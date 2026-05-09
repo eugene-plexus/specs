@@ -1,0 +1,265 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — hemisphere-driver
+  version: 0.1.0
+  summary: The interface every hemisphere adapter implements.
+  description: |
+    A `hemisphere-driver` instance wraps exactly one model backend
+    (Anthropic API, OpenAI API, Claude Code CLI, Codex CLI, OpenAI-compatible
+    HTTP for Ollama/vLLM/LM Studio). The orchestrator runs *two* instances
+    side-by-side as the bicameral pair — typically configured with different
+    backends so the hemispheres genuinely disagree.
+
+    All operations are stateless: the orchestrator owns conversation state
+    and passes the full prompt every call. Streaming uses Server-Sent
+    Events; non-streaming returns a single JSON body.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment (mDNS-discovered or config-overridden).
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8081'
+
+tags:
+  - name: inference
+    description: Model invocation.
+  - name: meta
+    description: Driver metadata, configuration, and health.
+
+paths:
+
+  /v1/generate:
+    post:
+      tags: [inference]
+      operationId: generate
+      summary: Run inference on the configured backend.
+      description: |
+        Single-turn request/response. The orchestrator builds the full prompt
+        (system, conversation history, current user turn, NT-conditioning
+        prefix) and the driver passes it through to the backend. The driver
+        does not own conversation memory.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '200':
+          description: Generation completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '500':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '502':
+          description: Upstream model backend error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/generate/stream:
+    post:
+      tags: [inference]
+      operationId: generateStream
+      summary: Run inference with token-streamed output.
+      description: |
+        Same request shape as `POST /v1/generate`, but the response is a
+        Server-Sent Events stream. Events:
+
+        - `event: token` — `data` is a JSON `{"text": "..."}` chunk
+        - `event: done`  — `data` is the final `GenerateResponse` JSON
+        - `event: error` — `data` is a `Problem` JSON
+
+        Backends that don't support native streaming (some CLI subprocess
+        adapters) MAY emit the entire response as a single `token` event
+        followed by `done`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '200':
+          description: SSE stream opened.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Newline-delimited SSE events; see operation description.
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '500':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/info:
+    get:
+      tags: [meta]
+      operationId: info
+      summary: Report which backend and model this driver is configured to use.
+      description: |
+        Used by the orchestrator at startup to log the bicameral pairing
+        ("left=claude-opus-4-7, right=gpt-5") and by the UI to label
+        hemisphere outputs.
+      responses:
+        '200':
+          description: Driver metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverInfo'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      description: |
+        Returns ok if the driver process is running and the configured
+        backend is reachable (a cheap probe — typically a cached result
+        from the last successful call, refreshed on a timer).
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Backend unreachable or driver not ready.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+
+  schemas:
+
+    GenerateRequest:
+      type: object
+      required:
+        - messages
+      properties:
+        messages:
+          type: array
+          description: |
+            Full prompt as an ordered conversation. The orchestrator is
+            responsible for inserting any NT-conditioning system message,
+            persona, etc. The driver does not modify this.
+          items:
+            $ref: 'components/common.yaml#/components/schemas/Message'
+        ntState:
+          $ref: 'components/common.yaml#/components/schemas/NTState'
+        passIndex:
+          type: integer
+          minimum: 0
+          description: |
+            Zero-based bicameral pass index. The driver itself does not
+            condition on this; it's logged for observability so a UI can
+            tell which pass produced which hemisphere output.
+        maxTokens:
+          type: integer
+          minimum: 1
+          description: Maximum output tokens. Backend-clamped.
+        temperature:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 2
+          description: Sampling temperature. Backend-clamped.
+        stop:
+          type: array
+          items:
+            type: string
+          description: Optional stop sequences.
+        requestId:
+          type: string
+          format: uuid
+          description: Caller-supplied id for log correlation. Echoed in the response.
+
+    GenerateResponse:
+      type: object
+      required:
+        - content
+        - finishReason
+      properties:
+        content:
+          type: string
+          description: The generated assistant text.
+        finishReason:
+          type: string
+          enum:
+            - stop          # natural end of generation
+            - length        # hit max tokens
+            - stop_sequence # matched a `stop` value
+            - error         # truncated due to backend error
+        usage:
+          $ref: '#/components/schemas/Usage'
+        requestId:
+          type: string
+          format: uuid
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        modelId:
+          type: string
+          description: Backend-specific model identifier (e.g. `"claude-opus-4-7"`).
+        latencyMs:
+          type: integer
+          description: End-to-end driver-side latency in milliseconds.
+
+    Usage:
+      type: object
+      description: Token accounting. Some backends (CLI subprocess) may report nulls.
+      properties:
+        promptTokens:
+          type: integer
+          minimum: 0
+        completionTokens:
+          type: integer
+          minimum: 0
+        totalTokens:
+          type: integer
+          minimum: 0
+
+    DriverInfo:
+      type: object
+      required:
+        - backend
+        - modelId
+        - hemisphere
+      properties:
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        modelId:
+          type: string
+          description: Backend-specific model identifier.
+        hemisphere:
+          $ref: 'components/common.yaml#/components/schemas/Hemisphere'
+        capabilities:
+          type: object
+          description: Optional backend capabilities the orchestrator may key off.
+          properties:
+            streaming:
+              type: boolean
+              description: Whether `/v1/generate/stream` emits true incremental tokens.
+            maxContextTokens:
+              type: integer
+              minimum: 0
+        version:
+          type: string
+          description: hemisphere-driver semver.

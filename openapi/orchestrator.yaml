@@ -1,0 +1,351 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — orchestrator
+  version: 0.1.0
+  summary: User-facing chat API and admin endpoints for Eugene Plexus.
+  description: |
+    The orchestrator is the front door of Eugene Plexus. It owns the
+    bicameral loop: it dispatches each turn to the left and right
+    hemisphere-driver instances in parallel, runs the corpus-callosum
+    blend on their outputs, decides whether to terminate or run another
+    pass, and streams the final response to the client.
+
+    v0.1 scope: stubbed memory (in-process), trivial NT blend, no drives,
+    no sleep consolidation, no tool use, no auth (assume Tailscale tailnet).
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8080'
+
+tags:
+  - name: chat
+    description: User-facing conversational endpoints.
+  - name: admin
+    description: Inspect and manage the running orchestrator.
+  - name: meta
+    description: Versioning and health.
+
+paths:
+
+  /v1/chat:
+    post:
+      tags: [chat]
+      operationId: chat
+      summary: Run one turn of the bicameral loop and return the final response.
+      description: |
+        Non-streaming variant. The orchestrator runs the full bicameral
+        loop (one or more passes until corpus-callosum convergence or
+        a max-pass cap) and returns the final assistant message.
+
+        For interactive UIs, prefer `POST /v1/chat/stream` — the loop can
+        take seconds to tens of seconds when hemispheres disagree.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: The final assistant message.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '500':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '502':
+          description: Both hemispheres failed to produce a response.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/chat/stream:
+    post:
+      tags: [chat]
+      operationId: chatStream
+      summary: Run the bicameral loop with progressive event streaming.
+      description: |
+        Server-Sent Events stream. Each event surfaces the bicameral process
+        as it unfolds — the UI uses this to render the side-by-side hemisphere
+        view and the corpus-callosum blend.
+
+        Event types (`event:` field):
+
+        - `pass_started`     — `data` = `{"passIndex": int}`
+        - `hemisphere_token` — `data` = `{"hemisphere": "left"|"right", "passIndex": int, "text": "..."}` — incremental tokens from one hemisphere
+        - `hemisphere_done`  — `data` = `Message` with `role: "hemisphere"`
+        - `callosum`         — `data` = `CallosumState` — blend / disagreement signal at end of pass
+        - `final_token`      — `data` = `{"text": "..."}` — token of the chosen final response (some implementations may only emit this after `done`)
+        - `done`             — `data` = full `ChatResponse`
+        - `error`            — `data` = `Problem`
+
+        Clients should treat unknown event types as informational.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: SSE stream opened.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '500':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/conversations/{conversationId}:
+    parameters:
+      - in: path
+        name: conversationId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [chat]
+      operationId: getConversation
+      summary: Fetch the full message history of a conversation.
+      description: |
+        v0.1 returns whatever the in-process memory stub holds. Once a real
+        memory component lands, this delegates to it.
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Conversation'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/admin/hemispheres:
+    get:
+      tags: [admin]
+      operationId: listHemispheres
+      summary: Report the two configured hemisphere-driver instances.
+      description: |
+        Surfaces what the orchestrator sees when it queries each
+        driver's `/v1/info`. Used by the UI to label hemispheres and
+        by ops to confirm the bicameral pair is genuinely cross-vendor.
+      responses:
+        '200':
+          description: Hemisphere configuration snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HemispherePairInfo'
+        '503':
+          description: One or both drivers unreachable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/admin/nt-state:
+    get:
+      tags: [admin]
+      operationId: getNTState
+      summary: Read the current global NT state.
+      description: |
+        v0.1 returns a static neutral state. The endpoint exists so the
+        UI and downstream components can begin consuming NT state now,
+        without code changes when modulation lands in v0.2.
+      responses:
+        '200':
+          description: Current NT state.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/NTState'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: One or more dependencies unhealthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+
+  schemas:
+
+    ChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: The user's new message.
+        conversationId:
+          type: string
+          format: uuid
+          description: |
+            Continue an existing conversation. If omitted, the orchestrator
+            mints a new id and returns it in the response.
+        systemPrompt:
+          type: string
+          description: |
+            Optional caller-supplied system prompt. If omitted, the
+            orchestrator uses its configured default Eugene persona.
+        maxPasses:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 3
+          description: |
+            Maximum number of bicameral passes before the orchestrator
+            forces termination regardless of hemisphere disagreement.
+        temperature:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 2
+          description: Optional override; otherwise driver defaults apply.
+        requestId:
+          type: string
+          format: uuid
+          description: Caller-supplied id for log correlation.
+
+    ChatResponse:
+      type: object
+      required:
+        - conversationId
+        - message
+        - passes
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        message:
+          $ref: 'components/common.yaml#/components/schemas/Message'
+        passes:
+          type: array
+          description: |
+            Per-pass record of what each hemisphere said and how the
+            corpus callosum scored agreement. `passes[N].hemispheres` has
+            two entries (left, right) when both succeeded.
+          items:
+            $ref: '#/components/schemas/PassRecord'
+        ntStateAtStart:
+          $ref: 'components/common.yaml#/components/schemas/NTState'
+        ntStateAtEnd:
+          $ref: 'components/common.yaml#/components/schemas/NTState'
+        requestId:
+          type: string
+          format: uuid
+
+    PassRecord:
+      type: object
+      required:
+        - passIndex
+        - hemispheres
+        - callosum
+      properties:
+        passIndex:
+          type: integer
+          minimum: 0
+        hemispheres:
+          type: array
+          minItems: 1
+          maxItems: 2
+          items:
+            $ref: 'components/common.yaml#/components/schemas/Message'
+        callosum:
+          $ref: '#/components/schemas/CallosumState'
+
+    CallosumState:
+      type: object
+      description: |
+        Output of the corpus-callosum blend at the end of one bicameral pass.
+        v0.1 implements only a trivial blend (string equality / length-based
+        heuristic); v0.2+ replaces this with a real disagreement signal
+        (semantic similarity, cross-hemisphere critique, etc.).
+      required:
+        - agreement
+        - decision
+      properties:
+        agreement:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: |
+            Estimated agreement between the two hemispheres on this pass.
+            1.0 = identical content, 0.0 = orthogonal.
+        decision:
+          type: string
+          enum:
+            - terminate    # agreement above threshold; emit final response
+            - another_pass # disagreement above threshold; re-prompt
+            - cap_reached  # forced terminate due to maxPasses
+          description: What the orchestrator did at the end of this pass.
+        blendedMessage:
+          $ref: 'components/common.yaml#/components/schemas/Message'
+
+    HemispherePairInfo:
+      type: object
+      required:
+        - left
+        - right
+      properties:
+        left:
+          $ref: '#/components/schemas/HemisphereInfo'
+        right:
+          $ref: '#/components/schemas/HemisphereInfo'
+
+    HemisphereInfo:
+      type: object
+      description: |
+        What the orchestrator sees from one hemisphere-driver's `/v1/info`,
+        plus the orchestrator-side reachability status.
+      required:
+        - reachable
+      properties:
+        reachable:
+          type: boolean
+        url:
+          type: string
+          format: uri
+          description: How the orchestrator reaches this driver.
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        modelId:
+          type: string
+        version:
+          type: string
+        error:
+          type: string
+          description: 'Populated when `reachable: false`.'

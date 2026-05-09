@@ -1,0 +1,219 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — shared schema components
+  version: 0.1.0
+  description: |
+    Schemas referenced by multiple Eugene Plexus components. This is not a
+    standalone API — it's a $ref target. Components share *schemas*, not code.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+# This document defines no paths — it exists only to host shared `components`.
+paths: {}
+
+components:
+  schemas:
+
+    # -------- Conversation messages --------
+
+    Role:
+      type: string
+      description: The speaker of a single message in a conversation.
+      enum:
+        - system
+        - user
+        - assistant
+        - hemisphere
+
+    Message:
+      type: object
+      description: |
+        A single message in an Eugene Plexus conversation. The shape is
+        deliberately close to the OpenAI / Anthropic chat message format so
+        that adapters don't have to re-shape on every hop, but `role` includes
+        `hemisphere` for messages emitted by an individual hemisphere during
+        the bicameral pass (visible to corpus callosum and UI debug views,
+        not normally to the end user).
+      required:
+        - role
+        - content
+      properties:
+        role:
+          $ref: '#/components/schemas/Role'
+        content:
+          type: string
+          description: Message text. v0.1 is text-only; multimodal extensions deferred.
+        hemisphere:
+          type: string
+          description: |
+            When `role == "hemisphere"`, identifies which hemisphere
+            produced this message (e.g. `"left"`, `"right"`). Omitted otherwise.
+          enum:
+            - left
+            - right
+        timestamp:
+          type: string
+          format: date-time
+          description: When the message was produced. Server-assigned if omitted.
+        passIndex:
+          type: integer
+          minimum: 0
+          description: |
+            Zero-based index of the bicameral pass that produced this message.
+            Pass 0 is the initial hemisphere response; subsequent passes are
+            re-prompts after corpus-callosum disagreement.
+
+    Conversation:
+      type: object
+      description: An ordered list of messages constituting a conversation history.
+      required:
+        - messages
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Server-assigned conversation id.
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+
+    # -------- NT (neurotransmitter) state --------
+
+    NTState:
+      type: object
+      description: |
+        A snapshot of Eugene's neurotransmitter state. v0.1 wires this through
+        the schemas but does not modulate behavior on it — the framework
+        passes a static neutral state. Drives, plasticity, and modulation
+        come in v0.2+.
+
+        Values are in [0, 1]. 0.5 represents a baseline / neutral level.
+      properties:
+        serotonin:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Mood / satiation tone. High = content / patient.
+        dopamine:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Reward prediction / motivation. High = engaged / curious.
+        norepinephrine:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Arousal / vigilance. High = alert / focused under load.
+        acetylcholine:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Attention / encoding gain. High = sharp focus, fast learning.
+        gaba:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Inhibitory tone. High = calm / restrained.
+        glutamate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Excitatory drive. High = active / responsive.
+
+    # -------- Hemisphere identity --------
+
+    Hemisphere:
+      type: string
+      description: Which hemisphere of the bicameral pair.
+      enum:
+        - left
+        - right
+
+    BackendKind:
+      type: string
+      description: |
+        Which adapter the hemisphere-driver instance is configured to use.
+        Reported by `/v1/info` so the orchestrator can log and the UI can
+        render a label. `claude_code_cli` and `codex_cli` shell out to the
+        respective CLIs (primary mode for personal installations).
+      enum:
+        - anthropic_api
+        - openai_api
+        - claude_code_cli
+        - codex_cli
+        - openai_compat_http   # Ollama, vLLM, LM Studio, etc.
+
+    # -------- Errors (RFC 7807-style) --------
+
+    Problem:
+      type: object
+      description: |
+        Error response shape, modeled on RFC 7807 (problem+json). Every
+        Eugene Plexus component returns this for 4xx / 5xx responses.
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+          description: A URI reference identifying the problem type.
+          default: about:blank
+        title:
+          type: string
+          description: Short human-readable summary.
+        status:
+          type: integer
+          description: HTTP status code.
+        detail:
+          type: string
+          description: Human-readable explanation specific to this occurrence.
+        instance:
+          type: string
+          format: uri
+          description: A URI reference identifying the specific occurrence.
+        component:
+          type: string
+          description: |
+            Eugene Plexus component name that originated the error
+            (e.g. `"orchestrator"`, `"hemisphere-driver:left"`).
+
+    # -------- Health --------
+
+    Health:
+      type: object
+      description: Liveness / readiness response shape.
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        version:
+          type: string
+          description: Component version (semver).
+        component:
+          type: string
+          description: Component identifier (e.g. `"hemisphere-driver"`).
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional component-specific health detail.
+
+  responses:
+
+    Problem:
+      description: Error response in RFC 7807 problem+json format.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

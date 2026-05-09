@@ -1,0 +1,57 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.tox/
+.python-version
+
+# --- Node / TypeScript ---
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+dist/
+build/
+*.tsbuildinfo
+.next/
+.svelte-kit/
+
+# --- OpenAPI codegen output ---
+# Consumers run codegen against these specs; don't ship the generated artifacts here.
+generated/
+gen/
+*.gen.py
+*.gen.ts
+*.gen.go
+.openapi-generator/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Local Claude state ---
+.claude/projects/
+.claude/settings.local.json
+
+# Project bootstrap notes — kept local; contains personal context.
+CLAUDE.md
+
+# --- Secrets / env ---
+.env
+.env.*
+!.env.example

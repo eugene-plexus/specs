@@ -1,0 +1,134 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — memory
+  version: 0.1.0
+  summary: Conversation history storage and retrieval interface.
+  description: |
+    The memory component stores Eugene's conversational past and (eventually)
+    consolidated long-term knowledge. v0.1 ships only what the orchestrator
+    actually needs to function — append-and-fetch by conversation id.
+
+    Vector retrieval, semantic recall, sleep-consolidation hooks, episodic
+    vs. semantic memory tiering are all deliberately deferred. Per CLAUDE.md,
+    memory is built last so its interface is shaped by real usage from
+    orchestrator + UI rather than speculation.
+
+    This document is the v0.1 minimum surface. It is expected to grow.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8082'
+
+tags:
+  - name: conversations
+    description: Per-conversation message storage.
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  /v1/conversations:
+    post:
+      tags: [conversations]
+      operationId: createConversation
+      summary: Create a new (empty) conversation and return its id.
+      responses:
+        '201':
+          description: Conversation created.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Conversation'
+        '500':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/conversations/{conversationId}:
+    parameters:
+      - in: path
+        name: conversationId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [conversations]
+      operationId: getConversation
+      summary: Fetch the full message history of a conversation.
+      responses:
+        '200':
+          description: The conversation.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Conversation'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [conversations]
+      operationId: deleteConversation
+      summary: Permanently remove a conversation and its messages.
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/conversations/{conversationId}/messages:
+    parameters:
+      - in: path
+        name: conversationId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [conversations]
+      operationId: appendMessage
+      summary: Append a message to a conversation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/Message'
+      responses:
+        '201':
+          description: Appended.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Message'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Storage backend unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components: {}
