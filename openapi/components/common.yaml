@@ -45,13 +45,10 @@ components:
           type: string
           description: Message text. v0.1 is text-only; multimodal extensions deferred.
         hemisphere:
-          type: string
+          $ref: '#/components/schemas/Hemisphere'
           description: |
             When `role == "hemisphere"`, identifies which hemisphere
-            produced this message (e.g. `"left"`, `"right"`). Omitted otherwise.
-          enum:
-            - left
-            - right
+            produced this message. Omitted otherwise.
         timestamp:
           type: string
           format: date-time
@@ -165,8 +162,10 @@ components:
       properties:
         type:
           type: string
-          format: uri
-          description: A URI reference identifying the problem type.
+          description: |
+            A URI reference identifying the problem type, per RFC 7807.
+            Modeled as a plain string rather than `format: uri` to keep
+            sentinel values like `about:blank` and ergonomic at call sites.
           default: about:blank
         title:
           type: string
@@ -179,8 +178,9 @@ components:
           description: Human-readable explanation specific to this occurrence.
         instance:
           type: string
-          format: uri
-          description: A URI reference identifying the specific occurrence.
+          description: |
+            A URI reference identifying the specific occurrence. Modeled
+            as a plain string for the same reason as `type`.
         component:
           type: string
           description: |
