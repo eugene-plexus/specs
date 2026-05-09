@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+
+  validate-openapi:
+    name: Validate (openapi-spec-validator)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install openapi-spec-validator
+        run: pip install 'openapi-spec-validator==0.8.5'
+
+      - name: Validate every OpenAPI document
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s globstar nullglob
+          status=0
+          for f in openapi/**/*.yaml; do
+            echo "::group::$f"
+            if ! python -m openapi_spec_validator "$f"; then
+              status=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $status
+
+  lint-openapi:
+    name: Lint (Redocly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Lint only the top-level API specs. Shared schemas in
+      # openapi/components/ are reached transitively via $ref, which is
+      # the only context in which they make sense as OpenAPI fragments.
+      - name: Run Redocly lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes @redocly/cli@2.30.4 lint \
+            openapi/orchestrator.yaml \
+            openapi/hemisphere-driver.yaml \
+            openapi/memory.yaml
+
+  dco:
+    name: DCO sign-off check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Check the actual PR commits, not the synthetic merge ref.
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      # CONTRIBUTING.md requires every commit to carry a Signed-off-by
+      # line whose name and email match the commit author. This check
+      # walks each non-merge commit in the PR and enforces that.
+      - name: Check Signed-off-by lines on every PR commit
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r sha; do
+            [[ -z "$sha" ]] && continue
+            name=$(git log -1 --format=%an "$sha")
+            email=$(git log -1 --format=%ae "$sha")
+            expected="Signed-off-by: ${name} <${email}>"
+            msg=$(git log -1 --format=%B "$sha")
+            if ! grep -Fxq "$expected" <<<"$msg"; then
+              echo "::error::Commit $sha by ${name} <${email}> is missing a matching DCO sign-off."
+              echo "  Expected line: ${expected}"
+              echo "  Fix with: git commit --amend -s --no-edit  (or: git rebase --signoff main)"
+              status=1
+            fi
+          done < <(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}")
+          exit $status

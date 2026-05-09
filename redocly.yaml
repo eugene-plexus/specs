@@ -1,0 +1,18 @@
+# Redocly CLI lint configuration.
+#
+# Linted as part of CI (.github/workflows/ci.yml). Lint runs against the
+# top-level API specs (orchestrator, hemisphere-driver, memory); shared
+# components in openapi/components/ are reached transitively via $ref.
+
+extends:
+  - recommended
+
+rules:
+  # v0.1 deliberately ships with no auth (Tailscale tailnet assumption,
+  # see CLAUDE.md / README.md). Re-enable when an auth gateway lands.
+  security-defined: off
+
+  # Many v0.1 endpoints are admin / healthz / simple GETs where a 4xx
+  # response would be informational at best. Tighten when endpoints grow
+  # more user-facing.
+  operation-4xx-response: off
