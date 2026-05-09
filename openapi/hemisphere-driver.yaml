@@ -324,14 +324,16 @@ components:
       type: object
       required:
         - backend
-        - modelId
         - hemisphere
       properties:
         backend:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
         modelId:
           type: string
-          description: Backend-specific model identifier.
+          description: |
+            Backend-specific model identifier (e.g. `"claude-opus-4-7"`).
+            Optional — omitted when the driver is configured to use the
+            adapter's built-in default rather than pinning a specific model.
         hemisphere:
           $ref: 'components/common.yaml#/components/schemas/Hemisphere'
         capabilities:
