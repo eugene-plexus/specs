@@ -1,5 +1,9 @@
 # Eugene Plexus — `specs`
 
+[![CI](https://github.com/eugene-plexus/specs/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/eugene-plexus/specs/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1-6BA539.svg)](https://spec.openapis.org/oas/v3.1.0)
+
 OpenAPI 3.1 schemas for every cross-component contract in [Eugene Plexus](https://eugeneplexus.com).
 
 This is the **single source of truth** for how Eugene Plexus components talk to each other. Every other repo in the org depends on this one via codegen — never via direct import — to physically enforce the principle that *components share schemas, not code*.
