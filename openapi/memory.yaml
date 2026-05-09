@@ -33,6 +33,12 @@ servers:
 tags:
   - name: conversations
     description: Per-conversation message storage.
+  - name: config
+    description: |
+      Remote-editable configuration. Every Eugene Plexus component
+      implements the same config trio (`GET /v1/config`,
+      `GET /v1/config/schema`, `PATCH /v1/config`) so a single UI can
+      manage all components without per-component code.
   - name: meta
     description: Health and version.
 
@@ -111,6 +117,84 @@ paths:
                 $ref: 'components/common.yaml#/components/schemas/Message'
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the memory component's current effective configuration.
+      description: |
+        Returns every config field's currently effective value. Values
+        of fields with `sensitive: true` are redacted as the literal
+        string `"<redacted>"`.
+
+        ## Auth note (v0.1)
+
+        Eugene Plexus v0.1 ships with no application-level
+        authentication. Deployment assumption: behind a Tailscale
+        tailnet (or equivalent network boundary). **Anyone reachable
+        on the network can read and modify the memory component's
+        config.** Auth lands in v0.2.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the memory component's configuration.
+      description: |
+        Accepts a partial map of `key -> new-value` pairs. Each key is
+        validated against its `ConfigField` definition. Validation
+        errors are reported per-key without aborting the whole
+        request — valid changes are applied, invalid ones are
+        rejected and surfaced in the response.
+
+        Some fields require a process restart to take effect (see
+        `ConfigField.requiresRestart`). The response indicates whether
+        a restart is needed and which keys are queued.
+
+        ## Auth note (v0.1)
+
+        Same caveat as `GET /v1/config`: in v0.1, anyone on the network
+        can change memory-component config. Auth lands in v0.2.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome (may include per-field rejections).
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      description: |
+        Returns a `ConfigSchema` listing every config field the memory
+        component accepts, with type, default, validation hints, and
+        UI metadata (label, description, category, sensitive flag,
+        restart-required flag). UIs use this to render a generic
+        config editor without component-specific code.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
 
   /healthz:
     get:

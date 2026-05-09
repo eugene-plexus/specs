@@ -209,6 +209,194 @@ components:
           additionalProperties: true
           description: Optional component-specific health detail.
 
+    # -------- Config protocol --------
+    #
+    # Every Eugene Plexus component implements a uniform remote-config
+    # contract: GET /v1/config, GET /v1/config/schema, PATCH /v1/config.
+    # The schema is rich enough that a generic UI can render an editor
+    # without component-specific code (label, description, valueType,
+    # category, sensitive flag, validation hints, restart-required flag).
+    # See each component's spec for the endpoint definitions.
+
+    ConfigValueType:
+      type: string
+      description: |
+        The kind of value a config field holds. The UI uses this to pick
+        a renderer (text input, dropdown, password field, etc.).
+      enum:
+        - string
+        - integer
+        - number
+        - boolean
+        - enum        # one of a fixed set; see ConfigField.enumValues
+        - secret      # sensitive string; redacted in GET, accepted in PATCH
+        - file_path   # path on the component host's filesystem
+        - url
+        - duration    # seconds; UI may render as a time picker
+
+    ConfigField:
+      type: object
+      description: |
+        UI-renderable description of a single editable config field.
+      required:
+        - key
+        - label
+        - valueType
+        - category
+      properties:
+        key:
+          type: string
+          description: |
+            Stable machine-readable id, dot-separated for grouping
+            (e.g. `"adapter.modelId"`).
+        label:
+          type: string
+          description: Human-readable label for the UI.
+        description:
+          type: string
+          description: One-sentence explanation suitable for non-programmers.
+        category:
+          type: string
+          description: |
+            Group key for UI tabbing or sectioning (e.g. `"adapter"`,
+            `"logging"`, `"network"`). Mapped to a display label via
+            `ConfigSchema.categories`.
+        valueType:
+          $ref: '#/components/schemas/ConfigValueType'
+        default:
+          description: |
+            Default value if unset. Type matches `valueType`. Omitted
+            for fields with no default.
+        enumValues:
+          type: array
+          items:
+            type: string
+          description: Allowed values when `valueType == enum`.
+        sensitive:
+          type: boolean
+          default: false
+          description: |
+            If true, the value is redacted (`"<redacted>"`) in
+            `ConfigDocument` responses but is accepted in
+            `ConfigUpdateRequest`. Use for API keys, passwords, etc.
+        required:
+          type: boolean
+          default: false
+          description: |
+            If true, the component will refuse to start without this
+            field set (either in config or via env var fallback).
+        minimum:
+          type: number
+          description: Validation hint for `integer` / `number` fields.
+        maximum:
+          type: number
+          description: Validation hint for `integer` / `number` fields.
+        pattern:
+          type: string
+          description: Regex validation hint for `string` / `url` / `file_path`.
+        requiresRestart:
+          type: boolean
+          default: false
+          description: |
+            If true, changes to this field via PATCH are accepted and
+            stored but do not take effect until the component process
+            restarts. The UI should warn before submitting.
+
+    ConfigSchema:
+      type: object
+      description: |
+        UI-renderable description of every editable config field this
+        component accepts. Returned by `GET /v1/config/schema`. UIs use
+        this to render a generic config editor without component-specific
+        code.
+      required:
+        - component
+        - fields
+      properties:
+        component:
+          type: string
+          description: Component identifier (e.g. `"hemisphere-driver"`).
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigField'
+        categories:
+          type: object
+          description: |
+            Map from category key (used in `ConfigField.category`) to
+            a human-readable section label. Optional; UIs may fall back
+            to the raw key.
+          additionalProperties:
+            type: string
+
+    ConfigDocument:
+      type: object
+      description: |
+        Current effective config values, keyed by `ConfigField.key`.
+        Values of fields with `sensitive: true` are returned as the
+        literal string `"<redacted>"` regardless of whether they are
+        set. Returned by `GET /v1/config`.
+      additionalProperties: true
+
+    ConfigUpdateRequest:
+      type: object
+      description: |
+        Partial update for `PATCH /v1/config`. Every present key is
+        set; absent keys are left unchanged. To revert a field to its
+        default, send `null` as the value. Sensitive fields are written
+        through directly (the redacted form sent back by GET is never
+        accepted as a write value).
+      additionalProperties: true
+
+    ConfigFieldError:
+      type: object
+      description: A per-field validation failure during PATCH.
+      required:
+        - key
+        - message
+      properties:
+        key:
+          type: string
+        message:
+          type: string
+
+    ConfigUpdateResult:
+      type: object
+      description: |
+        Outcome of a `PATCH /v1/config` call. Validation failures on
+        individual keys do not abort the whole request — valid changes
+        are applied, invalid ones are reported in `rejected`.
+      required:
+        - applied
+        - rejected
+        - requiresRestart
+      properties:
+        applied:
+          type: array
+          items:
+            type: string
+          description: Keys that were validated and applied successfully.
+        rejected:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfigFieldError'
+          description: |
+            Keys whose new values failed validation. The current value
+            is preserved.
+        requiresRestart:
+          type: boolean
+          description: |
+            True if any key in `applied` has `requiresRestart: true`,
+            meaning a process restart is needed for the change to take
+            effect. The UI should surface this to the user.
+        pendingRestart:
+          type: array
+          items:
+            type: string
+          description: |
+            Keys whose new values are stored but not yet active. Subset
+            of `applied`. Empty unless `requiresRestart` is true.
+
   responses:
 
     Problem:
