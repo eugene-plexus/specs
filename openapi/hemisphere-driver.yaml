@@ -286,13 +286,22 @@ components:
         maxTokens:
           type: integer
           minimum: 1
-          description: Maximum output tokens. Backend-clamped.
+          description: |
+            Maximum output tokens. Backend-clamped. Owned by the caller
+            (typically the orchestrator) — the driver does not apply a
+            local default. Adapters whose backends don't expose this
+            knob (e.g. agentic CLIs) silently ignore it.
         temperature:
           type: number
           format: float
           minimum: 0
           maximum: 2
-          description: Sampling temperature. Backend-clamped.
+          description: |
+            Sampling temperature. Backend-clamped. Owned by the caller
+            (typically the orchestrator, where it will eventually be
+            modulated by the NT system) — the driver does not apply a
+            local default. Adapters whose backends don't expose this
+            knob (e.g. agentic CLIs) silently ignore it.
         stop:
           type: array
           items:

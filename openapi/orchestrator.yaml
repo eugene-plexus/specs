@@ -338,12 +338,6 @@ components:
           description: |
             Maximum number of bicameral passes before the orchestrator
             forces termination regardless of hemisphere disagreement.
-        temperature:
-          type: number
-          format: float
-          minimum: 0
-          maximum: 2
-          description: Optional override; otherwise driver defaults apply.
         requestId:
           type: string
           format: uuid
