@@ -38,6 +38,8 @@ tags:
       implements the same config trio (`GET /v1/config`,
       `GET /v1/config/schema`, `PATCH /v1/config`) so a single UI can
       manage all components without per-component code.
+  - name: admin
+    description: Inspect and manage the running driver process.
   - name: meta
     description: Driver metadata and health.
 
@@ -233,6 +235,36 @@ paths:
             application/json:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
+
+  /v1/admin/restart:
+    post:
+      tags: [admin]
+      operationId: restart
+      summary: Schedule a process restart so `requiresRestart` config takes effect.
+      description: |
+        Some config keys (`port`, `provider`, `modelId`, etc.) carry
+        `requiresRestart: true` because the driver only reads them at
+        startup. Calling this endpoint tells the driver to exit shortly
+        after responding; an external supervisor (systemd, docker,
+        deploy launcher) brings it back up with the new config in
+        effect. The endpoint returns *before* the exit so the HTTP
+        response has time to flush.
+
+        v0.1 personal-use installations without a supervisor will
+        require a manual relaunch. The UI should make this clear in the
+        confirmation dialog.
+
+        ## Auth note (v0.1)
+
+        Unauthenticated, same as the rest of the v0.1 admin surface
+        (assumed Tailscale tailnet). Auth lands in v0.2.
+      responses:
+        '202':
+          description: Restart scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
 
   /healthz:
     get:

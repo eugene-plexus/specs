@@ -526,6 +526,42 @@ components:
             be specific enough that the operator can act on it (e.g.
             `"openaiApiKey rejected: 401 Unauthorized"`).
 
+    RestartResult:
+      type: object
+      description: |
+        Acknowledgement returned by `POST /v1/admin/restart`. The
+        component schedules its own process exit shortly after returning
+        this response (typically a few hundred ms — long enough for the
+        HTTP response to flush). The component does NOT bring itself
+        back up; a process supervisor (systemd, docker-compose, the
+        deploy launcher, etc.) is expected to relaunch it. In v0.1
+        personal-use deploys without a supervisor, the operator
+        relaunches manually.
+      required:
+        - scheduled
+        - delayMs
+      properties:
+        scheduled:
+          type: boolean
+          description: |
+            True if the component accepted the restart and an exit is
+            queued. Always true in v0.1 — the endpoint has no reason to
+            refuse — but typed as a boolean so future versions can gate
+            on (e.g.) an in-flight long-running operation.
+        delayMs:
+          type: integer
+          minimum: 0
+          description: |
+            How long the component intends to wait before calling exit,
+            measured from the moment the response is sent. Lets clients
+            time their UI ("restarting in 0.5s…") and decide when to
+            start polling `/healthz` for the relaunched process.
+        message:
+          type: string
+          description: |
+            Optional human-readable note (e.g. "logs flushed, exiting
+            now"). UI may display this in the restart-progress dialog.
+
   responses:
 
     Problem:
