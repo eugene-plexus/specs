@@ -18,6 +18,18 @@ info:
 
     v0.1 scope: stubbed memory (in-process), trivial NT blend, no drives,
     no sleep consolidation, no tool use, no auth (assume Tailscale tailnet).
+
+    ## Safe mode
+
+    The orchestrator honors the watchdog's safe-mode env var:
+    `EUGENE_PLEXUS_ORCH_SAFE_MODE=1` at startup makes the orchestrator
+    ignore its persisted config file and boot from built-in defaults
+    (no drivers configured, default memory URL, default thresholds).
+    This is the recovery flow when a config edit breaks startup — the
+    operator can still reach `/v1/config` to fix the persisted file,
+    then restart without the env var. While safe mode is active,
+    `/v1/chat` returns 503 (no drivers are configured), but
+    `PATCH /v1/config` writes to the on-disk config normally.
   license:
     name: Apache-2.0
     identifier: Apache-2.0

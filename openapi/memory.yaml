@@ -14,6 +14,19 @@ info:
     orchestrator + UI rather than speculation.
 
     This document is the v0.1 minimum surface. It is expected to grow.
+
+    ## Safe mode
+
+    Memory honors the watchdog's safe-mode env var:
+    `EUGENE_PLEXUS_MEM_SAFE_MODE=1` at startup makes memory ignore its
+    persisted config file and boot from built-in defaults. This is the
+    recovery flow when a config edit breaks startup — the operator can
+    still reach `/v1/config` to fix the persisted file, then restart
+    without the env var. While safe mode is active, the
+    `/v1/conversations` endpoints continue to work using in-memory
+    storage only (the v0.1 stub behavior); persistent backends, when
+    they land in v0.2+, will return 503 for write operations until
+    safe mode is cleared.
   license:
     name: Apache-2.0
     identifier: Apache-2.0

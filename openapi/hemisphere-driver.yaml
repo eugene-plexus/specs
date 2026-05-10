@@ -13,6 +13,17 @@ info:
     All operations are stateless: the orchestrator owns conversation state
     and passes the full prompt every call. Streaming uses Server-Sent
     Events; non-streaming returns a single JSON body.
+
+    ## Safe mode
+
+    The driver honors the watchdog's safe-mode env var:
+    `EUGENE_PLEXUS_HD_SAFE_MODE=1` at startup makes the driver ignore
+    its persisted config file and boot from built-in defaults. This is
+    the recovery flow when a config edit breaks startup — the operator
+    can still reach `/v1/config` to fix the persisted file, then
+    restart without the env var. While safe mode is active,
+    `/v1/generate` returns 503 (no engine is configured), but
+    `PATCH /v1/config` writes to the on-disk config normally.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
