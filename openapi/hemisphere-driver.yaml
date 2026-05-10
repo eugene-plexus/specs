@@ -368,6 +368,18 @@ components:
       properties:
         backend:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        provider:
+          type: string
+          description: |
+            Operator-friendly provider key from the driver's
+            registry (e.g. `"openai"`, `"xai"`, `"openrouter"`,
+            `"claude_subscription"`). Reflects which subscription /
+            service this driver is wrapping — `backend` reflects the
+            *protocol* underneath, which can be shared across many
+            providers (e.g. xAI, OpenRouter, Ollama all report
+            `backend: openai_compat_http`). Optional; omitted when
+            the driver is in degraded mode and never finished
+            constructing.
         modelId:
           type: string
           description: |
