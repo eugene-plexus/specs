@@ -21,6 +21,7 @@ openapi/
   orchestrator.yaml         user-facing chat API + admin
   hemisphere-driver.yaml    interface every hemisphere adapter implements
   memory.yaml               storage / retrieval interface (v0.1: stub)
+  watchdog.yaml             process supervisor + UI host (impl post-v0.1)
   components/
     common.yaml             shared schema components (messages, NT state, errors)
 ```

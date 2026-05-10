@@ -1,0 +1,452 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — watchdog
+  version: 0.1.0
+  summary: Process supervisor and UI host for an Eugene Plexus install.
+  description: |
+    The watchdog is the outermost process of an Eugene Plexus install —
+    the "medulla" in the consciousness analogy. Its only jobs are:
+
+      1. Spawn and supervise the body components (orchestrator,
+         hemisphere drivers, memory) declared in its topology config.
+         When a spawned child exits, the watchdog respawns it. Children
+         marked `safeMode: true` are launched with the
+         `EUGENE_PLEXUS_<KIND>_SAFE_MODE=1` env var so they boot from
+         defaults without reading their own config file.
+
+      2. Serve the UI's static assets at the root path so an operator's
+         browser has a single, stable address to point at — typically
+         `http://localhost:8079`. The UI proxies API calls through the
+         watchdog to the orchestrator and other components.
+
+      3. Expose its own configuration and topology over HTTP so the UI
+         (or a CLI client) can edit the install's shape without
+         touching files on disk.
+
+    The watchdog does **not** think. It does not participate in the
+    bicameral loop, has no NT state, and consumes no LLM tokens. Process
+    supervision in v0.1 is the watchdog's only job; v0.2+ moves the
+    richer supervision logic (interoceptive event stream, autonomic
+    restart based on NT state) into the orchestrator and reduces the
+    watchdog's role to "keep the orchestrator running, serve UI assets."
+
+    ## Auth note (v0.1)
+
+    Eugene Plexus v0.1 ships with no application-level authentication.
+    The deployment assumption is a Tailscale tailnet or equivalent
+    network boundary. **Anyone reachable on the network can read and
+    modify the watchdog's config and restart its children.** Auth lands
+    in v0.2.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default loopback deployment. Port is fixed in v0.1 so the UI ships with a known target.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8079'
+
+tags:
+  - name: components
+    description: |
+      Topology and lifecycle of the supervised body components. A
+      "component" is an orchestrator / hemisphere-driver / memory entry
+      the watchdog has been told to spawn or watch.
+  - name: config
+    description: |
+      Remote-editable watchdog settings — UI preferences (theme, font
+      size) and the first-run wizard's completion flag. Topology lives
+      under `/v1/components`, not here, so editing UI prefs can never
+      accidentally restructure the install.
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  /v1/components:
+    get:
+      tags: [components]
+      operationId: listComponents
+      summary: List supervised components with their declared topology and live status.
+      description: |
+        Returns one entry per component the watchdog knows about,
+        combining the declarative topology (what the operator asked
+        for) with operational state (what the watchdog observes
+        right now).
+      responses:
+        '200':
+          description: Component list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComponentList'
+    post:
+      tags: [components]
+      operationId: createComponent
+      summary: Add a new component to the topology.
+      description: |
+        Used by the first-run wizard's "+ Add another driver" flow and
+        by the post-setup Components tab. The watchdog scaffolds the
+        component's own config file at `spawn.configFile` if it doesn't
+        exist, then begins supervising. For a `remote` entry no file is
+        scaffolded — the watchdog only monitors reachability.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComponentEntry'
+      responses:
+        '201':
+          description: Component added; supervision started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Component'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: A component with this name already exists.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/components/{name}:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+        description: Operator-supplied component name (e.g. `left`, `right`, `orchestrator`).
+    get:
+      tags: [components]
+      operationId: getComponent
+      summary: Read one component's topology entry plus current status.
+      responses:
+        '200':
+          description: Component details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Component'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    patch:
+      tags: [components]
+      operationId: updateComponent
+      summary: Modify a component's topology entry.
+      description: |
+        Partial update. Changes that affect the running process
+        (spawn.configFile, url's port, safeMode) trigger a restart of
+        that component once the patch is applied — the watchdog's
+        respawn loop sees the new desired state and reconciles.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComponentEntry'
+      responses:
+        '200':
+          description: Updated component.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Component'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [components]
+      operationId: deleteComponent
+      summary: Remove a component from the topology.
+      description: |
+        SIGTERMs the spawned process (if local) and removes the entry
+        from `watchdog.yaml`. The component's own config file is left
+        on disk so re-adding by the same name picks up where it left
+        off.
+      responses:
+        '204':
+          description: Component removed.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/components/{name}/restart:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [components]
+      operationId: restartComponent
+      summary: Restart one supervised component.
+      description: |
+        For a spawned component the watchdog SIGTERMs it (with a brief
+        timeout, then SIGKILL) and respawns with the current desired
+        state — picking up any config changes made via PATCH. The first-
+        run wizard's "Start" step calls this once per component to
+        flip them out of safe mode after their real config is in place.
+
+        For a `remote` component this returns `409 Conflict`: the
+        watchdog cannot restart something it does not own.
+      responses:
+        '202':
+          description: Restart scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Component is remote and cannot be restarted by the watchdog.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the watchdog's UI preferences and first-run state.
+      description: |
+        Returns the watchdog's settings that are NOT topology — UI
+        preferences (theme, font size, future displayName, future
+        connectors) and `firstRunComplete`. Topology lives under
+        `/v1/components`. This split prevents accidental topology
+        changes when an operator edits UI prefs.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of UI preferences and setup state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable watchdog config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      description: |
+        The watchdog is healthy if its own HTTP server is up and at
+        least one supervised component is reachable. A watchdog that
+        cannot reach any of its children stays up (so config endpoints
+        remain editable) but reports `degraded`.
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: All supervised components unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+
+  schemas:
+
+    ComponentList:
+      type: object
+      required:
+        - components
+      properties:
+        components:
+          type: array
+          description: |
+            Components in the order they were configured. The first-run
+            wizard fills this in; later editing happens via the
+            Components tab.
+          items:
+            $ref: '#/components/schemas/Component'
+
+    Component:
+      type: object
+      description: |
+        Combined declarative + operational view of one supervised
+        component. The declarative half (`name`, `kind`, `url`,
+        `spawn`, `safeMode`) is what's persisted to `watchdog.yaml`.
+        The operational half (`status`, `lastRestart`, `lastError`,
+        `pid`) is observed at runtime and not persisted.
+      required:
+        - name
+        - kind
+        - url
+        - status
+      properties:
+        name:
+          type: string
+          description: Operator-supplied label, also used in the orchestrator's `drivers` list.
+        kind:
+          $ref: '#/components/schemas/ComponentKind'
+        url:
+          type: string
+          format: uri
+          description: |
+            Canonical address. For spawned components the watchdog
+            parses the port out of this URL and passes it via env var
+            (`EUGENE_PLEXUS_<KIND>_BIND_PORT`); for remote components
+            this is what the watchdog probes.
+        spawn:
+          $ref: '#/components/schemas/SpawnConfig'
+          description: |
+            Present iff this component runs locally under watchdog
+            supervision. Absence means it's remote (the watchdog only
+            monitors reachability).
+        safeMode:
+          type: boolean
+          default: false
+          description: |
+            When true the watchdog launches the spawned component with
+            `EUGENE_PLEXUS_<KIND>_SAFE_MODE=1`, telling it to ignore its
+            own config file and boot from defaults. Used to recover
+            from a config that breaks startup. Ignored for remote
+            components.
+        status:
+          $ref: '#/components/schemas/ComponentStatus'
+        pid:
+          type: integer
+          description: Operating-system process id. Set only for spawned, currently-running components.
+        lastRestart:
+          type: string
+          format: date-time
+          description: When the watchdog last started or restarted this component.
+        lastError:
+          type: string
+          description: |
+            Most recent error observed for this component. Reset to null
+            on successful restart. Useful for surfacing why a component
+            keeps crashing in the UI's Components tab.
+
+    ComponentEntry:
+      type: object
+      description: |
+        Declarative half of a Component, used for create / update
+        request bodies. Status fields are server-owned and excluded.
+      required:
+        - name
+        - kind
+        - url
+      properties:
+        name:
+          type: string
+        kind:
+          $ref: '#/components/schemas/ComponentKind'
+        url:
+          type: string
+          format: uri
+        spawn:
+          $ref: '#/components/schemas/SpawnConfig'
+        safeMode:
+          type: boolean
+          default: false
+
+    ComponentKind:
+      type: string
+      enum:
+        - orchestrator
+        - hemisphere-driver
+        - memory
+      description: |
+        Which Eugene Plexus component class this entry represents. The
+        watchdog's spawn registry maps each kind to a launch command.
+        v0.1 covers the three v0.1 body parts; future kinds (thalamus,
+        hypothalamus, …) extend this enum.
+
+    SpawnConfig:
+      type: object
+      required:
+        - configFile
+      properties:
+        configFile:
+          type: string
+          description: |
+            Absolute path to the component's own config file. The
+            watchdog passes this to the component via its
+            kind-specific env var
+            (`EUGENE_PLEXUS_<KIND>_CONFIG_FILE`) at spawn time.
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Optional extra environment variables to pass to the
+            spawned process. Reserved for advanced operators; the
+            wizard never sets this.
+
+    ComponentStatus:
+      type: string
+      enum:
+        - starting
+        - running
+        - safe_mode
+        - exited
+        - crashed
+        - unreachable
+      description: |
+        Current operational state.
+
+        * `starting` — watchdog has spawned the process but it has
+          not yet answered `/healthz`.
+        * `running` — process is up and `/healthz` is healthy.
+        * `safe_mode` — process is up but launched with
+          `SAFE_MODE=1`; will refuse to do useful work until the
+          operator fixes its config and clears the safe-mode flag.
+        * `exited` — process exited cleanly and the watchdog is in
+          the middle of respawning it (transient state).
+        * `crashed` — process has exited non-zero repeatedly and the
+          watchdog has given up auto-restarting it. Operator must
+          restart it manually after fixing the cause.
+        * `unreachable` — for remote components, the watchdog can't
+          reach the URL. For spawned components this state is not
+          used (use `crashed` or `exited` instead).
