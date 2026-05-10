@@ -429,6 +429,64 @@ components:
             Keys whose new values are stored but not yet active. Subset
             of `applied`. Empty unless `requiresRestart` is true.
 
+    ConfigTestRequest:
+      type: object
+      description: |
+        Optional override for `POST /v1/config/test`. Same shape as
+        `ConfigUpdateRequest`: keys override the saved config for the
+        duration of the test only. Useful for "Test Connection" UIs where
+        the operator wants to verify a new API key, URL, or model
+        identifier before committing it. Send an empty body (`{}`) to
+        test the saved config as-is.
+      properties:
+        overrides:
+          $ref: '#/components/schemas/ConfigUpdateRequest'
+
+    ConfigTestResult:
+      type: object
+      description: |
+        Result of a `POST /v1/config/test` invocation. Components decide
+        what "test" means for their own surface: hemisphere-driver runs
+        a minimal `generate()` round-trip; orchestrator probes its
+        configured hemispheres + memory; memory verifies the store
+        backend is reachable.
+      required:
+        - ok
+        - component
+        - latencyMs
+      properties:
+        ok:
+          type: boolean
+          description: True iff the test invocation succeeded end-to-end.
+        component:
+          type: string
+          description: |
+            Component identifier (matches `ConfigSchema.component`).
+            Echoed for UI clarity when several /v1/config/test responses
+            land in the same view.
+        latencyMs:
+          type: integer
+          description: Wall-clock time the test took, in milliseconds.
+        summary:
+          type: string
+          description: |
+            One-line human-readable result summary. Always set when
+            `ok` is true; may be set on failure to add context beyond
+            `error`.
+        sampleOutput:
+          type: string
+          description: |
+            Brief sample of the data the test produced — e.g. assistant
+            text from a hemisphere-driver `generate()` round-trip. May be
+            truncated to keep the response small. Omitted when there's
+            nothing useful to show.
+        error:
+          type: string
+          description: |
+            Human-readable error message. Set when `ok` is false. Should
+            be specific enough that the operator can act on it (e.g.
+            `"openaiApiKey rejected: 401 Unauthorized"`).
+
   responses:
 
     Problem:

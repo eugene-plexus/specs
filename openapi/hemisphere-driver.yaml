@@ -207,6 +207,33 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
 
+  /v1/config/test:
+    post:
+      tags: [config]
+      operationId: testConfig
+      summary: Test the effective config without committing it.
+      description: |
+        Builds a temporary adapter from the saved config merged with the
+        optional `overrides`, runs a minimal `generate()` round-trip
+        (single user message), and reports success / failure / latency.
+        The override values are NOT persisted — `PATCH /v1/config` is
+        still required to commit them. Use this from the UI's "Test
+        Connection" button so the operator can verify a new API key,
+        URL, or model identifier before saving.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigTestRequest'
+      responses:
+        '200':
+          description: Test result. Returned for both success and failure cases.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
+
   /healthz:
     get:
       tags: [meta]
