@@ -301,6 +301,38 @@ components:
             If true, changes to this field via PATCH are accepted and
             stored but do not take effect until the component process
             restarts. The UI should warn before submitting.
+        showWhen:
+          $ref: '#/components/schemas/ConfigFieldShowWhen'
+          description: |
+            Conditional-rendering hint. When set, the UI should only
+            render this field when another field's current value matches
+            the condition. Used to hide adapter-specific fields
+            (e.g. `openaiApiKey`) when a different adapter is selected.
+            The component still validates and stores the field
+            regardless of UI visibility.
+
+    ConfigFieldShowWhen:
+      type: object
+      description: |
+        Predicate over another `ConfigField`'s current value. The UI
+        renders the field this is attached to only when the named field
+        equals the given value.
+      required:
+        - key
+        - equals
+      properties:
+        key:
+          type: string
+          description: |
+            `key` of another field in the same `ConfigSchema` to compare
+            against.
+        equals:
+          description: |
+            Value the named field must equal for this field to render.
+            Untyped — JSON value matching the referenced field's
+            `valueType`. Only literal equality is supported in v0.1;
+            richer predicates (`oneOf`, `not`, etc.) deferred until a
+            real use case appears.
 
     ConfigSchema:
       type: object
