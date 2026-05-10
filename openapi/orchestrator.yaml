@@ -5,10 +5,16 @@ info:
   summary: User-facing chat API and admin endpoints for Eugene Plexus.
   description: |
     The orchestrator is the front door of Eugene Plexus. It owns the
-    bicameral loop: it dispatches each turn to the left and right
-    hemisphere-driver instances in parallel, runs the corpus-callosum
-    blend on their outputs, decides whether to terminate or run another
-    pass, and streams the final response to the client.
+    bicameral loop: it dispatches each turn to its configured
+    hemisphere-driver instances (v0.1: exactly two; v0.2+: N with
+    backup/failover) in parallel, runs the corpus-callosum blend on
+    their outputs, decides whether to terminate or run another pass,
+    and streams the final response to the client.
+
+    The orchestrator owns the **topology**: the list of drivers, their
+    operator-supplied names (used for UI labelling and message
+    stamping), and their URLs. Drivers themselves are anonymous and
+    report only their backend / model identity.
 
     v0.1 scope: stubbed memory (in-process), trivial NT blend, no drives,
     no sleep consolidation, no tool use, no auth (assume Tailscale tailnet).
@@ -93,7 +99,7 @@ paths:
         Event types (`event:` field):
 
         - `pass_started`     — `data` = `{"passIndex": int}`
-        - `hemisphere_token` — `data` = `{"hemisphere": "left"|"right", "passIndex": int, "text": "..."}` — incremental tokens from one hemisphere
+        - `hemisphere_token` — `data` = `{"driverName": string, "passIndex": int, "text": "..."}` — incremental tokens from one driver
         - `hemisphere_done`  — `data` = `Message` with `role: "hemisphere"`
         - `callosum`         — `data` = `CallosumState` — blend / disagreement signal at end of pass
         - `final_token`      — `data` = `{"text": "..."}` — token of the chosen final response (some implementations may only emit this after `done`)
@@ -144,24 +150,25 @@ paths:
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
-  /v1/admin/hemispheres:
+  /v1/admin/drivers:
     get:
       tags: [admin]
-      operationId: listHemispheres
-      summary: Report the two configured hemisphere-driver instances.
+      operationId: listDrivers
+      summary: Report the orchestrator's configured drivers.
       description: |
         Surfaces what the orchestrator sees when it queries each
-        driver's `/v1/info`. Used by the UI to label hemispheres and
-        by ops to confirm the bicameral pair is genuinely cross-vendor.
+        driver's `/v1/info`, in the order the operator configured
+        them. Used by the UI to render dynamic per-driver tabs and by
+        ops to confirm the topology.
       responses:
         '200':
-          description: Hemisphere configuration snapshot.
+          description: Driver topology snapshot.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HemispherePairInfo'
+                $ref: '#/components/schemas/DriversInfo'
         '503':
-          description: One or both drivers unreachable.
+          description: All configured drivers are unreachable.
           content:
             application/problem+json:
               schema:
@@ -358,9 +365,9 @@ components:
         passes:
           type: array
           description: |
-            Per-pass record of what each hemisphere said and how the
-            corpus callosum scored agreement. `passes[N].hemispheres` has
-            two entries (left, right) when both succeeded.
+            Per-pass record of what each driver said and how the corpus
+            callosum scored agreement. `passes[N].hemispheres` has one
+            entry per configured driver that responded — two in v0.1.
           items:
             $ref: '#/components/schemas/PassRecord'
         ntStateAtStart:
@@ -383,8 +390,12 @@ components:
           minimum: 0
         hemispheres:
           type: array
+          description: |
+            One `Message` per configured driver that responded on this
+            pass, in the order the orchestrator's `drivers` config
+            declares them. Each message carries `driverName`. v0.1
+            expects exactly two entries.
           minItems: 1
-          maxItems: 2
           items:
             $ref: 'components/common.yaml#/components/schemas/Message'
         callosum:
@@ -419,25 +430,34 @@ components:
         blendedMessage:
           $ref: 'components/common.yaml#/components/schemas/Message'
 
-    HemispherePairInfo:
+    DriversInfo:
       type: object
       required:
-        - left
-        - right
+        - drivers
       properties:
-        left:
-          $ref: '#/components/schemas/HemisphereInfo'
-        right:
-          $ref: '#/components/schemas/HemisphereInfo'
+        drivers:
+          type: array
+          description: |
+            Per-driver health snapshot, ordered as the orchestrator's
+            `drivers` config declared them.
+          items:
+            $ref: '#/components/schemas/DriverHealth'
 
-    HemisphereInfo:
+    DriverHealth:
       type: object
       description: |
         What the orchestrator sees from one hemisphere-driver's `/v1/info`,
-        plus the orchestrator-side reachability status.
+        plus the orchestrator-side reachability status and the
+        operator-supplied `name`.
       required:
+        - name
         - reachable
       properties:
+        name:
+          type: string
+          description: |
+            Operator-supplied driver name from the orchestrator's
+            `drivers` config. UI uses this as the tab/column label.
         reachable:
           type: boolean
         url:

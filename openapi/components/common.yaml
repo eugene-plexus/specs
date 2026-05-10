@@ -32,9 +32,9 @@ components:
         A single message in an Eugene Plexus conversation. The shape is
         deliberately close to the OpenAI / Anthropic chat message format so
         that adapters don't have to re-shape on every hop, but `role` includes
-        `hemisphere` for messages emitted by an individual hemisphere during
-        the bicameral pass (visible to corpus callosum and UI debug views,
-        not normally to the end user).
+        `hemisphere` for messages emitted by one of the parallel drivers
+        during a bicameral pass (visible to corpus callosum and UI debug
+        views, not normally to the end user).
       required:
         - role
         - content
@@ -44,11 +44,15 @@ components:
         content:
           type: string
           description: Message text. v0.1 is text-only; multimodal extensions deferred.
-        hemisphere:
-          $ref: '#/components/schemas/Hemisphere'
+        driverName:
+          type: string
           description: |
-            When `role == "hemisphere"`, identifies which hemisphere
-            produced this message. Omitted otherwise.
+            When `role == "hemisphere"`, the operator-supplied name of
+            the driver that produced this message (e.g. `"left"`,
+            `"right"`, or any free-form label set by the orchestrator's
+            `drivers` config). Omitted otherwise. Identity is owned by
+            the orchestrator's topology config — drivers themselves do
+            not know their position in the pair.
         timestamp:
           type: string
           format: date-time
@@ -125,14 +129,32 @@ components:
           maximum: 1
           description: Excitatory drive. High = active / responsive.
 
-    # -------- Hemisphere identity --------
+    # -------- Driver / backend identity --------
 
-    Hemisphere:
-      type: string
-      description: Which hemisphere of the bicameral pair.
-      enum:
-        - left
-        - right
+    DriverEntry:
+      type: object
+      description: |
+        One operator-configured hemisphere-driver in the orchestrator's
+        topology. The orchestrator owns the `name` (free-form, used for
+        labelling messages and UI tabs); drivers themselves are anonymous
+        and report only their backend / model identity. v0.1 expects two
+        entries; v0.2+ generalizes to N (with backup/failover semantics
+        layered on top).
+      required:
+        - name
+        - url
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Operator-supplied label (e.g. `"left"`, `"right"`, or any
+            free-form string). Stamped onto every message this driver
+            produces and surfaced in the UI as the tab/column label.
+        url:
+          type: string
+          format: uri
+          description: Base URL where the driver's HTTP API is reachable.
 
     BackendKind:
       type: string
@@ -233,6 +255,7 @@ components:
         - file_path   # path on the component host's filesystem
         - url
         - duration    # seconds; UI may render as a time picker
+        - driver_list # ordered list of `DriverEntry` objects; see schema
 
     ConfigField:
       type: object

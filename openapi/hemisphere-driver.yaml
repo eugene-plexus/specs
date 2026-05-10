@@ -358,9 +358,13 @@ components:
 
     DriverInfo:
       type: object
+      description: |
+        Driver self-description. Driver does not know its position in
+        any topology — identity (the operator-supplied name used for UI
+        labelling and message stamping) lives on the orchestrator's
+        `drivers` config and is never sourced from here.
       required:
         - backend
-        - hemisphere
       properties:
         backend:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
@@ -370,8 +374,6 @@ components:
             Backend-specific model identifier (e.g. `"claude-opus-4-7"`).
             Optional — omitted when the driver is configured to use the
             adapter's built-in default rather than pinning a specific model.
-        hemisphere:
-          $ref: 'components/common.yaml#/components/schemas/Hemisphere'
         capabilities:
           type: object
           description: Optional backend capabilities the orchestrator may key off.
