@@ -1,0 +1,629 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — identity
+  version: 0.2.0-draft
+  summary: Eugene's sense of self — constitution, self-model, persons, identity links.
+  description: |
+    The identity component holds the parts of Eugene's mind that
+    constitute his sense of self. Anatomically it corresponds to the
+    Default Mode Network (DMN) — a distributed network in the brain
+    active during self-referential thought, autobiographical memory,
+    and theory of mind.
+
+    Two internal nodes mirror the DMN's split:
+
+    * **Constitution** (medial prefrontal cortex / mPFC node) — the
+      immutable, declarative half. "I am Eugene." Name, pronouns,
+      core values, operator-supplied backstory. Operator-editable
+      from the UI; Eugene cannot modify this. Stored as YAML on
+      disk for easy operator inspection and version control.
+
+    * **Self-model** (posterior cingulate cortex / precuneus node)
+      — the autobiographical / mutable half. The narrative Eugene
+      builds about himself over time: "I tend to be cautious on
+      novel topics," "I notice my hemispheres disagree more about
+      creative work than analytical work." Written by Eugene's
+      reflection process (v0.2: manually triggered; v0.3: tied to
+      NT idle states). Stored in SQLite.
+
+    The component also owns the **person** concept — anyone Eugene
+    interacts with via any platform. Persons are keyed by stable
+    UUIDs; each carries zero or more `PlatformAlias` entries that
+    map external-platform identities (Discord user ID, Slack member
+    ID, etc.) back to one person. The operator approves aliasing
+    via the pending-links flow (no auto-linking; spoof-resistant).
+
+    The orchestrator calls into this component every chat turn to
+    assemble each hemisphere's prompt:
+
+      1. Constitution (always, full)
+      2. Relevant self-model entries (queried by topic)
+      3. Relationship context for the speaker (queried by personId)
+
+    ## Safe mode
+
+    Identity honors the watchdog's safe-mode env var:
+    `EUGENE_PLEXUS_IDENTITY_SAFE_MODE=1` at startup makes identity
+    ignore its persisted config file and boot from built-in
+    defaults. Constitution / self-model files on disk are read
+    only after a non-safe-mode boot. While safe mode is active,
+    GET endpoints return a minimal Eugene constitution
+    ("name: Eugene") so the rest of the stack can still function,
+    and write endpoints return 503 until safe mode is cleared.
+
+    ## Auth note (v0.2)
+
+    Every endpoint except `/healthz` requires a bearer session
+    token issued by the watchdog. Inbound calls from other
+    components present the per-component service token threaded
+    via env var at spawn time. UI calls present the operator's
+    session token. v0.2 introduces this surface; the watchdog
+    owns its issuance and validation flow.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default loopback deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8084'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: constitution
+    description: The immutable / declarative half of identity (mPFC).
+  - name: self-model
+    description: The autobiographical / mutable half of identity (PCC).
+  - name: persons
+    description: |
+      People Eugene knows. The operator (always present) plus anyone
+      introduced via connector adapters and approved through the
+      pending-links flow.
+  - name: links
+    description: |
+      Pending identity links — unknown external-platform identities
+      waiting for operator approval to be aliased onto a person.
+  - name: config
+    description: |
+      Remote-editable component configuration. Standard Eugene Plexus
+      config trio.
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  # -------- Constitution --------
+
+  /v1/identity/constitution:
+    get:
+      tags: [constitution]
+      operationId: getConstitution
+      summary: Read Eugene's constitution — the immutable declarative facts.
+      responses:
+        '200':
+          description: Current constitution.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Constitution'
+    patch:
+      tags: [constitution]
+      operationId: updateConstitution
+      summary: Operator-edits the constitution.
+      description: |
+        Partial update. Eugene himself cannot call this — only the
+        operator (authenticated via UI). Changes take effect on the
+        next hemisphere prompt assembly; no restart required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/Constitution'
+      responses:
+        '200':
+          description: Updated constitution.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Constitution'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          description: |
+            Caller is not the operator (e.g. a component-internal
+            service token tried to PATCH the constitution).
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  # -------- Self-model --------
+
+  /v1/identity/self-model:
+    get:
+      tags: [self-model]
+      operationId: querySelfModel
+      summary: Retrieve self-model entries by topic relevance.
+      description: |
+        Topic-relevance ranked. The orchestrator calls this every
+        chat turn with the current conversation topic (or `null` for
+        a generic "what's Eugene like" query) to pull entries to
+        inject into hemisphere prompts.
+      parameters:
+        - in: query
+          name: topic
+          required: false
+          schema:
+            type: string
+          description: |
+            Topic key to rank entries against. Omit to get a
+            recency-ranked sample.
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 5
+        - in: query
+          name: personId
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: |
+            Optionally restrict to entries involving this person.
+      responses:
+        '200':
+          description: Matched self-model entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/SelfModelEntry'
+
+  /v1/identity/self-model/reflect:
+    post:
+      tags: [self-model]
+      operationId: reflectAndWriteSelfModel
+      summary: Trigger Eugene's reflection process to write new self-model entries.
+      description: |
+        Manually triggers Eugene to reflect on recent conversations
+        and write self-model entries. v0.2 is manual-only — operator
+        clicks a button in the UI, or another component fires this
+        on a schedule. v0.3 ties this to NT idle states so Eugene
+        reflects autonomously when his cognitive state is in a
+        reflection-favorable mode (high serotonin + low cortisol).
+
+        The reflection process reads recent memory entries, calls
+        one of the configured hemisphere-drivers with a reflection
+        prompt, and persists the resulting entries.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lookbackTurns:
+                  type: integer
+                  minimum: 1
+                  default: 50
+                  description: |
+                    How many recent conversation turns to consider.
+                conversationId:
+                  type: string
+                  format: uuid
+                  description: |
+                    Restrict reflection to a single conversation.
+                    Omit to reflect across all recent conversations.
+      responses:
+        '200':
+          description: Reflection complete.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entriesWritten]
+                properties:
+                  entriesWritten:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/SelfModelEntry'
+        '503':
+          description: |
+            No hemisphere-driver reachable to perform reflection,
+            or identity is in safe mode.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  # -------- Persons --------
+
+  /v1/identity/persons:
+    get:
+      tags: [persons]
+      operationId: listPersons
+      summary: List everyone Eugene knows.
+      responses:
+        '200':
+          description: Persons list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [persons]
+                properties:
+                  persons:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/Person'
+    post:
+      tags: [persons]
+      operationId: createPerson
+      summary: Create a new person record.
+      description: |
+        Operator can manually create persons (e.g. to pre-seed
+        relationship notes before that person ever messages
+        Eugene). The pending-links flow creates persons too when
+        the operator approves an unknown identity without aliasing
+        it onto an existing one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName]
+              properties:
+                displayName:
+                  type: string
+                  minLength: 1
+                relationshipNote:
+                  type: string
+      responses:
+        '201':
+          description: Person created.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Person'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/identity/persons/{personId}:
+    parameters:
+      - in: path
+        name: personId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [persons]
+      operationId: getPerson
+      summary: Read one person's full record.
+      responses:
+        '200':
+          description: Person.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Person'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    patch:
+      tags: [persons]
+      operationId: updatePerson
+      summary: Update display name or relationship note.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  minLength: 1
+                relationshipNote:
+                  type: string
+      responses:
+        '200':
+          description: Updated person.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Person'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [persons]
+      operationId: deletePerson
+      summary: Forget a person.
+      description: |
+        Removes the person record and all `PlatformAlias` entries.
+        Memory entries keyed to this person are NOT automatically
+        deleted from the memory component — call the memory
+        component's deletion endpoint separately if needed
+        (deliberate split so operator can choose to keep
+        conversation history while forgetting the identity
+        association).
+
+        Refuses to delete the operator's own person record (returns
+        409). Use the wizard's reset flow if you want to fully
+        re-initialize the install.
+      responses:
+        '204':
+          description: Person deleted.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Refused (e.g. attempted to delete the operator).
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/identity/persons/{personId}/relationship:
+    parameters:
+      - in: path
+        name: personId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [persons]
+      operationId: getPersonRelationship
+      summary: Get the relationship context Eugene should use when talking to this person.
+      description: |
+        Returns a `RelationshipSummary` the orchestrator injects into
+        hemisphere prompts. v0.2 builds this from raw recent memory
+        turns with this person; v0.3 adds synthesized summaries
+        (reactive extraction).
+      responses:
+        '200':
+          description: Relationship summary.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RelationshipSummary'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  # -------- Pending identity links --------
+
+  /v1/identity/links/pending:
+    get:
+      tags: [links]
+      operationId: listPendingLinks
+      summary: List unknown identities waiting for operator approval.
+      description: |
+        UI polls this to show the pending-links queue with its
+        notification badge. Each entry carries only
+        cross-platform-universal fields plus the adapter's private
+        metadata in `adapterPrivate`.
+      responses:
+        '200':
+          description: Pending links.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [links]
+                properties:
+                  links:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/PendingIdentityLink'
+    post:
+      tags: [links]
+      operationId: createPendingLink
+      summary: Connector adapter files a new pending link.
+      description: |
+        Called by a connector adapter when an unknown
+        platform user first interacts with Eugene. The adapter
+        supplies the universal identity fields plus any
+        platform-specific metadata in `adapterPrivate`.
+
+        Adapters MUST call this BEFORE calling the orchestrator's
+        `/v1/chat` — Eugene does not respond to unknown people.
+        Adapters typically reply on the platform with a static
+        message directing the unknown user to ask the operator
+        to approve the link.
+
+        Service-token auth only — never callable from the
+        operator's session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/PendingIdentityLink'
+      responses:
+        '201':
+          description: Pending link filed.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/PendingIdentityLink'
+        '409':
+          description: |
+            A pending link already exists for this (platform,
+            accountId) pair. Adapter should treat this as
+            success — the operator just hasn't approved yet.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/identity/links/pending/{linkId}/approve:
+    parameters:
+      - in: path
+        name: linkId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [links]
+      operationId: approvePendingLink
+      summary: Operator approves a pending identity link.
+      description: |
+        Two modes:
+          - With `linkAsPersonId`: alias the unknown identity onto
+            an existing person. Use when the operator recognizes
+            the platform user (themselves, their spouse, a known
+            colleague).
+          - Without `linkAsPersonId`: create a new person record
+            using `displayName` (and optional `relationshipNote`).
+            Use when the operator wants Eugene to know this is a
+            new, distinct individual.
+
+        Operator session-token auth only — service tokens cannot
+        approve links.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/LinkApprovalRequest'
+      responses:
+        '200':
+          description: Link approved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [link, person]
+                properties:
+                  link:
+                    $ref: 'components/common.yaml#/components/schemas/PendingIdentityLink'
+                  person:
+                    $ref: 'components/common.yaml#/components/schemas/Person'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '400':
+          description: |
+            Invalid approval request (e.g. both `linkAsPersonId`
+            and `displayName` supplied; neither supplied).
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/identity/links/pending/{linkId}/reject:
+    parameters:
+      - in: path
+        name: linkId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [links]
+      operationId: rejectPendingLink
+      summary: Operator rejects a pending identity link.
+      description: |
+        The unknown identity is marked rejected and Eugene will not
+        respond to it. The adapter may continue to file new pending
+        links if the same identity messages again (operator can
+        update the rejection if they change their mind).
+
+        Operator session-token auth only.
+      responses:
+        '204':
+          description: Link rejected.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  # -------- Standard config trio --------
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read effective configuration.
+      responses:
+        '200':
+          description: Config document.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: patchConfig
+      summary: Partial update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update result.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable schema of editable fields.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness probe.
+      security: []
+      responses:
+        '200':
+          description: Health.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        Bearer session token issued by the watchdog. Operator
+        sessions are issued via `POST /v1/auth/login` on the
+        watchdog; component-internal calls use service tokens
+        threaded to spawned children via env var at startup.
