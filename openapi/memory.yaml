@@ -1,19 +1,39 @@
 openapi: 3.1.0
 info:
   title: Eugene Plexus — memory
-  version: 0.1.0
-  summary: Conversation history storage and retrieval interface.
+  version: 0.2.0-draft
+  summary: Conversation history storage and per-person retrieval.
   description: |
-    The memory component stores Eugene's conversational past and (eventually)
-    consolidated long-term knowledge. v0.1 ships only what the orchestrator
-    actually needs to function — append-and-fetch by conversation id.
+    The memory component stores Eugene's conversational past and
+    supports retrieval. Anatomically: the hippocampus — the brain's
+    episodic-memory consolidation hub.
 
-    Vector retrieval, semantic recall, sleep-consolidation hooks, episodic
-    vs. semantic memory tiering are all deliberately deferred. Per CLAUDE.md,
-    memory is built last so its interface is shaped by real usage from
-    orchestrator + UI rather than speculation.
+    ## v0.2 additions
 
-    This document is the v0.1 minimum surface. It is expected to grow.
+    * **Person-keyed memory.** Every entry carries a `personId`
+      (defined by the identity component) alongside `conversationId`.
+      This unlocks per-person context: the orchestrator pulls
+      "recent turns with this person" before each chat turn so
+      Eugene speaks differently to different people.
+    * **Pluggable backends** (Hermes-style). The memory component's
+      HTTP surface is the long-term contract; internally a backend
+      registry chooses storage. v0.2 ships `local_sqlite` only
+      (SQLite + sentence-transformers embeddings + kNN). Future
+      adapters (`mem0`, `holographic` HRR, `hindsight` graph,
+      `obsidian` vault, etc.) land in v0.3+ as drop-in additions
+      with no spec changes here.
+    * **Reactive search.** `POST /v1/memory/search` exposes
+      similarity-based retrieval. The orchestrator's topic-shift
+      detector (v0.3) calls this when the current conversation
+      references something outside recent history; v0.2 ships the
+      endpoint so the wire shape is stable.
+    * **Per-person retrieval endpoints**:
+      `GET /v1/memory/persons/{personId}/recent` returns raw recent
+      turns for the relationship-summary path; v0.3 adds the
+      synthesized-summary endpoint.
+
+    The v0.1 conversation endpoints continue to work; the v0.2
+    additions sit alongside them.
 
     ## Safe mode
 
@@ -43,9 +63,22 @@ servers:
       port:
         default: '8082'
 
+security:
+  - bearerAuth: []
+
 tags:
   - name: conversations
     description: Per-conversation message storage.
+  - name: persons
+    description: |
+      (v0.2) Per-person retrieval. Memory is keyed by
+      `(personId, conversationId)`; these endpoints fetch by
+      personId so the orchestrator can build per-person prompt
+      context.
+  - name: search
+    description: |
+      (v0.2) Reactive similarity search. Backend-defined scoring
+      (cosine similarity for `local_sqlite`).
   - name: config
     description: |
       Remote-editable configuration. Every Eugene Plexus component
@@ -115,21 +148,132 @@ paths:
       tags: [conversations]
       operationId: appendMessage
       summary: Append a message to a conversation.
+      description: |
+        (v0.2) The request body's `Message` may be wrapped in a
+        broader entry shape carrying `personId` and NT snapshot.
+        For backward compatibility, posting a bare `Message`
+        continues to work; the memory component will associate it
+        with the conversation's primary person.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: 'components/common.yaml#/components/schemas/Message'
+              oneOf:
+                - $ref: 'components/common.yaml#/components/schemas/Message'
+                - $ref: 'components/common.yaml#/components/schemas/MemoryEntry'
       responses:
         '201':
           description: Appended.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Message'
+                $ref: 'components/common.yaml#/components/schemas/MemoryEntry'
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
+
+  # -------- v0.2: per-person retrieval --------
+
+  /v1/memory/persons/{personId}/recent:
+    parameters:
+      - in: path
+        name: personId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+      - in: query
+        name: conversationId
+        required: false
+        schema:
+          type: string
+          format: uuid
+        description: |
+          Optionally restrict to a single conversation. Omit to
+          pull recent entries with this person across all
+          conversations.
+    get:
+      tags: [persons]
+      operationId: getPersonRecent
+      summary: Recent memory entries involving a specific person.
+      description: |
+        Returns raw recent entries with the given person, newest
+        first. Used by the orchestrator to build relationship
+        context for hemisphere prompts (v0.2's skip-extraction
+        approach to relationship summaries).
+      responses:
+        '200':
+          description: Recent entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/MemoryEntry'
+                  personId:
+                    type: string
+                    format: uuid
+                  turnCount:
+                    type: integer
+                    minimum: 0
+                    description: |
+                      Total turns ever recorded with this person
+                      (not limited by `limit`). Surfaced for UI
+                      "you've talked N times" displays.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  # -------- v0.2: reactive search --------
+
+  /v1/memory/search:
+    post:
+      tags: [search]
+      operationId: searchMemory
+      summary: Similarity-based memory search.
+      description: |
+        Embeds the query (via the configured embedding source) and
+        returns the top-K most similar entries. The orchestrator's
+        topic-shift detector (v0.3) calls this when the current
+        conversation references something outside recent history;
+        the endpoint ships in v0.2 so the wire shape is stable.
+
+        Backend-defined scoring scale. `local_sqlite` uses cosine
+        similarity in [0, 1].
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/MemorySearchRequest'
+      responses:
+        '200':
+          description: Matched entries, ranked.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/MemorySearchResult'
+        '503':
+          description: |
+            Embedding source unreachable (e.g. `embedding: api`
+            with the vendor down, or the local model file
+            missing). Memory keeps accepting writes; only search
+            is affected.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
 
   /v1/config:
     get:
@@ -239,6 +383,7 @@ paths:
       tags: [meta]
       operationId: healthz
       summary: Liveness / readiness probe.
+      security: []
       responses:
         '200':
           description: Healthy.
@@ -253,4 +398,13 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Health'
 
-components: {}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        Bearer session token issued by the watchdog. Component-to-
+        component calls use service tokens threaded via env var at
+        spawn time.
