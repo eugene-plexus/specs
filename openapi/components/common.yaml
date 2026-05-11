@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Eugene Plexus — shared schema components
-  version: 0.1.0
+  version: 0.2.0-draft
   description: |
     Schemas referenced by multiple Eugene Plexus components. This is not a
     standalone API — it's a $ref target. Components share *schemas*, not code.
@@ -85,49 +85,82 @@ components:
     NTState:
       type: object
       description: |
-        A snapshot of Eugene's neurotransmitter state. v0.1 wires this through
-        the schemas but does not modulate behavior on it — the framework
-        passes a static neutral state. Drives, plasticity, and modulation
-        come in v0.2+.
+        A snapshot of Eugene's neurotransmitter state. v0.2 introduces real
+        modulation: the orchestrator updates this from observations each
+        chat turn, and the bicameral loop reads it to set `max_passes`,
+        `temperature`, and blend weights. CLLM-inspired anxiety-driven
+        termination is the load-bearing behavior.
 
-        Values are in [0, 1]. 0.5 represents a baseline / neutral level.
+        Six NTs in v0.2 (cortisol replaces v0.1's glutamate — cortisol is
+        directly observable from chat patterns like sustained divergence
+        and time pressure; glutamate's lower-level activation modeling
+        waits for v0.3). All values in [0, 1]; `level` carries the current
+        instantaneous value, `baseline` the resting state the field decays
+        toward, `decay` the per-second decay rate.
+
+        v0.3+ adds: full 12-NT shape (oxytocin, endorphins, melatonin,
+        adenosine, histamine, orexin), per-driver NT modulation, drives
+        feeding NT, NT-driven autonomous-thinking triggers.
+      required:
+        - lastUpdated
+        - dopamine
+        - serotonin
+        - norepinephrine
+        - gaba
+        - cortisol
+        - acetylcholine
       properties:
-        serotonin:
-          type: number
-          format: float
-          minimum: 0
-          maximum: 1
-          description: Mood / satiation tone. High = content / patient.
+        lastUpdated:
+          type: string
+          format: date-time
+          description: |
+            When NT levels were last updated. Used by the orchestrator
+            to compute elapsed-time decay on the next tick.
         dopamine:
-          type: number
-          format: float
-          minimum: 0
-          maximum: 1
-          description: Reward prediction / motivation. High = engaged / curious.
+          $ref: '#/components/schemas/NTLevel'
+        serotonin:
+          $ref: '#/components/schemas/NTLevel'
         norepinephrine:
-          type: number
-          format: float
-          minimum: 0
-          maximum: 1
-          description: Arousal / vigilance. High = alert / focused under load.
-        acetylcholine:
-          type: number
-          format: float
-          minimum: 0
-          maximum: 1
-          description: Attention / encoding gain. High = sharp focus, fast learning.
+          $ref: '#/components/schemas/NTLevel'
         gaba:
+          $ref: '#/components/schemas/NTLevel'
+        cortisol:
+          $ref: '#/components/schemas/NTLevel'
+        acetylcholine:
+          $ref: '#/components/schemas/NTLevel'
+
+    NTLevel:
+      type: object
+      description: |
+        Per-NT level + its baseline + per-second decay rate. The level
+        decays toward baseline at `decay` units per second between
+        observations; observations push it up or down based on the
+        orchestrator's observation→NT mapping (see orchestrator spec).
+      required:
+        - level
+        - baseline
+        - decay
+      properties:
+        level:
           type: number
           format: float
           minimum: 0
           maximum: 1
-          description: Inhibitory tone. High = calm / restrained.
-        glutamate:
+          description: Current instantaneous value.
+        baseline:
           type: number
           format: float
           minimum: 0
           maximum: 1
-          description: Excitatory drive. High = active / responsive.
+          description: Resting-state target the level decays toward.
+        decay:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: |
+            Per-second decay rate toward baseline. Larger values =
+            faster return to baseline after a stimulus.
 
     # -------- Driver / backend identity --------
 
@@ -538,6 +571,755 @@ components:
             Human-readable error message. Set when `ok` is false. Should
             be specific enough that the operator can act on it (e.g.
             `"openaiApiKey rejected: 401 Unauthorized"`).
+
+    # -------- Auth + security (v0.2) --------
+    #
+    # v0.1 had no application-level auth (Tailscale tailnet assumption).
+    # v0.2 introduces a passphrase-gated UI auth model: operator sets a
+    # passphrase during the wizard, the watchdog derives a master key
+    # via KDF, and that master key encrypts API keys on disk plus
+    # backs UI session auth. Every component-internal call presents a
+    # bearer token issued by the watchdog at spawn time.
+
+    SecurityMode:
+      type: string
+      description: |
+        Operator's choice for how the watchdog handles its master key
+        between restarts. Set during the wizard's security screen; can
+        be changed later from the Config page.
+
+        * `prompt_on_startup` — passphrase required at every watchdog
+          start. Master key lives only in process memory. Best for
+          shared environments, sensitive conversations, security-
+          conscious operators. A power outage means Eugene stays
+          offline until the operator re-enters the passphrase.
+        * `os_keyring` — master key stored in the OS secret store
+          (Windows Credential Manager / macOS Keychain / Linux Secret
+          Service via the `keyring` Python lib). OS unlocks tied to
+          user login; Eugene auto-recovers from restarts. Best for
+          home / personal-use installs and anyone who wants minimum
+          friction. Anyone with the OS account can also start Eugene.
+      enum:
+        - prompt_on_startup
+        - os_keyring
+
+    AuthLoginRequest:
+      type: object
+      description: |
+        Login request body sent by the UI to `POST /v1/auth/login` on
+        the watchdog. The passphrase is the same one the operator set
+        in the wizard. The watchdog bcrypt-compares it; on match,
+        issues a session token.
+      required:
+        - passphrase
+      properties:
+        passphrase:
+          type: string
+          minLength: 1
+
+    AuthLoginResponse:
+      type: object
+      description: |
+        Issued on successful login. The UI stores `sessionToken` as a
+        Secure / HttpOnly / SameSite=Strict cookie or in memory; every
+        subsequent proxy request includes it as
+        `Authorization: Bearer <token>`.
+      required:
+        - sessionToken
+        - expiresAt
+      properties:
+        sessionToken:
+          type: string
+          description: |
+            Opaque bearer token. Signed and validated server-side; the
+            UI should never inspect its contents. Lifetime is bounded
+            by `expiresAt`.
+        expiresAt:
+          type: string
+          format: date-time
+        operatorName:
+          type: string
+          description: |
+            The operator's display name from the constitution
+            (typically "operator" or whatever the operator set).
+            Echoed for UI welcome strings.
+
+    MasterKeyEnvelope:
+      type: object
+      description: |
+        Encrypted-at-rest envelope for sensitive config fields. The
+        on-disk YAML for fields marked `sensitive: true` is stored as
+        this envelope when v0.2 security is enabled; the component
+        decrypts using the master key passed in by the watchdog at
+        spawn time (env var `EUGENE_PLEXUS_<KIND>_MASTER_KEY`,
+        base64-encoded).
+
+        Algorithm: libsodium secretbox (XSalsa20-Poly1305). The nonce
+        is generated per-encryption and stored alongside the
+        ciphertext. The master key is 32 bytes derived from the
+        operator's passphrase via Argon2id with parameters chosen at
+        first-run time and persisted in the watchdog's state.
+
+        Components MAY accept plaintext values in PATCH requests
+        (current behavior); on persist, they encrypt to this envelope
+        if the master key is available. GET requests continue to
+        return `"<redacted>"` for sensitive fields regardless of
+        envelope-vs-plaintext on disk.
+      required:
+        - alg
+        - nonce
+        - ciphertext
+      properties:
+        alg:
+          type: string
+          description: Encryption algorithm identifier.
+          enum:
+            - secretbox-xsalsa20poly1305
+        nonce:
+          type: string
+          description: |
+            Base64-encoded 24-byte nonce. Generated per-encryption,
+            never reused with the same key.
+        ciphertext:
+          type: string
+          description: Base64-encoded ciphertext + auth tag.
+
+    # -------- Identity + persons (v0.2) --------
+    #
+    # The identity component (`eugene-plexus/identity`) holds Eugene's
+    # constitution (mPFC node: declarative facts) and self-model (PCC
+    # node: autobiographical narrative). It also owns the `person`
+    # concept — anyone Eugene interacts with via any platform. Person
+    # entries are keyed by stable platform IDs and may be aliased
+    # together via operator-confirmed identity linking.
+
+    PersonRef:
+      type: object
+      description: |
+        Reference to a person Eugene knows. The `personId` is the
+        identity component's stable key (UUID). Each person has zero
+        or more platform aliases linking external IDs back to this
+        person; the operator approves aliasing via the pending-links
+        flow.
+
+        v0.2 distinguishes between the operator (always known, defined
+        by the wizard) and other persons (introduced via connector
+        adapters). The operator's `personId` is special-cased in some
+        endpoints — e.g. the UI's chat surface always sends as the
+        operator.
+      required:
+        - personId
+      properties:
+        personId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+          description: Operator-supplied or auto-from-platform display name.
+        isOperator:
+          type: boolean
+          default: false
+          description: True iff this person is the install's operator.
+
+    Person:
+      type: object
+      description: |
+        Full record of a known person. The identity component owns
+        these. `aliases` lists all platform identities that have been
+        approved as belonging to this person. The relationship summary
+        is rebuilt on-demand by the memory component from raw turns
+        in v0.2; v0.3 adds reactive synthesis via the topic-shift
+        detector.
+      required:
+        - personId
+        - displayName
+        - createdAt
+      properties:
+        personId:
+          type: string
+          format: uuid
+        displayName:
+          type: string
+        isOperator:
+          type: boolean
+          default: false
+        createdAt:
+          type: string
+          format: date-time
+        aliases:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlatformAlias'
+        relationshipNote:
+          type: string
+          description: |
+            Optional free-form operator-supplied note about who this
+            person is to Eugene (e.g. "my wife", "the dev-banter
+            channel regular"). Surfaced into hemisphere prompts as
+            top-level relationship context.
+
+    PlatformAlias:
+      type: object
+      description: |
+        One external-platform identity that maps to a person. The
+        union of (platform, accountId) is globally unique. Created
+        when the operator approves a pending identity link.
+      required:
+        - platform
+        - accountId
+        - linkedAt
+      properties:
+        platform:
+          type: string
+          description: |
+            Platform identifier (e.g. `"discord"`, `"slack"`,
+            `"matrix"`, `"ui"`). The `ui` platform is reserved for
+            the local UI session; the operator is always
+            `(platform=ui, accountId=operator)`.
+        accountId:
+          type: string
+          description: |
+            Platform-stable account identifier (Discord user ID,
+            Matrix MXID, Slack member ID, etc.). MUST be the
+            platform's immutable id, not a mutable handle.
+        handle:
+          type: string
+          description: Username / handle on the platform (mutable).
+        displayName:
+          type: string
+          description: Platform display name (mutable).
+        avatarUrl:
+          type: string
+          format: uri
+          description: Avatar image URL on the platform.
+        linkedAt:
+          type: string
+          format: date-time
+
+    PendingIdentityLink:
+      type: object
+      description: |
+        An unknown identity that wants to interact with Eugene. The
+        connector adapter creates these when a new platform user
+        @mentions Eugene or DMs for the first time. The operator
+        approves or rejects from the UI; until then the identity has
+        no relationship context and Eugene treats it as a stranger.
+
+        Universal fields only — every plausible future platform
+        (Slack, Matrix, Telegram, Gmail, Signal) supplies these.
+        Platform-specific extras live in `adapterPrivate` and are
+        NOT promoted to the operator-facing UI unless the operator
+        drills in.
+      required:
+        - linkId
+        - platform
+        - accountId
+        - firstSeen
+        - triggeringMessage
+        - status
+      properties:
+        linkId:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        accountId:
+          type: string
+        displayName:
+          type: string
+        handle:
+          type: string
+        avatarUrl:
+          type: string
+          format: uri
+        firstSeen:
+          type: string
+          format: date-time
+        triggeringMessage:
+          type: string
+          description: |
+            The text of the message that triggered the link request,
+            truncated. Gives the operator context for the approval
+            decision.
+        status:
+          type: string
+          enum: [pending, approved, rejected]
+        adapterPrivate:
+          type: object
+          additionalProperties: true
+          description: |
+            Platform-specific metadata the adapter stored alongside
+            this link. UI may render this in a drill-down view but
+            does not promote it to the main approval surface. Use
+            for things like Teams UPN/tenant, Slack workspace,
+            Matrix homeserver.
+
+    LinkApprovalRequest:
+      type: object
+      description: |
+        Operator action on a pending identity link. To link the
+        unknown identity to an existing person (typically the
+        operator themselves or a known third party), supply
+        `linkAsPersonId`. To create a new person record for this
+        identity, omit `linkAsPersonId` and supply `displayName`
+        and optionally `relationshipNote`.
+      properties:
+        linkAsPersonId:
+          type: string
+          format: uuid
+          description: |
+            Existing person to alias this identity onto. Mutually
+            exclusive with `displayName` / `relationshipNote`.
+        displayName:
+          type: string
+          description: |
+            Display name for the new person record. Required when
+            `linkAsPersonId` is omitted.
+        relationshipNote:
+          type: string
+          description: |
+            Optional initial relationship context for the new person
+            (e.g. "my wife", "Discord regular"). Only used when
+            `linkAsPersonId` is omitted.
+
+    Constitution:
+      type: object
+      description: |
+        The immutable / declarative half of Eugene's identity — the
+        "I am Eugene" facts. Operator-editable from the UI; Eugene
+        cannot modify this. Anatomically: medial prefrontal cortex
+        (mPFC) node of the Default Mode Network.
+
+        v0.2 reserves three structured keys (`name`, `pronouns`,
+        `coreValues`) that the orchestrator reads programmatically
+        when constructing hemisphere prompts. The `freeText` field is
+        operator-owned free-form context (markdown / YAML / plain)
+        that's included verbatim in every prompt. Future versions
+        may promote stable patterns out of `freeText` into structured
+        fields, but the operator-flexibility-first design choice was
+        deliberate (we can't enumerate all immutable identity data
+        yet).
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Eugene's name. Operator may rename (e.g. if they want
+            their consciousness called something else). Used in
+            every hemisphere system prompt and in UI chrome.
+        pronouns:
+          type: string
+          description: |
+            Eugene's pronouns (e.g. "he/him", "they/them"). Used
+            in hemisphere prompts for self-reference consistency.
+        coreValues:
+          type: array
+          items:
+            type: string
+          description: |
+            Short list of operator-supplied core values. Each is a
+            short phrase ("honesty", "intellectual humility",
+            "patience with confusion"). Included in every
+            hemisphere prompt.
+        freeText:
+          type: string
+          description: |
+            Operator-owned free-form context — markdown or plain
+            text. Included verbatim in every hemisphere prompt
+            after the structured fields. Use for backstory, voice
+            guidance, anything that doesn't fit a structured field
+            yet.
+
+    SelfModelEntry:
+      type: object
+      description: |
+        One entry in Eugene's self-model — the autobiographical
+        / mutable half of identity. Anatomically: posterior cingulate
+        cortex (PCC) / precuneus node of the Default Mode Network.
+
+        Self-model entries are written by Eugene's reflection process
+        (v0.2: manually triggered via `POST /v1/identity/self-model/reflect`;
+        v0.3: autonomous when NT state is in reflection mode).
+        They're queried by topic relevance and injected into
+        hemisphere prompts when relevant.
+      required:
+        - id
+        - topic
+        - content
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        topic:
+          type: string
+          description: |
+            Short topic key for retrieval (e.g. "creative-tasks",
+            "user-troy", "uncertainty-handling").
+        content:
+          type: string
+          description: |
+            The reflection itself. Free-form prose written by
+            Eugene's reflection process. Typically 1-3 sentences.
+        relatedPersonIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: |
+            Persons this reflection involves, if any.
+        createdAt:
+          type: string
+          format: date-time
+        sourceConversationIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: |
+            Conversation ids that fed into this reflection. Lets the
+            UI offer "show me the conversations that produced this
+            self-model entry" drill-down.
+
+    # -------- Memory (v0.2) --------
+    #
+    # The memory component upgrades from v0.1's in-process stub to a
+    # pluggable backend registry. v0.2 ships `local_sqlite` only;
+    # adapters for mem0, holographic (HRR), hindsight, obsidian, etc.
+    # land in v0.3+. All entries are keyed by `(personId,
+    # conversationId)` so per-person memory is a first-class concept.
+
+    MemoryBackendKind:
+      type: string
+      description: |
+        Which storage backend the memory component is using. Set in
+        the memory component's config. v0.2 ships one option; future
+        versions add adapters following the same pattern as
+        `hemisphere-driver`'s provider registry.
+      enum:
+        - local_sqlite
+
+    MemoryEmbeddingSource:
+      type: string
+      description: |
+        How the memory component generates embeddings for similarity
+        search. `local` uses sentence-transformers (offline, ~100MB
+        model download on first install). `api` calls a vendor
+        (OpenAI / Voyage / Cohere) and requires network + an API
+        key. Lives inside `local_sqlite`'s adapter-specific config.
+      enum:
+        - local
+        - api
+
+    MemoryEntry:
+      type: object
+      description: |
+        One stored message + the cognitive metadata it was produced
+        with. Memory writes typically happen at the end of each
+        bicameral turn: the user's message and Eugene's final
+        response each become entries. Hemisphere intermediate
+        outputs are NOT persisted by default — they're debug
+        artifacts.
+      required:
+        - entryId
+        - personId
+        - conversationId
+        - role
+        - content
+        - timestamp
+      properties:
+        entryId:
+          type: string
+          format: uuid
+        personId:
+          type: string
+          format: uuid
+          description: |
+            The person this entry is *with* (the user side of the
+            exchange, even for Eugene's responses — they're
+            responses to that person).
+        conversationId:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/Role'
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        ntStateSnapshot:
+          $ref: '#/components/schemas/NTState'
+          description: |
+            Eugene's NT state at the time this entry was produced.
+            Lets later analysis correlate output style with NT
+            state. Optional — not all entries carry one.
+        hemisphereAttribution:
+          type: string
+          description: |
+            For Eugene's responses: which hemisphere(s) produced
+            this. Free-form (e.g. "left-only", "blended", or a
+            driver name). Omitted for user messages.
+
+    MemorySearchRequest:
+      type: object
+      description: |
+        Reactive memory search. Called by the orchestrator when its
+        topic-shift detector (v0.3) flags that the current
+        conversation references something outside recent history,
+        or when the operator explicitly requests retrieval. v0.2
+        ships the endpoint; the trigger is v0.3.
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: Free-form query text to embed and search.
+        personId:
+          type: string
+          format: uuid
+          description: |
+            Optionally restrict search to entries involving this
+            person.
+        conversationId:
+          type: string
+          format: uuid
+          description: |
+            Optionally restrict search to a specific conversation.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+        minScore:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: |
+            Minimum similarity score to include. Backends define
+            their own scoring scale; 0.5 is a reasonable default
+            for cosine-similarity embedding backends.
+
+    MemorySearchResult:
+      type: object
+      description: Ranked list of matching memory entries.
+      required:
+        - entries
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemorySearchHit'
+
+    MemorySearchHit:
+      type: object
+      required:
+        - entry
+        - score
+      properties:
+        entry:
+          $ref: '#/components/schemas/MemoryEntry'
+        score:
+          type: number
+          format: float
+          description: |
+            Backend-defined similarity score. Higher = more
+            relevant. Scale depends on the backend; for
+            `local_sqlite` it's cosine similarity in [0, 1].
+
+    RelationshipSummary:
+      type: object
+      description: |
+        Per-person context the orchestrator injects into hemisphere
+        prompts so Eugene speaks differently to different people.
+        v0.2: built on-demand from raw recent turns with this person
+        (skip-extraction approach). v0.3: synthesized via reactive
+        memory extraction.
+      required:
+        - personId
+        - lastUpdated
+      properties:
+        personId:
+          type: string
+          format: uuid
+        summary:
+          type: string
+          description: |
+            Short paragraph Eugene's hemispheres see before each
+            turn (e.g. "Sarah is your wife. You talk about 3
+            times a day, mostly casual, frequent jokes. She works
+            in product."). Omitted when there's no synthesized
+            summary; the orchestrator will then build context
+            from raw recent turns.
+        turnCount:
+          type: integer
+          minimum: 0
+          description: |
+            How many turns Eugene has shared with this person.
+            Surfaced in UI to give the operator a sense of how
+            well Eugene knows them.
+        lastUpdated:
+          type: string
+          format: date-time
+        recentTurns:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryEntry'
+          description: |
+            Raw recent turns with this person, included alongside
+            (or instead of) the synthesized summary. v0.2's
+            default mode is recentTurns-only; v0.3 fills in
+            `summary` reactively.
+
+    # -------- Connector adapter (v0.2) --------
+    #
+    # The connector component (`eugene-plexus/connector`) bridges
+    # external platforms to the orchestrator. Same adapter-registry
+    # pattern as hemisphere-driver: one HTTP service, multiple
+    # platform adapters internally. v0.2 ships `discord`.
+
+    AdapterKind:
+      type: string
+      description: |
+        Which external platform adapter is configured. v0.2 ships
+        one; later versions add slack, matrix, telegram, gmail, etc.
+      enum:
+        - discord
+
+    AdapterEntry:
+      type: object
+      description: |
+        One configured platform adapter inside the connector. Like
+        hemisphere-driver's `drivers` config but for outbound
+        platforms. Each entry runs its own adapter loop (Discord
+        Gateway WS connection, Slack RTM, etc.) and bridges
+        incoming/outgoing messages between the platform and the
+        orchestrator.
+      required:
+        - name
+        - kind
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Operator-supplied label (e.g. `"work-discord"`,
+            `"family-slack"`). Used in logs and the UI.
+        kind:
+          $ref: '#/components/schemas/AdapterKind'
+        adapterConfig:
+          type: object
+          additionalProperties: true
+          description: |
+            Adapter-specific config (bot token, channel allowlist,
+            etc.). Schema is adapter-defined; the connector's
+            `GET /v1/adapters/{name}/config/schema` returns the
+            schema for the current adapter so the UI can render
+            an editor.
+        enabled:
+          type: boolean
+          default: true
+
+    IncomingMessage:
+      type: object
+      description: |
+        Normalized message shape an adapter posts to the
+        orchestrator's `POST /v1/chat`. Adapter-specific platform
+        details collapse to this universal shape; the orchestrator
+        never sees Discord-specific or Slack-specific fields.
+      required:
+        - personId
+        - content
+        - source
+      properties:
+        personId:
+          type: string
+          format: uuid
+          description: |
+            Sender's `personId` in the identity component. If the
+            adapter received a message from an unrecognized
+            platform user, it MUST file a `PendingIdentityLink`
+            and not call `/v1/chat` — Eugene only responds to
+            known people.
+        conversationId:
+          type: string
+          format: uuid
+          description: |
+            Conversation thread id. Adapters maintain a stable
+            mapping from (platform_channel_id, platform_thread_id)
+            → conversationId. Omitted starts a new conversation.
+        content:
+          type: string
+        source:
+          $ref: '#/components/schemas/MessageSource'
+        channelContext:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelContextEntry'
+          description: |
+            For channel-mention adapters (Discord channel
+            mentions, Slack channels): recent platform messages
+            preceding the mention, included for conversational
+            grounding. The orchestrator may surface these to
+            hemispheres as ambient context, but only the actual
+            mention/reply gets persisted to memory (privacy
+            default: don't store messages from people who didn't
+            invoke Eugene).
+
+    MessageSource:
+      type: object
+      description: |
+        Where a message came from. Lets the orchestrator and UI
+        distinguish "operator typing in the local UI" from
+        "Discord channel mention" without needing
+        adapter-specific code paths.
+      required:
+        - platform
+      properties:
+        platform:
+          type: string
+          description: |
+            Same identifiers used in `PlatformAlias.platform`
+            (`"ui"`, `"discord"`, etc.).
+        channelId:
+          type: string
+          description: |
+            Platform channel identifier (Discord channel id,
+            Slack channel id, Matrix room id, etc.). Omitted for
+            DMs or where the platform doesn't expose channels.
+        channelName:
+          type: string
+          description: Human-readable channel name (mutable).
+        isDirectMessage:
+          type: boolean
+          default: false
+
+    ChannelContextEntry:
+      type: object
+      description: |
+        One message from the channel that precedes Eugene's
+        invocation. Used by adapters to provide grounding context
+        for channel mentions. Not persisted to memory.
+      required:
+        - author
+        - content
+        - timestamp
+      properties:
+        author:
+          type: string
+          description: |
+            Platform display name of the speaker. Free-form;
+            Eugene doesn't try to resolve to known persons (would
+            require trust-establishing flows that v0.2 doesn't
+            have for non-mention authors).
+        content:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
 
     RestartResult:
       type: object
