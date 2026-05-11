@@ -1,0 +1,399 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — connector
+  version: 0.2.0-draft
+  summary: Bridges external chat platforms (Discord, Slack, ...) to the orchestrator.
+  description: |
+    The connector component bridges external chat platforms to
+    Eugene's orchestrator. Same architectural pattern as
+    `hemisphere-driver`: one HTTP service with a registry of
+    platform-specific adapters internally. Operators add an adapter
+    instance per platform (e.g. a Discord adapter pointed at one
+    Discord server with a bot token) and the connector handles
+    inbound/outbound bridging.
+
+    In Eugene's anatomy this is the **first external sense organ** —
+    the boundary between Eugene's interior life (orchestrator,
+    drivers, memory, identity, NT system) and the outside world.
+    Future sense organs (vision, audio, web search) will follow
+    similar patterns.
+
+    ## Flow
+
+    **Inbound** (platform message → Eugene):
+
+    1. Adapter receives a message on its platform (Discord Gateway
+       WS event, Slack event subscription, etc.).
+    2. Adapter resolves the platform user to a `personId`:
+        - If a `PlatformAlias` exists for this (platform, accountId),
+          use the linked `personId`.
+        - Otherwise, file a `PendingIdentityLink` with the identity
+          component and reply on the platform with a static "ask the
+          operator to authorize this link" message. STOP — don't
+          call the orchestrator.
+    3. Adapter builds an `IncomingMessage` (normalized shape) and
+       calls `POST /v1/chat` on the orchestrator with it.
+    4. Adapter receives the response and delivers it back through
+       the platform's API.
+
+    **Outbound** (Eugene → platform): handled synchronously inside
+    the same `POST /v1/chat` call. No separate outbound endpoint —
+    the orchestrator's response IS the adapter's delivery payload.
+
+    ## Privacy default for channel mentions
+
+    For platforms with channels (Discord channels, Slack channels,
+    Matrix rooms), adapters MAY read recent messages preceding
+    Eugene's invocation to provide conversational grounding via
+    `IncomingMessage.channelContext`. These messages are **not
+    persisted to memory** — only the mention/reply Eugene
+    participated in. People who didn't talk to Eugene don't get
+    stored in Eugene's memory.
+
+    ## v0.2 adapters
+
+    Only `discord` ships in v0.2. The adapter registry is in place
+    so v0.3+ adapters (slack, matrix, telegram, gmail, signal) are
+    drop-in additions with no spec changes here.
+
+    ## Safe mode
+
+    Connector honors the watchdog's safe-mode env var:
+    `EUGENE_PLEXUS_CONNECTOR_SAFE_MODE=1` at startup skips loading
+    the persisted adapters list (so a misconfigured bot token can't
+    crashloop the service). Config endpoints stay reachable;
+    adapter management endpoints return 503 until safe mode is
+    cleared.
+
+    ## Auth note (v0.2)
+
+    Every endpoint except `/healthz` requires a bearer session
+    token. Outbound calls from this component to the orchestrator
+    and identity components use the per-component service token
+    threaded via env var at spawn time.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default loopback deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8085'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: adapters
+    description: |
+      Platform adapters configured for this connector instance. Each
+      runs an adapter loop bridging one platform.
+  - name: config
+    description: |
+      Standard Eugene Plexus config trio — connector-level settings
+      (orchestrator URL, identity URL, default privacy mode). Adapter-
+      specific config lives under each adapter's schema.
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  # -------- Adapter registry --------
+
+  /v1/adapters:
+    get:
+      tags: [adapters]
+      operationId: listAdapters
+      summary: List configured platform adapters with current status.
+      responses:
+        '200':
+          description: Adapter list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [adapters]
+                properties:
+                  adapters:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdapterStatus'
+    post:
+      tags: [adapters]
+      operationId: createAdapter
+      summary: Add a platform adapter.
+      description: |
+        Operator adds an adapter from the UI (typically with a
+        platform's bot token and a channel allowlist for channel-
+        mention adapters). The connector validates the adapter
+        config against the kind's schema, persists it, and starts
+        the adapter loop.
+
+        Returns 400 if a required field is missing or invalid.
+        Returns 409 if an adapter with this name already exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/AdapterEntry'
+      responses:
+        '201':
+          description: Adapter created and started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdapterStatus'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Adapter with this name already exists.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/adapters/{name}:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [adapters]
+      operationId: getAdapter
+      summary: Read one adapter's configuration + current status.
+      responses:
+        '200':
+          description: Adapter status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdapterStatus'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    patch:
+      tags: [adapters]
+      operationId: updateAdapter
+      summary: Modify an adapter's config.
+      description: |
+        Partial update of `adapterConfig` or `enabled`. Changes that
+        affect platform connectivity (bot token, channel allowlist)
+        require an adapter restart, which the connector handles
+        internally — the operator-facing response reports
+        `requiresAdapterRestart: true` and the new connection
+        attempt happens in the background.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/AdapterEntry'
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdapterStatus'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [adapters]
+      operationId: deleteAdapter
+      summary: Stop and remove an adapter.
+      description: |
+        Stops the adapter loop, disconnects from the platform, and
+        removes the entry from the persisted adapters list. Eugene's
+        memory of conversations conducted via this adapter is NOT
+        deleted (deliberate split — operator can re-add the adapter
+        later and Eugene picks up where he left off).
+      responses:
+        '204':
+          description: Adapter stopped and removed.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/adapters/{name}/config/schema:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [adapters]
+      operationId: getAdapterConfigSchema
+      summary: |
+        Adapter-specific config schema (UI-renderable, like the
+        standard config trio but for the adapter's `adapterConfig`).
+      description: |
+        Each adapter kind defines its own config fields (Discord:
+        bot token, channel allowlist, status message; Slack:
+        workspace token, etc.). The UI calls this to render an
+        editor for the adapter's settings.
+      responses:
+        '200':
+          description: Adapter config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/adapters/{name}/test:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [adapters]
+      operationId: testAdapter
+      summary: Verify the adapter can reach its platform.
+      description: |
+        Equivalent to the hemisphere-driver's `/v1/config/test`:
+        runs a non-destructive platform check (e.g. Discord:
+        fetches the bot's own user record from Discord's API).
+        Used by the UI's "Test connection" button on the adapter
+        config page.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigTestRequest'
+      responses:
+        '200':
+          description: Test result.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  # -------- Standard config trio (connector-level settings) --------
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read connector-level configuration.
+      responses:
+        '200':
+          description: Config document.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: patchConfig
+      summary: Partial update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update result.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable connector config schema.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness probe.
+      security: []
+      responses:
+        '200':
+          description: Health.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        Bearer session token issued by the watchdog. Service tokens
+        threaded to spawned children at startup are used for
+        outbound calls to other components.
+
+  schemas:
+    AdapterStatus:
+      type: object
+      description: |
+        Combined declarative + operational view of one adapter.
+        Mirrors the watchdog's `Component` shape pattern.
+      required:
+        - entry
+        - status
+      properties:
+        entry:
+          $ref: 'components/common.yaml#/components/schemas/AdapterEntry'
+        status:
+          type: string
+          description: Adapter loop's current state.
+          enum:
+            - starting
+            - connected
+            - disconnected
+            - rate_limited
+            - error
+            - disabled
+        connectedAt:
+          type: string
+          format: date-time
+          description: |
+            When the adapter last successfully connected to its
+            platform. Resets on each (re)connection.
+        lastError:
+          type: string
+          description: |
+            Most recent error message, if any. Reset to null on
+            successful connection. Useful for surfacing why an
+            adapter keeps disconnecting.
+        platformIdentity:
+          type: object
+          description: |
+            Adapter-supplied summary of the platform identity it's
+            authenticated as (e.g. Discord: bot user id + username).
+            Surfaced in the UI's adapter list so the operator can
+            verify they're authenticated as the right bot.
+          additionalProperties: true
