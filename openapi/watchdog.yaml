@@ -1,18 +1,18 @@
 openapi: 3.1.0
 info:
   title: Eugene Plexus — watchdog
-  version: 0.1.0
-  summary: Process supervisor and UI host for an Eugene Plexus install.
+  version: 0.2.0-draft
+  summary: Process supervisor, UI host, auth root, and master-key holder.
   description: |
     The watchdog is the outermost process of an Eugene Plexus install —
-    the "medulla" in the consciousness analogy. Its only jobs are:
+    the "medulla" in the consciousness analogy. Its jobs:
 
       1. Spawn and supervise the body components (orchestrator,
-         hemisphere drivers, memory) declared in its topology config.
-         When a spawned child exits, the watchdog respawns it. Children
-         marked `safeMode: true` are launched with the
-         `EUGENE_PLEXUS_<KIND>_SAFE_MODE=1` env var so they boot from
-         defaults without reading their own config file.
+         hemisphere drivers, memory, identity, connector) declared in
+         its topology config. When a spawned child exits, the watchdog
+         respawns it. Children marked `safeMode: true` are launched
+         with the `EUGENE_PLEXUS_<KIND>_SAFE_MODE=1` env var so they
+         boot from defaults without reading their own config file.
 
       2. Serve the UI's static assets at the root path so an operator's
          browser has a single, stable address to point at — typically
@@ -23,20 +23,55 @@ info:
          (or a CLI client) can edit the install's shape without
          touching files on disk.
 
+      4. (v0.2) **Hold the install's trust root.** The operator's
+         passphrase, set in the first-run wizard, derives the master
+         key that encrypts API keys on disk. The watchdog also issues
+         UI session tokens after passphrase login, and threads
+         per-component service tokens + the master key to spawned
+         children via env var at startup.
+
+      5. (v0.2) **Surface a pending identity-links badge** so the
+         operator sees when unknown platform users (Discord, Slack,
+         etc.) are waiting for approval. Counts live on the identity
+         component; the watchdog's surface exposes a single GET so
+         the UI doesn't need to talk to identity for the badge.
+
     The watchdog does **not** think. It does not participate in the
-    bicameral loop, has no NT state, and consumes no LLM tokens. Process
-    supervision in v0.1 is the watchdog's only job; v0.2+ moves the
-    richer supervision logic (interoceptive event stream, autonomic
-    restart based on NT state) into the orchestrator and reduces the
-    watchdog's role to "keep the orchestrator running, serve UI assets."
+    bicameral loop, has no NT state, and consumes no LLM tokens. Per
+    `project_supervisor_as_interoception`: process health is
+    interoceptive sensory data, and the natural place to react to it
+    is the orchestrator's NT system. v0.2's watchdog is still a
+    transitional concession; v0.3+ moves the richer supervision logic
+    into the orchestrator.
 
-    ## Auth note (v0.1)
+    ## v0.2 security model
 
-    Eugene Plexus v0.1 ships with no application-level authentication.
-    The deployment assumption is a Tailscale tailnet or equivalent
-    network boundary. **Anyone reachable on the network can read and
-    modify the watchdog's config and restart its children.** Auth lands
-    in v0.2.
+    The wizard sets a passphrase at install. The watchdog derives a
+    master key from it via Argon2id and uses that for two purposes:
+
+      * **At-rest encryption** of `sensitive` config fields on each
+        component. The master key is threaded to spawned children
+        via env var (`EUGENE_PLEXUS_<KIND>_MASTER_KEY`, base64);
+        children decrypt at engine construction time.
+      * **UI session auth.** `POST /v1/auth/login` accepts the
+        passphrase, bcrypt-compares, and issues a `SessionToken`.
+        Every UI proxy request thereafter presents the token as
+        `Authorization: Bearer <token>`.
+
+    Two `securityMode` options the operator picks in the wizard:
+
+      * `prompt_on_startup` — master key in memory only; passphrase
+        required at every watchdog start. Power-outage Eugene stays
+        offline until the operator types the passphrase.
+      * `os_keyring` — master key in OS Credential Manager / Keychain /
+        Secret Service. Auto-unlocked when the operator's OS session
+        is active. More convenient; weaker security boundary.
+
+    Component-internal calls (orchestrator → driver, etc.) use
+    per-component service tokens. Same `Authorization: Bearer ...`
+    shape, different audience claim, rotates on each watchdog
+    restart. The Tailscale tailnet remains the network boundary
+    (the v0.2 auth layer sits on top, doesn't replace it).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -53,22 +88,136 @@ servers:
       port:
         default: '8079'
 
+security:
+  - bearerAuth: []
+
 tags:
+  - name: auth
+    description: |
+      (v0.2) Operator passphrase login → session token. Trust root
+      for the install.
   - name: components
     description: |
       Topology and lifecycle of the supervised body components. A
-      "component" is an orchestrator / hemisphere-driver / memory entry
-      the watchdog has been told to spawn or watch.
+      "component" is an orchestrator / hemisphere-driver / memory /
+      identity / connector entry the watchdog has been told to spawn
+      or watch.
+  - name: pending-links
+    description: |
+      (v0.2) Notification surface for the pending-identity-links
+      queue maintained by the identity component. Watchdog exposes
+      a count + thin pass-through for the UI badge.
   - name: config
     description: |
       Remote-editable watchdog settings — UI preferences (theme, font
-      size) and the first-run wizard's completion flag. Topology lives
-      under `/v1/components`, not here, so editing UI prefs can never
-      accidentally restructure the install.
+      size), the first-run wizard's completion flag, and `securityMode`.
+      Topology lives under `/v1/components`, not here, so editing UI
+      prefs can never accidentally restructure the install.
   - name: meta
     description: Health and version.
 
 paths:
+
+  # -------- v0.2: auth --------
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Exchange the operator's passphrase for a session token.
+      security: []
+      description: |
+        Bcrypt-compares the supplied passphrase against the hash set
+        during the first-run wizard. On success, returns a
+        `SessionToken` the UI presents on every subsequent request.
+
+        Rate-limited per source IP. After 5 failed attempts within
+        60 seconds, the endpoint returns 429 and refuses further
+        attempts from that source for 60 seconds. (No lockout of the
+        legitimate operator — they'll just have to wait.)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/AuthLoginRequest'
+      responses:
+        '200':
+          description: Logged in.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/AuthLoginResponse'
+        '401':
+          description: Wrong passphrase.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '429':
+          description: Rate-limited.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/auth/sessions/current:
+    delete:
+      tags: [auth]
+      operationId: logout
+      summary: Invalidate the current session token.
+      description: |
+        The token presented in `Authorization` is added to the
+        watchdog's revocation list. UI uses this for explicit
+        logout; expired sessions are cleaned up server-side
+        without an explicit call.
+      responses:
+        '204':
+          description: Logged out.
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  # -------- v0.2: pending identity links badge --------
+
+  /v1/pending-links:
+    get:
+      tags: [pending-links]
+      operationId: getPendingLinksSummary
+      summary: |
+        Summary of pending identity links for the UI's notification
+        badge.
+      description: |
+        Returns a count and the most recent N entries. Avoids forcing
+        the UI to talk directly to the identity component for the
+        navigation badge; the full pending-links queue is still
+        managed by the identity component
+        (`GET /v1/identity/links/pending` etc.).
+      parameters:
+        - in: query
+          name: previewLimit
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 20
+            default: 3
+      responses:
+        '200':
+          description: Summary.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [count, preview]
+                properties:
+                  count:
+                    type: integer
+                    minimum: 0
+                    description: Total pending links awaiting operator action.
+                  preview:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/PendingIdentityLink'
 
   /v1/components:
     get:
@@ -273,6 +422,7 @@ paths:
       tags: [meta]
       operationId: healthz
       summary: Liveness / readiness probe.
+      security: []
       description: |
         The watchdog is healthy if its own HTTP server is up and at
         least one supervised component is reachable. A watchdog that
@@ -293,6 +443,16 @@ paths:
                 $ref: 'components/common.yaml#/components/schemas/Health'
 
 components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        Bearer session token. Issued via `POST /v1/auth/login`
+        after operator passphrase entry. Component-internal calls
+        present service tokens threaded via env var at spawn time.
 
   schemas:
 
