@@ -21,9 +21,9 @@ openapi/
   orchestrator.yaml         user-facing chat API + admin
   hemisphere-driver.yaml    interface every hemisphere adapter implements
   memory.yaml               storage / retrieval interface (v0.1: stub)
-  watchdog.yaml             process supervisor + UI host (skeleton in eugene-plexus/watchdog)
+  watchdog.yaml             process supervisor + UI host
   components/
-    common.yaml             shared schema components (messages, NT state, errors)
+    common.yaml             shared schema components (messages, NT state, errors, config protocol)
 ```
 
 ## Repos in the Eugene Plexus v0.1 set
@@ -31,12 +31,13 @@ openapi/
 | Order | Repo | Status |
 |-------|------|--------|
 | 1 | [`specs`](https://github.com/eugene-plexus/specs) | this repo |
-| 2 | `hemisphere-driver` | not yet created |
-| 3 | `orchestrator` | not yet created |
-| 4 | `ui` | not yet created |
-| 5 | `memory` | not yet created |
+| 2 | [`hemisphere-driver`](https://github.com/eugene-plexus/hemisphere-driver) | working |
+| 3 | [`orchestrator`](https://github.com/eugene-plexus/orchestrator) | working |
+| 4 | [`ui`](https://github.com/eugene-plexus/ui) | working — chat + config editor + first-run wizard |
+| 5 | [`memory`](https://github.com/eugene-plexus/memory) | working — v0.1 in-process stub |
+| 6 | [`watchdog`](https://github.com/eugene-plexus/watchdog) | working — process supervisor + UI host |
 
-Build order is deliberate: specs first so contracts don't conflict at integration time; hemisphere-driver before orchestrator so orchestrator integrates against real backends, not mocks; UI before memory because UI doubles as the debugging surface for hemispheres and NT state.
+Build order was deliberate: specs first so contracts don't conflict at integration time; hemisphere-driver before orchestrator so the orchestrator integrates against real backends, not mocks; UI before memory because the UI doubles as the debugging surface for hemispheres and NT state. The watchdog was added during the build when first-run UX surfaced the need for a process owning the body components.
 
 ## Using these schemas
 
