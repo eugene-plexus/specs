@@ -583,6 +583,8 @@ components:
             entry per configured driver that responded — two in v0.1.
           items:
             $ref: '#/components/schemas/PassRecord'
+        voicePass:
+          $ref: '#/components/schemas/VoicePassRecord'
         ntStateAtStart:
           $ref: 'components/common.yaml#/components/schemas/NTState'
         ntStateAtEnd:
@@ -590,6 +592,52 @@ components:
         requestId:
           type: string
           format: uuid
+
+    VoicePassRecord:
+      type: object
+      description: |
+        After the deliberation loop terminates (agreement or
+        cap-reached), the orchestrator runs ONE additional LLM call
+        — the "voice pass" — whose job is to convert internal
+        deliberation into a user-facing reply. The deliberation
+        hemispheres talk to each other in the loop, often slipping
+        into inner-dialog register that doesn't actually address the
+        user. The voice pass takes the deliberated content and asks
+        for a clean reply addressed to the user.
+
+        This record carries the voice pass's input + output for
+        diagnostic transparency. The `message` field on the parent
+        `ChatResponse` is the voice pass's `output` — what Eugene
+        actually said to the user.
+
+        Optional so older orchestrators that don't run a voice pass
+        keep working; v0.2.x orchestrators always emit it.
+      required:
+        - driverName
+        - inputMessages
+        - output
+      properties:
+        driverName:
+          type: string
+          description: |
+            Which hemisphere driver performed the voice pass. Operator-
+            configurable via `voiceDriver` on the orchestrator config;
+            defaults to the first driver in the topology.
+        inputMessages:
+          type: array
+          description: |
+            The full message list sent to the voice driver — system
+            prompt + conversation history + user message + the
+            inline summary of what each hemisphere considered during
+            deliberation.
+          items:
+            $ref: 'components/common.yaml#/components/schemas/Message'
+        output:
+          $ref: 'components/common.yaml#/components/schemas/Message'
+        latencyMs:
+          type: integer
+          minimum: 0
+          description: Wall-clock duration of the voice pass call.
 
     PassRecord:
       type: object
