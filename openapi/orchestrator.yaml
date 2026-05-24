@@ -611,6 +611,36 @@ components:
           minItems: 1
           items:
             $ref: 'components/common.yaml#/components/schemas/Message'
+        hemisphereInputs:
+          type: array
+          description: |
+            Diagnostic-only mirror of `hemispheres`: each entry is the
+            exact message list the orchestrator built and sent to that
+            hemisphere driver for this pass — system prompt, conversation
+            history, and any cross-hemisphere intermediate content. The
+            UI's "copy trace" feature reads this so an operator can see
+            what each side actually saw, which is essential when one
+            backend (e.g. a CLI persona) appears to be ignoring its
+            briefing.
+
+            Same ordering as `hemispheres`. Length matches `hemispheres`
+            when present. Optional so older clients keep working —
+            v0.2 orchestrators emit it; pre-v0.2 do not.
+          minItems: 0
+          items:
+            type: object
+            required:
+              - driverName
+              - messages
+            properties:
+              driverName:
+                type: string
+                description: Driver this snapshot belongs to.
+              messages:
+                type: array
+                description: The full message list sent to this driver.
+                items:
+                  $ref: 'components/common.yaml#/components/schemas/Message'
         callosum:
           $ref: '#/components/schemas/CallosumState'
 
