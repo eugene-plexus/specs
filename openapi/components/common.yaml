@@ -341,6 +341,21 @@ components:
           items:
             type: string
           description: Allowed values when `valueType == enum`.
+        suggestions:
+          type: array
+          items:
+            type: string
+          description: |
+            Discovery-time hints — values the operator might want
+            but which AREN'T enforced by validation. UIs render
+            string-typed fields with non-empty `suggestions` as a
+            combobox (free-text input with a dropdown of suggestions)
+            rather than a strict dropdown. Use when the set of
+            valid values is large, partially-discoverable, or
+            extends beyond what the component knows at the moment
+            (e.g. local LLM model lists that update when the operator
+            pulls a new model). Distinct from `enumValues`:
+            suggestions are advisory, enumValues are mandatory.
         enumLabels:
           type: array
           items:
