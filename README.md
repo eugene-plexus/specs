@@ -81,6 +81,7 @@ These are settled. Don't relitigate them in PRs without a strong reason.
 - This repo follows [SemVer](https://semver.org). `0.x` means breaking changes can land on minor bumps; pin exactly until 1.0.
 - Each OpenAPI document carries its own `info.version`. The repo tag is the umbrella version.
 - Breaking schema changes require a major (or pre-1.0 minor) bump and a migration note in the changelog.
+- Cross-component release notes live in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
