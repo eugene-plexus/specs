@@ -4,7 +4,7 @@ Cross-component release notes. Each repo has its own commit history; this file c
 
 ---
 
-## v0.2.0 — 2026-05-24
+## v0.2.0 — 2026-05-25 (shipping; pending tag)
 
 The "Eugene gains agency" release. v0.1 was a working bicameral loop with a thin shared system prompt and no persistence. v0.2 turns Eugene into a multi-component organism: a stored identity that survives restarts, person-keyed memory, drives-and-NT modulation of the deliberation loop, and a first external sense organ (the Discord-aware `connector`). Late in the cycle, three architectural fixes to the user-facing reply path raised the practical persona ceiling further than any of the v0.2 features could have on their own.
 
@@ -110,6 +110,8 @@ A visual progress bar in the wizard header animates fill width across screen tra
 ### Spec additions
 
 - `ConfigField.suggestions: string[]` — advisory discovery hints; UIs render as combobox.
+- `ConfigField.componentKindHint: ComponentKind` — declarative "this field points at a peer component of this kind"; UI renders kind-hinted fields as dropdowns sourced from the watchdog topology with `(off)` as the first option. Stops operators from copy-pasting URLs they shouldn't need to know.
+- `ComponentKind` relocated from `watchdog.yaml` to `common.yaml` — multiple components now reference it (watchdog directly, anyone using `componentKindHint` indirectly).
 - `PassRecord.hemisphereInputs: HemisphereInput[]` — per-driver input snapshots for diagnostic traces.
 - `VoicePassRecord` + `ChatResponse.voicePass` — voice-pass driver name, input messages, output, latency.
 - `Health.safeMode: bool` — uniform safe-mode reporting across components.
@@ -123,6 +125,18 @@ A visual progress bar in the wizard header animates fill width across screen tra
 - **Chat page auth gate** — probes `/v1/auth/status` (public endpoint, no auth cost) before any `/v1/config` call so the auto-redirect-on-401 path can't bounce a fresh install through `/login` on its way to `/setup`.
 - **Proxy auth threading** — incoming `Authorization` header forwarded to the resolver so per-driver `/v1/config` lookups don't 401 when the orchestrator's resolve path needs auth.
 - **`<think>` block leaks** — thinking-mode `off` strips them with a post-response regex pass even when the upstream chat template ignores the prompt directive.
+
+### Late hardening (post-smoke-test, 2026-05-25)
+
+Items surfaced during the v0.2 smoke test and fixed before the tag.
+
+- **Identity startup deadlock (release blocker).** `IdentityStore.ensure_operator()` held a non-reentrant `threading.Lock` while calling `get_person()`, which tried to re-acquire it. First boot worked (no row → fell through to the lock-released `create_person` path); every subsequent boot deadlocked silently — no traceback, no crash counter. Fixed by closing the `with self._lock:` block before the cross-call. Regression test runs the second `ensure_operator()` on a background thread with a 5s join-timeout, so a future re-introduction fails an assertion instead of hanging the suite.
+- **Identity lifespan diagnostics.** Each step inside the lifespan now emits a `log.info("lifespan: <step>")` checkpoint and is wrapped in `asyncio.wait_for(..., timeout=30s)`. Future silent stalls surface as `TimeoutError` tracebacks with the exact step pinpointed. `logging.basicConfig(level=INFO)` added in `__main__.py` so the checkpoints actually reach stdout (uvicorn's `log_level=` only touches `uvicorn.*` loggers).
+- **Reflection peer URLs require restart to take effect.** `reflectionHemisphereUrl` / `reflectionMemoryUrl` were missing `requiresRestart=True`. The cached `hemisphere_client` / `memory_client` are built once in the lifespan; PATCH'd URLs didn't change runtime behavior until restart. UI auto-restart-on-save now triggers correctly.
+- **Watchdog supervisor pipes + prefixes child output.** Children inherited the parent terminal, so concurrent boots produced an unlabeled wall of `INFO: Waiting for application startup` with no source identification. Supervisor now PIPEs each child's stdout (with stderr merged), spawns a reader task per child, and re-emits lines as `[<name>] <line>`. Drivers (which can be named arbitrarily by operators) get the disambiguated prefix `[driver: <name>]` so a renamed driver is unmistakable.
+- **Watchdog log signal-to-noise.** 2xx `/healthz` access logs (~24 lines/min across the body) are suppressed at the reader; non-2xx pass through so a newly-unhealthy component is still visible. `error` / `warning` words get ANSI color (red/yellow, word-only — full-line color is unreadable on dark terminals); honors `NO_COLOR` env var as the documented opt-out.
+- **Watchdog rotating-file log capture.** `sys.stdout` / `sys.stderr` are mirrored to `<watchdog.yaml dir>/logs/watchdog.log` (10 MB × 5 backups = 50 MB cap). Operators get a sharable bug-report artifact without redirecting stdout at task-launch time or learning env vars; GUI-equality principle.
+- **Peer-reference dropdowns end-to-end** (the `componentKindHint` rollout above). The 5 fields that adopted it: `identity.reflectionHemisphereUrl`, `identity.reflectionMemoryUrl`, `orchestrator.memoryUrl`, `orchestrator.identityUrl`, `connector.orchestratorUrl`, `connector.identityUrl`. Wire shape unchanged — the hint only changes the input UX. Closes the OpenClaw trap of duplicating watchdog topology into per-component free-text URL fields.
 
 ### Known limitations (carried into v0.3)
 
@@ -147,14 +161,14 @@ v0.1 installs need to:
 
 | Repo | v0.2.0 HEAD |
 |---|---|
-| `specs` | `764d4a1` |
-| `orchestrator` | `650cc9b` |
+| `specs` | `a812379` |
+| `orchestrator` | `66fc10a` |
 | `hemisphere-driver` | `9f2cedc` |
-| `ui` | `1efa1a6` |
-| `watchdog` | `bb4de0e` |
+| `ui` | `e2aa4d5` |
+| `watchdog` | `07d398c` |
 | `memory` | `8ca8624` |
-| `identity` | `3d60e1c` |
-| `connector` | `a8ba3df` |
+| `identity` | `f4237f1` |
+| `connector` | `d394e69` |
 
 ---
 
