@@ -488,7 +488,7 @@ components:
           type: string
           description: Operator-supplied label, also used in the orchestrator's `drivers` list.
         kind:
-          $ref: '#/components/schemas/ComponentKind'
+          $ref: 'components/common.yaml#/components/schemas/ComponentKind'
         url:
           type: string
           format: uri
@@ -541,7 +541,7 @@ components:
         name:
           type: string
         kind:
-          $ref: '#/components/schemas/ComponentKind'
+          $ref: 'components/common.yaml#/components/schemas/ComponentKind'
         url:
           type: string
           format: uri
@@ -551,21 +551,6 @@ components:
           type: boolean
           default: false
 
-    ComponentKind:
-      type: string
-      enum:
-        - orchestrator
-        - hemisphere-driver
-        - memory
-        - identity
-        - connector
-      description: |
-        Which Eugene Plexus component class this entry represents. The
-        watchdog's spawn registry maps each kind to a launch command.
-        v0.1 covered three body parts (orchestrator, hemisphere-driver,
-        memory). v0.2 adds `identity` (the Default Mode Network — see
-        `openapi/identity.yaml`) and `connector` (external sense
-        organs — see `openapi/connector.yaml`).
 
     SpawnConfig:
       type: object

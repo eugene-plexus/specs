@@ -203,6 +203,24 @@ components:
         - codex_cli
         - openai_compat_http   # Ollama, vLLM, LM Studio, etc.
 
+    ComponentKind:
+      type: string
+      enum:
+        - orchestrator
+        - hemisphere-driver
+        - memory
+        - identity
+        - connector
+      description: |
+        Which Eugene Plexus component class a topology entry represents.
+        Lives in `common.yaml` because multiple components reference it:
+        the watchdog's `/v1/components`, and (via `ConfigField.
+        componentKindHint`) any component declaring a config field that
+        points at a peer of a specific kind. v0.1 covered three body
+        parts (orchestrator, hemisphere-driver, memory); v0.2 adds
+        `identity` (Default Mode Network analogue) and `connector`
+        (external sense organs).
+
     # -------- Errors (RFC 7807-style) --------
 
     Problem:
@@ -356,6 +374,21 @@ components:
             (e.g. local LLM model lists that update when the operator
             pulls a new model). Distinct from `enumValues`:
             suggestions are advisory, enumValues are mandatory.
+        componentKindHint:
+          $ref: '#/components/schemas/ComponentKind'
+          description: |
+            Declarative rendering hint: this field references a peer
+            component of the given kind. UIs render any kind-hinted
+            field as a dropdown sourced from the watchdog's
+            `/v1/components` (filtered by kind), with `(off)` as the
+            first option (saves an empty string). For single-instance
+            kinds (memory, identity, etc.) the dropdown UX collapses
+            to effectively a toggle; for multi-instance kinds
+            (hemisphere-driver) the operator picks one. Pairs with a
+            string/url `valueType` — the saved value is still the
+            peer's URL, the hint only changes how the UI looks it up.
+            Avoids the OpenClaw trap of duplicating topology into
+            free-text URL fields the operator has to type by hand.
         enumLabels:
           type: array
           items:
