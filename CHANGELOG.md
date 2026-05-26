@@ -136,7 +136,30 @@ Items surfaced during the v0.2 smoke test and fixed before the tag.
 - **Watchdog supervisor pipes + prefixes child output.** Children inherited the parent terminal, so concurrent boots produced an unlabeled wall of `INFO: Waiting for application startup` with no source identification. Supervisor now PIPEs each child's stdout (with stderr merged), spawns a reader task per child, and re-emits lines as `[<name>] <line>`. Drivers (which can be named arbitrarily by operators) get the disambiguated prefix `[driver: <name>]` so a renamed driver is unmistakable.
 - **Watchdog log signal-to-noise.** 2xx `/healthz` access logs (~24 lines/min across the body) are suppressed at the reader; non-2xx pass through so a newly-unhealthy component is still visible. `error` / `warning` words get ANSI color (red/yellow, word-only — full-line color is unreadable on dark terminals); honors `NO_COLOR` env var as the documented opt-out.
 - **Watchdog rotating-file log capture.** `sys.stdout` / `sys.stderr` are mirrored to `<watchdog.yaml dir>/logs/watchdog.log` (10 MB × 5 backups = 50 MB cap). Operators get a sharable bug-report artifact without redirecting stdout at task-launch time or learning env vars; GUI-equality principle.
-- **Peer-reference dropdowns end-to-end** (the `componentKindHint` rollout above). The 5 fields that adopted it: `identity.reflectionHemisphereUrl`, `identity.reflectionMemoryUrl`, `orchestrator.memoryUrl`, `orchestrator.identityUrl`, `connector.orchestratorUrl`, `connector.identityUrl`. Wire shape unchanged — the hint only changes the input UX. Closes the OpenClaw trap of duplicating watchdog topology into per-component free-text URL fields.
+- **Peer-reference dropdowns end-to-end** (the `componentKindHint` rollout above). The 7 fields that adopted it: `identity.reflectionHemisphereUrl`, `identity.reflectionMemoryUrl`, `orchestrator.memoryUrl`, `orchestrator.identityUrl`, `orchestrator.drivers[].url` (per-row dropdown inside the driver list), `connector.orchestratorUrl`, `connector.identityUrl`. Wire shape unchanged — the hint only changes the input UX. Closes the OpenClaw trap of duplicating watchdog topology into per-component free-text URL fields.
+- **`basicConfig` logging across all body components.** Identity / orchestrator / hemisphere-driver / memory / connector were emitting warnings without timestamps because uvicorn's `--log-level` only touches `uvicorn.*` loggers. Added `logging.basicConfig(level=INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", force=True)` in each component's `__main__.py` before `uvicorn.run`. Stale "encrypted on disk, no master key available" warnings are now distinguishable from current ones at a glance — surfaced by a smoke-test session where the operator couldn't tell whether the warning was from the failed save five minutes ago or the successful one thirty seconds ago.
+- **Auto-engage safe mode after repeated crashes.** Watchdog supervisor flips a component to safe-mode after `autoSafeModeAfterCrashes` (default 5) consecutive crashes, and gives up entirely after twice that (default 10). Closes the "config edit soft-bricks the install" failure mode without needing operator intervention — paired with the GUI-equality principle (operator never needs to set an env var to recover). `restart()` clears the auto-engaged flag so the operator can re-test after the fix.
+- **`POST /v1/config/test` on the watchdog.** Probes an OS keyring round-trip when `securityMode=os_keyring` (or under explicit override). UI Test button on the Watchdog tab now has something to talk to — was 404 before. Lets operators verify keyring access works before relying on auto-unlock at next boot.
+- **`personRecentLimit` default bumped 10 → 30.** Smoke-test caught Eugene confabulating personal history because the recent-turns slice for the speaker was too short — the relevant prior turn had aged out of context. Bumping to 30 fixes the confabulation without measurable latency cost (the slice is system-prompt material, not user-input length).
+- **Discord adapter UX fixes.** Pending-link reply reworded from "ask the operator to authorize this link" (ambiguous — sounded like it referred to the Discord connector itself, not the speaker's identity) to point explicitly at the Identity → Pending screen. Typing indicator wraps the orchestrator call so users see Eugene is "thinking" while passes run. Orchestrator-side failures now send a Discord fallback message including the exception class — previously a 502 fell silently through `on_message`'s try/except and the Discord user got nothing.
+- **`ConnectorPanel` polls while transient.** After adapter save, panel polls `/v1/adapters` at 1.5s while any adapter is in `starting` or `rate_limited`. Previous one-shot reload raced the adapter's background task and left the UI saying "launching" until the next manual refresh, even when the adapter had already errored out.
+
+### Late UI polish (post-smoke-test, 2026-05-25)
+
+- **"Thought for X.Xs ›" chip.** ChatGPT-style chip rendered above the latest Eugene response showing total turn latency. Click expands to show pass count, agreement score, termination decision, voice driver, and per-pass mini-summary. Makes bicameral pass behavior legible without opening DevTools or pulling the trace via `CopyTraceButton`.
+- **Watchdog tab on the Config page.** Closes the gap where the watchdog had a config endpoint but no UI tab. `Test` button drives the new `POST /v1/config/test` for keyring round-trip verification.
+- **Pre-render auth gate.** Chat page checks `hasSessionToken()` before any authed call and redirects to `/login?next=...` if missing — the underlying page no longer paints first when an unauthenticated user arrives, which had been a small security smell (operator UI flash before the login modal popped). Catch path distinguishes `ApiError(401)` (stays in "checking" until the redirect completes) from other errors so the redirect can't be raced.
+- **`--radius` theme token.** Bubble / badge / button / pass-card / modal / form-field switched from `rounded-md` to `rounded-[var(--radius)]` so themes can pick their own corner radius without per-component overrides. 118 swaps across 15 files. `rounded-full` (pills, dots, scrollbar) is intentionally untouched. `--pad` token added alongside for density tuning (declared per theme; not yet wired into spacing utilities — v0.3).
+
+### Three themes (Cyberpunk / Modern / Editorial)
+
+The token framework introduced by `--radius` + `--pad` paid off immediately: Claude Design produced three theme presets that each compose into roughly 50 lines of CSS without touching component code. Validates that the token framework holds up cleanly for new themes.
+
+- **Cyberpunk** — Miami '26 palette (replaces the prior v0.2 cyberpunk colors). Dark violet (#0c0820) base, teal + pink accents (#1bd9c2 / #ff7ac0), Space Grotesk + JetBrains Mono. 4px corners, bubble blur, perimeter-pulse thinking animation. Default theme.
+- **Modern** — light theme refresh. Near-white (#fafafb) base, deep blue + magenta accents (#2a55e6 / #cf3a85), Inter + JetBrains Mono, 6px corners, spinner-rail thinking state.
+- **Editorial** (new third theme) — newsprint cream (#faf7f1) base, forest green + rust accents (#2d6240 / #a23b29), DM Sans throughout, 6px corners, no bubble blur, no Eugene letterform showing through the chrome.
+
+`system` theme resolves to Cyberpunk (dark OS) or Modern (light OS) via `prefers-color-scheme`; Editorial is an explicit operator pick (it's a third option, not an OS-level concept).
 
 ### Known limitations (carried into v0.3)
 
@@ -161,14 +184,14 @@ v0.1 installs need to:
 
 | Repo | v0.2.0 HEAD |
 |---|---|
-| `specs` | `a812379` |
-| `orchestrator` | `66fc10a` |
-| `hemisphere-driver` | `9f2cedc` |
-| `ui` | `e2aa4d5` |
-| `watchdog` | `07d398c` |
-| `memory` | `8ca8624` |
-| `identity` | `f4237f1` |
-| `connector` | `d394e69` |
+| `specs` | `052fd19` |
+| `orchestrator` | `9c26fe0` |
+| `hemisphere-driver` | `254038e` |
+| `ui` | `9196d5b` |
+| `watchdog` | `f84ab84` |
+| `memory` | `3fbf9b2` |
+| `identity` | `ca19f0a` |
+| `connector` | `3c8e1e1` |
 
 ---
 

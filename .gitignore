@@ -55,3 +55,18 @@ CLAUDE.md
 .env
 .env.*
 !.env.example
+
+# --- Local runtime artifacts ---
+# When the operator runs Eugene Plexus with the working directory set to
+# this repo (e.g. for spec-side smoke testing), the watchdog + body
+# components drop their config and SQLite stores here. None of it belongs
+# in git.
+watchdog.yaml
+adapters.yaml
+constitution.yaml
+identity.db
+memory.sqlite3
+memory.sqlite3-shm
+memory.sqlite3-wal
+component-configs/
+logs/
