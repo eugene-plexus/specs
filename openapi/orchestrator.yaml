@@ -239,17 +239,22 @@ paths:
       operationId: probeDriver
       summary: Test-connect to an arbitrary driver URL without persisting it.
       description: |
-        Used by the UI's per-row "Test" buttons in the drivers list
+        Used by the UI's per-URL "Test" buttons in the drivers list
         editor — same affordance Sonarr / Radarr expose next to each
         indexer entry. Fetches `<url>/v1/info` once, reports
         reachability + backend identity, and returns. Does not touch
         the saved config; safe to call against unsaved form values.
+
+        Probes a *single* URL. A driver slot is a priority list of
+        URLs (see `DriverEntry.urls`); the UI calls this once per URL
+        in the slot so each fallback backend can be tested
+        independently.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: 'components/common.yaml#/components/schemas/DriverEntry'
+              $ref: '#/components/schemas/DriverProbeRequest'
       responses:
         '200':
           description: |
@@ -751,6 +756,28 @@ components:
           description: What the orchestrator did at the end of this pass.
         blendedMessage:
           $ref: 'components/common.yaml#/components/schemas/Message'
+
+    DriverProbeRequest:
+      type: object
+      description: |
+        Request body for `POST /v1/admin/drivers/probe`. Tests a single
+        backend URL without persisting it. A driver slot may hold
+        several URLs (`DriverEntry.urls`); the UI probes each one
+        separately so an operator can verify every fallback before
+        saving.
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+          description: The single backend base URL to test-connect.
+        name:
+          type: string
+          description: |
+            Optional slot label, echoed into diagnostics. Not required
+            to probe; the operator may be testing a URL before naming
+            the slot.
 
     DriversInfo:
       type: object

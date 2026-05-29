@@ -167,27 +167,45 @@ components:
     DriverEntry:
       type: object
       description: |
-        One operator-configured hemisphere-driver in the orchestrator's
-        topology. The orchestrator owns the `name` (free-form, used for
-        labelling messages and UI tabs); drivers themselves are anonymous
-        and report only their backend / model identity. v0.1 expects two
-        entries; v0.2+ generalizes to N (with backup/failover semantics
-        layered on top).
+        One operator-configured hemisphere-driver *slot* in the
+        orchestrator's topology. The orchestrator owns the `name`
+        (free-form, used for labelling messages and UI tabs); drivers
+        themselves are anonymous and report only their backend / model
+        identity. The bicameral loop requires exactly two slots.
+
+        A slot is a **priority list** of backend URLs (`urls`), not a
+        single backend (v0.2.1). On each chat turn the orchestrator
+        tries `urls[0]`; if it fails in a cascade-eligible way
+        (transport error / 5xx / timeout) it falls through to
+        `urls[1]`, and so on. A 4xx fails the slot HARD without
+        cascading — a 4xx is a request/auth/config bug that the next
+        backend would hit identically, and cascading past it would
+        mask the real problem. Stock installs run one URL per slot, so
+        the list is length-1 and behaves exactly as the pre-v0.2.1
+        single-`url` shape did.
       required:
         - name
-        - url
+        - urls
       properties:
         name:
           type: string
           minLength: 1
           description: |
             Operator-supplied label (e.g. `"left"`, `"right"`, or any
-            free-form string). Stamped onto every message this driver
+            free-form string). Stamped onto every message this slot
             produces and surfaced in the UI as the tab/column label.
-        url:
-          type: string
-          format: uri
-          description: Base URL where the driver's HTTP API is reachable.
+        urls:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            format: uri
+          description: |
+            Ordered priority list of base URLs where interchangeable
+            backends for this slot are reachable. The orchestrator
+            tries them in order on each turn and cascades to the next
+            on transport error / 5xx / timeout (but not on 4xx). At
+            least one entry is required.
 
     BackendKind:
       type: string
