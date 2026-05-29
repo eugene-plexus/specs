@@ -39,6 +39,19 @@ openapi/
 
 Build order was deliberate: specs first so contracts don't conflict at integration time; hemisphere-driver before orchestrator so the orchestrator integrates against real backends, not mocks; UI before memory because the UI doubles as the debugging surface for hemispheres and NT state. The watchdog was added during the build when first-run UX surfaced the need for a process owning the body components.
 
+## Setting up a dev environment
+
+Eugene Plexus is a polyrepo targeting **Python 3.12** — every component pins `requires-python = ">=3.12"`, ruff `target-version = "py312"`, and mypy `python_version = "3.12"`, and CI runs on 3.12. Develop on 3.12 so local matches CI.
+
+To set up every repo on a fresh machine (Windows):
+
+```powershell
+gh repo clone eugene-plexus/specs
+.\specs\scripts\bootstrap.ps1
+```
+
+[`scripts/bootstrap.ps1`](scripts/bootstrap.ps1) clones every component as a sibling of `specs`, builds a 3.12 virtualenv per Python repo with dev extras, sets up `ui` (npm + codegen), and activates the pre-commit hooks. Prerequisites: Python 3.12 (`winget install Python.Python.3.12`), `git`, `gh` (authenticated via `gh auth login`), and Node.js. Re-running is safe — it skips repos already cloned and venvs already built.
+
 ## Using these schemas
 
 ### Python (Pydantic v2 models)
