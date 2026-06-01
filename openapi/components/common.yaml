@@ -173,19 +173,24 @@ components:
         themselves are anonymous and report only their backend / model
         identity. The bicameral loop requires exactly two slots.
 
-        A slot is a **priority list** of backend URLs (`urls`), not a
-        single backend (v0.2.1). On each chat turn the orchestrator
-        tries `urls[0]`; if it fails in a cascade-eligible way
-        (transport error / 5xx / timeout) it falls through to
-        `urls[1]`, and so on. A 4xx fails the slot HARD without
-        cascading — a 4xx is a request/auth/config bug that the next
-        backend would hit identically, and cascading past it would
-        mask the real problem. Stock installs run one URL per slot, so
-        the list is length-1 and behaves exactly as the pre-v0.2.1
-        single-`url` shape did.
+        A slot is a **priority list** of backends (`backends`), not a
+        single backend. Each entry is the NAME of a hemisphere-driver
+        entry in the watchdog topology (`GET /v1/components`,
+        `kind: hemisphere-driver`); the orchestrator resolves names to
+        URLs at startup. This keeps backend URLs in exactly one place
+        (the watchdog topology) instead of duplicating them into the
+        orchestrator's config (v0.2.1).
+
+        On each chat turn the orchestrator tries `backends[0]`; if it
+        fails in a cascade-eligible way (transport error / 5xx /
+        timeout) it falls through to `backends[1]`, and so on. A 4xx
+        fails the slot HARD without cascading — a 4xx is a
+        request/auth/config bug that the next backend would hit
+        identically, and cascading past it would mask the real problem.
+        Stock installs run one backend per slot.
       required:
         - name
-        - urls
+        - backends
       properties:
         name:
           type: string
@@ -194,18 +199,18 @@ components:
             Operator-supplied label (e.g. `"left"`, `"right"`, or any
             free-form string). Stamped onto every message this slot
             produces and surfaced in the UI as the tab/column label.
-        urls:
+        backends:
           type: array
           minItems: 1
           items:
             type: string
-            format: uri
           description: |
-            Ordered priority list of base URLs where interchangeable
-            backends for this slot are reachable. The orchestrator
-            tries them in order on each turn and cascades to the next
-            on transport error / 5xx / timeout (but not on 4xx). At
-            least one entry is required.
+            Ordered priority list of watchdog-topology hemisphere-driver
+            entry NAMES that back this slot. The orchestrator resolves
+            each name to a URL via `GET /v1/components` at startup and
+            tries them in order on each turn, cascading to the next on
+            transport error / 5xx / timeout (but not on 4xx). At least
+            one entry is required. (Not a URL — a topology entry name.)
 
     BackendKind:
       type: string
