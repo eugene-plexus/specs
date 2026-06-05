@@ -385,6 +385,18 @@ components:
           type: string
           format: uuid
           description: Caller-supplied id for log correlation. Echoed in the response.
+        tools:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/ToolDefinition'
+          description: |
+            Tool catalog available for this generation. The driver
+            translates each entry into its backend's native tool-calling
+            mechanism and passes it through; it does not choose which to
+            call or execute any. Omitted or empty = no tools this pass
+            (e.g. the voice / articulation pass, which emits speech rather
+            than tool calls). A `toolChoice` knob (auto/none/required) is
+            deferred — v0.3 leaves selection to the model.
 
     GenerateResponse:
       type: object
@@ -401,7 +413,18 @@ components:
             - stop          # natural end of generation
             - length        # hit max tokens
             - stop_sequence # matched a `stop` value
+            - tool_use      # stopped to emit tool call(s); see toolCalls
             - error         # truncated due to backend error
+        toolCalls:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/ToolCall'
+          description: |
+            Tool-invocation requests the model emitted this turn. Non-empty
+            iff `finishReason == tool_use`. The orchestrator decides
+            whether and which to execute (reflexive/deliberative gate, plus
+            bicameral agreement for irreversible efferent effects); the
+            driver only surfaces them.
         usage:
           $ref: '#/components/schemas/Usage'
         requestId:
