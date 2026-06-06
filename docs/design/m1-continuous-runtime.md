@@ -110,9 +110,10 @@ landscape.**
 
 ## 3. Perception and action surfaces (the wire contracts)
 
-Two doors in, two channels out. Addressing is symmetric: an afferent event
-carries a **source**; a speech act carries a **destination**; both reuse the
-existing `MessageSource` / `ChannelContextEntry` shapes.
+One door in, two channels out — **no backwards-compatibility surface** (see
+below). Addressing is symmetric: an afferent event carries a **source**; a
+speech act carries a **destination**; both reuse the existing `MessageSource` /
+`ChannelContextEntry` shapes.
 
 ### In — `POST /v1/events` (the pure interface)
 
@@ -142,14 +143,19 @@ NT-modulated lossy salience, identity-resolved). `IncomingMessage`,
 > solicited perception, e.g. checking a channel or recalling) is an afferent
 > `role: tool` cycle.
 
-### In — `POST /v1/chat` (compatibility adapter; throwaway)
+### Removed — the request-response surface
 
-Keeps the v0.2 UI and the test suite alive during the M2 transition. Internally:
-inject an `AfferentEvent`, then `await` the first speech aimed at that
-conversation with a timeout. Returns the utterance **or** a "no response"
-result — i.e. it *surfaces silence as a valid outcome* rather than forcing a
-reply. One engine, two front doors — **not** a parallel request-response
-cognition path. Removed once the UI moves to the streaming model.
+**No backwards compatibility** (Troy, 2026-06-06): nobody is running Eugene
+Plexus, so breaking the project to reach the correct shape beats preserving the
+old one. The v0.2 request-response endpoints — `POST /v1/chat`,
+`POST /v1/chat/stream`, and the `ChatRequest` / `ChatResponse` schemas — are
+**removed outright.** There is no compatibility adapter and no dual front door:
+`POST /v1/events` is the only way in.
+
+*Silence as a valid outcome* is still first-class — a caller observes it as a
+`gate_decision` (and the absence of an ensuing speech) on the consciousness
+stream, **not** as a synchronous "no response" reply. The UI breaks and is
+rebuilt against the streams; that is acceptable and intended.
 
 ### Out — speech (efferent), routed to a destination
 
@@ -212,11 +218,13 @@ The bicameral pipeline is rewired, not deleted:
 | NT `tick` (`nt.py`) | moves from once-post-turn into loop step 2 (continuous) |
 | M0.5 tool trace | becomes the live `tool_call` events on the consciousness stream |
 
-**Migration is staged** (cheap to find failures): the loop ships behind the
-`/v1/chat` adapter, so v0.2 behavior keeps working while the new runtime runs
-underneath. The UI flips to event-injection + the two streams deliberately; the
-connector is already async (it posts inbound and sends outbound as separate
-actions, so it maps to the new model with no shim).
+**Migration is replace, not coexist** (Troy, 2026-06-06: no backwards compat —
+correctness beats compatibility, nobody is using it yet). The old
+request-response handler is *deleted*, not flagged off. The UI is rebuilt to
+post `AfferentEvent`s and subscribe to the two streams; the connector is already
+async (posts inbound, sends outbound as separate actions) so it maps to the new
+model directly. The risk this *removes*: no half-migrated dual runtime to keep
+in sync — there is exactly one cognition path.
 
 ---
 
@@ -265,6 +273,11 @@ relationship-valence updates.
 
 **Locked:**
 
+- **No backwards compatibility (Troy, 2026-06-06).** Nobody is running Eugene
+  Plexus; breaking the project to reach the correct shape beats preserving v0.2.
+  The request-response surface (`/v1/chat`, `/v1/chat/stream`, `ChatRequest`,
+  `ChatResponse`) is removed outright — no adapter, no dual front door, one
+  cognition path.
 - **One loop, one workspace; single long-lived asyncio task** in the
   orchestrator lifespan; endpoints are thin event-injection doors.
 - **Single-attention is literal.** One focus; other threads wait in a lossy
