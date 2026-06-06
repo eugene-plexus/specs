@@ -622,6 +622,21 @@ components:
             $ref: '#/components/schemas/PassRecord'
         voicePass:
           $ref: '#/components/schemas/VoicePassRecord'
+        toolInvocations:
+          type: array
+          description: |
+            Ordered diagnostic record of every tool the orchestrator
+            invoked during this turn — afferent reads (memory recall,
+            identity), efferent writes (memory persistence), and internal
+            regimented calls (NT observation). The primary debug surface
+            for the tool-calling substrate: the UI renders these alongside
+            the bicameral passes so an operator sees Eugene's
+            perception/action flow, not just deliberation. Phase-1 tools
+            are orchestrator-constructed (the model does not yet emit tool
+            calls); this trace shows what ran regardless. Optional —
+            orchestrators without the tool retrofit omit it.
+          items:
+            $ref: '#/components/schemas/ToolInvocationRecord'
         ntStateAtStart:
           $ref: 'components/common.yaml#/components/schemas/NTState'
         ntStateAtEnd:
@@ -675,6 +690,44 @@ components:
           type: integer
           minimum: 0
           description: Wall-clock duration of the voice pass call.
+
+    ToolInvocationRecord:
+      type: object
+      description: |
+        Diagnostic record of one tool invocation during a chat turn —
+        a ToolCall/ToolResult pair flattened for the trace: what ran, on
+        which channel, its reversibility class, a short result summary,
+        and timing. The UI's bicameral-trace view renders these as the
+        perception/action layer beneath deliberation. Result payloads are
+        NOT included — only the human-readable summary — so the trace
+        stays small and free of (potentially sensitive) recalled content.
+      required:
+        - name
+        - channel
+      properties:
+        name:
+          type: string
+          description: Tool name (matches the registered ToolDefinition.name).
+        channel:
+          $ref: 'components/common.yaml#/components/schemas/ToolChannel'
+        effect:
+          $ref: 'components/common.yaml#/components/schemas/ToolEffect'
+        summary:
+          type: string
+          description: |
+            Short human-readable result summary (the ToolResult.content),
+            e.g. "12 recent entries", "constitution", "nt state advanced".
+        isError:
+          type: boolean
+          default: false
+          description: |
+            True if the tool failed. Phase-1 tool errors propagate to the
+            chat handler's existing error mapping instead, so this is
+            normally false until Phase 2 (model-driven tools).
+        latencyMs:
+          type: integer
+          minimum: 0
+          description: Wall-clock duration of the tool invocation.
 
     PassRecord:
       type: object
