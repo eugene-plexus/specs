@@ -1492,9 +1492,10 @@ components:
       type: object
       description: |
         Normalized message shape an adapter posts to the
-        orchestrator's `POST /v1/chat`. Adapter-specific platform
-        details collapse to this universal shape; the orchestrator
-        never sees Discord-specific or Slack-specific fields.
+        orchestrator, wrapped in an `AfferentEvent` (`kind: message`)
+        to `POST /v1/events`. Adapter-specific platform details
+        collapse to this universal shape; the orchestrator never sees
+        Discord-specific or Slack-specific fields.
       required:
         - personId
         - content
@@ -1507,7 +1508,7 @@ components:
             Sender's `personId` in the identity component. If the
             adapter received a message from an unrecognized
             platform user, it MUST file a `PendingIdentityLink`
-            and not call `/v1/chat` — Eugene only responds to
+            and not post the event — Eugene only responds to
             known people.
         conversationId:
           type: string
@@ -1621,6 +1622,151 @@ components:
           description: |
             Optional human-readable note (e.g. "logs flushed, exiting
             now"). UI may display this in the restart-progress dialog.
+
+    AfferentEvent:
+      type: object
+      description: |
+        A single afferent (perception-in) event injected into the
+        orchestrator's continuous loop via `POST /v1/events`. The
+        unified envelope for everything Eugene perceives — a person's
+        message, a presence change, and future sensory inputs all arrive
+        as one shape, differing only by `kind` and the typed payload.
+
+        Injection is fire-and-forget: the endpoint enqueues the event
+        and returns `202` immediately. Whether, when, and how Eugene
+        responds is the loop's decision, not this call's — there is no
+        synchronous reply (the request-response `/v1/chat` surface was
+        removed). Speech leaves asynchronously; see `EfferentSpeechAct`
+        and `GET /v1/stream/consciousness`.
+
+        An unsolicited event arriving keeps `role: user` semantics —
+        Eugene did not "call hear." Only Eugene's *interpretation* of it
+        (and any solicited perception) is an afferent tool cycle.
+      required:
+        - eventId
+        - kind
+        - source
+        - timestamp
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: |
+            Caller-minted id. Echoed by any resulting `EfferentSpeechAct`
+            in `inResponseTo` when Eugene's reply is reactive to this
+            event, for correlation.
+        kind:
+          type: string
+          enum:
+            - message
+            - presence
+          description: |
+            Discriminates the payload. Extensible — future afferent
+            modalities (timer, sensor, …) add an enum value + a payload
+            field without changing the envelope.
+        source:
+          $ref: '#/components/schemas/MessageSource'
+          description: Where the event came from (platform / channel).
+        timestamp:
+          type: string
+          format: date-time
+        message:
+          $ref: '#/components/schemas/IncomingMessage'
+          description: 'Present when `kind` is `message`.'
+        presence:
+          $ref: '#/components/schemas/PresenceEvent'
+          description: 'Present when `kind` is `presence`.'
+
+    PresenceEvent:
+      type: object
+      description: |
+        Afferent perception of the social environment's *occupancy* —
+        who entered or left an environment — distinct from message
+        content. This is the external trigger that lets Eugene
+        *initiate* (not just respond): the continuous loop + speak-as-a-
+        decision give the ability to start talking; presence gives the
+        social cue to.
+
+        Presence is a LOSSY, NT-modulated salience signal, NOT a queue:
+        most occupancy churn is low-salience and never attended (the
+        loop drops it), the same way a person doesn't consciously track
+        everyone's comings and goings. Salience is gated by NT state —
+        wary attends to strangers, relaxed attends to known persons.
+        Restraint about acting on presence is *learned*, not a policy
+        knob.
+
+        Actor resolution ties into identity: an enter/leave resolves to
+        a `personId` when known, otherwise to a `PlatformAlias` / the
+        pending-link flow. "X entered" only means something once X is a
+        known person.
+      required:
+        - change
+        - environment
+      properties:
+        change:
+          type: string
+          enum:
+            - entered
+            - left
+          description: The occupancy transition observed.
+        environment:
+          $ref: '#/components/schemas/MessageSource'
+          description: |
+            The environment (platform / channel) whose occupancy
+            changed. Reuses `MessageSource` addressing.
+        personId:
+          type: string
+          format: uuid
+          description: |
+            The actor, resolved to a known person. Omitted when the
+            actor is unknown — see `alias`.
+        alias:
+          $ref: '#/components/schemas/PlatformAlias'
+          description: |
+            Set instead of `personId` when the actor is an unrecognized
+            platform user (routes to the pending-link flow rather than
+            to relationship-aware behavior).
+
+    EfferentSpeechAct:
+      type: object
+      description: |
+        An efferent (act-out) utterance Eugene has *decided* to emit.
+        Speech is not a privileged terminal step — it is an efferent
+        action the gate elects when speaking has higher anticipated
+        reward than continuing to think or staying silent. Silence is a
+        valid outcome and simply produces no `EfferentSpeechAct`.
+
+        Routed to a destination by the speak effector: a reply in a
+        Discord channel goes to the connector's outbound API for that
+        channel; a reply in the UI goes to the UI's speech stream;
+        *initiated* speech (no triggering event) picks its destination
+        from social context. `destination` reuses `MessageSource`
+        addressing — the mirror of an `AfferentEvent.source`.
+      required:
+        - destination
+        - content
+        - timestamp
+      properties:
+        destination:
+          $ref: '#/components/schemas/MessageSource'
+          description: Where the utterance is delivered (mirror of afferent `source`).
+        content:
+          type: string
+        inResponseTo:
+          type: string
+          format: uuid
+          description: |
+            The `AfferentEvent.eventId` this utterance reacts to, when
+            reactive. Omitted for self-initiated speech (mind-wandering,
+            presence-triggered) — Eugene speaking on its own initiative,
+            not in reply to a specific event.
+        conversationId:
+          type: string
+          format: uuid
+          description: Conversation thread the utterance belongs to, when applicable.
+        timestamp:
+          type: string
+          format: date-time
 
   responses:
 
