@@ -428,6 +428,12 @@ components:
         - memory
         - identity
         - connector
+        - coordinator
+        - trainer
+        - data
+        - eval
+        - inference
+        - cluster
       description: |
         Which Eugene Plexus component class a topology entry represents.
         Lives in `common.yaml` because multiple components reference it:
@@ -437,6 +443,13 @@ components:
         parts (orchestrator, hemisphere-driver, memory); v0.2 adds
         `identity` (Default Mode Network analogue) and `connector`
         (external sense organs).
+
+        v0.3 adds the local-LLM-platform components: `coordinator`
+        (owns the `TrainingProject` aggregate and sequences pipeline
+        runs across the others), `trainer` (executes training runs +
+        owns checkpoints), `data` (datasets + tokenizers),
+        `eval` (eval suites + results), `inference` (OpenAI-compatible
+        local serving), and `cluster` (deferred; multi-host workers).
 
     # -------- Errors (RFC 7807-style) --------
 
@@ -1767,6 +1780,403 @@ components:
         timestamp:
           type: string
           format: date-time
+    # ======== Training platform (v0.3 direction) ========
+    #
+    # The trainer component owns TrainingProject + TrainingRun + Checkpoint.
+    # It embeds trainer-owned config (template/architecture/recipe/hparams/
+    # hardware) and REFERENCES data/eval/inference resources by id (resolved
+    # to peer URLs via ConfigField.componentKindHint topology lookup).
+
+    TrainingProject:
+      type: object
+      description: |
+        The key user-facing abstraction. A reusable, persisted description of
+        "a model you are building": what to train, from what data, with which
+        recipe and hyperparameters, on which hardware, evaluated how, exported
+        where. Runs are executions of a project (one project -> many runs).
+      required: [projectId, name, goal, createdAt]
+      properties:
+        projectId:        { type: string, format: uuid }
+        name:             { type: string, minLength: 1 }
+        description:      { type: string }
+        goal:             { $ref: '#/components/schemas/TrainingGoal' }
+        createdAt:        { type: string, format: date-time }
+        updatedAt:        { type: string, format: date-time }
+        modelTemplate:    { $ref: '#/components/schemas/ModelTemplate' }
+        tokenizer:        { $ref: '#/components/schemas/TokenizerRef' }
+        datasets:
+          type: array
+          description: Ordered dataset selection (with per-dataset weight + curriculum gate).
+          items: { $ref: '#/components/schemas/DatasetRef' }
+        recipe:           { $ref: '#/components/schemas/TrainingRecipe' }
+        hyperparameters:  { $ref: '#/components/schemas/Hyperparameters' }
+        hardware:         { $ref: '#/components/schemas/HardwareTopology' }
+        evalSuites:
+          type: array
+          items: { $ref: '#/components/schemas/EvalSuiteRef' }
+        exportSettings:   { $ref: '#/components/schemas/ExportSettings' }
+        latestRunId:      { type: string, format: uuid }
+        latestRunStatus:  { $ref: '#/components/schemas/RunStatus' }
+
+    TrainingGoal:
+      type: string
+      description: |
+        Mirrors the wizard's "what do you want to do" screen. Drives which
+        recipe/fields the UI surfaces (via showWhen) and which defaults apply.
+      enum:
+        - pretrain_from_scratch
+        - continue_pretraining
+        - finetune
+        - train_adapter        # LoRA / QLoRA
+        - evaluate
+        - serve
+
+    ModelTemplate:
+      type: object
+      description: |
+        A named preset of an ArchitectureConfig (e.g. "small-test-20L",
+        "deep-medium-40L" — the migrated CLLM config presets become built-ins).
+        Custom templates are clones with overrides.
+      required: [name, architecture]
+      properties:
+        name:         { type: string }
+        displayName:  { type: string }
+        description:  { type: string }
+        builtin:      { type: boolean, default: false }
+        architecture: { $ref: '#/components/schemas/ArchitectureConfig' }
+        estimatedParamCount: { type: integer, description: Read-only; computed from architecture. }
+
+    ArchitectureConfig:
+      type: object
+      description: |
+        Generic decoder-only transformer config. Lifted from CLLM's
+        architecture package with all NT/hemisphere/cognitive fields removed.
+        See §10: cognitive.use_moe -> generic ffn.type; mood_vector dropped.
+      required: [modelType, nLayer, nHead, nEmbd, blockSize, vocabSize]
+      properties:
+        modelType:   { type: string, enum: [decoder_only], default: decoder_only }
+        nLayer:      { type: integer, minimum: 1 }
+        nHead:       { type: integer, minimum: 1 }
+        nKvHead:     { type: integer, description: GQA KV heads; omit for full MHA. }
+        nEmbd:       { type: integer, minimum: 1, description: Must be divisible by nHead. }
+        blockSize:   { type: integer, minimum: 1, description: Training context length. }
+        vocabSize:   { type: integer, minimum: 1 }
+        activation:  { type: string, enum: [relu, leaky_relu, gelu, elu, swiglu], default: swiglu }
+        ropeBase:    { type: number, default: 500000 }
+        useQkNorm:   { type: boolean, default: false }
+        attentionVariant: { type: string, enum: [gqa, differential], default: gqa }
+        ffn:
+          type: object
+          description: Replaces CLLM's cognitive/hemisphere FFN with a generic dense|moe choice.
+          properties:
+            type:           { type: string, enum: [dense, moe], default: dense }
+            nExperts:       { type: integer, minimum: 1 }
+            topK:           { type: integer, minimum: 1 }
+            useSharedExpert: { type: boolean, default: false }
+            auxLossWeight:  { type: number }
+        mixtureOfDepths:
+          type: object
+          properties:
+            enabled:        { type: boolean, default: false }
+            capacityFactor: { type: number }
+            auxLossWeight:  { type: number }
+        blockAttnResGroupSize: { type: integer, default: 0, description: 0 = disabled. }
+        contextExtension:
+          type: object
+          properties:
+            mode:      { type: string, enum: [none, ntk, yarn], default: none }
+            maxFactor: { type: number }
+        weightTying: { type: boolean, default: true }
+
+    TrainingRecipe:
+      type: object
+      description: |
+        What KIND of training and its method-specific params. UI uses
+        ConfigField.showWhen to reveal adapter/quantization blocks only for
+        the relevant kind.
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [pretraining, continued_pretraining, sft, lora, qlora, dpo] }
+        baseCheckpoint:
+          $ref: '#/components/schemas/CheckpointRef'
+          description: Required for continued_pretraining / sft / lora / qlora / dpo.
+        adapter:
+          type: object
+          description: LoRA/QLoRA adapter config (kind in [lora, qlora]).
+          properties:
+            rank:          { type: integer, minimum: 1 }
+            alpha:         { type: number }
+            dropout:       { type: number }
+            targetModules: { type: array, items: { type: string } }
+        quantization:
+          type: object
+          description: QLoRA base-weight quantization (kind == qlora).
+          properties:
+            bits:       { type: integer, enum: [4, 8] }
+            computeDtype: { type: string, enum: [bf16, fp16] }
+        dpoBeta: { type: number, description: DPO temperature (kind == dpo). }
+
+    Hyperparameters:
+      type: object
+      description: Every output-affecting knob, grouped. Sourced from CLLM's training config.
+      properties:
+        batchSize:      { type: integer, minimum: 1 }
+        gradAccumSteps: { type: integer, minimum: 1, default: 1 }
+        maxSteps:       { type: integer, description: Omit to derive from maxEpochs / dataset size. }
+        maxEpochs:      { type: integer }
+        seed:           { type: integer, default: 1337 }
+        optimizer:
+          type: object
+          required: [kind, learningRate]
+          properties:
+            kind:         { type: string, enum: [adamw, sgd, adadelta, adabelief, muon], default: adamw }
+            learningRate: { type: number }
+            weightDecay:  { type: number }
+            betas:        { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+            eps:          { type: number }
+            fused:        { type: boolean, default: true }
+        scheduler:
+          type: object
+          properties:
+            kind:          { type: string, enum: [wsd, epoch, plateau, cosine], default: wsd }
+            warmupSteps:   { type: integer }
+            maxLr:         { type: number }
+            minLr:         { type: number }
+            totalSteps:    { type: integer, description: Omit to derive via chinchilla. }
+            chinchillaTokensPerParam: { type: number, description: Auto total_steps when totalSteps null. }
+            decayType:     { type: string, enum: [cosine, linear] }
+            decayFraction: { type: number }
+        precision:
+          type: object
+          properties:
+            dtype:      { type: string, enum: [auto, bf16, fp16, fp32], default: auto }
+            gradScaler: { type: string, enum: [auto, always, never], default: auto }
+        gradientClip:
+          type: object
+          properties:
+            percentile:   { type: number, default: 0.9 }
+            historySize:  { type: integer, default: 100 }
+            maxClipValue: { type: number }
+            minClipValue: { type: number }
+        collapseStop:
+          type: object
+          description: Mode-collapse early stop (CLLM SampledTokenTracker, de-consciousness'd).
+          properties:
+            minLogitEntropy:  { type: number }
+            warmupGraceSteps: { type: integer }
+
+    HardwareTopology:
+      type: object
+      description: |
+        How a run is placed on hardware. Sourced from CLLM gpu_manager +
+        distributed_config (torchrun/DDP env generation).
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [cpu, single_gpu, multi_gpu, multi_node], default: single_gpu }
+        gpuIndices:   { type: array, items: { type: integer } }
+        excludeGpus:  { type: array, items: { type: integer } }
+        minMemoryGb:  { type: number }
+        distributed:
+          type: object
+          description: Present for multi_gpu / multi_node.
+          properties:
+            backend:        { type: string, enum: [nccl, gloo], default: nccl }
+            masterAddr:     { type: string }
+            masterPort:     { type: integer }
+            nodes:
+              type: array
+              items:
+                type: object
+                properties:
+                  host:      { type: string }
+                  gpuCount:  { type: integer }
+                  nodeRank:  { type: integer }
+            findUnusedParameters: { type: boolean, default: false }
+            bucketCapMb:          { type: integer }
+            gradientAsBucketView: { type: boolean }
+            staticGraph:          { type: boolean }
+            checkpointStrategy:   { type: string, enum: [master_only, all_nodes], default: master_only }
+
+    # -------- Run / checkpoint / metrics --------
+
+    TrainingRun:
+      type: object
+      description: One execution of a TrainingProject. Lives inside the trainer service (§2).
+      required: [runId, projectId, status, createdAt]
+      properties:
+        runId:      { type: string, format: uuid }
+        projectId:  { type: string, format: uuid }
+        status:     { $ref: '#/components/schemas/RunStatus' }
+        createdAt:  { type: string, format: date-time }
+        startedAt:  { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        currentStep:     { type: integer, minimum: 0 }
+        totalSteps:      { type: integer }
+        currentEpoch:    { type: integer, minimum: 0 }
+        tokensSeen:      { type: integer, minimum: 0 }
+        progressFraction: { type: number, minimum: 0, maximum: 1 }
+        latestMetrics:   { $ref: '#/components/schemas/TrainingMetricPoint' }
+        bestValLoss:     { type: number }
+        checkpointCount: { type: integer, minimum: 0 }
+        lastError:       { type: string, description: Populated when status == failed. }
+
+    RunStatus:
+      type: string
+      enum: [queued, preparing, running, paused, completed, failed, cancelled]
+      description: |
+        queued -> preparing (build model/data/optimizer) -> running -> completed.
+        paused/resumed are operator actions; failed carries lastError; cancelled
+        is operator-initiated stop. Note: these are RUN states owned by the
+        trainer service, distinct from the watchdog's ComponentStatus for the
+        trainer PROCESS.
+
+    TrainingMetricPoint:
+      type: object
+      description: One sampled point of training health. Streamed over SSE + persisted for curves.
+      required: [step]
+      properties:
+        step:           { type: integer, minimum: 0 }
+        timestamp:      { type: string, format: date-time }
+        loss:           { type: number }
+        valLoss:        { type: number }
+        learningRate:   { type: number }
+        gradNorm:       { type: number }
+        gradClipValue:  { type: number }
+        tokensPerSec:   { type: number }
+        vramGb:         { type: number }
+        tokenEntropy:   { type: number, description: Sampled-token Shannon entropy (collapse monitor). }
+
+    Checkpoint:
+      type: object
+      description: A saved model state produced by a run. Consumed by eval + inference.
+      required: [checkpointId, runId, step, createdAt]
+      properties:
+        checkpointId: { type: string, format: uuid }
+        runId:        { type: string, format: uuid }
+        projectId:    { type: string, format: uuid }
+        step:         { type: integer, minimum: 0 }
+        epoch:        { type: integer, minimum: 0 }
+        createdAt:    { type: string, format: date-time }
+        path:         { type: string, description: Filesystem path on the trainer host. }
+        sizeBytes:    { type: integer }
+        valLoss:      { type: number }
+        isLatest:     { type: boolean, default: false }
+        isBest:       { type: boolean, default: false }
+        tags:         { type: array, items: { type: string } }
+
+    CheckpointRef:
+      type: object
+      description: Lightweight reference to a checkpoint (id + enough to display).
+      required: [checkpointId]
+      properties:
+        checkpointId: { type: string, format: uuid }
+        runId:        { type: string, format: uuid }
+        step:         { type: integer }
+        label:        { type: string }
+
+    # -------- Cross-component references --------
+
+    DatasetRef:
+      type: object
+      description: |
+        Reference to a dataset MANIFEST owned by the data component, plus the
+        per-project curriculum settings (weight + min-iteration gate) sourced
+        from CLLM's datasets.json schema.
+      required: [datasetId]
+      properties:
+        datasetId:      { type: string, format: uuid }
+        name:           { type: string }
+        samplingWeight: { type: number, default: 1, description: Oversample(>1)/subsample(<1) factor. }
+        minIteration:   { type: integer, default: 0, description: Curriculum gate; introduce at this step. }
+
+    TokenizerRef:
+      type: object
+      description: Reference to a tokenizer owned by the data component (+ its vocab fingerprint).
+      required: [tokenizerId]
+      properties:
+        tokenizerId:     { type: string, format: uuid }
+        name:            { type: string }
+        vocabSize:       { type: integer }
+        vocabFingerprint: { type: string, description: SHA256; must match dataset pretokenization. }
+
+    EvalSuiteRef:
+      type: object
+      required: [evalSuiteId]
+      properties:
+        evalSuiteId: { type: string, format: uuid }
+        name:        { type: string }
+
+    ExportSettings:
+      type: object
+      description: How/where a finished model is served. Points at the inference component.
+      properties:
+        autoServeOnComplete: { type: boolean, default: false }
+        target:
+          type: string
+          description: |
+            Inference endpoint name. Rendered as a componentKindHint dropdown
+            (kind: inference) in the UI; saved value is the peer URL.
+        format: { type: string, enum: [native, safetensors, gguf], default: native }
+
+    # --- Coordinator pipeline + trainer hand-off (revision 2) ---
+
+    PipelineRun:
+      type: object
+      description: |
+        One end-to-end execution of a TrainingProject's pipeline, owned by the
+        coordinator. Sequences stages across components (data prep -> tokenizer
+        -> training -> eval -> serve), each delegating to a peer component and
+        tracking the underlying resource id. One active pipeline per project.
+      required: [pipelineRunId, projectId, status, createdAt, stages]
+      properties:
+        pipelineRunId: { type: string, format: uuid }
+        projectId:     { type: string, format: uuid }
+        status:        { $ref: '#/components/schemas/PipelineStatus' }
+        createdAt:     { type: string, format: date-time }
+        startedAt:     { type: string, format: date-time }
+        finishedAt:    { type: string, format: date-time }
+        currentStage:  { type: string, description: Kind of the stage currently executing. }
+        stages:
+          type: array
+          items: { $ref: '#/components/schemas/PipelineStage' }
+        lastError:     { type: string }
+
+    PipelineStage:
+      type: object
+      description: One stage of a PipelineRun, delegated to a peer component.
+      required: [kind, status]
+      properties:
+        kind:       { type: string, enum: [data_prep, tokenizer, training, eval, serve] }
+        status:     { $ref: '#/components/schemas/PipelineStatus' }
+        component:  { $ref: '#/components/schemas/ComponentKind' }
+        resourceId: { type: string, description: Id of the underlying resource (e.g. a trainer runId). }
+        startedAt:  { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+        detail:     { type: string }
+
+    PipelineStatus:
+      type: string
+      enum: [pending, running, paused, completed, failed, cancelled, skipped]
+      description: Per-stage and overall status. skipped = stage not requested for this project.
+
+    TrainingRunRequest:
+      type: object
+      description: |
+        The resolved training spec the coordinator (or UI, for ad-hoc runs)
+        hands to the trainer's POST /v1/trainer/runs. Carries everything the
+        trainer needs to execute without owning project config; projectId is
+        for back-reference / single-active-run enforcement only.
+      required: [architecture, recipe, hyperparameters, hardware, tokenizer, datasets]
+      properties:
+        projectId:       { type: string, format: uuid }
+        architecture:    { $ref: '#/components/schemas/ArchitectureConfig' }
+        recipe:          { $ref: '#/components/schemas/TrainingRecipe' }
+        hyperparameters: { $ref: '#/components/schemas/Hyperparameters' }
+        hardware:        { $ref: '#/components/schemas/HardwareTopology' }
+        tokenizer:       { $ref: '#/components/schemas/TokenizerRef' }
+        datasets:
+          type: array
+          items: { $ref: '#/components/schemas/DatasetRef' }
 
   responses:
 

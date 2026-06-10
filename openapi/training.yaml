@@ -1,0 +1,570 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — trainer
+  version: 0.3.0-draft
+  summary: Executes local LLM training runs and owns checkpoints.
+  description: |
+    The trainer is the execution engine of the local-LLM-training platform.
+    It accepts a fully-resolved `TrainingRunRequest` (architecture + recipe +
+    hyperparameters + hardware + resolved dataset/tokenizer references), runs
+    the training job, and owns the resulting `TrainingRun` + `Checkpoint`
+    resources. It does NOT own the `TrainingProject` aggregate — that lives in
+    the `coordinator`, which is the usual caller of this API. Direct callers
+    (UI/CLI) may also start ad-hoc runs by posting a `TrainingRunRequest`.
+
+    Like every Eugene Plexus component, the trainer is an always-up HTTP
+    service supervised by the watchdog. **A training run is a long-lived
+    resource the trainer manages, executed in a child process / background job
+    inside this service — it is NOT the supervised process** (a finite run
+    cannot be the thing the watchdog respawns-on-exit). Runs launch
+    torchrun/DDP internally using the configured hardware topology.
+
+    Per the platform's run policy, **one active run per `projectId`** is
+    enforced; starting a second for the same project returns `409`.
+
+    ## Safe mode
+    Honors `EUGENE_PLEXUS_TRN_SAFE_MODE=1`: skip loading the persisted config,
+    boot from built-in defaults, keep `/v1/config` reachable, and refuse to
+    start runs (`503`) until the flag is cleared. Forced by the watchdog's
+    auto-safe-mode after repeated crashes (so a config that breaks startup
+    never soft-bricks the component).
+
+    ## Auth note (v0.2+)
+    Operator bearer session tokens gate UI control; the coordinator presents a
+    service token for run control. `/healthz` is unauthenticated.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8087'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: runs
+    description: |
+      Start/monitor/control training runs. A run is started from a resolved
+      `TrainingRunRequest`; live progress streams over SSE.
+  - name: checkpoints
+    description: |
+      Saved model states produced by runs. Consumed by the `eval` and
+      `inference` components.
+  - name: hardware
+    description: |
+      GPU discovery + architecture param/VRAM estimation for pre-run planning.
+  - name: config
+    description: |
+      Remote-editable configuration. Every Eugene Plexus component implements
+      the same config trio so a single UI can manage all components without
+      per-component code.
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  /v1/trainer/runs:
+    get:
+      tags: [runs]
+      operationId: listRuns
+      summary: List training runs (newest first).
+      parameters:
+        - in: query
+          name: projectId
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optionally restrict to runs for a single project.
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: 'components/common.yaml#/components/schemas/RunStatus'
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/TrainingRun'
+    post:
+      tags: [runs]
+      operationId: startRun
+      summary: Start a training run from a resolved run request.
+      description: |
+        Validates hardware + dataset/tokenizer fingerprints, enqueues the run,
+        and returns immediately with a `TrainingRun` in `queued`/`preparing`.
+        The run executes in a child process inside this service. One active run
+        per `projectId`: starting a second returns `409`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/TrainingRunRequest'
+      responses:
+        '201':
+          description: Run started.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/TrainingRun'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: A run is already active for this project (single-active-run policy).
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '503':
+          description: Trainer in safe mode, or no usable hardware.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/trainer/runs/{runId}:
+    parameters:
+      - in: path
+        name: runId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [runs]
+      operationId: getRun
+      summary: Current run status + latest metrics snapshot (poll-friendly).
+      responses:
+        '200':
+          description: The run.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/TrainingRun'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/trainer/runs/{runId}/pause:
+    parameters:
+      - in: path
+        name: runId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [runs]
+      operationId: pauseRun
+      summary: Pause a running run at the next safe checkpoint boundary.
+      responses:
+        '202':
+          description: Pause scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/TrainingRun'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Run is not in a pausable state.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/trainer/runs/{runId}/resume:
+    parameters:
+      - in: path
+        name: runId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [runs]
+      operationId: resumeRun
+      summary: Resume a paused run from its latest checkpoint.
+      responses:
+        '202':
+          description: Resume scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/TrainingRun'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Run is not paused.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/trainer/runs/{runId}/cancel:
+    parameters:
+      - in: path
+        name: runId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [runs]
+      operationId: cancelRun
+      summary: Stop a run (terminates the child job); keeps checkpoints already written.
+      responses:
+        '202':
+          description: Cancellation scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/TrainingRun'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Run already terminal.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/trainer/runs/{runId}/events:
+    parameters:
+      - in: path
+        name: runId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [runs]
+      operationId: streamRunEvents
+      summary: Live run progress as Server-Sent Events.
+      description: |
+        SSE stream (mirrors orchestrator `/v1/chat/stream`). Named events:
+        `status` (RunStatus change), `metrics` (TrainingMetricPoint),
+        `checkpoint` (Checkpoint saved), `log` (text line), `done`, `error`.
+      responses:
+        '200':
+          description: Event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/trainer/runs/{runId}/metrics:
+    parameters:
+      - in: path
+        name: runId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [runs]
+      operationId: getRunMetrics
+      summary: Historical metric points for curve rendering (poll fallback for SSE).
+      parameters:
+        - in: query
+          name: sinceStep
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 1000
+      responses:
+        '200':
+          description: Metric points.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [points]
+                properties:
+                  points:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/TrainingMetricPoint'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/trainer/runs/{runId}/checkpoints:
+    parameters:
+      - in: path
+        name: runId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [checkpoints]
+      operationId: listRunCheckpoints
+      summary: List checkpoints produced by a run.
+      responses:
+        '200':
+          description: Checkpoints for this run.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [checkpoints]
+                properties:
+                  checkpoints:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/Checkpoint'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/trainer/checkpoints/{checkpointId}:
+    parameters:
+      - in: path
+        name: checkpointId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [checkpoints]
+      operationId: getCheckpoint
+      summary: Read one checkpoint's metadata.
+      responses:
+        '200':
+          description: The checkpoint.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Checkpoint'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [checkpoints]
+      operationId: deleteCheckpoint
+      summary: Delete a checkpoint from disk.
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/trainer/hardware:
+    get:
+      tags: [hardware]
+      operationId: getHardware
+      summary: Discovered GPUs + recommended selection.
+      responses:
+        '200':
+          description: Hardware inventory.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      required: [index, name]
+                      properties:
+                        index:
+                          type: integer
+                        name:
+                          type: string
+                        memoryTotalGb:
+                          type: number
+                          format: float
+                        memoryFreeGb:
+                          type: number
+                          format: float
+                        utilization:
+                          type: number
+                          format: float
+                          description: Current GPU utilization in [0, 1].
+                        temperatureC:
+                          type: number
+                          format: float
+                        recommended:
+                          type: boolean
+                          description: True if this device passes the configured selection thresholds.
+
+  /v1/trainer/estimate:
+    post:
+      tags: [hardware]
+      operationId: estimateArchitecture
+      summary: Validate an architecture and estimate param count / VRAM / Chinchilla tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ArchitectureConfig'
+      responses:
+        '200':
+          description: Estimate.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [valid]
+                properties:
+                  valid:
+                    type: boolean
+                  validationErrors:
+                    type: array
+                    items:
+                      type: string
+                  paramCount:
+                    type: integer
+                  estimatedVramGb:
+                    type: number
+                    format: float
+                    description: Rough working-set estimate (weights + optimizer state + activations).
+                  chinchillaTokens:
+                    type: integer
+                    description: Chinchilla-optimal training tokens (tokensPerParam × paramCount).
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the trainer's current effective configuration.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the trainer's configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome (may include per-field rejections).
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /v1/config/test:
+    post:
+      tags: [config]
+      operationId: testConfig
+      summary: Verify GPU visibility and that the output/checkpoint dirs are writable.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigTestRequest'
+      responses:
+        '200':
+          description: Test result. Returned for both success and failure cases.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
+
+  /v1/admin/restart:
+    post:
+      tags: [config]
+      operationId: restart
+      summary: Schedule a process restart so requiresRestart config fields take effect.
+      responses:
+        '202':
+          description: Restart scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      security: []
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Engine uninitialized (no GPU / bad config) or safe mode.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        Bearer session token issued by the watchdog. Component-to-component
+        calls use service tokens threaded via env var at spawn time.

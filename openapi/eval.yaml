@@ -1,0 +1,356 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — eval
+  version: 0.3.0-draft
+  summary: Eval suites, perplexity/val-loss, sample review, collapse detection, checkpoint comparison.
+  description: |
+    The eval component evaluates checkpoints produced by the `trainer`: it
+    runs eval prompt suites, computes perplexity / validation loss, logs
+    generated samples for review, detects mode collapse (sampled-token
+    entropy), and compares checkpoints for regression. It references
+    checkpoints (via `common.yaml#/components/schemas/Checkpoint`) and
+    validation datasets (via `DatasetRef`).
+
+    This is a **v0.3-draft stub**: headline operations only, reserving the
+    contract surface. Seeded by the CLLM eval logic currently embedded in the
+    training loop (estimate_loss, run_checkpoint_prompts, SampledTokenTracker)
+    plus the validation-set builder — to be extracted into a standalone
+    EvalRunner. Consciousness-flavored default eval prompts are replaced with
+    neutral ones.
+
+    ## Safe mode
+    Honors `EUGENE_PLEXUS_EVAL_SAFE_MODE=1`: boot from defaults, keep
+    `/v1/config` reachable, refuse eval runs (`503`) until cleared.
+
+    ## Auth note (v0.2+)
+    Operator/service bearer tokens; `/healthz` unauthenticated.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8089'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: suites
+    description: CRUD over eval prompt suites.
+  - name: eval-runs
+    description: Run a suite against a checkpoint; compare checkpoints.
+  - name: config
+    description: Standard config trio (every component implements it).
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  /v1/eval/suites:
+    get:
+      tags: [suites]
+      operationId: listEvalSuites
+      summary: List eval suites.
+      responses:
+        '200':
+          description: Eval suites.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suites]
+                properties:
+                  suites:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EvalSuite'
+    post:
+      tags: [suites]
+      operationId: createEvalSuite
+      summary: Create an eval suite.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EvalSuite'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalSuite'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/eval/suites/{evalSuiteId}:
+    parameters:
+      - in: path
+        name: evalSuiteId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [suites]
+      operationId: getEvalSuite
+      summary: Read one eval suite.
+      responses:
+        '200':
+          description: The eval suite.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalSuite'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [suites]
+      operationId: deleteEvalSuite
+      summary: Delete an eval suite.
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/eval/runs:
+    post:
+      tags: [eval-runs]
+      operationId: startEvalRun
+      summary: Run an eval suite against a checkpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [evalSuiteId, checkpointId]
+              properties:
+                evalSuiteId:
+                  type: string
+                  format: uuid
+                checkpointId:
+                  type: string
+                  format: uuid
+      responses:
+        '202':
+          description: Eval run started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          description: Safe mode.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/eval/runs/{evalRunId}:
+    parameters:
+      - in: path
+        name: evalRunId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [eval-runs]
+      operationId: getEvalResult
+      summary: Read an eval run's result.
+      responses:
+        '200':
+          description: The eval result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvalResult'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/eval/compare:
+    post:
+      tags: [eval-runs]
+      operationId: compareCheckpoints
+      summary: Compare two checkpoints on a suite (regression check).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [evalSuiteId, baselineCheckpointId, candidateCheckpointId]
+              properties:
+                evalSuiteId:
+                  type: string
+                  format: uuid
+                baselineCheckpointId:
+                  type: string
+                  format: uuid
+                candidateCheckpointId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Comparison result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  baseline:
+                    $ref: '#/components/schemas/EvalResult'
+                  candidate:
+                    $ref: '#/components/schemas/EvalResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the eval component's current effective configuration.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the eval component's configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      security: []
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Safe mode or eval engine uninitialized.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Bearer session/service token issued by the watchdog.
+
+  schemas:
+
+    EvalSuite:
+      type: object
+      description: |
+        v0.3-draft. A named set of eval prompts + metrics to run against a
+        checkpoint. Referenced from `common.yaml#/components/schemas/EvalSuiteRef`.
+      required: [evalSuiteId, name]
+      properties:
+        evalSuiteId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        prompts:
+          type: array
+          items:
+            type: string
+        validationDatasetId:
+          type: string
+          format: uuid
+          description: Optional dataset for perplexity / val-loss evaluation.
+        metrics:
+          type: array
+          items:
+            type: string
+            enum: [val_loss, perplexity, token_entropy, sample_review]
+
+    EvalResult:
+      type: object
+      description: v0.3-draft. Outcome of running a suite against one checkpoint.
+      required: [evalRunId, evalSuiteId, checkpointId, status]
+      properties:
+        evalRunId:
+          type: string
+          format: uuid
+        evalSuiteId:
+          type: string
+          format: uuid
+        checkpointId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [running, completed, failed]
+        valLoss:
+          type: number
+          format: float
+        perplexity:
+          type: number
+          format: float
+        tokenEntropy:
+          type: number
+          format: float
+        samples:
+          type: array
+          items:
+            type: object
+            properties:
+              prompt:
+                type: string
+              response:
+                type: string

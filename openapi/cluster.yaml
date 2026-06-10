@@ -1,0 +1,156 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — cluster (deferred)
+  version: 0.3.0-draft
+  summary: Multi-host training agents — placeholder contract, not implemented in the first milestone.
+  description: |
+    The cluster component is **deferred**. It is drafted now only to reserve
+    the contract surface so multi-host training does not force a breaking
+    change later (per the project's "draft contracts upfront" rule). It is NOT
+    part of the first platform milestone, which targets single-host
+    (single- and multi-GPU) training.
+
+    Intended role (post single-host): an `agent` runs on each remote training
+    host, reports its hardware inventory, and launches/supervises the
+    distributed workers for a run on behalf of the `trainer`/`coordinator`.
+    Seeded by the CLLM `distributed_config.py` (torchrun launch-script + DDP
+    env generation). Only the bare lifecycle surface is sketched here; the
+    real contract is designed when single-host multi-GPU is proven.
+
+    ## Safe mode
+    Honors `EUGENE_PLEXUS_CLU_SAFE_MODE=1`.
+
+    ## Auth note (v0.2+)
+    Service bearer tokens; `/healthz` unauthenticated.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment (one agent per remote host).
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8091'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: agents
+    description: Hardware inventory + worker launch on a remote host (deferred).
+  - name: config
+    description: Standard config trio (every component implements it).
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  /v1/cluster/agents:
+    get:
+      tags: [agents]
+      operationId: listAgents
+      summary: List known remote training agents and their reported hardware (deferred).
+      responses:
+        '200':
+          description: Agents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agents]
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      type: object
+                      required: [agentId, host, status]
+                      properties:
+                        agentId:
+                          type: string
+                          format: uuid
+                        host:
+                          type: string
+                        status:
+                          type: string
+                          enum: [online, offline, busy]
+                        gpuCount:
+                          type: integer
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the cluster component's current effective configuration.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the cluster component's configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      security: []
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Safe mode.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Bearer service token issued by the watchdog.

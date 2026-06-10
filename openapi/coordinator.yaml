@@ -1,0 +1,446 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — coordinator
+  version: 0.3.0-draft
+  summary: Owns the TrainingProject aggregate and sequences pipeline runs across components.
+  description: |
+    The coordinator is the control plane for the local-LLM-training platform.
+    It owns the **TrainingProject** — the user-facing aggregate describing a
+    model you are building (template/architecture, tokenizer + dataset
+    selection, recipe, hyperparameters, hardware, eval suites, export
+    settings) — and it executes **pipeline runs** that sequence the work across
+    the other platform components: data prep + tokenizer (`data`), training
+    (`trainer`), evaluation (`eval`), and serving (`inference`).
+
+    Like every Eugene Plexus component, the coordinator is an always-up HTTP
+    service supervised by the watchdog. A *pipeline run* is a long-lived
+    resource the coordinator owns and drives — it is NOT the supervised
+    process. The coordinator delegates each stage to a peer component (whose
+    URL it resolves from the watchdog topology) and tracks the underlying
+    resource id (e.g. a `trainer` runId) on the corresponding
+    `PipelineStage`.
+
+    Per the platform's run policy, **one pipeline run may be active per
+    project at a time**; starting a second returns `409`.
+
+    ## Safe mode
+    Honors `EUGENE_PLEXUS_CRD_SAFE_MODE=1`: skip loading the persisted config,
+    boot from built-in defaults, keep `/v1/config` reachable, and refuse to
+    start pipeline runs (`503`) until the flag is cleared. Project CRUD over
+    already-stored projects continues to work read-only. Forced by the
+    watchdog's auto-safe-mode after repeated crashes.
+
+    ## Auth note (v0.2+)
+    Operator bearer session tokens (issued by the watchdog) gate project +
+    pipeline control; component-internal calls (coordinator → trainer/data/…)
+    present service tokens threaded via env var at spawn time. `/healthz` is
+    unauthenticated.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8086'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: projects
+    description: |
+      CRUD over TrainingProjects — the persisted "model you are building".
+      The coordinator owns these; the trainer/data/eval/inference components
+      own the resources a project references.
+  - name: pipeline
+    description: |
+      Start and monitor pipeline runs that sequence data prep → tokenizer →
+      training → eval → serve across the platform components. Live progress
+      via SSE.
+  - name: config
+    description: |
+      Remote-editable configuration. Every Eugene Plexus component implements
+      the same config trio (`GET /v1/config`, `GET /v1/config/schema`,
+      `PATCH /v1/config`) so a single UI can manage all components without
+      per-component code.
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  /v1/coordinator/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List all training projects.
+      responses:
+        '200':
+          description: Projects.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [projects]
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/TrainingProject'
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create a training project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/TrainingProject'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/TrainingProject'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/coordinator/projects/{projectId}:
+    parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Read one training project.
+      responses:
+        '200':
+          description: The project.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/TrainingProject'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      summary: Partial update of a project's config.
+      description: |
+        Rejected with `409` while a pipeline run is active for this project —
+        the config is frozen until the run finishes or is cancelled.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/TrainingProject'
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/TrainingProject'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: A pipeline run is active; project config is frozen until it finishes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+    delete:
+      tags: [projects]
+      operationId: deleteProject
+      summary: Delete a training project.
+      description: |
+        Refused with `409` if the project has an active pipeline run. Stored
+        checkpoints/artifacts produced by past runs are owned by the trainer
+        and are not deleted by this call.
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Project has an active pipeline run; cancel it first.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/coordinator/projects/{projectId}/pipeline:
+    parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [pipeline]
+      operationId: startPipeline
+      summary: Start a pipeline run for a project.
+      description: |
+        Resolves the project's dataset/tokenizer/eval references against the
+        peer components, then sequences the requested stages (data prep →
+        tokenizer → training → eval → serve). Returns immediately with a
+        `PipelineRun` in `pending`/`running`. One active pipeline per project:
+        a second start returns `409`.
+      responses:
+        '201':
+          description: Pipeline run started.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/PipelineRun'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: A pipeline run is already active for this project.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '503':
+          description: Coordinator in safe mode, or a required peer component is unreachable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/coordinator/projects/{projectId}/pipeline-runs:
+    parameters:
+      - in: path
+        name: projectId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [pipeline]
+      operationId: listProjectPipelineRuns
+      summary: List pipeline runs for a project (newest first).
+      responses:
+        '200':
+          description: Pipeline runs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pipelineRuns]
+                properties:
+                  pipelineRuns:
+                    type: array
+                    items:
+                      $ref: 'components/common.yaml#/components/schemas/PipelineRun'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/coordinator/pipeline-runs/{pipelineRunId}:
+    parameters:
+      - in: path
+        name: pipelineRunId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [pipeline]
+      operationId: getPipelineRun
+      summary: Current pipeline-run status + per-stage progress (poll-friendly).
+      responses:
+        '200':
+          description: The pipeline run.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/PipelineRun'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/coordinator/pipeline-runs/{pipelineRunId}/cancel:
+    parameters:
+      - in: path
+        name: pipelineRunId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [pipeline]
+      operationId: cancelPipelineRun
+      summary: Cancel a pipeline run.
+      description: |
+        Cancels the currently-executing stage on its owning component (e.g.
+        cancels the `trainer` run) and stops advancing the pipeline. Artifacts
+        already produced by completed stages are retained.
+      responses:
+        '202':
+          description: Cancellation scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/PipelineRun'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Pipeline run is already terminal.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/coordinator/pipeline-runs/{pipelineRunId}/events:
+    parameters:
+      - in: path
+        name: pipelineRunId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [pipeline]
+      operationId: streamPipelineEvents
+      summary: Live pipeline progress as Server-Sent Events.
+      description: |
+        SSE stream (mirrors orchestrator `/v1/chat/stream`). Named events:
+        `stage_started`, `stage_status`, `metrics` (forwarded from the active
+        training/eval stage), `stage_completed`, `done`, `error`.
+      responses:
+        '200':
+          description: Event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the coordinator's current effective configuration.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the coordinator's configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome (may include per-field rejections).
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /v1/config/test:
+    post:
+      tags: [config]
+      operationId: testConfig
+      summary: Verify the configured peer components are reachable.
+      description: |
+        The coordinator's test probes the `/healthz` of each peer it routes to
+        (trainer/data/eval/inference) and reports which are reachable.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigTestRequest'
+      responses:
+        '200':
+          description: Test result. Returned for both success and failure cases.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
+
+  /v1/admin/restart:
+    post:
+      tags: [config]
+      operationId: restart
+      summary: Schedule a process restart so requiresRestart config fields take effect.
+      responses:
+        '202':
+          description: Restart scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      security: []
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Safe mode, or no configured peer component reachable.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        Bearer session token issued by the watchdog. Component-to-component
+        calls use service tokens threaded via env var at spawn time.
