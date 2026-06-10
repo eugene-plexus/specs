@@ -1,0 +1,312 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — inference
+  version: 0.3.0-draft
+  summary: Local model serving with OpenAI-compatible chat/completions endpoints.
+  description: |
+    The inference component serves trained checkpoints locally behind an
+    **OpenAI-compatible** API so existing tooling can talk to a model the
+    platform produced without changes. It loads a checkpoint (and optional
+    LoRA adapter) into an endpoint, then answers `/v1/chat/completions` and
+    `/v1/completions` (streaming + non-streaming). It references checkpoints
+    via `common.yaml#/components/schemas/Checkpoint`.
+
+    This is a **v0.3-draft stub**: the OpenAI-compatible surface + endpoint
+    management headline operations are reserved; sampling-param and message
+    schemas will be filled in from the CLLM server (openai_api_server,
+    inference_utils, generation_params, model_registry, chat_formatter) with
+    the `--consciousness` skin removed.
+
+    ## Safe mode
+    Honors `EUGENE_PLEXUS_INF_SAFE_MODE=1`: boot from defaults, keep
+    `/v1/config` reachable, refuse to load/serve models (`503`) until cleared.
+
+    ## Auth note (v0.2+)
+    Operator/service bearer tokens for management; the OpenAI-compatible
+    inference routes may additionally accept an API key per deployment policy.
+    `/healthz` unauthenticated.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8090'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: openai
+    description: OpenAI-compatible inference surface (chat/completions, models).
+  - name: endpoints
+    description: Manage which checkpoint/adapter each inference endpoint serves.
+  - name: config
+    description: Standard config trio (every component implements it).
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  /v1/chat/completions:
+    post:
+      tags: [openai]
+      operationId: createChatCompletion
+      summary: OpenAI-compatible chat completion (streaming + non-streaming).
+      description: |
+        v0.3-draft. Request/response bodies mirror the OpenAI Chat Completions
+        API; full schema to be filled in. When `stream: true`, responds with
+        `text/event-stream` SSE chunks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [model, messages]
+              properties:
+                model:
+                  type: string
+                  description: Endpoint / served-checkpoint id.
+                messages:
+                  type: array
+                  items:
+                    $ref: 'components/common.yaml#/components/schemas/Message'
+                stream:
+                  type: boolean
+                  default: false
+                temperature:
+                  type: number
+                  format: float
+                top_p:
+                  type: number
+                  format: float
+                max_tokens:
+                  type: integer
+      responses:
+        '200':
+          description: Completion (JSON) or SSE stream when stream=true.
+          content:
+            application/json:
+              schema:
+                type: object
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          description: No model loaded / safe mode.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/models:
+    get:
+      tags: [openai]
+      operationId: listModels
+      summary: OpenAI-compatible model list (one entry per loaded endpoint).
+      responses:
+        '200':
+          description: Models.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  object:
+                    type: string
+                    default: list
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        object:
+                          type: string
+                          default: model
+
+  /v1/inference/endpoints:
+    get:
+      tags: [endpoints]
+      operationId: listEndpoints
+      summary: List inference endpoints.
+      responses:
+        '200':
+          description: Endpoints.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [endpoints]
+                properties:
+                  endpoints:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InferenceEndpoint'
+    post:
+      tags: [endpoints]
+      operationId: createEndpoint
+      summary: Create an inference endpoint backed by a checkpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InferenceEndpoint'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceEndpoint'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/inference/endpoints/{endpointId}/load:
+    parameters:
+      - in: path
+        name: endpointId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [endpoints]
+      operationId: loadEndpoint
+      summary: Load (or hot-swap) the checkpoint/adapter an endpoint serves.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [checkpointId]
+              properties:
+                checkpointId:
+                  type: string
+                  format: uuid
+                adapterCheckpointId:
+                  type: string
+                  format: uuid
+                  description: Optional LoRA/QLoRA adapter to load on top of the base checkpoint.
+      responses:
+        '202':
+          description: Load started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InferenceEndpoint'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the inference component's current effective configuration.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the inference component's configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      security: []
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Safe mode or no model loaded.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Bearer session/service token issued by the watchdog.
+
+  schemas:
+
+    InferenceEndpoint:
+      type: object
+      description: |
+        v0.3-draft. One served model: a checkpoint (+ optional adapter) exposed
+        under an OpenAI-compatible model id. Referenced from
+        `common.yaml#/components/schemas/ExportSettings.target`.
+      required: [endpointId, name]
+      properties:
+        endpointId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: OpenAI-compatible model id clients pass as `model`.
+        checkpointId:
+          type: string
+          format: uuid
+        adapterCheckpointId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [unloaded, loading, ready, error]

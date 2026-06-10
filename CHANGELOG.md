@@ -4,6 +4,20 @@ Cross-component release notes. Each repo has its own commit history; this file c
 
 ---
 
+## Unreleased — local-LLM-training platform (v0.3 direction)
+
+Direction change: Eugene Plexus expands into a full-stack, UI-driven platform for local LLM training, evaluation, and inference. This first spec PR introduces the `TrainingProject` abstraction and the contracts for six new components. Schemas only — no implementation yet. Contracts are drafted upfront (not incrementally) so they don't conflict at integration time; implementation lands later, starting with `data` + `trainer`.
+
+### specs
+
+- **`ComponentKind` extended** with `coordinator`, `trainer`, `data`, `eval`, `inference`, `cluster`.
+- **New shared schemas in `common.yaml`** — the `TrainingProject` family (`TrainingProject`, `TrainingGoal`, `ModelTemplate`, `ArchitectureConfig`, `TrainingRecipe`, `Hyperparameters`, `HardwareTopology`, `TrainingRun`, `RunStatus`, `TrainingMetricPoint`, `Checkpoint`, `CheckpointRef`, `DatasetRef`, `TokenizerRef`, `EvalSuiteRef`, `ExportSettings`) plus the coordinator pipeline + hand-off schemas (`PipelineRun`, `PipelineStage`, `PipelineStatus`, `TrainingRunRequest`).
+- **New spec files** — full `coordinator.yaml` (owns the `TrainingProject` aggregate and sequences pipeline runs across components) and `training.yaml` (executes training runs, owns checkpoints); thin `data.yaml` / `eval.yaml` / `inference.yaml` stubs; deferred `cluster.yaml` placeholder (multi-host, post single-host milestone).
+- **Component ports** — coordinator 8086, trainer 8087, data 8088, eval 8089, inference 8090, cluster 8091.
+- **CI** — the six new top-level specs are added to the Redocly lint set.
+
+---
+
 ## v0.2.0 — 2026-05-25 (shipping; pending tag)
 
 The "Eugene gains agency" release. v0.1 was a working bicameral loop with a thin shared system prompt and no persistence. v0.2 turns Eugene into a multi-component organism: a stored identity that survives restarts, person-keyed memory, drives-and-NT modulation of the deliberation loop, and a first external sense organ (the Discord-aware `connector`). Late in the cycle, three architectural fixes to the user-facing reply path raised the practical persona ceiling further than any of the v0.2 features could have on their own.

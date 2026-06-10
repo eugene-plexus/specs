@@ -71,7 +71,13 @@ jobs:
           npx --yes @redocly/cli@2.30.4 lint \
             openapi/orchestrator.yaml \
             openapi/hemisphere-driver.yaml \
-            openapi/memory.yaml
+            openapi/memory.yaml \
+            openapi/coordinator.yaml \
+            openapi/training.yaml \
+            openapi/data.yaml \
+            openapi/eval.yaml \
+            openapi/inference.yaml \
+            openapi/cluster.yaml
 
   dco:
     name: DCO sign-off check

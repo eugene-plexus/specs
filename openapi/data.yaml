@@ -1,0 +1,388 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — data
+  version: 0.3.0-draft
+  summary: Dataset import/cleaning/splitting, tokenizer training, and pretokenization.
+  description: |
+    The data component owns dataset acquisition and preparation for the
+    local-LLM-training platform: import (local path / web scrape / HuggingFace
+    Hub), cleaning + dedupe, train/val/test splitting, **tokenizer training**,
+    and **pretokenization** into fixed-size token blocks (memory-mapped Arrow
+    shards). It serves dataset manifests and tokenizers to the `trainer` and
+    `eval` components, which reference them by id + vocab fingerprint.
+
+    This is a **v0.3-draft stub**: the contract surface is reserved so it does
+    not conflict at integration time (per the project's "draft contracts
+    upfront" rule), but only the headline operations are specified. Seeded by
+    the CLLM data stack (data_server, ingress daemon, pretokenizer, BPE
+    tokenizer trainer, dataset/sampler classes).
+
+    ## Safe mode
+    Honors `EUGENE_PLEXUS_DAT_SAFE_MODE=1`: boot from defaults, keep
+    `/v1/config` reachable, refuse mutating operations (`503`) until cleared.
+
+    ## Auth note (v0.2+)
+    Operator/service bearer tokens; `/healthz` unauthenticated.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+
+servers:
+  - url: http://{host}:{port}
+    description: Default LAN deployment.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8088'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: datasets
+    description: Import, prepare, split, pretokenize, and serve datasets.
+  - name: tokenizers
+    description: Train and serve BPE tokenizers; expose vocab fingerprints.
+  - name: config
+    description: Standard config trio (every component implements it).
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  /v1/data/datasets:
+    get:
+      tags: [datasets]
+      operationId: listDatasets
+      summary: List dataset manifests.
+      responses:
+        '200':
+          description: Datasets.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [datasets]
+                properties:
+                  datasets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DatasetManifest'
+    post:
+      tags: [datasets]
+      operationId: createDataset
+      summary: Register a new (empty) dataset to import into.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DatasetManifest'
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetManifest'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/data/datasets/{datasetId}:
+    parameters:
+      - in: path
+        name: datasetId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [datasets]
+      operationId: getDataset
+      summary: Read one dataset manifest.
+      responses:
+        '200':
+          description: The dataset manifest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetManifest'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [datasets]
+      operationId: deleteDataset
+      summary: Delete a dataset and its pretokenized shards.
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/data/datasets/{datasetId}/import:
+    parameters:
+      - in: path
+        name: datasetId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [datasets]
+      operationId: importDataset
+      summary: Import raw data into a dataset (local path, URL/scrape, or HuggingFace Hub).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportRequest'
+      responses:
+        '202':
+          description: Import started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetManifest'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          description: Safe mode.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/data/datasets/{datasetId}/pretokenize:
+    parameters:
+      - in: path
+        name: datasetId
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [datasets]
+      operationId: pretokenizeDataset
+      summary: Pretokenize a dataset into fixed-size blocks with a given tokenizer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tokenizerId, blockSize]
+              properties:
+                tokenizerId:
+                  type: string
+                  format: uuid
+                blockSize:
+                  type: integer
+                  minimum: 1
+      responses:
+        '202':
+          description: Pretokenization started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DatasetManifest'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/data/tokenizers:
+    get:
+      tags: [tokenizers]
+      operationId: listTokenizers
+      summary: List tokenizers.
+      responses:
+        '200':
+          description: Tokenizers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tokenizers]
+                properties:
+                  tokenizers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TokenizerSpec'
+
+  /v1/data/tokenizers/train:
+    post:
+      tags: [tokenizers]
+      operationId: trainTokenizer
+      summary: Train a new BPE tokenizer over one or more datasets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, vocabSize]
+              properties:
+                name:
+                  type: string
+                vocabSize:
+                  type: integer
+                  minimum: 1
+                minFrequency:
+                  type: integer
+                  minimum: 1
+                sourceDatasetIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '202':
+          description: Tokenizer training started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenizerSpec'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the data component's current effective configuration.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the data component's configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness / readiness probe.
+      security: []
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Safe mode or storage unreachable.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Bearer session/service token issued by the watchdog.
+
+  schemas:
+
+    DatasetManifest:
+      type: object
+      description: |
+        v0.3-draft. Describes a prepared dataset: its source, pretokenization
+        parameters, and the vocab fingerprint that must match the tokenizer +
+        any consumer. Referenced from `common.yaml#/components/schemas/DatasetRef`.
+      required: [datasetId, name]
+      properties:
+        datasetId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        sourceKind:
+          type: string
+          enum: [local_path, url, huggingface]
+        blockSize:
+          type: integer
+        vocabFingerprint:
+          type: string
+          description: SHA256 of the tokenizer used to pretokenize; must match consumers.
+        shardCount:
+          type: integer
+        tokenCount:
+          type: integer
+        status:
+          type: string
+          enum: [empty, importing, pretokenizing, ready, error]
+
+    TokenizerSpec:
+      type: object
+      description: v0.3-draft. A trained BPE tokenizer + its vocab fingerprint.
+      required: [tokenizerId, name]
+      properties:
+        tokenizerId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        vocabSize:
+          type: integer
+        vocabFingerprint:
+          type: string
+        status:
+          type: string
+          enum: [training, ready, error]
+
+    ImportRequest:
+      type: object
+      description: v0.3-draft. Where to import raw data from.
+      required: [sourceKind, location]
+      properties:
+        sourceKind:
+          type: string
+          enum: [local_path, url, huggingface]
+        location:
+          type: string
+          description: Filesystem path, URL, or HuggingFace dataset id depending on sourceKind.
+        dataColumn:
+          type: string
+          description: For structured sources, the text column to extract.
