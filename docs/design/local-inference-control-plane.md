@@ -102,10 +102,10 @@ component had one.
 
 | Component | Repo | Port | Job |
 |---|---|---|---|
-| supervisor | `watchdog` (kept) | 8083 | Spawn/monitor engines by arbitrary argv; owns engine adapters (argv construction, readiness probe, config schema); topology; log capture; safe mode; auth root; serves the UI |
+| supervisor | `watchdog` (kept) | 8079 | Spawn/monitor engines by arbitrary argv; owns engine adapters (argv construction, readiness probe, config schema); topology; log capture; safe mode; auth root; serves the UI |
 | gateway | `orchestrator` (renamed, gutted) | 8080 | One OpenAI-compatible front door. Model → driver resolution, load balancing, priority-list failover, idle-unload triggers. **No backend knowledge.** |
 | inference-driver | `hemisphere-driver` (renamed) | 8081 | **One instance per backend.** Uniform surface over one heterogeneous engine; owns provider choice, model id, secrets, params, health |
-| library | new repo | 8082 | Catalogue search + model metadata, resumable downloads with progress, local file scan, quant table, hardware fit scoring |
+| library | new repo | 8082 | The operator's own model directories: recursive scan (GGUF + safetensors), metadata, per-model launch profiles; catalogue search, resumable downloads, quant table, hardware fit scoring |
 | ui | `ui` (kept) | — | Config editor, runtime dashboard, library browser, chat playground, logs |
 | specs | `specs` (kept) | — | Contracts; consumers codegen from a pinned SHA as today |
 
@@ -221,18 +221,21 @@ Everything not listed here already exists and mostly survives untouched.
 
 ## 5. Milestones
 
-- **M0 — one engine, end to end.** Supervise a single `llama-server` from
-  config; a driver fronts it; `GET /v1/runtimes` reports it healthy; the
-  gateway routes a chat completion through the driver to it; the UI shows it.
+- **M0 — one engine, end to end**
+  ([acceptance](../acceptance/m0-four-process-run.md))**.** Supervise a single
+  `llama-server` from config; a driver fronts it; `GET /v1/runtimes` reports
+  it healthy; the gateway routes a chat completion through the driver to it;
+  the UI shows it.
   Proves the whole chain — argv + lifecycle adapter + driver + routing — with
   exactly one backend. Load balancing arrives the moment there are two, which
   is why the layering has to be right *here* and not retrofitted later.
-- **M1 — engine acquisition.** Detect platform + accelerator, fetch and verify
-  the matching prebuilt llama.cpp release, surface the version, offer updates.
-  Closes the one manual step M0 leaves behind, and it's the increment that
-  makes first-run one-click.
-- **M2 — model library, both formats.** Point at directories, scan GGUF *and*
-  HF-safetensors models, edit per-model profiles, launch from the library.
+- **M1 — engine acquisition** ([design](m1-engine-acquisition.md))**.** Detect
+  platform + accelerator, fetch and verify the matching prebuilt llama.cpp
+  release, surface the version, offer updates. Closes the one manual step M0
+  leaves behind, and it's the increment that makes first-run one-click.
+- **M2 — model library, both formats** ([design](m2-model-library.md))**.** Point
+  at directories, scan GGUF *and* HF-safetensors models, edit per-model
+  profiles, launch from the library.
 - **M3 — discovery, download, guidance.** Catalogue search, model detail, quant
   recommendations against detected hardware, resumable download into a
   user-chosen directory. Sequenced ahead of lifecycle policy deliberately:

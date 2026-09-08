@@ -71,6 +71,7 @@ jobs:
           npx --yes @redocly/cli@2.30.4 lint \
             openapi/gateway.yaml \
             openapi/inference-driver.yaml \
+            openapi/library.yaml \
             openapi/watchdog.yaml
 
   dco:

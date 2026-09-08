@@ -34,6 +34,7 @@ Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-
 openapi/
   gateway.yaml              the OpenAI-compatible front door; routing + failover
   inference-driver.yaml     the uniform surface over one backend (N instances)
+  library.yaml              the operator's model directories, scanned + profiled
   watchdog.yaml             process supervisor, engine launcher, UI host, auth root
   components/
     common.yaml             shared schemas (messages, errors, config protocol, auth)
@@ -45,10 +46,10 @@ Two layers, never collapsed: a routing `gateway` above N per-backend `inference-
 
 | Component | Repo | Port | Job |
 |---|---|---|---|
-| supervisor | [`watchdog`](https://github.com/eugene-plexus/watchdog) | 8083 | Spawns and monitors components *and* engine processes; owns engine adapters, topology, log capture, safe mode, auth root; serves the UI |
+| supervisor | [`watchdog`](https://github.com/eugene-plexus/watchdog) | 8079 | Spawns and monitors components *and* engine processes; owns engine adapters, topology, log capture, safe mode, auth root; serves the UI |
 | gateway | [`gateway`](https://github.com/eugene-plexus/gateway) | 8080 | One OpenAI-compatible endpoint. Model → driver resolution, load balancing, priority-list failover. **No backend knowledge.** |
 | inference-driver | [`inference-driver`](https://github.com/eugene-plexus/inference-driver) | 8081 | **One instance per backend.** Owns provider choice, model id, secrets, params, health |
-| library | `library` | 8082 | Catalogue search, resumable downloads, local file scan, quant table, hardware fit scoring |
+| library | `library` | 8082 | The operator's own model directories: recursive scan (GGUF + safetensors), metadata, per-model launch profiles; catalogue search, resumable downloads, quant table, hardware fit scoring |
 | ui | [`ui`](https://github.com/eugene-plexus/ui) | — | Config editor, runtime dashboard, library browser, chat playground, logs |
 | specs | this repo | — | Contracts; consumers codegen from a pinned SHA |
 

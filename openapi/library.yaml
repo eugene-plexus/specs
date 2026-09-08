@@ -1,0 +1,1325 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — library
+  version: 0.3.0-draft
+  summary: The operator's own model directories, scanned, described, and given launch profiles.
+  description: |
+    The library is how Eugene Plexus knows what models the operator
+    owns. It is pointed at directories that already exist, reads what
+    is in them, and remembers the launch settings that worked for each
+    model.
+
+    **The rule it exists to honour:** the user's model files stay
+    theirs. Their directories, their filenames, their layout. We read;
+    we never relocate, rename, hash-address, or take custody. Delete
+    Eugene Plexus and every model is still where it was, correctly
+    named. Every design choice here that looks slightly awkward — the
+    derived-from-path `id`, the refusal to resolve symlinks, the
+    refusal to guess that a moved file is the same model — is that rule
+    being kept.
+
+    ## What it holds
+
+    * **Scanned models**, from both formats. GGUF (one quantized file,
+      possibly sharded, possibly with a vision projector beside it) and
+      HF safetensors (a directory of weights plus `config.json`).
+      Format is a dimension of the data model, not an assumption.
+    * **Per-model launch profiles**, named, N per model. This is the
+      answer to "tired of tweaking llama.cpp settings for every
+      different model": the settings that worked are saved against the
+      model, not retyped into a runtime declaration.
+
+    Profiles are the *only* thing this component persists about a
+    model. Everything else is a projection of what is on disk, which
+    is why a model can be listed as `missing` — the file is gone but
+    the profile someone spent an afternoon tuning is not.
+
+    ## What it is not
+
+    * **Not a store.** There is no managed directory, no content
+      addressing, no blob cache. Model roots are operator-chosen paths
+      in this component's own config.
+    * **Not in the request path.** No inference traffic passes through
+      here. The gateway never calls it.
+    * **Not the launcher.** Launching a model is composed by the
+      caller: read a profile here, then `POST /v1/runtimes` on the
+      watchdog with the model's `path` and the profile's `flags`. The
+      profile's field names are `RuntimeSpec`'s field names precisely
+      so that composition is a copy rather than a translation. This
+      component holds no engine knowledge and never calls the
+      watchdog.
+    * **Not a validator of engine flags.** It stores `flags` as given.
+      Validation belongs where the curated flag surface lives — the
+      watchdog's engine adapter, at runtime-creation time. Two
+      validators would mean two copies of engine knowledge and one of
+      them going stale.
+
+    ## Reading metadata is not free
+
+    Measured, not assumed: the KV block of a 248k-vocab GGUF is
+    ~10.9 MB, because the tokenizer lives in it, and the fields worth
+    having (the quant, for one) can sit on the far side of it. That is
+    ~50–60 ms per model warm and a lot of disk cold.
+
+    So scanning is an asynchronous sub-resource with progress and
+    phases rather than a synchronous `GET`, and a rescan is
+    **incremental** — `(path, size, mtime)` unchanged means the parsed
+    metadata is reused and the file is never opened.
+
+    ## Two formats, one asymmetry worth knowing
+
+    Safetensors headers give an exact parameter count and dtype from a
+    ~11 KB read. GGUF gives no parameter count at all — only an
+    author-supplied `size_label` string like `"27B"` — but does give a
+    machine-readable quant tier. Hence: `parameters` is optional
+    everywhere, and the quant fields exist only on the GGUF side.
+    A safetensors model is sized, not tiered.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+servers:
+  - url: http://{host}:{port}
+    description: Default loopback deployment; one instance per install.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8082'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: models
+    description: |
+      What the operator owns, as found on disk. One entry per
+      launchable model — not per file, which is why a projector and
+      shards 2..N of a split GGUF are not entries.
+  - name: profiles
+    description: |
+      Named launch settings per model. The per-model config surface
+      the whole component exists for, and the only thing here that is
+      persisted rather than observed.
+  - name: scan
+    description: |
+      Walking the configured roots. A singleton sub-resource with
+      named phases — there is exactly one scan, so it is not a job
+      collection.
+  - name: config
+    description: |
+      The standard config trio. Model roots live here as a
+      `path_list`, which is what makes them editable in the generic
+      config UI with no library-specific code.
+  - name: meta
+    description: Health, version, and restart.
+
+paths:
+
+  # -------- Models --------
+
+  /v1/models:
+    get:
+      tags: [models]
+      operationId: listModels
+      summary: Every model in the library.
+      description: |
+        The library browser's source of truth. One entry per
+        *launchable* model: a projector, the second through Nth shard
+        of a split GGUF, and an older revision inside a HuggingFace
+        cache are all files on disk that are not models, and none of
+        them appears here. What was passed over, and why, is on
+        `GET /v1/scan` — a scanner that silently drops what it did not
+        understand is indistinguishable from a broken one.
+
+        Includes entries whose files are gone (`status: missing`).
+        Hiding them would throw away the profiles attached to them,
+        which are the one thing here that cannot be recovered by
+        looking at the disk again.
+
+        Unpaginated. Dozens to low hundreds of entries is the expected
+        scale; pagination is a backwards-compatible addition if
+        somebody turns up with thousands.
+      parameters:
+        - in: query
+          name: path
+          required: false
+          schema:
+            type: string
+          description: |
+            Reverse lookup: return the single entry whose model path is
+            this one, or nothing. Normalization (absolute, canonical
+            separators, case-folded on Windows) happens server-side,
+            which is the entire point — it exists so a caller holding a
+            path does not have to reproduce the `id` derivation to find
+            the entry. The runtime dashboard uses it to link a running
+            `Runtime.modelPath` back to its library entry.
+      responses:
+        '200':
+          description: Every known model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryModelList'
+
+  /v1/models/{id}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+        description: |
+          Opaque model handle from a list response. Derived from the
+          model's normalized absolute path so it is stable across
+          restarts, but opaque to callers — use `?path=` on the
+          collection for reverse lookup rather than deriving it.
+    get:
+      tags: [models]
+      operationId: getModel
+      summary: Read one model, with its full metadata.
+      responses:
+        '200':
+          description: The model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryModel'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [models]
+      operationId: forgetModel
+      summary: Forget a missing model and the profiles saved against it.
+      description: |
+        **No file is ever touched.** This deletes the library's own
+        record — which is to say the profiles, the only thing it
+        persists.
+
+        Refused for a model that is still on disk. A present model
+        cannot meaningfully be forgotten: the next scan finds it again,
+        so a delete that appeared to work would be a lie. Only a
+        `missing` entry can be dismissed, which makes this the "yes, I
+        did move that model and I do not want its old settings back"
+        button and nothing else.
+      responses:
+        '204':
+          description: Entry forgotten.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: |
+            The model is present on disk. Nothing was deleted.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  # -------- Profiles --------
+
+  /v1/models/{id}/profiles:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [profiles]
+      operationId: listProfiles
+      summary: Every saved launch profile for one model.
+      responses:
+        '200':
+          description: The model's profiles, default first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelProfileList'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    post:
+      tags: [profiles]
+      operationId: createProfile
+      summary: Save a new launch profile against a model.
+      description: |
+        `flags` are stored as given and **not validated here** — the
+        engine adapter's `flagSchema` on the watchdog is the validator,
+        and it runs when a runtime is actually created. A profile is
+        allowed to be wrong; a runtime is not.
+
+        Creating a profile with `default: true` clears the flag on
+        whichever profile held it. The first profile saved for a model
+        becomes its default whether or not it asks to be.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelProfileSpec'
+      responses:
+        '201':
+          description: Profile saved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelProfile'
+        '400':
+          description: |
+            Malformed profile — no name, an unknown `engine`, or
+            `flags` that are not a flat object.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: A profile with that name already exists for this model.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/models/{id}/profiles/{profileId}:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: profileId
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [profiles]
+      operationId: getProfile
+      summary: Read one launch profile.
+      responses:
+        '200':
+          description: The profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelProfile'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    put:
+      tags: [profiles]
+      operationId: replaceProfile
+      summary: Replace a launch profile.
+      description: |
+        A whole-document replace rather than a merge, deliberately, and
+        the one place this component departs from the `PATCH` shape used
+        for config everywhere else. `flags` is a document: with merge
+        semantics there is no way to express *removing* a flag, and
+        "why is `--n-gpu-layers` still on the command line after I
+        deleted it" is a bug report nobody should have to file.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelProfileSpec'
+      responses:
+        '200':
+          description: Updated profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelProfile'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Another profile for this model already has that name.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+    delete:
+      tags: [profiles]
+      operationId: deleteProfile
+      summary: Delete a launch profile.
+      description: |
+        Deleting the default promotes the next profile by creation
+        order, if there is one. Running runtimes are unaffected — a
+        profile is a template, and nothing holds a reference to it once
+        a runtime is declared.
+      responses:
+        '204':
+          description: Profile deleted.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  # -------- Scan --------
+
+  /v1/scan:
+    get:
+      tags: [scan]
+      operationId: getScan
+      summary: State of the current or most recent scan.
+      description: |
+        Poll this while `state` is `scanning`. When it settles, this is
+        the record of what the last walk found, what it passed over and
+        why, and which roots could not be read — which is the first
+        thing to look at when a model the operator can see in Explorer
+        is not in the library.
+
+        `state: idle` on a fresh start, before anything has been
+        scanned.
+      responses:
+        '200':
+          description: Scan state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+    post:
+      tags: [scan]
+      operationId: startScan
+      summary: Walk the configured roots.
+      description: |
+        Returns immediately; poll `GET /v1/scan` for progress. Reading
+        GGUF metadata costs tens of milliseconds per model warm and a
+        10 MB read cold, so a full library is seconds of work and does
+        not belong on a request the UI is waiting on.
+
+        Incremental by default: a file whose `(path, size, mtime)` is
+        unchanged keeps its cached metadata and is never opened. Send
+        `full: true` to re-read everything, which is the escape hatch
+        for when the metadata reader itself has got smarter since the
+        last scan.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScanRequest'
+      responses:
+        '202':
+          description: Scan started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+        '409':
+          description: |
+            A scan is already running. There is only ever one, and
+            starting a second would double the disk cost to reach the
+            same answer.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+    delete:
+      tags: [scan]
+      operationId: cancelScan
+      summary: Cancel a scan in flight.
+      description: |
+        Stops the walk. Models already found keep their entries — a
+        partial scan is not rolled back, because what it learned is
+        still true. The result reports `state: cancelled` so nobody
+        mistakes a short list for a complete one.
+      responses:
+        '200':
+          description: Cancellation requested.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scan'
+        '409':
+          description: No scan is running.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  # -------- Config --------
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the library's current effective config.
+      responses:
+        '200':
+          description: Current config values.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Update config fields.
+      description: |
+        Partial update; absent keys are unchanged, `null` reverts a key
+        to its default. Editing the roots does not itself trigger a
+        walk — `POST /v1/scan` is a separate, explicit act, because a
+        `PATCH` that quietly starts minutes of disk work is a `PATCH`
+        that times out.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome, per key.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable field.
+      description: |
+        The model roots are a `path_list` field here, which is the whole
+        reason they are config rather than a resource of their own: the
+        same generic editor that renders every other component's
+        settings renders them, with no library-specific UI code.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /v1/config/test:
+    post:
+      tags: [config]
+      operationId: testConfig
+      summary: Check that the configured model roots are readable.
+      description: |
+        Stats each configured root and reports which ones cannot be
+        read, without walking them — this answers "is this path right"
+        in milliseconds, which is what an operator typing a path into a
+        form needs. It does not scan, and finding zero models in a
+        readable root is not a failure.
+
+        Send overrides to check a path before committing it, which is
+        the "Test" button next to a directory picker.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigTestRequest'
+      responses:
+        '200':
+          description: |
+            Test outcome. `ok: false` when any configured root is
+            missing or unreadable.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
+
+  # -------- Meta --------
+
+  /v1/admin/restart:
+    post:
+      tags: [meta]
+      operationId: restart
+      summary: Schedule a process restart.
+      description: |
+        Exits shortly after responding and relies on the watchdog to
+        respawn. A scan in flight is abandoned; its findings so far
+        persist, and the next scan is incremental over them.
+      responses:
+        '202':
+          description: Restart scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness and readiness.
+      security: []
+      description: |
+        Reports `degraded` when a **configured** root cannot be read —
+        the operator asked for something that is not working, and a
+        removable drive or a dead network share is exactly what this is
+        for.
+
+        Having **no** roots configured is `ok`, not degraded. That is a
+        fresh install waiting for the wizard, not a fault, and a health
+        surface that cries about it on day one teaches people to ignore
+        it. `details.rootsConfigured` carries the count either way.
+
+        Neither case ever prevents startup: bad config never crashes a
+        component, and the config endpoints stay reachable so the UI can
+        fix it.
+      responses:
+        '200':
+          description: Health status.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Session token from the watchdog's `POST /v1/auth/login`, or a
+        component service token threaded in at spawn time. Reads are
+        open to either; mutations are operator-only.
+
+  schemas:
+
+    # -------- Models --------
+
+    LibraryModelList:
+      type: object
+      required:
+        - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/LibraryModel'
+        lastScanAt:
+          type: string
+          format: date-time
+          description: |
+            When the walk that produced this list finished. Omitted
+            before the first scan. Present here as well as on `Scan` so
+            a browser rendering the list can say how stale it is
+            without a second call.
+
+    LibraryModel:
+      type: object
+      description: |
+        One launchable model on this host.
+
+        The format-independent facts are here; exactly one of `gguf` or
+        `safetensors` carries the rest. That split is not tidiness — a
+        quant tier is a GGUF concept and an exact parameter count is a
+        safetensors one, and flattening both into one object would
+        produce a schema half of whose fields are null for any given
+        model.
+      required:
+        - id
+        - path
+        - format
+        - name
+        - status
+      properties:
+        id:
+          type: string
+          description: |
+            Stable handle for this model: the first 16 hex characters of
+            the SHA-256 of its normalized absolute path. Normalized
+            means absolute, canonical separators, case-folded on
+            Windows, and **symlinks left unresolved**.
+
+            Derived rather than random so it survives restarts, since
+            profiles are keyed to it. **Opaque to callers** — the
+            normalization rules are fiddly enough that a client deriving
+            it independently would sooner or later compute a handle the
+            server does not recognise and get an unexplained 404. Use
+            `GET /v1/models?path=` instead.
+
+            Not content addressing: no byte of the model is read to
+            produce it. Hashing 40 GB on every scan is not on the table,
+            and a content-derived identity would change when nothing the
+            operator did changed.
+        path:
+          type: string
+          description: |
+            Absolute path, verbatim, in the operator's own layout — the
+            model's real identity, reported in full because the `id` is
+            not human-readable and nothing here should be hidden behind
+            a handle.
+
+            A `.gguf` file for GGUF (the **first** shard when split), a
+            directory for safetensors. This is what goes on a runtime's
+            `modelPath`.
+        root:
+          type: string
+          description: |
+            The configured root this model was found under. Two roots
+            can hold the same filename, so this is how the UI
+            disambiguates two entries that otherwise read alike — and
+            how it tells the operator which drive to go plug back in.
+        format:
+          $ref: 'components/common.yaml#/components/schemas/ModelFormat'
+        name:
+          type: string
+          description: |
+            The filename with its extension stripped, or the directory
+            name for safetensors. **Not derived from metadata**: the
+            file's own name is what the operator downloaded, what they
+            call it, and what `Runtime.modelAlias` defaults to — so
+            plainly-named files mean the obvious name is already the
+            right one.
+        displayName:
+          type: string
+          description: |
+            The model's self-declared name from its metadata
+            (`general.name` for GGUF), when it has one and it differs
+            from `name`. Shown as a subtitle, never as the identity:
+            metadata names are frequently the training-run name and
+            collide across quants of one model.
+        status:
+          $ref: '#/components/schemas/ModelStatus'
+        sizeBytes:
+          type: integer
+          minimum: 0
+          description: |
+            Total size of every file belonging to this model — all
+            shards, and the projector when there is one. The number
+            that answers "will this fit on the drive I am copying it
+            to", which is why it is a sum rather than the weights file
+            alone.
+        fileCount:
+          type: integer
+          minimum: 1
+          description: How many files make up this model. 1 for a plain single-file GGUF.
+        architecture:
+          type: string
+          description: |
+            Model architecture as the file declares it — `general.architecture`
+            for GGUF, `model_type` from `config.json` for safetensors.
+            Free-form on purpose: new architectures ship constantly and
+            an enum here would reject models that work fine.
+        contextLength:
+          type: integer
+          minimum: 0
+          description: |
+            Context length the **model** declares. Not what an engine
+            will serve — that depends on the launch flags and available
+            memory, and is reported by the watchdog as
+            `RuntimeCapabilities.contextLength`. Both numbers are real
+            and a UI that shows only this one tells a comfortable lie.
+        parameters:
+          type: integer
+          minimum: 0
+          description: |
+            Exact parameter count, when the format gives one. Safetensors
+            headers do (summed tensor shapes, from an ~11 KB read);
+            **GGUF does not** — see `sizeLabel`. Optional because for
+            most local models it is genuinely unavailable, and a schema
+            that required it would be unfillable for every GGUF in
+            existence.
+        sizeLabel:
+          type: string
+          description: |
+            The author's own size label, e.g. `"27B"`
+            (`general.size_label`). A display string, not a number, and
+            not always present or accurate — it is what the person who
+            uploaded the file typed. For GGUF it is usually the only
+            answer available to "how big is this model".
+        capabilities:
+          $ref: '#/components/schemas/ModelCapabilities'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelFile'
+          description: |
+            Every file that belongs to this model, with its role. This
+            is what makes a sharded model legible as one thing, and what
+            shows the operator that the 900 MB projector next to their
+            model is accounted for rather than missed.
+        gguf:
+          $ref: '#/components/schemas/GgufDetail'
+        safetensors:
+          $ref: '#/components/schemas/SafetensorsDetail'
+        profileCount:
+          type: integer
+          minimum: 0
+          description: |
+            How many launch profiles are saved against this model. On
+            the list so the browser can badge a tuned model without
+            fetching every profile collection.
+        firstSeenAt:
+          type: string
+          format: date-time
+          description: When a scan first found this model.
+        lastSeenAt:
+          type: string
+          format: date-time
+          description: |
+            When a scan last found it on disk. For a `missing` entry
+            this is when it was last there, which is the only clue to
+            what happened.
+        modifiedAt:
+          type: string
+          format: date-time
+          description: Filesystem mtime of the weights. Part of the incremental-rescan key.
+        error:
+          type: string
+          description: |
+            Why this entry is `unreadable` — a header that would not
+            parse, a permission error, a truncated file. Named rather
+            than dropped: a model the operator can see and we cannot
+            explain is the worst of the three states.
+
+    ModelStatus:
+      type: string
+      enum:
+        - present
+        - missing
+        - unreadable
+      description: |
+        * `present` — found on disk and readable.
+        * `missing` — not found by the last scan, but profiles are
+          saved against it, so the entry survives. **Moving a model
+          produces this**, plus a new entry at the new path: nothing
+          guesses that a file which vanished from one root and appeared
+          in another is the same file, because a wrong guess silently
+          applies one model's tuning to another. The profiles stay here
+          to be copied across by hand.
+        * `unreadable` — the files are there and something about them
+          did not work. `error` says what.
+
+    ModelCapabilities:
+      type: object
+      description: |
+        What the model's own metadata says it can do. Distinct from the
+        watchdog's `RuntimeCapabilities`, which is read back off a
+        *running* engine: this is a property of the file, available
+        before anything is launched, and it is what the launch flags
+        have to be chosen from.
+      properties:
+        chat:
+          type: boolean
+          description: |
+            Text generation — the default assumption for a causal model.
+            False for an embedding model.
+        embedding:
+          type: boolean
+          description: |
+            The model is a dedicated embedding model (a pooling type in
+            its metadata, or non-causal attention). Load-bearing rather
+            than informational: llama-server's own help says
+            `--embedding` is "for use only with dedicated embedding
+            models", and launching one of these as a chat model does not
+            fail — it starts, serves, and returns nonsense.
+        vision:
+          type: boolean
+          description: |
+            A vision projector was found for this model, so it can take
+            images. See `GgufDetail.projectorPath`.
+        chatTemplate:
+          type: boolean
+          description: |
+            The file embeds its own chat template. When false, something
+            has to supply one at launch, and a model answering strangely
+            with no template is a common and confusing failure.
+
+    ModelFile:
+      type: object
+      description: One file belonging to a model, and what part it plays.
+      required:
+        - path
+        - role
+      properties:
+        path:
+          type: string
+          description: Absolute path.
+        role:
+          $ref: '#/components/schemas/ModelFileRole'
+        sizeBytes:
+          type: integer
+          minimum: 0
+
+    ModelFileRole:
+      type: string
+      enum:
+        - weights
+        - shard
+        - projector
+        - config
+        - tokenizer
+        - index
+        - other
+      description: |
+        * `weights` — the file named on the launch line. Exactly one per
+          model: the single `.gguf`, the first shard of a split one, or
+          the primary safetensors file.
+        * `shard` — the second through Nth part of a split model.
+        * `projector` — a vision projector (`general.type: mmproj`),
+          which is why it is a role here and not a model of its own.
+        * `config` / `tokenizer` / `index` — safetensors sidecars.
+        * `other` — present in the model's directory, counted in
+          `sizeBytes`, not classified.
+
+    GgufDetail:
+      type: object
+      description: |
+        GGUF-specific metadata, read from the file's KV block. Present
+        iff `format` is `gguf`.
+      properties:
+        quantization:
+          type: string
+          description: |
+            Human-readable quant tier, e.g. `"Q4_K_M"`. The vocabulary
+            the operator's question is actually phrased in — "Q3_K_S vs
+            2Q_K_M? No one knows" — and M3's guidance hangs off it.
+        fileType:
+          type: integer
+          description: |
+            Raw `general.file_type` enum value, reported alongside the
+            label rather than instead of it. It **does** distinguish the
+            K-quant mixtures (verified: 14 is `Q4_K_S`, 15 is `Q4_K_M`),
+            so the label is machine-read rather than guessed from a
+            filename.
+
+            Reported raw because the quant families churn — imatrix
+            variants, MXFP4, whatever is next — and a reader will meet
+            values it does not know. The rule for those is to surface
+            the number and the filename-derived label, never to map an
+            unrecognised value onto a plausible neighbour: guidance
+            built on a guess is worse than no guidance.
+        quantizationDisagrees:
+          type: boolean
+          description: |
+            True when the label derived from `fileType` and the label in
+            the filename are not the same. Both are then reported and
+            neither is silently preferred, because either one can be the
+            wrong one — a requantized file keeps its old name more often
+            than a metadata field is wrong, but not always.
+        ggufVersion:
+          type: integer
+          description: GGUF container version (3 for everything current).
+        shardCount:
+          type: integer
+          minimum: 1
+          description: |
+            Number of `…-0000N-of-0000M.gguf` parts. 1 for a plain file.
+            Only the first is on the launch line; the rest are `shard`
+            files.
+        vocabSize:
+          type: integer
+          minimum: 0
+          description: |
+            Token count. Worth reporting for its own sake and because it
+            explains the scan cost: the tokenizer lives in the KV block,
+            so a 248k-token vocab means ~10.9 MB of metadata to walk
+            past before the quant can be read.
+        projectorPath:
+          type: string
+          description: |
+            Absolute path to the vision projector found beside this
+            model, if any. Becomes `--mmproj` on the launch line.
+            llama-server can also find it unaided, but it is reported
+            because "this model can see" is a fact the browser should
+            show and a profile should be able to override.
+        recommendedSampling:
+          $ref: '#/components/schemas/RecommendedSampling'
+        metadata:
+          type: object
+          additionalProperties: true
+          description: |
+            Selected raw KV pairs, verbatim, minus the tokenizer arrays.
+            An escape hatch for the long tail — architecture-prefixed
+            keys grow with upstream, and a reader that only ever exposes
+            the fields it was written to understand goes blind on every
+            model newer than itself.
+
+    SafetensorsDetail:
+      type: object
+      description: |
+        Safetensors-specific metadata. Present iff `format` is
+        `safetensors`. **No quant fields** — a safetensors model is
+        sized, not tiered.
+      properties:
+        dtype:
+          type: string
+          description: |
+            Dominant tensor dtype as the header declares it, e.g.
+            `"BF16"`, `"F16"`, `"F32"`. The nearest thing to a quant
+            tier here, and it is a precision rather than a scheme.
+        shardCount:
+          type: integer
+          minimum: 1
+          description: |
+            Number of `model-0000N-of-0000M.safetensors` files. Unlike
+            GGUF, all of them are loaded together and none is "the"
+            file — the directory is the model.
+        repoId:
+          type: string
+          description: |
+            HuggingFace repo this came from, e.g.
+            `"sentence-transformers/all-MiniLM-L6-v2"`, when the layout
+            says so (a `models--<org>--<name>` cache directory, or
+            `config.json` naming it).
+        revision:
+          type: string
+          description: |
+            Snapshot revision, when the model sits in a HuggingFace
+            cache. Those caches hold **one directory per revision**, so
+            without this two snapshots of one model are two
+            indistinguishable entries. The revision named by the
+            cache's own `refs/main` is the current one; the others are
+            reported as skipped older revisions rather than as models.
+        configPath:
+          type: string
+          description: Absolute path to `config.json`, the file that made this a model.
+
+    RecommendedSampling:
+      type: object
+      description: |
+        Sampling parameters the model's author put in the file
+        (`general.sampling.*` in GGUF). **Reported, never applied.**
+
+        The locked rule is that the gateway owns every
+        LLM-output-affecting parameter and no component substitutes a
+        local default; that rule is unchanged. But the file having an
+        opinion is real information, and dropping it means the operator
+        has to go read the model card to find out. Whether anything can
+        adopt these with one click is a gateway decision, not a library
+        one.
+      properties:
+        temperature:
+          type: number
+        topK:
+          type: integer
+        topP:
+          type: number
+
+    # -------- Profiles --------
+
+    ModelProfileList:
+      type: object
+      required:
+        - profiles
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelProfile'
+
+    ModelProfileSpec:
+      type: object
+      description: |
+        Declarative half of a profile — the launch settings that worked
+        for one model. Used for create and replace bodies.
+
+        Every field name here is a `RuntimeSpec` field name, on purpose:
+        composing a profile into a runtime declaration is a copy, not a
+        translation, which is what lets the launch flow live in the
+        caller and keep this component free of engine knowledge.
+      required:
+        - name
+        - engine
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Operator-supplied label, unique per model — "long context",
+            "cpu only", "gpu 1". Names rather than numbers because the
+            reason a profile exists is the thing worth remembering about
+            it.
+        default:
+          type: boolean
+          default: false
+          description: |
+            The profile offered first when launching this model.
+            Setting it clears the flag on whichever profile held it; the
+            first profile saved for a model gets it whether it asks or
+            not.
+        engine:
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+          description: |
+            Which engine these flags are written for. Flags are not
+            portable between engines, so a profile is only ever offered
+            for the engine it names — and a model whose format no
+            installed engine can load has nowhere to use one at all. The
+            engine side of that answer is
+            `EngineDescriptor.modelFormats` on the watchdog.
+        flags:
+          type: object
+          additionalProperties: true
+          description: |
+            Curated engine flags, keyed by the field names in the
+            adapter's `flagSchema` — context size, GPU layers, batch
+            size, parallel slots. Copied onto `RuntimeSpec.flags`
+            verbatim.
+
+            **Stored, not validated.** The validator is the watchdog's
+            adapter schema, at runtime-creation time. A profile is
+            allowed to be wrong; the runtime that uses it is not, and
+            that is where an unknown key becomes a 400. Validating in
+            both places would mean two copies of engine knowledge and
+            one of them going stale.
+        extraArgs:
+          type: array
+          items:
+            type: string
+          description: |
+            Verbatim extra arguments, for the long tail a curated
+            surface always misses. `--lora` lives here, which is why
+            adapters are not modelled as their own thing yet.
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Extra environment for the engine process. This is where
+            `CUDA_VISIBLE_DEVICES` goes, and therefore where the
+            two-replicas-on-two-GPUs case comes from: the same profile
+            twice with a different device pinned. It is also the
+            strongest argument for profiles being plural.
+        notes:
+          type: string
+          description: |
+            Free text from the operator. Tuning a model is empirical and
+            the reasoning evaporates — "OOMs above 24 layers on the
+            3090" is worth more later than the flag value it explains.
+
+    ModelProfile:
+      type: object
+      description: |
+        A saved profile, as stored: the spec plus server-owned
+        identifiers and timestamps.
+      required:
+        - id
+        - name
+        - engine
+        - default
+      properties:
+        id:
+          type: string
+          description: Server-assigned profile id, unique within the model.
+        name:
+          type: string
+        default:
+          type: boolean
+        engine:
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+        flags:
+          type: object
+          additionalProperties: true
+        extraArgs:
+          type: array
+          items:
+            type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # -------- Scan --------
+
+    ScanRequest:
+      type: object
+      properties:
+        full:
+          type: boolean
+          default: false
+          description: |
+            Re-read metadata for every model instead of trusting the
+            `(path, size, mtime)` cache. Costs the full walk — tens of
+            milliseconds per model, more cold — and exists for when the
+            metadata reader has changed rather than the files.
+
+    Scan:
+      type: object
+      description: |
+        State of the current or most recent walk of the configured
+        roots. A singleton: there is exactly one scan, and inventing job
+        ids for something that has exactly one is worse than not.
+      required:
+        - state
+      properties:
+        state:
+          $ref: '#/components/schemas/ScanState'
+        full:
+          type: boolean
+          description: Whether this scan is ignoring the metadata cache.
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        roots:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScanRoot'
+          description: |
+            Per-root outcome. A root that could not be read is reported
+            here and does not abort the scan: one unplugged drive must
+            not cost the operator every other model they own.
+        currentPath:
+          type: string
+          description: |
+            What is being read right now. Present while `scanning`, and
+            the difference between a scan that is working and one that
+            is wedged on a network share.
+        filesScanned:
+          type: integer
+          minimum: 0
+          description: Files examined so far, across all roots.
+        modelsFound:
+          type: integer
+          minimum: 0
+          description: Models in the library as of this scan.
+        added:
+          type: integer
+          minimum: 0
+          description: Models this scan saw for the first time.
+        updated:
+          type: integer
+          minimum: 0
+          description: Models whose metadata was re-read because the file changed.
+        missing:
+          type: integer
+          minimum: 0
+          description: |
+            Previously-known models this scan did not find. They keep
+            their entries and their profiles; see `ModelStatus`.
+        skipped:
+          type: array
+          items:
+            $ref: '#/components/schemas/SkippedPath'
+          description: |
+            Paths deliberately not treated as models, each with a
+            reason. **The important half of the response.** Every
+            not-a-model case is here — the projector beside a model, the
+            second shard of a split file, an older revision in a
+            HuggingFace cache — and the reason someone can find out why
+            their model is not showing up. A scanner that silently drops
+            what it did not understand is indistinguishable from a
+            broken one.
+        error:
+          type: string
+          description: 'Populated when `state` is `failed`.'
+
+    ScanState:
+      type: string
+      enum:
+        - idle
+        - scanning
+        - done
+        - failed
+        - cancelled
+      description: |
+        * `idle` — nothing has been scanned yet this install.
+        * `scanning` — in flight; poll for progress.
+        * `done` — completed. Individual roots may still have failed;
+          check `roots`.
+        * `failed` — the scan itself could not run, e.g. no roots are
+          configured at all.
+        * `cancelled` — stopped by `DELETE /v1/scan`. Whatever it found
+          is kept and reported, but the list is not complete and this
+          state is what says so.
+
+    ScanRoot:
+      type: object
+      description: One configured root and how the walk went in it.
+      required:
+        - path
+        - status
+      properties:
+        path:
+          type: string
+        status:
+          type: string
+          enum:
+            - ok
+            - missing
+            - unreadable
+            - pending
+          description: |
+            `missing` and `unreadable` are separate on purpose: a path
+            that does not exist is usually a typo or an unplugged drive,
+            and one that exists but cannot be read is a permission
+            problem. They need different advice. `pending` means the
+            walk has not reached this root yet.
+        modelsFound:
+          type: integer
+          minimum: 0
+        filesScanned:
+          type: integer
+          minimum: 0
+        error:
+          type: string
+
+    SkippedPath:
+      type: object
+      description: A path the scan saw and deliberately did not make a model of.
+      required:
+        - path
+        - reason
+      properties:
+        path:
+          type: string
+        reason:
+          $ref: '#/components/schemas/SkipReason'
+        detail:
+          type: string
+          description: |
+            Specifics — which model a projector belongs to, which entry
+            a shard is part of, what the header parser objected to.
+
+    SkipReason:
+      type: string
+      enum:
+        - projector
+        - shard_member
+        - adapter
+        - older_revision
+        - not_a_model
+        - unreadable_header
+        - unsupported_format
+        - incomplete_download
+      description: |
+        Why a path is not an entry. Every value here is a real case
+        found on a real disk, not a defensive placeholder:
+
+        * `projector` — a vision projector (`general.type: mmproj`),
+          which belongs to the model beside it. Nearly a gigabyte each
+          on current models, so getting this wrong is visible.
+        * `shard_member` — part 2..N of a split model, accounted for on
+          the entry that owns part 1.
+        * `adapter` — a LoRA or similar (`adapter_config.json` plus
+          `adapter_model.safetensors`, and no base weights). Not
+          modelled yet; `--lora` in `extraArgs` covers anyone who needs
+          it now.
+        * `older_revision` — a HuggingFace cache snapshot that is not
+          the one `refs/main` names. Those caches keep one directory per
+          revision, so without this a single model appears once per
+          revision ever fetched.
+        * `not_a_model` — infrastructure inside a HuggingFace cache
+          (`blobs/`, `refs/`, and `.no_exist/`, which is a *negative*
+          cache full of zero-byte files with real-looking names), or
+          anything else structurally not a model.
+        * `unreadable_header` — the file is there and the metadata would
+          not parse. Reported rather than skipped silently.
+        * `unsupported_format` — a model format with no scanner yet.
+          MLX is the reserved case.
+        * `incomplete_download` — a partial file from an interrupted
+          download. Reserved for M3, which is when `.part` files start
+          landing in scanned roots; better to have the reason before
+          then than to surface a half-fetched 40 GB model as broken.

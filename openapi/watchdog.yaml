@@ -447,7 +447,7 @@ paths:
         name: engine
         required: true
         schema:
-          $ref: '#/components/schemas/EngineKind'
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
     post:
       tags: [engines]
       operationId: installEngine
@@ -981,22 +981,7 @@ components:
           reach the URL. For spawned components this state is not
           used (use `crashed` or `exited` instead).
 
-    # -------- Engines and runtimes --------
-
-    EngineKind:
-      type: string
-      enum:
-        - llama_cpp
-      description: |
-        Which engine adapter constructs the argv and interprets
-        readiness. Deliberately a closed enum rather than a free string:
-        an engine is supported exactly when an adapter exists for it,
-        and without an adapter there is nothing that knows how to start
-        it or tell when it is ready.
-
-        `llama_cpp` drives upstream `llama-server`. vLLM is a second
-        adapter later, and MLX after that. We never ship an engine — all
-        three are upstream projects we wrap and track.
+    # -------- Auth --------
 
     AuthStatus:
       type: object
@@ -1026,6 +1011,8 @@ components:
             derive the master key that at-rest secrets are sealed
             under, so losing it means losing every stored credential —
             there is no recovery path by design.
+
+    # -------- Engines and runtimes --------
 
     ManagedEngine:
       type: object
@@ -1173,7 +1160,7 @@ components:
         - state
       properties:
         engine:
-          $ref: '#/components/schemas/EngineKind'
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
         state:
           type: string
           enum:
@@ -1240,15 +1227,36 @@ components:
       required:
         - engine
         - available
+        - modelFormats
       properties:
         engine:
-          $ref: '#/components/schemas/EngineKind'
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
         available:
           type: boolean
           description: |
             True iff a usable binary was found and successfully
             version-probed. When false, `error` says why and runtimes
             for this engine will fail to spawn.
+        modelFormats:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/ModelFormat'
+          description: |
+            On-disk model formats this adapter's engine can load. A
+            property of the engine, not of this host — it does not
+            change with `available`.
+
+            This is the engine half of a join the UI performs: the
+            library reports what format each model *is*, and this
+            reports what each engine can *load*. `llama_cpp` lists
+            `gguf` only, so a safetensors model in the library has
+            nowhere to run until the vLLM adapter lands, and the UI can
+            say so — naming the missing engine — instead of offering a
+            launch button that fails.
+
+            It lives here because engine knowledge lives here. Putting
+            format support on the library would give the library a copy
+            of it, and the copy would be the one that went stale.
         binaryPath:
           type: string
           description: Absolute path to the binary the adapter would spawn.
@@ -1331,7 +1339,7 @@ components:
             Operator-supplied label, unique per install. Referenced by
             an inference-driver's config to say which runtime it fronts.
         engine:
-          $ref: '#/components/schemas/EngineKind'
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
         modelPath:
           type: string
           description: |
@@ -1340,6 +1348,13 @@ components:
             path, in the operator's own layout.** We never relocate,
             rename, or hash-address a model file; a runtime points at
             where the user put it.
+
+            For a sharded GGUF this is the *first* shard
+            (`…-00001-of-0000N.gguf`), which is what the engine expects.
+            When a runtime is created from the library, this is the
+            `path` off a `LibraryModel` and the `flags` are a
+            `ModelProfile` — but nothing here depends on the library
+            existing, and a hand-written runtime is still a runtime.
         modelAlias:
           type: string
           description: |
@@ -1436,7 +1451,7 @@ components:
         name:
           type: string
         engine:
-          $ref: '#/components/schemas/EngineKind'
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
         modelPath:
           type: string
         modelAlias:

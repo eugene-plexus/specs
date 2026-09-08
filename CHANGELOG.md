@@ -49,6 +49,48 @@ The tool family (`ToolChannel`, `ToolEffect`, `ToolDefinition`, `ToolCall`, `Too
 
 Validated with `openapi-spec-validator` 0.8.5 and `@redocly/cli` 2.30.4, and confirmed to generate importable Pydantic v2 models via `datamodel-code-generator`.
 
+### specs — M1 (engine acquisition)
+
+*Landed at `8abfc91`; this entry was written retroactively alongside M2, which is why it is a summary rather than a full one. The design doc is the record: [`docs/design/m1-engine-acquisition.md`](docs/design/m1-engine-acquisition.md).*
+
+The control plane fetches, verifies and manages the llama.cpp binary itself, closing the one manual step M0 left. `EngineDescriptor` gained `managed` and `acquisition`, plus a singleton install sub-resource (`POST`/`GET`/`DELETE /v1/engines/{engine}/install`) whose state names its phases — `resolving` / `downloading` / `verifying` / `extracting` — because they fail differently and the operator needs to know which one they are in.
+
+Four of the five things upstream actually ships turned out to be traps, all documented: `releases/latest` is not a llama.cpp build, Windows + CUDA is a two-asset install, no prebuilt Linux CUDA binary exists, and `--version` changed format mid-2026. Linux + NVIDIA is refused with a reason rather than silently handed the slower Vulkan build.
+
+Two drift fixes rode along: `/v1/auth/status` and `/v1/auth/initialize` became documented (the UI calls status on every page load), and `ConfigValueType.driver_list` stopped naming the deleted `DriverEntry` schema.
+
+### specs — M2 (model library)
+
+M2 is "point it at the directories you already keep models in": scan them, describe what is in them, and hold the launch settings that worked for each model. Design, with every metadata claim verified against real files on the dev box: [`docs/design/m2-model-library.md`](docs/design/m2-model-library.md).
+
+**New — `openapi/library.yaml`** (port 8082), the component the watchdog's own description has claimed to supervise since M0.
+
+- **`GET /v1/models`** and **`GET /v1/models/{id}`.** One entry per *launchable* model, which is the whole difficulty: a vision projector sits beside its model as a second `.gguf` (931 MB on one of the models used to check this, 1.8 GB on another), shards 2..N of a split GGUF are not models, and a HuggingFace cache holds one directory *per revision* of the same model. `LibraryModel` carries the format-independent facts; exactly one of `gguf` / `safetensors` carries the rest.
+- **The quant fields live on the GGUF side only.** Quant tiers are a GGUF concept; a safetensors model is sized, not tiered. `general.file_type` does distinguish the K-quant mixtures (verified: 14 is `Q4_K_S`, 15 is `Q4_K_M`), so the tier is machine-read rather than guessed from a filename — and the raw integer is reported alongside the label because the quant families churn and an unrecognised value must degrade to "here is the number", never to a plausible neighbour.
+- **`parameters` is optional, and `sizeLabel` is a string.** Forced by a measured asymmetry: a safetensors header gives an exact parameter count from ~11 KB, while GGUF gives none at all — only an author-typed `"27B"`. A schema requiring a parameter count would be unfillable for every GGUF in existence.
+- **`GET`/`POST`/`DELETE /v1/scan`**, a singleton sub-resource with named phases, following M1's engine-install precedent. Asynchronous because reading GGUF metadata is not a cheap header read: the tokenizer lives in the KV block, so a 248k-vocab model means walking ~10.9 MB to reach fields that sit *after* it — ~50–60 ms per model warm, measured both buffered and not. Rescans are incremental on `(path, size, mtime)`.
+- **`Scan.skipped[]` carries a reason per path,** and `SkipReason`'s eight values are all real cases off a real disk, not defensive placeholders — projector, shard member, adapter-only directory, older HF revision, HF cache infrastructure (including `.no_exist/`, a *negative* cache full of zero-byte files with real-looking names), unparseable header, unsupported format, and `incomplete_download` reserved for M3's `.part` files. A scanner that silently drops what it did not understand is indistinguishable from a broken one.
+- **Per-model profiles** (`/v1/models/{id}/profiles`), named, N per model, one default. Plural because a long-context profile and a fast one are different flags on one file — and because two replicas of one model across two GPUs is the same profile twice with a different `CUDA_VISIBLE_DEVICES`, which is the load-balancing case M5 exists for. `PUT` rather than `PATCH`: `flags` is a document, and merge semantics give no way to *remove* a flag.
+- **The library validates no engine flags and launches nothing.** Flags are validated by the watchdog's adapter `flagSchema` at runtime-creation time, because that is where the curated surface lives and where a bad flag has to fail anyway. Launching is composed by the caller — read a profile here, `POST /v1/runtimes` there — and `ModelProfile`'s field names are `RuntimeSpec`'s field names so that composition is a copy rather than a translation.
+- **`DELETE /v1/models/{id}` refuses a model that is present** (409), and never touches a file. It drops the saved profiles, which is the only thing this component owns. A moved model reads as a new model and its old entry goes `missing` keeping its profiles: nothing guesses that a file which vanished from one root and appeared in another is the same file, because a wrong guess silently applies one model's tuning to another.
+- Model roots are **config, not a resource** — a `path_list` field in the standard trio, so the generic config editor edits them with no library-specific UI code. `POST /v1/config/test` checks they are readable, which `common.yaml` promised before the library existed.
+
+**Changed — shared schemas**
+
+- **`ComponentKind` gains `library`.** The watchdog has described itself as supervising the library since M0 while the enum could not name it.
+- **`EngineKind` moves from `watchdog.yaml` into `common.yaml`.** A profile names an engine, so two components reference it now.
+- **`ModelFormat` is new and shared** (`gguf`, `safetensors`), because it appears on both sides of a join.
+- **`ConfigValueType` gains `path_list`** — the first list-typed config value. `driver_list` stays reserved for M5.
+
+**Changed — watchdog**
+
+- **`EngineDescriptor.modelFormats`**, required. llama.cpp cannot load safetensors, so at M2 those models are scanned, browsed and profiled with nothing able to launch them. Format support goes where engine knowledge already lives rather than into the library, so the UI can grey out a launch button and name the missing engine — and so vLLM at M4 lights it up with no library change.
+- `RuntimeSpec.modelPath` now says that a sharded GGUF is named by its *first* shard, and where a path comes from when a runtime is created from the library.
+
+**One drift fix riding along:** the watchdog binds **8079** — its own spec and M0's acceptance script both say so, and the UI defaults to it — while the README and the main design doc's shape tables said 8083. The tables were wrong.
+
+Validated with `openapi-spec-validator` 0.8.5 and `@redocly/cli` 2.30.4; all four specs confirmed to generate importable Pydantic v2 models via `datamodel-code-generator`, and `library.yaml` to generate types via `openapi-typescript` 7.13.
+
 ---
 
 ## Superseded — local-LLM-training platform (v0.3 direction)
