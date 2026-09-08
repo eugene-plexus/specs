@@ -1,8 +1,8 @@
 # Redocly CLI lint configuration.
 #
 # Linted as part of CI (.github/workflows/ci.yml). Lint runs against the
-# top-level API specs (orchestrator, hemisphere-driver, memory); shared
-# components in openapi/components/ are reached transitively via $ref.
+# top-level API specs; shared components in openapi/components/ are
+# reached transitively via $ref.
 
 extends:
   - recommended
