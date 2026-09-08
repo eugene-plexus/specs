@@ -1,3 +1,10 @@
+> **SUPERSEDED 2026-09-08 — historical record only. Do not implement.**
+> The continuous-loop runtime belonged to the consciousness program, which is
+> retired (not paused). The current direction is
+> [`local-inference-control-plane.md`](local-inference-control-plane.md).
+> Kept because the SSE/streaming and supervision lessons in it are still
+> useful reading; nothing else in it is live.
+
 # M1 — Continuous-loop runtime (design)
 
 **Status:** design-gate output for milestone **M1**. Provisional — the
