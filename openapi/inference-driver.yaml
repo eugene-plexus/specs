@@ -1,53 +1,78 @@
 openapi: 3.1.0
 info:
   title: Eugene Plexus — inference-driver
-  version: 0.2.0-draft
-  summary: The interface every hemisphere adapter implements.
+  version: 0.3.0-draft
+  summary: The uniform surface every heterogeneous backend is wrapped in.
   description: |
-    A `inference-driver` instance wraps exactly one model backend
-    (Anthropic API, OpenAI-compatible HTTP for OpenAI / xAI /
-    OpenRouter / MiniMax / Ollama / vLLM / LM Studio, Claude Code
-    CLI, Codex CLI). The gateway runs *two* instances
-    side-by-side as the bicameral pair — typically configured with
-    different backends so the hemispheres genuinely disagree.
+    One `inference-driver` instance wraps exactly **one** model backend
+    and presents a uniform surface over it. An install runs N instances,
+    one per backend, with the gateway routing above them.
 
-    All operations are stateless: the gateway owns conversation
-    state and passes the full prompt every call. Streaming uses
-    Server-Sent Events; non-streaming returns a single JSON body.
+    A backend is any of: a local engine speaking OpenAI-compatible HTTP
+    (llama.cpp's `llama-server`, vLLM, LM Studio, Ollama), a hosted API
+    (Anthropic, OpenAI, xAI, OpenRouter), or a subprocess CLI riding on
+    a subscription the operator already pays for (`claude_code_cli`,
+    `codex_cli`). The last kind is why the driver exists as a separate
+    process: a CLI has no HTTP endpoint to proxy to, so something has to
+    front it, and normalising *all* backends through one surface is
+    cheaper than special-casing the ones that cannot be proxied.
 
-    ## v0.2 changes
+    The driver owns what is specific to its backend — provider choice,
+    model id, secrets, health, and how to speak the wire protocol. It
+    does **not** own routing, and it does not know its own place in any
+    topology: the gateway reads `/v1/info` to learn what this driver
+    serves, and resolves it to a URL from the watchdog topology.
 
-    * **Encrypted-at-rest secrets.** The `apiKey` field (and any
-      future `sensitive: true` fields) are stored on disk as a
-      `MasterKeyEnvelope` (libsodium secretbox + base64
-      nonce/ciphertext) when v0.2 security is enabled. The driver
-      reads the master key from `EUGENE_PLEXUS_DRIVER_MASTER_KEY` at
-      startup (threaded by the watchdog) and decrypts on demand.
-      PATCH requests still accept plaintext; the driver encrypts
-      before persisting. GET continues to return `"<redacted>"`.
-    * **Bearer auth on every endpoint** except `/healthz`. The
-      gateway presents its service token (issued by the
-      watchdog at spawn) on every call. Drivers verify the token
-      matches the watchdog's signing key (threaded via env var).
-      v0.1's "anyone on the tailnet can hit /v1/generate" is gone.
+    All operations are stateless — the caller passes the full prompt on
+    every call. Streaming uses Server-Sent Events; non-streaming returns
+    a single JSON body.
+
+    ## Parameters are the caller's, never the driver's
+
+    The driver applies no local defaults to anything affecting model
+    output. Temperature, max tokens and stop sequences arrive on the
+    request or are not sent to the backend at all. Backends that do not
+    expose a given knob (agentic CLIs, mostly) ignore it silently rather
+    than erroring.
+
+    Correspondingly the driver **never refuses a model.** A backend that
+    rejects `temperature` — as some reasoning models do — is accommodated
+    by dropping the unsupported parameter and warning, not by failing
+    construction. The operator owns the model; the control plane's job is
+    to route to it.
+
+    ## Secrets
+
+    The `apiKey` field (and any other `sensitive: true` field) is stored
+    on disk as a `MasterKeyEnvelope` (libsodium secretbox + base64
+    nonce/ciphertext). The driver reads the master key from
+    `EUGENE_PLEXUS_DRIVER_MASTER_KEY` at startup (threaded by the
+    watchdog) and decrypts on demand. PATCH accepts plaintext and
+    encrypts before persisting; GET returns `"<redacted>"`.
 
     ## Safe mode
 
     The driver honors the watchdog's safe-mode env var:
-    `EUGENE_PLEXUS_DRIVER_SAFE_MODE=1` at startup makes the driver ignore
-    its persisted config file and boot from built-in defaults. This is
-    the recovery flow when a config edit breaks startup — the operator
-    can still reach `/v1/config` to fix the persisted file, then
-    restart without the env var. While safe mode is active,
-    `/v1/generate` returns 503 (no engine is configured), but
-    `PATCH /v1/config` writes to the on-disk config normally.
+    `EUGENE_PLEXUS_DRIVER_SAFE_MODE=1` at startup makes it ignore its
+    persisted config file and boot from built-in defaults. This is the
+    recovery flow when a config edit breaks startup — the operator can
+    still reach `/v1/config` to fix the persisted file, then restart
+    without the env var. While safe mode is active `/v1/generate`
+    returns 503 (no backend is configured), but `PATCH /v1/config`
+    writes to the on-disk config normally.
+
+    ## Auth
+
+    Every endpoint except `/healthz` requires a bearer token. The
+    gateway presents its service token (issued by the watchdog at spawn)
+    on every call; the driver verifies it against the watchdog's signing
+    key, threaded via env var.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
   contact:
     name: Eugene Plexus
     url: https://github.com/eugene-plexus
-
 servers:
   - url: http://{host}:{port}
     description: Default LAN deployment (mDNS-discovered or config-overridden).
@@ -82,10 +107,10 @@ paths:
       operationId: generate
       summary: Run inference on the configured backend.
       description: |
-        Single-turn request/response. The gateway builds the full prompt
-        (system, conversation history, current user turn, NT-conditioning
-        prefix) and the driver passes it through to the backend. The driver
-        does not own conversation memory.
+        Single-turn request/response. The caller builds the full prompt
+        and the driver passes it through to its backend, translating into
+        whatever wire protocol that backend speaks. The driver owns no
+        conversation state.
       requestBody:
         required: true
         content:
@@ -149,11 +174,12 @@ paths:
     get:
       tags: [meta]
       operationId: info
-      summary: Report which backend and model this driver is configured to use.
+      summary: Report which backend and model this driver serves.
       description: |
-        Used by the gateway at startup to log the bicameral pairing
-        ("left=claude-opus-4-7, right=gpt-5") and by the UI to label
-        hemisphere outputs.
+        The gateway polls this to build its routing table: `modelId` is
+        the key it routes on, `capabilities` says what the backend can
+        do, and `backend` / `provider` are what the UI labels. A driver
+        reports only what it serves — never where it sits.
       responses:
         '200':
           description: Driver metadata.
@@ -343,28 +369,19 @@ components:
         messages:
           type: array
           description: |
-            Full prompt as an ordered conversation. The gateway is
-            responsible for inserting any NT-conditioning system message,
-            persona, etc. The driver does not modify this.
+            Full prompt as an ordered conversation. Whatever system
+            message the caller wants is already in here; the driver does
+            not modify, prepend to, or reorder it.
           items:
             $ref: 'components/common.yaml#/components/schemas/Message'
-        ntState:
-          $ref: 'components/common.yaml#/components/schemas/NTState'
-        passIndex:
-          type: integer
-          minimum: 0
-          description: |
-            Zero-based bicameral pass index. The driver itself does not
-            condition on this; it's logged for observability so a UI can
-            tell which pass produced which hemisphere output.
         maxTokens:
           type: integer
           minimum: 1
           description: |
             Maximum output tokens. Backend-clamped. Owned by the caller
-            (typically the gateway) — the driver does not apply a
-            local default. Adapters whose backends don't expose this
-            knob (e.g. agentic CLIs) silently ignore it.
+            (the gateway) — the driver applies no local default. Adapters
+            whose backends don't expose this knob (agentic CLIs) ignore
+            it silently.
         temperature:
           type: number
           format: float
@@ -372,10 +389,10 @@ components:
           maximum: 2
           description: |
             Sampling temperature. Backend-clamped. Owned by the caller
-            (typically the gateway, where it will eventually be
-            modulated by the NT system) — the driver does not apply a
-            local default. Adapters whose backends don't expose this
-            knob (e.g. agentic CLIs) silently ignore it.
+            (the gateway, which resolves it from the model's settings
+            profile) — the driver applies no local default. Backends that
+            reject the parameter outright, as some reasoning models do,
+            have it dropped with a warning rather than erroring.
         stop:
           type: array
           items:
@@ -385,19 +402,6 @@ components:
           type: string
           format: uuid
           description: Caller-supplied id for log correlation. Echoed in the response.
-        tools:
-          type: array
-          items:
-            $ref: 'components/common.yaml#/components/schemas/ToolDefinition'
-          description: |
-            Tool catalog available for this generation. The driver
-            translates each entry into its backend's native tool-calling
-            mechanism and passes it through; it does not choose which to
-            call or execute any. Omitted or empty = no tools this pass
-            (e.g. the voice / articulation pass, which emits speech rather
-            than tool calls). A `toolChoice` knob (auto/none/required) is
-            deferred — v0.3 leaves selection to the model.
-
     GenerateResponse:
       type: object
       required:
@@ -413,18 +417,7 @@ components:
             - stop          # natural end of generation
             - length        # hit max tokens
             - stop_sequence # matched a `stop` value
-            - tool_use      # stopped to emit tool call(s); see toolCalls
             - error         # truncated due to backend error
-        toolCalls:
-          type: array
-          items:
-            $ref: 'components/common.yaml#/components/schemas/ToolCall'
-          description: |
-            Tool-invocation requests the model emitted this turn. Non-empty
-            iff `finishReason == tool_use`. The gateway decides
-            whether and which to execute (reflexive/deliberative gate, plus
-            bicameral agreement for irreversible efferent effects); the
-            driver only surfaces them.
         usage:
           $ref: '#/components/schemas/Usage'
         requestId:
@@ -456,10 +449,10 @@ components:
     DriverInfo:
       type: object
       description: |
-        Driver self-description. Driver does not know its position in
-        any topology — identity (the operator-supplied name used for UI
-        labelling and message stamping) lives on the gateway's
-        `drivers` config and is never sourced from here.
+        Driver self-description, and the gateway's only source of truth
+        for what this backend serves. A driver does not know its position
+        in any topology: its operator-supplied name lives in the watchdog
+        topology, not here.
       required:
         - backend
       properties:
@@ -485,7 +478,7 @@ components:
             adapter's built-in default rather than pinning a specific model.
         capabilities:
           type: object
-          description: Optional backend capabilities the gateway may key off.
+          description: Backend capabilities the gateway keys off when routing.
           properties:
             streaming:
               type: boolean

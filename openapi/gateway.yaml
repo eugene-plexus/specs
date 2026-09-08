@@ -2,95 +2,76 @@ openapi: 3.1.0
 info:
   title: Eugene Plexus — gateway
   version: 0.3.0-draft
-  summary: User-facing chat API and admin endpoints for Eugene Plexus.
+  summary: The one OpenAI-compatible front door over every configured backend.
   description: |
-    The gateway is the seat of Eugene's consciousness: it runs a
-    single continuous loop (one workspace, one attention) that perceives
-    afferent events, thinks in `thought`s, and decides — via an
-    NT-driven action gate — when to speak, when to keep thinking, and
-    when to stay silent. Speaking is an elected efferent action, not an
-    automatic reply; silence is valid.
+    The gateway is the single endpoint a client talks to. It resolves a
+    requested model to a backend, load-balances across the drivers
+    serving that model, and cascades down a priority list when one
+    fails. That is its whole job.
 
-    Afferent events (a person's message, a presence change) are injected
-    fire-and-forget via `POST /v1/events`. Eugene's replies leave
-    asynchronously as `EfferentSpeechAct`s and are mirrored on the
-    `GET /v1/stream/consciousness` SSE stream. The v0.2 request-response
-    surface (`/v1/chat`, `/v1/chat/stream`) has been removed — no
-    backwards compatibility (nobody is running Eugene Plexus yet, so
-    correctness beats it). The bicameral pair survives as the
-    *deliberative* flavor of a single thought. See the design doc
-    `docs/design/m1-continuous-runtime.md`.
+    **The gateway holds no backend knowledge.** One `inference-driver`
+    runs per backend and owns everything backend-specific: provider
+    choice, model id, secrets, generation params, health. The gateway
+    owns only routing.
 
-    The gateway owns the **topology**: the list of drivers, their
-    operator-supplied names (used for UI labelling and message
-    stamping), and their URLs. Drivers themselves are anonymous and
-    report only their backend / model identity.
+    The two layers are never collapsed. Keeping them separate is what
+    buys three things that matter:
 
-    ## v0.2 additions
+      * **Load balancing and concurrency.** Two replicas of one model
+        on two GPUs, or a small fast model and a large one serving at
+        once, need N independently-configured backends with something
+        above them.
+      * **Multi-host placement.** A driver belongs next to its engine.
+        As separate processes, the driver runs on the remote GPU host
+        and the gateway reaches it over the tailnet — which is what
+        makes "GPUs in different buildings" a supported topology.
+      * **Non-HTTP backends.** `claude_code_cli` and `codex_cli` are
+        subprocess engines with no endpoint to proxy to. Something must
+        front them with HTTP, and that something is the driver — so the
+        driver has to be able to sit in the request path regardless.
 
-    * **Per-person prompts.** Every `IncomingMessage` carries a
-      `personId` resolved upstream (by the connector adapter or the
-      UI session). The gateway pulls that person's
-      `RelationshipSummary` from the identity component and injects
-      it into each hemisphere's prompt — Eugene speaks differently
-      to different people.
-    * **Hemisphere-aware prompts.** Each hemisphere receives a
-      hemisphere-specific system prompt naming itself and its twin
-      (e.g. *"You are the left hemisphere on MiniMax; your twin is
-      Claude"*). Fixes the v0.1 confusion where each hemisphere read
-      the history of role=assistant messages and concluded it itself
-      produced both prior responses.
-    * **Real NT modulation.** `NTState` carries the 6-NT shape with
-      level/baseline/decay per NT. The bicameral loop reads NT to
-      set `max_passes`, `temperature`, and blend weights.
-      `lastUpdated` lets the gateway compute elapsed-time decay
-      between turns.
-    * **Reactive memory search.** `POST /v1/admin/memory-search` is
-      a thin pass-through to the memory component, used by the
-      gateway's topic-shift detector (v0.3). The endpoint
-      ships in v0.2 so the wire shape is stable.
-    * **Identity-component dependency.** The gateway's config
-      now includes `identityUrl` alongside `memoryUrl` and the
-      `drivers` list.
+    The extra local hop is sub-millisecond against a multi-second
+    generation. It is not a cost worth optimising away.
+
+    ## Where the routing table comes from
+
+    The gateway does not store backend URLs. It reads the watchdog
+    topology (`GET /v1/components`, `kind: inference-driver`) and asks
+    each driver's `/v1/info` what model it is serving, then builds
+    model → drivers from the answers. Backend URLs live in exactly one
+    place — the watchdog topology — and are never duplicated into the
+    gateway's own config.
+
+    ## The gateway owns every output-affecting parameter
+
+    Temperature, max tokens and stop sequences ride on every request
+    the gateway makes downstream. A driver never substitutes a local
+    default for a parameter the caller omitted: if a value reaches a
+    backend, the gateway put it there. Per-model settings profiles
+    resolve here, on the way through.
 
     ## Safe mode
 
     The gateway honors the watchdog's safe-mode env var:
-    `EUGENE_PLEXUS_GATEWAY_SAFE_MODE=1` at startup makes the gateway
-    ignore its persisted config file and boot from built-in defaults
-    (no drivers configured, default memory URL, default thresholds).
-    This is the recovery flow when a config edit breaks startup — the
-    operator can still reach `/v1/config` to fix the persisted file,
-    then restart without the env var. While safe mode is active,
-    `/v1/chat` returns 503 (no drivers are configured), but
-    `PATCH /v1/config` writes to the on-disk config normally.
+    `EUGENE_PLEXUS_GATEWAY_SAFE_MODE=1` at startup makes it ignore its
+    persisted config file and boot from built-in defaults. This is the
+    recovery flow when a config edit breaks startup — the operator can
+    still reach `/v1/config` to fix the persisted file, then restart
+    without the env var. Inference requests fail while safe mode is
+    active; `PATCH /v1/config` writes to the on-disk config normally.
 
-    ## Auth note (v0.2)
+    ## Auth
 
-    Every endpoint except `/healthz` requires a bearer session
-    token. UI calls present the operator's session token (issued by
-    the watchdog after passphrase login). Component-to-component
-    calls present the per-component service token threaded via env
-    var at spawn time.
-
-    ## Safe mode
-
-    The gateway honors the watchdog's safe-mode env var:
-    `EUGENE_PLEXUS_GATEWAY_SAFE_MODE=1` at startup makes the gateway
-    ignore its persisted config file and boot from built-in defaults
-    (no drivers configured, default memory URL, default thresholds).
-    This is the recovery flow when a config edit breaks startup — the
-    operator can still reach `/v1/config` to fix the persisted file,
-    then restart without the env var. While safe mode is active,
-    `/v1/chat` returns 503 (no drivers are configured), but
-    `PATCH /v1/config` writes to the on-disk config normally.
+    Every endpoint except `/healthz` requires a bearer token. UI calls
+    present the operator's session token (issued by the watchdog after
+    passphrase login); component-to-component calls present the
+    per-component service token threaded via env var at spawn time.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
   contact:
     name: Eugene Plexus
     url: https://github.com/eugene-plexus
-
 servers:
   - url: http://{host}:{port}
     description: Default LAN deployment.
@@ -104,8 +85,6 @@ security:
   - bearerAuth: []
 
 tags:
-  - name: chat
-    description: User-facing conversational endpoints.
   - name: admin
     description: Inspect and manage the running gateway.
   - name: config
@@ -118,122 +97,6 @@ tags:
     description: Versioning and health.
 
 paths:
-
-  /v1/events:
-    post:
-      tags: [chat]
-      operationId: injectEvent
-      summary: Inject one afferent event into the continuous loop (fire-and-forget).
-      description: |
-        The single door in. Accepts one `AfferentEvent` — a person's
-        message, a presence change, a future sensory input — enqueues it
-        for the continuous consciousness loop, and returns `202`
-        immediately. This call does NOT block for a reply and does NOT
-        guarantee one: whether, when, and how Eugene responds is the
-        loop's decision (speaking is an elected efferent action; silence
-        is valid).
-
-        Eugene's replies leave asynchronously as `EfferentSpeechAct`s,
-        delivered to their destination by the speak effector (connector
-        outbound / UI) and mirrored on `GET /v1/stream/consciousness`
-        for observability. There is no synchronous chat endpoint — the
-        v0.2 request-response surface (`/v1/chat`, `/v1/chat/stream`) was
-        removed (no backwards compatibility; see the design doc
-        `docs/design/m1-continuous-runtime.md`).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: 'components/common.yaml#/components/schemas/AfferentEvent'
-      responses:
-        '202':
-          description: |
-            Event accepted and enqueued. The body echoes the accepted
-            `eventId` for correlation. Acceptance is not a promise of a
-            reply.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [eventId, accepted]
-                properties:
-                  eventId:
-                    type: string
-                    format: uuid
-                  accepted:
-                    type: boolean
-        '400':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '503':
-          description: |
-            The loop is not accepting events (e.g. safe mode — no drivers
-            configured, so there is nothing to think with).
-          content:
-            application/problem+json:
-              schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-
-  /v1/stream/consciousness:
-    get:
-      tags: [chat]
-      operationId: streamConsciousness
-      summary: Subscribe to Eugene's live stream of consciousness (SSE).
-      description: |
-        Server-Sent Events broadcast of the continuous loop's internal
-        activity — the observability window the UI renders as Eugene's
-        stream of consciousness (the direct evolution of the removed
-        `/v1/chat/stream`, generalized from per-turn passes to continuous
-        thoughts). External channels (Discord) only *hear speech*; this
-        stream is the fMRI.
-
-        Event types (`event:` field):
-
-        - `thought`       — `data` = `PassRecord`. One unit of thinking. A
-          single-model thought has one `hemispheres` entry; a *deliberative*
-          thought (high stakes / uncertainty) runs the bicameral pair and has
-          two, with `callosum.agreement` carrying the settledness signal.
-        - `nt_update`     — `data` = `NTState`. The live NT snapshot after a tick.
-        - `gate_decision` — `data` = `GateDecision`. The action the gate elected and its anticipated valence.
-        - `tool_call`     — `data` = `ToolInvocationRecord`. An afferent / efferent / internal tool that ran.
-        - `speech`        — `data` = `EfferentSpeechAct`. What Eugene said (observability mirror of the delivered utterance).
-        - `focus_switch`  — `data` = an object with `from` and `to` focus labels (either may be null). Attention moved.
-        - `phase_change`  — `data` = an object with `phase` set to `awake` or `asleep`. Wake / sleep transition.
-
-        Clients should treat unknown event types as informational.
-      responses:
-        '200':
-          description: SSE stream opened.
-          content:
-            text/event-stream:
-              schema:
-                type: string
-
-  /v1/conversations/{conversationId}:
-    parameters:
-      - in: path
-        name: conversationId
-        required: true
-        schema:
-          type: string
-          format: uuid
-    get:
-      tags: [chat]
-      operationId: getConversation
-      summary: Fetch the full message history of a conversation.
-      description: |
-        v0.1 returns whatever the in-process memory stub holds. Once a real
-        memory component lands, this delegates to it.
-      responses:
-        '200':
-          description: The conversation.
-          content:
-            application/json:
-              schema:
-                $ref: 'components/common.yaml#/components/schemas/Conversation'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-
   /v1/admin/drivers:
     get:
       tags: [admin]
@@ -323,69 +186,6 @@ paths:
             application/json:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/RestartResult'
-
-  /v1/admin/nt-state:
-    get:
-      tags: [admin]
-      operationId: getNTState
-      summary: Read the current global NT state.
-      description: |
-        (v0.2) Returns the 6-NT state with level / baseline / decay per
-        NT and `lastUpdated`. The gateway updates NT each chat
-        turn from observable signals (hemisphere agreement, divergence
-        across passes, latency, time pressure) and the bicameral loop
-        reads NT state to set `max_passes`, `temperature`, and blend
-        weights.
-
-        v0.3 adds background tick from autonomous-thinking idle states;
-        v0.2 only ticks on chat-turn events.
-      responses:
-        '200':
-          description: Current NT state.
-          content:
-            application/json:
-              schema:
-                $ref: 'components/common.yaml#/components/schemas/NTState'
-
-  /v1/admin/memory-search:
-    post:
-      tags: [admin]
-      operationId: searchMemory
-      summary: Reactive memory search (proxies the memory component).
-      description: |
-        (v0.2) Thin pass-through to the memory component's
-        `POST /v1/memory/search`. The gateway's topic-shift
-        detector calls this when the current conversation references
-        something outside the recent history window (e.g. user
-        mentions a name or topic not in the last N turns). The
-        detector itself ships in v0.3; this endpoint exists in v0.2
-        so the wire shape is stable.
-
-        Why proxy instead of letting the UI/connector hit memory
-        directly: the gateway is the only component that knows
-        the current conversation's full context, so it's positioned
-        to make the "this is a topic shift" judgment and to inject
-        the retrieved entries into the next hemisphere prompt.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: 'components/common.yaml#/components/schemas/MemorySearchRequest'
-      responses:
-        '200':
-          description: Matched memory entries.
-          content:
-            application/json:
-              schema:
-                $ref: 'components/common.yaml#/components/schemas/MemorySearchResult'
-        '503':
-          description: Memory component unreachable.
-          content:
-            application/problem+json:
-              schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-
   /v1/config:
     get:
       tags: [config]
@@ -467,12 +267,11 @@ paths:
       operationId: testConfig
       summary: Test the effective config without committing it.
       description: |
-        Probes the gateway's external dependencies — both
-        hemisphere-drivers' `/v1/info` and the memory service's
-        `/healthz` — using the saved config merged with the optional
+        Probes every driver the gateway can route to, hitting each
+        `/v1/info`, using the saved config merged with the optional
         `overrides`. The override values are NOT persisted. Use this
-        from the UI's "Test Connection" button to verify URLs and
-        timeouts before saving.
+        from the UI's "Test Connection" button to verify the routing
+        table and timeouts before saving.
       requestBody:
         required: false
         content:
@@ -521,214 +320,6 @@ components:
         threaded to spawned children via env var at startup.
 
   schemas:
-
-    GateDecision:
-      type: object
-      description: |
-        The action-selection gate's choice on one loop iteration. The
-        gate hill-climbs on anticipated net NT valence — it elects the
-        action with the highest expected reward (and lowest anticipated
-        aversive cost). There are no fixed step counts or termination
-        thresholds; "keep thinking vs. act vs. rest" is purely this
-        valence comparison. Emitted on `GET /v1/stream/consciousness` as
-        the `gate_decision` event.
-      required:
-        - action
-      properties:
-        action:
-          type: string
-          enum:
-            - think
-            - switch
-            - speak
-            - idle
-            - sleep
-          description: |
-            The elected action — take another `thought` on the current
-            focus, `switch` attention to a different focus, `speak` (emit
-            an `EfferentSpeechAct`), `idle` (nothing salient — a low-grade
-            seeking floor, not true rest), or `sleep` (adenosine high —
-            offline consolidation).
-        anticipatedValence:
-          type: number
-          format: float
-          description: |
-            The expected net NT reward that drove the choice, for
-            diagnostics. Higher = the gate expected this action to feel
-            better than the alternatives.
-        focus:
-          type: string
-          description: |
-            Human-readable label of the current focus (a conversationId,
-            an internal topic, or absent when idle) — diagnostic context
-            for the decision.
-
-    VoicePassRecord:
-      type: object
-      description: |
-        After the deliberation loop terminates (agreement or
-        cap-reached), the gateway runs ONE additional LLM call
-        — the "voice pass" — whose job is to convert internal
-        deliberation into a user-facing reply. The deliberation
-        hemispheres talk to each other in the loop, often slipping
-        into inner-dialog register that doesn't actually address the
-        user. The voice pass takes the deliberated content and asks
-        for a clean reply addressed to the user.
-
-        This record carries the voice pass's input + output for
-        diagnostic transparency. The `message` field on the parent
-        `ChatResponse` is the voice pass's `output` — what Eugene
-        actually said to the user.
-
-        Optional so older orchestrators that don't run a voice pass
-        keep working; v0.2.x orchestrators always emit it.
-      required:
-        - driverName
-        - inputMessages
-        - output
-      properties:
-        driverName:
-          type: string
-          description: |
-            Which hemisphere driver performed the voice pass. Operator-
-            configurable via `voiceDriver` on the gateway config;
-            defaults to the first driver in the topology.
-        inputMessages:
-          type: array
-          description: |
-            The full message list sent to the voice driver — system
-            prompt + conversation history + user message + the
-            inline summary of what each hemisphere considered during
-            deliberation.
-          items:
-            $ref: 'components/common.yaml#/components/schemas/Message'
-        output:
-          $ref: 'components/common.yaml#/components/schemas/Message'
-        latencyMs:
-          type: integer
-          minimum: 0
-          description: Wall-clock duration of the voice pass call.
-
-    ToolInvocationRecord:
-      type: object
-      description: |
-        Diagnostic record of one tool invocation during a chat turn —
-        a ToolCall/ToolResult pair flattened for the trace: what ran, on
-        which channel, its reversibility class, a short result summary,
-        and timing. The UI's bicameral-trace view renders these as the
-        perception/action layer beneath deliberation. Result payloads are
-        NOT included — only the human-readable summary — so the trace
-        stays small and free of (potentially sensitive) recalled content.
-      required:
-        - name
-        - channel
-      properties:
-        name:
-          type: string
-          description: Tool name (matches the registered ToolDefinition.name).
-        channel:
-          $ref: 'components/common.yaml#/components/schemas/ToolChannel'
-        effect:
-          $ref: 'components/common.yaml#/components/schemas/ToolEffect'
-        summary:
-          type: string
-          description: |
-            Short human-readable result summary (the ToolResult.content),
-            e.g. "12 recent entries", "constitution", "nt state advanced".
-        isError:
-          type: boolean
-          default: false
-          description: |
-            True if the tool failed. Phase-1 tool errors propagate to the
-            chat handler's existing error mapping instead, so this is
-            normally false until Phase 2 (model-driven tools).
-        latencyMs:
-          type: integer
-          minimum: 0
-          description: Wall-clock duration of the tool invocation.
-
-    PassRecord:
-      type: object
-      required:
-        - passIndex
-        - hemispheres
-        - callosum
-      properties:
-        passIndex:
-          type: integer
-          minimum: 0
-        hemispheres:
-          type: array
-          description: |
-            One `Message` per configured driver that responded on this
-            pass, in the order the gateway's `drivers` config
-            declares them. Each message carries `driverName`. v0.1
-            expects exactly two entries.
-          minItems: 1
-          items:
-            $ref: 'components/common.yaml#/components/schemas/Message'
-        hemisphereInputs:
-          type: array
-          description: |
-            Diagnostic-only mirror of `hemispheres`: each entry is the
-            exact message list the gateway built and sent to that
-            hemisphere driver for this pass — system prompt, conversation
-            history, and any cross-hemisphere intermediate content. The
-            UI's "copy trace" feature reads this so an operator can see
-            what each side actually saw, which is essential when one
-            backend (e.g. a CLI persona) appears to be ignoring its
-            briefing.
-
-            Same ordering as `hemispheres`. Length matches `hemispheres`
-            when present. Optional so older clients keep working —
-            v0.2 orchestrators emit it; pre-v0.2 do not.
-          minItems: 0
-          items:
-            type: object
-            required:
-              - driverName
-              - messages
-            properties:
-              driverName:
-                type: string
-                description: Driver this snapshot belongs to.
-              messages:
-                type: array
-                description: The full message list sent to this driver.
-                items:
-                  $ref: 'components/common.yaml#/components/schemas/Message'
-        callosum:
-          $ref: '#/components/schemas/CallosumState'
-
-    CallosumState:
-      type: object
-      description: |
-        Output of the corpus-callosum blend at the end of one bicameral pass.
-        v0.1 implements only a trivial blend (string equality / length-based
-        heuristic); v0.2+ replaces this with a real disagreement signal
-        (semantic similarity, cross-hemisphere critique, etc.).
-      required:
-        - agreement
-        - decision
-      properties:
-        agreement:
-          type: number
-          format: float
-          minimum: 0
-          maximum: 1
-          description: |
-            Estimated agreement between the two hemispheres on this pass.
-            1.0 = identical content, 0.0 = orthogonal.
-        decision:
-          type: string
-          enum:
-            - terminate    # agreement above threshold; emit final response
-            - another_pass # disagreement above threshold; re-prompt
-            - cap_reached  # forced terminate due to maxPasses
-          description: What the gateway did at the end of this pass.
-        blendedMessage:
-          $ref: 'components/common.yaml#/components/schemas/Message'
-
     DriverProbeRequest:
       type: object
       description: |

@@ -1,84 +1,96 @@
 openapi: 3.1.0
 info:
   title: Eugene Plexus — watchdog
-  version: 0.2.0-draft
-  summary: Process supervisor, UI host, auth root, and master-key holder.
+  version: 0.3.0-draft
+  summary: Process supervisor, engine launcher, UI host, auth root, master-key holder.
   description: |
-    The watchdog is the outermost process of an Eugene Plexus install —
-    the "medulla" in the consciousness analogy. Its jobs:
+    The watchdog is the outermost process of an Eugene Plexus install
+    and the only one an operator starts by hand. Its jobs:
 
-      1. Spawn and supervise the body components (gateway,
-         hemisphere drivers, memory, identity, connector) declared in
-         its topology config. When a spawned child exits, the watchdog
-         respawns it. Children marked `safeMode: true` are launched
-         with the `EUGENE_PLEXUS_<KIND>_SAFE_MODE=1` env var so they
-         boot from defaults without reading their own config file.
+      1. **Supervise the control-plane components** declared in its
+         topology — the gateway, N inference-drivers, the library.
+         These are Eugene Plexus processes, spawned as
+         `<python> -m <module>`, and the watchdog respawns any that
+         exit. Children marked `safeMode: true` launch with
+         `EUGENE_PLEXUS_<KIND>_SAFE_MODE=1` so they boot from defaults
+         without reading their own config file.
 
-      2. Serve the UI's static assets at the root path so an operator's
-         browser has a single, stable address to point at — typically
-         `http://localhost:8079`. The UI proxies API calls through the
-         watchdog to the gateway and other components.
+      2. **Supervise the engine processes.** These are third-party
+         binaries we do not own — `llama-server` first — spawned from
+         an arbitrary argv the watchdog's engine adapter constructs,
+         with an engine-specific readiness probe. See
+         `GET /v1/runtimes`. Supervision *mechanics* are shared with
+         components; nothing else is.
 
-      3. Expose its own configuration and topology over HTTP so the UI
-         (or a CLI client) can edit the install's shape without
-         touching files on disk.
+      3. **Serve the UI's static assets** at the root path so the
+         operator's browser has one stable address to point at. The UI
+         proxies API calls through the watchdog to the gateway and the
+         other components.
 
-      4. (v0.2) **Hold the install's trust root.** The operator's
-         passphrase, set in the first-run wizard, derives the master
-         key that encrypts API keys on disk. The watchdog also issues
-         UI session tokens after passphrase login, and threads
-         per-component service tokens + the master key to spawned
-         children via env var at startup.
+      4. **Expose its own configuration and topology over HTTP** so the
+         UI can edit the install's shape without touching files on
+         disk.
 
-      5. (v0.2) **Surface a pending identity-links badge** so the
-         operator sees when unknown platform users (Discord, Slack,
-         etc.) are waiting for approval. Counts live on the identity
-         component; the watchdog's surface exposes a single GET so
-         the UI doesn't need to talk to identity for the badge.
+      5. **Hold the install's trust root.** The operator's passphrase
+         derives the master key that encrypts secrets at rest. The
+         watchdog issues UI session tokens after passphrase login, and
+         threads per-component service tokens plus the master key to
+         spawned children via env var.
 
-    The watchdog does **not** think. It does not participate in the
-    bicameral loop, has no NT state, and consumes no LLM tokens. Per
-    `project_supervisor_as_interoception`: process health is
-    interoceptive sensory data, and the natural place to react to it
-    is the gateway's NT system. v0.2's watchdog is still a
-    transitional concession; v0.3+ moves the richer supervision logic
-    into the gateway.
+    The watchdog does not route requests, does not talk to models, and
+    consumes no tokens. It starts things and reports what is running.
 
-    ## v0.2 security model
+    ## Why engines and components are separate collections
+
+    Both are supervised processes and share the spawn / watch / respawn
+    / log-capture / crash-backoff machinery. Nothing about their
+    *declarations* is alike, which is why they are separate surfaces:
+
+    | | Component (`/v1/components`) | Runtime (`/v1/runtimes`) |
+    |---|---|---|
+    | What it is | a Eugene Plexus process | a third-party engine binary |
+    | How it starts | `<python> -m <module>` | argv from an engine adapter |
+    | Readiness | the shared `/healthz` | engine-specific probe |
+    | Config | the standard config trio | curated engine flag surface |
+    | Auth | gets signing key + service token | gets none; fronted by a driver |
+
+    Collapsing them would mean one schema whose fields are half-null
+    whichever kind it describes.
+
+    ## Security model
 
     The wizard sets a passphrase at install. The watchdog derives a
-    master key from it via Argon2id and uses that for two purposes:
+    master key from it via Argon2id and uses that for two things:
 
       * **At-rest encryption** of `sensitive` config fields on each
-        component. The master key is threaded to spawned children
-        via env var (`EUGENE_PLEXUS_<KIND>_MASTER_KEY`, base64);
-        children decrypt at engine construction time.
+        component. The master key is threaded to spawned children via
+        env var (`EUGENE_PLEXUS_<KIND>_MASTER_KEY`, base64); children
+        decrypt at construction time.
       * **UI session auth.** `POST /v1/auth/login` accepts the
-        passphrase, bcrypt-compares, and issues a `SessionToken`.
-        Every UI proxy request thereafter presents the token as
+        passphrase, verifies it, and issues a `SessionToken`. Every UI
+        proxy request thereafter presents it as
         `Authorization: Bearer <token>`.
 
     Two `securityMode` options the operator picks in the wizard:
 
       * `prompt_on_startup` — master key in memory only; passphrase
-        required at every watchdog start. Power-outage Eugene stays
-        offline until the operator types the passphrase.
+        required at every watchdog start. After a power cut the install
+        stays offline until the operator types it.
       * `os_keyring` — master key in OS Credential Manager / Keychain /
-        Secret Service. Auto-unlocked when the operator's OS session
-        is active. More convenient; weaker security boundary.
+        Secret Service, auto-unlocked while the operator's OS session is
+        active. More convenient; weaker boundary.
 
-    Component-internal calls (gateway → driver, etc.) use
-    per-component service tokens. Same `Authorization: Bearer ...`
-    shape, different audience claim, rotates on each watchdog
-    restart. The Tailscale tailnet remains the network boundary
-    (the v0.2 auth layer sits on top, doesn't replace it).
+    Component-internal calls (gateway → driver, and so on) use
+    per-component service tokens: same `Authorization: Bearer ...`
+    shape, different audience claim, rotated on each watchdog restart.
+    A mesh VPN (Tailscale / WireGuard) remains the network boundary
+    between hosts; this auth layer sits on top rather than replacing it.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
   contact:
     name: Eugene Plexus
     url: https://github.com/eugene-plexus
-
 servers:
   - url: http://{host}:{port}
     description: Default loopback deployment. Port is fixed in v0.1 so the UI ships with a known target.
@@ -94,19 +106,13 @@ security:
 tags:
   - name: auth
     description: |
-      (v0.2) Operator passphrase login → session token. Trust root
-      for the install.
+      Operator passphrase login → session token. Trust root for
+      the install.
   - name: components
     description: |
-      Topology and lifecycle of the supervised body components. A
-      "component" is an gateway / inference-driver / memory /
-      identity / connector entry the watchdog has been told to spawn
-      or watch.
-  - name: pending-links
-    description: |
-      (v0.2) Notification surface for the pending-identity-links
-      queue maintained by the identity component. Watchdog exposes
-      a count + thin pass-through for the UI badge.
+      Topology and lifecycle of the supervised Eugene Plexus
+      processes — the gateway, the inference-drivers, the library.
+      Engine processes are not components; see the `runtimes` tag.
   - name: config
     description: |
       Remote-editable watchdog settings — UI preferences (theme, font
@@ -176,49 +182,6 @@ paths:
           description: Logged out.
         '401':
           $ref: 'components/common.yaml#/components/responses/Problem'
-
-  # -------- v0.2: pending identity links badge --------
-
-  /v1/pending-links:
-    get:
-      tags: [pending-links]
-      operationId: getPendingLinksSummary
-      summary: |
-        Summary of pending identity links for the UI's notification
-        badge.
-      description: |
-        Returns a count and the most recent N entries. Avoids forcing
-        the UI to talk directly to the identity component for the
-        navigation badge; the full pending-links queue is still
-        managed by the identity component
-        (`GET /v1/identity/links/pending` etc.).
-      parameters:
-        - in: query
-          name: previewLimit
-          required: false
-          schema:
-            type: integer
-            minimum: 0
-            maximum: 20
-            default: 3
-      responses:
-        '200':
-          description: Summary.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [count, preview]
-                properties:
-                  count:
-                    type: integer
-                    minimum: 0
-                    description: Total pending links awaiting operator action.
-                  preview:
-                    type: array
-                    items:
-                      $ref: 'components/common.yaml#/components/schemas/PendingIdentityLink'
-
   /v1/components:
     get:
       tags: [components]
@@ -550,7 +513,6 @@ components:
         safeMode:
           type: boolean
           default: false
-
 
     SpawnConfig:
       type: object
