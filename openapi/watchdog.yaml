@@ -115,8 +115,10 @@ tags:
       Engine processes are not components; see the `runtimes` tag.
   - name: engines
     description: |
-      Which engines this install knows how to start, and whether a
-      usable binary is present for each.
+      Which engines this install knows how to start, whether a usable
+      binary is present for each, and fetching one when it isn't.
+      Engine releases are a managed artifact here, alongside configs
+      and (from M2) models.
   - name: runtimes
     description: |
       Engine processes under supervision — third-party binaries we
@@ -134,6 +136,72 @@ tags:
 paths:
 
   # -------- v0.2: auth --------
+
+  /v1/auth/status:
+    get:
+      tags: [auth]
+      operationId: authStatus
+      summary: Has a passphrase been set on this install?
+      security: []
+      description: |
+        Public probe, deliberately. The UI calls it on every page load to
+        tell "fresh install, send them to the wizard" from "logged out,
+        send them to the login form" — a distinction it cannot make from
+        a 401, and which it must not burn a rate-limited login attempt to
+        discover.
+
+        One boolean, no secrets, no per-source behaviour, no rate limit.
+        Nothing here is worth protecting: an unconfigured install
+        announces itself by refusing every other endpoint anyway.
+      responses:
+        '200':
+          description: Initialization state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+
+  /v1/auth/initialize:
+    post:
+      tags: [auth]
+      operationId: initializeAuth
+      summary: First-run passphrase setup.
+      security: []
+      description: |
+        Sets the operator passphrase on an uninitialized install:
+        persists an Argon2id-PHC hash and the master-key salt, derives
+        the master key into memory so the supervisor can thread it to
+        children that decrypt at-rest secrets, and returns a session
+        token.
+
+        Returning a session — rather than making the caller log in
+        immediately afterwards — is what lets the wizard commit the rest
+        of its screens in the same transaction. Everything it writes
+        after this point is authenticated.
+
+        **Not** a change-passphrase endpoint. It refuses with 409 when a
+        passphrase already exists, because an endpoint that both creates
+        and replaces a credential, and is reachable without one, is a
+        reset endpoint by accident.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthInitializeRequest'
+      responses:
+        '200':
+          description: Initialized; an operator session comes back with it.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/AuthLoginResponse'
+        '409':
+          description: Already initialized — log in instead.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
 
   /v1/auth/login:
     post:
@@ -355,9 +423,16 @@ paths:
         edits engine flags. No engine-specific UI code.
 
         `available: false` means the adapter exists but no binary was
-        found. Until engine acquisition lands the fix is to set
-        `binary` on the runtime by hand; after it, the UI offers to
-        fetch the matching release.
+        found. `acquisition` then says whether one can be fetched for
+        this host and which build would be chosen — or, when it cannot,
+        why not, which is a real answer on Linux with an NVIDIA GPU
+        because upstream publishes no CUDA build for it.
+
+        Note what `available` does and does not mean: it answers "is a
+        binary discoverable on this host", by managed install or PATH. A
+        runtime carrying an explicit `binary` bypasses discovery
+        entirely and will run happily against an engine reported here as
+        unavailable.
       responses:
         '200':
           description: Known engine adapters.
@@ -365,6 +440,111 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EngineList'
+
+  /v1/engines/{engine}/install:
+    parameters:
+      - in: path
+        name: engine
+        required: true
+        schema:
+          $ref: '#/components/schemas/EngineKind'
+    post:
+      tags: [engines]
+      operationId: installEngine
+      summary: Fetch, verify and unpack an engine build.
+      description: |
+        Starts an install and returns immediately — the download is
+        hundreds of megabytes and nothing useful comes of holding a
+        request open for it. Poll the GET on this path for progress.
+
+        One install runs per engine at a time, which is why this is a
+        singleton sub-resource and not a job collection: nobody is
+        installing two llama.cpp builds concurrently, and pretending
+        otherwise would mean inventing job ids for something that has
+        exactly one.
+
+        The build lands in its own versioned directory and only becomes
+        the engine's binary once it has verified and unpacked. An
+        install never overwrites a build in place — a runtime may be
+        executing one right now.
+
+        Returns 409 when an install is already running, and 422 when
+        this host has no installable build (see
+        `EngineAcquisition.reason`).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EngineInstallRequest'
+      responses:
+        '202':
+          description: Install accepted and running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngineInstall'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: An install is already in flight for this engine.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '422':
+          description: Nothing installable for this host.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+    get:
+      tags: [engines]
+      operationId: getEngineInstall
+      summary: Progress of the current or most recent install.
+      description: |
+        The terminal states (`done`, `failed`, `cancelled`) persist until
+        the next install starts, so a UI that reconnects after the fact
+        still learns how it ended rather than finding an empty slot and
+        assuming success.
+      responses:
+        '200':
+          description: Install state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngineInstall'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          description: No install has ever been started for this engine.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+    delete:
+      tags: [engines]
+      operationId: cancelEngineInstall
+      summary: Cancel an install in flight.
+      description: |
+        Stops the download and removes the partial directory. A build
+        that already finished is untouched — this cancels an install,
+        it does not uninstall an engine.
+      responses:
+        '200':
+          description: Cancelled; the state reflects it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngineInstall'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Nothing in flight to cancel.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
 
   # -------- runtimes: engine processes we supervise --------
 
@@ -818,6 +998,231 @@ components:
         adapter later, and MLX after that. We never ship an engine — all
         three are upstream projects we wrap and track.
 
+    AuthStatus:
+      type: object
+      description: |
+        Whether this install has been through first-run setup.
+      required:
+        - initialized
+      properties:
+        initialized:
+          type: boolean
+          description: |
+            True once a passphrase has been set. False means every
+            endpoint except this one, `/healthz` and
+            `POST /v1/auth/initialize` will refuse.
+
+    AuthInitializeRequest:
+      type: object
+      required:
+        - passphrase
+      properties:
+        passphrase:
+          type: string
+          minLength: 1
+          format: password
+          description: |
+            The operator passphrase. Hashed with Argon2id and used to
+            derive the master key that at-rest secrets are sealed
+            under, so losing it means losing every stored credential —
+            there is no recovery path by design.
+
+    ManagedEngine:
+      type: object
+      description: |
+        A build this install fetched and owns, as opposed to one found on
+        PATH or pointed at by hand. Present only when we installed it.
+      required:
+        - version
+        - binaryPath
+        - variant
+      properties:
+        version:
+          type: string
+          description: |
+            Upstream build identifier - for llama.cpp a `bNNNN` tag, not
+            a semver. Copied verbatim from the release, because the only
+            useful thing to do with it is compare it to what upstream
+            has.
+        binaryPath:
+          type: string
+          description: Absolute path to the executable inside the managed directory.
+        variant:
+          type: string
+          description: |
+            Which asset was chosen, e.g. `win-cuda-13.3-x64`. Recorded
+            because it is the answer to "why is this slow" often enough
+            to be worth surfacing: a host that fell back to a CPU build
+            looks identical from the outside otherwise.
+        installedAt:
+          type: string
+          format: date-time
+        sizeBytes:
+          type: integer
+          format: int64
+          description: |
+            On-disk size of this build. A Windows CUDA install is roughly
+            half a gigabyte unpacked and we retain two, so this is worth
+            showing before someone asks where their disk went.
+        previousVersion:
+          type: string
+          description: |
+            The build retained alongside this one, if any. Retention is
+            current plus previous: keeping every build is not viable at
+            this size, and keeping only the newest leaves a bad upgrade
+            with no way back.
+
+    EngineAcquisition:
+      type: object
+      description: |
+        Whether this host can be given a build of this engine, and which
+        one. Answers the question before the operator commits to a
+        several-hundred-megabyte download.
+      required:
+        - installable
+      properties:
+        installable:
+          type: boolean
+          description: |
+            False means no published asset fits this host and `reason`
+            says why. This is a real outcome, not an error: upstream
+            publishes no CUDA build for Linux, so a Linux box with an
+            NVIDIA GPU cannot be served automatically and is told so
+            rather than quietly handed a slower Vulkan build it never
+            asked for.
+        variant:
+          type: string
+          description: The asset variant that would be fetched, when installable.
+        reason:
+          type: string
+          description: |
+            Why not, when `installable: false`. Written for the operator,
+            naming the way forward - build from source, use a container,
+            or point `binary` at an existing build.
+        detected:
+          $ref: '#/components/schemas/HostAccelerator'
+        latestVersion:
+          type: string
+          description: Newest upstream build we know of.
+        latestPublishedAt:
+          type: string
+          format: date-time
+          description: |
+            When that build shipped. Deliberately the age of the newest
+            build rather than a count of builds behind: llama.cpp
+            publishes several a day, so "1,021 builds behind" is noise
+            and "your build is three weeks old" is information.
+        checkedAt:
+          type: string
+          format: date-time
+          description: |
+            When we last asked upstream. Checked at most daily and never
+            on the request path; a failed check leaves this stale rather
+            than raising anything.
+
+    HostAccelerator:
+      type: object
+      description: |
+        What the watchdog detected about this machine, insofar as it
+        decides which engine build to fetch. Not a general hardware
+        inventory - the VRAM-and-quant-fit surface that M3 needs belongs
+        to the library component, not here.
+      properties:
+        os:
+          type: string
+          enum: [windows, linux, macos]
+        arch:
+          type: string
+          enum: [x64, arm64]
+        accelerator:
+          type: string
+          enum: [none, cuda, rocm, metal, sycl]
+          description: |
+            `metal` is reported on Apple silicon even though there is no
+            separate Metal asset - the plain macOS build has it compiled
+            in, and saying `none` there would read as "no GPU".
+        acceleratorVersion:
+          type: string
+          description: |
+            For CUDA, the highest version the installed driver supports.
+            Selection takes the highest published build whose major
+            matches and whose minor is no greater than this; a higher
+            major is never chosen.
+
+    EngineInstallRequest:
+      type: object
+      properties:
+        version:
+          type: string
+          description: |
+            A specific upstream build to install. Omit for the newest.
+            Present so an operator who found a regression can pin the
+            build that worked, which is the whole reason we record the
+            version rather than just "installed".
+
+    EngineInstall:
+      type: object
+      description: |
+        Progress of one install. Phases are named rather than reduced to
+        a percentage because they fail differently and the operator
+        needs to know which one they are in: a stall in `downloading` is
+        the network, a stall in `extracting` is the disk, and a failure
+        in `verifying` is the one that means do not run this.
+      required:
+        - engine
+        - state
+      properties:
+        engine:
+          $ref: '#/components/schemas/EngineKind'
+        state:
+          type: string
+          enum:
+            - resolving
+            - downloading
+            - verifying
+            - extracting
+            - done
+            - failed
+            - cancelled
+          description: |
+            * `resolving` - asking upstream which build and which asset.
+            * `downloading` - fetching. On Windows with CUDA this is two
+              assets, the binary and a separate CUDA runtime, and the
+              byte counters cover both.
+            * `verifying` - comparing the SHA-256 the releases API
+              reported for the asset. Upstream publishes no checksum
+              file; the digest arrives with the asset metadata, so
+              there is no excuse for skipping this.
+            * `extracting` - unpacking into a new versioned directory.
+            * `done` / `failed` / `cancelled` - terminal, and retained
+              until the next install starts.
+        version:
+          type: string
+          description: The build being installed, once resolved.
+        variant:
+          type: string
+        bytesDownloaded:
+          type: integer
+          format: int64
+        bytesTotal:
+          type: integer
+          format: int64
+          description: |
+            Total across every asset this install needs. Absent until
+            `resolving` finishes.
+        message:
+          type: string
+          description: What is happening now, for a status line.
+        error:
+          type: string
+          description: 'Populated when `state: failed`.'
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+
     EngineList:
       type: object
       required:
@@ -884,6 +1289,10 @@ components:
         error:
           type: string
           description: 'Populated when `available: false`.'
+        managed:
+          $ref: '#/components/schemas/ManagedEngine'
+        acquisition:
+          $ref: '#/components/schemas/EngineAcquisition'
 
     RuntimeList:
       type: object

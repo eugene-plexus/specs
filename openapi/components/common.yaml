@@ -186,7 +186,7 @@ components:
         - file_path   # path on the component host's filesystem
         - url
         - duration    # seconds; UI may render as a time picker
-        - driver_list # ordered list of `DriverEntry` objects; see schema
+        - driver_list # reserved: ordered model->driver priority lists (M5)
 
     ConfigField:
       type: object

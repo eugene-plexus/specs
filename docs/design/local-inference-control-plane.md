@@ -2,7 +2,7 @@
 
 **Status:** direction change, decided 2026-09-08. **Supersedes the consciousness
 program entirely** — the functional-region architecture, the continuous-loop
-runtime (`m1-continuous-runtime.md`), and the NT/identity/memory stack are
+runtime (`retired-continuous-runtime.md`), and the NT/identity/memory stack are
 retired, not paused. Also retires the local-LLM-*training* platform arc
 (`coordinator`/`trainer`/`data`/`eval`/`inference`/`cluster`, June 2026) as the
 headline direction.
