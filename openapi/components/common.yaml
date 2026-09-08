@@ -54,9 +54,9 @@ components:
           description: |
             When `role == "hemisphere"`, the operator-supplied name of
             the driver that produced this message (e.g. `"left"`,
-            `"right"`, or any free-form label set by the orchestrator's
+            `"right"`, or any free-form label set by the gateway's
             `drivers` config). Omitted otherwise. Identity is owned by
-            the orchestrator's topology config — drivers themselves do
+            the gateway's topology config — drivers themselves do
             not know their position in the pair.
         timestamp:
           type: string
@@ -175,7 +175,7 @@ components:
       type: object
       description: |
         A capability Eugene can invoke, normalized across backends. The
-        orchestrator owns the catalog; each hemisphere-driver adapter
+        gateway owns the catalog; each inference-driver adapter
         translates this into its backend's native mechanism (Anthropic
         tool-use blocks, OpenAI function-calling, or Hermes-style
         `<tool_call>` text for `openai_compat_http` models without native
@@ -213,7 +213,7 @@ components:
         A model's request to invoke a tool, surfaced in
         `GenerateResponse.toolCalls` and carried back in `Message` for the
         next pass. The driver only surfaces the request; the
-        orchestrator — never the driver — decides whether to execute it,
+        gateway — never the driver — decides whether to execute it,
         after the reflexive/deliberative gate and (for `irreversible`
         efferent effects) bicameral agreement.
       required:
@@ -263,7 +263,7 @@ components:
           description: |
             Typed result payload, for `internal` regimented calls and
             structured tool outputs — e.g. an emotion-read returning
-            `{joy: 0.1, anger: 0.7, ...}` that the orchestrator routes
+            `{joy: 0.1, anger: 0.7, ...}` that the gateway routes
             into the NT system. Mirrors MCP's `structuredContent`. When
             both are present, `content` is the text rendering of this.
         isError:
@@ -280,7 +280,7 @@ components:
       type: object
       description: |
         A snapshot of Eugene's neurotransmitter state. v0.2 introduces real
-        modulation: the orchestrator updates this from observations each
+        modulation: the gateway updates this from observations each
         chat turn, and the bicameral loop reads it to set `max_passes`,
         `temperature`, and blend weights. CLLM-inspired anxiety-driven
         termination is the load-bearing behavior.
@@ -308,7 +308,7 @@ components:
           type: string
           format: date-time
           description: |
-            When NT levels were last updated. Used by the orchestrator
+            When NT levels were last updated. Used by the gateway
             to compute elapsed-time decay on the next tick.
         dopamine:
           $ref: '#/components/schemas/NTLevel'
@@ -329,7 +329,7 @@ components:
         Per-NT level + its baseline + per-second decay rate. The level
         decays toward baseline at `decay` units per second between
         observations; observations push it up or down based on the
-        orchestrator's observation→NT mapping (see orchestrator spec).
+        gateway's observation→NT mapping (see gateway spec).
       required:
         - level
         - baseline
@@ -361,21 +361,21 @@ components:
     DriverEntry:
       type: object
       description: |
-        One operator-configured hemisphere-driver *slot* in the
-        orchestrator's topology. The orchestrator owns the `name`
+        One operator-configured inference-driver *slot* in the
+        gateway's topology. The gateway owns the `name`
         (free-form, used for labelling messages and UI tabs); drivers
         themselves are anonymous and report only their backend / model
         identity. The bicameral loop requires exactly two slots.
 
         A slot is a **priority list** of backends (`backends`), not a
-        single backend. Each entry is the NAME of a hemisphere-driver
+        single backend. Each entry is the NAME of a inference-driver
         entry in the watchdog topology (`GET /v1/components`,
-        `kind: hemisphere-driver`); the orchestrator resolves names to
+        `kind: inference-driver`); the gateway resolves names to
         URLs at startup. This keeps backend URLs in exactly one place
         (the watchdog topology) instead of duplicating them into the
-        orchestrator's config (v0.2.1).
+        gateway's config (v0.2.1).
 
-        On each chat turn the orchestrator tries `backends[0]`; if it
+        On each chat turn the gateway tries `backends[0]`; if it
         fails in a cascade-eligible way (transport error / 5xx /
         timeout) it falls through to `backends[1]`, and so on. A 4xx
         fails the slot HARD without cascading — a 4xx is a
@@ -399,8 +399,8 @@ components:
           items:
             type: string
           description: |
-            Ordered priority list of watchdog-topology hemisphere-driver
-            entry NAMES that back this slot. The orchestrator resolves
+            Ordered priority list of watchdog-topology inference-driver
+            entry NAMES that back this slot. The gateway resolves
             each name to a URL via `GET /v1/components` at startup and
             tries them in order on each turn, cascading to the next on
             transport error / 5xx / timeout (but not on 4xx). At least
@@ -409,8 +409,8 @@ components:
     BackendKind:
       type: string
       description: |
-        Which adapter the hemisphere-driver instance is configured to use.
-        Reported by `/v1/info` so the orchestrator can log and the UI can
+        Which adapter the inference-driver instance is configured to use.
+        Reported by `/v1/info` so the gateway can log and the UI can
         render a label. `claude_code_cli` and `codex_cli` shell out to the
         respective CLIs (primary mode for personal installations).
       enum:
@@ -423,8 +423,8 @@ components:
     ComponentKind:
       type: string
       enum:
-        - orchestrator
-        - hemisphere-driver
+        - gateway
+        - inference-driver
         - memory
         - identity
         - connector
@@ -440,7 +440,7 @@ components:
         the watchdog's `/v1/components`, and (via `ConfigField.
         componentKindHint`) any component declaring a config field that
         points at a peer of a specific kind. v0.1 covered three body
-        parts (orchestrator, hemisphere-driver, memory); v0.2 adds
+        parts (gateway, inference-driver, memory); v0.2 adds
         `identity` (Default Mode Network analogue) and `connector`
         (external sense organs).
 
@@ -488,7 +488,7 @@ components:
           type: string
           description: |
             Eugene Plexus component name that originated the error
-            (e.g. `"orchestrator"`, `"hemisphere-driver:left"`).
+            (e.g. `"gateway"`, `"inference-driver:left"`).
 
     # -------- Health --------
 
@@ -506,7 +506,7 @@ components:
           description: Component version (semver).
         component:
           type: string
-          description: Component identifier (e.g. `"hemisphere-driver"`).
+          description: Component identifier (e.g. `"inference-driver"`).
         safeMode:
           type: boolean
           default: false
@@ -614,7 +614,7 @@ components:
             first option (saves an empty string). For single-instance
             kinds (memory, identity, etc.) the dropdown UX collapses
             to effectively a toggle; for multi-instance kinds
-            (hemisphere-driver) the operator picks one. Pairs with a
+            (inference-driver) the operator picks one. Pairs with a
             string/url `valueType` — the saved value is still the
             peer's URL, the hint only changes how the UI looks it up.
             Avoids the OpenClaw trap of duplicating topology into
@@ -710,7 +710,7 @@ components:
       properties:
         component:
           type: string
-          description: Component identifier (e.g. `"hemisphere-driver"`).
+          description: Component identifier (e.g. `"inference-driver"`).
         fields:
           type: array
           items:
@@ -809,8 +809,8 @@ components:
       type: object
       description: |
         Result of a `POST /v1/config/test` invocation. Components decide
-        what "test" means for their own surface: hemisphere-driver runs
-        a minimal `generate()` round-trip; orchestrator probes its
+        what "test" means for their own surface: inference-driver runs
+        a minimal `generate()` round-trip; gateway probes its
         configured hemispheres + memory; memory verifies the store
         backend is reachable.
       required:
@@ -840,7 +840,7 @@ components:
           type: string
           description: |
             Brief sample of the data the test produced — e.g. assistant
-            text from a hemisphere-driver `generate()` round-trip. May be
+            text from a inference-driver `generate()` round-trip. May be
             truncated to keep the response small. Omitted when there's
             nothing useful to show.
         error:
@@ -1169,7 +1169,7 @@ components:
         (mPFC) node of the Default Mode Network.
 
         v0.2 reserves three structured keys (`name`, `pronouns`,
-        `coreValues`) that the orchestrator reads programmatically
+        `coreValues`) that the gateway reads programmatically
         when constructing hemisphere prompts. The `freeText` field is
         operator-owned free-form context (markdown / YAML / plain)
         that's included verbatim in every prompt. Future versions
@@ -1275,7 +1275,7 @@ components:
         Which storage backend the memory component is using. Set in
         the memory component's config. v0.2 ships one option; future
         versions add adapters following the same pattern as
-        `hemisphere-driver`'s provider registry.
+        `inference-driver`'s provider registry.
       enum:
         - local_sqlite
 
@@ -1344,7 +1344,7 @@ components:
     MemorySearchRequest:
       type: object
       description: |
-        Reactive memory search. Called by the orchestrator when its
+        Reactive memory search. Called by the gateway when its
         topic-shift detector (v0.3) flags that the current
         conversation references something outside recent history,
         or when the operator explicitly requests retrieval. v0.2
@@ -1411,7 +1411,7 @@ components:
     RelationshipSummary:
       type: object
       description: |
-        Per-person context the orchestrator injects into hemisphere
+        Per-person context the gateway injects into hemisphere
         prompts so Eugene speaks differently to different people.
         v0.2: built on-demand from raw recent turns with this person
         (skip-extraction approach). v0.3: synthesized via reactive
@@ -1430,7 +1430,7 @@ components:
             turn (e.g. "Sarah is your wife. You talk about 3
             times a day, mostly casual, frequent jokes. She works
             in product."). Omitted when there's no synthesized
-            summary; the orchestrator will then build context
+            summary; the gateway will then build context
             from raw recent turns.
         turnCount:
           type: integer
@@ -1455,8 +1455,8 @@ components:
     # -------- Connector adapter (v0.2) --------
     #
     # The connector component (`eugene-plexus/connector`) bridges
-    # external platforms to the orchestrator. Same adapter-registry
-    # pattern as hemisphere-driver: one HTTP service, multiple
+    # external platforms to the gateway. Same adapter-registry
+    # pattern as inference-driver: one HTTP service, multiple
     # platform adapters internally. v0.2 ships `discord`.
 
     AdapterKind:
@@ -1471,11 +1471,11 @@ components:
       type: object
       description: |
         One configured platform adapter inside the connector. Like
-        hemisphere-driver's `drivers` config but for outbound
+        inference-driver's `drivers` config but for outbound
         platforms. Each entry runs its own adapter loop (Discord
         Gateway WS connection, Slack RTM, etc.) and bridges
         incoming/outgoing messages between the platform and the
-        orchestrator.
+        gateway.
       required:
         - name
         - kind
@@ -1505,9 +1505,9 @@ components:
       type: object
       description: |
         Normalized message shape an adapter posts to the
-        orchestrator, wrapped in an `AfferentEvent` (`kind: message`)
+        gateway, wrapped in an `AfferentEvent` (`kind: message`)
         to `POST /v1/events`. Adapter-specific platform details
-        collapse to this universal shape; the orchestrator never sees
+        collapse to this universal shape; the gateway never sees
         Discord-specific or Slack-specific fields.
       required:
         - personId
@@ -1542,7 +1542,7 @@ components:
             For channel-mention adapters (Discord channel
             mentions, Slack channels): recent platform messages
             preceding the mention, included for conversational
-            grounding. The orchestrator may surface these to
+            grounding. The gateway may surface these to
             hemispheres as ambient context, but only the actual
             mention/reply gets persisted to memory (privacy
             default: don't store messages from people who didn't
@@ -1551,7 +1551,7 @@ components:
     MessageSource:
       type: object
       description: |
-        Where a message came from. Lets the orchestrator and UI
+        Where a message came from. Lets the gateway and UI
         distinguish "operator typing in the local UI" from
         "Discord channel mention" without needing
         adapter-specific code paths.
@@ -1640,7 +1640,7 @@ components:
       type: object
       description: |
         A single afferent (perception-in) event injected into the
-        orchestrator's continuous loop via `POST /v1/events`. The
+        gateway's continuous loop via `POST /v1/events`. The
         unified envelope for everything Eugene perceives — a person's
         message, a presence change, and future sensory inputs all arrive
         as one shape, differing only by `kind` and the typed payload.

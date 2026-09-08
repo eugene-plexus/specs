@@ -69,8 +69,8 @@ jobs:
         run: |
           set -euo pipefail
           npx --yes @redocly/cli@2.30.4 lint \
-            openapi/orchestrator.yaml \
-            openapi/hemisphere-driver.yaml \
+            openapi/gateway.yaml \
+            openapi/inference-driver.yaml \
             openapi/watchdog.yaml
 
   dco:

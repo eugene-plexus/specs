@@ -7,7 +7,7 @@ info:
     The watchdog is the outermost process of an Eugene Plexus install —
     the "medulla" in the consciousness analogy. Its jobs:
 
-      1. Spawn and supervise the body components (orchestrator,
+      1. Spawn and supervise the body components (gateway,
          hemisphere drivers, memory, identity, connector) declared in
          its topology config. When a spawned child exits, the watchdog
          respawns it. Children marked `safeMode: true` are launched
@@ -17,7 +17,7 @@ info:
       2. Serve the UI's static assets at the root path so an operator's
          browser has a single, stable address to point at — typically
          `http://localhost:8079`. The UI proxies API calls through the
-         watchdog to the orchestrator and other components.
+         watchdog to the gateway and other components.
 
       3. Expose its own configuration and topology over HTTP so the UI
          (or a CLI client) can edit the install's shape without
@@ -40,9 +40,9 @@ info:
     bicameral loop, has no NT state, and consumes no LLM tokens. Per
     `project_supervisor_as_interoception`: process health is
     interoceptive sensory data, and the natural place to react to it
-    is the orchestrator's NT system. v0.2's watchdog is still a
+    is the gateway's NT system. v0.2's watchdog is still a
     transitional concession; v0.3+ moves the richer supervision logic
-    into the orchestrator.
+    into the gateway.
 
     ## v0.2 security model
 
@@ -67,7 +67,7 @@ info:
         Secret Service. Auto-unlocked when the operator's OS session
         is active. More convenient; weaker security boundary.
 
-    Component-internal calls (orchestrator → driver, etc.) use
+    Component-internal calls (gateway → driver, etc.) use
     per-component service tokens. Same `Authorization: Bearer ...`
     shape, different audience claim, rotates on each watchdog
     restart. The Tailscale tailnet remains the network boundary
@@ -99,7 +99,7 @@ tags:
   - name: components
     description: |
       Topology and lifecycle of the supervised body components. A
-      "component" is an orchestrator / hemisphere-driver / memory /
+      "component" is an gateway / inference-driver / memory /
       identity / connector entry the watchdog has been told to spawn
       or watch.
   - name: pending-links
@@ -275,7 +275,7 @@ paths:
         required: true
         schema:
           type: string
-        description: Operator-supplied component name (e.g. `left`, `right`, `orchestrator`).
+        description: Operator-supplied component name (e.g. `left`, `right`, `gateway`).
     get:
       tags: [components]
       operationId: getComponent
@@ -486,7 +486,7 @@ components:
       properties:
         name:
           type: string
-          description: Operator-supplied label, also used in the orchestrator's `drivers` list.
+          description: Operator-supplied label, also used in the gateway's `drivers` list.
         kind:
           $ref: 'components/common.yaml#/components/schemas/ComponentKind'
         url:
