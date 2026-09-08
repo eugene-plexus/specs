@@ -1,8 +1,15 @@
 # M1 — Engine acquisition (design)
 
-**Status:** design, 2026-09-08. Milestone **M1** of
+**Status:** built 2026-09-08. Milestone **M1** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
-Follows [M0](../acceptance/m0-four-process-run.md), which is complete.
+Follows [M0](../acceptance/m0-four-process-run.md).
+
+Verified against upstream for real, not a fixture: installed b10867
+`win-cuda-13.3-x64` (both assets, 516 MB transferred, both SHA-256 digests
+checked), then ran the full four-process stack with a runtime declaring no
+`binary` at all. It found the managed build, spawned it, reached `ready`,
+and served a completion through the gateway. See §8 for what that shook
+out.
 
 **What it is:** the control plane fetches, verifies and updates the engine
 binary itself, so a fresh install can serve a model without the operator
@@ -20,8 +27,11 @@ artifact** alongside models and configs.
 
 ## 1. What upstream actually ships
 
-Checked against `ggml-org/llama.cpp` build **b10867**, 2026-09-08. Four
-things about it shape the whole milestone, and three of them are traps.
+Checked against `ggml-org/llama.cpp` build **b10867**, 2026-09-08. Five
+things about it shape the whole milestone, and four of them are traps —
+the last found by installing a current build beside the one this project
+had been using by hand, which is the sort of thing only a real install
+tells you.
 
 ### The release matrix
 
@@ -75,7 +85,24 @@ product is slow. Handing someone a worse engine without their say-so is a
 bad trade for a one-click install, and the manual path already works — M0's
 acceptance run uses it.
 
-### Trap 4 — no checksums are published, but the API has digests
+### Trap 4 — `--version` changed format mid-2026
+
+Found by installing a current build next to the one this project had been
+using:
+
+```
+version: 9846 (f708a5b2c)                          <= through ~b10000
+version: 0.4.0-dev (build 10867, commit f3f1a8f27) <= b10867 onward
+```
+
+Upstream started printing a semver alongside the build number, which is
+also where that stray `v0.4.0` release tag comes from. A scraper that
+takes the first token after `version:` returns `0.4.0-dev`, which answers
+none of the questions the field exists for and disagrees with the `bNNNN`
+shown beside it. **Prefer the parenthesised build number; fall back to the
+old shape.**
+
+### Trap 5 — no checksums are published, but the API has digests
 
 There is no `.sha256` or `.sig` asset. There *is* a per-asset
 `digest: "sha256:…"` field on the releases API response — the same call
@@ -132,9 +159,10 @@ not build a comparison screen for this; guidance UI is M3.
   exactly this reason (prebuilt releases ship their shared libraries
   alongside the executable).
 - **Retention: current + previous.** Older builds are pruned on a
-  successful install. Windows CUDA is ~500 MB unpacked per build; keeping
-  every one is not viable, and keeping only the newest means a bad upgrade
-  has no way back.
+  successful install. A Windows CUDA build is **704 MB unpacked** (516 MB
+  transferred) — measured, not estimated — so two retained is about 1.4 GB.
+  Keeping every build is not viable at that size, and keeping only the
+  newest means a bad upgrade has no way back.
 - Discovery precedence becomes **explicit `binary` > managed > PATH.** A
   managed install should beat a stray `llama-server` on PATH, because the
   operator asked us to manage it; an explicit `binary` still beats
@@ -233,7 +261,32 @@ extraction, versioned install, pointer move, retention, update check, the
 - **A comparison surface** between accelerator variants. That is M3
   guidance work.
 
-## 7. Risks
+## 7. What building it changed
+
+Everything in §1–§6 survived contact, with three amendments worth keeping:
+
+- **The `--version` format trap above** — found only by installing a
+  current build beside an old one, which no unit test would have done.
+- **Sizes were understated.** 704 MB unpacked, not ~500 MB.
+- **`GET /v1/engines`' `available: false` needed rewording, not
+  rethinking.** It answers "is a binary discoverable on this host", and a
+  runtime with an explicit `binary` bypasses discovery entirely — so an
+  engine can read as unavailable while a runtime using it runs happily.
+  That is correct as specified and confusing as displayed; the fix was to
+  say so in the field's own text and in the error string, which now names
+  the install endpoint.
+
+Two things deliberately *not* done, both cheap to add and both wrong for
+now:
+
+- **No resumable downloads.** A failed engine install is retried, not
+  resumed. This becomes load-bearing at M3, where a 40 GB model makes a
+  restart unacceptable — and that is the library's problem, not this one.
+- **No background update checking beyond the daily cache.** Nothing polls
+  upstream on a timer; the check happens when someone looks at the engines
+  panel, and a failure leaves the timestamp stale rather than raising.
+
+## 8. Risks
 
 - **Upstream asset naming is not a contract.** llama.cpp renames and adds
   variants freely (`ubuntu-` was `linux-`; ROCm and OpenVINO versions are
@@ -245,5 +298,5 @@ extraction, versioned install, pointer move, retention, update check, the
 - **Antivirus on Windows** quarantines freshly-downloaded executables. A
   verified download that then fails to launch needs to say so in those
   terms, not as a generic spawn error.
-- **Disk.** ~500 MB per Windows CUDA build, ×2 retained. Report the size
-  before installing, not after.
+- **Disk.** 704 MB per Windows CUDA build unpacked, ×2 retained. Report
+  the size before installing, not after.
