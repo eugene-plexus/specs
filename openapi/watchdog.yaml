@@ -113,6 +113,15 @@ tags:
       Topology and lifecycle of the supervised Eugene Plexus
       processes — the gateway, the inference-drivers, the library.
       Engine processes are not components; see the `runtimes` tag.
+  - name: engines
+    description: |
+      Which engines this install knows how to start, and whether a
+      usable binary is present for each.
+  - name: runtimes
+    description: |
+      Engine processes under supervision — third-party binaries we
+      spawn from an adapter-built argv, not Eugene Plexus components.
+      One runtime serves one model.
   - name: config
     description: |
       Remote-editable watchdog settings — UI preferences (theme, font
@@ -328,6 +337,236 @@ paths:
             application/problem+json:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  # -------- engines: what we know how to start --------
+
+  /v1/engines:
+    get:
+      tags: [engines]
+      operationId: listEngines
+      summary: Report every engine adapter, and whether a usable binary is present.
+      description: |
+        An engine is supported only when an adapter exists for it,
+        because the adapter is the thing that knows how to build the
+        argv, what readiness means, and which flags are worth exposing.
+        This endpoint is what the UI reads to render the "add a runtime"
+        form: `flagSchema` is a standard `ConfigSchema`, so the same
+        generic config editor that edits every component's settings also
+        edits engine flags. No engine-specific UI code.
+
+        `available: false` means the adapter exists but no binary was
+        found. Until engine acquisition lands the fix is to set
+        `binary` on the runtime by hand; after it, the UI offers to
+        fetch the matching release.
+      responses:
+        '200':
+          description: Known engine adapters.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EngineList'
+
+  # -------- runtimes: engine processes we supervise --------
+
+  /v1/runtimes:
+    get:
+      tags: [runtimes]
+      operationId: listRuntimes
+      summary: What is running, where, with which model, and what it can do.
+      description: |
+        The runtime dashboard's source of truth, and how the operator
+        answers "is my model loaded yet". Each entry pairs the
+        declarative half (what the operator asked for) with the observed
+        half — status, pid, the resolved `argv`, the engine's own
+        version, and the capabilities read back off the running engine.
+
+        Includes runtimes that are not currently up: a `stopped` or
+        `crashed` runtime is still declared, and hiding it would make
+        the dashboard lie.
+      responses:
+        '200':
+          description: Every declared runtime.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeList'
+    post:
+      tags: [runtimes]
+      operationId: createRuntime
+      summary: Declare a new engine runtime.
+      description: |
+        Persists the runtime to the watchdog's topology and spawns it
+        immediately unless `autoStart` is false. `flags` are validated
+        against the engine adapter's `flagSchema`; unknown keys are
+        rejected rather than silently dropped, because a typo'd flag
+        that vanishes is much worse than one that errors.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeSpec'
+      responses:
+        '201':
+          description: Runtime declared.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Runtime'
+        '400':
+          description: |
+            Invalid spec — unknown engine, no adapter, a flag that
+            isn't in the adapter's schema, a model path that does not
+            exist, or a port already claimed by another runtime.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '409':
+          description: A runtime with that name already exists.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/runtimes/{name}:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [runtimes]
+      operationId: getRuntime
+      summary: Read one runtime.
+      responses:
+        '200':
+          description: The runtime.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Runtime'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    patch:
+      tags: [runtimes]
+      operationId: updateRuntime
+      summary: Modify a runtime's declaration.
+      description: |
+        Partial update. Every field here is baked into the argv at
+        spawn time, so any change to a running runtime restarts it —
+        there is no way to re-flag a live `llama-server`. The response
+        reports the post-restart state, which will normally be
+        `starting` or `loading` rather than `ready`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeSpec'
+      responses:
+        '200':
+          description: Updated runtime.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Runtime'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [runtimes]
+      operationId: deleteRuntime
+      summary: Stop a runtime and remove it from the topology.
+      description: |
+        Terminates the engine process and drops the entry. **The model
+        file is never touched.** Removing a runtime un-declares a way of
+        serving a model; it does not delete anything the user owns.
+      responses:
+        '204':
+          description: Runtime removed.
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/runtimes/{name}/restart:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [runtimes]
+      operationId: restartRuntime
+      summary: Restart one engine process.
+      description: |
+        Terminates the engine (brief timeout, then kill) and respawns it
+        with the current declaration. Also clears the crash counter, so
+        this is how an operator retries a `crashed` runtime after fixing
+        whatever was wrong. Expect the model load to be paid again.
+      responses:
+        '202':
+          description: Restart scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/runtimes/{name}/stop:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [runtimes]
+      operationId: stopRuntime
+      summary: Stop an engine process without un-declaring it.
+      description: |
+        Terminates the engine and suppresses the respawn loop, leaving
+        the runtime declared with `status: stopped`. This exists because
+        an engine holds GPU memory: an operator who wants the VRAM back
+        for something else needs a stop that is not a delete and not a
+        crash. Start it again with `POST .../start`.
+      responses:
+        '202':
+          description: Stop scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/runtimes/{name}/start:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [runtimes]
+      operationId: startRuntime
+      summary: Start a stopped engine process.
+      description: |
+        Spawns a runtime that is `stopped` or `crashed`. A no-op that
+        still returns 202 if it is already coming up or ready, so the
+        UI's Start button is idempotent.
+      responses:
+        '202':
+          description: Start scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
 
   /v1/config:
     get:
@@ -561,3 +800,361 @@ components:
         * `unreachable` — for remote components, the watchdog can't
           reach the URL. For spawned components this state is not
           used (use `crashed` or `exited` instead).
+
+    # -------- Engines and runtimes --------
+
+    EngineKind:
+      type: string
+      enum:
+        - llama_cpp
+      description: |
+        Which engine adapter constructs the argv and interprets
+        readiness. Deliberately a closed enum rather than a free string:
+        an engine is supported exactly when an adapter exists for it,
+        and without an adapter there is nothing that knows how to start
+        it or tell when it is ready.
+
+        `llama_cpp` drives upstream `llama-server`. vLLM is a second
+        adapter later, and MLX after that. We never ship an engine — all
+        three are upstream projects we wrap and track.
+
+    EngineList:
+      type: object
+      required:
+        - engines
+      properties:
+        engines:
+          type: array
+          items:
+            $ref: '#/components/schemas/EngineDescriptor'
+
+    EngineDescriptor:
+      type: object
+      description: |
+        One engine adapter, plus what the watchdog found on this host.
+      required:
+        - engine
+        - available
+      properties:
+        engine:
+          $ref: '#/components/schemas/EngineKind'
+        available:
+          type: boolean
+          description: |
+            True iff a usable binary was found and successfully
+            version-probed. When false, `error` says why and runtimes
+            for this engine will fail to spawn.
+        binaryPath:
+          type: string
+          description: Absolute path to the binary the adapter would spawn.
+        version:
+          type: string
+          description: |
+            Version string as reported by the binary itself (for
+            llama.cpp, the build number). Surfaced so an operator can
+            tell what they are actually running, and so a flag that
+            stopped working after an upgrade is diagnosable.
+        origin:
+          type: string
+          enum:
+            - managed
+            - configured
+            - path
+          description: |
+            Where the binary came from.
+
+            * `managed` — fetched and verified by us. The one-click
+              path; not implemented until engine acquisition lands.
+            * `configured` — an explicit path the operator set, because
+              they build llama.cpp themselves or want a specific build.
+            * `path` — found on `PATH`.
+        flagSchema:
+          $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+          description: |
+            The **curated** flag surface for this engine, as a standard
+            `ConfigSchema` so the generic config editor renders it with
+            no engine-specific UI code.
+
+            Curated, not complete: `llama-server` has hundreds of flags
+            and exposing them wholesale would produce a form nobody can
+            use. What is here is what a person actually turns —
+            context size, GPU layers, batch size, parallel slots, flash
+            attention. Anything omitted is still reachable through
+            `RuntimeSpec.extraArgs`.
+        error:
+          type: string
+          description: 'Populated when `available: false`.'
+
+    RuntimeList:
+      type: object
+      required:
+        - runtimes
+      properties:
+        runtimes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Runtime'
+
+    RuntimeSpec:
+      type: object
+      description: |
+        Declarative half of a Runtime — what the operator asked for.
+        Used for create and update bodies; observed fields are
+        server-owned and excluded.
+
+        Note what is *not* here: a command line. The operator declares
+        intent (this engine, this model, these flags) and the adapter
+        builds the argv. Letting a topology entry carry raw argv would
+        make every engine "supported" while making none of them
+        knowable — no readiness probe, no flag validation, no version
+        story. The resolved argv is reported back on `Runtime.argv` for
+        debugging, which is the half of raw-argv access that is
+        genuinely useful.
+      required:
+        - name
+        - engine
+        - modelPath
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Operator-supplied label, unique per install. Referenced by
+            an inference-driver's config to say which runtime it fronts.
+        engine:
+          $ref: '#/components/schemas/EngineKind'
+        modelPath:
+          type: string
+          description: |
+            Absolute path to the model on this host — a `.gguf` file, or
+            a directory for multi-file formats. **The operator's own
+            path, in the operator's own layout.** We never relocate,
+            rename, or hash-address a model file; a runtime points at
+            where the user put it.
+        modelAlias:
+          type: string
+          description: |
+            The model id this runtime serves under, and therefore what a
+            client asks the gateway for. Defaults to the model
+            filename with its extension stripped — plainly-named files
+            mean the obvious name is already the right one, so this is
+            an override, not a requirement.
+        host:
+          type: string
+          default: 127.0.0.1
+          description: |
+            Address the engine binds. Defaults to loopback: an engine
+            has no auth of its own, so it must not be exposed directly.
+            Reaching a model from another machine is the gateway's job,
+            and the gateway has auth.
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: |
+            Port the engine binds. Assigned from an ephemeral range when
+            omitted — with N runtimes the operator should not have to
+            hand out port numbers.
+        autoStart:
+          type: boolean
+          default: true
+          description: |
+            Whether the watchdog spawns this runtime at startup and
+            respawns it on exit. False leaves it declared but
+            `stopped`, which is how a rarely-used large model stays
+            configured without holding VRAM.
+        flags:
+          type: object
+          additionalProperties: true
+          description: |
+            Curated engine flags, keyed by the field names in the
+            adapter's `flagSchema`. Validated on write: an unknown key
+            is a 400, never a silent drop.
+
+            This is the per-model settings surface — the reason
+            "tweaking llama.cpp settings for every different model" is a
+            complaint we answer. Values here are engine *launch* flags;
+            sampling parameters that ride on each request are the
+            gateway's, not these.
+        extraArgs:
+          type: array
+          items:
+            type: string
+          description: |
+            Verbatim extra arguments, appended after everything the
+            adapter generated. The escape hatch for the long tail of
+            flags a curated surface will always miss.
+
+            Unvalidated by definition, so the UI must present it as the
+            advanced option it is: a bad value here surfaces as an
+            engine that refuses to start, and the resolved `argv` plus
+            the captured engine output are how it gets diagnosed.
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Extra environment variables for the engine process. Needed
+            more often than for a component — accelerator selection
+            (`CUDA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`) is how a
+            runtime is pinned to one GPU, which is what makes two
+            replicas on two cards possible.
+        workingDirectory:
+          type: string
+          description: |
+            Working directory for the engine process. Defaults to the
+            binary's own directory, which is what prebuilt llama.cpp
+            releases need to find their bundled shared libraries.
+        binary:
+          type: string
+          description: |
+            Override the binary for this one runtime, ignoring whatever
+            the adapter discovered. For running one model on a custom
+            build without disturbing the rest of the install.
+
+    Runtime:
+      type: object
+      description: |
+        Combined declarative + operational view of one engine process.
+        The declarative half is `RuntimeSpec` and is persisted; the
+        operational half is observed and is not.
+      required:
+        - name
+        - engine
+        - modelPath
+        - status
+      properties:
+        name:
+          type: string
+        engine:
+          $ref: '#/components/schemas/EngineKind'
+        modelPath:
+          type: string
+        modelAlias:
+          type: string
+          description: Resolved alias — the declared value, or the derived filename.
+        host:
+          type: string
+        port:
+          type: integer
+          description: Resolved port, including one assigned by the watchdog.
+        autoStart:
+          type: boolean
+        flags:
+          type: object
+          additionalProperties: true
+        extraArgs:
+          type: array
+          items:
+            type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        workingDirectory:
+          type: string
+        binary:
+          type: string
+        status:
+          $ref: '#/components/schemas/RuntimeStatus'
+        url:
+          type: string
+          format: uri
+          description: |
+            Where this engine is actually listening
+            (`http://<host>:<port>`). This is the value an
+            inference-driver's `baseUrl` points at, and the reason a
+            driver never needs to know about ports or argv.
+        argv:
+          type: array
+          items:
+            type: string
+          description: |
+            The exact command line the watchdog spawned, as the adapter
+            resolved it. Read-only and reported deliberately: the first
+            question anyone debugging a local engine asks is "what
+            command did you actually run", and every tool that hides the
+            answer makes that debugging worse. Copy-pasteable.
+        pid:
+          type: integer
+          description: OS process id. Set only while the engine is alive.
+        engineVersion:
+          type: string
+          description: Version reported by the binary that is actually running.
+        capabilities:
+          $ref: '#/components/schemas/RuntimeCapabilities'
+        lastRestart:
+          type: string
+          format: date-time
+        lastError:
+          type: string
+          description: |
+            Most recent failure for this runtime — a spawn error, a
+            non-zero exit, or a readiness probe that never passed.
+            Cleared on a successful start.
+
+    RuntimeStatus:
+      type: string
+      enum:
+        - starting
+        - loading
+        - ready
+        - stopped
+        - exited
+        - crashed
+      description: |
+        Operational state of an engine process. Distinct from
+        `ComponentStatus`: an engine has no safe mode (nothing to
+        recover a config from), and it has a model-load phase that a
+        component does not.
+
+        * `starting` — spawned, not yet answering its readiness probe
+          at all.
+        * `loading` — answering, but reporting the model is still being
+          read into memory. Worth its own state rather than folding
+          into `starting`: a large quant off a spinning disk can sit
+          here for minutes, and an operator staring at a dashboard
+          needs to know the difference between "working on it" and
+          "wedged". This is exactly what a per-engine readiness probe
+          buys — llama-server distinguishes the two on `/health` and a
+          generic TCP check could not.
+        * `ready` — model loaded and serving. The only state in which
+          the gateway will route to it.
+        * `stopped` — deliberately stopped, or declared with
+          `autoStart: false`. Not an error; the respawn loop is
+          suppressed.
+        * `exited` — exited cleanly and is being respawned (transient).
+        * `crashed` — exited non-zero repeatedly and the watchdog has
+          given up. `lastError` and the captured engine output say why;
+          `POST .../restart` retries.
+
+    RuntimeCapabilities:
+      type: object
+      description: |
+        What the running engine reports about itself, read back after it
+        becomes ready rather than inferred from the declaration. The
+        gateway keys routing decisions off these; the UI displays them.
+      properties:
+        contextLength:
+          type: integer
+          minimum: 0
+          description: |
+            Effective context window of the loaded model, as the engine
+            resolved it — which is not necessarily what was asked for.
+            A requested context larger than the model or the available
+            memory gets clamped by the engine, and the clamped value is
+            the true one.
+        parallelSlots:
+          type: integer
+          minimum: 1
+          description: |
+            Concurrent requests this runtime can serve. The unit of
+            capacity the gateway divides work across, so a single
+            runtime with several slots and several runtimes with one
+            each are the same kind of thing to the layer above.
+        embeddings:
+          type: boolean
+          description: Whether this runtime was started in embedding mode.
+        multimodal:
+          type: boolean
+          description: Whether a projector was loaded alongside the model.

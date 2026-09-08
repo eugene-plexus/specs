@@ -85,6 +85,11 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: inference
+    description: |
+      The OpenAI-compatible front door. snake_case field names and
+      OpenAI's error envelope, unlike everything else here — see the
+      note above `/v1/models` in `paths`.
   - name: admin
     description: Inspect and manage the running gateway.
   - name: config
@@ -97,6 +102,122 @@ tags:
     description: Versioning and health.
 
 paths:
+  # -------- The OpenAI-compatible front door --------
+  #
+  # These two operations are the only ones in Eugene Plexus that use
+  # snake_case field names and a non-problem+json error envelope. That is
+  # deliberate and not negotiable: "OpenAI-compatible" is worth nothing
+  # unless an unmodified OpenAI SDK can point its base_url here and work.
+  # Renaming `max_tokens` to `maxTokens` for house-style consistency
+  # would break every client, which is the entire audience.
+
+  /v1/models:
+    get:
+      tags: [inference]
+      operationId: listModels
+      summary: List every model the gateway can currently route to.
+      description: |
+        OpenAI-compatible model list. This is how a client discovers
+        what to put in `ChatCompletionRequest.model`, and it is a view
+        of the routing table rather than a configured list: the gateway
+        asks every `inference-driver` in the watchdog topology what it
+        serves and reports the union.
+
+        A model appears here when at least one driver serving it is
+        reachable. Two drivers serving the same model produce one entry,
+        not two — replicas are a routing detail, and a client should not
+        have to know how many GPUs are behind a name.
+      responses:
+        '200':
+          description: Available models.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelList'
+
+  /v1/chat/completions:
+    post:
+      tags: [inference]
+      operationId: createChatCompletion
+      summary: Generate a chat completion, routed to a backend that serves the model.
+      description: |
+        The one endpoint everything else exists to support.
+
+        Routing: `model` is resolved to the drivers serving it, one is
+        chosen, and the request is translated to that driver's
+        `/v1/generate`. If the attempt fails in a cascade-eligible way —
+        transport error, 5xx, timeout — the gateway falls through to the
+        next driver and tries again. A **4xx does not cascade**: it means
+        the request itself is wrong, the next backend would reject it
+        identically, and retrying would only bury the real error.
+
+        Sampling parameters are the gateway's to send. Anything the
+        caller omits is filled from the model's settings profile and
+        sent explicitly; a driver never substitutes a default of its
+        own. A parameter the chosen backend cannot accept is dropped
+        with a warning rather than failing the request — a control plane
+        routes to whatever the operator owns, and refusing a model
+        because it dislikes `temperature` is not our call to make.
+
+        Set `stream: true` for Server-Sent Events. The stream emits
+        `data:` lines carrying `ChatCompletionChunk` objects and
+        terminates with `data: [DONE]`, matching OpenAI's framing
+        exactly.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatCompletionRequest'
+      responses:
+        '200':
+          description: |
+            A completion, or an SSE stream when `stream` was true.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ChatCompletionChunk'
+                description: |
+                  The stream is `data:` lines each carrying one of
+                  these, terminated by a literal `data: [DONE]`. The
+                  schema names the frame, not the whole body.
+        '400':
+          description: Malformed request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: |
+            No reachable driver serves the requested model. Distinct
+            from 503: the model is not something this install can route
+            to at all.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: |
+            Every eligible backend failed. Returned after the priority
+            list is exhausted, so this means the cascade ran and lost,
+            not that one backend hiccuped.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: |
+            A driver serves the model but is not ready — the engine is
+            still loading, or the gateway is in safe mode. Retryable, so
+            it is deliberately not folded into 502.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/admin/drivers:
     get:
       tags: [admin]
@@ -385,3 +506,355 @@ components:
         error:
           type: string
           description: 'Populated when `reachable: false`.'
+
+    # -------- OpenAI-compatible wire schemas --------
+    #
+    # snake_case throughout, unlike the rest of Eugene Plexus. See the
+    # note above `/v1/models` in `paths` for why.
+
+    ModelList:
+      type: object
+      required:
+        - object
+        - data
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Model'
+
+    Model:
+      type: object
+      description: |
+        One routable model, in OpenAI's shape plus one namespaced
+        extension. Unknown fields are ignored by OpenAI clients, which
+        is what makes it safe to answer "which of my backends is behind
+        this name" without breaking compatibility.
+      required:
+        - id
+        - object
+      properties:
+        id:
+          type: string
+          description: |
+            What the client puts in `ChatCompletionRequest.model`. For a
+            local runtime this is its `modelAlias`, which defaults to
+            the model's own filename — so the name a user sees is the
+            name of the file they downloaded.
+        object:
+          type: string
+          const: model
+        created:
+          type: integer
+          description: Unix timestamp. Model file mtime for local models.
+        owned_by:
+          type: string
+          description: |
+            OpenAI sends an organisation here. We send the provider —
+            `local`, or the cloud provider key for a subscription
+            backend.
+        x_eugene_plexus:
+          $ref: '#/components/schemas/ModelRoutingInfo'
+
+    ModelRoutingInfo:
+      type: object
+      description: |
+        Namespaced extension: how this install serves the model. Present
+        so the UI can render the routing table straight off the standard
+        endpoint instead of needing a parallel admin call, and so an
+        operator can see that a name is backed by two replicas.
+      properties:
+        drivers:
+          type: array
+          items:
+            type: string
+          description: Names of the inference-drivers currently serving this model.
+        backends:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/BackendKind'
+          description: Distinct wire protocols behind this model.
+        context_length:
+          type: integer
+          description: |
+            Smallest context window among the serving backends — the
+            honest number, since a request may land on any of them.
+
+    ChatCompletionRequest:
+      type: object
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+          description: |
+            A model id from `GET /v1/models`. The gateway resolves it to
+            a backend; the client does not choose a backend.
+        messages:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ChatCompletionMessage'
+        max_tokens:
+          type: integer
+          minimum: 1
+          description: |
+            Maximum output tokens. Filled from the model's settings
+            profile when omitted, then always sent downstream
+            explicitly.
+        temperature:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 2
+        top_p:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        stop:
+          type: array
+          items:
+            type: string
+          maxItems: 4
+          description: Stop sequences.
+        seed:
+          type: integer
+          description: |
+            Passed through to backends that support deterministic
+            sampling; dropped with a warning where they do not.
+        stream:
+          type: boolean
+          default: false
+          description: |
+            When true the response is an SSE stream of
+            `ChatCompletionChunk` objects terminated by `data: [DONE]`.
+        user:
+          type: string
+          description: Opaque client-supplied identifier, echoed into logs only.
+
+    ChatCompletionMessage:
+      type: object
+      description: |
+        OpenAI-shaped chat message. Intentionally *not* the shared
+        `Message` schema: this one is on a wire contract we do not own,
+        so it carries exactly OpenAI's fields and nothing of ours.
+        Leaking a house field like `timestamp` into a payload an OpenAI
+        SDK parses is how "compatible" quietly stops being true.
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum:
+            - system
+            - user
+            - assistant
+        content:
+          type: string
+        name:
+          type: string
+          description: Optional participant name, per OpenAI.
+
+    ChatCompletionResponse:
+      type: object
+      required:
+        - id
+        - object
+        - created
+        - model
+        - choices
+      properties:
+        id:
+          type: string
+          description: 'Completion id, `chatcmpl-` prefixed as clients expect.'
+        object:
+          type: string
+          const: chat.completion
+        created:
+          type: integer
+        model:
+          type: string
+          description: |
+            The model that actually served the request. Equal to the
+            requested id in the normal case; after a cascade it names
+            what answered, which may differ.
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionChoice'
+        usage:
+          $ref: '#/components/schemas/CompletionUsage'
+        x_eugene_plexus:
+          $ref: '#/components/schemas/CompletionRoutingInfo'
+
+    ChatCompletionChoice:
+      type: object
+      required:
+        - index
+        - message
+        - finish_reason
+      properties:
+        index:
+          type: integer
+        message:
+          $ref: '#/components/schemas/ChatCompletionMessage'
+        finish_reason:
+          type: string
+          enum:
+            - stop
+            - length
+          description: |
+            `stop` for a natural end or a matched stop sequence,
+            `length` for hitting the token cap — OpenAI's two values for
+            a completion without tool calls.
+
+    ChatCompletionChunk:
+      type: object
+      description: One SSE frame of a streaming completion.
+      required:
+        - id
+        - object
+        - created
+        - model
+        - choices
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: chat.completion.chunk
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatCompletionChunkChoice'
+        usage:
+          $ref: '#/components/schemas/CompletionUsage'
+          description: Present on the final chunk only.
+
+    ChatCompletionChunkChoice:
+      type: object
+      required:
+        - index
+        - delta
+      properties:
+        index:
+          type: integer
+        delta:
+          type: object
+          description: |
+            Incremental payload. The first chunk carries `role`;
+            subsequent chunks carry `content` fragments.
+          properties:
+            role:
+              type: string
+              enum:
+                - assistant
+            content:
+              type: string
+        finish_reason:
+          type:
+            - string
+            - 'null'
+          enum:
+            - stop
+            - length
+            - null
+          description: Null until the terminal chunk.
+
+    CompletionUsage:
+      type: object
+      description: |
+        Token accounting in OpenAI's field names. Fields may be absent
+        when the backend does not report them — the CLI subprocess
+        backends generally do not.
+      properties:
+        prompt_tokens:
+          type: integer
+          minimum: 0
+        completion_tokens:
+          type: integer
+          minimum: 0
+        total_tokens:
+          type: integer
+          minimum: 0
+
+    CompletionRoutingInfo:
+      type: object
+      description: |
+        Namespaced extension recording how this particular request was
+        served. Not part of OpenAI's schema, and ignored by clients that
+        do not know it.
+
+        It exists because the failure mode of a routing layer is being
+        opaque: when one of several backends is slow or a cascade fired,
+        an operator needs to see which one answered without going to the
+        logs. `attempts` above 1 is the visible evidence that failover
+        did its job.
+      properties:
+        driver:
+          type: string
+          description: Name of the inference-driver that served this request.
+        runtime:
+          type: string
+          description: |
+            Name of the engine runtime behind that driver, when it is a
+            local engine. Absent for hosted and CLI backends, which have
+            no runtime of ours.
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        latency_ms:
+          type: integer
+          description: Gateway-side wall-clock time, including any failed attempts.
+        attempts:
+          type: integer
+          minimum: 1
+          description: |
+            How many backends were tried. Greater than 1 means the
+            priority-list cascade fired and an earlier backend failed.
+
+    OpenAIErrorResponse:
+      type: object
+      description: |
+        Error envelope for the two OpenAI-compatible operations. The
+        rest of the gateway returns RFC 7807 `problem+json`; these two
+        cannot, because OpenAI SDKs parse this shape to build their
+        exceptions and would report a problem+json body as an unhelpful
+        generic failure. One surface, one foreign convention, honoured
+        exactly.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+          properties:
+            message:
+              type: string
+              description: |
+                Human-readable failure. Names the model and, on a
+                cascade, that every backend was tried — the operator
+                reading it is usually the person who configured the
+                thing.
+            type:
+              type: string
+              description: 'OpenAI-style class, e.g. `invalid_request_error`.'
+            param:
+              type:
+                - string
+                - 'null'
+            code:
+              type:
+                - string
+                - 'null'

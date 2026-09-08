@@ -4,7 +4,57 @@ Cross-component release notes. Each repo has its own commit history; this file c
 
 ---
 
-## Unreleased — local-LLM-training platform (v0.3 direction)
+## Unreleased — local-inference control plane (direction change, 2026-09-08)
+
+Eugene Plexus becomes a **self-hosted control plane for local LLM inference**: it supervises engine processes it does not own, manages a model library on the user's own disk, holds per-model settings profiles, exposes one OpenAI-compatible endpoint that routes across local runtimes and cloud providers with failover, and serves a web UI with real auth so it works over a tailnet.
+
+This retires **both** prior directions as headline work — the consciousness framework (May 2026) and the from-scratch training platform (June 2026). Neither is deleted; both are archived. Full reasoning, evidence, milestones and locked decisions: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md).
+
+Five repos survive, one is new: `watchdog` (supervisor), `orchestrator` → **`gateway`**, `hemisphere-driver` → **`inference-driver`**, `ui`, `specs`, plus a new `library`.
+
+### specs — M0 (contracts)
+
+M0 is "supervise one `llama-server` end to end": the supervisor starts it, a driver fronts it, the gateway routes a chat completion through to it, the UI shows it. This is the contract half.
+
+**Renames**
+
+- `openapi/orchestrator.yaml` → `openapi/gateway.yaml`; `openapi/hemisphere-driver.yaml` → `openapi/inference-driver.yaml`. `orchestrator` survives as the gateway rather than being replaced — it already sat above N drivers and routed to them.
+- Env prefixes move with the components: `EUGENE_PLEXUS_ORCH` → `EUGENE_PLEXUS_GATEWAY`, `EUGENE_PLEXUS_HD` → `EUGENE_PLEXUS_DRIVER`.
+
+**Deleted**
+
+- Spec documents for every killed component: `identity`, `connector`, `memory`, and the six training-platform documents (`coordinator`, `training`, `data`, `eval`, `inference`, `cluster`).
+- 51 schemas from `common.yaml` (2183 lines → 653): the tool family, the NT system, bicameral and continuous-runtime schemas, identity, memory, connector adapters, and the whole `TrainingProject` family.
+- The gateway's consciousness surface: `/v1/events`, `/v1/stream/consciousness`, `/v1/conversations/{id}`, `/v1/admin/nt-state`, `/v1/admin/memory-search`.
+- The watchdog's `/v1/pending-links` identity badge.
+- `GenerateRequest.ntState` / `.passIndex` / `.tools`, `GenerateResponse.toolCalls`, and the `tool_use` finish reason.
+
+The tool family (`ToolChannel`, `ToolEffect`, `ToolDefinition`, `ToolCall`, `ToolResult`) went rather than being kept "for later" because it was never generic: `channel` encoded an afferent/efferent/internal perception-action model and `effect` was a reversibility class feeding a System-1/System-2 escalation gate that required bicameral agreement. Tool passthrough returns in OpenAI shape when the gateway implements it.
+
+**New — engines and runtimes (watchdog)**
+
+- **`GET /v1/runtimes`** plus full CRUD, `restart`, `stop` and `start`. A *runtime* is a supervised third-party engine process, deliberately a separate collection from `/v1/components`: a component is a Eugene Plexus process (`python -m`, config trio, service token), a runtime is a foreign binary (adapter-built argv, engine-specific readiness probe, no auth of its own). They share supervision mechanics and nothing else. `stop` exists as distinct from `delete` because an engine holds GPU memory.
+- **`RuntimeSpec` / `Runtime` / `RuntimeStatus` / `RuntimeCapabilities`.** `RuntimeSpec` carries intent — engine, model path, curated `flags`, `extraArgs` escape hatch — and deliberately *not* a command line; the adapter builds the argv. The resolved `argv` is reported back read-only on `Runtime`, because the first question anyone debugging a local engine asks is what command actually ran.
+- `RuntimeStatus` has a `loading` state distinct from `starting`. A large quant off a spinning disk sits there for minutes, and an operator needs to tell "working on it" from "wedged" — which is exactly what a per-engine readiness probe buys and a generic TCP check cannot.
+- **`GET /v1/engines`** with `EngineDescriptor`, exposing each adapter's **curated** flag surface as a standard `ConfigSchema`, so the generic config editor renders engine flags with no engine-specific UI code. Curated, not complete: `llama-server` has hundreds of flags and `extraArgs` covers the long tail.
+- `ComponentKind` is down to `gateway` and `inference-driver`, and now states explicitly that engines are not components.
+
+**New — the OpenAI-compatible front door (gateway)**
+
+- **`POST /v1/chat/completions`** and **`GET /v1/models`**, with the full OpenAI wire schemas including streaming chunks.
+- These two operations use **snake_case field names and OpenAI's error envelope**, unlike every other surface in Eugene Plexus. That is deliberate: "OpenAI-compatible" is worth nothing unless an unmodified OpenAI SDK can point its `base_url` here and work, and OpenAI SDKs parse the error shape to build their exceptions. One surface, one foreign convention, honoured exactly.
+- `GET /v1/models` is a *view of the routing table*, not a configured list — the gateway asks each driver what it serves. Two drivers serving one model produce one entry; replicas are a routing detail a client should not see.
+- Namespaced `x_eugene_plexus` extensions report which driver, runtime and backend served a request, its latency, and the number of `attempts`. OpenAI clients ignore unknown fields, and `attempts > 1` is the visible evidence that priority-list failover fired. The failure mode of a routing layer is being opaque.
+- Status codes distinguish the cases that matter operationally: 404 no driver serves the model at all, 502 the cascade ran and every backend failed, 503 a driver serves it but is not ready (engine still loading) and the call is retryable.
+
+Validated with `openapi-spec-validator` 0.8.5 and `@redocly/cli` 2.30.4, and confirmed to generate importable Pydantic v2 models via `datamodel-code-generator`.
+
+---
+
+## Superseded — local-LLM-training platform (v0.3 direction)
+
+> Archived 2026-09-08. Contracts only ever landed as schemas; no implementation shipped. The documents are deleted from `openapi/` but preserved in git history at `113559a`.
+
 
 Direction change: Eugene Plexus expands into a full-stack, UI-driven platform for local LLM training, evaluation, and inference. This first spec PR introduces the `TrainingProject` abstraction and the contracts for six new components. Schemas only — no implementation yet. Contracts are drafted upfront (not incrementally) so they don't conflict at integration time; implementation lands later, starting with `data` + `trainer`.
 

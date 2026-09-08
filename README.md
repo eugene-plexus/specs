@@ -4,40 +4,97 @@
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1-6BA539.svg)](https://spec.openapis.org/oas/v3.1.0)
 
-OpenAPI 3.1 schemas for every cross-component contract in [Eugene Plexus](https://eugeneplexus.com).
+OpenAPI 3.1 contracts for every cross-component interface in [Eugene Plexus](https://eugeneplexus.com).
 
 This is the **single source of truth** for how Eugene Plexus components talk to each other. Every other repo in the org depends on this one via codegen — never via direct import — to physically enforce the principle that *components share schemas, not code*.
 
 ## What is Eugene Plexus?
 
-A consciousness framework that wraps existing LLMs (Claude, GPT, local OSS models) instead of relying on a custom from-scratch model. Treat the LLM as the "neocortex" and build the consciousness scaffolding — bicameral hemispheres, NT system, multi-pass reasoning, memory, sleep consolidation, corpus callosum — as a framework around it.
+**A self-hosted control plane for local LLM inference.**
 
-The **bicameral cross-vendor commitment**: left hemisphere and right hemisphere run on *different* model families (e.g. Claude and GPT). Genuinely different RLHF distributions and priors produce real architectural tension; multi-pass termination maps cleanly to "hemispheres agree → terminate, hemispheres diverge → another pass."
+It supervises engine processes it does not own, manages a model library on your own disk, holds per-model settings profiles, exposes one OpenAI-compatible endpoint that routes across local runtimes and cloud providers with failover, and serves a web UI with real auth so it works over a tailnet — not just localhost.
+
+**It is not an inference engine.** llama.cpp, vLLM and MLX are the engines. We wrap upstream; we never fork it and never compete with it.
+
+Everyone else builds an *engine* (llama.cpp, vLLM, MLX) or a *desktop chat app* (LM Studio, llama.app). The operations layer — supervise, configure, route, authenticate — is unclaimed. That layer is the product:
+
+1. **It supervises engines it doesn't own,** and manages their binaries so you don't install llama.cpp by hand first.
+2. **Discovery and download happen in the app.** Search a catalogue, read what a model is, pick a quant, download with resume and progress.
+3. **Your model files stay yours.** Point it at your existing GGUF directories; downloads land *there*, as plainly-named files. No content-addressed cache, no hash mismatches. Delete us and you still have your models, correctly named, where you put them.
+4. **Schema-driven config UI with per-model profiles.** Every knob is a form field with help text and defaults, generated from the config schema the component already publishes.
+5. **Networked-first, with auth.** Headless server, browser UI, tokens.
+6. **Hardware-aware quant guidance, on the discovery screen.** `Q3_K_S` or `Q4_K_M` is a question you should be answered at the moment you are asking it, not in a separate tool.
+7. **Many backends at once, load-balanced, with failover.** Several models resident simultaneously; replicas of one model across two GPUs served round-robin; a priority-list cascade when a backend dies. Cloud subscriptions are just another backend — so it's one endpoint over your local models *and* the subscriptions you already pay for.
+
+Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md).
 
 ## Layout
 
 ```
 openapi/
-  orchestrator.yaml         user-facing chat API + admin
-  hemisphere-driver.yaml    interface every hemisphere adapter implements
-  memory.yaml               storage / retrieval interface (v0.1: stub)
-  watchdog.yaml             process supervisor + UI host
+  gateway.yaml              the OpenAI-compatible front door; routing + failover
+  inference-driver.yaml     the uniform surface over one backend (N instances)
+  watchdog.yaml             process supervisor, engine launcher, UI host, auth root
   components/
-    common.yaml             shared schema components (messages, NT state, errors, config protocol)
+    common.yaml             shared schemas (messages, errors, config protocol, auth)
 ```
 
-## Repos in the Eugene Plexus v0.1 set
+## Shape
 
-| Order | Repo | Status |
-|-------|------|--------|
-| 1 | [`specs`](https://github.com/eugene-plexus/specs) | this repo |
-| 2 | [`hemisphere-driver`](https://github.com/eugene-plexus/hemisphere-driver) | working |
-| 3 | [`orchestrator`](https://github.com/eugene-plexus/orchestrator) | working |
-| 4 | [`ui`](https://github.com/eugene-plexus/ui) | working — chat + config editor + first-run wizard |
-| 5 | [`memory`](https://github.com/eugene-plexus/memory) | working — v0.1 in-process stub |
-| 6 | [`watchdog`](https://github.com/eugene-plexus/watchdog) | working — process supervisor + UI host |
+Two layers, never collapsed: a routing `gateway` above N per-backend `inference-driver` instances.
 
-Build order was deliberate: specs first so contracts don't conflict at integration time; hemisphere-driver before orchestrator so the orchestrator integrates against real backends, not mocks; UI before memory because the UI doubles as the debugging surface for hemispheres and NT state. The watchdog was added during the build when first-run UX surfaced the need for a process owning the body components.
+| Component | Repo | Port | Job |
+|---|---|---|---|
+| supervisor | [`watchdog`](https://github.com/eugene-plexus/watchdog) | 8083 | Spawns and monitors components *and* engine processes; owns engine adapters, topology, log capture, safe mode, auth root; serves the UI |
+| gateway | [`gateway`](https://github.com/eugene-plexus/gateway) | 8080 | One OpenAI-compatible endpoint. Model → driver resolution, load balancing, priority-list failover. **No backend knowledge.** |
+| inference-driver | [`inference-driver`](https://github.com/eugene-plexus/inference-driver) | 8081 | **One instance per backend.** Owns provider choice, model id, secrets, params, health |
+| library | `library` | 8082 | Catalogue search, resumable downloads, local file scan, quant table, hardware fit scoring |
+| ui | [`ui`](https://github.com/eugene-plexus/ui) | — | Config editor, runtime dashboard, library browser, chat playground, logs |
+| specs | this repo | — | Contracts; consumers codegen from a pinned SHA |
+
+The layering matters and is not an accident of history. A driver belongs *next to its engine*, so it can run on a remote GPU host while the gateway reaches it over the tailnet — that is the whole multi-host story. Two replicas of one model on two GPUs need N independently-configured backends with something above them. And `claude_code_cli` / `codex_cli` are subprocess backends with no endpoint to proxy to, so a driver has to be able to sit in the request path regardless.
+
+### Components vs. runtimes
+
+The watchdog supervises two different kinds of process and keeps them in separate collections, because they share only their supervision *mechanics*:
+
+| | Component (`/v1/components`) | Runtime (`/v1/runtimes`) |
+|---|---|---|
+| What it is | a Eugene Plexus process | a third-party engine binary |
+| How it starts | `<python> -m <module>` | argv built by an engine adapter |
+| Readiness | the shared `/healthz` | engine-specific probe |
+| Config | the standard config trio | curated engine flag surface |
+| Auth | gets signing key + service token | gets none; fronted by a driver |
+
+Engine knowledge splits the same way, with no shared library: how to **start** an engine (argv, readiness, curated flags) lives in the supervisor; how to **talk to** one (wire protocol) lives in the driver.
+
+## Using these schemas
+
+### Python (Pydantic v2 models)
+```bash
+pip install datamodel-code-generator
+datamodel-codegen \
+  --input openapi/gateway.yaml \
+  --input-file-type openapi \
+  --output-model-type pydantic_v2.BaseModel \
+  --output gen/gateway_models.py
+```
+
+### Python (typed async client)
+```bash
+pip install openapi-python-client
+openapi-python-client generate --path openapi/gateway.yaml
+```
+
+### TypeScript (types)
+```bash
+npm install -D openapi-typescript
+npx openapi-typescript openapi/gateway.yaml -o gen/gateway.ts
+```
+
+We deliberately **avoid the Java-based `openapi-generator`** — verbose output, opinionated templates you fight, heavyweight install.
+
+Consumers pin a specs SHA in their own `SPECS_REF` file and regenerate from GitHub at that SHA, so a change here never breaks a consumer until it chooses to bump.
 
 ## Setting up a dev environment
 
@@ -52,42 +109,32 @@ gh repo clone eugene-plexus/specs
 
 [`scripts/bootstrap.ps1`](scripts/bootstrap.ps1) clones every component as a sibling of `specs`, builds a 3.12 virtualenv per Python repo with dev extras, sets up `ui` (npm + codegen), and activates the pre-commit hooks. Prerequisites: Python 3.12 (`winget install Python.Python.3.12`), `git`, `gh` (authenticated via `gh auth login`), and Node.js. Re-running is safe — it skips repos already cloned and venvs already built.
 
-## Using these schemas
+## Conventions
 
-### Python (Pydantic v2 models)
-```bash
-pip install datamodel-code-generator
-datamodel-codegen \
-  --input openapi/orchestrator.yaml \
-  --input-file-type openapi \
-  --output-model-type pydantic_v2.BaseModel \
-  --output gen/orchestrator_models.py
-```
-
-### Python (typed async client)
-```bash
-pip install openapi-python-client
-openapi-python-client generate --path openapi/orchestrator.yaml
-```
-
-### TypeScript (types)
-```bash
-npm install -D openapi-typescript
-npx openapi-typescript openapi/orchestrator.yaml -o gen/orchestrator.ts
-```
-
-We deliberately **avoid the Java-based `openapi-generator`** — verbose output, opinionated templates you fight, heavyweight install.
+- **camelCase** field names throughout — with one deliberate exception. The gateway's `/v1/chat/completions` and `/v1/models` use **snake_case** and OpenAI's error envelope, because "OpenAI-compatible" is worth nothing unless an unmodified OpenAI SDK can point its `base_url` at us and work. House style does not get to break every client.
+- **RFC 7807 `problem+json`** for errors everywhere else.
+- **SSE** for one-way streams, framed exactly as OpenAI frames them on the compatible surface.
+- Every component implements the same config trio — `GET /v1/config`, `GET /v1/config/schema`, `PATCH /v1/config` — with rich UI metadata, so one generic editor manages all of them. This started as an internal convention; it is now a product feature.
 
 ## Architectural commitments
 
 These are settled. Don't relitigate them in PRs without a strong reason.
 
-- **OpenAPI 3.1** for everything. HTTP+JSON for control, SSE for one-way streams, WebSocket+JSON for bidirectional. gRPC/Protobuf deferred until concrete hot-path need emerges.
+- **Never ship an inference engine.** Wrap upstream, track it, don't fork it.
+- **The user's model files stay in user-chosen directories.** No content-addressed cache. Non-negotiable.
+- **Two layers: a routing gateway above N per-backend drivers.** Never collapsed.
+- **OpenAPI 3.1** for everything. HTTP+JSON for control, SSE for one-way streams, WebSocket+JSON for bidirectional. gRPC/Protobuf deferred until a concrete hot-path need emerges.
 - **Polyrepo**, no shared `core` library. Components share *schemas* (this repo), not code.
 - **Apache 2.0** — explicit patent grant matters in AI/ML; chosen by PyTorch, Kubernetes, vLLM, llama.cpp.
-- **Open-core**. Core stays Apache 2.0 forever. Future commercial enterprise add-ons (SSO, multi-tenancy, compliance, managed hosting) live in *physically separate repos* under commercial license. Core never gets polluted with commercial-only code.
-- **DCO**, no CLA. CLAs scare off contributors and the open-core model doesn't need them. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **Mesh VPN (Tailscale / WireGuard)** for component-to-component auth. User-facing auth lives at the API gateway only; no per-component JWT validation.
+- **Open-core**. Core stays Apache 2.0 forever. Future commercial add-ons live in *physically separate repos* under commercial license.
+- **DCO**, no CLA. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- **Mesh VPN (Tailscale / WireGuard)** for component-to-component transport between hosts; user-facing auth lives at the gateway and the watchdog.
+
+## History
+
+Eugene Plexus began in May 2026 as a consciousness framework wrapping commercial LLMs, then grew a from-scratch LLM training platform in June 2026. **Both were retired as of 2026-09-08.** The code still exists and worked; it is archived, not deleted. If you find consciousness or training concepts in old commits or tags, they are historical — `main` is the control plane.
+
+The name is a legacy of that era and was kept deliberately, which is why this README does the work a descriptive name would have done for free.
 
 ## Versioning
 
