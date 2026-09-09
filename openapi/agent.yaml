@@ -2,10 +2,23 @@ openapi: 3.1.0
 info:
   title: Eugene Plexus — agent
   version: 0.3.0-draft
-  summary: Process supervisor, engine launcher, UI host, auth root, master-key holder.
+  summary: Per-host process supervisor and engine launcher. One per node.
   description: |
-    The agent is the outermost process of an Eugene Plexus install
-    and the only one an operator starts by hand. Its jobs:
+    The agent is the per-host supervisor: **one runs on every node** in
+    an install, and it is the only Eugene Plexus process an operator
+    starts by hand. Its lifecycle belongs to the platform — a systemd
+    unit, a container entrypoint — which is why it is not itself a
+    `ComponentKind`.
+
+    **M5 splits this component.** Jobs 1-3 below are the agent's and
+    stay; jobs 4-5 — the install's trust root and its install-wide
+    topology — move to the new **control root** (`control.yaml`),
+    because supervision is inherently per-host while a trust root is
+    inherently singular. Until that implementation lands, the
+    trust-root surface is still served here and still documented here.
+    Design: `docs/design/m5-multi-host-and-trust.md`.
+
+    Its jobs:
 
       1. **Supervise the control-plane components** declared in its
          topology — the gateway, N inference-drivers, the library.
@@ -106,8 +119,15 @@ security:
 tags:
   - name: auth
     description: |
-      Operator passphrase login → session token. Trust root for
-      the install.
+      Operator passphrase login → session token.
+
+      **Moving to the control root at M5** (`control.yaml`). The agent
+      held the trust root only because it used to be the single process;
+      once there are N agents there cannot be N trust roots, which is the
+      concrete reason the install was capped at one host. Documented here
+      until the implementation migrates, so a consumer regenerating
+      against this document does not lose the endpoints its login flow
+      still calls.
   - name: components
     description: |
       Topology and lifecycle of the supervised Eugene Plexus
@@ -130,6 +150,11 @@ tags:
       size), the first-run wizard's completion flag, and `securityMode`.
       Topology lives under `/v1/components`, not here, so editing UI
       prefs can never accidentally restructure the install.
+  - name: node
+    description: |
+      This host's identity, its accelerators, and which control root it
+      answers to. One agent per host; the install-wide view of every node
+      lives on the control root (`control.yaml`).
   - name: meta
     description: Health and version.
 
@@ -765,6 +790,88 @@ paths:
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
+  # -------- this node --------
+
+  /v1/node:
+    get:
+      tags: [node]
+      operationId: getNode
+      summary: What this host is, and which control root it answers to.
+      description: |
+        One agent, one host. This is how the control root learns what a
+        node *is* — accelerators included — and how anything else
+        discovers which control root this node recognises.
+
+        `epoch` is the highest control-root generation this agent has
+        acknowledged, and the agent **refuses any root presenting a
+        lower one**. That refusal is the whole fencing mechanism: a
+        superseded control root cannot command a node that has already
+        heard from its successor, with no election and no agreement
+        between agents required. See `control.yaml`.
+
+        Present before enrollment too, with `enrolled: false` and no
+        control root — an agent supervises local processes perfectly well
+        with no trust relationship at all, which is what makes the
+        bootstrap order work and is consistent with the standing
+        degraded-mode rule.
+      responses:
+        '200':
+          description: This node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeIdentity'
+
+  /v1/node/enroll:
+    post:
+      tags: [node]
+      operationId: enrollWithControl
+      summary: Join an install by presenting a join token to a control root.
+      description: |
+        Operator-only, and the one call that gives this agent a place in
+        an install. It generates the node's identity keypair if it has
+        none, then calls the control root's `POST /v1/nodes/enroll` with
+        the join token and its **public** key.
+
+        The private key never leaves this host. That is not a detail:
+        per-node sealing means a secret is sealed to this key, so a
+        control root that could obtain it would be a control root that
+        could read every node's secrets — which is exactly the blast
+        radius the design refuses.
+
+        Returns 409 if already enrolled. Re-enrolling elsewhere is a
+        deliberate act: revoke at the old control root first, so its
+        signing key rotates and this node stops being trusted there.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollRequest'
+      responses:
+        '200':
+          description: Enrolled; the resulting identity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeIdentity'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Already enrolled with a control root.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The control root refused or was unreachable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/config:
     get:
       tags: [config]
@@ -1013,6 +1120,87 @@ components:
         * `unreachable` — for remote components, the agent can't
           reach the URL. For spawned components this state is not
           used (use `crashed` or `exited` instead).
+
+    # -------- This node --------
+
+    NodeIdentity:
+      type: object
+      description: |
+        What this agent knows about its own host and its own place in an
+        install. The install-wide `Node` view lives on the control root;
+        this is the half only the host itself can answer.
+      required:
+        - enrolled
+      properties:
+        enrolled:
+          type: boolean
+          description: |
+            False on a fresh agent, and not an error state — supervision
+            works without a trust relationship, which is what lets the
+            agent on the control host boot first and start the control
+            root.
+        name:
+          type: string
+          description: This node's name in the install. Absent until enrolled.
+        publicKey:
+          type: string
+          description: |
+            This node's identity public key. The private half never
+            leaves the host; a secret sealed to this key is readable here
+            and by the control root's recovery recipient, and nowhere
+            else.
+        controlUrl:
+          type: string
+          format: uri
+          description: The control root this node answers to.
+        epoch:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Highest control-root epoch this agent has acknowledged. **It
+            refuses any root presenting a lower one**, which fences a
+            superseded control root without an election, without quorum,
+            and without agreeing with any other agent.
+        os:
+          type: string
+          enum: [windows, linux, macos]
+        arch:
+          type: string
+          enum: [x64, arm64]
+        devices:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/ComputeDevice'
+          description: |
+            What this host can compute on, detected locally. The control
+            root aggregates these into the cross-host inventory M3
+            deferred; detection stays here because only the host can do
+            it.
+        agentVersion:
+          type: string
+
+    EnrollRequest:
+      type: object
+      required:
+        - controlUrl
+        - token
+      properties:
+        controlUrl:
+          type: string
+          format: uri
+          description: The control root to join.
+        token:
+          type: string
+          description: |
+            A join token minted at that control root. Single-use and
+            short-lived by design — it is the only credential this node
+            has until enrollment completes.
+        name:
+          type: string
+          description: |
+            Requested node name. Defaults to the host's own name, which
+            is the answer an operator would have typed anyway.
 
     # -------- Auth --------
 
@@ -1738,6 +1926,19 @@ components:
         pid:
           type: integer
           description: OS process id. Set only while the engine is alive.
+        node:
+          type: string
+          description: |
+            The node this runtime runs on — always *this* agent's node,
+            since an agent supervises only its own host.
+
+            Reported anyway, and this is why: the control root relays
+            these into a union view across every node, and a runtime that
+            arrived without a node would be a runtime the operator cannot
+            locate. Filled from the agent's own identity rather than
+            declared, so it cannot disagree with reality. Absent on an
+            agent that has not enrolled, which is the only state in which
+            "which node" has no answer.
         engineVersion:
           type: string
           description: Version reported by the binary that is actually running.

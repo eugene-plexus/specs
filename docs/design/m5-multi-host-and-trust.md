@@ -14,7 +14,10 @@ away with postponing it. The trigger was a specific question: what stops
 two hosts both claiming to be the trust root?
 
 **Nothing here is implemented.** This is a contract-and-design milestone
-like M4's first half.
+like M4's first half. The **design landed 2026-09-09 (`d1937cd`)** and the
+**contracts landed the same day** — `openapi/control.yaml` is new, §10 has
+the shape and the four places it departed from the sketch. `control` the
+repo does not exist yet.
 
 Decisions taken to open it, all Troy's, 2026-09-09:
 
@@ -389,41 +392,93 @@ promoting a stale one is how a control plane loses a node registry.
 
 ---
 
-## 10. Contract sketch
+## 10. Contract
+
+**Landed 2026-09-09.** The sketch this section began as is below, with the
+four places the built contract departed from it.
 
 ```
 common.yaml
-  ComponentKind      + control
-  ConfigValueType    + node_name      (dropdown from GET /v1/nodes)
+  ComponentKind        + control                    (the agent stays out — it supervises)
+  ConfigValueType      + node_name                  (dropdown from GET /v1/nodes)
+  ComputeDevice        one device on one host        (new, shared)
+  ComputeDeviceKind    cuda|rocm|xpu|metal|cpu       (new, shared)
 
-agent.yaml   (was watchdog.yaml — supervision surface, minus the trust root)
-  /v1/runtimes …            unchanged, but scoped to THIS host
-  /v1/engines …             unchanged, scoped to this host
-  /v1/components …          local components only
-  /v1/node                  this node's id, epoch, control-root endpoint,
-                            accelerators, agent version
-  /v1/node/enroll           accept a join token, generate keypair (bootstrap)
+agent.yaml   (supervision surface; trust root marked as moving)
+  /v1/node                  this host: enrolled, name, publicKey, controlUrl,
+                            epoch, os, arch, devices[], agentVersion
+  /v1/node/enroll           present a join token to a control root
+  Runtime            + node  filled from identity, never declared
+  /v1/auth/*                 tagged as moving to control
+  /v1/runtimes /v1/engines /v1/components   unchanged, scoped to THIS host
 
-control.yaml (new)
-  /v1/nodes                 the install's nodes, each with role, reachability,
-                            last-seen epoch, accelerators
-  /v1/nodes/{id}            one node
-  /v1/nodes/join-token      mint a scoped single-use token
-  DELETE /v1/nodes/{id}     revoke -> rotates the signing key (§8)
-  /v1/runtimes              UNION across nodes, each tagged with node
-  /v1/components            install-wide topology
-  /v1/control/status        epoch, role, applied index, standbys and their lag
+control.yaml (new, port 8083)
+  /v1/nodes                 every host: role, reachable, lastSeenEpoch, devices
+  /v1/nodes/{name}          one node
+  DELETE /v1/nodes/{name}   revoke -> rotates the signing key (§8)
+  /v1/nodes/join-token      mint a scoped, single-use, short-lived token
+  /v1/nodes/enroll          token-authenticated; called by the agent
+  /v1/control/status        role, epoch, appliedIndex, standbys and their lag
+  /v1/control/log           standbys PULL entries after an index
+  /v1/control/snapshot      bootstrap a standby; recover past compaction
   /v1/control/promote       operator action, passphrase required (§9)
-  /v1/control/rotate-key    explicit signing-key rotation
-  /v1/auth/*                moves here from the watchdog
+  /v1/control/rotate-key    explicit rotation; GET reports progress
+  /v1/runtimes              UNION across nodes, tagged; POST forwards to an agent
+  /v1/components            install-wide, each entry tagged with its node
+  /v1/auth/*                the trust root
   /v1/config{,/schema}      the standard trio
-
-Runtime       + node        which host it runs on
-RuntimeSpec   + node        where to place it; defaults to the local node
-Node          id, name, url, role: control|standby|agent, reachable,
-              agentVersion, os, arch, accelerators[], publicKey,
-              lastSeenEpoch, enrolledAt
 ```
+
+**Four departures from the sketch, each with a reason.**
+
+**`{name}`, not `{id}`.** Nodes are addressed by an operator-supplied
+name, consistent with components and runtimes. A node's *identity* is its
+`publicKey` — a name is a label a human reads, the keypair is what makes a
+node the same node across a restart and what a secret is sealed to. Two
+identifiers where one plus a key will do is one identifier too many.
+
+**The replication surface is explicit.** §5 said standbys pull; the sketch
+did not say through what. `GET /v1/control/log?after=` and
+`GET /v1/control/snapshot` are that, and pulling rather than pushing is
+what keeps one writer, lets a standby measure its own lag honestly, and
+puts the connection in the direction that survives a firewall between
+buildings.
+
+**`RuntimeSpec` did *not* gain a `node`.** Placement lives on the control
+root's `RuntimePlacementSpec` — `{node, spec}` — and the agent's
+`RuntimeSpec` is unchanged. An agent supervises only its own host, so a
+`node` on its own declaration would be a field it cannot act on and could
+contradict. `Runtime.node` *is* reported, filled from the agent's own
+identity rather than declared, so it cannot disagree with reality.
+
+**`ComputeDevice`, not `Accelerator`** — and this one was a real trap. The
+device list belongs in `common.yaml` because it sits on both sides of a
+join: an agent reports its own devices, the control root aggregates them.
+But naming it `Accelerator` collided with the enum generated from
+`HostAccelerator.accelerator`, which the agent's `engines/host.py` imports
+by that exact name and uses as `Accelerator.metal`. Codegen resolved the
+clash by demoting the enum to `Accelerator1`, so the existing import would
+have silently started resolving to a Pydantic model and failed at
+attribute access — discovered only whenever the agent next re-pinned.
+`ComputeDevice` avoids the collision and is the better name anyway, since
+`cpu` is a member of the enum and a CPU is not an accelerator. Second
+instance of M4's lesson: **name a schema explicitly whenever a field name
+repeats across documents, or codegen will name it for you.**
+
+Two notes on shape that survived unchanged. **A host is not a
+component** — the same reasoning that made engine processes `runtimes` in
+their own collection applies again, so nodes get `/v1/nodes` and not a
+`ComponentKind`. And **`Node.devices` is the cross-host hardware inventory
+M3 deferred**, landing precisely where M3 predicted: *"building a real
+inventory is topology work and belongs to the agent if it belongs
+anywhere."* The library's fit surface already takes a hardware override
+and reports which host it measured, so multi-host fit scoring works the
+moment nodes exist.
+
+Verified: all five documents validate under `openapi-spec-validator`
+0.8.5, lint clean under `@redocly/cli`, generate importable Pydantic v2
+models, **and** generate TypeScript that typechecks under `tsc --strict` —
+that last one because skipping it at M4 is what hid the fifth consumer.
 
 Two notes on shape. **A host is not a component** — the same reasoning
 that made engine processes `runtimes` in their own collection rather than

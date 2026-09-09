@@ -1,0 +1,1477 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — control
+  version: 0.3.0-draft
+  summary: The install's trust root, node registry, topology and UI host. Exactly one active.
+  description: |
+    The **control root**. Exactly one is active per install, plus any
+    number of warm standbys. It holds what is inherently singular —
+    the trust root, the node registry, install-wide topology, the
+    replicated log and the UI — and it **spawns nothing**.
+
+    Supervision is the [agent](agent.yaml)'s job, and there is one agent
+    per host. On whichever host holds the control root, `control` is
+    itself just another local component in that agent's topology. That
+    is deliberate: if the control root supervised processes it would need
+    a second copy of the supervision machinery, and "components share
+    schemas, not code" means a real second copy rather than an import.
+    One supervisor implementation, running everywhere; one control root,
+    supervised like anything else.
+
+    Design and every decision behind this document:
+    `docs/design/m5-multi-host-and-trust.md`. **Nothing here is
+    implemented yet** — this is the contract half of M5.
+
+    ## What it is authoritative for
+
+    | | control root | agent |
+    |---|---|---|
+    | How many | one active, N standbys | one per host |
+    | Spawns | **nothing** | every local component and engine runtime |
+    | Topology | install-wide | this host only |
+    | Runtimes | the **union**, tagged by node | this host's, with the process handles |
+    | Trust | mints the signing key, registers nodes | holds a node keypair, receives the signing key |
+
+    An operator talks to the control root. A mutation that has to happen
+    on a particular host — declaring a runtime, restarting a component —
+    is accepted here and **forwarded** to that node's agent, because the
+    operator should not have to know which host owns what.
+
+    ## `down` versus `out`
+
+    Borrowed from Ceph, because the distinction is the one that matters.
+    **down** means unreachable and expected back: nothing is reassigned.
+    **out** means not coming back: its responsibilities must be
+    relocated.
+
+    A control root that is `down` pauses *management* — no config edits,
+    no new runtimes, no enrollment, no UI login — while **inference
+    continues**, because the gateway routes from topology it already
+    holds and agents keep supervising from cached state.
+
+    **A control root is never marked `out` automatically.** There is no
+    equivalent of Ceph's `mon_osd_down_out_interval` here. Promotion is
+    an operator act, always, because automatic promotion without quorum
+    is split-brain by definition — and that single property is what makes
+    two hosts both believing they are root structurally impossible rather
+    than merely unlikely.
+
+    ## Epoch fencing
+
+    Every control root carries a monotonic `epoch`. **Agents record the
+    highest epoch they have seen and refuse to go backwards.** Promotion
+    increments it, so a superseded root returning at a lower epoch is
+    refused by every agent — no election, no quorum, and no agent needing
+    to agree with any other agent. Each independently declines a
+    downgrade.
+
+    Known and accepted cost: an agent partitioned *during* a promotion
+    still trusts the old root until it reconnects. That is bounded to the
+    partitioned nodes, visible here as an epoch disagreement on
+    `GET /v1/nodes`, and self-healing. It must not be "fixed" with
+    automatic promotion, which would trade a visible, bounded window for
+    genuine split-brain.
+
+    ## One writer, one ordered log
+
+    Every control-state change — enrolling a node, revoking one,
+    declaring a runtime, patching config, rotating the signing key — is
+    appended as a `LogEntry` with a gapless monotonic `index`, applied by
+    the active root, and pulled by standbys from `GET /v1/control/log`.
+    Applied state is a deterministic function of the log; `GET
+    /v1/control/snapshot` exists so a new standby need not replay from
+    the beginning.
+
+    Standbys **pull**; the active root never pushes. That keeps one
+    writer, lets a standby measure its own lag, and means the standby
+    initiates every connection, which is the direction that survives a
+    firewall.
+
+    Timestamps on entries are informational and **never** used for
+    ordering. Index is the only ordering there is, which keeps clock
+    skew between buildings out of the correctness argument.
+
+    This is Raft minus voting, and deliberately so. Moving to consensus
+    later would replace the transport and add an election; the log, the
+    apply function, the snapshot and the epoch are already here, and only
+    the commit rule would change — from "the active root applied it" to
+    "a majority acknowledged it".
+
+    ## Secrets never pass through here
+
+    Per-node sealing: each node holds an identity keypair whose private
+    half never leaves it, and a secret is sealed to the node whose
+    component will read it. The control root knows the recipient because
+    topology says which node a component runs on. **It never holds
+    plaintext, and in normal operation never holds a key that can read
+    every node's secrets.**
+
+    Every secret is additionally sealed to a **recovery recipient** —
+    a key held here, itself sealed under the passphrase-derived key and
+    unsealed only during an explicit recovery. Without it, a dead node's
+    secrets would be unrecoverable; with it, reading them still requires
+    the operator's passphrase.
+
+    ## Auth
+
+    The control root is the trust root. `POST /v1/auth/login` takes the
+    operator passphrase and issues a session token; component-internal
+    calls present service tokens signed with the key this root mints.
+    Enrollment is the one exception: `POST /v1/nodes/enroll` is
+    authenticated by a **join token** rather than a session, because the
+    node presenting it has no credential yet.
+
+    A mesh VPN (Tailscale / WireGuard) remains the network boundary
+    between hosts. This auth layer sits on top of it rather than
+    replacing it.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+servers:
+  - url: http://{host}:{port}
+    description: |
+      The operator-facing address, and what a browser points at once the
+      control root serves the UI.
+
+      8083 rather than inheriting the agent's 8079: the agent keeps that
+      port because it appears in every existing config and acceptance
+      script and there are now N agents, while `control` is new and can
+      take a free number. 8083 was `memory`'s port before the strip.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8083'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: nodes
+    description: |
+      The hosts this install spans, their identities and their
+      enrollment. A host is **not** a component — the same reasoning that
+      made engine processes `runtimes` in their own collection rather
+      than components applies again.
+  - name: control
+    description: |
+      The control root's own state: epoch, role, log replication, key
+      rotation and promotion.
+  - name: topology
+    description: Install-wide components and the union runtime view.
+  - name: auth
+    description: |
+      Operator authentication. Moves here from the agent, which held it
+      only because it used to be the single process.
+  - name: config
+    description: |
+      Remote-editable configuration. Every Eugene Plexus component
+      implements the same trio so one UI manages all of them without
+      per-component code.
+  - name: meta
+    description: Health and version.
+
+paths:
+
+  # -------- nodes: the hosts this install spans --------
+
+  /v1/nodes:
+    get:
+      tags: [nodes]
+      operationId: listNodes
+      summary: Every host in this install, with its identity and epoch.
+      description: |
+        The multi-host dashboard's source of truth, and where a
+        mis-wired or partitioned install becomes visible: a node whose
+        `lastSeenEpoch` disagrees with `GET /v1/control/status` is one
+        that has not yet learned about a promotion.
+
+        Includes this node. A single-host install returns exactly one
+        entry, which is the honest answer rather than an empty list.
+      responses:
+        '200':
+          description: Every enrolled node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeList'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/nodes/{name}:
+    parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [nodes]
+      operationId: getNode
+      summary: Read one node.
+      responses:
+        '200':
+          description: The node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [nodes]
+      operationId: revokeNode
+      summary: Revoke a node's enrollment, which rotates the signing key.
+      description: |
+        **This is a rotation, not a deletion,** and the distinction is
+        the sharp edge of the whole design. A revoked node still *holds*
+        the service-token signing key, so removing its registry entry
+        would not stop it authenticating to other components. Revoking
+        therefore mints a new signing key, redistributes it to every
+        remaining node, and bumps the epoch.
+
+        Consequences the caller must expect. Nodes that are `down` during
+        the rotation hold a superseded key and are refused until they
+        reconnect and are re-keyed — so this is **resumable and
+        idempotent** by necessity, not by preference. And the runtimes
+        the revoked node was hosting become un-declared: the models
+        themselves are untouched on that host's disk, but nothing in this
+        install will route to them.
+
+        Returns 409 when a rotation is already in flight, because two
+        concurrent rotations would leave the install in a mixed-key state
+        with no single correct answer.
+      responses:
+        '202':
+          description: Revocation accepted; rotation in progress.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotation'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: A key rotation is already in flight.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/nodes/join-token:
+    post:
+      tags: [nodes]
+      operationId: mintJoinToken
+      summary: Mint a single-use, short-lived token that lets one host enroll.
+      description: |
+        Operator-only. The token is the only credential a new agent has,
+        so it is deliberately narrow: **single-use, short-lived, and
+        scoped to one node**. Minting a second token does not invalidate
+        the first; expiry and use do.
+
+        The returned `token` is shown **once** and not retrievable
+        afterwards. It is not stored in recoverable form — a lost token
+        is re-minted, not looked up.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinTokenRequest'
+      responses:
+        '201':
+          description: Token minted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinToken'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/nodes/enroll:
+    post:
+      tags: [nodes]
+      operationId: enrollNode
+      summary: Exchange a join token and a public key for membership.
+      description: |
+        Called by the **agent**, not by the operator, and authenticated by
+        the join token rather than a session — the node presenting it has
+        no credential yet. This is the one endpoint here that does not
+        take a session token.
+
+        The agent generates its identity keypair first and sends only the
+        public half; **the private key never leaves the node**, which is
+        what makes per-node sealing meaningful. In exchange it receives
+        its name, the current service-token signing key, the current
+        epoch, and the control root's identity.
+
+        Idempotent on the token: re-presenting a consumed token returns
+        409 rather than enrolling a second node, because a join token
+        that could be replayed is a join token that could be stolen.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentRequest'
+      responses:
+        '201':
+          description: Enrolled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Enrollment'
+        '400':
+          description: Malformed public key, or a name that collides.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '401':
+          description: Token unknown, expired, or already used.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '409':
+          description: This token has already enrolled a node.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  # -------- control: this root's own state --------
+
+  /v1/control/status:
+    get:
+      tags: [control]
+      operationId: controlStatus
+      summary: This root's role, epoch, applied index, and its standbys' lag.
+      description: |
+        The one call that answers "is failover safe right now". A standby
+        whose `appliedIndex` trails the active root's cannot be promoted
+        without losing whatever it has not applied, and this is where an
+        operator sees that before deciding rather than after.
+
+        Readable by any service token as well as the operator, because
+        an agent needs to learn the current epoch and a driver needs to
+        know whether management is available.
+      responses:
+        '200':
+          description: Control-root state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlStatus'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/control/log:
+    get:
+      tags: [control]
+      operationId: readLog
+      summary: Pull control-state log entries after a given index.
+      description: |
+        How a standby stays current. Standbys **pull**; the active root
+        never pushes — that keeps exactly one writer, lets a standby
+        measure its own lag honestly, and means the standby initiates the
+        connection, which is the direction that survives a firewall
+        between buildings.
+
+        Entries are gapless and strictly increasing in `index`. A caller
+        that receives a gap must re-snapshot rather than guess, which is
+        why the response reports `firstAvailableIndex`: after compaction
+        the tail an old standby wants may no longer exist.
+
+        Timestamps on entries are informational. **Index is the only
+        ordering**, so clock skew between hosts cannot affect
+        correctness.
+      parameters:
+        - in: query
+          name: after
+          required: true
+          description: Return entries with `index` strictly greater than this.
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        '200':
+          description: Entries, oldest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogPage'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: |
+            `after` predates `firstAvailableIndex` — the entries were
+            compacted away. Take a snapshot instead.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/control/snapshot:
+    get:
+      tags: [control]
+      operationId: readSnapshot
+      summary: The applied state as of one index, for bootstrapping a standby.
+      description: |
+        A new standby starts here and then follows the log from
+        `index`. Also the recovery path for a standby that fell behind
+        compaction.
+
+        Contains topology, the node registry and the sealed recovery key
+        — everything in the replication set except the passphrase, which
+        exists only in the operator's head, and per-component secrets,
+        which are sealed on the hosts that read them and never travel
+        here.
+      responses:
+        '200':
+          description: Snapshot at an index.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Snapshot'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/control/promote:
+    post:
+      tags: [control]
+      operationId: promote
+      summary: Promote this standby to active. Operator action, passphrase required.
+      description: |
+        Called **on the standby**, never on the active root, and never by
+        a timer. The passphrase is required because a standby holds the
+        Argon2id salt and a verifier but not the master key — which is
+        exactly why the master key never has to exist here at rest or
+        cross the wire: promotion is manual, so the operator is present
+        at the one moment it is needed.
+
+        The standby verifies the passphrase, derives the master key,
+        confirms its applied index, increments the epoch, appends a
+        `promote` entry, and begins accepting writes. Agents learn the
+        new epoch on their next contact and fence the old root by
+        refusing its lower one.
+
+        **Refusing to promote is a valid outcome.** A standby that cannot
+        prove its state reports how far behind it is and returns 409;
+        silently promoting a stale root is how an install loses its node
+        registry. `force` exists for the operator who has decided that
+        losing the tail is better than staying down, and it says so.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PromoteRequest'
+      responses:
+        '200':
+          description: Promoted; the new epoch is in the response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlStatus'
+        '401':
+          description: Passphrase rejected.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '409':
+          description: |
+            This root is already active, or the standby is behind and
+            `force` was not set. `detail` reports the gap.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/control/rotate-key:
+    post:
+      tags: [control]
+      operationId: rotateSigningKey
+      summary: Mint a new service-token signing key and redistribute it.
+      description: |
+        Explicit, and no longer a side effect of restarting. Through M4
+        service tokens were "rotated on each agent restart", which was
+        harmless when one process spawned everything and is an outage
+        once there are N nodes — a restart that re-keys the install would
+        break every component that had not yet been told.
+
+        Rotation is therefore a first-class operation with its own log
+        entry, resumable, and tolerant of nodes that are `down`: they are
+        re-keyed on reconnect and refused until then. `GET` reports the
+        state of the current or most recent rotation, which persists
+        until the next one starts so a UI that reconnects afterwards
+        still learns how it ended.
+      responses:
+        '202':
+          description: Rotation accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotation'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: A rotation is already in flight.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+    get:
+      tags: [control]
+      operationId: getKeyRotation
+      summary: Progress of the current or most recent key rotation.
+      responses:
+        '200':
+          description: Rotation state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeyRotation'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          description: No rotation has ever run.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  # -------- topology: install-wide --------
+
+  /v1/components:
+    get:
+      tags: [topology]
+      operationId: listComponents
+      summary: Every component in the install, across every node.
+      description: |
+        The install-wide view. Each entry carries the `node` it runs on,
+        which the agent's own `/v1/components` cannot report because it
+        only knows its own host.
+      responses:
+        '200':
+          description: Components across all nodes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComponentPlacementList'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          description: |
+            No node is reachable. Distinct from an empty list, which
+            would mean nothing is declared.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/runtimes:
+    get:
+      tags: [topology]
+      operationId: listRuntimes
+      summary: The union of every node's runtimes, each tagged with its node.
+      description: |
+        What the runtime dashboard reads once an install spans hosts.
+        Assembled by asking each enrolled node's agent, so a node that is
+        `down` contributes `unreachableNodes` rather than silently
+        contributing nothing — a dashboard that shows fewer runtimes than
+        exist, with no indication why, is worse than one that says a host
+        is unreachable.
+      responses:
+        '200':
+          description: Runtimes across all reachable nodes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimePlacementList'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    post:
+      tags: [topology]
+      operationId: createRuntime
+      summary: Declare a runtime on a node, forwarded to that node's agent.
+      description: |
+        Accepted here and **forwarded** to the target node's agent, which
+        is what makes "the operator talks to the control root" true
+        rather than aspirational. `node` selects the host; omitted, it
+        means the node the control root runs on, which keeps a
+        single-host install from having to name anything.
+
+        Validation that needs the host — does this model path exist, is
+        this port free, does the engine adapter know these flags — can
+        only happen on the agent, so this endpoint's failures are largely
+        relayed from there. A 502 means the agent refused or was
+        unreachable, and `detail` carries what it said.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimePlacementSpec'
+      responses:
+        '201':
+          description: Declared on the target node.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimePlacement'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          description: No such node.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The target node's agent refused or was unreachable.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  # -------- auth --------
+
+  /v1/auth/status:
+    get:
+      tags: [auth]
+      operationId: authStatus
+      summary: Whether this install has been through first-run setup.
+      security: []
+      description: |
+        Called by the UI on every page load to tell a fresh install from
+        a logged-out one. Unauthenticated by necessity — it is what the
+        UI asks *before* it has a token.
+      responses:
+        '200':
+          description: Initialization state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatus'
+
+  /v1/auth/initialize:
+    post:
+      tags: [auth]
+      operationId: authInitialize
+      summary: Set the operator passphrase on a fresh install.
+      security: []
+      description: |
+        First-run only, and refused once `initialized` is true. Derives
+        the master key via Argon2id and generates the first
+        service-token signing key and this root's epoch-1 identity.
+
+        The passphrase is unrecoverable by design: losing it means losing
+        every sealed secret in the install, including the recovery
+        recipient that would otherwise reach a dead node's credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthInitializeRequest'
+      responses:
+        '204':
+          description: Initialized.
+        '409':
+          description: Already initialized.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: authLogin
+      summary: Exchange the operator passphrase for a session token.
+      security: []
+      responses:
+        '200':
+          description: Session issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionToken'
+        '401':
+          description: Passphrase rejected.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthInitializeRequest'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the control root's configuration.
+      description: |
+        UI preferences, `firstRunComplete`, `securityMode`, and the
+        standby endpoints this root replicates to.
+
+        **`securityMode: os_keyring` is host-bound** and this is where
+        that bites: the master key sits in *this* machine's Credential
+        Manager or Keychain, so a standby on another host cannot inherit
+        auto-unlock and will require the passphrase at promotion. That is
+        consistent with promotion being a human act anyway, but the
+        wizard has to say so in words rather than let it be discovered
+        during a failover.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the control root's configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome, per key.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness probe.
+      security: []
+      description: |
+        Healthy on a standby as well as on the active root — a standby
+        that is up and replicating is doing its job. Read
+        `GET /v1/control/status` for role and lag; this endpoint answers
+        only whether the process is alive.
+      responses:
+        '200':
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+        '503':
+          description: Not ready.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: |
+        Operator session token from `POST /v1/auth/login`, or a
+        service token signed by this root's current signing key.
+        Mutations are operator-only; reads accept either.
+
+  schemas:
+
+    # -------- nodes --------
+
+    NodeList:
+      type: object
+      required:
+        - nodes
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+
+    Node:
+      type: object
+      description: |
+        One host in this install.
+
+        Identified by an operator-supplied `name`, consistent with
+        components and runtimes — but its *identity* is `publicKey`. A
+        name is a label an operator can read; the keypair is what makes
+        a node the same node after a restart, and what a secret is sealed
+        to.
+      required:
+        - name
+        - role
+        - reachable
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Operator-supplied, unique per install. Used in
+            `Runtime.node`, `RuntimePlacementSpec.node`, and anywhere a
+            placement has to be named.
+        url:
+          type: string
+          format: uri
+          description: Where this node's agent is reachable.
+        role:
+          $ref: '#/components/schemas/NodeRole'
+        reachable:
+          type: boolean
+          description: |
+            Whether the control root could reach this node's agent on its
+            last attempt. False means `down`, not `out` — see this
+            document's description. Nothing is reassigned on the strength
+            of this field alone.
+        publicKey:
+          type: string
+          description: |
+            The node's identity public key, generated at enrollment. The
+            private half never leaves the node, which is what makes
+            per-node sealing meaningful: a secret sealed to this key can
+            be read by this host and by the recovery recipient, and by
+            nothing else.
+        lastSeenEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            The highest control-root epoch this node has acknowledged. A
+            value below `ControlStatus.epoch` is the visible symptom of a
+            node that was partitioned during a promotion — bounded,
+            self-healing, and deliberately surfaced rather than hidden.
+        agentVersion:
+          type: string
+        os:
+          type: string
+          enum: [windows, linux, macos]
+        arch:
+          type: string
+          enum: [x64, arm64]
+        devices:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/ComputeDevice'
+          description: |
+            What this host can compute on. **This is the cross-host
+            hardware inventory M3 deferred**, and it lands here exactly
+            as M3 predicted: *"building a real inventory is topology work
+            and belongs to the agent if it belongs anywhere."*
+
+            The library's fit surface already takes a hardware override
+            and reports which host it measured, so multi-host quant
+            guidance works as soon as these exist. Reported, not acted
+            on — deciding *which* node should host a model is lifecycle
+            policy, which is M6.
+        enrolledAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+
+    NodeRole:
+      type: string
+      enum:
+        - control
+        - standby
+        - agent
+      description: |
+        * `control` — the active control root. Exactly one.
+        * `standby` — replicating, promotable, serving no writes.
+        * `agent` — supervision only, no control-plane state.
+
+        A node's role is *configuration*, not an election outcome.
+        Nothing here votes.
+
+    JoinTokenRequest:
+      type: object
+      properties:
+        nodeName:
+          type: string
+          description: |
+            Bind this token to one intended node name. Optional; when
+            set, an enrollment presenting a different name is refused,
+            which turns a leaked token into a token that can only do the
+            thing it was minted for.
+        ttlSeconds:
+          type: integer
+          minimum: 30
+          maximum: 86400
+          default: 900
+          description: |
+            Short by default. A join token is the one credential that
+            grants membership, and the window in which it is useful is
+            the window in which it is dangerous.
+
+    JoinToken:
+      type: object
+      required:
+        - token
+        - expiresAt
+      properties:
+        token:
+          type: string
+          description: |
+            **Shown once.** Not retrievable afterwards and not stored in
+            recoverable form — a lost token is re-minted, never looked
+            up.
+        expiresAt:
+          type: string
+          format: date-time
+        nodeName:
+          type: string
+          description: The node name this token is bound to, when it is bound.
+
+    EnrollmentRequest:
+      type: object
+      required:
+        - token
+        - name
+        - publicKey
+      properties:
+        token:
+          type: string
+          description: The join token, which is this request's only credential.
+        name:
+          type: string
+          minLength: 1
+        publicKey:
+          type: string
+          description: |
+            The agent's identity public key. The private half stays on
+            the node; sending it would defeat the point of per-node
+            sealing.
+        agentVersion:
+          type: string
+        os:
+          type: string
+          enum: [windows, linux, macos]
+        arch:
+          type: string
+          enum: [x64, arm64]
+        devices:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/ComputeDevice'
+
+    Enrollment:
+      type: object
+      description: |
+        What a newly enrolled node needs in order to participate, and
+        nothing more.
+      required:
+        - name
+        - epoch
+        - signingKey
+      properties:
+        name:
+          type: string
+        epoch:
+          type: integer
+          format: int64
+          description: |
+            The control root's current epoch. The node records it and
+            from then on refuses any root presenting a lower one.
+        signingKey:
+          type: string
+          description: |
+            The current service-token signing key, so this node's
+            components can verify tokens minted anywhere in the install.
+            **This is what a single-watchdog install could not do**: a
+            driver spawned on one host used to reject a gateway's token
+            from another because the keys were unrelated.
+        controlPublicKey:
+          type: string
+          description: |
+            The control root's public key, so the node can verify that
+            later epoch changes come from a root it recognises rather
+            than from anything that can reach its port.
+        recoveryPublicKey:
+          type: string
+          description: |
+            The second recipient every secret on this node is sealed to.
+            Held by the control root under the passphrase-derived key, so
+            a dead node's credentials are recoverable by the operator and
+            by nobody else.
+
+    # -------- control state --------
+
+    ControlStatus:
+      type: object
+      required:
+        - role
+        - epoch
+        - appliedIndex
+      properties:
+        role:
+          $ref: '#/components/schemas/NodeRole'
+        epoch:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Monotonic generation of the control root. Incremented by
+            promotion, and the whole of the fencing mechanism: agents
+            refuse a lower epoch, so a superseded root cannot command
+            anything that has already heard from its successor.
+        appliedIndex:
+          type: integer
+          format: int64
+          minimum: 0
+          description: The highest log index this process has applied.
+        firstAvailableIndex:
+          type: integer
+          format: int64
+          description: |
+            Oldest index still in the log after compaction. A standby
+            whose position predates this cannot catch up by reading the
+            log and must take a snapshot instead.
+        standbys:
+          type: array
+          items:
+            $ref: '#/components/schemas/StandbyStatus'
+          description: |
+            Present on the active root. **This is the "is failover safe
+            right now" answer** — a standby trailing the active root
+            cannot be promoted without losing the difference, and an
+            operator should see that before a failure rather than during
+            one.
+        activeUrl:
+          type: string
+          format: uri
+          description: Where the active root is, as reported by a standby.
+        initialized:
+          type: boolean
+
+    StandbyStatus:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+        appliedIndex:
+          type: integer
+          format: int64
+        lagEntries:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            How many entries behind this standby is. Reported as a count
+            of entries rather than a duration, because entries are what
+            would be lost and seconds are not.
+        lastContactAt:
+          type: string
+          format: date-time
+        reachable:
+          type: boolean
+
+    LogPage:
+      type: object
+      required:
+        - entries
+        - appliedIndex
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogEntry'
+          description: Oldest first, gapless, strictly increasing `index`.
+        appliedIndex:
+          type: integer
+          format: int64
+          description: The active root's own applied index, so a caller can compute its lag.
+        firstAvailableIndex:
+          type: integer
+          format: int64
+          description: |
+            Reported on every page so a standby learns it has fallen
+            behind compaction *before* it tries to read a gap.
+
+    LogEntry:
+      type: object
+      description: |
+        One control-state change. Applied state is a deterministic
+        function of the entries applied so far, which is the property
+        that makes a standby's state comparable to the active root's —
+        and the property a later move to consensus would depend on.
+      required:
+        - index
+        - epoch
+        - op
+      properties:
+        index:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Gapless and monotonic, assigned by the active root alone.
+            **The only ordering there is.**
+        epoch:
+          type: integer
+          format: int64
+          description: |
+            The control-root generation that appended this entry. A
+            standby rejects entries from an epoch below the highest it
+            has seen, which fences a superseded root out of the log as
+            well as out of the agents.
+        op:
+          $ref: '#/components/schemas/LogOp'
+        payload:
+          type: object
+          additionalProperties: true
+          description: Operation-specific. Shape follows `op`.
+        at:
+          type: string
+          format: date-time
+          description: |
+            **Informational only, never used for ordering.** Recorded so
+            an operator can read the log; deliberately not load-bearing,
+            which is what keeps clock skew between buildings out of the
+            correctness argument.
+
+    LogOp:
+      type: string
+      enum:
+        - enrollNode
+        - revokeNode
+        - putComponent
+        - deleteComponent
+        - putRuntime
+        - deleteRuntime
+        - patchConfig
+        - rotateSigningKey
+        - promote
+      description: |
+        The complete set of control-state mutations. Closed on purpose:
+        **every change goes through one writer and one ordered path**, and
+        an operation that is not in this list is an operation that would
+        not replicate. Adding a mutation means adding an op here.
+
+    Snapshot:
+      type: object
+      description: |
+        Applied state as of `index`, for bootstrapping a standby or
+        recovering one that fell behind compaction.
+
+        Carries the replication set and nothing else. The passphrase
+        exists only in the operator's head; per-component secrets are
+        sealed on the hosts that read them and never travel here.
+      required:
+        - index
+        - epoch
+      properties:
+        index:
+          type: integer
+          format: int64
+        epoch:
+          type: integer
+          format: int64
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Node'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComponentPlacement'
+        runtimes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimePlacement'
+        salt:
+          type: string
+          description: |
+            The Argon2id salt. Replicated because without it the same
+            passphrase derives a different key, and a standby that cannot
+            derive the master key cannot be promoted.
+        passphraseVerifier:
+          type: string
+          description: |
+            Lets a standby authenticate the operator at promotion without
+            holding the master key.
+        sealedRecoveryKey:
+          type: string
+          description: |
+            The recovery recipient, sealed under the passphrase-derived
+            key. Replicated so a promoted standby can still reach a dead
+            node's secrets; useless to anyone without the passphrase.
+
+    PromoteRequest:
+      type: object
+      required:
+        - passphrase
+      properties:
+        passphrase:
+          type: string
+          format: password
+          description: |
+            Required, and the reason the master key never needs to live
+            on a standby at rest or cross the wire to it.
+        force:
+          type: boolean
+          default: false
+          description: |
+            Promote despite trailing the active root. For the operator
+            who has decided that losing the tail beats staying down —
+            an explicit choice with a name, not a silent default.
+
+    KeyRotation:
+      type: object
+      description: |
+        Progress of a service-token signing-key rotation, whether
+        triggered explicitly or by revoking a node.
+
+        Phases are named rather than reduced to a percentage because a
+        rotation that stops partway leaves the install in a mixed-key
+        state, and the operator needs to know which nodes are on which
+        key rather than what fraction is done.
+      required:
+        - state
+      properties:
+        state:
+          type: string
+          enum:
+            - minting
+            - distributing
+            - done
+            - failed
+          description: |
+            `distributing` is the interesting one: nodes that are `down`
+            hold a superseded key and are refused until they reconnect
+            and are re-keyed. That is why rotation has to be resumable
+            and idempotent rather than a single atomic act.
+        reason:
+          type: string
+          enum: [operator, revocation]
+        revokedNode:
+          type: string
+          description: 'Set when `reason: revocation`.'
+        nodesTotal:
+          type: integer
+        nodesRekeyed:
+          type: integer
+        nodesPending:
+          type: array
+          items:
+            type: string
+          description: |
+            Nodes that have not yet taken the new key, named rather than
+            counted, because "which host is stale" is the question an
+            operator actually has.
+        error:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+
+    # -------- topology --------
+
+    ComponentPlacementList:
+      type: object
+      required:
+        - components
+      properties:
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComponentPlacement'
+        unreachableNodes:
+          type: array
+          items:
+            type: string
+          description: |
+            Nodes that could not be asked. Named explicitly so the view
+            is honestly partial rather than quietly short.
+
+    ComponentPlacement:
+      type: object
+      description: |
+        A component, plus which node it runs on. The node dimension is
+        the only thing the agent's own view cannot supply.
+      required:
+        - node
+        - name
+        - kind
+      properties:
+        node:
+          type: string
+        name:
+          type: string
+        kind:
+          $ref: 'components/common.yaml#/components/schemas/ComponentKind'
+        url:
+          type: string
+          format: uri
+        status:
+          type: string
+          description: |
+            As the owning agent reports it. Deliberately a string here
+            rather than a copy of the agent's enum: the agent owns
+            component status, and duplicating its enum in this document
+            would create two definitions of one fact.
+
+    RuntimePlacementList:
+      type: object
+      required:
+        - runtimes
+      properties:
+        runtimes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimePlacement'
+        unreachableNodes:
+          type: array
+          items:
+            type: string
+          description: |
+            Nodes that could not be asked. A dashboard showing fewer
+            runtimes than exist, with no indication why, is worse than
+            one that names the host it could not reach.
+
+    RuntimePlacement:
+      type: object
+      description: |
+        An engine runtime, plus the node it runs on. Every other field is
+        the agent's `Runtime` verbatim, relayed rather than
+        reinterpreted — this document adds placement and takes nothing
+        away.
+      required:
+        - node
+        - name
+      properties:
+        node:
+          type: string
+        name:
+          type: string
+        modelAlias:
+          type: string
+          description: |
+            The model id a client asks the gateway for. Unique across the
+            *install*, not just the node — two nodes serving the same
+            alias is how replicas are expressed, and the gateway load
+            balances across them.
+        status:
+          type: string
+        url:
+          type: string
+          format: uri
+        engine:
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+
+    RuntimePlacementSpec:
+      type: object
+      description: |
+        A runtime declaration plus where to put it. `spec` is the agent's
+        `RuntimeSpec` unchanged; this wrapper adds only the node.
+      required:
+        - spec
+      properties:
+        node:
+          type: string
+          description: |
+            Target host. Omitted means the node the control root runs on,
+            so a single-host install never has to name anything.
+        spec:
+          type: object
+          additionalProperties: true
+          description: |
+            The agent's `RuntimeSpec`, forwarded verbatim. Modelled
+            loosely here on purpose: the agent's spec is the one
+            definition of what a runtime declaration is, and restating
+            its fields in this document would create a second one that
+            drifts.
+
+    # -------- auth --------
+
+    AuthStatus:
+      type: object
+      required:
+        - initialized
+      properties:
+        initialized:
+          type: boolean
+          description: |
+            True once a passphrase has been set. False means every
+            endpoint except this one, `/healthz` and
+            `POST /v1/auth/initialize` will refuse.
+
+    AuthInitializeRequest:
+      type: object
+      required:
+        - passphrase
+      properties:
+        passphrase:
+          type: string
+          minLength: 1
+          format: password
+          description: |
+            Hashed with Argon2id and used to derive the master key that
+            at-rest secrets are sealed under. Losing it means losing
+            every stored credential — including the recovery recipient
+            that would otherwise reach a dead node's secrets. There is no
+            recovery path, by design.
+
+    SessionToken:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time

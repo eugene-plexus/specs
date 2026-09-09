@@ -72,7 +72,8 @@ jobs:
             openapi/gateway.yaml \
             openapi/inference-driver.yaml \
             openapi/library.yaml \
-            openapi/agent.yaml
+            openapi/agent.yaml \
+            openapi/control.yaml
 
   dco:
     name: DCO sign-off check
