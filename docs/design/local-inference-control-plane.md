@@ -233,7 +233,8 @@ Everything not listed here already exists and mostly survives untouched.
   platform + accelerator, fetch and verify the matching prebuilt llama.cpp
   release, surface the version, offer updates. Closes the one manual step M0
   leaves behind, and it's the increment that makes first-run one-click.
-- **M2 — model library, both formats** ([design](m2-model-library.md))**.** Point
+- **M2 — model library, both formats** ([design](m2-model-library.md),
+  [acceptance](../acceptance/m2-five-process-run.md))**.** Point
   at directories, scan GGUF *and* HF-safetensors models, edit per-model
   profiles, launch from the library.
 - **M3 — discovery, download, guidance.** Catalogue search, model detail, quant
