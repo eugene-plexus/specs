@@ -13,11 +13,32 @@ single-host does not change that — it only changes how long you can get
 away with postponing it. The trigger was a specific question: what stops
 two hosts both claiming to be the trust root?
 
-**Nothing here is implemented.** This is a contract-and-design milestone
-like M4's first half. The **design landed 2026-09-09 (`d1937cd`)** and the
-**contracts landed the same day** — `openapi/control.yaml` is new, §10 has
-the shape and the four places it departed from the sketch. `control` the
-repo does not exist yet.
+**Status, 2026-09-09.** Design `d1937cd`; contracts `811112b`, corrected
+by `64dd38a`, `dd33451` and `da19cac` once implementing them showed what
+they were missing. **The `control` repo exists and the core is built** —
+the single-writer ordered log, the deterministic apply, snapshots and
+compaction, the standby follower, epoch fencing, promotion, enrollment,
+revocation-as-rotation, two-recipient sealing, the trust root's auth
+surface, the config trio and the union topology views. §10 records the
+five places the contract departed from its own sketch and the one place
+the implementation departed from the contract.
+
+**Both required tests of §5 pass.** Replay equivalence is
+`control/tests/test_replay_equivalence.py`, asserted from five
+directions. "Kill the control root and a chat completion still succeeds"
+is `scripts/m5-acceptance.sh`, and it has been run: five processes, a
+real 27B model on a real GPU, the control root killed through the OS
+mid-run, and a completion returned two seconds later. **The surviving
+data path is now a tested guarantee rather than the accident §1 called
+it.**
+
+**What is not built:** multi-host has never run on two machines. Every
+cross-host behaviour — enrollment over a real network, a rotation with a
+genuinely offline node, a promotion after a genuinely lost host — is
+exercised against fake agents in-process, because one dev box cannot
+arrange "one node answers and the other does not". The `ui` has not been
+re-pinned and does not know this component exists. `securityMode:
+os_keyring` is a config field with no keyring behind it here yet.
 
 Decisions taken to open it, all Troy's, 2026-09-09:
 
@@ -266,6 +287,24 @@ Second required test, because §1 called the surviving-data-path an
 accident: **kill the control root and assert that a chat completion still
 succeeds** through the gateway to a running engine. That turns the
 property into a guarantee.
+
+**Both are done, and both earned their keep.** Replay equivalence lives
+in `control/tests/test_replay_equivalence.py` and asserts the property
+from five directions — over HTTP through the real replication surface,
+through a snapshot, through a *compacted* snapshot plus a tail, twice at
+different wall-clock times, and against every one of the nine ops. It is
+what surfaced the three `Snapshot` gaps above and the serializer
+normalization below, none of which fails a request.
+
+The kill test is `scripts/m5-acceptance.sh` rather than anything in the
+`control` repo, and deliberately: it needs a gateway, a driver and a
+real engine, and a version that stubbed all three would assert only that
+our stubs do not call us. It has been run — five processes, a real 27B
+model, the control root killed through the OS mid-run, a completion
+returned two seconds later, and the gateway's routing table intact
+afterwards. The routing check is separate from the completion on
+purpose: a stale-but-working cache and a genuinely independent routing
+path look identical from a single request.
 
 ---
 
@@ -544,6 +583,32 @@ form are **the same document**. A standby bootstraps from exactly what
 the test compares, so a divergence cannot hide in the gap between the
 two — which was the first thing that gap did.
 
+### And one place the implementation departs from the contract
+
+**The replication surface transmits verbatim bytes.**
+`GET /v1/control/snapshot` and `GET /v1/control/log` return their
+payloads without passing them through a response model, and that is a
+correctness requirement rather than an optimization.
+
+Round-tripping applied state through Pydantic normalizes it on the way
+out: `http://host:8079` becomes `http://host:8079/`, and `+00:00`
+becomes `Z`. Both are correct serializations. Both mean a standby's
+state differs from the active root's **in bytes while agreeing in
+meaning** — which is precisely the difference replay equivalence exists
+to detect, arriving as a false positive from the transport instead of a
+true one from the logic. A team that hit this once would be tempted to
+loosen the comparison, and the comparison is the deliverable.
+
+So values are normalized **once, on the way into the log**, and the two
+replication endpoints send what the writer wrote. The contract is
+unchanged and still declares `Snapshot` and `LogPage`; what changes is
+that conformance is asserted by a test
+(`control/tests/test_contract_shape.py`) rather than enforced by the
+serializer. That test also checks the canonical form carries no field
+`Snapshot` does not declare — an extra one would be silently dropped by
+any consumer that *does* validate, and the first symptom would be a
+standby quietly missing state.
+
 `ConfigValueType` also grew **`url_list`**, for the same reason M2 added
 `path_list`: the control root's standby endpoints are inherently plural,
 and a comma-separated text field is the bug report `path_list` exists to
@@ -629,16 +694,25 @@ of §5.
   assumed away: if the first-run experience gets worse, the product gets
   worse, and differentiator #5 was "networked-first" rather than
   "networked-only".
-- **A new repo, and a rename that is only half absorbed.** `watchdog` →
-  `agent` was executed 2026-09-09 in the org and in `specs` — the spec is
-  now `openapi/agent.yaml` — but the four other consumers still carry
-  `watchdog` in prose, in their codegen paths, and in the gateway's and
-  UI's persisted **`watchdogUrl`** config key. Those are folded into the
-  M4 re-pin they need anyway rather than done as a second sweep, which
-  means **until that re-pin lands, the fleet is mid-rename**: the
-  consumers keep working because each is pinned to a specs SHA that
-  predates the move, and that is the only reason nothing is broken.
-  `control` still has to be created.
+- ~~**A new repo, and a rename that is only half absorbed.**~~ Both
+  resolved 2026-09-09: `watchdog` → `agent` is fully absorbed across all
+  five consumers, and `control` now exists as the seventh live repo.
 - **`os_keyring` and HA are in tension** (§7) and the wizard will have to
   say so in words an operator understands, rather than offering both and
-  letting them discover it at promotion time.
+  letting them discover it at promotion time. The control root's config
+  schema now says it in the field's own description, which is the
+  cheapest half of that; the wizard is still the half that matters.
+- **Multi-host has never run on two machines**, and that is the largest
+  outstanding gap in this milestone. Everything cross-host is tested
+  against fake agents in-process. The behaviours that will bite are the
+  ones a single box cannot produce: a rotation where a node is genuinely
+  offline rather than pointed at a closed port, a promotion where the
+  old root is genuinely partitioned rather than shut down, and clock
+  skew between buildings — which the design keeps out of the
+  correctness argument on purpose, but which will still make timestamps
+  in the log read strangely.
+- **The `ui` has not been re-pinned** and does not know this component
+  exists, so nothing here is reachable from a browser yet. The five
+  consumers are level with `811112b`; `control` is on `da19cac`. That
+  is the fleet mid-re-pin again, and the same pin model is the reason
+  nothing is broken meanwhile.
