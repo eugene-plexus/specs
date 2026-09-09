@@ -484,34 +484,70 @@ M4's `runtimeName` resolution becomes node-local: a driver follows a
 runtime through *its own* agent, which is correct because a driver lives
 next to its engine. One clarifying sentence, no redesign.
 
-### One correction the implementation found
+### The correction the implementation found
 
-**`Snapshot` was missing half the replication set.** Added while
-building the `control` repo: `sealedSigningKey`, `sealedControlKey` and
-`controlPublicKey`.
+**`Snapshot` could not reproduce what the log produces.** That is one
+finding, not five, and it is worth stating as a rule because it will
+recur every time an op is added:
 
-§4 requires the service-token signing key to survive — *"otherwise every
-node must re-enroll after promotion"* — and the built `Snapshot` carried
-the salt, the verifier and the sealed recovery key but not the signing
-key. Since a standby bootstraps from a snapshot and *then* tails the log,
-the gap is not cosmetic: a standby that joined after the last compaction
-would have had no signing key at all, so promoting it would have
-invalidated every service token in the install.
+> A snapshot **is** the log's compacted head, so every one of the nine
+> `LogOp` values has to have somewhere to land in `Snapshot`. An op
+> whose effect the schema cannot hold is state that compaction silently
+> discards — and the loss surfaces at a promotion, not at the
+> compaction.
 
-The same argument applies once more, to a key §4 never listed. Nodes
-record `controlPublicKey` at enrollment and check epoch changes against
-it, so a promoted standby generating a *fresh* identity keypair would be
-refused by every node it tried to command — the fencing mechanism firing
-at the wrong target. **Promotion has to be a change of host, not a change
-of identity**, which means the control root's own identity private key is
-part of the replication set too.
+Three of the nine ops failed that test against the contract as landed,
+and one key §4 never listed failed it too. All four are now fields:
 
-Both are sealed under the passphrase-derived key rather than carried in
-the clear, which costs nothing: a standby has the salt and the verifier
-but no master key until the operator supplies the passphrase at
-promotion, and promotion is exactly the moment it needs to open them.
-§4's table is therefore two rows short, and this is the honest place to
-say so rather than quietly widening the schema.
+- **`rotateSigningKey` → `sealedSigningKey`, `signingKeyId`.** §4
+  requires the signing key to survive — *"otherwise every node must
+  re-enroll after promotion"* — and `Snapshot` carried the salt, the
+  verifier and the sealed recovery key but not the key itself. A standby
+  that joined after the last compaction would have held no signing key
+  at all, so promoting it would have invalidated every service token in
+  the install.
+- **`patchConfig` → `config`.** Config is control state by the design's
+  own op list, so a snapshot without it loses every config change made
+  before the last compaction. The specific bite: a promoted standby with
+  no `standbyUrls` silently has no standbys of its own, which is the
+  failure mode where the *second* failover is the one that hurts.
+- **`putRuntime` → `runtimes` typed as `RuntimePlacementSpec`, not
+  `RuntimePlacement`.** §4 requires "declared runtimes" to survive, and
+  a placement without its spec is not a declaration — a promoted standby
+  would know a runtime's name and nothing about the model path or flags
+  it launches with. `RuntimePlacement` is the *reporting* shape; the
+  snapshot needs the *declaring* one.
+- **`sealedControlKey` and `controlPublicKey`**, which §4's table never
+  listed at all. Nodes record `controlPublicKey` at enrollment and check
+  epoch changes against it, so a promoted standby generating a *fresh*
+  identity keypair would be refused by every node it tried to command —
+  the fencing mechanism firing at exactly the wrong target. **Promotion
+  has to be a change of host, not a change of identity.**
+
+Both private halves are sealed under the passphrase-derived key rather
+than carried in the clear, which costs nothing: a standby has the salt
+and the verifier but no master key until the operator supplies the
+passphrase at promotion, and promotion is exactly the moment it needs to
+open them.
+
+§4's replication table is therefore short by config, the signing key and
+the control identity, and this is the honest place to say so rather than
+quietly widening the schema. **The reason all four were invisible is
+worth keeping:** none of them breaks a request. Each one breaks a
+*promotion*, months later, on a host nobody was watching — which is
+precisely the class of invariant §5 said "rots silently if nothing
+asserts it", and precisely what the replay-equivalence test is for.
+
+One consequence of making the snapshot exactly reproduce applied state:
+the implementation's canonical comparison form and the snapshot wire
+form are **the same document**. A standby bootstraps from exactly what
+the test compares, so a divergence cannot hide in the gap between the
+two — which was the first thing that gap did.
+
+`ConfigValueType` also grew **`url_list`**, for the same reason M2 added
+`path_list`: the control root's standby endpoints are inherently plural,
+and a comma-separated text field is the bug report `path_list` exists to
+avoid.
 
 Two things the implementation deliberately did **not** add, because
 their absence is correct and the reasoning is worth recording so it is

@@ -1207,6 +1207,21 @@ components:
         Carries the replication set and nothing else. The passphrase
         exists only in the operator's head; per-component secrets are
         sealed on the hosts that read them and never travel here.
+
+        **The governing rule, learned by implementing it:** a snapshot
+        has to be able to reproduce exactly what the log produces,
+        because it *is* the log's compacted head. Every one of the nine
+        `LogOp` values must have somewhere to land here, or compaction
+        silently discards the state that op wrote — and the loss shows
+        up at a promotion rather than at the compaction. Adding an op
+        means checking this schema can hold its effect.
+
+        **`Node.reachable` in a snapshot is not an observation.** It is
+        required by that schema and a snapshot carries no observations,
+        so it is always `false` here and a reader must not treat it as a
+        report about the host. Reachability, `lastSeenAt` and
+        `lastSeenEpoch` belong to whichever root did the polling; see
+        `GET /v1/nodes`.
       required:
         - index
         - epoch
@@ -1228,7 +1243,39 @@ components:
         runtimes:
           type: array
           items:
-            $ref: '#/components/schemas/RuntimePlacement'
+            $ref: '#/components/schemas/RuntimePlacementSpec'
+          description: |
+            Runtime **declarations** — what should be running where —
+            and deliberately not `RuntimePlacement`, which is the
+            reporting shape and carries no `spec`.
+
+            §4 of the design requires "declared runtimes" to survive,
+            and a placement without its spec is not a declaration: a
+            promoted standby holding one would know a runtime's name and
+            nothing about the model path or flags it launches with.
+            `node` is always present here even though the schema allows
+            it to be omitted elsewhere; a snapshot has no "the node the
+            control root runs on" default to fall back on, because the
+            root that reads it may not be the root that wrote it.
+        config:
+          type: object
+          additionalProperties: true
+          description: |
+            The control root's own applied configuration.
+
+            Replicated because `patchConfig` is one of the nine ops, so
+            config *is* control state — and a snapshot that dropped it
+            would lose every config change made before the last
+            compaction. A promoted standby that came up without
+            `standbyUrls` would silently have no standbys of its own,
+            which is the failure mode where the second failover is the
+            one that hurts.
+        signingKeyId:
+          type: string
+          description: |
+            Names the current signing-key generation. Not a secret, and
+            the thing a node reports back so a rotation can tell which
+            hosts are stale rather than counting how many are.
         salt:
           type: string
           description: |
