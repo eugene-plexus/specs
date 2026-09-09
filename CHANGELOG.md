@@ -131,6 +131,36 @@ All of it lands on **`library.yaml`**, which grows eleven paths and 25 schemas. 
 
 Validated with `openapi-spec-validator` 0.8.5 and `@redocly/cli` 2.30.4, and confirmed to generate importable Pydantic v2 models via `datamodel-code-generator` (82 models) and types via `openapi-typescript` 7.13.
 
+### library — M3 (implementation)
+
+Seven new modules behind the eleven endpoints: `hub.py` (the only outbound network in the component), `catalogue.py` (a repo's file list into launchable choices), `fit.py`, `hardware.py`, `quants.py`, `preflight.py`, `downloads.py`. 288 tests, plus an opt-in suite that drives the live hub (`EUGENE_PLEXUS_LIBRARY_LIVE_HUB=1 pytest tests/test_live_hub.py`).
+
+Four defects the first live run earned, none of which a fixture would have produced:
+
+- **Candidate labels collided.** Four files read as `UD-Q6_K` — they were `UD-Q6_K`, `_M`, `_L` and `_XL` — while others fell back to their whole filename. One cause: the label was matched against llama.cpp's own `file_type` names, and publishers invent tiers (`Q4_K_XL`, `UD-Q8_K_XL`) no fixed list will contain. The label now comes from the data — every candidate stem in a repo shares a prefix, and what remains is the distinguishing tier. Four identical rows on a screen whose whole job is "pick one" is the worst thing this could have shipped.
+- **Verification used a digest captured before the transfer,** so a file replaced upstream mid-download could never verify however often it was retried. The HEAD preceding each transfer is authoritative now.
+- **A digest mismatch retried five times against the same bad partial** — one failure five times, and four sleeps. It discards the partial and allows exactly one clean retry.
+- **A performance regression, introduced and then measured away.** Bounds-checking the GGUF reader's `skip()` cost two seeks per stepped string and `tell()` on every `raw()` cost more: together 3.4× slower (0.61 vs 0.18 ms/model), which broke a test that busy-polls a live scan. The reader tracks its own offset now — faster than the original, and exact where a buffered `tell()` after a short read is not.
+
+`httpx` is the one new runtime dependency. The watchdog's venv is the runtime venv for every component it spawns, so that venv needs it too.
+
+### ui — M3
+
+**`/discover`**: search, then one repo's launchable choices with a fit verdict on every row. Guidance and discovery are the same screen deliberately — the moment someone is choosing between `Q3_K_S` and `Q2_K_M` is the moment they need to be told which one their box can hold, and a UI that has to join two calls to say so ships without the second one. The context control in the header is the other half: watching the recommendation walk down the list as it moves from 8k to 128k *is* the guidance.
+
+- **`FitBadge` opens into its own arithmetic.** Differentiator #6 is "show why", so a verdict is a disclosure rather than a chip: weights, KV cache with the attention-layer count, the overhead allowance, the budget it was measured against, and whether the KV term came from the model's declared shape or was estimated from its size.
+- **A `check` button per candidate** runs the ranged metadata read, which flips that basis from `estimate` to `metadata` and reports it if the file's own metadata disagrees with its filename.
+- **`DownloadsPanel`** is shared by the discovery and library screens, because a transfer outlives the screen it was started from. Pause, resume and cancel are distinct verbs and the panel says which: cancel asks first, because a paused 40 GB download is an hour of bandwidth sitting on the disk and the buttons are next to each other.
+- **`QuantReference`** renders `GET /v1/quants` — the schemes, the naming decorations, and where on the curve quality goes — with no per-model judgement anywhere in it.
+- **`ModelCard`** renders the card prose, which is the "with summaries" half of the original complaint. Untrusted content: Markdown with no raw HTML, images dropped, links `noopener noreferrer`.
+- The library page gains a fit panel on the selected model, where the scan has already read the real metadata — so it reports `maxContextLength`, the number that goes in a profile's context flag and is routinely far below what the model declares.
+
+### specs — M3 acceptance
+
+[`scripts/m3-acceptance.sh`](scripts/m3-acceptance.sh), 27 checks, passed 2026-09-09. Three processes, and **every call goes through the UI's own proxy** — the seam M3 adds and the one no single-component test can reach, since the browser knows no component URLs and a request has to be resolved through the watchdog's topology by kind. Against the live hub, not a mock. Full record: [`docs/acceptance/m3-three-process-run.md`](docs/acceptance/m3-three-process-run.md).
+
+It found a fourth instance of this project's POSIX/Windows path class: a Git Bash path (`/tmp/x`) in a component's config is a *mount*, not a directory, so Python wrote the download to `C:\tmp\…` while the shell looked under `AppData\Local\Temp`. Both halves were internally correct and disagreed about where the disk is. Translate at the boundary — `cygpath -m` going in, `cygpath -u` coming back.
+
 ---
 
 ## Superseded — local-LLM-training platform (v0.3 direction)

@@ -238,7 +238,8 @@ Everything not listed here already exists and mostly survives untouched.
   at directories, scan GGUF *and* HF-safetensors models, edit per-model
   profiles, launch from the library.
 - **M3 — discovery, download, guidance**
-  ([design](m3-discovery-download-guidance.md))**.** Catalogue search, model
+  ([design](m3-discovery-download-guidance.md),
+  [acceptance](../acceptance/m3-three-process-run.md))**.** Catalogue search, model
   detail, quant recommendations against detected hardware, resumable download
   into a user-chosen directory. Sequenced ahead of lifecycle policy
   deliberately: swap policy only matters once a user *has* several models, and
