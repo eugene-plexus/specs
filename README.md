@@ -34,7 +34,8 @@ Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-
 openapi/
   gateway.yaml              the OpenAI-compatible front door; routing + failover
   inference-driver.yaml     the uniform surface over one backend (N instances)
-  library.yaml              the operator's model directories, scanned + profiled
+  library.yaml              the operator's model directories, scanned + profiled;
+                            catalogue search, downloads, quant guidance
   watchdog.yaml             process supervisor, engine launcher, UI host, auth root
   components/
     common.yaml             shared schemas (messages, errors, config protocol, auth)

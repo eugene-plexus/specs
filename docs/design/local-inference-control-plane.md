@@ -237,11 +237,22 @@ Everything not listed here already exists and mostly survives untouched.
   [acceptance](../acceptance/m2-five-process-run.md))**.** Point
   at directories, scan GGUF *and* HF-safetensors models, edit per-model
   profiles, launch from the library.
-- **M3 — discovery, download, guidance.** Catalogue search, model detail, quant
-  recommendations against detected hardware, resumable download into a
-  user-chosen directory. Sequenced ahead of lifecycle policy deliberately:
-  swap policy only matters once a user *has* several models, and getting models
-  is the step that decides whether they stay.
+- **M3 — discovery, download, guidance**
+  ([design](m3-discovery-download-guidance.md))**.** Catalogue search, model
+  detail, quant recommendations against detected hardware, resumable download
+  into a user-chosen directory. Sequenced ahead of lifecycle policy
+  deliberately: swap policy only matters once a user *has* several models, and
+  getting models is the step that decides whether they stay.
+
+  Two results from building the contracts are worth carrying forward. A
+  remote GGUF's real metadata is readable over HTTP Range for ~11 MB —
+  0.07% of a 16 GB file — so quant guidance is built on
+  `general.file_type` rather than on a filename, the same standard M2 holds
+  local models to. And **bits per weight** (`size × 8 / parameters`, both
+  free from the hub) is the one number that makes three upstream quant
+  naming schemes comparable; it is also the boundary of what we will say,
+  because relative quant *quality* is upstream research and a fabricated
+  score is worse than none.
 - **M4 — second engine: vLLM.** A second adapter and a second driver kind. This
   is where the format abstraction and the two-layer split stop being
   speculative and get tested.
