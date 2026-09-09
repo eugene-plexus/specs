@@ -43,14 +43,14 @@ info:
       here. The gateway never calls it.
     * **Not the launcher.** Launching a model is composed by the
       caller: read a profile here, then `POST /v1/runtimes` on the
-      watchdog with the model's `path` and the profile's `flags`. The
+      agent with the model's `path` and the profile's `flags`. The
       profile's field names are `RuntimeSpec`'s field names precisely
       so that composition is a copy rather than a translation. This
       component holds no engine knowledge and never calls the
-      watchdog.
+      agent.
     * **Not a validator of engine flags.** It stores `flags` as given.
       Validation belongs where the curated flag surface lives — the
-      watchdog's engine adapter, at runtime-creation time. Two
+      agent's engine adapter, at runtime-creation time. Two
       validators would mean two copies of engine knowledge and one of
       them going stale.
 
@@ -302,7 +302,7 @@ paths:
       summary: Save a new launch profile against a model.
       description: |
         `flags` are stored as given and **not validated here** — the
-        engine adapter's `flagSchema` on the watchdog is the validator,
+        engine adapter's `flagSchema` on the agent is the validator,
         and it runs when a runtime is actually created. A profile is
         allowed to be wrong; a runtime is not.
 
@@ -689,7 +689,7 @@ paths:
         may be one or two segments (`unsloth/Qwen3.8-27B-GGUF`, but
         also `gpt2`). A path segment would need `%2F`, which
         intermediaries mangle — and every UI call to this component
-        goes through the watchdog's proxy.
+        goes through the agent's proxy.
       parameters:
         - name: repo
           in: query
@@ -1039,7 +1039,7 @@ paths:
 
         Detection is stdlib plus vendor CLIs — no new dependency, because
         every dependency this component gains has to be installed into
-        the watchdog's venv as well.
+        the agent's venv as well.
       responses:
         '200':
           description: The host's memory and accelerators.
@@ -1172,7 +1172,7 @@ paths:
       operationId: restart
       summary: Schedule a process restart.
       description: |
-        Exits shortly after responding and relies on the watchdog to
+        Exits shortly after responding and relies on the agent to
         respawn. A scan in flight is abandoned; its findings so far
         persist, and the next scan is incremental over them.
       responses:
@@ -1219,7 +1219,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: |
-        Session token from the watchdog's `POST /v1/auth/login`, or a
+        Session token from the agent's `POST /v1/auth/login`, or a
         component service token threaded in at spawn time. Reads are
         open to either; mutations are operator-only.
 
@@ -1347,7 +1347,7 @@ components:
           description: |
             Context length the **model** declares. Not what an engine
             will serve — that depends on the launch flags and available
-            memory, and is reported by the watchdog as
+            memory, and is reported by the agent as
             `RuntimeCapabilities.contextLength`. Both numbers are real
             and a UI that shows only this one tells a comfortable lie.
         parameters:
@@ -1435,7 +1435,7 @@ components:
       type: object
       description: |
         What the model's own metadata says it can do. Distinct from the
-        watchdog's `RuntimeCapabilities`, which is read back off a
+        agent's `RuntimeCapabilities`, which is read back off a
         *running* engine: this is a property of the file, available
         before anything is launched, and it is what the launch flags
         have to be chosen from.
@@ -1687,7 +1687,7 @@ components:
             for the engine it names — and a model whose format no
             installed engine can load has nowhere to use one at all. The
             engine side of that answer is
-            `EngineDescriptor.modelFormats` on the watchdog.
+            `EngineDescriptor.modelFormats` on the agent.
         flags:
           type: object
           additionalProperties: true
@@ -1697,7 +1697,7 @@ components:
             size, parallel slots. Copied onto `RuntimeSpec.flags`
             verbatim.
 
-            **Stored, not validated.** The validator is the watchdog's
+            **Stored, not validated.** The validator is the agent's
             adapter schema, at runtime-creation time. A profile is
             allowed to be wrong; the runtime that uses it is not, and
             that is where an unknown key becomes a 400. Validating in
@@ -2969,7 +2969,7 @@ components:
       type: object
       description: |
         What this host has to spend, as detected. Deliberately **not**
-        shared with the watchdog's `HostAccelerator`: that answers "which
+        shared with the agent's `HostAccelerator`: that answers "which
         engine build do I fetch" and its own description already says the
         VRAM-and-fit surface belongs here. The two overlap on `os` and
         `arch` and diverge on everything else, so this duplicates two

@@ -95,7 +95,7 @@ respectable rather than a shrug:
    does not exist — only a per-runtime `binary`. For an engine we never
    manage, that leaves an operator with a perfectly good venv reported as
    `available: false` unless they either put it on `PATH` or repeat the
-   path on every single runtime. So the watchdog's config gains a
+   path on every single runtime. So the agent's config gains a
    `vllmBinary` field, and `Origin.configured` gains a second, install-wide
    source. §3.
 
@@ -365,7 +365,7 @@ Precedence gains one rung, and `Origin.configured` gains a second source:
 explicit RuntimeSpec.binary   >  configured (per engine, new)  >  managed  >  PATH
 ```
 
-The new rung is a watchdog config field, `vllmBinary`, of type
+The new rung is a agent config field, `vllmBinary`, of type
 `file_path`. A config field rather than a new endpoint on purpose: the
 generic editor renders it with no engine-specific UI code, which is the
 same rule that made `flagSchema` a `ConfigSchema`, and
@@ -417,7 +417,7 @@ first: TP reports as one backend because it is one.
 
 M2 left a gap and named it plainly: **launching a model does not make it
 routable.** The gateway builds its routing table from the drivers, and
-nothing points a driver at a port the watchdog only chose at launch — so
+nothing points a driver at a port the agent only chose at launch — so
 the model loads, serves, and is unreachable, with `gateway /v1/models`
 returning `[]`. Closing it by hand is one PATCH of a driver's `baseUrl`
 plus a restart.
@@ -435,19 +435,19 @@ M0 that it is *"referenced by an inference-driver's config to say which
 runtime it fronts"* — and no driver config field does that. So:
 
 - **`runtimeName`** on the driver's config. When set, the driver resolves
-  its backend URL from the watchdog topology by runtime name instead of
+  its backend URL from the agent topology by runtime name instead of
   using a literal `baseUrl`. `runtimeName` wins when both are set;
   `baseUrl` stays for every backend that is not a supervised runtime — a
   cloud provider, a remote LM Studio, an engine someone else runs.
 - **`ConfigValueType.runtime_name`**, so the generic editor renders it as a
-  dropdown sourced from the watchdog's `GET /v1/runtimes`. The existing
+  dropdown sourced from the agent's `GET /v1/runtimes`. The existing
   `componentKindHint` cannot do this job: a runtime is deliberately not a
   component, and `/v1/components` does not list one.
 - **`DriverInfo.runtime`** echoes it, and **`DriverHealth.runtime`**
   carries it up, so the gateway and the UI can show which engine process a
   driver is actually fronting.
 
-**The real win is not saving a copy-paste.** The watchdog assigns the
+**The real win is not saving a copy-paste.** The agent assigns the
 port when the operator does not pick one, so a literal `baseUrl` encodes a
 number the operator was never told and does not own. Following a runtime
 by *name* means the driver survives whatever the supervisor does with
@@ -469,7 +469,7 @@ common.yaml
   EngineKind              + vllm
   ConfigValueType         + runtime_name                             §4
 
-watchdog.yaml
+agent.yaml
   EngineAcquisition       + policy: managed | manual
                           + manualInstall: ManualInstall?
   ManualInstall             docsUrl, command?, notes?        (new)    §1
@@ -513,7 +513,7 @@ whose build is a property of its environment rather than of a filename.
 
 ### Re-pin radius: all five, and not for the reason it looks like
 
-**Watchdog, gateway, inference-driver, library and `ui` all re-pin** —
+**Agent, gateway, inference-driver, library and `ui` all re-pin** —
 M2's radius, for M1's reason: one bump carries both halves of the
 milestone.
 
@@ -526,7 +526,7 @@ consumers. Counting the Python ones is the same mistake as counting
 
 The interesting part is *why*, because reference-counting gets it wrong
 and this was checked rather than reasoned about. `EngineKind` is named by
-`watchdog.yaml` and `library.yaml` only; the gateway and the driver
+`agent.yaml` and `library.yaml` only; the gateway and the driver
 reference it zero times. The natural conclusion — that adding `vllm`
 leaves those two byte-identical, M3's shape exactly — **is false.** With
 `vllm` added and nothing else, the gateway's generated models still

@@ -58,10 +58,15 @@ CLAUDE.md
 
 # --- Local runtime artifacts ---
 # When the operator runs Eugene Plexus with the working directory set to
-# this repo (e.g. for spec-side smoke testing), the watchdog + body
+# this repo (e.g. for spec-side smoke testing), the agent + body
 # components drop their config and SQLite stores here. None of it belongs
 # in git.
-watchdog.yaml
+#
+# `/agent.yaml` is root-anchored deliberately: the agent's runtime config
+# shares a filename with the tracked spec `openapi/agent.yaml`, and a bare
+# pattern would match both. It only looks harmless today because the spec
+# is already tracked, and tracked files ignore .gitignore.
+/agent.yaml
 adapters.yaml
 constitution.yaml
 identity.db

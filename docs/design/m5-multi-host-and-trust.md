@@ -42,7 +42,7 @@ genuinely cross-host.
 
 It is not *authenticable* cross-host, and that is the whole problem.
 
-From `watchdog.yaml`, job #5 is to hold **"the install's trust root"** —
+From `agent.yaml` (named `watchdog.yaml` until 2026-09-09), job #5 is to hold **"the install's trust root"** —
 singular — and:
 
 > Component-internal calls (gateway → driver, and so on) use
@@ -113,10 +113,19 @@ processes perfectly well with no signing key at all; the key gates its
 *API*, not its supervision, which is what makes this order work and is
 consistent with the standing degraded-mode rule.
 
-**Repo mapping:** `watchdog` → `agent` (a rename, since that is where the
-supervision code lives and history should follow it), plus a new
-`control` repo. Seven live repos, six codegen consumers. Names in this
-document are provisional.
+**Repo mapping:** `watchdog` → `agent` — **executed 2026-09-09**, since
+that is where the supervision code lives and history should follow it —
+plus a new `control` repo still to be created. Seven live repos, six
+codegen consumers.
+
+Names are settled: `agent` because there is one per host reporting to a
+central authority, which is the sense Consul, Nomad, Datadog and Puppet
+all use; `control` because the product is already described as a control
+plane, so the component holding the control-plane responsibilities is
+named for them. Weighed against `agent`: in an LLM product the word also
+means an autonomous AI agent. Accepted anyway — the `control`/`agent`
+pairing disambiguates, and the fleet-daemon sense is older and still
+dominant in operations contexts.
 
 ---
 
@@ -485,12 +494,16 @@ of §5.
   assumed away: if the first-run experience gets worse, the product gets
   worse, and differentiator #5 was "networked-first" rather than
   "networked-only".
-- **Two renames and a new repo, on a codebase that just landed M4's
-  contracts.** `watchdog` → `agent` moves the Python package, the
-  `EUGENE_PLEXUS_WATCHDOG` env prefix, the kind→module map and the
-  codegen wiring. The last two renames sat undone for four milestones and
-  were cited as fact while stale; this one should be executed or
-  explicitly deferred, not left ambiguous.
+- **A new repo, and a rename that is only half absorbed.** `watchdog` →
+  `agent` was executed 2026-09-09 in the org and in `specs` — the spec is
+  now `openapi/agent.yaml` — but the four other consumers still carry
+  `watchdog` in prose, in their codegen paths, and in the gateway's and
+  UI's persisted **`watchdogUrl`** config key. Those are folded into the
+  M4 re-pin they need anyway rather than done as a second sweep, which
+  means **until that re-pin lands, the fleet is mid-rename**: the
+  consumers keep working because each is pinned to a specs SHA that
+  predates the move, and that is the only reason nothing is broken.
+  `control` still has to be created.
 - **`os_keyring` and HA are in tension** (§7) and the wizard will have to
   say so in words an operator understands, rather than offering both and
   letting them discover it at promotion time.

@@ -35,7 +35,7 @@ $root = (Resolve-Path "$specsRoot\..").Path
 Write-Host "Polyrepo root: $root"
 Write-Host "Target Python: $PythonVersion`n"
 
-$pythonRepos = @("hemisphere-driver", "orchestrator", "memory", "watchdog", "identity", "connector")
+$pythonRepos = @("hemisphere-driver", "orchestrator", "memory", "agent", "identity", "connector")
 $allRepos = @("specs") + $pythonRepos + @("ui")
 
 # --- Prerequisite checks ---

@@ -21,7 +21,7 @@ info:
     model id, secrets, health, and how to speak the wire protocol. It
     does **not** own routing, and it does not know its own place in any
     topology: the gateway reads `/v1/info` to learn what this driver
-    serves, and resolves it to a URL from the watchdog topology.
+    serves, and resolves it to a URL from the agent topology.
 
     All operations are stateless — the caller passes the full prompt on
     every call. Streaming uses Server-Sent Events; non-streaming returns
@@ -33,7 +33,7 @@ info:
     addressed.
 
     - **`runtimeName`** (`runtime_name`) names a supervised engine
-      runtime. The driver resolves that name to a URL from the watchdog
+      runtime. The driver resolves that name to a URL from the agent
       topology, at startup and again whenever it reconnects.
     - **`baseUrl`** is a literal URL, for every backend that is *not* a
       supervised runtime — a cloud provider, a remote LM Studio, an
@@ -42,7 +42,7 @@ info:
     `runtimeName` wins when both are set.
 
     Following a runtime by name rather than by URL is not a
-    convenience. The watchdog assigns the port when the operator does
+    convenience. The agent assigns the port when the operator does
     not pick one, so a literal `baseUrl` pointing at a local runtime
     encodes a number the operator was never told and does not own — it
     is wrong the moment the thing it points at moves. A name survives
@@ -74,12 +74,12 @@ info:
     on disk as a `MasterKeyEnvelope` (libsodium secretbox + base64
     nonce/ciphertext). The driver reads the master key from
     `EUGENE_PLEXUS_DRIVER_MASTER_KEY` at startup (threaded by the
-    watchdog) and decrypts on demand. PATCH accepts plaintext and
+    agent) and decrypts on demand. PATCH accepts plaintext and
     encrypts before persisting; GET returns `"<redacted>"`.
 
     ## Safe mode
 
-    The driver honors the watchdog's safe-mode env var:
+    The driver honors the agent's safe-mode env var:
     `EUGENE_PLEXUS_DRIVER_SAFE_MODE=1` at startup makes it ignore its
     persisted config file and boot from built-in defaults. This is the
     recovery flow when a config edit breaks startup — the operator can
@@ -91,8 +91,8 @@ info:
     ## Auth
 
     Every endpoint except `/healthz` requires a bearer token. The
-    gateway presents its service token (issued by the watchdog at spawn)
-    on every call; the driver verifies it against the watchdog's signing
+    gateway presents its service token (issued by the agent at spawn)
+    on every call; the driver verifies it against the agent's signing
     key, threaded via env var.
   license:
     name: Apache-2.0
@@ -382,7 +382,7 @@ components:
       scheme: bearer
       bearerFormat: opaque
       description: |
-        Bearer service token. Threaded to the driver by the watchdog
+        Bearer service token. Threaded to the driver by the agent
         at spawn time via env var. The gateway presents the
         same token shape on every call.
 
@@ -478,7 +478,7 @@ components:
       description: |
         Driver self-description, and the gateway's only source of truth
         for what this backend serves. A driver does not know its position
-        in any topology: its operator-supplied name lives in the watchdog
+        in any topology: its operator-supplied name lives in the agent
         topology, not here.
       required:
         - backend

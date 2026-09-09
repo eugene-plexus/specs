@@ -191,7 +191,7 @@ that treats "a newer build exists" as an alert is broken on arrival.
 
 ## 5. Contract
 
-New on the watchdog. `EngineDescriptor` gains two optional objects, so the
+New on the agent. `EngineDescriptor` gains two optional objects, so the
 existing `GET /v1/engines` answer stays valid and the UI's engines panel
 grows rather than being replaced.
 
@@ -223,7 +223,7 @@ differently and the operator needs to know which one they are in: a stall
 in `downloading` is a network problem, a stall in `extracting` is a disk
 problem, and `verifying` failing at all is the one that matters.
 
-Operator-only, like every other mutation on the watchdog.
+Operator-only, like every other mutation on the agent.
 
 ### Two drift fixes fold in here
 

@@ -36,7 +36,7 @@ openapi/
   inference-driver.yaml     the uniform surface over one backend (N instances)
   library.yaml              the operator's model directories, scanned + profiled;
                             catalogue search, downloads, quant guidance
-  watchdog.yaml             process supervisor, engine launcher, UI host, auth root
+  agent.yaml             process supervisor, engine launcher, UI host, auth root
   components/
     common.yaml             shared schemas (messages, errors, config protocol, auth)
 ```
@@ -47,7 +47,7 @@ Two layers, never collapsed: a routing `gateway` above N per-backend `inference-
 
 | Component | Repo | Port | Job |
 |---|---|---|---|
-| supervisor | [`watchdog`](https://github.com/eugene-plexus/watchdog) | 8079 | Spawns and monitors components *and* engine processes; owns engine adapters, topology, log capture, safe mode, auth root; serves the UI |
+| supervisor | [`agent`](https://github.com/eugene-plexus/agent) | 8079 | Spawns and monitors components *and* engine processes; owns engine adapters, topology, log capture, safe mode, auth root; serves the UI |
 | gateway | [`gateway`](https://github.com/eugene-plexus/gateway) | 8080 | One OpenAI-compatible endpoint. Model → driver resolution, load balancing, priority-list failover. **No backend knowledge.** |
 | inference-driver | [`inference-driver`](https://github.com/eugene-plexus/inference-driver) | 8081 | **One instance per backend.** Owns provider choice, model id, secrets, params, health |
 | library | `library` | 8082 | The operator's own model directories: recursive scan (GGUF + safetensors), metadata, per-model launch profiles; catalogue search, resumable downloads, quant table, hardware fit scoring |
@@ -58,7 +58,7 @@ The layering matters and is not an accident of history. A driver belongs *next t
 
 ### Components vs. runtimes
 
-The watchdog supervises two different kinds of process and keeps them in separate collections, because they share only their supervision *mechanics*:
+The agent supervises two different kinds of process and keeps them in separate collections, because they share only their supervision *mechanics*:
 
 | | Component (`/v1/components`) | Runtime (`/v1/runtimes`) |
 |---|---|---|
@@ -130,7 +130,7 @@ These are settled. Don't relitigate them in PRs without a strong reason.
 - **Apache 2.0** — explicit patent grant matters in AI/ML; chosen by PyTorch, Kubernetes, vLLM, llama.cpp.
 - **Open-core**. Core stays Apache 2.0 forever. Future commercial add-ons live in *physically separate repos* under commercial license.
 - **DCO**, no CLA. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **Mesh VPN (Tailscale / WireGuard)** for component-to-component transport between hosts; user-facing auth lives at the gateway and the watchdog.
+- **Mesh VPN (Tailscale / WireGuard)** for component-to-component transport between hosts; user-facing auth lives at the gateway and the agent.
 
 ## History
 

@@ -76,15 +76,15 @@ components:
       description: |
         Which Eugene Plexus component class a topology entry
         represents. Lives in `common.yaml` because more than one
-        component references it: the watchdog's `/v1/components`, and
+        component references it: the agent's `/v1/components`, and
         (via `ConfigField.componentKindHint`) any component declaring
         a config field that points at a peer of a specific kind.
 
         A component is a **Eugene Plexus process**. Engine processes
         are not components and are not named here — they are runtimes,
-        declared separately on the watchdog, because a third-party
+        declared separately on the agent, because a third-party
         binary shares none of a component's declarative shape (no
-        module, no config trio, no service token). See the watchdog's
+        module, no config trio, no service token). See the agent's
         `GET /v1/runtimes`.
 
         `gateway` is the one OpenAI-compatible front door and there is
@@ -124,8 +124,8 @@ components:
         Python package the operator installs themselves. See
         `EngineAcquisition.policy`.
 
-        Lives here rather than on the watchdog because two components
-        reference it: the watchdog's engines and runtimes, and a
+        Lives here rather than on the agent because two components
+        reference it: the agent's engines and runtimes, and a
         library `ModelProfile`, which names the engine its launch flags
         are written for.
 
@@ -216,7 +216,7 @@ components:
           type: boolean
           default: false
           description: |
-            True when the component was started with the watchdog's
+            True when the component was started with the agent's
             safe-mode env var set
             (`EUGENE_PLEXUS_<KIND>_SAFE_MODE=1`) and is therefore
             running on built-in defaults instead of its persisted
@@ -257,11 +257,11 @@ components:
         model→driver priority lists.
 
         `runtime_name` holds the `name` of a supervised engine runtime,
-        and UIs render it as a dropdown sourced from the watchdog's
+        and UIs render it as a dropdown sourced from the agent's
         `GET /v1/runtimes`. It exists because `componentKindHint` cannot
         do this job: a runtime is deliberately not a component, so
         `/v1/components` does not list one. What is saved is the
-        runtime's *name*, never its URL — the watchdog assigns the port
+        runtime's *name*, never its URL — the agent assigns the port
         when the operator does not pick one, so a stored URL would
         encode a number the operator never chose and does not own, and
         would be wrong the moment the runtime moved. Its first user is
@@ -339,7 +339,7 @@ components:
           description: |
             Declarative rendering hint: this field references a peer
             component of the given kind. UIs render any kind-hinted
-            field as a dropdown sourced from the watchdog's
+            field as a dropdown sourced from the agent's
             `/v1/components` (filtered by kind), with `(off)` as the
             first option (saves an empty string). For single-instance
             kinds (memory, identity, etc.) the dropdown UX collapses
@@ -584,19 +584,19 @@ components:
     #
     # v0.1 had no application-level auth (Tailscale tailnet assumption).
     # v0.2 introduces a passphrase-gated UI auth model: operator sets a
-    # passphrase during the wizard, the watchdog derives a master key
+    # passphrase during the wizard, the agent derives a master key
     # via KDF, and that master key encrypts API keys on disk plus
     # backs UI session auth. Every component-internal call presents a
-    # bearer token issued by the watchdog at spawn time.
+    # bearer token issued by the agent at spawn time.
 
     SecurityMode:
       type: string
       description: |
-        Operator's choice for how the watchdog handles its master key
+        Operator's choice for how the agent handles its master key
         between restarts. Set during the wizard's security screen; can
         be changed later from the Config page.
 
-        * `prompt_on_startup` — passphrase required at every watchdog
+        * `prompt_on_startup` — passphrase required at every agent
           start. Master key lives only in process memory. Best for
           shared environments, sensitive conversations, security-
           conscious operators. A power outage means Eugene stays
@@ -615,8 +615,8 @@ components:
       type: object
       description: |
         Login request body sent by the UI to `POST /v1/auth/login` on
-        the watchdog. The passphrase is the same one the operator set
-        in the wizard. The watchdog bcrypt-compares it; on match,
+        the agent. The passphrase is the same one the operator set
+        in the wizard. The agent bcrypt-compares it; on match,
         issues a session token.
       required:
         - passphrase
@@ -658,7 +658,7 @@ components:
         Encrypted-at-rest envelope for sensitive config fields. The
         on-disk YAML for fields marked `sensitive: true` is stored as
         this envelope when v0.2 security is enabled; the component
-        decrypts using the master key passed in by the watchdog at
+        decrypts using the master key passed in by the agent at
         spawn time (env var `EUGENE_PLEXUS_<KIND>_MASTER_KEY`,
         base64-encoded).
 
@@ -666,7 +666,7 @@ components:
         is generated per-encryption and stored alongside the
         ciphertext. The master key is 32 bytes derived from the
         operator's passphrase via Argon2id with parameters chosen at
-        first-run time and persisted in the watchdog's state.
+        first-run time and persisted in the agent's state.
 
         Components MAY accept plaintext values in PATCH requests
         (current behavior); on persist, they encrypt to this envelope

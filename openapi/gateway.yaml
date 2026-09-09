@@ -35,11 +35,11 @@ info:
 
     ## Where the routing table comes from
 
-    The gateway does not store backend URLs. It reads the watchdog
+    The gateway does not store backend URLs. It reads the agent
     topology (`GET /v1/components`, `kind: inference-driver`) and asks
     each driver's `/v1/info` what model it is serving, then builds
     model → drivers from the answers. Backend URLs live in exactly one
-    place — the watchdog topology — and are never duplicated into the
+    place — the agent topology — and are never duplicated into the
     gateway's own config.
 
     ## The gateway owns every output-affecting parameter
@@ -52,7 +52,7 @@ info:
 
     ## Safe mode
 
-    The gateway honors the watchdog's safe-mode env var:
+    The gateway honors the agent's safe-mode env var:
     `EUGENE_PLEXUS_GATEWAY_SAFE_MODE=1` at startup makes it ignore its
     persisted config file and boot from built-in defaults. This is the
     recovery flow when a config edit breaks startup — the operator can
@@ -63,7 +63,7 @@ info:
     ## Auth
 
     Every endpoint except `/healthz` requires a bearer token. UI calls
-    present the operator's session token (issued by the watchdog after
+    present the operator's session token (issued by the agent after
     passphrase login); component-to-component calls present the
     per-component service token threaded via env var at spawn time.
   license:
@@ -120,7 +120,7 @@ paths:
         OpenAI-compatible model list. This is how a client discovers
         what to put in `ChatCompletionRequest.model`, and it is a view
         of the routing table rather than a configured list: the gateway
-        asks every `inference-driver` in the watchdog topology what it
+        asks every `inference-driver` in the agent topology what it
         serves and reports the union.
 
         A model appears here when at least one driver serving it is
@@ -256,7 +256,7 @@ paths:
 
         Probes a *single* URL. A driver slot in the gateway's `drivers`
         config is a priority list of backends, held as topology entry
-        names; the UI resolves each name to a URL via the watchdog
+        names; the UI resolves each name to a URL via the agent
         topology and calls this once per backend so each fallback can
         be tested independently.
       requestBody:
@@ -435,9 +435,9 @@ components:
       scheme: bearer
       bearerFormat: opaque
       description: |
-        Bearer session token issued by the watchdog. Operator
+        Bearer session token issued by the agent. Operator
         sessions are issued via `POST /v1/auth/login` on the
-        watchdog; component-internal calls use service tokens
+        agent; component-internal calls use service tokens
         threaded to spawned children via env var at startup.
 
   schemas:

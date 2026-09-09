@@ -3,14 +3,14 @@
 # M3 acceptance: three processes, and a model fetched from the catalogue
 # through the UI's own proxy.
 #
-#   watchdog  ->  spawns  ->  library
-#   ui (next start)  ->  /api/proxy/library/...  ->  watchdog topology  ->  library
+#   agent  ->  spawns  ->  library
+#   ui (next start)  ->  /api/proxy/library/...  ->  agent topology  ->  library
 #
 # What makes this different from m0/m2-acceptance.sh: every call goes
 # through the **UI's** proxy rather than straight at a component port.
 # That is the seam M3 adds and the one no single-component test can
 # reach — the browser knows no component URLs, so a request has to be
-# resolved through the watchdog's topology by KIND before it arrives.
+# resolved through the agent's topology by KIND before it arrives.
 # M0's equivalent seam had two defects in it.
 #
 # It also reaches the live HuggingFace hub, deliberately. The library's
@@ -27,8 +27,8 @@
 #
 # Configure via environment:
 #   EP_ROOT          parent directory holding the component clones
-#   EP_WATCHDOG_PY   python with watchdog + library installed (the
-#                    watchdog spawns children with its own sys.executable,
+#   EP_AGENT_PY   python with agent + library installed (the
+#                    agent spawns children with its own sys.executable,
 #                    so the library must import from this one)
 #   EP_MODEL_ROOT    a directory downloads may be written into. A
 #                    throwaway is created under EP_WORKDIR by default,
@@ -39,7 +39,7 @@
 set -uo pipefail
 
 EP_ROOT="${EP_ROOT:-/d/py/eugene-plexus}"
-EP_WATCHDOG_PY="${EP_WATCHDOG_PY:-$EP_ROOT/watchdog/.venv/Scripts/python.exe}"
+EP_AGENT_PY="${EP_AGENT_PY:-$EP_ROOT/agent/.venv/Scripts/python.exe}"
 EP_WORKDIR="${EP_WORKDIR:-${TMPDIR:-/tmp}/ep-m3-acceptance}"
 EP_MODEL_ROOT="${EP_MODEL_ROOT:-$EP_WORKDIR/models}"
 EP_REPO="${EP_REPO:-unsloth/Qwen3.8-27B-GGUF}"
@@ -51,7 +51,7 @@ EP_SMALL_FILE="${EP_SMALL_FILE:-imatrix_unsloth.gguf}"
 # A large-vocab quant, for the ranged metadata read.
 EP_PREFLIGHT_FILE="${EP_PREFLIGHT_FILE:-Qwen3.8-27B-UD-Q4_K_M.gguf}"
 
-WATCHDOG_PORT=8079
+AGENT_PORT=8079
 LIBRARY_PORT=8082
 UI_PORT="${UI_PORT:-3210}"
 
@@ -80,10 +80,10 @@ ui() { curl -s -m 120 "${AUTH[@]}" "http://127.0.0.1:$UI_PORT/api/proxy/library$
 
 # --- preflight -------------------------------------------------------------
 say "preflight"
-[ -f "$EP_WATCHDOG_PY" ] || bad "watchdog venv python not found at $EP_WATCHDOG_PY"
-if ! "$EP_WATCHDOG_PY" -c "import eugene_plexus_watchdog, eugene_plexus_library, httpx" 2>/dev/null; then
-  bad "watchdog, library AND httpx must import from $EP_WATCHDOG_PY"
-  printf '  (pip install -e %s/library into it — the watchdog venv is the runtime venv,\n' "$EP_ROOT"
+[ -f "$EP_AGENT_PY" ] || bad "agent venv python not found at $EP_AGENT_PY"
+if ! "$EP_AGENT_PY" -c "import eugene_plexus_agent, eugene_plexus_library, httpx" 2>/dev/null; then
+  bad "agent, library AND httpx must import from $EP_AGENT_PY"
+  printf '  (pip install -e %s/library into it — the agent venv is the runtime venv,\n' "$EP_ROOT"
   printf '   and M3 added httpx to the library, so that venv needs it too)\n'
 fi
 [ -d "$EP_ROOT/ui/.next" ] || bad "the UI is not built — run 'npm run build' in $EP_ROOT/ui"
@@ -91,7 +91,7 @@ curl -sf -m 10 -o /dev/null "https://huggingface.co/api/models?limit=1" \
   && ok "the catalogue is reachable" \
   || bad "cannot reach huggingface.co — this run needs outbound HTTPS"
 [ "$FAILURES" -eq 0 ] || { echo; echo "preflight failed; stopping"; exit 1; }
-ok "watchdog venv imports the library and httpx"
+ok "agent venv imports the library and httpx"
 
 # --- a throwaway install ---------------------------------------------------
 say "a throwaway install in $EP_WORKDIR"
@@ -102,7 +102,7 @@ cd "$EP_WORKDIR" || exit 1
 
 # No runtimes and no engine: M3 is about acquiring models, and nothing
 # here launches one.
-cat > watchdog.yaml <<YAML
+cat > agent.yaml <<YAML
 firstRunComplete: true
 components:
   - name: library
@@ -125,8 +125,8 @@ note "model root as the library will read it: $EP_MODEL_ROOT_NATIVE"
 
 # --- 1. the supervisor and the library -------------------------------------
 say "1. start the supervisor; it spawns the library"
-EUGENE_PLEXUS_WATCHDOG_CONFIG_FILE=watchdog.yaml "$EP_WATCHDOG_PY" \
-  -m eugene_plexus_watchdog > watchdog-run.log 2>&1 &
+EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml "$EP_AGENT_PY" \
+  -m eugene_plexus_agent > agent-run.log 2>&1 &
 WD_PID=$!
 UI_PID=""
 
@@ -137,27 +137,27 @@ cleanup() {
 trap cleanup EXIT
 
 for _ in $(seq 1 60); do
-  curl -sf -m 2 "http://127.0.0.1:$WATCHDOG_PORT/healthz" >/dev/null 2>&1 && break
+  curl -sf -m 2 "http://127.0.0.1:$AGENT_PORT/healthz" >/dev/null 2>&1 && break
   sleep 1
 done
-if curl -sf -m 2 "http://127.0.0.1:$WATCHDOG_PORT/healthz" >/dev/null; then
-  ok "watchdog answering on :$WATCHDOG_PORT"
+if curl -sf -m 2 "http://127.0.0.1:$AGENT_PORT/healthz" >/dev/null; then
+  ok "agent answering on :$AGENT_PORT"
 else
-  bad "watchdog never came up"
-  tail -40 watchdog-run.log
+  bad "agent never came up"
+  tail -40 agent-run.log
   exit 1
 fi
 
 # --- 2. auth ---------------------------------------------------------------
 say "2. initialize auth"
-TOK=$(curl -s -X POST "http://127.0.0.1:$WATCHDOG_PORT/v1/auth/initialize" \
+TOK=$(curl -s -X POST "http://127.0.0.1:$AGENT_PORT/v1/auth/initialize" \
   -H 'content-type: application/json' \
   -d "{\"passphrase\":\"$PASSPHRASE\"}" | jq_ "d.get('sessionToken','')")
 if [ -n "${TOK:-}" ]; then
   ok "operator session token issued"
 else
   bad "no session token"
-  tail -30 watchdog-run.log
+  tail -30 agent-run.log
   exit 1
 fi
 AUTH=(-H "Authorization: Bearer $TOK")
@@ -168,20 +168,20 @@ AUTH=(-H "Authorization: Bearer $TOK")
 # that restart, not a crash.
 note "children are restarted by auth init; waiting for the library to come back"
 for _ in $(seq 1 45); do
-  S=$(curl -s "${AUTH[@]}" "http://127.0.0.1:$WATCHDOG_PORT/v1/components" \
+  S=$(curl -s "${AUTH[@]}" "http://127.0.0.1:$AGENT_PORT/v1/components" \
     | jq_ "' '.join(f\"{c['name']}={c.get('status')}\" for c in d.get('components',[]))" 2>/dev/null)
   case "$S" in *"library=running"*) break ;; esac
   sleep 1
 done
 case "$S" in
   *"library=running"*) ok "library running, spawned by the supervisor" ;;
-  *) bad "library not running (saw: ${S:-nothing})"; tail -40 watchdog-run.log ;;
+  *) bad "library not running (saw: ${S:-nothing})"; tail -40 agent-run.log ;;
 esac
 
 # --- 3. the UI ------------------------------------------------------------
 say "3. start the UI and load the discovery page"
 cd "$EP_ROOT/ui" || exit 1
-PORT="$UI_PORT" WATCHDOG_URL="http://127.0.0.1:$WATCHDOG_PORT" \
+PORT="$UI_PORT" AGENT_URL="http://127.0.0.1:$AGENT_PORT" \
   npm run start -- --port "$UI_PORT" > "$EP_WORKDIR/ui-run.log" 2>&1 &
 UI_PID=$!
 cd "$EP_WORKDIR" || exit 1
@@ -406,5 +406,5 @@ if [ "$FAILURES" -eq 0 ]; then
 else
   echo "$FAILURES check(s) FAILED"
 fi
-echo "install left at $EP_WORKDIR (watchdog-run.log and ui-run.log have every child's output)"
+echo "install left at $EP_WORKDIR (agent-run.log and ui-run.log have every child's output)"
 exit "$FAILURES"

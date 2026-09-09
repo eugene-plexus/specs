@@ -442,8 +442,8 @@ is asked from. Verified here:
 
 **Stdlib plus vendor CLIs, no new dependency.** `ctypes` on Windows,
 `/proc` on Linux, `sysctl` on macOS — deliberately not `psutil`, because
-[[watchdog-venv-is-runtime]] has collected four victims already and every
-dependency the library gains has to be installed into the watchdog's venv
+[[agent-venv-is-runtime]] has collected four victims already and every
+dependency the library gains has to be installed into the agent's venv
 as well. The Windows path is `ctypes`, which the CI-vs-devenv lesson flags
 as the class of code that passes locally and is untested on the platforms
 the audience actually runs.
@@ -474,9 +474,9 @@ surface accepts an **explicit budget override** so a caller who knows the
 target host's numbers can score against them, and the reported hardware
 carries the hostname it was read from so a UI can say which machine it is
 talking about. Building a cross-host hardware inventory is not M3's job
-and probably belongs to the watchdog's topology when it is.
+and probably belongs to the agent's topology when it is.
 
-**Not shared with the watchdog's `HostAccelerator`, on purpose.** That
+**Not shared with the agent's `HostAccelerator`, on purpose.** That
 schema answers "which engine build do I fetch" and its own description
 already says the VRAM-and-fit surface belongs here. The two overlap on
 `os` and `arch` and diverge on everything else, so this duplicates two
@@ -637,7 +637,7 @@ DELETE /v1/downloads/{id}                     cancel in flight / forget; removes
 **The repo id is a query parameter, not a path segment.** It contains a
 slash (`unsloth/Qwen3.8-27B-GGUF`), and the two obvious alternatives both
 break: `%2F` in a path segment is mangled by intermediaries — and every UI
-call goes through the watchdog's proxy — while `{owner}/{name}` as two
+call goes through the agent's proxy — while `{owner}/{name}` as two
 parameters cannot address the single-segment canonical repos that also
 exist (`gpt2`). A query parameter is the shape that covers the whole space
 without encoding tricks.
@@ -735,7 +735,7 @@ post-download rescan, and the discovery + download UI.
 
 - **Cross-host hardware inventory.** The fit surface takes an override and
   reports which host it measured; building a real inventory is topology
-  work and belongs to the watchdog if it belongs anywhere. §3.
+  work and belongs to the agent if it belongs anywhere. §3.
 - **Quality scoring of quants.** Permanently, not just for now. §2.
 - **Xet-native chunked transfer.** The reconstruction API is right there in
   the `Link` header and would give dedup across quants of one model. It

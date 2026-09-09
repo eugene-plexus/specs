@@ -2,13 +2,13 @@
 #
 # M0 acceptance: the whole chain, four processes, nothing simulated.
 #
-#   watchdog  ->  spawns  ->  gateway
+#   agent  ->  spawns  ->  gateway
 #             ->  spawns  ->  inference-driver
 #             ->  spawns  ->  llama-server (a real engine binary)
 #
 # and then one chat completion travelling gateway -> driver -> engine.
 #
-# Both existing end-to-end tests stub the other side: the watchdog's
+# Both existing end-to-end tests stub the other side: the agent's
 # test_runtime_end_to_end.py supervises a Python stand-in that speaks
 # llama-server's /health contract, and the gateway's routes its OpenAI
 # surface at a fake driver. Each proves its own half. This proves they
@@ -25,8 +25,8 @@
 # machine this was written on — set them):
 #
 #   EP_ROOT          parent directory holding the component clones
-#   EP_WATCHDOG_PY   python that has watchdog + gateway + driver installed
-#                    (the watchdog's venv IS the runtime venv: it spawns
+#   EP_AGENT_PY   python that has agent + gateway + driver installed
+#                    (the agent's venv IS the runtime venv: it spawns
 #                    every component with its own sys.executable, so all
 #                    three must be importable from this one interpreter)
 #   EP_LLAMA_SERVER  path to llama-server(.exe)
@@ -36,12 +36,12 @@
 set -uo pipefail
 
 EP_ROOT="${EP_ROOT:-/d/py/eugene-plexus}"
-EP_WATCHDOG_PY="${EP_WATCHDOG_PY:-$EP_ROOT/watchdog/.venv/Scripts/python.exe}"
+EP_AGENT_PY="${EP_AGENT_PY:-$EP_ROOT/agent/.venv/Scripts/python.exe}"
 EP_LLAMA_SERVER="${EP_LLAMA_SERVER:-C:/Users/troyc/OneDrive/Desktop/llamacpp/llama-server.exe}"
 EP_MODEL="${EP_MODEL:-C:/Users/troyc/.lmstudio/models/lmstudio-community/Qwen3.6-27B-GGUF/Qwen3.6-27B-Q4_K_M.gguf}"
 EP_WORKDIR="${EP_WORKDIR:-${TMPDIR:-/tmp}/ep-m0-acceptance}"
 
-WATCHDOG_PORT=8079
+AGENT_PORT=8079
 GATEWAY_PORT=8080
 DRIVER_PORT=8081
 ENGINE_PORT=8090
@@ -66,16 +66,16 @@ jq_() { PYTHONUTF8=1 python -c "import sys,json; d=json.load(sys.stdin); print($
 
 # --- preflight -------------------------------------------------------------
 say "preflight"
-[ -f "$EP_WATCHDOG_PY" ] || bad "watchdog venv python not found at $EP_WATCHDOG_PY"
+[ -f "$EP_AGENT_PY" ] || bad "agent venv python not found at $EP_AGENT_PY"
 [ -f "$EP_LLAMA_SERVER" ] || bad "llama-server not found at $EP_LLAMA_SERVER"
 [ -f "$EP_MODEL" ] || bad "model not found at $EP_MODEL"
 if [ "$FAILURES" -ne 0 ]; then
-  printf '\nSet EP_WATCHDOG_PY / EP_LLAMA_SERVER / EP_MODEL and retry.\n'
+  printf '\nSet EP_AGENT_PY / EP_LLAMA_SERVER / EP_MODEL and retry.\n'
   printf 'Engine acquisition is M1 — until then the binary is the operator'"'"'s to supply.\n'
   exit 1
 fi
-if ! "$EP_WATCHDOG_PY" -c "import eugene_plexus_watchdog, eugene_plexus_gateway, eugene_plexus_inference_driver" 2>/dev/null; then
-  bad "watchdog, gateway and inference-driver must all be importable from $EP_WATCHDOG_PY"
+if ! "$EP_AGENT_PY" -c "import eugene_plexus_agent, eugene_plexus_gateway, eugene_plexus_inference_driver" 2>/dev/null; then
+  bad "agent, gateway and inference-driver must all be importable from $EP_AGENT_PY"
   printf '  (pip install -e %s/gateway -e %s/inference-driver into it)\n' "$EP_ROOT" "$EP_ROOT"
   exit 1
 fi
@@ -91,7 +91,7 @@ cd "$EP_WORKDIR" || exit 1
 # POSIX host they pass through unchanged.
 win_path() { printf '%s' "$1" | sed 's|/|\\|g'; }
 
-cat > watchdog.yaml <<YAML
+cat > agent.yaml <<YAML
 firstRunComplete: true
 components:
   - name: gateway
@@ -134,26 +134,26 @@ ok "topology, gateway config and driver config written"
 
 # --- 1. start the supervisor ----------------------------------------------
 say "1. start the supervisor — it spawns everything else"
-EUGENE_PLEXUS_WATCHDOG_CONFIG_FILE=watchdog.yaml "$EP_WATCHDOG_PY" \
-  -m eugene_plexus_watchdog > watchdog-run.log 2>&1 &
+EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml "$EP_AGENT_PY" \
+  -m eugene_plexus_agent > agent-run.log 2>&1 &
 WD_PID=$!
 trap 'kill "$WD_PID" 2>/dev/null' EXIT
 
 for _ in $(seq 1 60); do
-  curl -sf -m 2 "http://127.0.0.1:$WATCHDOG_PORT/healthz" >/dev/null 2>&1 && break
+  curl -sf -m 2 "http://127.0.0.1:$AGENT_PORT/healthz" >/dev/null 2>&1 && break
   sleep 1
 done
-if curl -sf -m 2 "http://127.0.0.1:$WATCHDOG_PORT/healthz" >/dev/null; then
-  ok "watchdog answering on :$WATCHDOG_PORT"
+if curl -sf -m 2 "http://127.0.0.1:$AGENT_PORT/healthz" >/dev/null; then
+  ok "agent answering on :$AGENT_PORT"
 else
-  bad "watchdog never came up"
-  tail -40 watchdog-run.log
+  bad "agent never came up"
+  tail -40 agent-run.log
   exit 1
 fi
 
 # --- 2. auth ---------------------------------------------------------------
 say "2. initialize auth — what the wizard's Start button does"
-TOK=$(curl -s -X POST "http://127.0.0.1:$WATCHDOG_PORT/v1/auth/initialize" \
+TOK=$(curl -s -X POST "http://127.0.0.1:$AGENT_PORT/v1/auth/initialize" \
   -H 'content-type: application/json' \
   -d "{\"passphrase\":\"$PASSPHRASE\"}" | jq_ "d.get('sessionToken','')")
 if [ -n "$TOK" ]; then
@@ -167,7 +167,7 @@ AUTH=(-H "Authorization: Bearer $TOK")
 # --- 3. the components -----------------------------------------------------
 say "3. the gateway and the driver, spawned by the supervisor"
 for _ in $(seq 1 60); do
-  S=$(curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$WATCHDOG_PORT/v1/components" 2>/dev/null |
+  S=$(curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$AGENT_PORT/v1/components" 2>/dev/null |
     jq_ "' '.join(sorted(c['name']+'='+c['status'] for c in d['components']))" 2>/dev/null)
   case "$S" in *"gateway=running"*"$DRIVER_NAME=running"*) break ;; esac
   sleep 1
@@ -179,7 +179,7 @@ case "$S" in *"$DRIVER_NAME=running"*) ok "inference-driver running" ;; *) bad "
 # --- 4. the engine ---------------------------------------------------------
 say "4. the engine reaches ready — real binary, real /health probe"
 for _ in $(seq 1 600); do
-  R=$(curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$WATCHDOG_PORT/v1/runtimes")
+  R=$(curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$AGENT_PORT/v1/runtimes")
   ST=$(echo "$R" | jq_ "d['runtimes'][0]['status']" 2>/dev/null)
   [ "$ST" = "ready" ] && break
   [ "$ST" = "crashed" ] && break
@@ -191,7 +191,7 @@ if [ "$ST" = "ready" ]; then
 else
   bad "runtime never became ready (status=$ST)"
   echo "$R" | jq_ "d['runtimes'][0].get('lastError')" 2>/dev/null
-  tail -30 watchdog-run.log
+  tail -30 agent-run.log
 fi
 echo "$R" | PYTHONUTF8=1 python -c "
 import sys, json
@@ -319,5 +319,5 @@ if [ "$FAILURES" -eq 0 ]; then
 else
   echo "$FAILURES check(s) FAILED"
 fi
-echo "install left at $EP_WORKDIR (watchdog-run.log has every child's output)"
+echo "install left at $EP_WORKDIR (agent-run.log has every child's output)"
 exit "$FAILURES"

@@ -97,17 +97,28 @@ these are the product.
 
 ## 3. Shape
 
-**Five** surviving repos plus one new. Ports are inherited where a retired
-component had one.
+Six live repos, becoming seven at M5. All three renames are **executed**:
+`orchestrator` → `gateway` and `hemisphere-driver` → `inference-driver` on
+2026-09-08, and `watchdog` → `agent` on 2026-09-09. Ports are inherited
+where a retired component had one.
 
 | Component | Repo | Port | Job |
 |---|---|---|---|
-| supervisor | `watchdog` (kept) | 8079 | Spawn/monitor engines by arbitrary argv; owns engine adapters (argv construction, readiness probe, config schema); topology; log capture; safe mode; auth root; serves the UI |
-| gateway | `orchestrator` (renamed, gutted) | 8080 | One OpenAI-compatible front door. Model → driver resolution, load balancing, priority-list failover, idle-unload triggers. **No backend knowledge.** |
-| inference-driver | `hemisphere-driver` (renamed) | 8081 | **One instance per backend.** Uniform surface over one heterogeneous engine; owns provider choice, model id, secrets, params, health |
-| library | new repo | 8082 | The operator's own model directories: recursive scan (GGUF + safetensors), metadata, per-model launch profiles; catalogue search, resumable downloads, quant table, hardware fit scoring |
-| ui | `ui` (kept) | — | Config editor, runtime dashboard, library browser, chat playground, logs |
-| specs | `specs` (kept) | — | Contracts; consumers codegen from a pinned SHA as today |
+| node agent | `agent` (was `watchdog`) | 8079 | **One per host.** Spawn/monitor engines by arbitrary argv; owns engine adapters (argv construction, readiness probe, config schema); local topology; log capture; safe mode. Still holds the trust root and serves the UI **until M5 extracts them** |
+| control root | `control` (**new at M5**) | tbd | Trust root, install-wide topology, node registry, the replicated log, the UI. Exactly one active, plus warm standbys |
+| gateway | `gateway` (was `orchestrator`) | 8080 | One OpenAI-compatible front door. Model → driver resolution, load balancing, priority-list failover, idle-unload triggers. **No backend knowledge.** |
+| inference-driver | `inference-driver` (was `hemisphere-driver`) | 8081 | **One instance per backend.** Uniform surface over one heterogeneous engine; owns provider choice, model id, secrets, params, health |
+| library | `library` | 8082 | The operator's own model directories: recursive scan (GGUF + safetensors), metadata, per-model launch profiles; catalogue search, resumable downloads, quant table, hardware fit scoring |
+| ui | `ui` | — | Config editor, runtime dashboard, library browser, chat playground, logs |
+| specs | `specs` | — | Contracts; consumers codegen from a pinned SHA as today |
+
+The **node agent** was called the *watchdog* through M0–M4, and the old
+name is still what appears in the acceptance-run records, which are
+transcripts and were deliberately left alone. `agent` is the name because
+there is one per host reporting to a central authority — the sense Consul,
+Nomad, Datadog and Puppet all use it in — and because the name it replaced
+was a survivor of the anatomical scheme (it was the *medulla*) rather than
+a description of the job.
 
 ### Two layers: a gateway above N drivers
 
@@ -144,7 +155,7 @@ shared library:
 | How to **talk to** an engine | inference-driver | wire protocol — `openai_compat_http`, `claude_code_cli`, `codex_cli`, all three of which already exist |
 
 The supervisor publishes what's running (`GET /v1/runtimes`) for the UI
-dashboard; the gateway builds its routing table from the watchdog topology plus
+dashboard; the gateway builds its routing table from the agent topology plus
 each driver's own config and health endpoints. "Components share schemas, not
 code" stays intact — nobody imports anybody.
 
@@ -158,7 +169,7 @@ manifest code is partially reusable by `library`.
 **`orchestrator` survives** (moved off the kill list 2026-09-08). It is already
 the thing that sat above N drivers and routed to them, so it is the gateway's
 natural home: rename it, delete `bicameral/` and `runtime/`, and keep the auth
-wiring, config trio, watchdog-topology peer resolution, SSE streaming and the
+wiring, config trio, agent-topology peer resolution, SSE streaming and the
 driver priority-list plumbing. Real reuse, not just history.
 
 `connector` is **deferred, not killed**: "expose your local model in Discord" is
@@ -273,7 +284,7 @@ Everything not listed here already exists and mostly survives untouched.
   (decided 2026-09-09) — the open question §6 carried, now settled.
 - **M5 — multi-host, trust, and the control root**
   ([design](m5-multi-host-and-trust.md))**.** Inserted 2026-09-09 ahead of
-  lifecycle policy, which pushed M5→M6 and M6→M7. The watchdog splits into a
+  lifecycle policy, which pushed M5→M6 and M6→M7. The agent splits into a
   **control root** and a **node agent**; nodes get identity and enrollment;
   secrets are sealed per-node instead of under one install-wide master key;
   control state becomes a single-writer ordered log with a warm standby and
@@ -283,7 +294,7 @@ Everything not listed here already exists and mostly survives untouched.
   retrofit and the current one caps the install at one host in a way that is
   easy to miss: multi-host is *designed* — the gateway resolves remote driver
   URLs from topology — but not *authenticable*, since a driver spawned by one
-  watchdog rejects a token signed by another. Deliberately **not** Raft; the
+  agent rejects a token signed by another. Deliberately **not** Raft; the
   log shape is chosen so that consensus later would be a transport-and-election
   swap rather than a redesign.
 - **M6 — lifecycle policy** *(was M5)*. Swap on demand, idle unload, VRAM-aware
@@ -357,9 +368,9 @@ OS behave differently from every other target.
 | In-app discovery + download is required scope, not a convenience; downloads write plainly-named files into user-chosen directories | 2026-09-08 |
 | Consciousness program retired, not paused | 2026-09-08 |
 | v0.1 drives a user-provided vLLM; engine installation is managed for llama.cpp only. Driving is a first-class path — the refusal names the command, and discovery finds the operator's venv | 2026-09-09 |
-| The watchdog splits into a **control root** and a **node agent** — two components, not one binary with a role flag. Supervision is per-host and there are N; the trust root, topology and UI are inherently one | 2026-09-09 |
+| The agent splits into a **control root** and a **node agent** — two components, not one binary with a role flag. Supervision is per-host and there are N; the trust root, topology and UI are inherently one | 2026-09-09 |
 | **Per-node sealing.** Secrets are sealed to the node that reads them, plus a passphrase-protected recovery recipient. No install-wide master key on every host | 2026-09-09 |
 | **Warm standby, log-shaped — not Raft.** One writer, one ordered mutation path, monotonic index. Consensus later is a transport-and-election swap, not a redesign | 2026-09-09 |
 | A control root is **never** marked `out` automatically. Promotion is an operator act, fenced by a monotonic epoch — automatic promotion without quorum is split-brain by definition | 2026-09-09 |
-| A driver follows a supervised runtime by **name**, resolved through the watchdog topology — never a literal URL, because the watchdog owns the port | 2026-09-09 |
+| A driver follows a supervised runtime by **name**, resolved through the agent topology — never a literal URL, because the agent owns the port | 2026-09-09 |
 | Runtime states are defined by what they mean, not by how one engine reports them. For an engine that does not answer while loading, a live process that answers nothing *is* `loading` | 2026-09-09 |

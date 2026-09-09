@@ -2,15 +2,15 @@
 #
 # M2 acceptance: five processes, and a model launched from the library.
 #
-#   watchdog  ->  spawns  ->  gateway
+#   agent  ->  spawns  ->  gateway
 #             ->  spawns  ->  inference-driver
 #             ->  spawns  ->  library
 #             ->  spawns  ->  llama-server   (declared at runtime, not in the topology)
 #
 # What makes this different from m0-acceptance.sh: the engine runtime is
-# NOT written into watchdog.yaml. It is created the way the UI's Launch
+# NOT written into agent.yaml. It is created the way the UI's Launch
 # button creates one — read a profile from the library, POST a runtime to
-# the watchdog with the model's path and the profile's flags. That
+# the agent with the model's path and the profile's flags. That
 # composition lives in the caller and crosses two components, so it is
 # exactly the seam no single-component test covers.
 #
@@ -24,8 +24,8 @@
 #
 # Configure via environment:
 #   EP_ROOT          parent directory holding the component clones
-#   EP_WATCHDOG_PY   python with watchdog + gateway + driver + library installed
-#                    (the watchdog spawns every component with its own
+#   EP_AGENT_PY   python with agent + gateway + driver + library installed
+#                    (the agent spawns every component with its own
 #                    sys.executable, so all four must import from this one)
 #   EP_LLAMA_SERVER  path to llama-server(.exe)
 #   EP_MODEL_ROOT    a directory holding real models, scanned for real
@@ -35,13 +35,13 @@
 set -uo pipefail
 
 EP_ROOT="${EP_ROOT:-/d/py/eugene-plexus}"
-EP_WATCHDOG_PY="${EP_WATCHDOG_PY:-$EP_ROOT/watchdog/.venv/Scripts/python.exe}"
+EP_AGENT_PY="${EP_AGENT_PY:-$EP_ROOT/agent/.venv/Scripts/python.exe}"
 EP_LLAMA_SERVER="${EP_LLAMA_SERVER:-C:/Users/troyc/OneDrive/Desktop/llamacpp/llama-server.exe}"
 EP_MODEL_ROOT="${EP_MODEL_ROOT:-C:/Users/troyc/.lmstudio/models}"
 EP_MODEL_NAME="${EP_MODEL_NAME:-Qwen3.6-27B}"
 EP_WORKDIR="${EP_WORKDIR:-${TMPDIR:-/tmp}/ep-m2-acceptance}"
 
-WATCHDOG_PORT=8079
+AGENT_PORT=8079
 GATEWAY_PORT=8080
 DRIVER_PORT=8081
 LIBRARY_PORT=8082
@@ -50,7 +50,7 @@ DRIVER_NAME=qwen-driver
 # Deliberately wrong at boot. The driver comes up degraded, which proves
 # the config endpoints stay reachable, and stage 8 repoints it at the
 # runtime the library launched — a port nobody could have known in
-# advance, because the watchdog assigns it.
+# advance, because the agent assigns it.
 PLACEHOLDER_URL="http://127.0.0.1:9"
 
 PASSPHRASE="acceptance-$(date +%s)-$$"
@@ -67,16 +67,16 @@ jq_() { PYTHONUTF8=1 python -c "import sys,json; d=json.load(sys.stdin); print($
 
 # --- preflight -------------------------------------------------------------
 say "preflight"
-[ -f "$EP_WATCHDOG_PY" ] || bad "watchdog venv python not found at $EP_WATCHDOG_PY"
+[ -f "$EP_AGENT_PY" ] || bad "agent venv python not found at $EP_AGENT_PY"
 [ -f "$EP_LLAMA_SERVER" ] || bad "llama-server not found at $EP_LLAMA_SERVER"
 [ -d "$EP_MODEL_ROOT" ] || bad "model root not found at $EP_MODEL_ROOT"
 if [ "$FAILURES" -ne 0 ]; then
-  printf '\nSet EP_WATCHDOG_PY / EP_LLAMA_SERVER / EP_MODEL_ROOT and retry.\n'
+  printf '\nSet EP_AGENT_PY / EP_LLAMA_SERVER / EP_MODEL_ROOT and retry.\n'
   exit 1
 fi
-if ! "$EP_WATCHDOG_PY" -c "import eugene_plexus_watchdog, eugene_plexus_gateway, eugene_plexus_inference_driver, eugene_plexus_library" 2>/dev/null; then
-  bad "watchdog, gateway, inference-driver AND library must import from $EP_WATCHDOG_PY"
-  printf '  (pip install -e %s/library into it — the watchdog venv is the runtime venv)\n' "$EP_ROOT"
+if ! "$EP_AGENT_PY" -c "import eugene_plexus_agent, eugene_plexus_gateway, eugene_plexus_inference_driver, eugene_plexus_library" 2>/dev/null; then
+  bad "agent, gateway, inference-driver AND library must import from $EP_AGENT_PY"
+  printf '  (pip install -e %s/library into it — the agent venv is the runtime venv)\n' "$EP_ROOT"
   exit 1
 fi
 ok "engine binary, model root and all four components present"
@@ -111,7 +111,7 @@ win_path() { printf '%s' "$1" | sed 's|/|\\|g'; }
 # Note what is NOT here: a `runtimes:` block. M0's topology declared the
 # engine up front. Here the operator has not chosen a model yet — that is
 # what the library is for.
-cat > watchdog.yaml <<YAML
+cat > agent.yaml <<YAML
 firstRunComplete: true
 components:
   - name: gateway
@@ -148,26 +148,26 @@ ok "topology written — three components, zero runtimes"
 
 # --- 1. the supervisor -----------------------------------------------------
 say "1. start the supervisor"
-EUGENE_PLEXUS_WATCHDOG_CONFIG_FILE=watchdog.yaml "$EP_WATCHDOG_PY" \
-  -m eugene_plexus_watchdog > watchdog-run.log 2>&1 &
+EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml "$EP_AGENT_PY" \
+  -m eugene_plexus_agent > agent-run.log 2>&1 &
 WD_PID=$!
 trap 'kill "$WD_PID" 2>/dev/null' EXIT
 
 for _ in $(seq 1 60); do
-  curl -sf -m 2 "http://127.0.0.1:$WATCHDOG_PORT/healthz" >/dev/null 2>&1 && break
+  curl -sf -m 2 "http://127.0.0.1:$AGENT_PORT/healthz" >/dev/null 2>&1 && break
   sleep 1
 done
-if curl -sf -m 2 "http://127.0.0.1:$WATCHDOG_PORT/healthz" >/dev/null; then
-  ok "watchdog answering on :$WATCHDOG_PORT"
+if curl -sf -m 2 "http://127.0.0.1:$AGENT_PORT/healthz" >/dev/null; then
+  ok "agent answering on :$AGENT_PORT"
 else
-  bad "watchdog never came up"
-  tail -40 watchdog-run.log
+  bad "agent never came up"
+  tail -40 agent-run.log
   exit 1
 fi
 
 # --- 2. auth ---------------------------------------------------------------
 say "2. initialize auth"
-TOK=$(curl -s -X POST "http://127.0.0.1:$WATCHDOG_PORT/v1/auth/initialize" \
+TOK=$(curl -s -X POST "http://127.0.0.1:$AGENT_PORT/v1/auth/initialize" \
   -H 'content-type: application/json' \
   -d "{\"passphrase\":\"$PASSPHRASE\"}" | jq_ "d.get('sessionToken','')")
 if [ -n "$TOK" ]; then
@@ -181,7 +181,7 @@ AUTH=(-H "Authorization: Bearer $TOK")
 # --- 3. three components ---------------------------------------------------
 say "3. the gateway, the driver and the library, all spawned by the supervisor"
 for _ in $(seq 1 60); do
-  S=$(curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$WATCHDOG_PORT/v1/components" 2>/dev/null |
+  S=$(curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$AGENT_PORT/v1/components" 2>/dev/null |
     jq_ "' '.join(sorted(c['name']+'='+c['status'] for c in d['components']))" 2>/dev/null)
   case "$S" in *"gateway=running"*"library=running"*) break ;; esac
   sleep 1
@@ -192,8 +192,8 @@ case "$S" in *"$DRIVER_NAME=running"*) ok "driver running" ;; *) bad "driver not
 case "$S" in *"library=running"*) ok "library running — a new ComponentKind the supervisor knows" ;; *) bad "library not running" ;; esac
 
 # --- 3b. engine discovery --------------------------------------------------
-say "3b. can the watchdog find an engine at all?"
-E=$(curl -s "${AUTH[@]}" "http://127.0.0.1:$WATCHDOG_PORT/v1/engines")
+say "3b. can the agent find an engine at all?"
+E=$(curl -s "${AUTH[@]}" "http://127.0.0.1:$AGENT_PORT/v1/engines")
 echo "$E" | PYTHONUTF8=1 python -c "
 import sys, json
 for e in json.load(sys.stdin)['engines']:
@@ -289,7 +289,7 @@ PROFILE=$(curl -s -X POST "${AUTH[@]}" \
 PROFILE_ID=$(echo "$PROFILE" | jq_ "d.get('id','')" 2>/dev/null)
 [ -n "$PROFILE_ID" ] && ok "profile saved (id $PROFILE_ID, default)" || bad "profile not saved: $PROFILE"
 
-# The library validates no flags — the watchdog does, when a runtime is
+# The library validates no flags — the agent does, when a runtime is
 # created. Prove both halves rather than asserting the design.
 BADP=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" \
   "http://127.0.0.1:$LIBRARY_PORT/v1/models/$MODEL_ID/profiles" \
@@ -299,10 +299,10 @@ BADP=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" \
   || bad "expected 201 storing an unknown flag, got $BADP"
 
 WRONG=$(curl -s -o /dev/null -w '%{http_code}' -X POST "${AUTH[@]}" \
-  "http://127.0.0.1:$WATCHDOG_PORT/v1/runtimes" -H 'content-type: application/json' \
+  "http://127.0.0.1:$AGENT_PORT/v1/runtimes" -H 'content-type: application/json' \
   -d "{\"name\":\"wrong-key-check\",\"engine\":\"llama_cpp\",\"modelPath\":\"$(echo "$MODEL_PATH" | sed 's|\\|\\\\|g')\",\"flags\":{\"nGpuLayers\":99}}")
-[ "$WRONG" = "400" ] && ok "and the watchdog refuses the runtime that uses it (400) — one validator, in the right place" \
-  || bad "expected 400 from the watchdog for an unknown flag, got $WRONG"
+[ "$WRONG" = "400" ] && ok "and the agent refuses the runtime that uses it (400) — one validator, in the right place" \
+  || bad "expected 400 from the agent for an unknown flag, got $WRONG"
 
 # --- 7. launch: the composition the UI performs ----------------------------
 say "7. launch — read the profile, POST a runtime. Field names line up; nothing translates."
@@ -318,13 +318,13 @@ print(json.dumps({
     'extraArgs': profile.get('extraArgs') or None,
     'env': profile.get('env') or None,
     'autoStart': True,
-    # No host, no port: the watchdog binds loopback and assigns a port.
+    # No host, no port: the agent binds loopback and assigns a port.
     # Restating either here would put a second copy of the supervisor's
     # rule in the caller.
 }))
 " "$PROFILE" "$RUNTIME_NAME" "$MODEL_PATH")
 echo "  POST /v1/runtimes $SPEC"
-RT=$(curl -s -X POST "${AUTH[@]}" "http://127.0.0.1:$WATCHDOG_PORT/v1/runtimes" \
+RT=$(curl -s -X POST "${AUTH[@]}" "http://127.0.0.1:$AGENT_PORT/v1/runtimes" \
   -H 'content-type: application/json' -d "$SPEC")
 RT_NAME=$(echo "$RT" | jq_ "d.get('name','')" 2>/dev/null)
 if [ -n "$RT_NAME" ]; then
@@ -337,7 +337,7 @@ fi
 # --- 8. the engine ---------------------------------------------------------
 say "8. the engine reaches ready"
 for _ in $(seq 1 900); do
-  R=$(curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$WATCHDOG_PORT/v1/runtimes")
+  R=$(curl -s -m 3 "${AUTH[@]}" "http://127.0.0.1:$AGENT_PORT/v1/runtimes")
   ST=$(echo "$R" | PYTHONUTF8=1 python -c "
 import sys, json
 for r in json.load(sys.stdin)['runtimes']:
@@ -359,7 +359,7 @@ import sys, json
 for r in json.load(sys.stdin)['runtimes']:
     if r['name'] == '''$RT_NAME''':
         print('  status', r['status'], '| pid', r.get('pid'), '| build', r.get('engineVersion'))
-        print('  url', r.get('url'), '(port assigned by the watchdog)')
+        print('  url', r.get('url'), '(port assigned by the agent)')
         print('  capabilities read back off the loaded engine:', r.get('capabilities'))
         print('  argv:', ' '.join(r.get('argv') or []))
         if r.get('lastError'): print('  lastError:', r['lastError'])
@@ -368,7 +368,7 @@ if [ "$ST" = "ready" ]; then
   ok "the model the library found is loaded and serving"
 else
   bad "runtime never became ready (status=$ST)"
-  tail -30 watchdog-run.log
+  tail -30 agent-run.log
 fi
 
 # --- 9. the gap ------------------------------------------------------------
@@ -382,7 +382,7 @@ if [ -n "$IDS" ]; then
   note "already routable — a driver was pointing at it"
 else
   note "NOT routable. The gateway routes via drivers, and nothing wired one"
-  note "to a port the watchdog only chose at launch. This is the step a"
+  note "to a port the agent only chose at launch. This is the step a"
   note "human closes by hand today; stage 10 does it explicitly."
 fi
 
@@ -453,5 +453,5 @@ if [ "$FAILURES" -eq 0 ]; then
 else
   echo "$FAILURES check(s) FAILED"
 fi
-echo "install left at $EP_WORKDIR (watchdog-run.log has every child's output)"
+echo "install left at $EP_WORKDIR (agent-run.log has every child's output)"
 exit "$FAILURES"

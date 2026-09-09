@@ -226,7 +226,7 @@ GGUF. vLLM arrives at M4 and is the safetensors path.
 
 The fix is not to hide them. It is to put format support where engine
 knowledge already lives: `EngineDescriptor` grows `modelFormats`, the
-watchdog fills it in from each adapter, and the UI joins the two
+agent fills it in from each adapter, and the UI joins the two
 surfaces to grey out a launch button with a reason that names the
 missing engine. The library stays format-agnostic and gains no engine
 knowledge — the no-shared-code rule holds. It also pre-wires M4: vLLM's
@@ -324,11 +324,11 @@ same profile twice with different `CUDA_VISIBLE_DEVICES` in `env`. A
 1:1 shape would need a migration by M5.
 
 **The library does not validate `flags`.** It stores them. Validation is
-the watchdog's, against the engine adapter's `flagSchema`, at
+the agent's, against the engine adapter's `flagSchema`, at
 `POST /v1/runtimes` — which is where the curated flag surface lives and
 where a bad flag has to fail anyway. Validating in two places means two
 copies of engine knowledge and one of them going stale. The UI renders
-the profile editor from the watchdog's `flagSchema` and posts the result
+the profile editor from the agent's `flagSchema` and posts the result
 to the library, which is the same generic-config-editor path everything
 else uses.
 
@@ -387,12 +387,12 @@ starting.
 
 **Not the library.** "Launch from the library" is a UI flow composed from
 two surfaces it already talks to: read the profile from the library
-(8082), `POST /v1/runtimes` to the watchdog (8079) with the model path
-and the profile's flags. The library never calls the watchdog, needs no
+(8082), `POST /v1/runtimes` to the agent (8079) with the model path
+and the profile's flags. The library never calls the agent, needs no
 service token for it, and carries no copy of `RuntimeSpec`.
 
 The alternative — `POST /v1/models/{id}/launch` on the library — reads
-tidier from a curl prompt and makes the library a client of the watchdog
+tidier from a curl prompt and makes the library a client of the agent
 with knowledge of runtime declarations, engine kinds and port
 assignment. That is the coupling the profile's field-name alignment (§3)
 exists to make unnecessary.
@@ -402,7 +402,7 @@ exists to make unnecessary.
 ## 6. Contract
 
 New document, `openapi/library.yaml`, port 8082 — the component the
-watchdog's own description has claimed to supervise since M0.
+agent's own description has claimed to supervise since M0.
 
 ```
 GET    /v1/models                          LibraryModel[]   (?path= for reverse lookup)
@@ -434,9 +434,9 @@ runtime delete already says: **the model file is never touched.**
 `common.yaml` is for schemas more than one component references, so three
 changes fall out:
 
-1. **`ComponentKind` gains `library`.** The watchdog has described itself
+1. **`ComponentKind` gains `library`.** The agent has described itself
    as supervising the library since M0 while the enum could not name it.
-2. **`EngineKind` moves in from `watchdog.yaml`.** A profile names an
+2. **`EngineKind` moves in from `agent.yaml`.** A profile names an
    engine, so it is now referenced by two components — the same
    reasoning `ComponentKind`'s own comment records.
 3. **`ModelFormat` is new and shared,** because it appears on both a
@@ -447,7 +447,7 @@ first list-typed config value; `driver_list` stays reserved for M5.
 
 ### One drift fix riding along
 
-The watchdog's port is **8079** in its spec and in M0's acceptance
+The agent's port is **8079** in its spec and in M0's acceptance
 script, and `8083` in this design doc's shape table and the README's.
 8079 is what the code binds and what the UI defaults to. The tables were
 wrong; they now say 8079.
