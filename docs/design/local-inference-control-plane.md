@@ -271,12 +271,29 @@ Everything not listed here already exists and mostly survives untouched.
 
   **v0.1 drives a user-provided vLLM and does not manage its installation**
   (decided 2026-09-09) — the open question §6 carried, now settled.
-- **M5 — lifecycle policy.** Swap on demand, idle unload, VRAM-aware admission,
-  and **load balancing across drivers serving the same model** — testable for
-  the first time now that two engines and N drivers exist. The
-  llama-swap-without-Docker answer.
-- **M6 — networked polish.** Re-verify the auth arc against the new topology,
-  rewrite the wizard, document tailnet deployment.
+- **M5 — multi-host, trust, and the control root**
+  ([design](m5-multi-host-and-trust.md))**.** Inserted 2026-09-09 ahead of
+  lifecycle policy, which pushed M5→M6 and M6→M7. The watchdog splits into a
+  **control root** and a **node agent**; nodes get identity and enrollment;
+  secrets are sealed per-node instead of under one install-wide master key;
+  control state becomes a single-writer ordered log with a warm standby and
+  operator-driven promotion, fenced by a monotonic epoch.
+
+  It jumps the queue because a distributed trust model is expensive to
+  retrofit and the current one caps the install at one host in a way that is
+  easy to miss: multi-host is *designed* — the gateway resolves remote driver
+  URLs from topology — but not *authenticable*, since a driver spawned by one
+  watchdog rejects a token signed by another. Deliberately **not** Raft; the
+  log shape is chosen so that consensus later would be a transport-and-election
+  swap rather than a redesign.
+- **M6 — lifecycle policy** *(was M5)*. Swap on demand, idle unload, VRAM-aware
+  admission, and **load balancing across drivers serving the same model** —
+  testable for the first time now that two engines and N drivers exist. The
+  llama-swap-without-Docker answer. Admission depends on M5's
+  `Node.accelerators` to know *whose* VRAM it is reasoning about.
+- **M7 — networked polish** *(was M6)*. Re-verify the auth arc against the new
+  topology, rewrite the wizard, document tailnet deployment. Now partly settled
+  by M5, which moves auth to the control root.
 - **Then:** MLX adapter, cloud providers back in the routing table, Discord
   revival.
 
@@ -340,5 +357,9 @@ OS behave differently from every other target.
 | In-app discovery + download is required scope, not a convenience; downloads write plainly-named files into user-chosen directories | 2026-09-08 |
 | Consciousness program retired, not paused | 2026-09-08 |
 | v0.1 drives a user-provided vLLM; engine installation is managed for llama.cpp only. Driving is a first-class path — the refusal names the command, and discovery finds the operator's venv | 2026-09-09 |
+| The watchdog splits into a **control root** and a **node agent** — two components, not one binary with a role flag. Supervision is per-host and there are N; the trust root, topology and UI are inherently one | 2026-09-09 |
+| **Per-node sealing.** Secrets are sealed to the node that reads them, plus a passphrase-protected recovery recipient. No install-wide master key on every host | 2026-09-09 |
+| **Warm standby, log-shaped — not Raft.** One writer, one ordered mutation path, monotonic index. Consensus later is a transport-and-election swap, not a redesign | 2026-09-09 |
+| A control root is **never** marked `out` automatically. Promotion is an operator act, fenced by a monotonic epoch — automatic promotion without quorum is split-brain by definition | 2026-09-09 |
 | A driver follows a supervised runtime by **name**, resolved through the watchdog topology — never a literal URL, because the watchdog owns the port | 2026-09-09 |
 | Runtime states are defined by what they mean, not by how one engine reports them. For an engine that does not answer while loading, a live process that answers nothing *is* `loading` | 2026-09-09 |
