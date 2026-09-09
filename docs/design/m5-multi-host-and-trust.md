@@ -480,20 +480,64 @@ Verified: all five documents validate under `openapi-spec-validator`
 models, **and** generate TypeScript that typechecks under `tsc --strict` —
 that last one because skipping it at M4 is what hid the fifth consumer.
 
-Two notes on shape. **A host is not a component** — the same reasoning
-that made engine processes `runtimes` in their own collection rather than
-components applies again, so nodes get `/v1/nodes` and not a
-`ComponentKind`. And **`Node.accelerators` is the cross-host hardware
-inventory M3 deferred**, landing precisely where M3 predicted it would:
-*"building a real inventory is topology work and belongs to the watchdog
-if it belongs anywhere."* The library's fit surface already takes a
-hardware override and reports which host it measured, so multi-host fit
-scoring works the moment nodes exist — that is pre-wiring, not
-retrofitting.
-
 M4's `runtimeName` resolution becomes node-local: a driver follows a
 runtime through *its own* agent, which is correct because a driver lives
 next to its engine. One clarifying sentence, no redesign.
+
+### One correction the implementation found
+
+**`Snapshot` was missing half the replication set.** Added while
+building the `control` repo: `sealedSigningKey`, `sealedControlKey` and
+`controlPublicKey`.
+
+§4 requires the service-token signing key to survive — *"otherwise every
+node must re-enroll after promotion"* — and the built `Snapshot` carried
+the salt, the verifier and the sealed recovery key but not the signing
+key. Since a standby bootstraps from a snapshot and *then* tails the log,
+the gap is not cosmetic: a standby that joined after the last compaction
+would have had no signing key at all, so promoting it would have
+invalidated every service token in the install.
+
+The same argument applies once more, to a key §4 never listed. Nodes
+record `controlPublicKey` at enrollment and check epoch changes against
+it, so a promoted standby generating a *fresh* identity keypair would be
+refused by every node it tried to command — the fencing mechanism firing
+at the wrong target. **Promotion has to be a change of host, not a change
+of identity**, which means the control root's own identity private key is
+part of the replication set too.
+
+Both are sealed under the passphrase-derived key rather than carried in
+the clear, which costs nothing: a standby has the salt and the verifier
+but no master key until the operator supplies the passphrase at
+promotion, and promotion is exactly the moment it needs to open them.
+§4's table is therefore two rows short, and this is the honest place to
+say so rather than quietly widening the schema.
+
+Two things the implementation deliberately did **not** add, because
+their absence is correct and the reasoning is worth recording so it is
+not "fixed" later:
+
+- **There is no `initialize` log op**, though initialization does
+  establish replicated state. Initialization happens exactly once,
+  before any standby can exist, so the snapshot always carries it
+  forward and it never needs to replicate as an entry. `LogOp` stays
+  closed at nine.
+- **Minting a join token is not a log op either.** A token is
+  active-root-local by design, not stored in recoverable form, and
+  useless if the root that minted it dies before the node enrolls.
+  `enrollNode` is the mutation; minting is not one.
+
+### Two notes on shape that survived unchanged
+
+**A host is not a component** — the same reasoning that made engine
+processes `runtimes` in their own collection rather than components
+applies again, so nodes get `/v1/nodes` and not a `ComponentKind`. And
+**`Node.devices` is the cross-host hardware inventory M3 deferred**,
+landing precisely where M3 predicted it would: *"building a real
+inventory is topology work and belongs to the agent if it belongs
+anywhere."* The library's fit surface already takes a hardware override
+and reports which host it measured, so multi-host fit scoring works the
+moment nodes exist — that is pre-wiring, not retrofitting.
 
 ---
 

@@ -1246,6 +1246,38 @@ components:
             The recovery recipient, sealed under the passphrase-derived
             key. Replicated so a promoted standby can still reach a dead
             node's secrets; useless to anyone without the passphrase.
+        sealedSigningKey:
+          type: string
+          description: |
+            The current service-token signing key, sealed under the
+            passphrase-derived key.
+
+            The design's replication set requires this — *"otherwise
+            every node must re-enroll after promotion"* — and the first
+            implementation found it missing here, which would have made
+            a snapshot-bootstrapped standby unpromotable without
+            re-enrolling the install. It is **sealed** rather than
+            plaintext because a snapshot is a file on a second host and
+            this key mints every service token in the install; the
+            standby has the salt and the verifier but no master key
+            until the operator supplies the passphrase at promotion,
+            which is exactly the moment it needs to open this.
+        sealedControlKey:
+          type: string
+          description: |
+            The control root's own identity private key, sealed under
+            the passphrase-derived key. Its public half is what nodes
+            record at enrollment as `controlPublicKey` and check epoch
+            changes against, so a promoted standby that generated a
+            *fresh* identity would be rejected by every enrolled node.
+            Replicating it is what makes promotion a change of host
+            rather than a change of identity.
+        controlPublicKey:
+          type: string
+          description: |
+            The public half of the above, carried in the clear so a
+            standby can report the identity it would assume without
+            holding the passphrase.
 
     PromoteRequest:
       type: object
