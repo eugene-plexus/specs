@@ -226,6 +226,25 @@ Validated with `openapi-spec-validator` 0.8.5 and `@redocly/cli`; all five docum
 
 **Two tests are required deliverables, not nice-to-haves.** *Replay equivalence* — a standby's applied state must be byte-identical to the active root's after applying the same log — is what makes a promotion trustworthy rather than hopeful, and is exactly what consensus would later depend on. And *kill the control root, assert a chat completion still succeeds*, because §1 identified the surviving data path as currently an accident rather than a designed property.
 
+### All five consumers re-pinned — 2026-09-09
+
+One bump carried three specs changes together, per M1's precedent of spending a single re-pin on everything pending: the `watchdog` → `agent` rename (`76f9090`), M4's contracts (`aff219d`) and M5's (`811112b`).
+
+| Repo | Was | Now |
+|---|---|---|
+| `agent` `gateway` `inference-driver` | `8288926` (M2) | `811112b` |
+| `library` `ui` | `a1e8e46` (M3) | `811112b` |
+
+All five level with `specs` HEAD; tests, mypy, ruff, `tsc --noEmit`, eslint, Prettier and the Next.js production build all green, and every repo's CI passed including the codegen-freshness check that asserts regenerated models match what was committed. The rename is now **fully absorbed**: `openapi/agent.yaml` is the spec, `agentUrl` is the config key, `ui/src/lib/agent.ts` is the module. Nothing was broken in the interim only because each consumer had been pinned to a SHA predating the move.
+
+**Three things the re-pin shook out, all of them contract changes masquerading as broken code.**
+
+- **The library's `test_an_unknown_engine_is_rejected_by_the_schema` used `vllm` as its example of an unknown engine.** M4 made `vllm` real, so the profile started being *accepted* and the assertion failed — a passing contract change that looks exactly like a regression. The value is now `not_an_engine`: a negative test wants something the enum cannot grow into, not the next item on the roadmap. `mlx` would have re-broken it later.
+- **The agent's `test_registry_covers_every_engine_kind` failed,** because `EngineKind` gained `vllm` and no adapter is registered. The test is right — the enum and the registry are two views of one fact — so rather than weaken the parity check, the gap is now *named*: `CONTRACTED_WITHOUT_ADAPTER` lists kinds whose contract landed ahead of their adapter, and a companion test asserts every entry is still genuinely missing one. The allowlist therefore cannot silently keep excusing an engine after its adapter lands, and registering the vLLM adapter is proved by deleting an entry instead of by remembering to. Empty is the correct steady state.
+- **`ui/src/lib/watchdog.ts` needed a real file move,** not a text substitution. Rewriting the import sites to `@/lib/agent` without moving the module left `tsc` reporting a missing module *plus* a cluster of downstream implicit-`any` errors that looked unrelated and vanished with the move. A rename script that edits contents and not filenames is a script that half-renames.
+
+**`control` is a sixth consumer that does not exist yet.** Its contract is `openapi/control.yaml`; the repo has not been created.
+
 ---
 
 ## Superseded — local-LLM-training platform (v0.3 direction)
