@@ -511,10 +511,18 @@ the outside to one holding a CUDA build, and runs orders of magnitude
 slower. `torchVersion` and `accelerator` are that variant, for an engine
 whose build is a property of its environment rather than of a filename.
 
-### Re-pin radius: all four, and not for the reason it looks like
+### Re-pin radius: all five, and not for the reason it looks like
 
-**Watchdog, library, inference-driver and gateway all re-pin** — M2's
-radius, for M1's reason: one bump carries both halves of the milestone.
+**Watchdog, gateway, inference-driver, library and `ui` all re-pin** —
+M2's radius, for M1's reason: one bump carries both halves of the
+milestone.
+
+**There are five codegen consumers, not four**, and an earlier draft of
+this section said four. `ui` generates TypeScript from all four spec
+documents via `openapi-typescript` (`scripts/codegen.mjs`), so a
+`common.yaml` change reaches it exactly as it reaches the Python
+consumers. Counting the Python ones is the same mistake as counting
+`$ref`s, one level up.
 
 The interesting part is *why*, because reference-counting gets it wrong
 and this was checked rather than reasoned about. `EngineKind` is named by
@@ -536,9 +544,11 @@ document. The rule that survives is the one M3 already stated, and it is
 the only reliable one: **generate both sides and diff them.** Counting
 `$ref`s looks like the same check and is not.
 
-Verified for this milestone: all four specs validate under
+Verified for this milestone: all four spec documents validate under
 `openapi-spec-validator` 0.8.5 and lint clean under `@redocly/cli`
-2.51.2, and all four generate importable Pydantic v2 models. The one
+2.51.2, and all four generate importable Pydantic v2 models. `ui`'s
+TypeScript generation was **not** exercised, which is the gap that hid
+the fifth consumer. The one
 generated-name collision the new schemas introduced — a second inline
 `accelerator` enum arriving as `Accelerator1` — is why
 `FrameworkAccelerator` is a named schema rather than an inline enum.
