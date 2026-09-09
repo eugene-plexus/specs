@@ -574,7 +574,7 @@ then goes `failed` with the attempt count visible. An operator-issued
 `resume` on a `failed` or `paused` record runs the same loop.
 
 Concurrency is a collection, not M1's singleton: several downloads can be
-queued, `max_concurrent_downloads` caps how many transfer at once
+queued, `maxConcurrentDownloads` caps how many transfer at once
 (default 1 — two 40 GB fetches sharing a link finish later than one after
 the other, and the progress bar people watch is the one they started
 first).
@@ -707,12 +707,12 @@ no new `ConfigValueType`:
 
 | Field | Type | Why |
 |---|---|---|
-| `hf_token` | `secret` | Gated repos, higher rate limits, and upstream's own advice that it makes public downloads faster. |
-| `catalogue_enabled` | `boolean` | An air-gapped install turns off every outbound request, and gets a legible refusal instead of timeouts. |
-| `catalogue_base_url` | `url` | Enterprise hubs and regional mirrors are real; hardcoding `huggingface.co` makes the component useless behind either. |
-| `download_layout` | `enum` | `publisher_repo` (default) or `flat`. §4. |
-| `max_concurrent_downloads` | `integer` | Default 1. §4. |
-| `guidance_context_length` | `integer` | The context every fit verdict is computed at when a caller passes none — so the one number that decides which quant gets recommended. A config field rather than a constant because 4k and 128k give different answers and neither is wrong. |
+| `hfToken` | `secret` | Gated repos, higher rate limits, and upstream's own advice that it makes public downloads faster. |
+| `catalogueEnabled` | `boolean` | An air-gapped install turns off every outbound request, and gets a legible refusal instead of timeouts. |
+| `catalogueBaseUrl` | `url` | Enterprise hubs and regional mirrors are real; hardcoding `huggingface.co` makes the component useless behind either. |
+| `downloadLayout` | `enum` | `publisher_repo` (default) or `flat`. §4. |
+| `maxConcurrentDownloads` | `integer` | Default 1. §4. |
+| `guidanceContextLength` | `integer` | The context every fit verdict is computed at when a caller passes none — so the one number that decides which quant gets recommended. A config field rather than a constant because 4k and 128k give different answers and neither is wrong. |
 
 The catalogue being unreachable is **not** a degraded-health state. No
 roots configured is `ok` (M2's rule: a fresh install is not a fault), and

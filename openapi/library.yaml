@@ -140,7 +140,7 @@ tags:
       The upstream model catalogue: search, what a repo holds, the card
       prose, and a ranged metadata read of one candidate. The only
       outbound-network surface in this component, and the only one that
-      can be switched off entirely (`catalogue_enabled`) for an
+      can be switched off entirely (`catalogueEnabled`) for an
       air-gapped install.
   - name: downloads
     description: |
@@ -159,18 +159,17 @@ tags:
       config UI with no library-specific code.
 
       The discovery and download half adds six fields to that same
-      trio and needs no new renderer for any of them:
-      `hf_token` (a `secret` — gated repos, higher upstream rate
-      limits, and faster transfers even for public files, which is
-      upstream's own advice), `catalogue_enabled` (the air-gap switch:
-      off means no outbound request is ever made and search says so
-      rather than timing out), `catalogue_base_url` (enterprise hubs
-      and regional mirrors both exist), `download_layout`
-      (`publisher_repo` or `flat`), `max_concurrent_downloads`
-      (default 1), and `guidance_context_length` — the context every
-      fit verdict is computed at unless a caller passes one, and
-      therefore the single number that decides which quant gets
-      recommended.
+      trio and needs no new renderer for any of them: `hfToken` (a
+      `secret` — gated repos, higher upstream rate limits, and faster
+      transfers even for public files, which is upstream's own advice),
+      `catalogueEnabled` (the air-gap switch: off means no outbound
+      request is ever made and search says so rather than timing out),
+      `catalogueBaseUrl` (enterprise hubs and regional mirrors both
+      exist), `downloadLayout` (`publisher_repo` or `flat`),
+      `maxConcurrentDownloads` (default 1), and
+      `guidanceContextLength` — the context every fit verdict is
+      computed at unless a caller passes one, and therefore the single
+      number that decides which quant gets recommended.
   - name: meta
     description: Health, version, and restart.
 
@@ -450,7 +449,7 @@ paths:
             type: integer
             minimum: 1
           description: |
-            Defaults to the configured `guidance_context_length`. Pass
+            Defaults to the configured `guidanceContextLength`. Pass
             the model's own `contextLength` to ask "can I serve what
             this was trained for".
         - name: kvCacheType
@@ -715,7 +714,7 @@ paths:
             minimum: 1
           description: |
             Context to score the candidates at. Defaults to the
-            configured `guidance_context_length`. This is the parameter
+            configured `guidanceContextLength`. This is the parameter
             the UI puts behind a slider: watching the recommendation
             walk down the quant list as context grows *is* the
             guidance.
@@ -871,7 +870,7 @@ paths:
       summary: Fetch a model into a directory the operator chose.
       description: |
         A collection rather than M1's singleton install: several
-        downloads can be queued, and `max_concurrent_downloads` (default
+        downloads can be queued, and `maxConcurrentDownloads` (default
         1) decides how many transfer at once. Two 40 GB fetches sharing
         one link both finish later than one after the other, and the
         progress bar people watch is the one they started first.
@@ -2745,7 +2744,7 @@ components:
         disk, and `verifying` *failing* is the one that means the bytes
         are wrong.
 
-        * `queued` — accepted, waiting on `max_concurrent_downloads`.
+        * `queued` — accepted, waiting on `maxConcurrentDownloads`.
         * `resolving` — asking upstream for the commit, sizes and
           digests. Where a gated repo's 401 surfaces.
         * `paused` — operator-stopped; the `.part` is kept and shows up
