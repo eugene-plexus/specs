@@ -27,6 +27,33 @@ info:
     every call. Streaming uses Server-Sent Events; non-streaming returns
     a single JSON body.
 
+    ## Which backend a driver fronts
+
+    Two config fields, and which one is set decides how the backend is
+    addressed.
+
+    - **`runtimeName`** (`runtime_name`) names a supervised engine
+      runtime. The driver resolves that name to a URL from the watchdog
+      topology, at startup and again whenever it reconnects.
+    - **`baseUrl`** is a literal URL, for every backend that is *not* a
+      supervised runtime — a cloud provider, a remote LM Studio, an
+      engine somebody else operates.
+
+    `runtimeName` wins when both are set.
+
+    Following a runtime by name rather than by URL is not a
+    convenience. The watchdog assigns the port when the operator does
+    not pick one, so a literal `baseUrl` pointing at a local runtime
+    encodes a number the operator was never told and does not own — it
+    is wrong the moment the thing it points at moves. A name survives
+    that.
+
+    This closes the gap M2 left open: launching a model from the library
+    declared a runtime and stopped there, so the model loaded, served,
+    and was unreachable because nothing pointed a driver at it. What
+    still is *not* here is who creates the driver — a declared pool or
+    one per launch is routing policy, and it stays with the gateway.
+
     ## Parameters are the caller's, never the driver's
 
     The driver applies no local defaults to anything affecting model
@@ -476,6 +503,22 @@ components:
             Backend-specific model identifier (e.g. `"claude-opus-4-7"`).
             Optional — omitted when the driver is configured to use the
             adapter's built-in default rather than pinning a specific model.
+        runtime:
+          type: string
+          description: |
+            The supervised engine runtime this driver is following, when
+            it was configured with `runtimeName` rather than a literal
+            `baseUrl`. Absent for a cloud provider, a CLI subscription,
+            or any backend that is not a runtime this install
+            supervises.
+
+            Reported here despite the rule that a driver never says
+            where it sits, because this is not the driver's own address —
+            it is *what it serves*, which is exactly what `/v1/info` is
+            for. It lets the gateway and the UI show which engine
+            process is behind a driver, so a model that is loaded but
+            unroutable is diagnosable from the routing table instead of
+            by reading two components' configs side by side.
         capabilities:
           type: object
           description: Backend capabilities the gateway keys off when routing.

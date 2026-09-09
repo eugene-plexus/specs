@@ -428,11 +428,19 @@ paths:
         why not, which is a real answer on Linux with an NVIDIA GPU
         because upstream publishes no CUDA build for it.
 
+        Not every engine is one we install. `acquisition.policy` says
+        which kind this is, and for a `manual` engine — vLLM, a Python
+        package in the operator's own environment — `manualInstall`
+        carries the command for the detected host and `python` describes
+        the environment that was found. So this endpoint renders three
+        different panels from one shape: install it, here is why we
+        cannot, and here is how you do it yourself.
+
         Note what `available` does and does not mean: it answers "is a
-        binary discoverable on this host", by managed install or PATH. A
-        runtime carrying an explicit `binary` bypasses discovery
-        entirely and will run happily against an engine reported here as
-        unavailable.
+        binary discoverable on this host" — by managed install, by an
+        install-wide configured path, or on PATH. A runtime carrying an
+        explicit `binary` bypasses discovery entirely and will run
+        happily against an engine reported here as unavailable.
       responses:
         '200':
           description: Known engine adapters.
@@ -471,6 +479,15 @@ paths:
         Returns 409 when an install is already running, and 422 when
         this host has no installable build (see
         `EngineAcquisition.reason`).
+
+        **An engine with `acquisition.policy: manual` always returns
+        422**, on every host, because we do not install that engine at
+        all — its unit of installation is a Python environment rather
+        than a verifiable asset. The 422's `detail` carries
+        `manualInstall`'s command and docs URL, so a client that reached
+        here anyway still learns the way forward. A UI should read
+        `policy` and render instructions instead of an install button,
+        rather than discovering this by calling.
       requestBody:
         required: false
         content:
@@ -752,13 +769,29 @@ paths:
     get:
       tags: [config]
       operationId: getConfig
-      summary: Read the watchdog's UI preferences and first-run state.
+      summary: Read the watchdog's UI preferences, engine paths and first-run state.
       description: |
         Returns the watchdog's settings that are NOT topology — UI
         preferences (theme, font size, future displayName, future
-        connectors) and `firstRunComplete`. Topology lives under
-        `/v1/components`. This split prevents accidental topology
-        changes when an operator edits UI prefs.
+        connectors), host-local engine paths, and `firstRunComplete`.
+        Topology lives under `/v1/components`. This split prevents
+        accidental topology changes when an operator edits UI prefs.
+
+        **`vllmBinary`** (`file_path`) is the install-wide path to the
+        `vllm` console script in the operator's own virtual environment.
+        It exists because vLLM is an engine we deliberately do not
+        install (`EngineAcquisition.policy: manual`), and without it a
+        working venv reads as unavailable unless the operator puts it on
+        `PATH` or repeats the path on every runtime. It points at the
+        console script rather than at an interpreter or a venv
+        directory: the script's shebang binds its own interpreter, so
+        nothing needs activating.
+
+        A config field rather than a new endpoint on purpose — the
+        generic editor renders it with no engine-specific UI code, which
+        is the same rule that makes `EngineDescriptor.flagSchema` a
+        `ConfigSchema`. The pattern generalises as `<engine>Binary` if a
+        third driven engine ever arrives.
       responses:
         '200':
           description: Current config.
@@ -1068,15 +1101,48 @@ components:
       required:
         - installable
       properties:
+        policy:
+          type: string
+          enum:
+            - managed
+            - manual
+          description: |
+            Whether this engine is one we install at all. A property of
+            the engine, not of this host.
+
+            * `managed` — we fetch, verify and retain builds of it.
+              llama.cpp, which ships prebuilt release assets with
+              per-asset digests.
+            * `manual` — the operator installs it and we discover what
+              they installed. vLLM, whose unit of installation is a
+              Python environment: an interpreter of a version we do not
+              control (specifically 3.12 for the ROCm and Intel wheels),
+              several GB per retained copy, three of six targets on a
+              non-default package index, Apple silicon served by a
+              separate project entirely, and no single digest that
+              verifies the result. Decided 2026-09-09.
+
+            Separate from `installable` because the two answer different
+            questions and the UI renders them differently.
+            `installable: false` under `policy: managed` means *not on
+            this host* — there is a build, just not for this one, which
+            is Linux + NVIDIA llama.cpp. `policy: manual` means *not by
+            us, anywhere*, and the UI owes the operator instructions
+            (`manualInstall`) rather than a disabled install button.
+            Inferring that difference from a false boolean would be
+            guesswork.
         installable:
           type: boolean
           description: |
-            False means no published asset fits this host and `reason`
-            says why. This is a real outcome, not an error: upstream
-            publishes no CUDA build for Linux, so a Linux box with an
-            NVIDIA GPU cannot be served automatically and is told so
-            rather than quietly handed a slower Vulkan build it never
-            asked for.
+            False means we will not be installing this engine here, and
+            `reason` says why. This is a real outcome, not an error, and
+            it arises two ways. Under `policy: managed` no published
+            asset fits this host — upstream publishes no CUDA build for
+            Linux, so a Linux box with an NVIDIA GPU cannot be served
+            automatically and is told so rather than quietly handed a
+            slower Vulkan build it never asked for. Under
+            `policy: manual` it is always false, on every host, by
+            decision.
         variant:
           type: string
           description: The asset variant that would be fetched, when installable.
@@ -1085,7 +1151,16 @@ components:
           description: |
             Why not, when `installable: false`. Written for the operator,
             naming the way forward - build from source, use a container,
-            or point `binary` at an existing build.
+            or point `binary` at an existing build. For a
+            `policy: manual` engine the way forward is an install the
+            operator performs, and `manualInstall` carries the command
+            itself.
+        manualInstall:
+          $ref: '#/components/schemas/ManualInstall'
+          description: |
+            How the operator installs this engine themselves. Present
+            for `policy: manual`, and the reason driving an engine is a
+            supported path rather than a shrug.
         detected:
           $ref: '#/components/schemas/HostAccelerator'
         latestVersion:
@@ -1106,6 +1181,46 @@ components:
             When we last asked upstream. Checked at most daily and never
             on the request path; a failed check leaves this stale rather
             than raising anything.
+
+    ManualInstall:
+      type: object
+      description: |
+        Instructions for installing an engine we do not manage, written
+        for the host we actually detected.
+
+        This exists so that "we don't install this one" is still an
+        answer the operator can act on. A refusal that names the exact
+        command is a different product from a refusal that says no —
+        and since a `manual` engine's refusal is permanent rather than
+        situational, it is the only surface the operator gets.
+      required:
+        - docsUrl
+      properties:
+        command:
+          type: string
+          description: |
+            A copy-pasteable command for the detected platform and
+            accelerator, e.g.
+            `uv pip install vllm --torch-backend=auto`. Omitted when we
+            cannot name one honestly — an unrecognised accelerator, or a
+            target upstream serves from a separate project — in which
+            case `docsUrl` and `notes` carry it. Never a guess: a
+            command that does not work is worse than no command, because
+            the operator will believe it.
+        docsUrl:
+          type: string
+          description: |
+            Upstream's own install page. Required, and deliberately the
+            one field that always exists: upstream's instructions are
+            correct for longer than any copy we make of them, and this
+            is the value that stays right when our `command` goes stale.
+        notes:
+          type: string
+          description: |
+            Constraints the command alone does not convey — a required
+            Python version, a non-default package index, that this
+            target is served by a separate upstream project, or that the
+            platform is unsupported and the way in is a Linux VM.
 
     HostAccelerator:
       type: object
@@ -1249,10 +1364,25 @@ components:
             This is the engine half of a join the UI performs: the
             library reports what format each model *is*, and this
             reports what each engine can *load*. `llama_cpp` lists
-            `gguf` only, so a safetensors model in the library has
-            nowhere to run until the vLLM adapter lands, and the UI can
-            say so — naming the missing engine — instead of offering a
-            launch button that fails.
+            `gguf`; `vllm` lists `safetensors`. Between them the UI can
+            grey out a launch button and name the missing engine instead
+            of offering one that fails.
+
+            `vllm` does **not** list `gguf`, though upstream has a path
+            for it. That path is documented as highly experimental and
+            under-optimized, and it needs a second `--tokenizer` model
+            because converting a GGUF tokenizer is unstable — so
+            claiming the format would light up a launch button across
+            the whole GGUF population llama.cpp already serves properly.
+
+            A format match is a *first* filter and not a promise. It says
+            the engine can load this kind of file, not that it can load
+            this model: vLLM's model registry is the authority on
+            architectures and it answers only at spawn. The second
+            filter is therefore the engine's own failure, surfaced
+            verbatim through `Runtime.lastError`. No architecture list is
+            copied in here, for the same reason the formats are not
+            copied into the library.
 
             It lives here because engine knowledge lives here. Putting
             format support on the library would give the library a copy
@@ -1263,10 +1393,19 @@ components:
         version:
           type: string
           description: |
-            Version string as reported by the binary itself (for
-            llama.cpp, the build number). Surfaced so an operator can
-            tell what they are actually running, and so a flag that
-            stopped working after an upgrade is diagnosable.
+            What is running, so an operator can tell what they actually
+            have and so a flag that stopped working after an upgrade is
+            diagnosable. For llama.cpp, the build number as the binary
+            reports it.
+
+            **Not necessarily obtained by running the engine.** For a
+            Python-package engine the version is read from the installed
+            distribution's metadata instead: vLLM exposes it through a
+            CLI flag whose module import chain loads PyTorch first, and
+            paying that to render a settings panel is not acceptable.
+            Same trade the managed store already makes for llama.cpp,
+            where the recorded build number is returned rather than
+            re-probed.
         origin:
           type: string
           enum:
@@ -1274,12 +1413,21 @@ components:
             - configured
             - path
           description: |
-            Where the binary came from.
+            Where the binary came from. Discovery precedence is an
+            explicit `binary` on the runtime, then `configured`, then
+            `managed`, then `PATH`.
 
-            * `managed` — fetched and verified by us. The one-click
-              path; not implemented until engine acquisition lands.
-            * `configured` — an explicit path the operator set, because
-              they build llama.cpp themselves or want a specific build.
+            * `managed` — fetched and verified by us. Only ever set for
+              an engine with `acquisition.policy: managed`.
+            * `configured` — an explicit path the operator set. Two
+              sources: a `binary` on one runtime, for someone who builds
+              llama.cpp themselves or wants a specific build for one
+              model; or an install-wide path in the watchdog's own
+              config, which is how an engine we never manage becomes
+              discoverable at all. Without the second, an operator with
+              a perfectly good vLLM venv would read as unavailable
+              unless they put it on `PATH` or repeated the path on every
+              runtime.
             * `path` — found on `PATH`.
         flagSchema:
           $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
@@ -1301,6 +1449,80 @@ components:
           $ref: '#/components/schemas/ManagedEngine'
         acquisition:
           $ref: '#/components/schemas/EngineAcquisition'
+        python:
+          $ref: '#/components/schemas/PythonEngine'
+          description: |
+            Present when this engine is a Python package rather than a
+            self-contained binary, describing the environment it lives
+            in. Absent for llama.cpp.
+
+    PythonEngine:
+      type: object
+      description: |
+        The environment a Python-package engine was found in.
+
+        This is the `ManagedEngine.variant` idea applied to an engine
+        whose build is a property of its environment rather than of a
+        filename: recorded because it is the answer to "why is this
+        slow" often enough to be worth surfacing. A venv holding a
+        CPU-only PyTorch looks identical from the outside to one holding
+        a CUDA build and runs orders of magnitude slower, and nothing
+        else on this descriptor would ever say so.
+      required:
+        - interpreter
+      properties:
+        interpreter:
+          type: string
+          description: |
+            Absolute path to the interpreter behind the engine's console
+            script. The script's own shebang binds it, so nothing needs
+            activating and the argv stays a plain executable invocation —
+            but the interpreter is what identifies *which* install is in
+            use when an operator keeps more than one.
+        pythonVersion:
+          type: string
+          description: |
+            e.g. `3.12.8`. Surfaced rather than merely logged because it
+            is sometimes the whole problem and is not fixable from here:
+            upstream publishes the ROCm and Intel wheels for 3.12 only,
+            so an operator on 3.13 has an unusable environment and the
+            only useful thing we can do is show them the number.
+        packageVersion:
+          type: string
+          description: |
+            The engine package's own version, from the installed
+            distribution's metadata. Mirrors `EngineDescriptor.version`
+            and is here so the environment reads as a self-contained
+            record.
+        torchVersion:
+          type: string
+          description: |
+            The installed PyTorch version *including its build tag* —
+            e.g. `2.9.0+cu129`. The tag is the load-bearing half: it is
+            what distinguishes a CUDA build from a CPU-only one, which
+            is the single most useful fact about an environment that is
+            serving slowly.
+        accelerator:
+          $ref: '#/components/schemas/FrameworkAccelerator'
+
+    FrameworkAccelerator:
+      type: string
+      enum: [none, cuda, rocm, xpu, metal, unknown]
+      description: |
+        What a Python engine's installed framework was *built for*, read
+        from its build tag rather than from the host.
+
+        Deliberately a separate schema from `HostAccelerator.accelerator`
+        rather than a shared one, because the two say different things
+        and carry different values. That one reports what the *machine*
+        has; this one reports what the *wheel* has. A CUDA box running a
+        CPU-only PyTorch is a real and quiet failure — everything looks
+        installed and inference is orders of magnitude slower — and it
+        is visible only as the disagreement between these two fields.
+
+        `unknown` when the build tag does not parse. Honest, and better
+        than reporting `none`, which would read as a definite claim that
+        there is no acceleration.
 
     RuntimeList:
       type: object
@@ -1363,6 +1585,20 @@ components:
             filename with its extension stripped — plainly-named files
             mean the obvious name is already the right one, so this is
             an override, not a requirement.
+
+            **The resolved value is always passed to the engine
+            explicitly, never left to the engine's own default.** vLLM's
+            default served name is the `--model` argument verbatim, and
+            we launch models by absolute path because the user's files
+            stay theirs — so leaving it unset would publish
+            `/home/you/models/Qwen3-8B` as an OpenAI model id. That
+            leaks the operator's directory layout to every API client
+            and, worse, makes the routing key differ per host for the
+            same model, which breaks both multi-host placement and any
+            failover priority list that names a model. llama.cpp derives
+            its default from the filename and would have been fine,
+            which is exactly why this was invisible until a second
+            engine existed.
         host:
           type: string
           default: 127.0.0.1
@@ -1532,16 +1768,37 @@ components:
         recover a config from), and it has a model-load phase that a
         component does not.
 
-        * `starting` — spawned, not yet answering its readiness probe
-          at all.
-        * `loading` — answering, but reporting the model is still being
-          read into memory. Worth its own state rather than folding
-          into `starting`: a large quant off a spinning disk can sit
-          here for minutes, and an operator staring at a dashboard
-          needs to know the difference between "working on it" and
-          "wedged". This is exactly what a per-engine readiness probe
-          buys — llama-server distinguishes the two on `/health` and a
-          generic TCP check could not.
+        These are defined by what they *mean*, not by how any one engine
+        reports them. That distinction is load-bearing, because the two
+        engines report the load phase in opposite ways — see `loading`.
+
+        * `starting` — spawned, and we have no information yet. Not "the
+          probe failed": the honest gap between spawning a process and
+          learning anything about it.
+        * `loading` — the engine is alive and working, and is not
+          servable yet. Worth its own state rather than folding into
+          `starting`: a large quant off a spinning disk can sit here for
+          minutes, and an operator staring at a dashboard needs to know
+          the difference between "working on it" and "wedged".
+
+          How it is *observed* is per-engine, and this is most of why
+          readiness is per-adapter rather than a shared TCP check.
+          `llama-server` says so itself, answering `/health` with 503
+          and a loading status. **vLLM does the opposite:** it binds its
+          port before loading the model and does not answer at all until
+          the model is in memory, so for minutes it is
+          indistinguishable — over the network alone — from a process
+          that died.
+
+          Hence the rule: for an engine that does not answer while
+          loading, *the process being alive while nothing answers* **is**
+          `loading`. There is nothing else it could be. That inference
+          needs the process handle, which the supervisor has and a
+          network probe does not, and it is why lifecycle adapters live
+          here rather than in the driver. An engine like that also needs
+          a per-adapter startup budget to keep "working on it" separable
+          from "wedged"; vLLM's is minutes, because CUDA graph capture
+          and compilation dominate it.
         * `ready` — model loaded and serving. The only state in which
           the gateway will route to it.
         * `stopped` — deliberately stopped, or declared with

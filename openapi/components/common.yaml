@@ -100,6 +100,7 @@ components:
       type: string
       enum:
         - llama_cpp
+        - vllm
       description: |
         Which engine adapter constructs the argv and interprets
         readiness. Deliberately a closed enum rather than a free string:
@@ -107,9 +108,21 @@ components:
         and without an adapter there is nothing that knows how to start
         it or tell when it is ready.
 
-        `llama_cpp` drives upstream `llama-server`. vLLM is a second
-        adapter later, and MLX after that. We never ship an engine — all
-        three are upstream projects we wrap and track.
+        `llama_cpp` drives upstream `llama-server` and loads GGUF.
+        `vllm` drives upstream `vllm serve` and loads safetensors. MLX
+        is a third adapter later. We never ship an engine — every one of
+        them is an upstream project we wrap and track.
+
+        The two differ in far more than argv, and that is why readiness
+        is per-adapter rather than one shared TCP check:
+        `llama-server` answers `/health` while it loads and reports that
+        it is loading, whereas vLLM binds its port *before* loading the
+        model and refuses connections until the model is in memory — so
+        for minutes it is indistinguishable, over the network alone,
+        from a process that died. They differ in acquisition too: a
+        llama.cpp build is fetched and verified by us, while vLLM is a
+        Python package the operator installs themselves. See
+        `EngineAcquisition.policy`.
 
         Lives here rather than on the watchdog because two components
         reference it: the watchdog's engines and runtimes, and a
@@ -242,6 +255,18 @@ components:
         and M3's downloader offers the first entry as the default
         destination. `driver_list` stays reserved for M5's ordered
         model→driver priority lists.
+
+        `runtime_name` holds the `name` of a supervised engine runtime,
+        and UIs render it as a dropdown sourced from the watchdog's
+        `GET /v1/runtimes`. It exists because `componentKindHint` cannot
+        do this job: a runtime is deliberately not a component, so
+        `/v1/components` does not list one. What is saved is the
+        runtime's *name*, never its URL — the watchdog assigns the port
+        when the operator does not pick one, so a stored URL would
+        encode a number the operator never chose and does not own, and
+        would be wrong the moment the runtime moved. Its first user is
+        the inference-driver's `runtimeName`, which is how a driver
+        follows the engine process it fronts.
       enum:
         - string
         - integer
@@ -253,6 +278,7 @@ components:
         - path_list   # ordered list of paths; see the description
         - url
         - duration    # seconds; UI may render as a time picker
+        - runtime_name # name of a supervised engine runtime; see the description
         - driver_list # reserved: ordered model->driver priority lists (M5)
 
     ConfigField:

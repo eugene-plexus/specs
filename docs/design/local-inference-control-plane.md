@@ -254,9 +254,23 @@ Everything not listed here already exists and mostly survives untouched.
   naming schemes comparable; it is also the boundary of what we will say,
   because relative quant *quality* is upstream research and a fabricated
   score is worse than none.
-- **M4 — second engine: vLLM.** A second adapter and a second driver kind. This
-  is where the format abstraction and the two-layer split stop being
-  speculative and get tested.
+- **M4 — second engine: vLLM** ([design](m4-second-engine-vllm.md))**.** A
+  second engine adapter — and, as it turns out, **not** a second driver kind.
+  vLLM speaks OpenAI-compatible HTTP, so `openai_compat_http` already covers
+  it: the wire-protocol half of the split needs nothing at all, and the
+  engine half needs everything. That is the `EngineKind` / `BackendKind`
+  separation earning its keep on the first case that tested it.
+
+  Where the two-layer split stops being speculative is readiness. vLLM binds
+  its port *before* loading the model and answers nothing until the model is
+  resident, so for minutes it is indistinguishable over the network from a
+  process that died — and `loading` versus `crashed` becomes decidable only
+  from the process handle, which the supervisor has and a driver does not.
+  Also where the M2 routing gap closes, since a driver following a runtime by
+  name is what makes a launched model routable.
+
+  **v0.1 drives a user-provided vLLM and does not manage its installation**
+  (decided 2026-09-09) — the open question §6 carried, now settled.
 - **M5 — lifecycle policy.** Swap on demand, idle unload, VRAM-aware admission,
   and **load balancing across drivers serving the same model** — testable for
   the first time now that two engines and N drivers exist. The
@@ -270,11 +284,25 @@ Everything not listed here already exists and mostly survives untouched.
 
 ## 6. Risks
 
-**Open question (needs a call):** does v0.1 *manage* vLLM installation, or only
-drive a user-provided one? Managing it means owning a GPU-matched Python
-environment, which is a categorically harder problem than fetching a binary.
-Recommendation on file: manage llama.cpp fully, drive vLLM, defer managed vLLM
-install. Not yet decided.
+**Settled 2026-09-09 (was the open question here): v0.1 drives a
+user-provided vLLM and does not manage its installation.** The reasoning
+moved to [M4's design](m4-second-engine-vllm.md) along with the install
+matrix it rests on, and the shape of the problem was not what this section
+guessed. CUDA-version matching — the thing named here as the hard part — is
+the easy part, because the default wheel bundles its own CUDA build and
+`--torch-backend=auto` selects it, so we would never match a version at
+all. What is actually hard is that the unit of installation is *a Python
+environment*: an interpreter of a version we do not control (specifically
+3.12 for the ROCm and Intel wheels), several GB per retained copy, three of
+six targets on a non-default package index, Apple silicon served by a
+separate project, and no single digest that verifies the result.
+
+So engine acquisition stays **llama.cpp only**, and "we drive vLLM" is made
+a first-class path rather than an absence of one: the refusal names the
+exact command for the detected host, and discovery finds the operator's
+venv. Rejected on the way: managing a venv on Linux + NVIDIA alone, which
+is genuinely tractable and would have made the one accelerator on the one
+OS behave differently from every other target.
 
 
 - **llama.cpp is moving into this space.** `llama.app` is, in the thread
@@ -311,3 +339,6 @@ install. Not yet decided.
 | The user's model files stay in user-chosen directories; no content-addressed cache | 2026-09-08 |
 | In-app discovery + download is required scope, not a convenience; downloads write plainly-named files into user-chosen directories | 2026-09-08 |
 | Consciousness program retired, not paused | 2026-09-08 |
+| v0.1 drives a user-provided vLLM; engine installation is managed for llama.cpp only. Driving is a first-class path — the refusal names the command, and discovery finds the operator's venv | 2026-09-09 |
+| A driver follows a supervised runtime by **name**, resolved through the watchdog topology — never a literal URL, because the watchdog owns the port | 2026-09-09 |
+| Runtime states are defined by what they mean, not by how one engine reports them. For an engine that does not answer while loading, a live process that answers nothing *is* `loading` | 2026-09-09 |
