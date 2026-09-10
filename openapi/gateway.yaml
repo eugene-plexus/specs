@@ -54,10 +54,16 @@ info:
     eligible whenever it is reachable; there is no engine of ours for
     it to be waiting on.
 
-    With a `controlUrl` configured, topology and runtimes are read from
-    the control root's union views instead of one agent, and
-    `GET /v1/nodes` says which agent owns each runtime. Without one —
-    a single-host install — the one configured agent is both.
+    With a `controlUrl` configured, the gateway reads the control root's
+    `GET /v1/nodes` for the list of agents and then reads each agent's
+    `/v1/components` and `/v1/runtimes` directly — not the control
+    root's union views, whose `RuntimePlacement` carries no lifecycle
+    fields, and not through a poll that would die with the control root
+    and take model swapping down with management. The control root
+    contributes the one thing only it knows: which agents exist and
+    where, which is also how a stop or start reaches the agent that owns
+    a runtime on another host. Without one — a single-host install — the
+    one configured agent is all of it.
 
     ## Lifecycle policy (M6)
 
@@ -217,6 +223,13 @@ paths:
         `x_eugene_plexus.swapped_in` and `waited_ms` say so. Past the
         wait, the next tier is tried; with none, a 503 naming the
         runtime being woken.
+
+        A request that finds nothing eligible first refreshes the
+        routing table (shared across concurrent requests, at most once a
+        second) before waking anything or answering — the table is
+        otherwise `routingRefreshSeconds` behind the agent about
+        readiness, and the first live run met exactly that seam. A
+        request that finds a backend never pays for a topology read.
 
         Sampling parameters are the gateway's to send. Anything the
         caller omits is filled from the model's settings profile and
@@ -438,10 +451,11 @@ paths:
         * **`idleCheckSeconds`** (`duration`) — how often the gateway
           checks each runtime's idle timeout.
         * **`controlUrl`** (`url`, optional) — the control root. When
-          set, topology comes from its union views and lifecycle
-          actions are sent to the agent that owns each runtime, looked
-          up through `GET /v1/nodes`. Unset means a single-host install
-          and the one configured agent.
+          set, the agent list comes from its `GET /v1/nodes`; each
+          node's agent is then read directly for that node's drivers
+          and runtimes, and a stop or start is sent to the agent that
+          owns the runtime. Unset means a single-host install and the
+          one configured agent.
       responses:
         '200':
           description: Current config.

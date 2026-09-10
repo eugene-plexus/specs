@@ -1,6 +1,6 @@
 # M6 — Lifecycle policy (design)
 
-**Status:** designed 2026-09-10. Milestone **M6** of
+**Status:** designed, built and **live-verified 2026-09-10**. Milestone **M6** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
 Follows [M5](m5-multi-host-and-trust.md), whose core is built and whose
 two-machine run has not happened. Contracts first, then implementation,
@@ -515,7 +515,7 @@ and the complaint.
 The library's four verdicts are kept in meaning and mapped onto a
 launch decision by what the spec asked for:
 
-| fit | `gpuLayers` unset or ≥ 999 (full offload) | `gpuLayers` set below full |
+| fit | `gpuLayers` unset, negative, or ≥ 99 (full offload — 99 is llama.cpp's idiom for everything) | `gpuLayers` set below that |
 |---|---|---|
 | `fits` | admit | admit |
 | `tight` | **refuse** — something else holds the memory now; §5's eviction is the answer, or free it | admit |
@@ -716,3 +716,116 @@ an environment variable for exactly that.
 Unit tests use fake drivers (gateway) and a fake engine plus stubbed
 detection (agent), as M5 did. The live run is where every prior
 milestone's worst defects came from, and it is not skipped.
+
+---
+
+## 11. Implementation notes (2026-09-10)
+
+Built the same day as the design, in two repos plus a six-way re-pin,
+and verified by [`scripts/m6-acceptance.sh`](../../scripts/m6-acceptance.sh)
+— record in [`docs/acceptance/m6-six-process-run.md`](../acceptance/m6-six-process-run.md).
+Twenty-nine checks green on the second run; the first run found two
+defects, both real, both below.
+
+| Repo | Landed | What |
+|---|---|---|
+| `specs` | `8727736` | the contracts of §7, verbatim |
+| `agent` | `62f693b`, `7565031` | `companions.py`, `admission.py`, `engines/devices.py`, `routes/node.py`, stop reasons, `service:gateway` on stop/start, the supervision-loop fix; 283 tests |
+| `gateway` | `c53ebcd`, `c43baf8` | the name-keyed join and `ready` gate, `TieredClient`, least-busy balancing, `lifecycle.py`, `GET /v1/admin/routing`, refresh on demand; 124 tests |
+| `inference-driver` `library` `control` | `7fe3e1e` `57024d6` `ca17ba4` | re-pin only |
+| `ui` | `f679fab` | re-pin, a `model_slots` JSON editor, the honest post-launch message, `stopReason` on the dashboard |
+
+### What the live run found
+
+**The routing table was a refresh interval behind about readiness.**
+The design said the gateway routes only to `ready` runtimes (§2) and
+the code did — against a snapshot up to `routingRefreshSeconds` old,
+15 s by default. Every request in the seconds after both replicas
+turned `ready` met a table that still said `loading`; the completion
+after a replica was killed met one that had not noticed. **New rule:**
+a request that finds nothing eligible refreshes the table — shared
+across concurrent callers, at most once a second — before waking
+anything or answering; a request that finds a backend never pays for a
+topology read. That keeps M0's "a request never pays for discovery" on
+the path that matters and removes a fifteen-second 503 after every
+load.
+
+**`gpuLayers: 99` read as partial offload.** §6's table said full
+offload was "unset or ≥ 999". Every profile in this project writes 99,
+llama.cpp's idiom for everything, and the 40B at 128k was *admitted* as
+partial offload the operator had chosen. The threshold is 99, negative
+counts as full too (`-1` is upstream's spelling), and the table above
+says so now.
+
+### Where the implementation departs from, or refines, this document
+
+1. **Topology comes from each agent, not from the control root's union
+   views.** §5 and the first draft of `gateway.yaml` said the gateway
+   would read the control root's `/v1/components` and `/v1/runtimes`
+   when a `controlUrl` is set. It reads the control root's **node list**
+   instead and then each node's agent directly. Two reasons, one
+   contractual: `RuntimePlacement` in `control.yaml` carries no
+   capabilities, no `idleUnloadSeconds`, no `startOnDemand`, no
+   `stopReason` — it is the reporting shape, and adding lifecycle fields
+   to it would duplicate the agent's `Runtime` in a second document. The
+   other is the design's own argument: a poll that dies with the control
+   root would take model swapping down with management. The control
+   root's contribution is the one thing only it knows — which agents
+   exist and where. `gateway.yaml`'s text is corrected in the same
+   commit as this note.
+2. **The alias join survives as a fallback.** A driver that reports no
+   `runtime` — a hand-written `baseUrl`, a driver older than M4 — is
+   joined to the runtime whose alias equals its model id when exactly
+   one does, as before. Replica pairs still drop it, because naming one
+   of two is a coin flip; a companion always reports `runtime` and never
+   hits this path.
+3. **Idle is counted from "ready" for a runtime that never served.**
+   The gateway records when it first saw each runtime `ready`; a model
+   loaded at boot with no traffic unloads after its timeout rather than
+   sitting resident because no request ever stamped it.
+4. **`stopReason` defaults are derived, not stored.** A `stopped` runtime
+   with no recorded reason is `autoStart` when declared with `autoStart:
+   false`, else `operator` — the only two ways to be stopped without the
+   agent having been told why.
+5. **The companion's URL is loopback.** `http://127.0.0.1:<port>`, like
+   every component the agent spawns. On a remote node a gateway on
+   another host cannot reach it. The M5 design already carries this gap
+   for hand-written components; it is M7's (networked polish) to give
+   the agent an advertise address. Named here so the first two-host run
+   is not surprised by it.
+6. **Eviction ordering is the gateway's.** The agent's `blockers` come
+   evictable-first, then by name; the gateway re-sorts by its own idle
+   knowledge, because the agent cannot know idleness and did not
+   pretend to.
+7. **An agent whose `/v1/runtimes` cannot be read leaves its drivers
+   routable on faith.** No facts means no gate, and the cascade sorts out
+   the dead ones — nothing stops routing over a missing runtime list,
+   which is the degraded-mode rule applied to the gateway.
+8. **The supervision-loop fix landed.** A planner that raises anything
+   other than `SpawnPlanError` is a crash with `last_error` set rather
+   than a dead task and a runtime at `starting` forever. Tested with a
+   `TypeError`, which is what M4 met.
+9. **Admission measures against the largest single free device**, not
+   the sum, and via the library only when the model is under a library
+   root — the 40B was, so the run's `basis` was `metadata`. A model the
+   library has not scanned falls to `file_size` plus 10%, said out loud.
+
+### Process notes
+
+- **The Write tool emits CRLF; the repos are LF.** Every file went
+  through a byte-level normalizer before commit, as the M4 memo said to.
+  Bash heredocs were used only for commit messages; every multi-line
+  patch was a Python script run from a file. Zero heredoc casualties.
+- **A test that truncates a 200 GiB file takes 150 s on Windows.** NTFS
+  zero-fills; the first agent test run took four minutes for 36 tests.
+  Admission grew a `size_of` seam and the tests describe a size instead
+  of creating one.
+- **Pydantic's trailing slash bit again**, in a test this time: a
+  companion's `url` came back as `http://127.0.0.1:8091/`. Parse ports
+  with `urlparse`, never `rsplit(":")`.
+- **The venv launcher hides the process you meant to measure.** On
+  Windows the venv's `python.exe` is a 5 MB stub whose child is the
+  interpreter; the pid the agent holds is the stub's. Sum the tree.
+- **`nvidia-smi -L` is the hardware inventory, not CLAUDE.md.** The box
+  has one GPU today; the design and the script say so and take the
+  device list as a variable.

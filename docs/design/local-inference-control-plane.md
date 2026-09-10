@@ -305,11 +305,30 @@ Everything not listed here already exists and mostly survives untouched.
   agent rejects a token signed by another. Deliberately **not** Raft; the
   log shape is chosen so that consensus later would be a transport-and-election
   swap rather than a redesign.
-- **M6 — lifecycle policy** *(was M5)*. Swap on demand, idle unload, VRAM-aware
-  admission, and **load balancing across drivers serving the same model** —
-  testable for the first time now that two engines and N drivers exist. The
-  llama-swap-without-Docker answer. Admission depends on M5's
-  `Node.accelerators` to know *whose* VRAM it is reasoning about.
+- **M6 — lifecycle policy** *(was M5)*
+  ([design](m6-lifecycle-policy.md),
+  [acceptance](../acceptance/m6-six-process-run.md))**.** Swap on
+  demand, idle unload, VRAM-aware admission, and **load balancing across
+  drivers serving the same model** — testable for the first time now that
+  N drivers exist. The llama-swap-without-Docker answer.
+
+  **Built and live-verified 2026-09-10**, six processes and two
+  llama.cpp replicas on one GPU. Decided to open it: a **companion
+  inference-driver per runtime**, declared by the agent, so launch ends
+  routable (M2's gap, closed for real); **the gateway decides lifecycle
+  and the owning agent executes**, with the control root out of the
+  path so swapping survives management being down; **nothing new is
+  replicated** — `LogOp` stays at nine, the policy fields ride inside
+  `RuntimeSpec`; **admission refuses with the arithmetic and a `force`
+  override, never queues.** Every model is a slot whose tiers are model
+  ids (a cloud subscription is a target like any other); within a tier,
+  least outstanding requests weighted by `parallelSlots`. The live run
+  found two defects the fixtures could not — a routing table a refresh
+  interval behind about readiness, and 99 GPU layers read as partial
+  offload — and both are fixed. Admission uses the agent's own live
+  device detection, which also makes `GET /v1/node` real for the first
+  time. Still on one card: two-GPU placement is unproven, same as the
+  two-host question.
 - **M7 — networked polish** *(was M6)*. Re-verify the auth arc against the new
   topology, rewrite the wizard, document tailnet deployment. Now partly settled
   by M5, which moves auth to the control root.
@@ -382,3 +401,9 @@ OS behave differently from every other target.
 | A control root is **never** marked `out` automatically. Promotion is an operator act, fenced by a monotonic epoch — automatic promotion without quorum is split-brain by definition | 2026-09-09 |
 | A driver follows a supervised runtime by **name**, resolved through the agent topology — never a literal URL, because the agent owns the port | 2026-09-09 |
 | Runtime states are defined by what they mean, not by how one engine reports them. For an engine that does not answer while loading, a live process that answers nothing *is* `loading` | 2026-09-09 |
+| **A companion inference-driver per runtime, declared by the agent** — not a declared pool. One driver per backend is the M0 rule; a runtime is a backend | 2026-09-10 |
+| **The gateway decides lifecycle policy; the owning node's agent executes; the control root is not in the path.** Idle unload and start on demand are data-path behaviours and must survive management being down | 2026-09-10 |
+| **Nothing about lifecycle is replicated.** Loaded/unloaded is liveness, re-read from agents after a promotion; `LogOp` stays closed at nine; the policy fields ride inside `RuntimeSpec` | 2026-09-10 |
+| **Admission refuses with the arithmetic and a `force` override; it never queues.** `unknown` never refuses | 2026-09-10 |
+| **Every model is a slot; a slot's tiers are model ids, not driver names.** A model id names its replica set; a cloud subscription is a target like any other | 2026-09-10 |
+| **A driver whose runtime is not `ready` is not routed to**, and a request that finds nothing eligible refreshes the table before concluding anything | 2026-09-10 |
