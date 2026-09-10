@@ -1,6 +1,8 @@
 # M7 acceptance — two agents, one box, one key domain
 
-**Status:** passed 2026-09-10, on the third run. Script:
+**Status:** passed 2026-09-10 on the third run, and **re-run green on
+2026-09-10 (late), first attempt**, after the first-boot topology change
+— see "Re-run after the first-boot change" at the end. Script:
 [`scripts/m7-acceptance.sh`](../../scripts/m7-acceptance.sh). Follows
 [M6's six-process run](m6-six-process-run.md); design in
 [`m7-second-host-readiness.md`](../design/m7-second-host-readiness.md).
@@ -119,3 +121,41 @@ because its wake test waited through an idle check first.
 | Wake on demand across agents | 5,679 ms wall clock, 4,958 ms waiting |
 | Rotation across two nodes to `done` | under 3 s, plus the children's restarts |
 | Whole run | about four minutes |
+
+
+---
+
+## Re-run after the first-boot change (2026-09-10, late)
+
+The agent now declares control, gateway and library itself on a first
+boot (agent `c068ab1`). That changed what happens between "start the
+agent" and "there is a control plane", which is the ground this script
+stands on, so re-running it was the outstanding regression proof. M6's
+was re-run the same day; this one had not been.
+
+**41 checks, 0 failures, green on the first attempt** — where the
+original needed three. Nothing in the script changed.
+
+Why it was low risk and worth doing anyway: the script writes
+`firstRunComplete: true` into both agents' configs before starting them,
+so the default-topology path is skipped and agent B still spawns nothing
+until the control root forwards it a runtime. That was the reasoning
+before the run. The reasoning was also sound before the run that found
+the config-file signal wrong the same morning, which is why the run
+mattered rather than the argument.
+
+The one number that moved, and it is noise rather than signal:
+
+| What | Third run | Re-run |
+|---|---|---|
+| Wake on demand across agents | 5,679 ms (4,958 ms waiting) | 5,563 ms (4,843 ms waiting) |
+
+**The open window is still open.** `scripts/m7-acceptance.sh:226` still
+sleeps `${EP_WAKE_DELAY:-4}` seconds before the wake request, and the
+comment above it still describes the undiagnosed behaviour: with no
+pause, two runs sent the request ~2.5 s after the stop and the gateway
+routed to the stopped runtime's companion as eligible — a 502 instead of
+a wake — despite having refreshed twice and read B's `/v1/runtimes`
+after the stop. This re-run took the default 4 s and so did not exercise
+it. `EP_WAKE_DELAY=0` reproduces. A green run here is not evidence about
+that window in either direction.
