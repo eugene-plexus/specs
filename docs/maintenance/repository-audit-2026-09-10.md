@@ -191,3 +191,18 @@ control, gateway and library answer `/healthz`. Then the optional finisher, and
 a completion through the gateway in 219 ms at tier 1 with Health Check green.
 317 agent tests, 33 Pester tests.
 
+### Regression proof
+
+`scripts/m6-acceptance.sh` was re-run after the agent's boot behaviour
+changed, and passed: launch ends routable, replicas balance, a killed
+replica is survived, idle models unload and wake on demand, a model that
+will not fit is refused with the arithmetic, and a configured slot cascades
+across tiers.
+
+That run is the point. The acceptance scripts write `firstRunComplete: true`
+before starting an agent, so the new seeding skips and nothing should
+differ - but that is reasoning, and the same session had already produced a
+first-boot signal that passed every unit test and fired never in
+production. `scripts/m7-acceptance.sh` has not been re-run; the same guard
+covers it, so the risk is low and the proof is absent.
+
