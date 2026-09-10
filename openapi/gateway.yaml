@@ -162,6 +162,13 @@ tags:
       implements the same config trio (`GET /v1/config`,
       `GET /v1/config/schema`, `PATCH /v1/config`) so a single UI can
       manage all components without per-component code.
+  - name: metrics
+    description: |
+      Retained per-backend latency, throughput and failure counts.
+      Gateway-local and deliberately not replicated: these are
+      per-request measurements of one process's traffic, further from
+      install-wide truth than liveness, which M5 already settled is
+      never in the log.
   - name: meta
     description: Versioning and health.
 
@@ -423,6 +430,159 @@ paths:
             application/json:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/RestartResult'
+
+  # -------- Retained request metrics (M8) --------
+  #
+  # Every completion already reported how it was served, on
+  # `x_eugene_plexus`, and none of it was kept. These two paths are
+  # where it is kept.
+  #
+  # Recorded at the routing hooks rather than off the response
+  # envelope, deliberately: the streaming path never sets
+  # `x_eugene_plexus`, so an envelope-based recorder would be blind to
+  # every streaming client. The hooks fire around every attempt on both
+  # paths.
+
+  /v1/metrics:
+    get:
+      tags: [metrics]
+      operationId: getMetrics
+      summary: Aggregated per-backend latency, throughput and failure counts.
+      description: |
+        What each backend actually did, over a window. The question this
+        exists to answer is "is this backend faster than that one for
+        this model **on this box**" — and the restraint that goes with
+        it: these numbers describe this install only. They are not a
+        benchmark and must not be presented as one.
+
+        Grouped by (model, driver, runtime, node, backend). A group's
+        throughput is computed from the latency of the attempt that
+        **served** the request, never the request's total — a cascade
+        whose primary timed out for 30 s before a secondary answered in
+        800 ms would otherwise report the secondary as forty times
+        slower than it is.
+
+        `tokensPerSecond` is **null**, not zero, for a group whose
+        backends do not report token usage — the CLI subscription
+        backends do not. A UI that renders those the same way says "slow"
+        where it means "unmeasured".
+
+        Operator-only. No component needs this, so a `service:*` token
+        is refused rather than accepted for reads as elsewhere; and
+        model names plus traffic volumes are not nothing on a shared
+        tailnet.
+      parameters:
+        - name: since
+          in: query
+          description: |
+            Start of the window, inclusive. Defaults to 24 hours ago.
+            Rows older than `metricsRetentionDays` are gone, so a
+            `since` beyond it returns what survived, plus rollups when
+            `bucket=hour`.
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          description: End of the window, exclusive. Defaults to now.
+          schema:
+            type: string
+            format: date-time
+        - name: model
+          in: query
+          description: Restrict to one requested model id.
+          schema:
+            type: string
+        - name: driver
+          in: query
+          description: Restrict to one inference-driver by name.
+          schema:
+            type: string
+        - name: bucket
+          in: query
+          description: |
+            `none` (default) returns one group per dimension tuple over
+            the whole window. `hour` additionally splits each group by
+            hour, which is what a history chart reads and the only
+            granularity rollups retain once raw rows are pruned.
+          schema:
+            type: string
+            enum: [none, hour]
+            default: none
+      responses:
+        '200':
+          description: Aggregates over the window.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsSummary'
+        '503':
+          description: |
+            Metrics are disabled (`metricsEnabled: false`) or the store
+            could not be opened. Distinguished from an empty window,
+            which is a 200 with no groups.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/metrics/requests:
+    get:
+      tags: [metrics]
+      operationId: getMetricRequests
+      summary: Individual retained requests, newest first, with their attempts.
+      description: |
+        The rows behind the aggregates, for the question an aggregate
+        cannot answer: what happened at 02:14. Each request carries
+        every attempt it made, so a cascade is legible as one request
+        and the backends it tried in order.
+
+        Newest first, cursor-paged. Raw rows exist only within
+        `metricsRetentionDays`; older traffic survives as rollups
+        reachable through `GET /v1/metrics?bucket=hour` and not here.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: cursor
+          in: query
+          description: |
+            `nextCursor` from a previous page. Opaque; encodes the
+            position rather than an offset, so a page is stable while
+            new requests arrive.
+          schema:
+            type: string
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          description: |
+            Restrict to one outcome. `error` and `cascaded` are the two
+            worth filtering for; `cascaded` means `attempts > 1`
+            whether or not the request eventually succeeded.
+          schema:
+            type: string
+            enum: [served, error, cascaded]
+      responses:
+        '200':
+          description: One page of retained requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricRequestPage'
+        '503':
+          description: Metrics are disabled or the store could not be opened.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/config:
     get:
       tags: [config]
@@ -456,6 +616,22 @@ paths:
           and runtimes, and a stop or start is sent to the agent that
           owns the runtime. Unset means a single-host install and the
           one configured agent.
+
+        The retained-metrics fields (M8):
+
+        * **`metricsEnabled`** (`boolean`, default `true`) — whether
+          completions are measured at all. False skips building the
+          row, not just writing it: the recording path runs on every
+          request, and "small" is how the routing table came to be a
+          refresh interval behind.
+        * **`metricsRetentionDays`** (`integer`, default `7`) — how
+          long raw per-request rows are kept. `0` keeps rollups only.
+          A request plus its attempts is roughly 200 bytes, so a heavy
+          install at one completion a second is about 17 MB a day.
+        * **`metricsRollupEnabled`** (`boolean`, default `true`) —
+          hourly aggregates, kept indefinitely because they are a few
+          hundred rows a day and they are the only thing that can
+          answer "what did last night look like" once raw rows age out.
       responses:
         '200':
           description: Current config.
@@ -863,6 +1039,7 @@ components:
             $ref: '#/components/schemas/ChatCompletionChoice'
         usage:
           $ref: '#/components/schemas/CompletionUsage'
+          description: Present on the final chunk only.
         x_eugene_plexus:
           $ref: '#/components/schemas/CompletionRoutingInfo'
 
@@ -912,7 +1089,22 @@ components:
             $ref: '#/components/schemas/ChatCompletionChunkChoice'
         usage:
           $ref: '#/components/schemas/CompletionUsage'
-          description: Present on the final chunk only.
+        x_eugene_plexus:
+          $ref: '#/components/schemas/CompletionRoutingInfo'
+          description: |
+            Set on the **final frame only**, alongside `usage` — the
+            same place OpenAI puts its own end-of-stream extras.
+            Absent on every earlier frame, because the values are not
+            known until the completion is done.
+
+            Added at M8. Until then a streaming client could see no
+            routing information at all: the non-streaming response
+            carried this and the stream did not, so exactly the clients
+            that stream — the UI playground among them — were the ones
+            that could not tell which backend answered. Retained
+            metrics do not depend on this (they are recorded at the
+            routing hooks, which fire on both paths); this closes the
+            matching gap in what a caller can see.
 
     ChatCompletionChunkChoice:
       type: object
@@ -1163,3 +1355,298 @@ components:
               type:
                 - string
                 - 'null'
+
+    # -------- Retained request metrics (M8) --------
+
+    Percentiles:
+      type: object
+      description: |
+        A latency distribution, in milliseconds. Percentiles rather than
+        a mean because generation latency is long-tailed, and a mean
+        hides exactly the requests an operator is asking about.
+      required:
+        - p50
+        - p90
+        - max
+      properties:
+        p50:
+          type: integer
+          minimum: 0
+        p90:
+          type: integer
+          minimum: 0
+        p99:
+          type: integer
+          minimum: 0
+        max:
+          type: integer
+          minimum: 0
+
+    Throughput:
+      type: object
+      description: |
+        Completion tokens per second, computed from the **serving
+        attempt's** elapsed time — not the request total, which
+        includes failed attempts.
+
+        `samples` is how many requests in the group actually reported
+        token usage, and can be lower than the group's `requests`. A
+        group where nothing reported usage is not given a zeroed
+        `Throughput`: the field is null instead, so "unmeasured" and
+        "zero" stay distinguishable.
+      required:
+        - p50
+        - samples
+      properties:
+        p50:
+          type: number
+        p90:
+          type: number
+        samples:
+          type: integer
+          minimum: 1
+
+    MetricsGroup:
+      type: object
+      description: |
+        One dimension tuple's numbers over the window, or over one hour
+        of it when `bucket=hour`.
+      required:
+        - requests
+        - errors
+        - cascaded
+        - swappedIn
+        - latencyMs
+      properties:
+        bucketStart:
+          type: string
+          format: date-time
+          description: Present only when `bucket=hour`.
+        model:
+          type: string
+          description: |
+            The model id the client **asked for**. After a cascade this
+            is not what answered — `driver` and `runtime` say that —
+            and grouping by the requested id is what makes "this model
+            is slow" answerable at all.
+        driver:
+          type: string
+        runtime:
+          type:
+            - string
+            - 'null'
+          description: |
+            The engine runtime behind the driver, by name so replicas
+            are distinguished. Null for hosted and CLI backends, which
+            have no runtime of ours.
+        node:
+          type:
+            - string
+            - 'null'
+          description: Which host's agent supervises it. Null before enrollment.
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        requests:
+          type: integer
+          minimum: 0
+        errors:
+          type: integer
+          minimum: 0
+          description: Requests that ended with no backend having served them.
+        cascaded:
+          type: integer
+          minimum: 0
+          description: |
+            Requests with `attempts > 1`. A cascade that silently
+            always works hides a broken primary, which is why this is
+            counted rather than only logged.
+        swappedIn:
+          type: integer
+          minimum: 0
+          description: |
+            Requests that had to wake a `startOnDemand` runtime. The
+            measured cost of M6's idle unload, which shipped with no
+            way to see what it costs.
+        latencyMs:
+          $ref: '#/components/schemas/Percentiles'
+        tokensPerSecond:
+          oneOf:
+            - $ref: '#/components/schemas/Throughput'
+            - type: 'null'
+          description: Null when no request in this group reported token usage.
+        waitedMs:
+          oneOf:
+            - $ref: '#/components/schemas/Percentiles'
+            - type: 'null'
+          description: |
+            Wake latency, over the `swappedIn` requests only. Null when
+            none of them woke anything.
+        tierCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 0
+          description: |
+            Requests served, keyed by the 1-based tier that answered. A
+            slot whose tier 2 answers everything has a primary that is
+            not working, and this is where that becomes visible.
+
+    MetricsSummary:
+      type: object
+      required:
+        - windowStart
+        - windowEnd
+        - gatewayStartedAt
+        - rowsDropped
+        - groups
+      properties:
+        windowStart:
+          type: string
+          format: date-time
+        windowEnd:
+          type: string
+          format: date-time
+        gatewayStartedAt:
+          type: string
+          format: date-time
+          description: |
+            When this gateway process started. Present so a history
+            that begins mid-window reads as partial rather than as an
+            install that served nothing — the gateway is respawned on
+            operator login, so a fresh start time is routine.
+        rowsDropped:
+          type: integer
+          minimum: 0
+          description: |
+            Measurements discarded since startup because the write
+            queue was full. Non-zero means these numbers are a sample
+            rather than a census, and the endpoint says so instead of
+            quietly under-reporting. Recording degrades before
+            inference does.
+        truncated:
+          type: boolean
+          description: |
+            True when the window reaches past `metricsRetentionDays`,
+            so raw rows for its early part no longer exist. With
+            `bucket=hour` the rollups still cover it.
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricsGroup'
+
+    MetricAttempt:
+      type: object
+      description: One backend touched by one request, in the order tried.
+      required:
+        - driver
+        - elapsedMs
+        - served
+      properties:
+        driver:
+          type: string
+        runtime:
+          type:
+            - string
+            - 'null'
+        node:
+          type:
+            - string
+            - 'null'
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: This attempt alone, not the request.
+        served:
+          type: boolean
+        error:
+          type:
+            - string
+            - 'null'
+          description: |
+            The exception **class name** only, never its message.
+            Driver error text can carry a provider's response body, and
+            a metrics table is the kind of thing that gets pasted into
+            an issue — this must not become an accidental credential
+            store.
+
+    MetricRequest:
+      type: object
+      required:
+        - startedAt
+        - requestedModel
+        - attempts
+        - totalMs
+        - outcome
+        - tries
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+        requestedModel:
+          type: string
+        servedModel:
+          type:
+            - string
+            - 'null'
+          description: |
+            What actually answered. Differs from the requested id after
+            a cascade.
+        attempts:
+          type: integer
+          minimum: 1
+        tier:
+          type: integer
+          minimum: 1
+        totalMs:
+          type: integer
+          minimum: 0
+          description: |
+            Gateway-side wall clock for the whole request, including
+            failed attempts and excluding the wake — the same figure
+            `x_eugene_plexus.latency_ms` reports. Per-backend
+            throughput comes from `tries[].elapsedMs`, never from here.
+        waitedMs:
+          type: integer
+          minimum: 0
+        swappedIn:
+          type: boolean
+        streamed:
+          type: boolean
+          description: |
+            Whether the client asked for SSE. Recorded because streamed
+            requests were invisible to the response envelope, and a
+            store that could not tell them apart would hide the very
+            gap it was built to close.
+        promptTokens:
+          type:
+            - integer
+            - 'null'
+        completionTokens:
+          type:
+            - integer
+            - 'null'
+        outcome:
+          type: string
+          enum: [served, error]
+        tries:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/MetricAttempt'
+
+    MetricRequestPage:
+      type: object
+      required:
+        - requests
+      properties:
+        requests:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricRequest'
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          description: Absent or null on the last page.
