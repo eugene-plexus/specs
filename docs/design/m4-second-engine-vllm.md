@@ -1,6 +1,12 @@
 # M4 — Second engine: vLLM (design)
 
-**Status:** contracts designed 2026-09-09. Milestone **M4** of
+**Status:** contracts designed 2026-09-09; **adapter and routing fix
+landed the same day** — agent `53d815d`, inference-driver `97f6583`,
+gateway `5ad5993`, no contract change needed. Verified against upstream
+source and fixtures only; **the live run is still pending** and
+`scripts/m4-acceptance.sh` is written for it. §8 records what the
+implementation verified, where it departed from this document, and what
+the first Linux run must measure. Milestone **M4** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
 Follows [M3](m3-discovery-download-guidance.md).
 
@@ -621,3 +627,155 @@ all of it.
   between running and not running at all. Every future change to this
   adapter carries the same caveat as this document until a Linux host
   exists.
+
+---
+
+## 8. Implementation notes (2026-09-09)
+
+The adapter and the routing fix landed the day after the contracts:
+agent `53d815d` (`engines/vllm.py`, the readiness redefinition in
+`engines/base.py`, `vllmBinary`), inference-driver `97f6583`
+(`runtimeName` resolution), gateway `5ad5993` (`DriverHealth.runtime`).
+`EngineKind.vllm` is gone from the agent's `CONTRACTED_WITHOUT_ADAPTER`,
+which was the proof the milestone asked for. No spec document changed:
+every field the implementation needed already existed at `73ddc83`.
+
+**Still no vLLM process has run.** The dev box is Windows, WSL is not
+installed, and this section is honest about what that means: the state
+machine is tested against a fake process handle and a fake HTTP probe,
+and the wall-clock behaviour in §2 is a design estimate until the Linux
+run happens.
+
+### What was checked against v0.29.0 source, and where
+
+Each claim below was read off the tagged tree (`gh api` on
+`contents/<path>?ref=v0.29.0`, base64-decoded), not off a summary.
+
+| Claim | File | What was found |
+|---|---|---|
+| All twelve curated flags exist | `vllm/engine/arg_utils.py` `add_cli_args` | Each is an `add_argument` over the matching config field: `--max-model-len` (916), `--gpu-memory-utilization` (1272), `--tensor-parallel-size` (1108), `--pipeline-parallel-size` (1070), `--max-num-seqs` (1596), `--max-num-batched-tokens` (1582), `--dtype` (902), `--quantization` (917), `--kv-cache-dtype` (1277, over `CacheConfig.cache_dtype`), `--enforce-eager` (925), `--trust-remote-code` (900), `--tokenizer` (897), `--served-model-name` (953) |
+| Booleans take no value | `arg_utils.py` `_compute_kwargs` | `bool` fields become `argparse.BooleanOptionalAction`, so `--enforce-eager` / `--no-enforce-eager`; presence-only is right |
+| The model is positional | `vllm/entrypoints/cli/serve.py` | `vllm serve [model_tag] [options]`; `cmd()` copies `model_tag` onto `args.model`, and `--model` is hidden from `vllm serve --help`. The adapter uses the positional |
+| Enum literals | `vllm/config/model.py`, `cache.py` | `ModelDType = auto, half, float16, bfloat16, float, float32` (used verbatim). `CacheDType` at 0.29.0 also has `fp8_inc`, `fp8_ds_mla` and four `turboquant_*` values; the schema exposes the six common ones and leaves the rest to `extraArgs` |
+| `gpu_memory_utilization` default 0.92, per instance | `cache.py:111` | Confirmed, and the docstring says two instances on one card can each take 0.5 — which is what the flag description now says |
+| `max_model_len` accepts `auto` / `-1` | `model.py:214` | New since the design was written; reachable through `extraArgs`, noted in the field description |
+| Bind before listen | `vllm/entrypoints/launchers/launcher.py` | `create_server_socket` (205) calls `sock.bind()` (218) and returns; `setup_server` (248) creates it citing issue #8204 (264). Unchanged from §1 |
+| `/health` is 200-empty or 503 | `serve/instrumentator/health.py` | 503 **only on `EngineDeadError`** — see the first departure below |
+| `/version`, `/load` | `serve/instrumentator/basic.py` | `{"version": ...}`; `/load` lists sixteen tracked routes at 0.29.0, not eleven |
+| Probe needs no credential | `serve/middleware/authenticate.py` | `GUARDED_PREFIX = ("/v1", "/v2", "/inference", "/cohere")`, unchanged |
+| `/v1/models` carries the context | `entrypoints/openai/models/serving.py:66-71` | `ModelCard(id=..., max_model_len=..., root=<model path>)` — so `contextLength` is read back, and note `root` leaks the path regardless of `--served-model-name` |
+| Install commands | `docs/getting_started/installation/*.inc.md` | Copied verbatim into `manual_install_for`: CUDA `uv pip install vllm --torch-backend=auto`; ROCm via `wheels.vllm.ai/rocm/`, **Python 3.12 only** with a silent fallback to the CUDA wheel otherwise; XPU nightly with two indexes; CPU release wheels by URL with `${VLLM_VERSION}`; Apple → vLLM-Metal; Windows → WSL |
+
+### Where the implementation departs from, or refines, this document
+
+1. **vLLM's `/health` 503 is not `loading`.** §2's table is right that
+   vLLM's load reads as "process alive, connections refused" — but a
+   *503* from vLLM is `EngineDeadError`: the API server is up and the
+   engine core behind it has died. The adapter maps it to
+   `NotAnswering(reached=True)`, which reports `starting` until the
+   process exits and the supervisor says `crashed`. Reading it as
+   llama-server's 503 would have shown a dead engine as "working on it".
+2. **`NotAnswering` grew `reached`, `Loading` grew `past_budget`.** The
+   first separates "the port refused" (the only thing that can be a
+   silent load) from "something answered, just not readiness". The
+   second is how §2's "still `loading` but flagged" surfaces: the
+   status stays `loading` and `Runtime.lastError` carries the elapsed
+   time and a pointer at the captured output. The contract already
+   listed "a readiness probe that never passed" as a `lastError` source,
+   so no schema change.
+3. **The rule lives in one function.** `interpret_readiness(adapter,
+   outcome, process_alive, elapsed)` in `engines/base.py`; the
+   supervisor calls it after every probe with the pid and the time since
+   spawn. `probe_readiness` stays a pure network observation, which is
+   what makes it testable with a mock transport and what keeps the
+   design's split honest: the probe cannot know the pid, so it does not
+   pretend to.
+4. **Version through the interpreter, not a file glob.** §1 Trap 4 said
+   "the venv's `vllm-*.dist-info` answers it with a file read". The
+   adapter instead runs the shebang's interpreter with `-I -c` and
+   `importlib.metadata`. Same information, same constraint honoured
+   (nothing of vLLM or torch is imported), but layout-agnostic — venv,
+   uv, conda and `--user` installs all put `site-packages` somewhere
+   different, and the target interpreter is the one authority on what it
+   sees. One small subprocess per discovery, the same cost class as
+   llama.cpp's `--version` probe.
+5. **An untagged torch is `unknown`, and that will be common.** PyPI
+   forbids PEP 440 local versions, so PyPI's default Linux wheel — a
+   CUDA build — reports a bare `2.9.0`, as does the CPU-only macOS
+   wheel. Only wheels from `download.pytorch.org` carry `+cu129` and
+   friends, which is what `uv --torch-backend=auto` fetches. So a plain
+   `pip install vllm` will show `accelerator: unknown` and that is the
+   honest answer; `none` would claim an absence the data does not
+   support.
+6. **vLLM inherits the agent's cwd.** The base default of "the
+   binary's own directory" exists for prebuilt llama.cpp with its
+   shared libraries; a console script has no such need and `<venv>/bin`
+   is a strange place to leave relative-path output.
+7. **"At startup and again whenever it reconnects"** (§4, the driver)
+   is implemented as *whenever the engine is constructed*: the lifespan,
+   `/v1/admin/restart`, and `/v1/config/test` (so a pending
+   `runtimeName` can be checked against the agent before it is saved).
+   There is no per-request re-resolution, because the port is assigned
+   and persisted at declaration time and does not change across the
+   runtime's restarts. Consequence worth knowing: **a driver written
+   before its runtime exists comes up degraded** (404 from the agent,
+   reason on `/healthz`, config endpoints reachable) and resolves on the
+   next restart. The acceptance script encodes that order on purpose.
+8. **The driver finds the agent at loopback:8079** by default
+   (`EUGENE_PLEXUS_DRIVER_AGENT_URL`), the same bootstrap assumption the
+   gateway has made since M0. The agent does not thread its own URL into
+   the children it spawns; if an agent ever binds only a non-loopback
+   address, that is the fix, and it is the same fix for both consumers.
+9. **`baseUrl` is no longer `required`** on the driver's schema; one of
+   `runtimeName` / `baseUrl` is, and the engine says so when neither is
+   set. A stale `runtimeName` on a CLI provider is ignored with a warning
+   rather than failing a subscription-backed driver over a field the UI
+   would not have shown it.
+10. **The UI's runtime dropdown is not built.** `ConfigField.tsx` falls
+    through unknown value types to a free-text input, so `runtimeName`
+    is editable today by typing the name. §4/§6 asked for a dropdown
+    sourced from `GET /v1/runtimes`; that is a `ui`-repo change with no
+    contract consequence and is the one piece of §6's "In" list left
+    undone.
+
+### What the live run must measure
+
+`scripts/m4-acceptance.sh` is written for the WSL2 session that also
+answers M5's multi-host question, and **has never been executed**. It
+watches the runtime's own port while the agent reports `loading` and
+prints two lines to carry back here:
+
+- **TIMING** — when `loading` was first reported and how long it lasted,
+  with `enforceEager: true`. `STARTUP_BUDGET_SECONDS = 600` is the
+  number most likely to be wrong; set it from this measurement, then run
+  once without `enforceEager` for the long path.
+- **SOCKET** — how many probes during `loading` were *refused* versus
+  *answered*. §1 Trap 1 derived "refused" from bind-without-listen; if
+  any probe is answered, the derivation is wrong for this version and
+  `interpret_readiness` needs to know about it.
+
+Plus the three things that were read rather than seen: that 0.29.0's
+CLI accepts every curated flag name as generated, that `/health` 200
+means a completion actually returns, and that `max_model_len` on the
+model card equals the `maxModelLen` that was asked for.
+
+### Process notes from the build
+
+- The parity test worked exactly as intended: registering the adapter
+  made `test_the_contracted_without_adapter_list_is_honest` fail until
+  the entry was deleted. Empty is the steady state again.
+- Two test stubs had to learn the new `discover(configured=)` /
+  `resolve_binary(spec, configured=)` signatures. The end-to-end test's
+  fake adapter had the old one, and the failure mode was silent: a
+  `TypeError` inside `plan()` killed the supervision task and the
+  runtime sat at `starting` forever. The supervision loop catches only
+  `SpawnPlanError`; an unexpected exception from a planner is a latent
+  robustness gap, noted here and not fixed in this slice.
+- The agent's venv (the install's runtime venv) turned out to hold a
+  torch — an assertion that "this venv has no torch" was wrong on this
+  box, and the test now asserts consistency instead of absence.
+- `str(Path("/opt/venv/bin/python3.12"))` on Windows is
+  `\opt\venv\bin\python3.12`, and `repr()` of a Windows path doubles its
+  backslashes. The interpreter is carried as the shebang's literal
+  string and error messages interpolate paths unquoted, so the same
+  code reports the same thing on both platforms.

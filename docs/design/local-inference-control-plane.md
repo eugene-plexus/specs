@@ -282,6 +282,14 @@ Everything not listed here already exists and mostly survives untouched.
 
   **v0.1 drives a user-provided vLLM and does not manage its installation**
   (decided 2026-09-09) — the open question §6 carried, now settled.
+
+  **Built 2026-09-09** (agent `53d815d`, inference-driver `97f6583`,
+  gateway `5ad5993`) against upstream source at v0.29.0 and fixtures;
+  **no vLLM process has run for this project yet.** The readiness rule
+  above is code (`interpret_readiness` in the agent), the driver follows a
+  runtime by `runtimeName`, and `scripts/m4-acceptance.sh` is written for
+  the first Linux run and has never been executed. M4's design §8 has the
+  implementation record and what that run must measure.
 - **M5 — multi-host, trust, and the control root**
   ([design](m5-multi-host-and-trust.md))**.** Inserted 2026-09-09 ahead of
   lifecycle policy, which pushed M5→M6 and M6→M7. The agent splits into a
