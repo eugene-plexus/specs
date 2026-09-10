@@ -55,7 +55,7 @@ bad() { printf '  FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
 jq_() { PYTHONUTF8=1 python -c "import sys,json; d=json.load(sys.stdin); print($1)"; }
 win_path() { printf '%s' "$1" | sed 's|/|\\|g'; }
 wait_healthy() { for _ in $(seq 1 "${2:-60}"); do curl -sf -m 2 "$1/healthz" >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
-ctl_login() { curl -s -X POST "$EP_CONTROL_URL/v1/auth/login" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASSPHRASE\"}" | jq_ "d.get('token','')"; }
+ctl_login() { curl -s -X POST "$EP_CONTROL_URL/v1/auth/login" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASSPHRASE\"}" | jq_ "d.get('sessionToken','')"; }
 agent_login() { curl -s -X POST "$1/v1/auth/login" -H 'content-type: application/json' -d "{\"passphrase\":\"$2\"}" | jq_ "d.get('sessionToken','')"; }
 
 # --- preflight -----------------------------------------------------------------

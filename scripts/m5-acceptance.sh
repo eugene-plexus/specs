@@ -193,7 +193,7 @@ INIT=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
 [ "$INIT" = "204" ] && ok "passphrase set (204)" || bad "initialize returned $INIT"
 
 CTOK=$(curl -s -X POST "http://127.0.0.1:$CONTROL_PORT/v1/auth/login" \
-  -H 'content-type: application/json' -d "{\"passphrase\":\"$PASSPHRASE\"}" | jq_ "d.get('token','')")
+  -H 'content-type: application/json' -d "{\"passphrase\":\"$PASSPHRASE\"}" | jq_ "d.get('sessionToken','')")
 if [ -n "$CTOK" ]; then
   ok "operator session issued by the control root"
 else
