@@ -16,6 +16,7 @@
 #   5. a dead backend produces an error row and a cascade row, and the
 #      survivor's throughput is NOT dragged down by the dead one's timeout
 #   6. rows survive a gateway restart
+#   6b. the phases of a request, and what the balancer saw
 #   7. switching recording off says so, and the rollup machinery runs
 set -uo pipefail
 
@@ -245,6 +246,47 @@ echo "  before restart: $BEFORE   after: $AFTER"
 [ "${AFTER:-0}" -ge "${BEFORE:-1}" ] && ok "*** history survived the restart ($AFTER rows) ***" || bad "history lost: $BEFORE -> $AFTER"
 GWSTART=$(curl -s "$GW/v1/metrics" -H "Authorization: Bearer $TOK" | jq_ "d['gatewayStartedAt']")
 echo "  gatewayStartedAt is now $GWSTART - a fresh process, an intact history"
+
+say "6b. the phases of a request, and what the balancer saw"
+# The two numbers this section exists for. `overheadMs` is the control
+# plane's own cost - the serving attempt's gateway-side time minus the
+# driver's measurement of its backend call - and gateway.yaml has
+# asserted since M0 that the extra local hop is "sub-millisecond against
+# a multi-second generation" without anyone measuring it.
+curl -s "$GW/v1/metrics" -H "Authorization: Bearer $TOK" | PYTHONUTF8=1 python -c "
+import sys,json
+d=json.load(sys.stdin)
+print()
+print('  THE LOCAL HOP, MEASURED (the claim gateway.yaml has made since M0):')
+for g in sorted(d['groups'], key=lambda g:-g['requests']):
+    o=g.get('overheadMs'); r=g.get('routingMs')
+    print('    %-12s routing p50=%-7s  control-plane overhead p50=%-7s max=%s' % (
+        g.get('driver'),
+        (str(r['p50'])+'ms' if r else 'unmeasured'),
+        (str(o['p50'])+'ms' if o else 'unmeasured'),
+        (str(o['max'])+'ms' if o else '-')))
+"
+P2=$(curl -s "$GW/v1/metrics/requests?limit=50" -H "Authorization: Bearer $TOK")
+HASROUTING=$(echo "$P2" | jq_ "sum(1 for r in d['requests'] if r.get('routingMs') is not None)")
+[ "${HASROUTING:-0}" -ge 1 ] && ok "*** the routing phase is measured ($HASROUTING request(s)) ***" || bad "no routingMs recorded"
+HASBACKEND=$(echo "$P2" | jq_ "sum(1 for r in d['requests'] for t in r['tries'] if t.get('backendMs') is not None)")
+[ "${HASBACKEND:-0}" -ge 1 ] && ok "*** the driver's own latency is retained ($HASBACKEND attempt(s)) ***" || bad "no backendMs recorded"
+echo "$P2" | PYTHONUTF8=1 python -c "
+import sys,json
+d=json.load(sys.stdin)
+cands=[r for r in d['requests'] if r.get('candidates')]
+print('  requests with a recorded decision:', len(cands), 'of', len(d['requests']))
+for r in cands[:3]:
+    print('   ', r['requestedModel'][:28], 'strategy=%s' % r.get('strategy'),
+          [(c['driver'], 'tier%s' % c['tier'], 'ok' if c['eligible'] else (c.get('reason') or 'no'),
+            'inflight=%s/%s' % (c.get('inFlight'), c.get('slots'))) for c in r['candidates']])
+"
+STRAT=$(echo "$P2" | jq_ "([r.get('strategy') for r in d['requests'] if r.get('strategy')] or [''])[0]")
+[ -n "$STRAT" ] && ok "the balancing strategy in effect is retained ('$STRAT')" || bad "no strategy recorded"
+# The cascade from section 5 had two candidates and a rejection, so it
+# must have kept its list - that is the case the field exists for.
+NCAND=$(curl -s "$GW/v1/metrics/requests?model=failover-test" -H "Authorization: Bearer $TOK" | jq_ "max([len(r.get('candidates') or []) for r in d['requests']] or [0])")
+[ "${NCAND:-0}" -ge 2 ] && ok "*** the cascade retained what the balancer considered ($NCAND candidates) ***" || bad "the cascade kept no candidate list (max=$NCAND)"
 
 say "7. the hourly rollup, advanced by hand rather than waited an hour for"
 # `maintain()` is public precisely so this is possible. Rolling up the

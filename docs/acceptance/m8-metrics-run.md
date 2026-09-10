@@ -1,6 +1,9 @@
 # M8 acceptance — the gateway retains what it serves
 
-**Status:** passed 2026-09-10 (late), on the third attempt. Script:
+**Status:** passed 2026-09-10 (late), on the third attempt, and
+**extended and re-run green (17 checks)** the same night for the phase
+decomposition and balancer-decision work — see "The local hop, measured"
+at the end. Script:
 [`scripts/m8-acceptance.sh`](../../scripts/m8-acceptance.sh). Design in
 [`m8-retained-request-metrics.md`](../design/m8-retained-request-metrics.md);
 follows [M7's two-agent run](m7-two-agent-run.md).
@@ -175,3 +178,50 @@ table and produces no cascade at all.
 | A cascade: failed attempt plus the survivor | 2,171 ms + 4,189 ms = 6,360 ms |
 | Store size after 11 requests | 4 KB plus a 300 KB write-ahead log |
 | Whole run | about four minutes |
+
+
+---
+
+## The local hop, measured (2026-09-10, later still)
+
+The script gained a section for the phase decomposition and the
+balancer-decision recording (design §11). **17 checks, 0 failures.**
+
+```
+  ollama-small  routing p50 = 0 ms   control-plane overhead p50 = 116 ms  max 131 ms
+  ollama-big    routing p50 = 0 ms   control-plane overhead p50 = 120 ms  max 120 ms
+
+  requests with a recorded decision: 1 of 11
+    failover-test  least_busy  [(dead-backend, tier1, ok, 0/1), (ollama-small, tier2, ok, 0/1)]
+```
+
+**Routing is free.** Nothing needed a refresh, so resolving and picking
+came in under a millisecond. That phase was added on suspicion and the
+suspicion was wrong — worth knowing, and the cheap half of the work.
+
+**The control plane's own cost is about 116 ms a request** and does not
+vary much (114 / 116 / 120), so it is a fixed per-request cost rather
+than a load effect. On completions of roughly a second that is better
+than a tenth of the request.
+
+`gateway.yaml` has said since M0 that "the extra local hop is
+sub-millisecond against a multi-second generation" and is "not a cost
+worth optimising away". What was measured is the serving attempt's
+gateway-side time minus the **driver's own** `latencyMs`, which contains
+the loopback round trip *and* everything the driver does around its
+backend call. A loopback round trip really is sub-millisecond, so the
+sentence about the hop is probably still true; what is false is the
+inference that the two-layer split is therefore free.
+
+Where to look next, in order of likelihood: Pydantic validation of a
+full completion body in the driver; `response.elapsed` not covering the
+body read, which would misattribute the time rather than locate it in
+the driver; and the gateway's own response construction, inside
+`elapsedMs` but outside anything the driver reports. **A finding, not a
+conclusion** — but a four-milestone-old architectural justification is
+now a number, and it is not the number the sentence implies.
+
+The balancer's decision was recorded for exactly one of eleven
+requests, which is the design working: ten had a single eligible backend
+and nothing to explain. The one that did was the cascade, and it kept
+both candidates with the tier each sat in.

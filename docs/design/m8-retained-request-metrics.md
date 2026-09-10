@@ -685,3 +685,55 @@ request go there and not to the other one.**
 No new open questions, no new decisions — the decisions were made
 above. Contracts extend `gateway.yaml` only, so the re-pin radius is
 `gateway` and `ui`, as with M8 itself.
+
+### What the measurement found, first time it ran
+
+`scripts/m8-acceptance.sh` extended and re-run: **17 checks, 0
+failures.** Live, through a real gateway, two real Ollama backends.
+
+```
+  ollama-small  routing p50 = 0 ms    control-plane overhead p50 = 116 ms  max 131 ms
+  ollama-big    routing p50 = 0 ms    control-plane overhead p50 = 120 ms  max 120 ms
+```
+
+**Routing is free**, as expected — nothing needed a refresh, so
+resolving and picking cost under a millisecond. Good: that phase was
+added on suspicion and the suspicion was wrong, which is worth knowing
+and is the cheap half of this work.
+
+**The overhead is not.** ~116 ms per request, consistently, on
+completions taking around a second — better than a tenth of the
+request. And §11's table above said this number would test the claim
+`gateway.yaml` has carried since M0:
+
+> The extra local hop is sub-millisecond against a multi-second
+> generation. It is not a cost worth optimising away.
+
+**Be precise about what this does and does not falsify.** The measured
+quantity is the serving attempt's gateway-side elapsed time minus the
+*driver's own* `latencyMs`, so it contains:
+
+- the loopback HTTP round trip gateway → driver, and
+- everything the driver does around its backend call: building the
+  request, parsing and validating the response, constructing the
+  `GenerateResponse`.
+
+A loopback round trip is genuinely sub-millisecond, so **the sentence
+about the hop is probably still true.** What is false is the inference
+people draw from it — that the two-layer split is free. Something in
+the driver costs ~115 ms per request, and it is consistent enough
+(114/116/120) to be systematic rather than noise: a fixed cost per
+request, not a load effect.
+
+**This is a finding, not a conclusion.** It says where to look, not what
+is wrong. The candidates worth eliminating, in order of likelihood:
+Pydantic validation of a full completion body on the driver;
+`response.elapsed` not covering the whole body read, which would put the
+missing time in the wrong bucket rather than in the driver; and the
+gateway's own response construction, which is inside `elapsedMs` but
+outside anything the driver reports.
+
+Whatever it turns out to be, the point stands: **an architectural
+justification that had gone four milestones unmeasured is now a number,
+and the number is not the one the sentence implies.** Diagnosing it is
+its own piece of work, and the numbers to do it with now exist.
