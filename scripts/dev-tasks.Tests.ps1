@@ -8,6 +8,7 @@ Describe 'Workspace task health' {
         $script:RuntimeStatus = 'ready'
         $script:ComponentStatus = 'running'
         $script:SafeMode = $false
+        $script:HealthDetails = $null
         $script:TopologyFailure = $false
         $script:UiFailure = $false
         $script:ObservedToken = $null
@@ -24,7 +25,11 @@ Describe 'Workspace task health' {
                 return @{ components = @(@{ name = 'replica'; status = $script:ComponentStatus; url = 'http://localhost:19001'; advertiseUrl = 'http://node:29001' }) }
             }
             if ($Url -like '*/v1/runtimes') { return @{ runtimes = @(@{ name = 'engine'; status = $script:RuntimeStatus; driver = 'replica' }) } }
-            return @{ status = $script:HealthStatus; safeMode = $script:SafeMode }
+            # `details` is a PSCustomObject, not a hashtable, because the real
+            # Get-TaskJson pipes through ConvertFrom-Json and that is what it
+            # produces. A hashtable here would answer property probes with
+            # Keys/Count and quietly pass a check that cannot work live.
+            return @{ status = $script:HealthStatus; safeMode = $script:SafeMode; details = $script:HealthDetails }
         }
     }
 
@@ -37,6 +42,24 @@ Describe 'Workspace task health' {
     It 'fails degraded health even with HTTP success' {
         $script:HealthStatus = 'degraded'
         Test-StackHealth 'http://agent' 'http://ui' | Should Be $false
+    }
+
+    It 'names the passphrase as the cause when a trust root is uninitialized' {
+        # This check already failed such an install, saying only "degraded" -
+        # true, unactionable, and duly ignored while a first run left the
+        # control root without a passphrase for a whole milestone. What was
+        # missing was the diagnosis, so that is what is asserted.
+        $script:HealthStatus = 'degraded'
+        $script:HealthDetails = [pscustomobject]@{ role = 'control'; initialized = $false }
+        Test-StackHealth 'http://agent' 'http://ui' | Should Be $false
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*no passphrase has been set*' }
+    }
+
+    It 'does not blame the passphrase for a degradation that has another cause' {
+        $script:HealthStatus = 'degraded'
+        $script:HealthDetails = [pscustomobject]@{ role = 'control'; initialized = $true }
+        Test-StackHealth 'http://agent' 'http://ui' | Should Be $false
+        Assert-MockCalled Write-Host -Scope It -Times 0 -ParameterFilter { $Object -like '*no passphrase has been set*' }
     }
 
     It 'fails when topology is unauthorized or unreachable' {

@@ -88,6 +88,23 @@ function Test-ServiceHealth {
         $health = Get-TaskJson "$($Url.TrimEnd('/'))/healthz"
         if ($health.status -ne 'ok' -or $health.safeMode -eq $true) {
             Write-Host "FAIL $Name health: $($health.status) (safe mode: $($health.safeMode -eq $true))"
+            # 'degraded' on its own sends you to the logs, and this check
+            # already reported exactly that while a first run left the trust
+            # root without a passphrase - true, unhelpful, and ignored.
+            #
+            # An uninitialized component is the one degradation with a
+            # one-line fix, so name it. The control root is the one that
+            # publishes the flag, and it is the one where the consequence is
+            # install-wide: no node enrollment, no join tokens, not even its
+            # own /v1/config, all answered 503 by design rather than falling
+            # open.
+            if ($null -ne $health.details -and
+                $health.details.PSObject.Properties.Name -contains 'initialized' -and
+                -not $health.details.initialized) {
+                Write-Host "     cause: no passphrase has been set on $Name, so it refuses its own API."
+                Write-Host "     fix:   POST /v1/auth/initialize on $Name with the operator passphrase,"
+                Write-Host "            or run the Finish Install task. The first-run wizard does this too."
+            }
             return $false
         }
         Write-Host "OK   $Name"
