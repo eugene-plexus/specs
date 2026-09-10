@@ -542,6 +542,105 @@ why.
 
 ---
 
-## 11. Implementation notes
+## 11. Implementation notes (2026-09-10)
 
-*Filled in after the run; see the acceptance record.*
+Built the same day as the design, in three repos plus a six-way re-pin,
+and verified by [`scripts/m7-acceptance.sh`](../../scripts/m7-acceptance.sh)
+— record in [`docs/acceptance/m7-two-agent-run.md`](../acceptance/m7-two-agent-run.md).
+
+| Repo | Landed | What |
+|---|---|---|
+| `specs` | `a0d793e` | the contracts of §7, verbatim |
+| `agent` | `9b0901a`, `6589820` | `node_identity.py`; enroll, re-key and the enrolled `GET /v1/node`; `advertiseUrl`; `bind_port`; `Runtime.node`; `Component.advertiseUrl`; `<KIND>_AGENT_URL` and `BIND_HOST` to children; `service:control` on create; `restart_all` skips the trust root; 304 tests |
+| `control` | `48cfeb2` | `Node.url` from enrollment, `signingKeyId`, the signed re-key, the epoch announcement after promotion, the identity check before minting; 88 tests |
+| `gateway` | `1484589`, `2e5544d` | prefers `advertiseUrl`; `tests/test_multi_agent.py`; refreshes serialized; 130 tests |
+| `inference-driver` `library` `ui` | `907cd00` `d6ea284` `3cf98cc` | re-pin only; the `ui` gains the types and no screen |
+
+### What the live run found
+
+**Passed on the third run, 41 checks.** The first two runs each failed one
+stage the same way and one of them left orphans; the record has the
+numbers. Everything the design's §10 listed happened: both agents enrolled
+over HTTP with real tokens (`/v1/nodes` carried both URLs, the field the
+exchange never used to send); a control-minted token read B and a
+B-minted token read the control root while each agent's pre-enrollment
+session was refused; the control root forwarded a declaration to node-b
+with `service:control`; the companion B spawned after enrolling was listed
+and served by the gateway on the other agent; the idle unload and the wake
+reached :8084; a rotation re-keyed both agents (`2/2`, generation 2) and a
+completion succeeded under the new key; a genuinely signed epoch-0 re-key
+was fenced with 409 and the same body with a changed epoch was 401.
+
+**One window is open and recorded, not closed.** Twice, a request sent
+about 2.5 s after the cross-host idle unload was routed to B's companion
+as eligible — a 502 from the driver instead of a wake — although the
+gateway had refreshed twice and read B's `/v1/runtimes` (200) after the
+stop, and B itself reported `stopped/idle`. With a 4 s pause the wake
+succeeded every time, and the routing view dumped at that moment showed
+the driver ineligible and the runtime `stopped`. Refresh serialization
+(below) was landed as a plausible cause and **did not close it**: run two
+had the lock and failed the same way. `EP_WAKE_DELAY=0` reproduces it.
+Candidates for the next session, in order: the snapshot the request saw
+was not the one the last refresh assigned; B's runtime list parsed to
+nothing for one read (`_get_json` logs that at DEBUG only, so raise it);
+the driver's `/v1/info` reported no `runtime` for one probe. The M6
+single-agent run never met this because its wake test paused for the
+idle check first.
+
+
+**Refreshes were not serialized.** Three things call the gateway's
+`refresh()` — the periodic loop, the lifecycle manager after a stop, a
+request that found nothing eligible — and two in flight at once is a
+lost update. A periodic refresh that began before the cross-host idle
+unload finished *after* the one issued once the stop returned, put the
+runtime back to `ready` over `stopped`, and the next request went to a
+driver whose engine was gone: a 502 where a wake should have been. Steady
+state was already right, which is why no fixture caught it and why the
+same completion succeeded against the still-running processes a minute
+later. `refresh()` takes a lock now; snapshots land in the order the
+refreshes began.
+
+**`restart_all` restarted the control root.** Found while writing the
+script rather than by running it: enrolling the control host's agent
+would have restarted the root it had just enrolled with, and a restarted
+root holds its keys sealed and is locked until someone logs in. The root
+receives nothing from the agent's auth state — no master key, no signing
+key — so the restart handed it nothing. It is skipped, on login too.
+
+**The pid the script held was a subshell's.** `( cd a && … ) &` and the
+teardown killed two subshells, orphaning both agents and an engine.
+`exec` in the subshell; recorded because the same shape will recur in
+the two-host script.
+
+### Where the implementation departs from, or refines, this document
+
+1. **The operator session that requests an enrollment dies with it.**
+   §2 said the key is adopted; it did not say what that does to the
+   token that asked. The same price a rotation charges at the control
+   root, documented on the route: log in again, here or at the root.
+2. **Two agents on one box see loopback everywhere.** The derived
+   advertise host is `127.0.0.1`, so `Component.advertiseUrl` equals
+   `url` and no component widens its bind. The mechanism is exercised;
+   the interesting values are not, and §10 says so.
+3. **Fencing was tested by forging, not by partitioning.** The control
+   identity's private key was opened from the snapshot with the
+   passphrase and an epoch-0 re-key signed with it; the agent answered
+   409, and the same body with the epoch changed answered 401. That is
+   the refusal, exactly as contracted, and not the partition.
+4. **The trust root is excluded from `restart_all`** (above), which M5
+   never said and which the M5 and M6 runs did not need because they
+   never re-keyed anything.
+
+### Process notes
+
+- **A description-only contract change still changes generated code**
+  (docstrings, TS comments). Consumers stay pinned at `a0d793e` through
+  the docs commits, as at M6.
+- **The gateway's `route_http` fixture lives in a test module**, not
+  `conftest.py`; a new module needs its own copy.
+- **`initialize` already restarts children once**; restart counts in
+  agent tests are relative to that.
+- **Routes without `response_model_exclude_none` emit `field: null`.**
+  Assert `is None`, not `not in`.
+- The Write tool's CRLF, the byte normalizer, patch scripts asserting
+  `count == 1`: all as before, zero casualties.

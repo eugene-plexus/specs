@@ -247,6 +247,13 @@ All five level with `specs` HEAD; tests, mypy, ruff, `tsc --noEmit`, eslint, Pre
 
 ---
 
+### specs — M7 (second-host readiness)
+
+Landed at `a0d793e`. Design and record: [`docs/design/m7-second-host-readiness.md`](docs/design/m7-second-host-readiness.md), [`docs/acceptance/m7-two-agent-run.md`](docs/acceptance/m7-two-agent-run.md). `common.yaml` untouched; re-pin radius `agent`, `control`, `ui`, the rest bumped for levelness.
+
+- **`agent.yaml`**: `POST /v1/node/rekey`, declared for the first time — control's rotation had called it since M5. `security: []`; the credential is an Ed25519 signature by the control identity over a three-field canonical message, and 409 on a lower epoch is where fencing happens. `RekeyRequest`. `NodeIdentity` + `advertiseUrl`, `signingKeyId`, `controlPublicKey`. `Component.advertiseUrl` (read-only, derived). `POST /v1/runtimes` accepts `service:control`. The agent's port is a setting.
+- **`control.yaml`**: `EnrollmentRequest.url` — without it every really-enrolled node had no address. `Enrollment.signingKeyId`. Promotion announces its epoch through the signed re-key with the key unchanged.
+
 ## Superseded — local-LLM-training platform (v0.3 direction)
 
 > Archived 2026-09-08. Contracts only ever landed as schemas; no implementation shipped. The documents are deleted from `openapi/` but preserved in git history at `113559a`.

@@ -792,7 +792,8 @@ says so now.
    another host cannot reach it. The M5 design already carries this gap
    for hand-written components; it is M7's (networked polish) to give
    the agent an advertise address. Named here so the first two-host run
-   is not surprised by it.
+   is not surprised by it. **Resolved at M7**: `Component.advertiseUrl`,
+   see [`m7-second-host-readiness.md`](m7-second-host-readiness.md) §4.
 6. **Eviction ordering is the gateway's.** The agent's `blockers` come
    evictable-first, then by name; the gateway re-sorts by its own idle
    knowledge, because the agent cannot know idleness and did not

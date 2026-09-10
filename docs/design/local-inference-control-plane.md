@@ -329,9 +329,25 @@ Everything not listed here already exists and mostly survives untouched.
   device detection, which also makes `GET /v1/node` real for the first
   time. Still on one card: two-GPU placement is unproven, same as the
   two-host question.
-- **M7 — networked polish** *(was M6)*. Re-verify the auth arc against the new
-  topology, rewrite the wizard, document tailnet deployment. Now partly settled
-  by M5, which moves auth to the control root.
+- **M7 — second-host readiness** *(was: networked polish, now M8)*
+  ([design](m7-second-host-readiness.md),
+  [acceptance](../acceptance/m7-two-agent-run.md))**.** Make a second
+  host possible before one exists: the agent's half of M5's enrollment
+  (never built until now), an advertise address so a gateway elsewhere
+  can reach a companion here, the gateway's fan-out proven over two
+  agents, and a two-host acceptance script run against two agents on
+  one box. **Built and live-verified 2026-09-10.** Decided to open it:
+  the re-key is **signed by the control identity** rather than
+  authenticated by a bearer, because a rotation invalidates every bearer
+  and a re-run cannot know which key a node holds; the node **tells**
+  the root where it is (derived from the route to the root, or set),
+  the root never guesses from a source address; `Component.url` keeps
+  its one meaning and `advertiseUrl` carries the other. Four defects the
+  control repo's fake agents had agreed to are in the design's §0. What
+  one box cannot prove is in its §10.
+- **M8 — networked polish** *(was M7)*. Re-verify the auth arc against the
+  new topology in a browser, rewrite the wizard, document tailnet
+  deployment, un-enroll and re-advertise.
 - **Then:** MLX adapter, cloud providers back in the routing table, Discord
   revival.
 
@@ -407,3 +423,8 @@ OS behave differently from every other target.
 | **Admission refuses with the arithmetic and a `force` override; it never queues.** `unknown` never refuses | 2026-09-10 |
 | **Every model is a slot; a slot's tiers are model ids, not driver names.** A model id names its replica set; a cloud subscription is a target like any other | 2026-09-10 |
 | **A driver whose runtime is not `ready` is not routed to**, and a request that finds nothing eligible refreshes the table before concluding anything | 2026-09-10 |
+| **The re-key is signed by the control identity, not authenticated by a bearer.** A rotation invalidates every bearer; the identity key does not rotate | 2026-09-10 |
+| **The node tells the root where it is.** `advertiseUrl`, configured or derived from the route to the root; the root records it and never guesses from a source address | 2026-09-10 |
+| **`Component.url` keeps one meaning** (what the agent binds and probes); `Component.advertiseUrl` is where peers reach it. Engines are never widened | 2026-09-10 |
+| **The install's signing key is stored in the clear on each node**, 0600. Children already hold it; a headless node has nobody to type a passphrase | 2026-09-10 |
+| **Every node enrolls the same way**, the control host's included. One mechanism | 2026-09-10 |

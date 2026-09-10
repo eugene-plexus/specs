@@ -32,6 +32,12 @@ mid-run, and a completion returned two seconds later. **The surviving
 data path is now a tested guarantee rather than the accident §1 called
 it.**
 
+**M7 (2026-09-10) built the agent's half** — enrollment, the signed
+re-key, epoch fencing, `Runtime.node`, and a node URL the exchange here
+never carried; see [`m7-second-host-readiness.md`](m7-second-host-readiness.md),
+whose §0 lists four places this document's contract was exercised only
+by fakes.
+
 **What is not built:** multi-host has never run on two machines. Every
 cross-host behaviour — enrollment over a real network, a rotation with a
 genuinely offline node, a promotion after a genuinely lost host — is
