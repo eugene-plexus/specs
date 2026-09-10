@@ -132,3 +132,14 @@ Check exited 0 with the UI up, and exited 0 on components with the runtime
 deliberately stopped — its companion probed and healthy. Twenty-eight Pester
 tests pass. Not verified: no browser has driven the UI, so the client-side
 first-run redirect is asserted from the config flag, not observed.
+
+The first task-driven run then found two more, both in the seeder itself.
+It prompted for the operator passphrase before checking an agent existed,
+so seeding before starting asked for a passphrase and discarded it; the
+check now runs first and waits rather than failing, so the two tasks may
+be run in either order. And Windows PowerShell 5.1 reads a `.ps1` without
+a byte order mark as the system ANSI codepage, not UTF-8 - the em dashes
+in these files were mojibake, and the one inside a string literal broke
+the parse outright with errors naming unrelated lines. These files are
+ASCII only, enforced by a byte check and a parser run over each script.
+Verified by reproducing the reported failure end to end.
