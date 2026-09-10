@@ -1490,6 +1490,22 @@ components:
           description: |
             Wake latency, over the `swappedIn` requests only. Null when
             none of them woke anything.
+        routingMs:
+          oneOf:
+            - $ref: '#/components/schemas/Percentiles'
+            - type: 'null'
+          description: |
+            How long deciding where to send the request took. Null for
+            groups recorded before this was measured.
+        overheadMs:
+          oneOf:
+            - $ref: '#/components/schemas/Percentiles'
+            - type: 'null'
+          description: |
+            The control plane's own cost: the serving attempt's
+            gateway-side time minus the driver's measurement of its
+            backend call. Null when no request in the group had a
+            backend that reported its own latency.
         tierCounts:
           type: object
           additionalProperties:
@@ -1568,7 +1584,27 @@ components:
         elapsedMs:
           type: integer
           minimum: 0
-          description: This attempt alone, not the request.
+          description: |
+            This attempt alone, not the request. Gateway-side, so it
+            includes the local hop to the driver.
+        backendMs:
+          type:
+            - integer
+            - 'null'
+          description: |
+            The **driver's** own measurement of its backend call
+            (`GenerateResponse.latencyMs`), when it reported one.
+
+            `elapsedMs - backendMs` is therefore the cost of the
+            gateway-to-driver hop plus the driver's own work: the
+            control plane's overhead on this request. This document has
+            asserted since M0 that the extra local hop is
+            "sub-millisecond against a multi-second generation" and "not
+            a cost worth optimising away" - an architectural
+            justification nobody had measured. Both numbers were already
+            being produced; subtracting them makes the claim checkable
+            on any install.
+          minimum: 0
         served:
           type: boolean
         error:
@@ -1618,6 +1654,44 @@ components:
             failed attempts and excluding the wake — the same figure
             `x_eugene_plexus.latency_ms` reports. Per-backend
             throughput comes from `tries[].elapsedMs`, never from here.
+        routingMs:
+          type:
+            - integer
+            - 'null'
+          description: |
+            Time spent deciding where to send this request - resolving
+            the model to a slot, picking a backend, and any
+            routing-table refresh that happened on the way - measured
+            **before** `totalMs` starts and excluding the wake, which is
+            `waitedMs`.
+
+            Previously invisible, and not always small: a refresh does
+            HTTP to the agent and to every driver's `/v1/info`, inside
+            the request that triggered it.
+          minimum: 0
+        refreshed:
+          type: boolean
+          description: |
+            Whether a routing-table refresh ran inside this request.
+            The expensive and surprising case, so it is a flag rather
+            than something to infer from `routingMs`.
+        strategy:
+          type:
+            - string
+            - 'null'
+          description: |
+            The `loadBalancing` value in effect when this request was
+            routed. Recorded per request because the config can change
+            between them, and `least_busy` and `round_robin` explain
+            different orderings.
+        candidates:
+          type: array
+          description: |
+            What the balancer considered. Present only when there was a
+            decision to make - more than one candidate, or at least one
+            rejected.
+          items:
+            $ref: '#/components/schemas/MetricCandidate'
         waitedMs:
           type: integer
           minimum: 0
@@ -1646,6 +1720,64 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/MetricAttempt'
+
+
+    MetricCandidate:
+      type: object
+      description: |
+        One backend the balancer considered for a request, and what it
+        saw when it decided.
+
+        Deliberately the **input** to the decision rather than a score.
+        There is no score: `least_busy` is a sort by in-flight requests
+        per slot of capacity, and inventing a number to display would be
+        inventing the smarter balancer that was explicitly deferred.
+        What this answers is the question an operator actually asks —
+        why did this request go there and not to the other one.
+
+        Recorded only when there was a decision to make: more than one
+        candidate, or at least one rejected. A single eligible backend is
+        not an audit trail.
+      required:
+        - driver
+        - tier
+        - eligible
+      properties:
+        driver:
+          type: string
+        tier:
+          type: integer
+          minimum: 1
+        eligible:
+          type: boolean
+          description: |
+            Whether this backend could take the request at all. A driver
+            following a runtime is eligible only while that runtime is
+            `ready`; one following nothing of ours is eligible whenever
+            it is reachable.
+        reason:
+          type:
+            - string
+            - 'null'
+          description: Why not, when `eligible` is false. Null when it was.
+        inFlight:
+          type:
+            - integer
+            - 'null'
+          description: |
+            Requests already outstanding to this backend when the choice
+            was made. The load signal `least_busy` sorts on.
+          minimum: 0
+        slots:
+          type:
+            - integer
+            - 'null'
+          description: |
+            The runtime's `parallelSlots`, its concurrent capacity. The
+            balancer compares `inFlight / slots`, not `inFlight`, so a
+            four-slot replica holding two requests is less loaded than a
+            one-slot replica holding one.
+          minimum: 1
 
     MetricRequestPage:
       type: object

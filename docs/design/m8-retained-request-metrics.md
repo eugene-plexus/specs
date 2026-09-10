@@ -626,3 +626,62 @@ the picker while one is outstanding. It is Troy's call.
 not run — no Windows build, WSL not installed. M8 makes the comparison
 *possible* and does not make it *available*. The WSL2 session now
 answers three open questions rather than two.
+
+---
+
+## 11. Phase decomposition and balancer decisions (2026-09-10, late)
+
+**Troy's answers to §4 and its follow-on, and the work they authorize.**
+
+*The balancer does not consume the data* — as recommended. But: "it
+deserves its own metrics so the entire transaction can be quantified",
+and, asked which he meant, **both, in that order**: decompose the
+request into phases first, then record why the balancer picked what it
+picked.
+
+### What one `total_ms` was hiding
+
+M8 measured a request as one number plus a wake. Four phases sit inside
+it, and their availability is not uniform:
+
+| Phase | Before | Now | Why |
+|---|---|---|---|
+| Resolve, pick, and any routing-table refresh | **invisible** | `routingMs` + `refreshed` | It happens *before* the clock starts. `refresh_if_stale()` does HTTP to the agent and to every driver's `/v1/info`, inside the request that triggered it. Nothing has ever measured that. |
+| Our wake of a supervised runtime | `waitedMs` | unchanged | Already right. |
+| The gateway↔driver hop and the driver's own work | buried | `elapsedMs` − `backendMs` | `GenerateResponse.latencyMs` is the *driver's* measurement of its backend call, and it was already on every response. |
+| Prefill vs decode (time to first token) | absent | **still absent** | Needs the token stream the gateway does not proxy. M0's deliberate limitation, still open. |
+| An external backend's own model load | absent | **still absent** | The backend would have to tell us. Nothing in the OpenAI-compatible surface does. |
+
+The third row is the interesting one. `gateway.yaml`'s own prose has
+claimed since M0 that the extra local hop is "sub-millisecond against a
+multi-second generation" and that it is "not a cost worth optimising
+away" — **an architectural justification nobody had measured.** The
+subtraction is free, both numbers already existed, and it makes that
+claim checkable on any install.
+
+Rows two and four of "still absent" are stated rather than worked
+around. Half a decomposition that says which half is missing is honest;
+one that silently attributes a backend's cold start to decode is not.
+
+### Balancer decisions
+
+Recorded per request, and only when there was a decision to make —
+more than one candidate, or at least one rejected. A single eligible
+backend is not an audit trail, it is noise.
+
+Each candidate carries what the picker saw: `driver`, `tier`,
+`eligible`, `reason` when not, `inFlight`, and `slots`. Plus the
+`strategy` in effect, because `least_busy` and `round_robin` explain
+different orderings and the config can change under you.
+
+This is deliberately the *input* to the decision, not a score. There is
+no score today — least-busy is a sort — and inventing a number to
+display would be inventing the smarter balancer §4 declined to build.
+What it gives is the thing an operator actually asks: **why did this
+request go there and not to the other one.**
+
+### Not a new milestone
+
+No new open questions, no new decisions — the decisions were made
+above. Contracts extend `gateway.yaml` only, so the re-pin radius is
+`gateway` and `ui`, as with M8 itself.
