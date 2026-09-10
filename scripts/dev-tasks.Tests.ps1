@@ -1,5 +1,6 @@
 $helper = Join-Path $PSScriptRoot 'dev-tasks.ps1'
 . $helper
+. (Join-Path $PSScriptRoot 'dev-seed.ps1')
 
 Describe 'Workspace task health' {
     BeforeEach {
@@ -48,10 +49,24 @@ Describe 'Workspace task health' {
         Test-StackHealth 'http://agent' 'http://ui' | Should Be $false
     }
 
-    It 'does not fail an intentionally unloaded runtime or probe its companion' {
+    It 'does not fail an intentionally unloaded runtime but still probes its companion' {
+        # The companion driver keeps running while its engine is stopped —
+        # that is what lets the gateway list an on-demand model — so a dead
+        # companion has to surface, not be skipped as "intentional".
         $script:RuntimeStatus = 'stopped'
         Test-StackHealth 'http://agent' 'http://ui' | Should Be $true
-        Assert-MockCalled Get-TaskJson -Times 0 -Exactly -Scope It -ParameterFilter { $Url -eq 'http://node:29001/healthz' }
+        Assert-MockCalled Get-TaskJson -Times 1 -Exactly -Scope It -ParameterFilter { $Url -eq 'http://node:29001/healthz' }
+    }
+
+    It 'fails a stopped runtime whose companion driver is down' {
+        $script:RuntimeStatus = 'stopped'
+        $script:ComponentStatus = 'crashed'
+        Test-StackHealth 'http://agent' 'http://ui' | Should Be $false
+    }
+
+    It 'does not fail a runtime that is still loading' {
+        $script:RuntimeStatus = 'loading'
+        Test-StackHealth 'http://agent' 'http://ui' | Should Be $true
     }
 
     It 'fails a crashed runtime' {
@@ -111,6 +126,9 @@ Describe 'Real isolated task shutdown' {
         $fixtureNext = Join-Path $fixtureRoot 'ui/node_modules/next/dist/bin'
         New-Item -ItemType Directory -Path $fixtureScripts, $fixtureNext -Force | Out-Null
         Copy-Item $helper (Join-Path $fixtureScripts 'dev-tasks.ps1')
+        # dev-tasks.ps1 dot-sources dev-common.ps1, so the fixture is only a
+        # faithful copy if both travel together.
+        Copy-Item (Join-Path $PSScriptRoot 'dev-common.ps1') (Join-Path $fixtureScripts 'dev-common.ps1')
         @'
 const { spawn } = require('node:child_process');
 const child = spawn(process.execPath, ['-e', 'process.stdin.resume()']);
@@ -206,8 +224,13 @@ Describe 'Shared task definitions' {
             foreach ($dependency in $task.dependsOn) { $tasks.tasks.label -contains $dependency | Should Be $true }
             if ($task.type) {
                 $task.type | Should Be 'process'
-                $task.args -contains '${workspaceFolder}/scripts/dev-tasks.ps1' | Should Be $true
-                $task.args[-1] -in 'Agent', 'Ui', 'Stop', 'Health' | Should Be $true
+                $taskScript = $task.args | Where-Object { $_ -like '*${workspaceFolder}/scripts/*' }
+                $taskScript | Should Not BeNullOrEmpty
+                $taskScript -in '${workspaceFolder}/scripts/dev-tasks.ps1', '${workspaceFolder}/scripts/dev-seed.ps1' | Should Be $true
+                Test-Path (Join-Path $PSScriptRoot ('../' + $taskScript.Replace('${workspaceFolder}/', ''))) | Should Be $true
+                if ($taskScript -like '*dev-tasks.ps1') {
+                    $task.args[-1] -in 'Agent', 'Ui', 'Stop', 'Health' | Should Be $true
+                }
             }
             if ($task.isBackground) {
                 $pattern = $task.problemMatcher.pattern
@@ -217,6 +240,104 @@ Describe 'Shared task definitions' {
                 $sample.Groups[$pattern.message].Value | Should Be 'test diagnostic'
                 $task.runOptions.instanceLimit | Should Be 1
             }
+        }
+    }
+}
+Describe 'Dev install seeding' {
+    It 'prefers an explicit path, then the environment, then the polyrepo default' {
+        Get-DevInstallPath 'C:\poly' 'C:\explicit' | Should Be 'C:\explicit'
+        $env:EUGENE_PLEXUS_DEV_INSTALL = 'C:\from-env'
+        try { Get-DevInstallPath 'C:\poly' | Should Be 'C:\from-env' }
+        finally { Remove-Item Env:\EUGENE_PLEXUS_DEV_INSTALL }
+        Get-DevInstallPath 'C:\poly' | Should Be 'C:\poly\.dev-install'
+    }
+
+    Context 'writing the install directory' {
+        BeforeEach {
+            $script:Install = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
+            Mock Write-Host {}
+        }
+        AfterEach {
+            if (Test-Path -LiteralPath $script:Install) { Remove-Item -LiteralPath $script:Install -Recurse -Force }
+        }
+
+        It 'writes one config per spawned component and roots the library at the model directory' {
+            Write-DevInstall $script:Install 'D:\models\pool\Qwen3-1.7B-Q8_0.gguf'
+            foreach ($name in 'control.yaml', 'gateway.yaml', 'library.yaml') {
+                Test-Path (Join-Path $script:Install $name) | Should Be $true
+            }
+            # -like, not -match: a Windows path is not a regex.
+            (Get-Content (Join-Path $script:Install 'library.yaml') -Raw) -like '*D:\models\pool*' | Should Be $true
+            # No agent.yaml: the topology is declared over HTTP, so a stale
+            # one on disk can never be what the agent silently loads.
+            Test-Path (Join-Path $script:Install 'agent.yaml') | Should Be $false
+        }
+
+        It 'writes UTF-8 without a byte order mark' {
+            Write-DevInstall $script:Install 'D:\models\pool\model.gguf'
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $script:Install 'gateway.yaml'))
+            ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) | Should Be $false
+        }
+
+        It 'omits modelRoots entirely when there is no model' {
+            Write-DevInstall $script:Install ''
+            (Get-Content (Join-Path $script:Install 'library.yaml') -Raw) -match 'modelRoots' | Should Be $false
+        }
+    }
+
+    Context 'obtaining an operator session' {
+        BeforeEach { Mock Write-Host {} }
+
+        It 'initializes a fresh install' {
+            Mock Invoke-Api { @{ Code = 200; Body = @{ sessionToken = 'fresh' } } }
+            $session = Get-OperatorToken 'http://agent' (ConvertTo-SecureString 'pass' -AsPlainText -Force)
+            $session.Token | Should Be 'fresh'
+            $session.Fresh | Should Be $true
+        }
+
+        It 'logs in when the install is already initialized' {
+            Mock Invoke-Api {
+                param($Method, $Url)
+                if ($Url -like '*initialize') { return @{ Code = 409; Body = $null } }
+                return @{ Code = 200; Body = @{ sessionToken = 'returning' } }
+            }
+            $session = Get-OperatorToken 'http://agent' (ConvertTo-SecureString 'pass' -AsPlainText -Force)
+            $session.Token | Should Be 'returning'
+            $session.Fresh | Should Be $false
+        }
+
+        It 'throws a directed error when the passphrase does not match' {
+            Mock Invoke-Api { @{ Code = 401; Body = $null } }
+            { Get-OperatorToken 'http://agent' (ConvertTo-SecureString 'wrong' -AsPlainText -Force) } | Should Throw
+        }
+    }
+
+    Context 'declaring topology and runtimes' {
+        BeforeEach { Mock Write-Host {} }
+
+        It 'treats an already-declared component as success' {
+            Mock Invoke-Api { @{ Code = 409; Body = $null } }
+            Add-DevComponent 'http://agent' 't' @{ name = 'gateway'; kind = 'gateway'; url = 'http://x' } | Should Be $true
+        }
+
+        It 'fails a component the agent rejects' {
+            Mock Invoke-Api { @{ Code = 400; Body = @{ detail = 'bad kind' } } }
+            Add-DevComponent 'http://agent' 't' @{ name = 'gateway'; kind = 'gateway'; url = 'http://x' } | Should Be $false
+        }
+
+        It 'fails a runtime that admission refuses' {
+            Mock Invoke-Api { @{ Code = 409; Body = @{ detail = 'will not fit' } } }
+            # 409 on a runtime means the name is taken, which is success;
+            # a refusal arrives as 400 with the arithmetic.
+            Add-DevRuntime 'http://agent' 't' @{ name = 'r' } | Should Be $true
+            Mock Invoke-Api { @{ Code = 400; Body = @{ detail = '36.0 GiB required, 26.5 GiB free' } } }
+            Add-DevRuntime 'http://agent' 't' @{ name = 'r' } | Should Be $false
+        }
+
+        It 'warns when a launch produced no companion driver' {
+            Mock Invoke-Api { @{ Code = 201; Body = @{ status = 'starting'; driver = $null } } }
+            Add-DevRuntime 'http://agent' 't' @{ name = 'r' } | Should Be $true
+            Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*not be routable*' }
         }
     }
 }

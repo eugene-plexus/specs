@@ -126,6 +126,28 @@
       "problemMatcher": []
     },
     {
+      "label": "Eugene Plexus: Seed Dev Install",
+      "detail": "Initialize the operator passphrase, declare control/gateway/library, and launch one llama.cpp runtime. Run once, after Start, on a fresh install.",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/scripts/dev-seed.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "echo": true,
+        "clear": false,
+        "close": false
+      },
+      "problemMatcher": []
+    },
+    {
       "label": "Eugene Plexus: Health Check",
       "detail": "Check agent, discovered components, runtime readiness and UI. Exits nonzero on failure; privately prompts for an operator token if needed.",
       "type": "process",

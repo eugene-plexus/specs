@@ -9,6 +9,11 @@ $script:WorkspaceRoot = Split-Path $PSScriptRoot -Parent
 $script:StateDirectory = Join-Path $script:WorkspaceRoot '.vscode/task-state'
 $script:HelperPath = $PSCommandPath
 
+# Install-path and port resolution are shared with the seeder so the two
+# cannot disagree about which install they mean. dev-common.ps1 has no
+# param block; sourcing one here would overwrite $Action.
+. (Join-Path $PSScriptRoot 'dev-common.ps1')
+
 function Get-TaskOwner {
     param([string]$Path)
 
@@ -112,18 +117,24 @@ function Test-StackHealth {
         }
         $runtimeList = Get-TaskJson "$($AgentUrl.TrimEnd('/'))/v1/runtimes" $headers
         if ($null -eq $topology.components -or $null -eq $runtimeList.runtimes) { throw 'Invalid topology response.' }
-        $inactiveDrivers = @()
         foreach ($runtime in $runtimeList.runtimes) {
             Write-Host "Runtime $($runtime.name): $($runtime.status)"
-            if ($runtime.status -eq 'stopped') {
-                if ($runtime.driver) { $inactiveDrivers += $runtime.driver }
-            } elseif ($runtime.status -ne 'ready') { $healthy = $false }
-        }
-        foreach ($component in $topology.components) {
-            if ($component.name -in $inactiveDrivers) {
-                Write-Host "SKIP $($component.name): companion of an intentionally stopped runtime."
-                continue
+            # `stopped` is a healthy state: idle unload is policy working,
+            # and start-on-demand will wake it. `loading` is a snapshot of
+            # something in progress, not a fault — an engine can hold the
+            # port without answering for minutes. Neither fails the check.
+            if ($runtime.status -eq 'loading') {
+                Write-Host "     still loading; re-run to confirm it settles."
+            } elseif ($runtime.status -ne 'ready' -and $runtime.status -ne 'stopped') {
+                $healthy = $false
             }
+        }
+        # A companion driver is probed whether or not its runtime is loaded.
+        # Per the agent spec, the companion deliberately keeps running while
+        # the engine is stopped — that is precisely what lets the gateway
+        # keep listing an on-demand model — so a dead one breaks wake-on-
+        # demand and must not be reported as merely skipped.
+        foreach ($component in $topology.components) {
             if ($component.status -ne 'running') {
                 Write-Host "FAIL $($component.name) topology status: $($component.status)"
                 $healthy = $false
@@ -157,7 +168,14 @@ if ($MyInvocation.InvocationName -ne '.') {
         switch ($Action) {
             'Agent' {
                 $root = Join-Path $polyrepoRoot 'agent'
-                Start-OwnedTask 'Agent' (Join-Path $root '.venv/Scripts/python.exe') @('-m', 'eugene_plexus_agent') $root
+                # The agent's cwd is the install, not the checkout. Everything
+                # it persists — agent.yaml, node.yaml, logs/, the companion
+                # drivers' configs — lands beside its config file, and putting
+                # that inside a source checkout is how the previous install
+                # became a fossil that no acceptance run ever loaded.
+                $install = Get-DevInstallPath $polyrepoRoot
+                New-Item -ItemType Directory -Path $install -Force | Out-Null
+                Start-OwnedTask 'Agent' (Join-Path $root '.venv/Scripts/python.exe') @('-m', 'eugene_plexus_agent') $install
             }
             'Ui' {
                 $root = Join-Path $polyrepoRoot 'ui'

@@ -84,3 +84,51 @@ Focused Pester tests include real temporary parent/child processes, an unrelated
 surviving process, PID reuse, topology-derived ports, HTTP health exit codes and
 degraded/unloaded states. A Windows CI job runs these tests; no actual inference
 stack is launched or stopped. See the [task guide](../../README.md#vs-code-tasks-windows).
+
+## Follow-Up: A Development Install That Works
+
+Later on 2026-09-10 the task migration above was exercised for the first time
+and did not start anything. Three findings, in cost order.
+
+**The agent's persisted config in the local checkout was a v0.2 fossil.** It
+declared `orchestrator`, two `hemisphere-driver` entries, `memory`, `identity`
+and `connector` — none of which are `ComponentKind` values any more. Loading it
+through the agent's own state loader raises a `ValidationError` on the first
+entry, and `state.load()` is not guarded at startup, so the agent exits rather
+than degrading. Every acceptance script from M0 onward builds a throwaway
+install under `$TMPDIR`, so no run had ever loaded the config a developer
+actually had. It drifted through four milestones unobserved. The fossil state
+(including a `connector` adapter file holding a live Discord bot token, never
+committed and gitignored throughout) was moved out of the checkout.
+
+**Nothing took an install from empty to working.** Clearing the fossil produced
+a startable agent supervising nothing. The first-run wizard cannot close that
+gap — it reads the topology and, by its own documentation, "assumes the operator
+has components in the agent topology already and cannot create them." The only
+path that has ever produced a running stack is an acceptance script that deletes
+its install at the end.
+
+[`scripts/dev-seed.ps1`](../../scripts/dev-seed.ps1) is the first durable path.
+It writes each component's config file, then over HTTP initializes the operator
+passphrase, declares the three components, initializes the control root, marks
+first-run complete, and declares one llama.cpp runtime whose companion driver
+the agent creates itself. It is idempotent and it is not a wizard: every step is
+one the real first-run flow must take, and the steps that are awkward here are
+the ones still missing from the product.
+
+**The health check skipped the component most likely to be broken.** It treated
+a stopped runtime's companion driver as intentionally absent. The agent contract
+is explicit that the companion keeps running while its engine is stopped,
+precisely so the gateway can keep listing an on-demand model — so a dead
+companion breaks wake-on-demand and was being reported as merely skipped.
+Companions are now always probed; `stopped` and `loading` runtimes no longer
+fail the check.
+
+Verified live rather than by fixture, on 2026-09-10: a wiped install, agent
+started from it, seeded fresh (exit 0) and seeded again idempotently (exit 0),
+six processes running, `GET /v1/models` listing the alias behind its companion,
+and a real completion returned through the gateway in 151 ms at tier 1. Health
+Check exited 0 with the UI up, and exited 0 on components with the runtime
+deliberately stopped — its companion probed and healthy. Twenty-eight Pester
+tests pass. Not verified: no browser has driven the UI, so the client-side
+first-run redirect is asserted from the config flag, not observed.

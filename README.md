@@ -144,18 +144,42 @@ for package installation until that script is migrated.
 ### VS Code Tasks (Windows)
 
 [.vscode/tasks.json](.vscode/tasks.json) is shared in Git; other editor settings
-and local task state remain ignored. The tasks use Windows PowerShell 5.1 and
-[scripts/dev-tasks.ps1](scripts/dev-tasks.ps1):
+and local task state remain ignored. The tasks use Windows PowerShell 5.1,
+[scripts/dev-tasks.ps1](scripts/dev-tasks.ps1) and
+[scripts/dev-seed.ps1](scripts/dev-seed.ps1), which share
+[scripts/dev-common.ps1](scripts/dev-common.ps1):
 
-- **Start** launches **Agent** and **UI Dev** concurrently. The agent uses its
-  own virtualenv and existing topology; tasks do not declare components or start
-  a second control root. Install the active Python components into that venv.
+- **Start** launches **Agent** and **UI Dev** concurrently. The agent runs from
+  the dev install directory, not from a source checkout: everything it persists
+  (`agent.yaml`, `node.yaml`, `logs/`, companion driver configs) lands beside its
+  config file. Defaults to `.dev-install` beside the repo checkouts;
+  `EUGENE_PLEXUS_DEV_INSTALL` overrides it. Install the active Python components
+  into the agent's venv.
+- **Seed Dev Install** takes an empty install to a working one, and is the only
+  supported path from a fresh checkout to a running stack. It initializes the
+  operator passphrase, declares `control`/`gateway`/`library` over
+  `POST /v1/components`, initializes the control root, marks first-run complete,
+  and declares one llama.cpp runtime — which is what makes a model routable,
+  because the agent declares the companion inference-driver itself. Run it once,
+  after **Start**. It is idempotent: a second run logs in rather than
+  initializing and treats already-declared components as success. The passphrase
+  is read from `EUGENE_PLEXUS_DEV_PASSPHRASE` or prompted for privately as a
+  `SecureString`; it is never written to disk or put in a command line, and
+  there is no recovery path for it by design. Pass `-Model` and `-Binary` for
+  paths other than the defaults, or `-SkipRuntime` for topology only. Without a
+  llama-server binary the control plane is still seeded and the runtime is
+  skipped with a reason.
 - **UI Dev** runs the installed Next.js executable on port 3000 and fails if it
   is occupied. `EUGENE_PLEXUS_DEV_UI_PORT` overrides the port for launch and checks.
 - **Health Check** reads `/v1/components` and `/v1/runtimes` from the agent, probes
-  discovered component URLs, and checks the UI. Degraded/safe-mode services,
-  non-ready active runtimes, missing topology and network/auth failures return
-  exit code 1. Stopped runtimes and their idle companions are skipped.
+  every discovered component URL, and checks the UI. Degraded/safe-mode services,
+  crashed runtimes, missing topology and network/auth failures return exit
+  code 1. A `stopped` runtime does not fail the check — idle unload is policy
+  working — and neither does one that is still `loading`, which is a snapshot of
+  something in progress. Companion drivers are probed whether or not their engine
+  is loaded: per the agent contract a companion deliberately keeps running while
+  its runtime is stopped, which is what lets the gateway keep listing an
+  on-demand model, so a dead one has to surface rather than be skipped.
 - **Stop All** is a force-stop fallback: it stops only the Agent/UI launcher
   trees recorded by these tasks, including their supervised descendants. It
   verifies PID, creation time and launcher command; it never selects listeners
