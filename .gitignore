@@ -37,7 +37,8 @@ gen/
 .openapi-generator/
 
 # --- Editor / OS ---
-.vscode/
+.vscode/*
+!.vscode/tasks.json
 .idea/
 *.swp
 *.swo

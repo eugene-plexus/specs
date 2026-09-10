@@ -1,0 +1,153 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Eugene Plexus: Start",
+      "detail": "Start the local node agent and UI dev server. Components and runtimes come from the agent's configured topology.",
+      "dependsOn": [
+        "Eugene Plexus: Agent",
+        "Eugene Plexus: UI Dev"
+      ],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Eugene Plexus: Agent",
+      "detail": "Node agent (default :8079): supervises configured gateway, control, library, inference-drivers and engine runtimes.",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/scripts/dev-tasks.ps1",
+        "-Action",
+        "Agent"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "eugene-plexus",
+        "echo": true,
+        "showReuseMessage": false,
+        "clear": false
+      },
+      "problemMatcher": {
+        "owner": "eugene-plexus-agent",
+        "pattern": {
+          "regexp": "^(.+):(\\d+): (error|warning): (.*)$",
+          "file": 1,
+          "line": 2,
+          "severity": 3,
+          "message": 4
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Started server process.*",
+          "endsPattern": ".*Application startup complete.*"
+        }
+      }
+    },
+    {
+      "label": "Eugene Plexus: UI Dev",
+      "detail": "Next.js dev server with HMR (default :3000; EUGENE_PLEXUS_DEV_UI_PORT overrides it). Fails if the port is occupied.",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/scripts/dev-tasks.ps1",
+        "-Action",
+        "Ui"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "runOptions": {
+        "instanceLimit": 1
+      },
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "eugene-plexus",
+        "echo": true,
+        "showReuseMessage": false,
+        "clear": false
+      },
+      "problemMatcher": {
+        "owner": "eugene-plexus-ui",
+        "pattern": {
+          "regexp": "^(.+):(\\d+): (error|warning): (.*)$",
+          "file": 1,
+          "line": 2,
+          "severity": 3,
+          "message": 4
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*Starting.*",
+          "endsPattern": ".*Ready in.*|.*compiled successfully.*"
+        }
+      }
+    },
+    {
+      "label": "Eugene Plexus: Stop All",
+      "detail": "Force-stop only this workspace's recorded Agent/UI task trees. Use Ctrl+C in their terminals for normal shutdown; unrelated listeners are never selected by port.",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/scripts/dev-tasks.ps1",
+        "-Action",
+        "Stop"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "echo": true,
+        "clear": false,
+        "close": false
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Eugene Plexus: Health Check",
+      "detail": "Check agent, discovered components, runtime readiness and UI. Exits nonzero on failure; privately prompts for an operator token if needed.",
+      "type": "process",
+      "command": "powershell.exe",
+      "args": [
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/scripts/dev-tasks.ps1",
+        "-Action",
+        "Health"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared",
+        "echo": true,
+        "clear": false,
+        "close": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}

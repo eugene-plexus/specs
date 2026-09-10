@@ -146,6 +146,10 @@ CI runs both validators and a secret scan on pushes and PRs; PRs also check DCO
 sign-offs. Documentation-only changes should check links and whitespace without
 regenerating consumers. Never stage secret-bearing runtime configs.
 
+Windows development-task changes also run the focused Pester suite described in
+[README.md](README.md#vs-code-tasks-windows). CI runs it on Windows with Node.js,
+without sibling repositories, model files, credentials or a live control plane.
+
 ## Reporting issues
 
 File issues at [github.com/eugene-plexus/specs/issues](https://github.com/eugene-plexus/specs/issues). Useful issues include:

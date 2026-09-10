@@ -49,13 +49,13 @@ removed from current specs.
 
 ## Deferred Work
 
-| Item                                             | Why it remains open                                                                                                                                                                                       |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Windows bootstrap and VS Code task migration     | Existing script still clones retired/renamed repos and omits control/library; task descriptions retain the old topology. Behavior changes are outside this pass. README now warns against the stale path. |
-| Dependency maintenance                           | Existing Dependabot PRs and grouping policy were not merged, closed or changed. Retired repos remain writable, so automation may continue until explicitly disabled.                                      |
-| Website and namespace administration             | Domain content, registration and package publication were not changed or audited.                                                                                                                         |
-| Historical release/tag documentation             | Preserved as historical evidence; not rewritten to imply current support.                                                                                                                                 |
-| Security reporting policy and adversarial review | No new reporting channel or response-time promise was invented. The control-root security design still needs adversarial review.                                                                          |
+| Item                                             | Why it remains open                                                                                                                                                               |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows bootstrap migration                      | Existing bootstrap script still clones retired/renamed repos and omits control/library. README warns against that setup path. VS Code tasks were migrated in the follow-up below. |
+| Dependency maintenance                           | Existing Dependabot PRs and grouping policy were not merged, closed or changed. Retired repos remain writable, so automation may continue until explicitly disabled.              |
+| Website and namespace administration             | Domain content, registration and package publication were not changed or audited.                                                                                                 |
+| Historical release/tag documentation             | Preserved as historical evidence; not rewritten to imply current support.                                                                                                         |
+| Security reporting policy and adversarial review | No new reporting channel or response-time promise was invented. The control-root security design still needs adversarial review.                                                  |
 
 Product verification gaps remain visible in the [current overview](../../README.md#current-status):
 the M7 post-unload routing window, real two-machine failure tests, a real vLLM
@@ -70,3 +70,17 @@ current contract paths and removed stale claims. Package TOML/JSON is parsed and
 compared with the prior revision to ensure only descriptions changed. Existing
 formatting hooks and post-push CI remain the publication gates; no application
 behavior or live acceptance run is claimed by this maintenance record.
+
+## Follow-Up: VS Code Tasks
+
+Later on 2026-09-10, the operator approved task migration. The shared task
+definition now launches the agent and UI through a Windows helper that records
+launcher identity and limits forced shutdown to those process trees. Health
+checks discover component URLs and runtime states through the authenticated agent
+API, check JSON health status, and exit nonzero on failure. Tokens are neither
+tracked nor stored in task state. All other `.vscode` files remain ignored.
+
+Focused Pester tests include real temporary parent/child processes, an unrelated
+surviving process, PID reuse, topology-derived ports, HTTP health exit codes and
+degraded/unloaded states. A Windows CI job runs these tests; no actual inference
+stack is launched or stopped. See the [task guide](../../README.md#vs-code-tasks-windows).

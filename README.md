@@ -138,10 +138,50 @@ regenerate when changing the pin or verifying freshness.
 
 **Do not use the existing bootstrap script as the current setup path.**
 [`scripts/bootstrap.ps1`](scripts/bootstrap.ps1) still clones retired components
-under old names and omits `control` and `library`. Its behavior is unchanged in
-this documentation-only cleanup. Local VS Code launch tasks also describe the
-retired topology. Use the active repo READMEs and milestone acceptance scripts
-until those development tools are migrated.
+under old names and omits `control` and `library`. Use the active repo READMEs
+for package installation until that script is migrated.
+
+### VS Code Tasks (Windows)
+
+[.vscode/tasks.json](.vscode/tasks.json) is shared in Git; other editor settings
+and local task state remain ignored. The tasks use Windows PowerShell 5.1 and
+[scripts/dev-tasks.ps1](scripts/dev-tasks.ps1):
+
+- **Start** launches **Agent** and **UI Dev** concurrently. The agent uses its
+  own virtualenv and existing topology; tasks do not declare components or start
+  a second control root. Install the active Python components into that venv.
+- **UI Dev** runs the installed Next.js executable on port 3000 and fails if it
+  is occupied. `EUGENE_PLEXUS_DEV_UI_PORT` overrides the port for launch and checks.
+- **Health Check** reads `/v1/components` and `/v1/runtimes` from the agent, probes
+  discovered component URLs, and checks the UI. Degraded/safe-mode services,
+  non-ready active runtimes, missing topology and network/auth failures return
+  exit code 1. Stopped runtimes and their idle companions are skipped.
+- **Stop All** is a force-stop fallback: it stops only the Agent/UI launcher
+  trees recorded by these tasks, including their supervised descendants. It
+  verifies PID, creation time and launcher command; it never selects listeners
+  by port. Use Ctrl+C in the task terminals for normal shutdown. Legacy launches,
+  detached orphans and other workspaces are deliberately not targeted.
+
+Default agent address: `http://127.0.0.1:8079`. `EUGENE_PLEXUS_AGENT_BIND_PORT`
+also updates the UI/check defaults; an explicit `AGENT_URL` overrides their
+target. `GATEWAY_URL` remains the UI's gateway bootstrap override. Set bootstrap
+environment variables before launching VS Code so tasks inherit them; topology
+and model settings still belong in the application config UI.
+
+Health Check accepts `EUGENE_PLEXUS_DEV_TOKEN` from the environment or prompts
+privately for an operator token on HTTP 401. Obtain the token through the normal
+login flow. It is not stored in task arguments or files, printed, or sent to
+discovered health endpoints. Do not put tokens in tracked task definitions.
+The check covers one agent's topology, not the install-wide control view.
+
+Run the focused tests with Windows PowerShell (Pester 3.4.0 and Node.js):
+
+```powershell
+Import-Module Pester -RequiredVersion 3.4.0
+Invoke-Pester -Script ./scripts/dev-tasks.Tests.ps1 -EnableExit
+```
+
+The tests use mocks and temporary synthetic processes, not your running stack.
 
 ## Conventions
 

@@ -11,6 +11,20 @@ permissions:
   contents: read
 
 jobs:
+  dev-tasks:
+    name: Windows development tasks
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Check task ownership and topology health
+        shell: powershell
+        run: |
+          Import-Module Pester -RequiredVersion 3.4.0
+          Invoke-Pester -Script ./scripts/dev-tasks.Tests.ps1 -EnableExit
 
   secret-scan:
     name: Secret scan (gitleaks)
@@ -31,7 +45,7 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install openapi-spec-validator
         run: pip install 'openapi-spec-validator==0.8.5'
@@ -59,7 +73,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '24'
+          node-version: "24"
 
       # Lint only the top-level API specs. Shared schemas in
       # openapi/components/ are reached transitively via $ref, which is
