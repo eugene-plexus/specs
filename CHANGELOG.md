@@ -10,7 +10,23 @@ Eugene Plexus becomes a **self-hosted control plane for local LLM inference**: i
 
 This retires **both** prior directions as headline work — the consciousness framework (May 2026) and the from-scratch training platform (June 2026). Neither is deleted; both are archived. Full reasoning, evidence, milestones and locked decisions: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md).
 
-Five repos survive, one is new: `watchdog` (supervisor), `orchestrator` → **`gateway`**, `hemisphere-driver` → **`inference-driver`**, `ui`, `specs`, plus a new `library`.
+The initial pivot retained five repos and added `library`; M5 added `control`.
+The current seven are `agent` (formerly `watchdog`), `gateway` (formerly
+`orchestrator`), `inference-driver` (formerly `hemisphere-driver`), `library`,
+`control`, `ui`, and `specs`. Milestone entries below retain names used at the time.
+
+### Repository and Documentation Maintenance (2026-09-10)
+
+- Updated all 15 GitHub descriptions, topics and project links, plus the
+	organization profile, to distinguish seven active repos, one deferred
+	connector and seven retired repos. Archive flags remain unchanged by choice.
+- Refreshed active READMEs, contributor guides and stale package descriptions;
+	added dated status notices above inactive repos' historical documentation.
+- Reconciled control-root ownership, six codegen consumers, M7 enrollment,
+	lifecycle policy and outstanding verification. No contracts, generated code,
+	dependency versions or application behavior changed.
+- Documented the obsolete bootstrap/task setup instead of recommending it.
+	See the [maintenance record](docs/maintenance/repository-audit-2026-09-10.md).
 
 ### specs — M0 (contracts)
 
@@ -230,10 +246,10 @@ Validated with `openapi-spec-validator` 0.8.5 and `@redocly/cli`; all five docum
 
 One bump carried three specs changes together, per M1's precedent of spending a single re-pin on everything pending: the `watchdog` → `agent` rename (`76f9090`), M4's contracts (`aff219d`) and M5's (`811112b`).
 
-| Repo | Was | Now |
-|---|---|---|
+| Repo                                 | Was            | Now       |
+| ------------------------------------ | -------------- | --------- |
 | `agent` `gateway` `inference-driver` | `8288926` (M2) | `811112b` |
-| `library` `ui` | `a1e8e46` (M3) | `811112b` |
+| `library` `ui`                       | `a1e8e46` (M3) | `811112b` |
 
 All five level with `specs` HEAD; tests, mypy, ruff, `tsc --noEmit`, eslint, Prettier and the Next.js production build all green, and every repo's CI passed including the codegen-freshness check that asserts regenerated models match what was committed. The rename is now **fully absorbed**: `openapi/agent.yaml` is the spec, `agentUrl` is the config key, `ui/src/lib/agent.ts` is the module. Nothing was broken in the interim only because each consumer had been pinned to a SHA predating the move.
 
@@ -449,16 +465,16 @@ v0.1 installs need to:
 
 ### Component versions
 
-| Repo | v0.2.0 HEAD |
-|---|---|
-| `specs` | `052fd19` |
-| `orchestrator` | `9c26fe0` |
-| `hemisphere-driver` | `254038e` |
-| `ui` | `9196d5b` |
-| `watchdog` | `f84ab84` |
-| `memory` | `3fbf9b2` |
-| `identity` | `ca19f0a` |
-| `connector` | `3c8e1e1` |
+| Repo                | v0.2.0 HEAD |
+| ------------------- | ----------- |
+| `specs`             | `052fd19`   |
+| `orchestrator`      | `9c26fe0`   |
+| `hemisphere-driver` | `254038e`   |
+| `ui`                | `9196d5b`   |
+| `watchdog`          | `f84ab84`   |
+| `memory`            | `3fbf9b2`   |
+| `identity`          | `ca19f0a`   |
+| `connector`         | `3c8e1e1`   |
 
 ---
 

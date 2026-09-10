@@ -15,7 +15,16 @@ providers with failover, and serves a web UI with real auth so it works over a
 tailnet — not just localhost.
 
 **What it is not:** an inference engine. llama.cpp, vLLM and MLX are the
-engines. We never ship one and never compete with them.
+engines. We supervise upstream, not fork or replace it. llama.cpp and
+user-installed vLLM are integrated; MLX has no adapter yet.
+
+**Reading this record (updated 2026-09-10):** the motivation and original work
+list below describe the direction change. M0-M3 and M6 are live-verified; M5's
+core and M7's enrollment/addressing integration are built. M7 used two agents on
+one host, not two machines. M4's vLLM launch, browser acceptance and real
+multi-host failure testing remain outstanding. See the milestone implementation
+records and the [current overview](../../README.md#current-status), rather than
+treating an original future-tense work item as today's implementation status.
 
 ---
 
@@ -30,15 +39,15 @@ Reddit session tokens, and republishing a full thread with usernames isn't ours
 to relicense). Strip out the tribalism and the *unanswered* complaints are all
 operational, not engine-level:
 
-| Complaint (recurring, from the thread) | What's missing |
-|---|---|
-| "Q3_K_S vs 2Q_K_M? No one fucking knows." | Hardware-aware quant guidance |
-| "Tired of tweaking llama.cpp settings for every different model." | Per-model settings profiles, in a GUI |
-| "Couldn't use the models I already had on disk → uninstalled it." | Respect for the user's own files |
-| "Let me just go to the dumpster fire UI that is HuggingFace… no search page with summaries, just an autocomplete list. Off to a real search engine." | In-app model discovery |
-| "`ollama pull` takes away a lot of hugging face headaches… finding GGUF and working with HF, I wouldn't call it beginner friendly." | In-app download |
-| "Can I run this on a server?" (asked three separate times) | Headless + networked + authenticated |
-| llama-swap is good but "just run Docker" / "not a drop-in replacement" | Model swapping without a container runtime |
+| Complaint (recurring, from the thread)                                                                                                               | What's missing                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| "Q3_K_S vs 2Q_K_M? No one fucking knows."                                                                                                            | Hardware-aware quant guidance              |
+| "Tired of tweaking llama.cpp settings for every different model."                                                                                    | Per-model settings profiles, in a GUI      |
+| "Couldn't use the models I already had on disk → uninstalled it."                                                                                    | Respect for the user's own files           |
+| "Let me just go to the dumpster fire UI that is HuggingFace… no search page with summaries, just an autocomplete list. Off to a real search engine." | In-app model discovery                     |
+| "`ollama pull` takes away a lot of hugging face headaches… finding GGUF and working with HF, I wouldn't call it beginner friendly."                  | In-app download                            |
+| "Can I run this on a server?" (asked three separate times)                                                                                           | Headless + networked + authenticated       |
+| llama-swap is good but "just run Docker" / "not a drop-in replacement"                                                                               | Model swapping without a container runtime |
 
 Nobody owns this layer. Everyone builds an *engine* (llama.cpp, vLLM, MLX) or a
 *desktop chat app* (LM Studio, Unsloth Studio, llama.app). The boring middle —
@@ -86,7 +95,7 @@ these are the product.
 
 7. **Many backends at once, load-balanced, with failover.** Several models
    resident simultaneously; two replicas of one model across two GPUs served
-   round-robin; a priority-list cascade when a backend dies. Cloud
+  by outstanding requests and capacity; a priority-list cascade when a backend dies. Cloud
    subscriptions are just another backend — the surviving `claude_code_cli` and
    `codex_cli` engines mean **one endpoint over local models and the
    subscriptions the user already pays for.** Nothing in the field does this:
@@ -97,20 +106,20 @@ these are the product.
 
 ## 3. Shape
 
-Six live repos, becoming seven at M5. All three renames are **executed**:
+Seven active repos as of M7, including `control`. All three renames are **executed**:
 `orchestrator` → `gateway` and `hemisphere-driver` → `inference-driver` on
 2026-09-08, and `watchdog` → `agent` on 2026-09-09. Ports are inherited
 where a retired component had one.
 
-| Component | Repo | Port | Job |
-|---|---|---|---|
-| node agent | `agent` (was `watchdog`) | 8079 | **One per host.** Spawn/monitor engines by arbitrary argv; owns engine adapters (argv construction, readiness probe, config schema); local topology; log capture; safe mode. Still holds the trust root and serves the UI **until M5 extracts them** |
-| control root | `control` (**new at M5**) | tbd | Trust root, install-wide topology, node registry, the replicated log, the UI. Exactly one active, plus warm standbys |
-| gateway | `gateway` (was `orchestrator`) | 8080 | One OpenAI-compatible front door. Model → driver resolution, load balancing, priority-list failover, idle-unload triggers. **No backend knowledge.** |
-| inference-driver | `inference-driver` (was `hemisphere-driver`) | 8081 | **One instance per backend.** Uniform surface over one heterogeneous engine; owns provider choice, model id, secrets, params, health |
-| library | `library` | 8082 | The operator's own model directories: recursive scan (GGUF + safetensors), metadata, per-model launch profiles; catalogue search, resumable downloads, quant table, hardware fit scoring |
-| ui | `ui` | — | Config editor, runtime dashboard, library browser, chat playground, logs |
-| specs | `specs` | — | Contracts; consumers codegen from a pinned SHA as today |
+| Component        | Repo                                         | Port                   | Job                                                                                                                                                                                       |
+| ---------------- | -------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| node agent       | `agent` (was `watchdog`)                     | 8079                   | **One per host.** Component/engine supervision, adapters, local topology, admission, enrollment, logs and safe mode. Still serves UI assets; enrolled nodes use the install's signing key |
+| control root     | `control` (added at M5)                      | 8083                   | Trust root, install-wide topology, node registry and replicated log. Exactly one active, plus warm standbys. Spawns nothing; UI ownership remains undecided                               |
+| gateway          | `gateway` (was `orchestrator`)               | 8080                   | One OpenAI-compatible front door. Model → driver resolution, load balancing, priority-list failover, idle-unload triggers. **No backend knowledge.**                                      |
+| inference-driver | `inference-driver` (was `hemisphere-driver`) | 8081                   | **One instance per backend.** Uniform surface over one backend; owns provider choice, model id, secrets, protocol and health. Request parameters come from the gateway                    |
+| library          | `library`                                    | 8082                   | The operator's own model directories: recursive scan (GGUF + safetensors), metadata, per-model launch profiles; catalogue search, resumable downloads, quant table, hardware fit scoring  |
+| ui               | `ui`                                         | 3000 dev / 8079 served | Config editor, runtime dashboard, library, discovery/downloads, playground and logs; control types/proxy exist, dedicated control screens do not                                          |
+| specs            | `specs`                                      | —                      | Contracts; consumers codegen from a pinned SHA as today                                                                                                                                   |
 
 The **node agent** was called the *watchdog* through M0–M4, and the old
 name is still what appears in the acceptance-run records, which are
@@ -149,9 +158,9 @@ not a cost worth optimising away.
 Two different kinds of engine knowledge, in two places, no duplication and no
 shared library:
 
-| Knowledge | Owner | What it is |
-|---|---|---|
-| How to **start** an engine | supervisor | argv construction, working directory, readiness probe, curated flag schema |
+| Knowledge                    | Owner            | What it is                                                                                             |
+| ---------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------ |
+| How to **start** an engine   | supervisor       | argv construction, working directory, readiness probe, curated flag schema                             |
 | How to **talk to** an engine | inference-driver | wire protocol — `openai_compat_http`, `claude_code_cli`, `codex_cli`, all three of which already exist |
 
 The supervisor publishes what's running (`GET /v1/runtimes`) for the UI
@@ -161,10 +170,15 @@ code" stays intact — nobody imports anybody.
 
 ### Kill list
 
-`memory`, `identity`, `coordinator`, `trainer`, `data`, `eval`, `inference`,
-`cluster`. Archive, don't delete — the training arc is a coherent body of work
+`memory`, `identity`, `coordinator`, `trainer`, `data`, `eval`, `inference`.
+The original list also named `cluster`, but no such repository exists.
+Retain, don't delete — the training arc is a coherent body of work
 that may be revived as an optional add-on, and `data`'s HF-download and
 manifest code is partially reusable by `library`.
+
+These seven repos are retired in project scope, not GitHub-archived. On
+2026-09-10 the operator chose to keep archive flags unchanged while labeling
+their descriptions and README introductions. `connector` remains deferred.
 
 **`orchestrator` survives** (moved off the kill list 2026-09-08). It is already
 the thing that sat above N drivers and routed to them, so it is the gateway's
@@ -305,6 +319,11 @@ Everything not listed here already exists and mostly survives untouched.
   agent rejects a token signed by another. Deliberately **not** Raft; the
   log shape is chosen so that consensus later would be a transport-and-election
   swap rather than a redesign.
+
+  **Core built and live-verified**, with the agent-side enrollment and signed
+  rekey integration completed at M7. The M5 five-process acceptance verified a
+  completion after killing the control root. Actual two-machine partitions and
+  offline-node rotation are still unverified; UI assets remain on the agent.
 - **M6 — lifecycle policy** *(was M5)*
   ([design](m6-lifecycle-policy.md),
   [acceptance](../acceptance/m6-six-process-run.md))**.** Swap on
@@ -395,36 +414,36 @@ OS behave differently from every other target.
 
 ## 7. Locked decisions
 
-| Decision | Date |
-|---|---|
-| Keep the Eugene Plexus name, org, and namespaces | 2026-09-08 |
-| Strip in place — five surviving repos, history preserved | 2026-09-08 |
-| Never ship an inference engine; wrap upstream instead | 2026-09-08 |
-| Two layers: a routing gateway above N per-backend drivers. Never collapse them | 2026-09-08 |
-| `orchestrator` → `gateway`; `hemisphere-driver` → `inference-driver` | 2026-09-08 |
-| Lifecycle adapters (how to start an engine) live in the supervisor; wire protocol (how to talk to one) lives in the driver | 2026-09-08 |
-| No reasoning-model refusal. Warn and adapt; never reject a model the user owns | 2026-09-08 |
-| Manage engine binaries; don't make the user install llama.cpp first | 2026-09-08 |
-| Library is multi-format at v0.1 — GGUF *and* HF safetensors, format is a data-model dimension | 2026-09-08 |
-| Never commit the source thread's HTML (session tokens + relicensing); cite the permalink and an archive snapshot | 2026-09-08 |
-| The user's model files stay in user-chosen directories; no content-addressed cache | 2026-09-08 |
-| In-app discovery + download is required scope, not a convenience; downloads write plainly-named files into user-chosen directories | 2026-09-08 |
-| Consciousness program retired, not paused | 2026-09-08 |
-| v0.1 drives a user-provided vLLM; engine installation is managed for llama.cpp only. Driving is a first-class path — the refusal names the command, and discovery finds the operator's venv | 2026-09-09 |
-| The agent splits into a **control root** and a **node agent** — two components, not one binary with a role flag. Supervision is per-host and there are N; the trust root, topology and UI are inherently one | 2026-09-09 |
-| **Per-node sealing.** Secrets are sealed to the node that reads them, plus a passphrase-protected recovery recipient. No install-wide master key on every host | 2026-09-09 |
-| **Warm standby, log-shaped — not Raft.** One writer, one ordered mutation path, monotonic index. Consensus later is a transport-and-election swap, not a redesign | 2026-09-09 |
-| A control root is **never** marked `out` automatically. Promotion is an operator act, fenced by a monotonic epoch — automatic promotion without quorum is split-brain by definition | 2026-09-09 |
-| A driver follows a supervised runtime by **name**, resolved through the agent topology — never a literal URL, because the agent owns the port | 2026-09-09 |
-| Runtime states are defined by what they mean, not by how one engine reports them. For an engine that does not answer while loading, a live process that answers nothing *is* `loading` | 2026-09-09 |
-| **A companion inference-driver per runtime, declared by the agent** — not a declared pool. One driver per backend is the M0 rule; a runtime is a backend | 2026-09-10 |
+| Decision                                                                                                                                                                                                         | Date       |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| Keep the Eugene Plexus name, org, and namespaces                                                                                                                                                                 | 2026-09-08 |
+| Strip in place — five surviving repos, history preserved                                                                                                                                                         | 2026-09-08 |
+| Never ship an inference engine; wrap upstream instead                                                                                                                                                            | 2026-09-08 |
+| Two layers: a routing gateway above N per-backend drivers. Never collapse them                                                                                                                                   | 2026-09-08 |
+| `orchestrator` → `gateway`; `hemisphere-driver` → `inference-driver`                                                                                                                                             | 2026-09-08 |
+| Lifecycle adapters (how to start an engine) live in the supervisor; wire protocol (how to talk to one) lives in the driver                                                                                       | 2026-09-08 |
+| No reasoning-model refusal. Warn and adapt; never reject a model the user owns                                                                                                                                   | 2026-09-08 |
+| Manage engine binaries; don't make the user install llama.cpp first                                                                                                                                              | 2026-09-08 |
+| Library is multi-format at v0.1 — GGUF *and* HF safetensors, format is a data-model dimension                                                                                                                    | 2026-09-08 |
+| Never commit the source thread's HTML (session tokens + relicensing); cite the permalink and an archive snapshot                                                                                                 | 2026-09-08 |
+| The user's model files stay in user-chosen directories; no content-addressed cache                                                                                                                               | 2026-09-08 |
+| In-app discovery + download is required scope, not a convenience; downloads write plainly-named files into user-chosen directories                                                                               | 2026-09-08 |
+| Consciousness program retired, not paused                                                                                                                                                                        | 2026-09-08 |
+| v0.1 drives a user-provided vLLM; engine installation is managed for llama.cpp only. Driving is a first-class path — the refusal names the command, and discovery finds the operator's venv                      | 2026-09-09 |
+| The agent splits into a **control root** and a **node agent** — two components, not one binary with a role flag. Supervision is per-host and there are N; the trust root, topology and UI are inherently one     | 2026-09-09 |
+| **Per-node sealing.** Secrets are sealed to the node that reads them, plus a passphrase-protected recovery recipient. No install-wide master key on every host                                                   | 2026-09-09 |
+| **Warm standby, log-shaped — not Raft.** One writer, one ordered mutation path, monotonic index. Consensus later is a transport-and-election swap, not a redesign                                                | 2026-09-09 |
+| A control root is **never** marked `out` automatically. Promotion is an operator act, fenced by a monotonic epoch — automatic promotion without quorum is split-brain by definition                              | 2026-09-09 |
+| A driver follows a supervised runtime by **name**, resolved through the agent topology — never a literal URL, because the agent owns the port                                                                    | 2026-09-09 |
+| Runtime states are defined by what they mean, not by how one engine reports them. For an engine that does not answer while loading, a live process that answers nothing *is* `loading`                           | 2026-09-09 |
+| **A companion inference-driver per runtime, declared by the agent** — not a declared pool. One driver per backend is the M0 rule; a runtime is a backend                                                         | 2026-09-10 |
 | **The gateway decides lifecycle policy; the owning node's agent executes; the control root is not in the path.** Idle unload and start on demand are data-path behaviours and must survive management being down | 2026-09-10 |
-| **Nothing about lifecycle is replicated.** Loaded/unloaded is liveness, re-read from agents after a promotion; `LogOp` stays closed at nine; the policy fields ride inside `RuntimeSpec` | 2026-09-10 |
-| **Admission refuses with the arithmetic and a `force` override; it never queues.** `unknown` never refuses | 2026-09-10 |
-| **Every model is a slot; a slot's tiers are model ids, not driver names.** A model id names its replica set; a cloud subscription is a target like any other | 2026-09-10 |
-| **A driver whose runtime is not `ready` is not routed to**, and a request that finds nothing eligible refreshes the table before concluding anything | 2026-09-10 |
-| **The re-key is signed by the control identity, not authenticated by a bearer.** A rotation invalidates every bearer; the identity key does not rotate | 2026-09-10 |
-| **The node tells the root where it is.** `advertiseUrl`, configured or derived from the route to the root; the root records it and never guesses from a source address | 2026-09-10 |
-| **`Component.url` keeps one meaning** (what the agent binds and probes); `Component.advertiseUrl` is where peers reach it. Engines are never widened | 2026-09-10 |
-| **The install's signing key is stored in the clear on each node**, 0600. Children already hold it; a headless node has nobody to type a passphrase | 2026-09-10 |
-| **Every node enrolls the same way**, the control host's included. One mechanism | 2026-09-10 |
+| **Nothing about lifecycle is replicated.** Loaded/unloaded is liveness, re-read from agents after a promotion; `LogOp` stays closed at nine; the policy fields ride inside `RuntimeSpec`                         | 2026-09-10 |
+| **Admission refuses with the arithmetic and a `force` override; it never queues.** `unknown` never refuses                                                                                                       | 2026-09-10 |
+| **Every model is a slot; a slot's tiers are model ids, not driver names.** A model id names its replica set; a cloud subscription is a target like any other                                                     | 2026-09-10 |
+| **A driver whose runtime is not `ready` is not routed to**, and a request that finds nothing eligible refreshes the table before concluding anything                                                             | 2026-09-10 |
+| **The re-key is signed by the control identity, not authenticated by a bearer.** A rotation invalidates every bearer; the identity key does not rotate                                                           | 2026-09-10 |
+| **The node tells the root where it is.** `advertiseUrl`, configured or derived from the route to the root; the root records it and never guesses from a source address                                           | 2026-09-10 |
+| **`Component.url` keeps one meaning** (what the agent binds and probes); `Component.advertiseUrl` is where peers reach it. Engines are never widened                                                             | 2026-09-10 |
+| **The install's signing key is stored in the clear on each node**, 0600. Children already hold it; a headless node has nobody to type a passphrase                                                               | 2026-09-10 |
+| **Every node enrolls the same way**, the control host's included. One mechanism                                                                                                                                  | 2026-09-10 |

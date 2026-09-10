@@ -9,7 +9,7 @@ Eugene Plexus uses the [Developer Certificate of Origin](https://developercertif
 **Every commit must be signed off.** Use `git commit -s` (or `git commit --signoff`):
 
 ```bash
-git commit -s -m "Add foo to orchestrator schema"
+git commit -s -m "Add a gateway schema field"
 ```
 
 This appends a line to your commit message:
@@ -75,7 +75,10 @@ By making a contribution to this project, I certify that:
 
 ## Scope of changes
 
-This repo is *only* schemas. Implementation lives in the consumer repos (`orchestrator`, `hemisphere-driver`, `memory`, `ui`, …).
+This repo owns shared contracts, architecture/design documentation, cross-component
+release notes and acceptance records/scripts. Application implementation lives in
+the six active consumers: `agent`, `control`, `gateway`, `inference-driver`,
+`library`, and `ui`.
 
 A PR here should be one of:
 
@@ -83,14 +86,16 @@ A PR here should be one of:
 - **Refine a schema** — tighten types, add constraints, fix descriptions.
 - **Add a new component-level OpenAPI document** for a new component.
 - **Bump the document version** to reflect a breaking change.
+- **Maintain documentation and acceptance tooling** for cross-component behavior.
 
-Out of scope: implementation code, tests against running services, deployment configs.
+Out of scope: application implementation and generated consumer models. Historical
+consciousness and training components are not targets for new contracts.
 
 ## Style
 
 - **OpenAPI 3.1** — not 3.0. We use JSON Schema 2020-12 features.
 - **YAML, two-space indent**, no tabs.
-- **kebab-case** for path segments and filenames; **camelCase** for query and JSON body fields; **PascalCase** for schema names.
+- **kebab-case** for path segments and filenames; **camelCase** for query and JSON body fields; **PascalCase** for schema names. The gateway's OpenAI-compatible `/v1/chat/completions` and `/v1/models` deliberately use OpenAI's snake_case and error envelope.
 - Every schema and operation has a `description`. Other contributors will read these without context.
 - Prefer `$ref` to shared components in `openapi/components/common.yaml` over duplicating types across documents.
 - Use `oneOf` + `discriminator` for tagged unions, not raw `anyOf`.
@@ -99,11 +104,30 @@ Out of scope: implementation code, tests against running services, deployment co
 
 Pre-1.0, breaking changes are allowed but require:
 
-1. A note in the changelog (or PR description, until we have a CHANGELOG file).
+1. A migration note in [CHANGELOG.md](CHANGELOG.md).
 2. A bump to the document's `info.version`.
 3. A heads-up in the issue tracker so consumer repos can plan their update.
 
 After 1.0, breaking changes require a major version bump.
+
+## Consumer Updates
+
+Publish the specs commit first. Each affected consumer then updates `SPECS_REF`
+and commits regenerated output with that pin. There are **six** consumers,
+including the TypeScript UI. No re-pin is needed for documentation-only changes.
+
+- Audit each consumer's codegen input list: a document rename or addition must
+    move with a pin at which the path exists.
+- Generate both revisions and compare output; counting `$ref`s does not establish
+    whether a shared-schema change affects generated models.
+- `control` generates from both `control.yaml` and `agent.yaml`; the UI generates
+    all five top-level API documents.
+- Keep `SPECS_REF` plain UTF-8 without a BOM. Windows PowerShell 5.1's
+    `Set-Content -Encoding utf8` adds a BOM and breaks archive URLs.
+
+External contributions use PRs. The solo-maintainer workflow lands signed-off
+commits directly on `main`, with CI checked after pushing. Do not force-push or
+create branches as a side effect of a routine documentation update.
 
 ## Validation
 
@@ -111,14 +135,16 @@ Before opening a PR, validate the spec locally:
 
 ```bash
 # Python — using openapi-spec-validator
-pip install openapi-spec-validator
-openapi-spec-validator openapi/orchestrator.yaml
+pip install openapi-spec-validator==0.8.5
+python -m openapi_spec_validator openapi/gateway.yaml
 
-# Or — using redocly CLI
-npx @redocly/cli@latest lint openapi/orchestrator.yaml
+# Also run Redocly with the CI version
+npx --yes @redocly/cli@2.30.4 lint openapi/gateway.yaml openapi/inference-driver.yaml openapi/library.yaml openapi/agent.yaml openapi/control.yaml
 ```
 
-CI will run the same validators on every PR.
+CI runs both validators and a secret scan on pushes and PRs; PRs also check DCO
+sign-offs. Documentation-only changes should check links and whitespace without
+regenerating consumers. Never stage secret-bearing runtime configs.
 
 ## Reporting issues
 
@@ -128,4 +154,4 @@ File issues at [github.com/eugene-plexus/specs/issues](https://github.com/eugene
 - Ambiguous or under-specified endpoints causing implementation drift.
 - Proposals for new endpoints, with a use case described.
 
-For broader architectural questions about Eugene Plexus, file the issue on the [orchestrator repo](https://github.com/eugene-plexus/orchestrator) instead.
+Cross-component architecture questions belong in [specs issues](https://github.com/eugene-plexus/specs/issues), next to the design documents. Component-specific bugs belong in the owning repo.
