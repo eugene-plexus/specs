@@ -727,13 +727,24 @@ paths:
       operationId: authLogin
       summary: Exchange the operator passphrase for a session token.
       security: []
+      description: |
+        Returns `common.yaml`'s shared `AuthLoginResponse`, the same
+        shape the agent's login returns, so the field is `sessionToken`.
+
+        It was not always. This document used to define its own local
+        `SessionToken` whose field was `token`, which meant the one
+        concept had two wire shapes in one install and the UI's session
+        handling could not be reused against the trust root. A component
+        redefining a shared schema locally is precisely what the shared
+        `specs` repo exists to prevent, so the duplicate is gone rather
+        than documented.
       responses:
         '200':
           description: Session issued.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionToken'
+                $ref: 'components/common.yaml#/components/schemas/AuthLoginResponse'
         '401':
           description: Passphrase rejected.
           content:
@@ -1588,13 +1599,3 @@ components:
             that would otherwise reach a dead node's secrets. There is no
             recovery path, by design.
 
-    SessionToken:
-      type: object
-      required:
-        - token
-      properties:
-        token:
-          type: string
-        expiresAt:
-          type: string
-          format: date-time
