@@ -5,7 +5,7 @@
 .DESCRIPTION
   This file has no `param` block on purpose. Dot-sourcing runs the
   sourced file in the caller's scope, so a `param` block here would
-  silently overwrite the caller's own parameters — `dev-tasks.ps1
+  silently overwrite the caller's own parameters - `dev-tasks.ps1
   -Action Ui` would find its `$Action` reset to the seeder's default
   and quietly do nothing at all. Keep this file parameterless.
 

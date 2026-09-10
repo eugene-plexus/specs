@@ -6,7 +6,7 @@
   The honest first draft of first-run.
 
   Until now the only path from nothing to a running stack was an
-  acceptance script — `scripts/m6-acceptance.sh` builds a throwaway
+  acceptance script - `scripts/m6-acceptance.sh` builds a throwaway
   install in $TMPDIR, uses it, and deletes it. Nothing built an install
   an operator could keep, so the config in a developer's checkout was
   never exercised and drifted for four milestones without anyone
@@ -23,7 +23,7 @@
             own config file. Safe before the agent starts; idempotent.
     Seed    online. Initializes the operator passphrase, declares the
             topology over `POST /v1/components`, initializes the control
-            root, and declares one llama.cpp runtime — which is what
+            root, and declares one llama.cpp runtime - which is what
             makes the alias routable, because the agent declares the
             companion inference-driver itself (M6).
 
@@ -36,13 +36,13 @@
 .PARAMETER InstallPath
   Where the install lives. Defaults to `.dev-install` beside the repo
   checkouts, or $env:EUGENE_PLEXUS_DEV_INSTALL. This is install state,
-  not source — it is deliberately outside every git checkout, because
+  not source - it is deliberately outside every git checkout, because
   putting it inside one is how the last install came to be a fossil
   nobody could see.
 
 .PARAMETER Model
   Absolute path to a .gguf. The operator's own path, in the operator's
-  own layout — never copied, never renamed.
+  own layout - never copied, never renamed.
 
 .PARAMETER Binary
   Path to llama-server(.exe). When it is missing the topology is still
@@ -81,7 +81,7 @@ function Write-DevInstall {
     New-Item -ItemType Directory -Path $Path -Force | Out-Null
 
     # No agent.yaml. The components are declared over HTTP below, so this
-    # exercises POST /v1/components rather than a hand-written topology —
+    # exercises POST /v1/components rather than a hand-written topology -
     # the wizard cannot create components yet, and pretending otherwise
     # here would hide that.
     Write-TextFile (Join-Path $Path 'control.yaml') "logLevel: INFO`n"
@@ -214,9 +214,29 @@ function Add-DevRuntime {
     }
     Write-Host "  declared runtime $($Spec.name) (admission: $($result.Body.status)); companion driver '$($result.Body.driver)'"
     if (-not $result.Body.driver) {
-        Write-Host '  WARNING: no companion driver was reported — the alias will not be routable.'
+        Write-Host '  WARNING: no companion driver was reported - the alias will not be routable.'
     }
     return $true
+}
+
+# Waits rather than failing fast, and waits BEFORE anything is asked of the
+# operator. The two tasks are independent by design - VS Code's dependsOn on
+# a background task resolves on a log pattern, which is a worse thing to
+# depend on than a health endpoint - so seeding may legitimately be started
+# first. Prompting for a passphrase and only then discovering there is no
+# agent throws away what the operator typed, which is how this was found.
+function Wait-ForAgent {
+    param([string]$AgentUrl, [int]$TimeoutSeconds = 180)
+
+    if (Wait-Healthy $AgentUrl 1) { return $true }
+    Write-Host "Waiting for the agent at $AgentUrl."
+    Write-Host '  Start it with the "Eugene Plexus: Start" task (or Agent alone); this will continue on its own.'
+    Write-Host "  Giving up after $TimeoutSeconds seconds. Ctrl+C to stop waiting."
+    if (Wait-Healthy $AgentUrl $TimeoutSeconds) {
+        Write-Host '  agent is up.'
+        return $true
+    }
+    return $false
 }
 
 function Wait-RuntimeReady {
@@ -253,8 +273,8 @@ function Invoke-DevSeed {
     $ok = $true
 
     Write-Host "`n== operator session"
-    if (-not (Wait-Healthy $agentUrl 30)) {
-        throw "No agent at $agentUrl. Run the `"Eugene Plexus: Start`" task first."
+    if (-not (Wait-Healthy $agentUrl 10)) {
+        throw "The agent at $agentUrl stopped answering. Check its task terminal."
     }
     $session = Get-OperatorToken $agentUrl $Passphrase
     $token = $session.Token
@@ -286,7 +306,7 @@ function Invoke-DevSeed {
 
     # Seeding IS this install's first run. Leaving the flag false sends the
     # UI to /setup, where the wizard's first act is POST /v1/auth/initialize
-    # on an install that already has an operator — a dead end.
+    # on an install that already has an operator - a dead end.
     Write-Host "`n== first run"
     $flip = Invoke-Api PATCH "$agentUrl/v1/config" @{ firstRunComplete = $true } $token
     if ($flip.Code -eq 200) { Write-Host '  marked first-run complete; the UI opens on the dashboard' }
@@ -349,6 +369,11 @@ if ($MyInvocation.InvocationName -ne '.') {
             Write-DevInstall $installPath $Model
         }
         if ($Action -eq 'Seed' -or $Action -eq 'All') {
+            # Before the prompt, not after it.
+            $agentUrl = "http://127.0.0.1:$((Get-DevPorts).Agent)"
+            if (-not (Wait-ForAgent $agentUrl)) {
+                throw "No agent at $agentUrl. Run the `"Eugene Plexus: Start`" task, then run this again - re-running is safe and nothing was asked of you."
+            }
             if ($env:EUGENE_PLEXUS_DEV_PASSPHRASE) {
                 $passphrase = ConvertTo-SecureString $env:EUGENE_PLEXUS_DEV_PASSPHRASE -AsPlainText -Force
             } else {

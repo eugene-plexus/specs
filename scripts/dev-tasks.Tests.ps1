@@ -50,8 +50,8 @@ Describe 'Workspace task health' {
     }
 
     It 'does not fail an intentionally unloaded runtime but still probes its companion' {
-        # The companion driver keeps running while its engine is stopped —
-        # that is what lets the gateway list an on-demand model — so a dead
+        # The companion driver keeps running while its engine is stopped -
+        # that is what lets the gateway list an on-demand model - so a dead
         # companion has to surface, not be skipped as "intentional".
         $script:RuntimeStatus = 'stopped'
         Test-StackHealth 'http://agent' 'http://ui' | Should Be $true
@@ -243,6 +243,31 @@ Describe 'Shared task definitions' {
         }
     }
 }
+Describe 'Script encoding' {
+    It 'keeps every helper script pure ASCII' {
+        # Windows PowerShell 5.1 reads a .ps1 without a BOM as the system ANSI
+        # codepage, not UTF-8. A single em dash inside a string literal is
+        # enough to break the parse with errors that name the wrong line.
+        # Adding a BOM would break other readers, so the rule is ASCII only.
+        foreach ($name in 'dev-tasks.ps1', 'dev-seed.ps1', 'dev-common.ps1', 'dev-tasks.Tests.ps1') {
+            $bytes = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $name))
+            $high = @($bytes | Where-Object { $_ -gt 127 })
+            if ($high.Count -ne 0) { throw "$name contains $($high.Count) non-ASCII byte(s)" }
+            $high.Count | Should Be 0
+        }
+    }
+
+    It 'parses every helper script with the Windows PowerShell parser' {
+        foreach ($name in 'dev-tasks.ps1', 'dev-seed.ps1', 'dev-common.ps1') {
+            $errors = $null
+            [void][Management.Automation.PSParser]::Tokenize(
+                (Get-Content (Join-Path $PSScriptRoot $name) -Raw), [ref]$errors)
+            if ($errors -and $errors.Count) { throw "$name : $($errors[0].Message)" }
+            $errors.Count | Should Be 0
+        }
+    }
+}
+
 Describe 'Dev install seeding' {
     It 'prefers an explicit path, then the environment, then the polyrepo default' {
         Get-DevInstallPath 'C:\poly' 'C:\explicit' | Should Be 'C:\explicit'
@@ -282,6 +307,28 @@ Describe 'Dev install seeding' {
         It 'omits modelRoots entirely when there is no model' {
             Write-DevInstall $script:Install ''
             (Get-Content (Join-Path $script:Install 'library.yaml') -Raw) -match 'modelRoots' | Should Be $false
+        }
+    }
+
+    Context 'waiting for the agent' {
+        BeforeEach { Mock Write-Host {} }
+
+        It 'returns immediately and says nothing when the agent is already up' {
+            Mock Wait-Healthy { $true }
+            Wait-ForAgent 'http://agent' | Should Be $true
+            Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It
+        }
+
+        It 'waits, explains what it is waiting for, and succeeds when the agent appears' {
+            $script:Probe = 0
+            Mock Wait-Healthy { $script:Probe++; return ($script:Probe -gt 1) }
+            Wait-ForAgent 'http://agent' 5 | Should Be $true
+            Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*Eugene Plexus: Start*' }
+        }
+
+        It 'gives up rather than hanging forever' {
+            Mock Wait-Healthy { $false }
+            Wait-ForAgent 'http://agent' 1 | Should Be $false
         }
     }
 

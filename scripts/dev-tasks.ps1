@@ -121,7 +121,7 @@ function Test-StackHealth {
             Write-Host "Runtime $($runtime.name): $($runtime.status)"
             # `stopped` is a healthy state: idle unload is policy working,
             # and start-on-demand will wake it. `loading` is a snapshot of
-            # something in progress, not a fault — an engine can hold the
+            # something in progress, not a fault - an engine can hold the
             # port without answering for minutes. Neither fails the check.
             if ($runtime.status -eq 'loading') {
                 Write-Host "     still loading; re-run to confirm it settles."
@@ -131,8 +131,8 @@ function Test-StackHealth {
         }
         # A companion driver is probed whether or not its runtime is loaded.
         # Per the agent spec, the companion deliberately keeps running while
-        # the engine is stopped — that is precisely what lets the gateway
-        # keep listing an on-demand model — so a dead one breaks wake-on-
+        # the engine is stopped - that is precisely what lets the gateway
+        # keep listing an on-demand model - so a dead one breaks wake-on-
         # demand and must not be reported as merely skipped.
         foreach ($component in $topology.components) {
             if ($component.status -ne 'running') {
@@ -169,8 +169,8 @@ if ($MyInvocation.InvocationName -ne '.') {
             'Agent' {
                 $root = Join-Path $polyrepoRoot 'agent'
                 # The agent's cwd is the install, not the checkout. Everything
-                # it persists — agent.yaml, node.yaml, logs/, the companion
-                # drivers' configs — lands beside its config file, and putting
+                # it persists - agent.yaml, node.yaml, logs/, the companion
+                # drivers' configs - lands beside its config file, and putting
                 # that inside a source checkout is how the previous install
                 # became a fossil that no acceptance run ever loaded.
                 $install = Get-DevInstallPath $polyrepoRoot
