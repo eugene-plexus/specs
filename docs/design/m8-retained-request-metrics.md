@@ -480,8 +480,149 @@ now answers three open questions instead of two.
 
 ---
 
-## 10. Implementation notes
+## 10. Implementation notes (2026-09-10, late)
 
-*(To be written as it is built, following the pattern of M6 §11 and
-M7 §11: what the live run found, and where the implementation departs
-from this document.)*
+Contracts specs `ebf24f7`; gateway `d722d78`; ui `cd4d322`. All CI green.
+`gateway` and `ui` re-pinned; the other four consumers stayed at
+`a0d793e`, and that was **verified rather than reasoned** — regenerating
+`agent` at the new pin changed only the recorded ref string in
+`_generated/__init__.py`, no model. Worth knowing for next time:
+bumping a pin *always* produces a diff for that reason, so "keep all six
+level" costs a commit per repo whose only content is a version string.
+
+### What the build changed from this document
+
+- **`RoutingHooks.on_attempt_end` grew `elapsed_ms` and `error`** as
+  designed, and the per-request join happens in a `collect_attempts()`
+  **contextvar** scope rather than on the table. The table is shared and
+  long-lived while the rows belong to one request, and the
+  `DriverClient` protocol has no room for a request id to key them by.
+  Outside a scope the hooks record nothing, which is what keeps the
+  existing tests and any non-request `generate()` working unchanged.
+- **The streaming path opens its own scope.** A `with` block in the
+  route would be closed before the generator ran — the generator runs
+  after the handler returns. The stream records itself, and emits the
+  routing extension on its final frame.
+- **Rollups are written and retained but no endpoint serves them.** This
+  is a scope reduction, and the *contract text was corrected to match*
+  rather than the implementation faked: a rollup holds sums and a max,
+  and **a percentile cannot be reconstructed from those.** Serving a
+  mean through a field named `p50` would be a quieter error than serving
+  nothing. §5's retention still holds; §7's original wording promised
+  coverage it could not deliver.
+
+### Three defects found while building, two by the existing suite
+
+1. **A hard crash, not an exception.** Windows access violation.
+   Cancelling the writer task does **not** stop the worker thread its
+   `asyncio.to_thread` call is running on, so shutdown closed the SQLite
+   connection under a live `INSERT`. Everything touching the connection
+   now holds a `threading.Lock`, and close flushes and closes inside it.
+   *Generalizes past this module: `to_thread` plus task cancellation is
+   not a stop.*
+2. **The test run wrote `metrics.sqlite3` into the checkout.** The path
+   is relative by default (correctly — the gateway's cwd is the install
+   directory) and pytest's cwd is the repo root. Same family as the
+   `git add -A` leak already on record. Gitignored, and the fixture
+   points at `tmp_path`.
+3. **A fake driver that answers in under a millisecond floors
+   `elapsed_ms` to zero**, so throughput was correctly `null` and the
+   *test* was wrong. An instantaneous backend is not a simpler version
+   of a backend; it is a different one.
+
+### What the live runs found, and they took three attempts
+
+`scripts/m8-acceptance.sh` **PASSED on the third attempt — 13 checks, 0
+failures** (record:
+[`m8-metrics-run.md`](../acceptance/m8-metrics-run.md)), against a real
+gateway, real drivers and a live Ollama with two models.
+
+**The central claim of the two-row shape, proved live.** A slot whose
+tier 1 refuses:
+
+```
+attempts=2 tier=2  [('dead-backend', 2171ms, failed, 'DriverError'),
+                    ('ollama-small', 4189ms, served, -)]
+survivor took 4189 ms of a 6360 ms request - 2171 ms was the dead backend
+```
+
+Computed from the request total the survivor would have scored **34%
+lower** than it did. That is the whole argument for an attempt being its
+own row, measured rather than asserted. `tier: 2` is also correct here —
+`dead-model` *is* served by a reachable driver, so the tier is not
+dropped, which confirms the defect below is specific to a target nothing
+serves at all.
+
+**The headline number, produced.** Same prompt, same `max_tokens`, one
+gateway. Three runs, and the spread is the finding:
+
+| model | backend | tok/s (run 2) | tok/s (run 3) | samples |
+|---|---|---|---|---|
+| dolphin3-abliterated 8B Q4 | `ollama-small` | 33.5 | 29.6 | 6 |
+| qwen3-coder:30b (MoE) | `ollama-big` | 19.7 | 3.3 | 4 |
+
+The 8B is stable across runs. **The 30B moved by a factor of six**,
+because Ollama had unloaded it between runs and reloaded it inside a
+measured request. That is not noise to be averaged away; it is the next
+point.
+
+**An external backend's own model load is inside the first request, and
+`waitedMs` cannot see it.** `swappedIn` and `waitedMs` only cover
+runtimes *this* control plane supervises. Ollama loading its own model
+made a first request 17.9 s and 5 tok/s — indistinguishable from a slow
+backend. The same backend measured 116.8 tok/s on a later sample and
+33.5 over six. **So the honest reading of this table is that it is a
+median with a sample count, not a benchmark**, which is why the UI shows
+the count beside every figure and why the script warms up first. It is
+also why percentiles rather than means.
+
+**Our tokens/sec is a whole-request rate, not a decode rate.** It is
+completion tokens over the serving attempt's wall clock, so prompt
+processing and any backend-side queueing are inside it, and a short
+response scores lower than a long one for the same engine. Comparing two
+backends is only meaningful at the same prompt and `max_tokens` — which
+the script does, and which a UI cannot enforce.
+
+**Two failed attempts at constructing a live cascade, both instructive:**
+
+- A slot whose tier-1 target names a **model id nothing serves** does
+  not cascade. `RoutingTable.resolve()` drops a tier whose target has no
+  backends, so the slot collapses to one tier and the fallback answers
+  as **tier 1**. See the defect below.
+- Patching `baseUrl` on an **`ollama_local`** driver is silently
+  ignored: the named local providers carry a fixed `default_base_url`,
+  and the `baseUrl` field is `showWhen: provider ==
+  openai_compat_custom`. The "dead" driver talked to the real Ollama and
+  served the request — and the metrics correctly recorded a success,
+  which is how the mistake was visible at all.
+
+The construction that works is `openai_compat_custom` with a `baseUrl`
+pointing at a closed port: a driver the gateway **can** reach, whose
+backend refuses. A driver the gateway cannot reach is dropped from the
+table and produces no cascade at all, which is a different scenario.
+
+### A pre-existing M6 defect this surfaced, deliberately not fixed
+
+**`RoutingTable.resolve()` drops a tier whose target names a model id
+nothing serves**, so a fallback reports `tier: 1`. The contract says
+`tier > 1` means every backend in an earlier tier was ineligible or
+failed, and `TieredClient` deliberately keeps *empty* tiers to preserve
+the numbering — but `resolve()` has already removed them. Reproduced in
+isolation.
+
+It matters more now that M8 retains and displays `tier` and
+`tierCounts`: "is a later tier quietly serving everything" (§1 question
+4) cannot be answered correctly for a slot whose earlier target is not
+currently served by anything.
+
+Left alone on purpose. Changing tier semantics is a behaviour change to
+the load-bearing routing path, it is the third routing question left
+open across M6 and M7, and §4 of this document argues against touching
+the picker while one is outstanding. It is Troy's call.
+
+### Still true after M8
+
+**vLLM against llama.cpp remains unmeasured**, because vLLM still has
+not run — no Windows build, WSL not installed. M8 makes the comparison
+*possible* and does not make it *available*. The WSL2 session now
+answers three open questions rather than two.

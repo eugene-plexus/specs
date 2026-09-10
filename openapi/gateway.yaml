@@ -477,8 +477,8 @@ paths:
           description: |
             Start of the window, inclusive. Defaults to 24 hours ago.
             Rows older than `metricsRetentionDays` are gone, so a
-            `since` beyond it returns what survived, plus rollups when
-            `bucket=hour`.
+            `since` beyond it returns what survived and sets
+            `truncated`.
           schema:
             type: string
             format: date-time
@@ -503,8 +503,15 @@ paths:
           description: |
             `none` (default) returns one group per dimension tuple over
             the whole window. `hour` additionally splits each group by
-            hour, which is what a history chart reads and the only
-            granularity rollups retain once raw rows are pruned.
+            hour, which is what a history chart reads.
+
+            Both are computed from **raw rows**, so both are bounded by
+            `metricsRetentionDays`. Hourly rollups are written and kept
+            past retention, but they are not served here and deliberately
+            so: a rollup can carry sums and a max, and a percentile
+            cannot be reconstructed from those. Serving a mean through a
+            field named `p50` would be a quieter error than serving
+            nothing.
           schema:
             type: string
             enum: [none, hour]
@@ -538,8 +545,8 @@ paths:
         and the backends it tried in order.
 
         Newest first, cursor-paged. Raw rows exist only within
-        `metricsRetentionDays`; older traffic survives as rollups
-        reachable through `GET /v1/metrics?bucket=hour` and not here.
+        `metricsRetentionDays`; older traffic survives only as hourly
+        rollups, which no endpoint serves yet.
       parameters:
         - name: limit
           in: query
@@ -630,8 +637,10 @@ paths:
           install at one completion a second is about 17 MB a day.
         * **`metricsRollupEnabled`** (`boolean`, default `true`) —
           hourly aggregates, kept indefinitely because they are a few
-          hundred rows a day and they are the only thing that can
-          answer "what did last night look like" once raw rows age out.
+          hundred rows a day and they are the only record that survives
+          retention. Written but not yet served: they hold sums and a
+          max, and no endpoint reports a percentile it cannot compute
+          from those.
       responses:
         '200':
           description: Current config.
@@ -1527,8 +1536,10 @@ components:
           type: boolean
           description: |
             True when the window reaches past `metricsRetentionDays`,
-            so raw rows for its early part no longer exist. With
-            `bucket=hour` the rollups still cover it.
+            so raw rows for its early part no longer exist and the
+            numbers describe less than the window asked for. Hourly
+            rollups do cover that period on disk; nothing serves them
+            yet.
         groups:
           type: array
           items:
