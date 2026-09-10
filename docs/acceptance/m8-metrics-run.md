@@ -22,7 +22,8 @@ behind one gateway is the comparison the milestone exists for**. The
 engine-supervision path is M0's and M6's ground and is not re-proved
 here.
 
-**Thirteen checks, all green.**
+**Thirteen checks, all green** on the run recorded below; **seventeen**
+after the phase-decomposition section was added.
 
 ---
 
@@ -154,12 +155,14 @@ table and produces no cascade at all.
 
 ## Open, and not closed by this run
 
-- **`resolve()` drops a tier whose target nothing serves**, so a
-  fallback reports `tier: 1` against a contract that says `tier > 1`
-  means an earlier tier lost. Pre-existing M6 behaviour, reproduced in
-  isolation, and more consequential now that `tier` and `tierCounts`
-  are retained and displayed. Not fixed: changing tier semantics is a
-  behaviour change to the load-bearing routing path.
+- ~~**`resolve()` drops a tier whose target nothing serves.**~~
+  **FIXED** the same night, gateway `c7190f6`, on Troy's call after
+  seeing the two cases side by side. Every configured tier is kept now,
+  including empty ones, so a fallback reports its real tier; the slot's
+  own implicit self-tier is still dropped when nothing serves it,
+  because keeping *that* one would push each configured target up a
+  number — the same defect in the other direction, and how the first
+  attempt at the fix broke five tests.
 - **vLLM against llama.cpp is still unmeasured.** No Windows build, WSL
   not installed. M8 makes the heterogeneous comparison possible, not
   available. The WSL2 session now answers three open questions.
