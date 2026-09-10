@@ -137,9 +137,16 @@ children use its interpreter. In `ui`, use Node.js 24 to match CI, `npm ci`, and
 regenerate when changing the pin or verifying freshness.
 
 **Do not use the existing bootstrap script as the current setup path.**
-[`scripts/bootstrap.ps1`](scripts/bootstrap.ps1) still clones retired components
-under old names and omits `control` and `library`. Use the active repo READMEs
-for package installation until that script is migrated.
+[`scripts/bootstrap.ps1`](scripts/bootstrap.ps1) clones the seven live repos,
+builds a Python 3.12 venv per repo, and then installs every component into the
+**agent's** venv as well. That last step is not redundancy: the agent supervises
+children by spawning them with its own `sys.executable`, so a component missing
+from the agent's environment cannot be started by it at all, and the agent
+declines to declare it on a first boot.
+
+Afterwards there is nothing else to run. Start the agent and it declares and
+spawns the control root, gateway and library itself; the browser UI is for
+setting a passphrase and pointing the library at your models.
 
 ### VS Code Tasks (Windows)
 
@@ -149,26 +156,24 @@ and local task state remain ignored. The tasks use Windows PowerShell 5.1,
 [scripts/dev-seed.ps1](scripts/dev-seed.ps1), which share
 [scripts/dev-common.ps1](scripts/dev-common.ps1):
 
-- **Start** launches **Agent** and **UI Dev** concurrently. The agent runs from
-  the dev install directory, not from a source checkout: everything it persists
+- **Start** launches **Agent** and **UI Dev** concurrently, and on a first boot
+  that is the whole of getting a control plane running: the agent declares and
+  spawns the control root, gateway and library itself. The agent runs from the
+  dev install directory, not from a source checkout: everything it persists
   (`agent.yaml`, `node.yaml`, `logs/`, companion driver configs) lands beside its
   config file. Defaults to `.dev-install` beside the repo checkouts;
-  `EUGENE_PLEXUS_DEV_INSTALL` overrides it. Install the active Python components
-  into the agent's venv.
-- **Seed Dev Install** takes an empty install to a working one, and is the only
-  supported path from a fresh checkout to a running stack. It initializes the
-  operator passphrase, declares `control`/`gateway`/`library` over
-  `POST /v1/components`, initializes the control root, marks first-run complete,
-  and declares one llama.cpp runtime — which is what makes a model routable,
-  because the agent declares the companion inference-driver itself. Run it once,
-  after **Start**. It is idempotent: a second run logs in rather than
-  initializing and treats already-declared components as success. The passphrase
-  is read from `EUGENE_PLEXUS_DEV_PASSPHRASE` or prompted for privately as a
-  `SecureString`; it is never written to disk or put in a command line, and
-  there is no recovery path for it by design. Pass `-Model` and `-Binary` for
-  paths other than the defaults, or `-SkipRuntime` for topology only. Without a
-  llama-server binary the control plane is still seeded and the runtime is
-  skipped with a reason.
+  `EUGENE_PLEXUS_DEV_INSTALL` overrides it.
+- **Finish Install (optional)** is the unattended equivalent of the first-run
+  UI, for a dev loop or CI that should not need a browser: it sets the operator
+  passphrase on the agent and control root, points the library at a model
+  directory, marks first run complete and declares one llama.cpp runtime. It
+  does this over the same endpoints the UI uses; there is no privileged path.
+  Nothing requires it. It is idempotent, waits for the agent rather than failing
+  if run first, and reads the passphrase from `EUGENE_PLEXUS_DEV_PASSPHRASE` or
+  a private `SecureString` prompt - never from disk or a command line, and there
+  is no recovery path for it by design. `-Model` / `-Binary` override the paths;
+  `-SkipRuntime` stops after configuration. Without a llama-server binary the
+  install is still configured and the runtime is skipped with a reason.
 - **UI Dev** runs the installed Next.js executable on port 3000 and fails if it
   is occupied. `EUGENE_PLEXUS_DEV_UI_PORT` overrides the port for launch and checks.
 - **Health Check** reads `/v1/components` and `/v1/runtimes` from the agent, probes

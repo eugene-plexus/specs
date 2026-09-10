@@ -277,39 +277,6 @@ Describe 'Dev install seeding' {
         Get-DevInstallPath 'C:\poly' | Should Be 'C:\poly\.dev-install'
     }
 
-    Context 'writing the install directory' {
-        BeforeEach {
-            $script:Install = Join-Path $env:TEMP ([guid]::NewGuid().ToString())
-            Mock Write-Host {}
-        }
-        AfterEach {
-            if (Test-Path -LiteralPath $script:Install) { Remove-Item -LiteralPath $script:Install -Recurse -Force }
-        }
-
-        It 'writes one config per spawned component and roots the library at the model directory' {
-            Write-DevInstall $script:Install 'D:\models\pool\Qwen3-1.7B-Q8_0.gguf'
-            foreach ($name in 'control.yaml', 'gateway.yaml', 'library.yaml') {
-                Test-Path (Join-Path $script:Install $name) | Should Be $true
-            }
-            # -like, not -match: a Windows path is not a regex.
-            (Get-Content (Join-Path $script:Install 'library.yaml') -Raw) -like '*D:\models\pool*' | Should Be $true
-            # No agent.yaml: the topology is declared over HTTP, so a stale
-            # one on disk can never be what the agent silently loads.
-            Test-Path (Join-Path $script:Install 'agent.yaml') | Should Be $false
-        }
-
-        It 'writes UTF-8 without a byte order mark' {
-            Write-DevInstall $script:Install 'D:\models\pool\model.gguf'
-            $bytes = [IO.File]::ReadAllBytes((Join-Path $script:Install 'gateway.yaml'))
-            ($bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) | Should Be $false
-        }
-
-        It 'omits modelRoots entirely when there is no model' {
-            Write-DevInstall $script:Install ''
-            (Get-Content (Join-Path $script:Install 'library.yaml') -Raw) -match 'modelRoots' | Should Be $false
-        }
-    }
-
     Context 'waiting for the agent' {
         BeforeEach { Mock Write-Host {} }
 
@@ -359,18 +326,64 @@ Describe 'Dev install seeding' {
         }
     }
 
-    Context 'declaring topology and runtimes' {
+    Context 'the restart-on-login window' {
         BeforeEach { Mock Write-Host {} }
 
-        It 'treats an already-declared component as success' {
-            Mock Invoke-Api { @{ Code = 409; Body = $null } }
-            Add-DevComponent 'http://agent' 't' @{ name = 'gateway'; kind = 'gateway'; url = 'http://x' } | Should Be $true
+        It 'waits through the respawn instead of reading crashed components' {
+            # Obtaining a session makes the master key available and the agent
+            # restarts every child to pick it up. A live run read the topology
+            # inside that window and saw gateway and library as "crashed".
+            $script:Poll = 0
+            Mock Invoke-Api {
+                $script:Poll++
+                if ($script:Poll -lt 3) {
+                    return @{ Code = 200; Body = @{ components = @(@{ name = 'gateway'; status = 'crashed' }) } }
+                }
+                return @{ Code = 200; Body = @{ components = @(@{ name = 'gateway'; status = 'running' }) } }
+            }
+            Wait-ComponentsRunning 'http://agent' 't' 5 | Should Be $true
         }
 
-        It 'fails a component the agent rejects' {
-            Mock Invoke-Api { @{ Code = 400; Body = @{ detail = 'bad kind' } } }
-            Add-DevComponent 'http://agent' 't' @{ name = 'gateway'; kind = 'gateway'; url = 'http://x' } | Should Be $false
+        It 'reports rather than hangs when a component never comes back' {
+            Mock Invoke-Api { @{ Code = 200; Body = @{ components = @(@{ name = 'gateway'; status = 'crashed' }) } } }
+            Wait-ComponentsRunning 'http://agent' 't' 1 | Should Be $false
         }
+
+    }
+
+    # Its own Context on purpose: a `Mock Invoke-Api` declared in an It stays
+    # in scope for the rest of its Context in Pester 3.4, so testing the real
+    # Invoke-Api anywhere below one silently exercises the mock instead.
+    Context 'a component that is not answering' {
+        BeforeEach { Mock Write-Host {} }
+
+        It 'treats a connection refusal as a state, not an exception' {
+            # A real refusal: a component being restarted underneath us refuses
+            # connections, and rethrowing there killed the whole script
+            # mid-install. Nothing listens on port 1.
+            $result = Invoke-Api GET 'http://127.0.0.1:1/v1/components'
+            $result.Code | Should Be 0
+            $result.Body | Should BeNullOrEmpty
+        }
+    }
+
+    Context 'pointing the library at models' {
+        BeforeEach { Mock Write-Host {} }
+
+        It "sets model roots through the library's own config endpoint" {
+            Mock Invoke-Api { @{ Code = 200; Body = @{} } }
+            Set-LibraryRoot 'http://library' 't' 'D:\models\pool' | Should Be $true
+            Assert-MockCalled Invoke-Api -Scope It -ParameterFilter { $Method -eq 'PATCH' -and $Url -like '*/v1/config' }
+        }
+
+        It 'warns rather than throwing when the library refuses' {
+            Mock Invoke-Api { @{ Code = 503; Body = $null } }
+            Set-LibraryRoot 'http://library' 't' 'D:\models\pool' | Should Be $false
+        }
+    }
+
+    Context 'declaring a runtime' {
+        BeforeEach { Mock Write-Host {} }
 
         It 'fails a runtime that admission refuses' {
             Mock Invoke-Api { @{ Code = 409; Body = @{ detail = 'will not fit' } } }

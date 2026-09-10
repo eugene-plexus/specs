@@ -143,3 +143,51 @@ in these files were mojibake, and the one inside a string literal broke
 the parse outright with errors naming unrelated lines. These files are
 ASCII only, enforced by a byte check and a parser run over each script.
 Verified by reproducing the reported failure end to end.
+
+## Follow-Up: The Agent Declares Its Own Topology
+
+The operator went through the first-run wizard rather than the seed script and
+got an install with nothing in it. The wizard had warned, clearly, that the
+gateway was missing - but it let Start proceed anyway, skipped the driver step
+it could not perform, flipped `firstRunComplete` and reported success. Asked
+for a streamlined installation, the answer was to remove the step rather than
+gate it.
+
+An install has exactly one control root, one gateway and one library, on ports
+the specs already declare authoritative, and since M6 the only per-install
+components are companion drivers the agent creates per runtime. There was
+nothing for a human to construct. The agent now declares that topology on a
+first boot (eugene-plexus/agent `9253c29`), so starting the agent *is* getting
+a control plane running. Headless settles who does it: a tailnet install has no
+browser at first boot, and a control plane that can only be built from a UI
+cannot start itself.
+
+`bootstrap.ps1` was rewritten around the same fact. It cloned four retired
+repos and none of the live components, but the more consequential bug was
+structural: it built a venv per repo, while the agent spawns children with its
+own `sys.executable`. A correct-looking bootstrap produced an agent that could
+not start anything. Every component is now installed into the agent's venv too,
+and the script verifies all five import before claiming success.
+
+`dev-seed.ps1` shrank to what is genuinely the operator's: passphrase, model
+directory, one runtime. It is optional, does only what the UI does over the
+same endpoints, and reports the topology the agent declared rather than
+declaring it.
+
+Two defects only the live run produced. Obtaining a session makes the master
+key available and the agent restarts every supervised child to pick it up, so
+reading the topology immediately after login sees `crashed` for components that
+are merely respawning - and talking to one gets a connection refusal that the
+API helper rethrew, killing the script mid-install. The helper now reports a
+refusal as a state, and the script waits through the restart it caused.
+
+Also: the agent never configured logging, so its own log calls never reached
+the console at all. "declared N companion driver(s) at boot" has been invisible
+since M6. Every child component already did this; the supervisor was the one
+that did not.
+
+Verified live: an empty directory, one `python -m eugene_plexus_agent`, and
+control, gateway and library answer `/healthz`. Then the optional finisher, and
+a completion through the gateway in 219 ms at tier 1 with Health Check green.
+317 agent tests, 33 Pester tests.
+

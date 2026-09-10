@@ -3,7 +3,7 @@
   "tasks": [
     {
       "label": "Eugene Plexus: Start",
-      "detail": "Start the local node agent and UI dev server. Components and runtimes come from the agent's configured topology.",
+      "detail": "Start the local node agent and UI dev server. On a first boot the agent declares and spawns the control root, gateway and library itself - this is the whole of getting a control plane running.",
       "dependsOn": [
         "Eugene Plexus: Agent",
         "Eugene Plexus: UI Dev"
@@ -17,7 +17,7 @@
     },
     {
       "label": "Eugene Plexus: Agent",
-      "detail": "Node agent (default :8079): supervises configured gateway, control, library, inference-drivers and engine runtimes.",
+      "detail": "Node agent (default :8079): declares the default topology on a first boot, then supervises control, gateway, library, companion inference-drivers and engine runtimes.",
       "type": "process",
       "command": "powershell.exe",
       "args": [
@@ -126,8 +126,8 @@
       "problemMatcher": []
     },
     {
-      "label": "Eugene Plexus: Seed Dev Install",
-      "detail": "Initialize the operator passphrase, declare control/gateway/library, and launch one llama.cpp runtime. Run once, after Start, on a fresh install.",
+      "label": "Eugene Plexus: Finish Install (optional)",
+      "detail": "Unattended equivalent of the first-run UI: operator passphrase, model directory, and one llama.cpp runtime. Optional - the control plane is already running after Start; this just avoids the browser.",
       "type": "process",
       "command": "powershell.exe",
       "args": [

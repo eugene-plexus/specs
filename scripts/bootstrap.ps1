@@ -8,7 +8,7 @@
   with dev extras, and activates the pre-commit hooks. Sets up `ui` with
   npm + codegen. Python 3.12 is the project's target (every pyproject pins
   `requires-python = ">=3.12"`, ruff `py312`, mypy `3.12`) and the version CI
-  runs — develop on 3.12 so local matches CI.
+  runs - develop on 3.12 so local matches CI.
 
   Idempotent: re-running skips repos already cloned and venvs already built.
 
@@ -35,7 +35,11 @@ $root = (Resolve-Path "$specsRoot\..").Path
 Write-Host "Polyrepo root: $root"
 Write-Host "Target Python: $PythonVersion`n"
 
-$pythonRepos = @("hemisphere-driver", "orchestrator", "memory", "agent", "identity", "connector")
+# The live control plane. `connector` is deferred and `memory`/`identity` plus
+# the five training repos are retired - see docs/maintenance for the inventory.
+$agentRepo = "agent"
+$componentRepos = @("control", "gateway", "inference-driver", "library")
+$pythonRepos = @($agentRepo) + $componentRepos
 $allRepos = @("specs") + $pythonRepos + @("ui")
 
 # --- Prerequisite checks ---
@@ -88,5 +92,25 @@ if ($npmOk) {
     Write-Host "[ui] ready"
 }
 
+# --- The agent's venv is the install's runtime ---
+#
+# The agent spawns every component with its own `sys.executable`, so each one
+# has to import from *its* environment, not only from its own repo's venv.
+# Without this the agent starts, finds it cannot import the gateway, and
+# declines to declare it - a working supervisor with nothing to supervise.
+Write-Host "`n=== [agent] installing every component into the supervisor's venv ==="
+$agentPy = Join-Path $root "$agentRepo\.venv\Scripts\python.exe"
+foreach ($r in $componentRepos) {
+    & $agentPy -m pip install --quiet -e (Join-Path $root $r)
+    Write-Host "[agent] + $r"
+}
+$importable = & $agentPy -c "import eugene_plexus_agent, eugene_plexus_control, eugene_plexus_gateway, eugene_plexus_inference_driver, eugene_plexus_library; print('ok')" 2>&1
+if ($importable -ne "ok") { throw "The agent's venv cannot import every component: $importable" }
+Write-Host "[agent] all five components import from the supervisor's interpreter"
+
 Write-Host "`nDone. All repos set up on Python $PythonVersion under $root."
-Write-Host "Activate a repo's environment with, e.g.:  .\memory\.venv\Scripts\Activate.ps1"
+Write-Host ""
+Write-Host "Nothing else needs running. Start the agent:"
+Write-Host "  cd <an install directory>; $agentPy -m eugene_plexus_agent"
+Write-Host "It declares and spawns the control root, gateway and library on first"
+Write-Host "boot. Then open the UI to set a passphrase and point at your models."

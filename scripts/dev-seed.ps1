@@ -1,67 +1,46 @@
 <#
 .SYNOPSIS
-  Seed a working development install: auth, topology, and one engine runtime.
+  Finish a development install without clicking: passphrase, model roots,
+  and one engine runtime.
 
 .DESCRIPTION
-  The honest first draft of first-run.
+  Optional. Nothing requires this script.
 
-  Until now the only path from nothing to a running stack was an
-  acceptance script - `scripts/m6-acceptance.sh` builds a throwaway
-  install in $TMPDIR, uses it, and deletes it. Nothing built an install
-  an operator could keep, so the config in a developer's checkout was
-  never exercised and drifted for four milestones without anyone
-  noticing.
+  The agent declares and spawns the control root, gateway and library on
+  its first boot (see the agent's `default_topology.py`), so starting the
+  agent is the whole of "get a control plane running". What is left after
+  that is genuinely the operator's: choosing a passphrase, saying where
+  their models live, and launching one. The browser UI is where those
+  belong.
 
-  This does the same work against a *durable* dev install and leaves it
-  running. It is deliberately not a wizard: every step here is a step
-  the real first-run flow has to take, and the ones that are awkward in
-  PowerShell are the ones that are still missing from the product.
+  This is the unattended equivalent, for a dev loop or CI that should not
+  need a browser. It does exactly what the UI would do, over the same
+  endpoints - there is no privileged path here and nothing is written to
+  disk by hand.
 
-  Two phases, because one of them needs the agent already running:
-
-    Write   offline. Creates the install directory and each component's
-            own config file. Safe before the agent starts; idempotent.
-    Seed    online. Initializes the operator passphrase, declares the
-            topology over `POST /v1/components`, initializes the control
-            root, and declares one llama.cpp runtime - which is what
-            makes the alias routable, because the agent declares the
-            companion inference-driver itself (M6).
-
-  What this does NOT do, and what the wizard still owes: pick a model,
-  fetch an engine, or explain any of it. It takes paths.
-
-.PARAMETER Action
-  Write, Seed, or All (default). `All` runs Write then Seed.
-
-.PARAMETER InstallPath
-  Where the install lives. Defaults to `.dev-install` beside the repo
-  checkouts, or $env:EUGENE_PLEXUS_DEV_INSTALL. This is install state,
-  not source - it is deliberately outside every git checkout, because
-  putting it inside one is how the last install came to be a fossil
-  nobody could see.
+  It used to declare the topology too. That is why it existed at all, and
+  the agent doing it instead is the reason this file shrank rather than
+  grew.
 
 .PARAMETER Model
-  Absolute path to a .gguf. The operator's own path, in the operator's
-  own layout - never copied, never renamed.
+  Absolute path to a .gguf. The operator's own path, in the operator's own
+  layout - never copied, never renamed. Its directory becomes the
+  library's model root.
 
 .PARAMETER Binary
-  Path to llama-server(.exe). When it is missing the topology is still
-  seeded and the runtime is skipped with a reason: three components and
-  no engine is a legitimate state, and the agent can fetch an engine
-  itself (M1).
+  Path to llama-server(.exe). Without it the passphrase and model root are
+  still set and the runtime is skipped with a reason; the agent can fetch
+  an engine itself (M1).
 
 .PARAMETER SkipRuntime
-  Seed auth and the topology only.
+  Set the passphrase and model roots, launch nothing.
 
 .EXAMPLE
-  # 1. Run the "Eugene Plexus: Start" task, then:
+  # Start the agent (the "Eugene Plexus: Start" task), then:
   .\scripts\dev-seed.ps1
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('Write', 'Seed', 'All')]
-    [string]$Action = 'All',
-    [string]$InstallPath,
     [string]$Model,
     [string]$Binary,
     [string]$RuntimeName = 'qwen3-a',
@@ -74,38 +53,6 @@ $script:WorkspaceRoot = Split-Path $PSScriptRoot -Parent
 $script:PolyrepoRoot = Split-Path $script:WorkspaceRoot -Parent
 
 . (Join-Path $PSScriptRoot 'dev-common.ps1')
-
-function Write-DevInstall {
-    param([string]$Path, [string]$ModelPath)
-
-    New-Item -ItemType Directory -Path $Path -Force | Out-Null
-
-    # No agent.yaml. The components are declared over HTTP below, so this
-    # exercises POST /v1/components rather than a hand-written topology -
-    # the wizard cannot create components yet, and pretending otherwise
-    # here would hide that.
-    Write-TextFile (Join-Path $Path 'control.yaml') "logLevel: INFO`n"
-
-    # Short intervals so a developer sees routing and idle-unload decisions
-    # inside a session rather than a coffee break. Production defaults are
-    # the spec's, not these.
-    Write-TextFile (Join-Path $Path 'gateway.yaml') @"
-logLevel: INFO
-routingRefreshSeconds: 3
-idleCheckSeconds: 5
-swapWaitSeconds: 120
-"@
-
-    $roots = @()
-    if ($ModelPath) { $roots += (Split-Path $ModelPath -Parent) }
-    $rootLines = ($roots | ForEach-Object { "  - $_" }) -join "`n"
-    $libraryBody = "logLevel: INFO`n"
-    if ($rootLines) { $libraryBody += "modelRoots:`n$rootLines`n" }
-    Write-TextFile (Join-Path $Path 'library.yaml') $libraryBody
-
-    Write-Host "Install directory prepared at $Path"
-    Write-Host '  control.yaml, gateway.yaml, library.yaml written; topology is seeded over HTTP.'
-}
 
 function Invoke-Api {
     param(
@@ -135,7 +82,10 @@ function Invoke-Api {
         return @{ Code = [int]$response.StatusCode; Body = $parsed }
     } catch {
         $response = $_.Exception.Response
-        if (-not $response) { throw }
+        # No response at all: refused, reset, or DNS. That is a state worth
+        # reporting, not an exception - a component being restarted underneath
+        # us is normal and used to kill this script outright.
+        if (-not $response) { return @{ Code = 0; Body = $null } }
         $code = [int]$response.StatusCode
         $text = $null
         try {
@@ -163,6 +113,26 @@ function Wait-Healthy {
     return $false
 }
 
+# Waits rather than failing fast, and waits BEFORE anything is asked of the
+# operator. The tasks are independent by design - VS Code's dependsOn on a
+# background task resolves on a log pattern, which is a worse thing to
+# depend on than a health endpoint - so this may legitimately be started
+# first. Prompting for a passphrase and only then discovering there is no
+# agent throws away what the operator typed, which is how this was found.
+function Wait-ForAgent {
+    param([string]$AgentUrl, [int]$TimeoutSeconds = 180)
+
+    if (Wait-Healthy $AgentUrl 1) { return $true }
+    Write-Host "Waiting for the agent at $AgentUrl."
+    Write-Host '  Start it with the "Eugene Plexus: Start" task (or Agent alone); this will continue on its own.'
+    Write-Host "  Giving up after $TimeoutSeconds seconds. Ctrl+C to stop waiting."
+    if (Wait-Healthy $AgentUrl $TimeoutSeconds) {
+        Write-Host '  agent is up.'
+        return $true
+    }
+    return $false
+}
+
 # The passphrase travels as a SecureString and is unwrapped only into the
 # request body. There is no recovery path for it by design, so it is also
 # never written to disk, echoed, or put in a process command line.
@@ -172,7 +142,7 @@ function ConvertTo-PlainText {
     return (New-Object System.Net.NetworkCredential('', $Secure)).Password
 }
 
-# Initialize if fresh, log in if not. A dev install gets seeded more than
+# Initialize if fresh, log in if not. A dev install gets set up more than
 # once and the second run must not be a puzzle.
 function Get-OperatorToken {
     param([string]$AgentUrl, [securestring]$Passphrase)
@@ -184,18 +154,35 @@ function Get-OperatorToken {
     throw "Could not obtain an operator session (initialize: $($result.Code), login: $($login.Code)). If this install already has a different passphrase, delete the install directory or supply the right one."
 }
 
-function Add-DevComponent {
-    param([string]$AgentUrl, [string]$Token, [hashtable]$Entry)
+function Wait-ComponentsRunning {
+    param([string]$AgentUrl, [string]$Token, [int]$TimeoutSeconds = 90)
 
-    $result = Invoke-Api POST "$AgentUrl/v1/components" $Entry $Token
-    switch ($result.Code) {
-        201 { Write-Host "  declared $($Entry.name) ($($Entry.kind)) at $($Entry.url)"; return $true }
-        409 { Write-Host "  $($Entry.name) already declared"; return $true }
-        default {
-            Write-Host "  FAILED to declare $($Entry.name): HTTP $($result.Code) $($result.Body.detail)"
-            return $false
+    for ($i = 0; $i -lt $TimeoutSeconds; $i++) {
+        $result = Invoke-Api GET "$AgentUrl/v1/components" $null $Token
+        if ($result.Code -eq 200) {
+            $components = @($result.Body.components)
+            if ($components.Count -gt 0 -and -not ($components | Where-Object { $_.status -ne 'running' })) {
+                return $true
+            }
         }
+        Start-Sleep -Seconds 1
     }
+    return $false
+}
+
+function Set-LibraryRoot {
+    param([string]$LibraryUrl, [string]$Token, [string]$ModelDirectory)
+
+    # Through the library's own config endpoint, which is what the UI uses.
+    # Model directories are the operator's to choose and we never relocate
+    # what is in them; this only points at one.
+    $result = Invoke-Api PATCH "$LibraryUrl/v1/config" @{ modelRoots = @($ModelDirectory) } $Token
+    if ($result.Code -eq 200) {
+        Write-Host "  library scanning $ModelDirectory"
+        return $true
+    }
+    Write-Host "  WARNING: could not set the library's model roots (HTTP $($result.Code))"
+    return $false
 }
 
 function Add-DevRuntime {
@@ -219,26 +206,6 @@ function Add-DevRuntime {
     return $true
 }
 
-# Waits rather than failing fast, and waits BEFORE anything is asked of the
-# operator. The two tasks are independent by design - VS Code's dependsOn on
-# a background task resolves on a log pattern, which is a worse thing to
-# depend on than a health endpoint - so seeding may legitimately be started
-# first. Prompting for a passphrase and only then discovering there is no
-# agent throws away what the operator typed, which is how this was found.
-function Wait-ForAgent {
-    param([string]$AgentUrl, [int]$TimeoutSeconds = 180)
-
-    if (Wait-Healthy $AgentUrl 1) { return $true }
-    Write-Host "Waiting for the agent at $AgentUrl."
-    Write-Host '  Start it with the "Eugene Plexus: Start" task (or Agent alone); this will continue on its own.'
-    Write-Host "  Giving up after $TimeoutSeconds seconds. Ctrl+C to stop waiting."
-    if (Wait-Healthy $AgentUrl $TimeoutSeconds) {
-        Write-Host '  agent is up.'
-        return $true
-    }
-    return $false
-}
-
 function Wait-RuntimeReady {
     param([string]$AgentUrl, [string]$Token, [string]$Name, [int]$TimeoutSeconds = 180)
 
@@ -258,7 +225,6 @@ function Wait-RuntimeReady {
 
 function Invoke-DevSeed {
     param(
-        [string]$InstallPath,
         [securestring]$Passphrase,
         [string]$ModelPath,
         [string]$BinaryPath,
@@ -270,6 +236,7 @@ function Invoke-DevSeed {
     $ports = Get-DevPorts
     $agentUrl = "http://127.0.0.1:$($ports.Agent)"
     $controlUrl = "http://127.0.0.1:$($ports.Control)"
+    $libraryUrl = "http://127.0.0.1:$($ports.Library)"
     $ok = $true
 
     Write-Host "`n== operator session"
@@ -281,20 +248,35 @@ function Invoke-DevSeed {
     if ($session.Fresh) { Write-Host '  install initialized; operator session issued' }
     else { Write-Host '  install was already initialized; logged in' }
 
-    Write-Host "`n== topology"
-    $components = @(
-        @{ name = 'control'; kind = 'control'; url = "http://127.0.0.1:$($ports.Control)"; spawn = @{ configFile = 'control.yaml' } },
-        @{ name = 'gateway'; kind = 'gateway'; url = "http://127.0.0.1:$($ports.Gateway)"; spawn = @{ configFile = 'gateway.yaml' } },
-        @{ name = 'library'; kind = 'library'; url = "http://127.0.0.1:$($ports.Library)"; spawn = @{ configFile = 'library.yaml' } }
-    )
-    foreach ($entry in $components) {
-        if (-not (Add-DevComponent $agentUrl $token $entry)) { $ok = $false }
+    # Obtaining a session makes the master key available, and the agent
+    # restarts every supervised child so they pick it up (M5's
+    # restart-on-login; the control root is deliberately exempt). Reading the
+    # topology inside that window sees `crashed` for components that are
+    # merely being respawned, and talking to one gets a connection refusal.
+    Write-Host "`n== topology (declared by the agent, not by this script)"
+    if (-not (Wait-ComponentsRunning $agentUrl $token)) {
+        Write-Host '  WARNING: not every component came back after the restart-on-login.'
+        $ok = $false
+    }
+    $components = Invoke-Api GET "$agentUrl/v1/components" $null $token
+    if ($components.Code -ne 200) {
+        Write-Host "  WARNING: could not read the topology (HTTP $($components.Code))"
+        $ok = $false
+    } else {
+        foreach ($c in $components.Body.components) {
+            Write-Host "  $($c.name) ($($c.kind)): $($c.status)"
+        }
+        foreach ($kind in 'control', 'gateway', 'library') {
+            if (-not ($components.Body.components | Where-Object { $_.kind -eq $kind })) {
+                Write-Host "  WARNING: no $kind in the topology. The agent declares one on a first"
+                Write-Host "           boot unless its package is missing from the agent's venv."
+                $ok = $false
+            }
+        }
     }
 
     Write-Host "`n== control root"
     if (Wait-Healthy $controlUrl 60) {
-        # 204 fresh, 409 already initialized. Both mean the root has an
-        # operator; it mints its own signing key either way.
         $init = Invoke-Api POST "$controlUrl/v1/auth/initialize" @{ passphrase = (ConvertTo-PlainText $Passphrase) }
         if ($init.Code -eq 204 -or $init.Code -eq 200) { Write-Host '  control root initialized with the same passphrase' }
         elseif ($init.Code -eq 409) { Write-Host '  control root was already initialized' }
@@ -304,13 +286,17 @@ function Invoke-DevSeed {
         $ok = $false
     }
 
+    if ($ModelPath -and (Test-Path -LiteralPath $ModelPath)) {
+        Write-Host "`n== model directory"
+        if (-not (Set-LibraryRoot $libraryUrl $token (Split-Path $ModelPath -Parent))) { $ok = $false }
+    }
+
     # Seeding IS this install's first run. Leaving the flag false sends the
-    # UI to /setup, where the wizard's first act is POST /v1/auth/initialize
-    # on an install that already has an operator - a dead end.
+    # UI to /setup for an install that already has an operator.
     Write-Host "`n== first run"
     $flip = Invoke-Api PATCH "$agentUrl/v1/config" @{ firstRunComplete = $true } $token
     if ($flip.Code -eq 200) { Write-Host '  marked first-run complete; the UI opens on the dashboard' }
-    else { Write-Host "  WARNING: could not set firstRunComplete (HTTP $($flip.Code)); the UI will open the wizard"; $ok = $false }
+    else { Write-Host "  WARNING: could not set firstRunComplete (HTTP $($flip.Code))"; $ok = $false }
 
     if ($SkipRuntime) {
         Write-Host "`n== runtime skipped by request"
@@ -318,7 +304,7 @@ function Invoke-DevSeed {
     }
     if (-not $BinaryPath -or -not (Test-Path -LiteralPath $BinaryPath)) {
         Write-Host "`n== runtime skipped: no llama-server binary"
-        Write-Host '  Pass -Binary, or let the agent fetch one through the UI (Engines).'
+        Write-Host '  Pass -Binary, or fetch one through the UI (Engines).'
         Write-Host '  The control plane above is running and usable without it.'
         return $ok
     }
@@ -344,7 +330,7 @@ function Invoke-DevSeed {
     Write-Host '  waiting for the engine to load...'
     $ready = Wait-RuntimeReady $agentUrl $token $RuntimeName
     if ($ready.Ready) {
-        Write-Host "  runtime $RuntimeName is ready; '$ModelAlias' should now be routable through the gateway"
+        Write-Host "  runtime $RuntimeName is ready; '$ModelAlias' is routable through the gateway"
     } else {
         Write-Host "  FAILED: runtime $RuntimeName is $($ready.Status). $($ready.Error)"
         $ok = $false
@@ -354,7 +340,6 @@ function Invoke-DevSeed {
 
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        $installPath = Get-DevInstallPath $script:PolyrepoRoot $InstallPath
         if (-not $Model) {
             $Model = if ($env:EUGENE_PLEXUS_DEV_MODEL) { $env:EUGENE_PLEXUS_DEV_MODEL } else { Join-Path $script:PolyrepoRoot 'smoke-test\models\Qwen3-1.7B-Q8_0.gguf' }
         }
@@ -365,32 +350,27 @@ if ($MyInvocation.InvocationName -ne '.') {
             $Alias = if ($Model) { [IO.Path]::GetFileNameWithoutExtension($Model).ToLowerInvariant() } else { $RuntimeName }
         }
 
-        if ($Action -eq 'Write' -or $Action -eq 'All') {
-            Write-DevInstall $installPath $Model
+        # Before the prompt, not after it.
+        $agentUrl = "http://127.0.0.1:$((Get-DevPorts).Agent)"
+        if (-not (Wait-ForAgent $agentUrl)) {
+            throw "No agent at $agentUrl. Run the `"Eugene Plexus: Start`" task, then run this again - re-running is safe and nothing was asked of you."
         }
-        if ($Action -eq 'Seed' -or $Action -eq 'All') {
-            # Before the prompt, not after it.
-            $agentUrl = "http://127.0.0.1:$((Get-DevPorts).Agent)"
-            if (-not (Wait-ForAgent $agentUrl)) {
-                throw "No agent at $agentUrl. Run the `"Eugene Plexus: Start`" task, then run this again - re-running is safe and nothing was asked of you."
-            }
-            if ($env:EUGENE_PLEXUS_DEV_PASSPHRASE) {
-                $passphrase = ConvertTo-SecureString $env:EUGENE_PLEXUS_DEV_PASSPHRASE -AsPlainText -Force
-            } else {
-                $passphrase = Read-Host 'Operator passphrase for this dev install (not saved)' -AsSecureString
-            }
-            if (-not $passphrase -or $passphrase.Length -eq 0) {
-                throw 'A passphrase is required. There is no recovery path for it, by design.'
-            }
-            $seeded = Invoke-DevSeed -InstallPath $installPath -Passphrase $passphrase -ModelPath $Model `
-                -BinaryPath $Binary -RuntimeName $RuntimeName -ModelAlias $Alias -SkipRuntime:$SkipRuntime
-            $passphrase.Dispose()
-            if (-not $seeded) {
-                Write-Host "`nSeeding finished with failures. Run the health check for detail."
-                exit 1
-            }
-            Write-Host "`nSeeded. Run `"Eugene Plexus: Health Check`", or open the UI."
+        if ($env:EUGENE_PLEXUS_DEV_PASSPHRASE) {
+            $passphrase = ConvertTo-SecureString $env:EUGENE_PLEXUS_DEV_PASSPHRASE -AsPlainText -Force
+        } else {
+            $passphrase = Read-Host 'Operator passphrase for this dev install (not saved)' -AsSecureString
         }
+        if (-not $passphrase -or $passphrase.Length -eq 0) {
+            throw 'A passphrase is required. There is no recovery path for it, by design.'
+        }
+        $seeded = Invoke-DevSeed -Passphrase $passphrase -ModelPath $Model `
+            -BinaryPath $Binary -RuntimeName $RuntimeName -ModelAlias $Alias -SkipRuntime:$SkipRuntime
+        $passphrase.Dispose()
+        if (-not $seeded) {
+            Write-Host "`nFinished with warnings. Run the health check for detail."
+            exit 1
+        }
+        Write-Host "`nDone. Run `"Eugene Plexus: Health Check`", or open the UI."
     } catch {
         Write-Error $_
         exit 1
