@@ -25,6 +25,8 @@ log** — answers are recorded here as they are made.
 | **3**  | macOS: first-class now, or wait for MLX?                                                | §8   | **First-class now, decoupled from MLX**     | **DECIDED 2026-09-11**     |
 | **4**  | Windows: a supported end-user target, or a dev surface only?                            | §11.1 | **Fully first-class** — parity, not a middle tier | **DECIDED 2026-09-11** |
 | **5**  | Where `install.sh` is hosted: `eugeneplexus.com`, or a raw GitHub URL first?             | §4   | *(recommended: GitHub URL now)*             | **OPEN**                   |
+| **6**  | What does `install.sh` install FROM, given nothing is published and the release is last?  | §6.1 | *(recommended: GitHub archives at a tag)*   | **OPEN — blocks step 3**   |
+| **7**  | Windows service: `pywin32` or NSSM?                                                      | §11.1 | *(recommended: pywin32)*                    | **OPEN — inside step 3**   |
 
 **#1 was one call and is now two**, which is the substantive change
 from the first draft. Troy's question — *"I intend for the UI to get
@@ -292,6 +294,41 @@ Version policy, release workflows and who tags what are **not decided
 here** and should be settled before the release, not before the install
 work.
 
+### 6.1 The gap between §6 and §9, found 2026-09-11 — call #6
+
+**§6 and §9 are in tension and step 3 walks straight into it.** §9 step
+3 says `install.sh` "installs the meta-package"; §6 says publishing
+that meta-package "finally publishes the PyPI stub"; and §9 puts **the
+release last**, behind tool calling. Publishing six packages to PyPI in
+order to write an installer *is* the release, in everything but the
+announcement — so taking §6 literally would quietly undo the sequencing
+decision Troy made deliberately.
+
+**Verified 2026-09-11, so nobody re-checks it:** `eugene-plexus`,
+`eugene-plexus-agent`, `eugene-plexus-ui` and `eugene-plexus-gateway`
+all 404 on PyPI; `@eugene-plexus/ui` 404s on npm; `agent` has **zero**
+GitHub releases. Nothing is published anywhere.
+
+**Recommendation: install from GitHub archives at a pinned ref**, which
+needs no registry and no release. `uv pip install
+"eugene-plexus-agent @ https://github.com/eugene-plexus/agent/archive/<ref>.tar.gz"`
+works today against public repos with no authentication — it is exactly
+the mechanism `SPECS_REF` already uses in every consumer, so the
+project has run it daily for four milestones. The meta-package then
+becomes a small `pyproject.toml` in a repo of its own (or in `specs`)
+whose dependencies are those URLs, and **publishing it to PyPI becomes
+a one-line change at release time** rather than a prerequisite.
+
+The counter-argument, and it is real: a URL-pinned install is not what
+an end user's `pip install eugene-plexus` will look like, so the
+installer gets rewritten once at release. That is a small, known,
+deferred cost against making the release stop being last.
+
+**Do not resolve this by publishing early.** If it turns out the
+installer genuinely cannot work without a registry, that is new
+information and it belongs back with Troy, because it moves the
+release.
+
 ## 7. Linux + NVIDIA — DECIDED 2026-09-11: ship Vulkan, badge it
 
 **Troy's call, taking the recommendation.** Build the `Degraded` plan
@@ -375,7 +412,10 @@ into, rather than the unclaimed one. See
    service unit that depends on it.
 3. **`install.sh` / `install.ps1`** — fetch `uv`, venv, install the
    meta-package, write a systemd unit / launchd plist / Windows
-   service, start it. Path B, and also every SMB GPU box. **macOS is in
+   service, start it. **Read §6.1 first: what it installs FROM is an
+   open call and nothing is published anywhere.** The Windows service
+   is `pywin32` or NSSM, also open; the hard-kill consequence of
+   running as one is settled and badged (§12, step 2). Path B, and also every SMB GPU box. **macOS is in
    scope from the first version** (call #3), including a launchd plist;
    llama.cpp acquisition on arm64 stays unverifiable on current
    hardware and any claim about it must say so.
