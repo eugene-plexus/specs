@@ -3,7 +3,8 @@
 # M9 acceptance: onboarding, leaving, moving house -- and a browser.
 #
 #   host A (this box)   agent A :8079  -> seeds control :8083, gateway :8080, library :8082
-#                       ui dev server :3100 (optional; EP_SKIP_BROWSER=1 to omit)
+#                       and serves the UI at its own root from the
+#                       eugene-plexus-ui wheel (EP_SKIP_BROWSER=1 to omit)
 #   host B (also here)  agent B :8084  -> onboarded by `eugene-plexus-agent join`
 #
 # **THIS SCRIPT DOES NOT PRE-WRITE `firstRunComplete`, AND THAT IS THE
@@ -41,7 +42,13 @@ EP_AGENT_B_URL="${EP_AGENT_B_URL:-http://127.0.0.1:8084}"
 EP_AGENT_B2_URL="${EP_AGENT_B2_URL:-http://127.0.0.1:8085}"
 EP_CONTROL_URL="${EP_CONTROL_URL:-http://127.0.0.1:8083}"
 EP_GATEWAY_URL="${EP_GATEWAY_URL:-http://127.0.0.1:8080}"
-EP_UI_URL="${EP_UI_URL:-http://127.0.0.1:3100}"
+# **The browser drives the agent, not a dev server.** Until
+# install-paths §9 step 1 this was `next dev` on :3100, which is the one
+# thing an install never runs: the UI now ships as a static export inside
+# the `eugene-plexus-ui` wheel and the agent serves it at its own root.
+# Pointing Playwright at a dev server tested a configuration no operator
+# has -- a reference client sharing a path with nothing it ships.
+EP_UI_URL="${EP_UI_URL:-$EP_AGENT_A_URL}"
 EP_SKIP_BROWSER="${EP_SKIP_BROWSER:-}"
 PASSPHRASE="${EP_PASSPHRASE:-m9-acceptance-passphrase}"
 
@@ -74,19 +81,44 @@ elif [ ! -d "$EP_UI_DIR/node_modules" ]; then
   BROWSER=0
   echo "  browser arc skipped: $EP_UI_DIR/node_modules is absent (npm ci first)"
 else
-  ok "ui checkout present; the browser arc will run against $EP_UI_URL"
+  # **Rebuild the wheel rather than trust the installed one.** The agent
+  # serves whatever `eugene-plexus-ui` is in its interpreter, and a wheel
+  # of unknown age is a stale instrument -- the failure that already cost
+  # this script a misattributed run when `next dev` kept serving a
+  # previous build. `EP_SKIP_UI_BUILD=1` for a fast re-run where the UI
+  # has not changed.
+  if [ -z "${EP_SKIP_UI_BUILD:-}" ]; then
+    if (cd "$EP_UI_DIR" && npm run build:python > "$EP_WORKDIR-uibuild.log" 2>&1 \
+          && "$EP_AGENT_PY" -m build --wheel >> "$EP_WORKDIR-uibuild.log" 2>&1 \
+          && "$EP_AGENT_PY" -m pip install --quiet --force-reinstall \
+               "$(ls -t "$EP_UI_DIR"/dist/eugene_plexus_ui-*.whl | head -1)" \
+               >> "$EP_WORKDIR-uibuild.log" 2>&1); then
+      ok "rebuilt and installed eugene-plexus-ui from the checkout"
+    else
+      BROWSER=0
+      echo "  browser arc skipped: the ui wheel would not build -- see $EP_WORKDIR-uibuild.log"
+      tail -15 "$EP_WORKDIR-uibuild.log"
+    fi
+  fi
+  if [ "$BROWSER" = "1" ]; then
+    "$EP_AGENT_PY" -c "import eugene_plexus_ui" 2>/dev/null \
+      && ok "the browser arc will drive the agent's own UI at $EP_UI_URL" \
+      || { BROWSER=0; echo "  browser arc skipped: eugene-plexus-ui is not installed in $EP_AGENT_PY"; }
+  fi
 fi
 
 rm -rf "$EP_WORKDIR"; mkdir -p "$EP_WORKDIR/a" "$EP_WORKDIR/b" "$EP_WORKDIR/seeded"; cd "$EP_WORKDIR" || exit 1
 
-A_PID=""; B_PID=""; UI_PID=""
-# `next dev` spawns a child of its own, so killing the pid we hold leaves
-# the server listening and the NEXT run binds nothing and silently tests
-# the previous run's build. That happened once here and cost a
-# misattributed failure: the arc ran against a stale server whose config
-# predated the fix under test. So the port is what gets cleared, not just
-# the pid -- the same shape as M7's "the pid the script held was a
-# subshell's", one layer further out.
+A_PID=""; B_PID=""
+# **Clear the PORT, not just the pid.** Written for `next dev`, which
+# spawned a child of its own, so killing the held pid left a server
+# listening and the next run silently tested the previous run's build --
+# a misattributed failure that cost a session. The dev server is gone
+# (the agent serves the UI now) and the rule is not: Windows lets a
+# second process bind an already-bound loopback port and keeps serving
+# from the OLDEST binder, which is how M10 read a two-runs-old reply.
+# Same shape as M7's "the pid the script held was a subshell's", one
+# layer further out.
 kill_port() {
   local port="$1"
   local pids
@@ -96,15 +128,15 @@ kill_port() {
   done
 }
 cleanup() {
-  for pid in "$UI_PID" "$B_PID" "$A_PID"; do
+  for pid in "$B_PID" "$A_PID"; do
     [ -n "$pid" ] && kill "$pid" 2>/dev/null
   done
-  kill_port "${EP_UI_URL##*:}"
+  for port in "${EP_AGENT_A_URL##*:}" "$B_PORT" "$B2_PORT"; do kill_port "$port"; done
 }
 trap cleanup EXIT
-# And clear it up front too, because a previous run that was interrupted
-# rather than exited never reached its own trap.
-kill_port "${EP_UI_URL##*:}"
+# And clear them up front too, because a previous run that was
+# interrupted rather than exited never reached its own trap.
+for port in "${EP_AGENT_A_URL##*:}" "$B_PORT" "$B2_PORT"; do kill_port "$port"; done
 
 # --- 1. a fresh machine declares its own control plane --------------------------
 say "1. agent A starts with NO agent.yaml -- and has to be an install by itself"
@@ -122,11 +154,12 @@ grep -q "first boot: declared the default topology" agent-a.log \
 if [ "$BROWSER" = "1" ]; then
   # --- 2. the browser does first run ---------------------------------------------
   say "2. a browser walks the first-run wizard, logs in, and survives the restart"
-  (cd "$EP_UI_DIR" && exec env AGENT_URL="$EP_AGENT_A_URL" GATEWAY_URL="$EP_GATEWAY_URL" \
-      npx next dev -p "${EP_UI_URL##*:}" > "$EP_WORKDIR/ui.log" 2>&1) &
-  UI_PID=$!
-  if wait_http "$EP_UI_URL" 180; then
-    ok "ui dev server answering at $EP_UI_URL"
+  # No server to start: agent A is already up and already serving the UI,
+  # which is the whole point of the repoint. The wait is on the page
+  # rather than on a process, because the agent answering /healthz says
+  # nothing about whether the wheel is mounted.
+  if wait_http "$EP_UI_URL/" 30; then
+    ok "the agent is serving the UI at $EP_UI_URL"
     if (cd "$EP_UI_DIR" && EP_UI_URL="$EP_UI_URL" EP_PASSPHRASE="$PASSPHRASE" \
          npx playwright test > "$EP_WORKDIR/playwright.log" 2>&1); then
       ok "the browser arc passed (first run, login, restart-on-login, proxy)"
@@ -135,8 +168,8 @@ if [ "$BROWSER" = "1" ]; then
       tail -40 "$EP_WORKDIR/playwright.log"
     fi
   else
-    bad "ui dev server never answered; skipping the browser arc"
-    tail -20 "$EP_WORKDIR/ui.log"
+    bad "the agent never served a page; skipping the browser arc"
+    tail -20 agent-a.log
   fi
 else
   say "2. no browser; initializing with curl the way every earlier script did"

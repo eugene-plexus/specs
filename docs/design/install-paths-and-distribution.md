@@ -1,9 +1,11 @@
 # Install paths and distribution
 
-**Status: design, 2026-09-11. Nothing here is built.** Written before any
-implementation so a later session can pick it up cold. Every claim marked
-*verified* was checked against a repo, a registry or upstream on the day
-of writing; everything else is reasoning and is marked as such.
+**Status: §9 step 1 is BUILT AND LIVE-VERIFIED (2026-09-11); steps 2-9
+are still design.** Written before any implementation so a later session
+could pick it up cold. Every claim marked *verified* was checked against
+a repo, a registry or upstream on the day of writing; everything else is
+reasoning and is marked as such. **§12 is the implementation record and
+is the pickup point.**
 
 Precedes a release, deliberately. Publishing an installable thing whose
 only install is a Windows developer script would bake the gap in.
@@ -16,8 +18,8 @@ log** — answers are recorded here as they are made.
 
 | #      | The call                                                                              | §    | Decision                                    | Status                     |
 | ------ | ------------------------------------------------------------------------------------- | ---- | ------------------------------------------- | -------------------------- |
-| **1a** | Move the UI proxy into the agent?                                                       | §3   | *(recommended: yes, now)*                   | **OPEN**                   |
-| **1b** | Ship the UI as a static export, or as a Next server?                                    | §3.1 | *(recommended: export — but deferrable)*    | **OPEN, deliberately**     |
+| **1a** | Move the UI proxy into the agent?                                                       | §3   | **Yes — moved; the agent serves the UI too** | **DONE 2026-09-11, §12** |
+| **1b** | Ship the UI as a static export, or as a Next server?                                    | §3.1 | **Export** — decided at the end of 1a, on evidence | **DONE 2026-09-11, §12** |
 | **2**  | Linux + NVIDIA: ship Vulkan with a permanent visible degradation, or keep the refusal?  | §7   | **Ship Vulkan, badge it permanently**       | **DECIDED 2026-09-11**     |
 | **3**  | macOS: first-class now, or wait for MLX?                                                | §8   | **First-class now, decoupled from MLX**     | **DECIDED 2026-09-11**     |
 | **4**  | Windows: a supported end-user target, or a dev surface only?                            | §11.1 | **Fully first-class** — parity, not a middle tier | **DECIDED 2026-09-11** |
@@ -110,6 +112,11 @@ software and they containerise without argument.
   `eugene-plexus-agent`, *is* the whole Python install.
 
 ### 2.1 The gap nobody had written down: no install produces a UI
+
+**CLOSED 2026-09-11 by §9 step 1 — see §12.** Everything below
+describes what was true before that and is kept because the reasoning
+is what chose the fix. The agent now serves the UI at root from the
+`eugene-plexus-ui` wheel.
 
 **The agent serves no UI.** The agent repo has no `ui/`, no static or
 assets directory, and `app.py` includes six routers and mounts nothing
@@ -350,10 +357,11 @@ the commoditising space `llama.app` and NVIDIA/Hugging Face just moved
 into, rather than the unclaimed one. See
 [`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md).
 
-1. **Move the proxy into the agent (1a); ship `eugene-plexus-ui`.** The
-   only real work on the auth path, and everything downstream gets
-   simpler. **Pick the build target (1b) at the end of this step, not
-   the start** — §3.1. Watch the streaming trap in §11.
+1. ~~**Move the proxy into the agent (1a); ship `eugene-plexus-ui`.**~~
+   **DONE 2026-09-11 — see §12.** Both traps §11 named were real: the
+   proxy does stream (measured, not asserted), and the browser arc was
+   repointed at the agent rather than kept on `next dev`. 1b came out
+   **export**, decided at the end as planned.
 2. **Windows supervision hardening.** Promoted into the build order by
    call #4: graceful shutdown, port-not-pid process reclaim, a service
    integration. Parity was chosen with this cost visible; it is a work
@@ -498,6 +506,114 @@ is not a reason.
 
 ## 12. Implementation record
 
-Nothing built yet. This section is the pickup point — record what was
-built, what departed from this design, and why, as each step of §9
-lands.
+Record what was built, what departed from this design, and why, as each
+step of §9 lands. **Steps 2-9 are unbuilt; step 2 (Windows supervision
+hardening) is the pickup point.**
+
+### Step 1 — the proxy moved, and the UI ships as a wheel. DONE 2026-09-11.
+
+specs `a83df4b`, agent `7cb9c0b` + `4062457`, ui `949e70e` + the e2e
+repoint. Verified live by `scripts/ui-hosting-acceptance.sh` — **36
+checks, zero failures** — and by `scripts/m9-acceptance.sh`, whose
+browser arc now drives the agent instead of `next dev`: **39 checks,
+zero failures**.
+
+**What was built.** `eugene_plexus_agent/routes/proxy.py` (the
+pass-through) and `ui_assets.py` (finding and mounting the bundle); a
+new `eugene-plexus-ui` distribution in the `ui` repo — a hatchling
+wheel wrapping the static export, located at runtime through
+`importlib.resources`; `output: "export"` with `trailingSlash: true`;
+and the deletion of `src/app/api/proxy/[target]/[...path]/route.ts`,
+the only dynamic route the application had.
+
+**§3's prediction held: the port is smaller than the original.** The
+Next handler's hardest step was resolving a target, which meant calling
+the agent's bearer-protected `GET /v1/components` over HTTP — so the
+proxy needed a credential of its own in order to look something up. It
+is a list scan now.
+
+**M9's two-credential hack dissolved, as §3 guessed it might — and it
+was checked rather than assumed.** `x-eugene-plexus-upstream-authorization`
+is gone from both sides: the wizard sends the control root's token in
+`Authorization` like any other caller. The acceptance run logs in at
+the trust root *through the proxy* with one header and reads
+`/v1/nodes` with it — the exact call M9 needed two credentials for —
+and separately asserts that a request carrying **only** the old header
+is refused, so the header is inert rather than deprecated.
+
+**The streaming trap (§11) was real and is cleared, measured rather
+than asserted.** 79 content frames through the proxy with the first
+token at 20-26% of the request, against 22-25% straight at the gateway.
+The comparison is the point: a buffering proxy still delivers every
+frame, so a frame count cannot tell the two apart and only a clock can.
+The unit test *deadlocks* rather than fails when the implementation
+buffers — verified by sabotaging the implementation and watching it
+time out — and it calls the route function directly, because
+`httpx.ASGITransport` buffers the whole body and would have reported a
+correct proxy as broken. That is M10's harness lie in a new costume,
+met before it could cost anything.
+
+### Decisions taken during the build
+
+**1b is EXPORT** — decided at the end of step 1, as §3.1 said to, and
+on evidence: every route prerendered with no change to any page, the
+wheel is 1.7 MB / 129 files, and the whole browser arc passes against
+it. One honest correction to §3.1's reversibility claim: `standalone`
+is still one config line, but taking it would mean the agent no longer
+serves the UI, so it also means a Node process in the runtime and a new
+answer to where the proxy lives. The build target is reversible; the
+shipping decision it belongs to is not as cheap as "one line" suggests.
+
+**`gateway` resolves by kind, not from `GATEWAY_URL`.** The Next proxy
+had an env var with a loopback default. An env var is a second place a
+component's URL is written down and a second place it can disagree with
+what the agent actually spawned — the OpenClaw trap the driver path had
+already avoided. The expert override moved rather than vanished: edit
+the topology entry, which was always the authoritative copy.
+
+**Trailing slashes: `true`.** §11's third trap. The export emits one
+HTML file per route, and only `out/nodes/index.html` is servable by an
+ordinary static file server; `/nodes` then redirects to `/nodes/`.
+
+**The contract gained two path items without operations.** `/` and
+`/api/proxy/{target}/{path}` in `agent.yaml`. An operation object must
+name a request body, a response schema and a status code, and for a
+verbatim pass-through all three are "whatever the component said" — a
+generated client would be a fiction. Note that `agent.yaml` had
+*claimed* UI hosting in prose since v0.2 while no code did it, and no
+path item existed to contradict it; that is how the fossil survived
+four milestones.
+
+### Three things that passed while broken, all found here
+
+**A catch-all mount answers for every path, including the API's.**
+Starlette takes the first full match and `Mount("/")` matches
+everything, so a typo under `/v1/` came back as the UI's HTML 404 page.
+Guarded: API-shaped paths always get a Problem document. The one
+consequence that cannot be avoided is that a **wrong method** on a real
+endpoint is now 404 rather than 405.
+
+**`trailingSlash: true` silently defanged three browser assertions.**
+`toHaveURL(/\/$|\/#/)` meant "it navigated away from the form" — and
+once every path ends in a slash, `/setup/` and `/login/` satisfy it
+too. The arc went green in 2.1 s with a wizard that had not finished
+its transaction and a login that had not happened. Only `signIn`'s
+token check, which names its own subject, noticed. Fixed with a regex
+anchored to the whole URL. **A negative assertion evaluated before its
+subject has arrived is the same defect in different clothes**: the
+first-run test asserted "not on /setup" immediately after `goto`, which
+is true of a page that has not yet decided.
+
+**A test read its own subject off the ambient venv.** The agent's
+degraded-mode test made "no UI distribution installed" true by not
+installing one — so installing the wheel this step ships turned it red.
+It refuses the import explicitly now.
+
+### Left undone, deliberately
+
+`next dev` keeps working through a dev-only `rewrites` entry, because
+hot reload is worth keeping; `output: "export"` and `rewrites` cannot
+coexist, so both are conditional on `NODE_ENV`. **A dev build therefore
+produces no `out/`**, which the staging script checks for and names.
+Nothing is published to PyPI — publishing belongs to the release, which
+is now last (§9).
