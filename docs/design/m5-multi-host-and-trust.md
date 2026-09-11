@@ -38,13 +38,26 @@ never carried; see [`m7-second-host-readiness.md`](m7-second-host-readiness.md),
 whose §0 lists four places this document's contract was exercised only
 by fakes.
 
-**What is not built:** multi-host has never run on two machines. Every
-cross-host behaviour — enrollment over a real network, a rotation with a
-genuinely offline node, a promotion after a genuinely lost host — is
-exercised against fake agents in-process, because one dev box cannot
-arrange "one node answers and the other does not". The `ui` has not been
-re-pinned and does not know this component exists. `securityMode:
-os_keyring` is a config field with no keyring behind it here yet.
+**What is not built — mostly superseded, read the dates.** When this was
+written, multi-host had never run on two machines and every cross-host
+behaviour was exercised against fake agents in-process. **That changed on
+2026-09-11: `scripts/m7-acceptance.sh` passed in `EP_MODE=two-host`
+across two real hosts** — a Windows box and a WSL2 Ubuntu guest, NAT and
+a host firewall between them, nothing on loopback that crossed, 41
+checks, zero failures. Enrollment over a real network, a companion
+advertised and routed to by IP, a cross-host idle unload and wake, and a
+full signing-key rotation all happened over the wire. Record:
+[`docs/acceptance/m7-two-host-run.md`](../acceptance/m7-two-host-run.md).
+
+What that run still could not arrange, and why: **a rotation with a
+genuinely offline node** and **clock skew** need two machines with
+independent power and independent clocks, which two guests on one
+hardware clock are not. **A partitioned rather than dead old root** is
+reachable on this pair — dropping the firewall rule mid-run would sever
+them for real — and is the obvious next experiment, since epoch fencing
+exists for exactly that case. The `ui` has since been re-pinned and
+generates control types, though dedicated control-root screens remain
+unbuilt. `securityMode: os_keyring` is implemented as of 2026-09-10.
 
 Decisions taken to open it, all Troy's, 2026-09-09:
 
@@ -708,15 +721,20 @@ of §5.
   letting them discover it at promotion time. The control root's config
   schema now says it in the field's own description, which is the
   cheapest half of that; the wizard is still the half that matters.
-- **Multi-host has never run on two machines**, and that is the largest
-  outstanding gap in this milestone. Everything cross-host is tested
-  against fake agents in-process. The behaviours that will bite are the
-  ones a single box cannot produce: a rotation where a node is genuinely
-  offline rather than pointed at a closed port, a promotion where the
-  old root is genuinely partitioned rather than shut down, and clock
-  skew between buildings — which the design keeps out of the
-  correctness argument on purpose, but which will still make timestamps
-  in the log read strangely.
+- ~~**Multi-host has never run on two machines**~~ — **it has, as of
+  2026-09-11**, and it was the largest outstanding gap in this
+  milestone. Two real hosts, NAT and a firewall between them, 41 checks
+  green on the first attempt; see
+  [`docs/acceptance/m7-two-host-run.md`](../acceptance/m7-two-host-run.md).
+  Nothing in any component had to change, which is the part worth
+  noting: the mechanisms M7 built for a second host that did not exist
+  yet were right. **Three of the four behaviours this bullet named are
+  still untested**, and the reasons are now specific rather than "one
+  box": a rotation with a genuinely offline node and clock skew need
+  independent power and independent clocks, which two guests sharing one
+  hardware clock cannot give; a promotion against a *partitioned* rather
+  than shut-down old root is reachable on this pair by dropping the
+  firewall rule mid-run, and is the next experiment.
 - **The `ui` has not been re-pinned** and does not know this component
   exists, so nothing here is reachable from a browser yet. The five
   consumers are level with `811112b`; `control` is on `da19cac`. That

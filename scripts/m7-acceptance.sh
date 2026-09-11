@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 #
-# M7 acceptance: a second host, on one box.
+# M7 acceptance: a second host -- on one box, or on two.
+#
+# RUN TWICE, both green, 41 checks each:
+#   same-box   many times, most recently 2026-09-11
+#   two-host   2026-09-11, FIRST EVER -- host A Windows, host B WSL2
+#              Ubuntu 26.04 at 172.19.221.94, A's services bound 0.0.0.0
+#              and addressed at 172.19.208.1, B running vLLM. Record:
+#              docs/acceptance/m7-two-host-run.md
 #
 #   host A (this box)        agent A :8079  -> spawns control :8083, gateway :8080, library :8082
 #   host B (also this box)   agent B :8084  -> spawns nothing until told; own config dir
@@ -43,10 +50,35 @@ EP_GATEWAY_URL="${EP_GATEWAY_URL:-http://127.0.0.1:8080}"
 EP_IDLE_SECONDS="${EP_IDLE_SECONDS:-20}"
 PASSPHRASE="${EP_PASSPHRASE:-acceptance-$(date +%s)-$$}"
 EP_AGENT_B_PASSPHRASE="${EP_AGENT_B_PASSPHRASE:-$PASSPHRASE}"
-ALIAS=qwen3-1.7b
+ALIAS="${EP_ALIAS:-qwen3-1.7b}"
 RT=qwen-b
 
+# --- host B's half of the declaration ------------------------------------
+# B need not be the same OS, or run the same engine, as A. The pair this
+# first ran on for real has a Windows A and a Linux B under WSL2, and B
+# runs vLLM because our own M1 policy refuses to install llama.cpp on a
+# Linux host with an NVIDIA GPU -- upstream publishes no such build. So
+# "the second host runs a different engine" is not a contrivance here; it
+# is what the acquisition policy forces. Unset, these reproduce the
+# same-box llama.cpp run exactly.
+EP_ENGINE_B="${EP_ENGINE_B:-llama_cpp}"
+EP_MODEL_B="${EP_MODEL_B:-}"     # B's own path to its model, verbatim
+EP_BINARY_B="${EP_BINARY_B:-}"   # B's own path to the engine binary
+EP_FLAGS_B="${EP_FLAGS_B:-}"     # JSON object of engine launch flags
+EP_ENV_B="${EP_ENV_B:-}"         # JSON object of extra engine env
+# Set this to a non-loopback URL for a real two-host run. It matters more
+# than it looks: a component binds 0.0.0.0 only when its node advertises a
+# non-loopback address, and enrollment deliberately does NOT restart the
+# control root -- so if A's advertise address is only discovered at
+# enrollment time, the root stays bound to loopback and B can never reach
+# it. Setting it up front is what makes the root reachable at all.
+EP_ADVERTISE_A="${EP_ADVERTISE_A:-}"
+
 B_PORT=$(printf '%s' "$EP_AGENT_B_URL" | sed -E 's|.*:([0-9]+)/?$|\1|')
+
+# Whatever host B answers on is the host its companion will advertise.
+# Same-box that is http://127.0.0.1:, which this used to assert literally.
+B_ADV_PREFIX="$(printf '%s' "$EP_AGENT_B_URL" | sed -E 's|:[0-9]+/?$||'):"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }
@@ -61,16 +93,29 @@ agent_login() { curl -s -X POST "$1/v1/auth/login" -H 'content-type: application
 # --- preflight -----------------------------------------------------------------
 say "preflight ($EP_MODE)"
 [ -f "$EP_AGENT_PY" ] || bad "agent venv python not found at $EP_AGENT_PY"
-[ -f "$EP_LLAMA_SERVER" ] || bad "llama-server not found at $EP_LLAMA_SERVER"
+# A's paths. B's are B's own and are never checked from here -- on a real
+# two-host run this box cannot see them, which is rather the point.
+if [ -z "$EP_BINARY_B" ]; then
+  [ -f "$EP_LLAMA_SERVER" ] || bad "llama-server not found at $EP_LLAMA_SERVER (or set EP_BINARY_B for host B)"
+fi
 [ -f "$EP_MODEL" ] || bad "model not found at $EP_MODEL"
 [ "$FAILURES" -ne 0 ] && exit 1
 "$EP_AGENT_PY" -c "import eugene_plexus_agent, eugene_plexus_control, eugene_plexus_gateway, eugene_plexus_inference_driver, eugene_plexus_library" 2>/dev/null || { bad "all five components must import from $EP_AGENT_PY"; exit 1; }
 ok "binary, model, five components; A=$EP_AGENT_A_URL B=$EP_AGENT_B_URL control=$EP_CONTROL_URL"
+# Defaults that reproduce the same-box run: B is this box, so B's paths
+# are A's paths in Windows form.
+[ -n "$EP_MODEL_B" ] || EP_MODEL_B="$(win_path "$EP_MODEL" | sed 's|\\|\\\\|g')"
+[ -n "$EP_BINARY_B" ] || EP_BINARY_B="$(win_path "$EP_LLAMA_SERVER" | sed 's|\\|\\\\|g')"
+[ -n "$EP_FLAGS_B" ] || EP_FLAGS_B='{"contextSize":4096,"gpuLayers":99,"parallelSlots":1}'
+echo "  host B: engine=$EP_ENGINE_B  model=$EP_MODEL_B"
+echo "          binary=$EP_BINARY_B"
+echo "          flags=$EP_FLAGS_B  env=${EP_ENV_B:-none}"
 
 rm -rf "$EP_WORKDIR"; mkdir -p "$EP_WORKDIR/a" "$EP_WORKDIR/b"; cd "$EP_WORKDIR" || exit 1
 
 cat > a/agent.yaml <<YAML
 firstRunComplete: true
+${EP_ADVERTISE_A:+advertiseUrl: $EP_ADVERTISE_A}
 components:
   - name: control
     kind: control
@@ -104,7 +149,11 @@ printf 'firstRunComplete: true\ncomponents: []\nruntimes: []\n' > b/agent.yaml
 say "1. agent A starts control, gateway (controlUrl set) and library"
 # `exec`, so the pid we hold is the agent's and not a subshell's — the first
 # run killed two subshells and orphaned both agents and an engine.
-(cd a && exec env EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml "$EP_AGENT_PY" -m eugene_plexus_agent > ../agent-a.log 2>&1) &
+# Bind wide only when A actually advertises a non-loopback address; the
+# agent passes the same widening down to every component it spawns.
+A_BIND_ENV=()
+[ -n "$EP_ADVERTISE_A" ] && A_BIND_ENV=(EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0)
+(cd a && exec env EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml "${A_BIND_ENV[@]}" "$EP_AGENT_PY" -m eugene_plexus_agent > ../agent-a.log 2>&1) &
 A_PID=$!
 B_PID=""
 trap 'kill "$A_PID" 2>/dev/null; [ -n "$B_PID" ] && kill "$B_PID" 2>/dev/null' EXIT
@@ -177,7 +226,9 @@ BTOK=$(agent_login "$EP_AGENT_B_URL" "$EP_AGENT_B_PASSPHRASE")
 
 # --- 6. declare on B through the control root ---------------------------------------
 say "6. declare $RT on node-b THROUGH the control root; B spawns the companion"
-SPEC="{\"node\":\"node-b\",\"spec\":{\"name\":\"$RT\",\"engine\":\"llama_cpp\",\"modelPath\":\"$(win_path "$EP_MODEL" | sed 's|\\|\\\\|g')\",\"modelAlias\":\"$ALIAS\",\"binary\":\"$(win_path "$EP_LLAMA_SERVER" | sed 's|\\|\\\\|g')\",\"flags\":{\"contextSize\":4096,\"gpuLayers\":99,\"parallelSlots\":1},\"idleUnloadSeconds\":$EP_IDLE_SECONDS,\"startOnDemand\":true}}"
+SPEC_ENV=""
+[ -n "$EP_ENV_B" ] && SPEC_ENV=",\"env\":$EP_ENV_B"
+SPEC="{\"node\":\"node-b\",\"spec\":{\"name\":\"$RT\",\"engine\":\"$EP_ENGINE_B\",\"modelPath\":\"$EP_MODEL_B\",\"modelAlias\":\"$ALIAS\",\"binary\":\"$EP_BINARY_B\",\"flags\":$EP_FLAGS_B$SPEC_ENV,\"idleUnloadSeconds\":$EP_IDLE_SECONDS,\"startOnDemand\":true}}"
 R=$(curl -s -w '\n%{http_code}' -X POST -H "Authorization: Bearer $CTOK" "$EP_CONTROL_URL/v1/runtimes" -H 'content-type: application/json' -d "$SPEC")
 CODE=$(echo "$R" | tail -1); BODY=$(echo "$R" | sed '$d')
 [ "$CODE" = "201" ] && ok "*** control forwarded the declaration to node-b with service:control (201): $(echo "$BODY" | jq_ "'%s on %s' % (d['name'], d['node'])") ***" || { bad "control POST /v1/runtimes returned $CODE: $BODY"; }
@@ -189,7 +240,8 @@ done
 [ "$ST" = "ready" ] && ok "B's engine ready; Runtime.node=$(echo "$RB" | jq_ "d.get('node')") driver=$(echo "$RB" | jq_ "d.get('driver')")" || { bad "B runtime status=$ST $(echo "$RB" | jq_ "d.get('lastError')")"; tail -20 agent-b.log; }
 COMP=$(curl -s -H "Authorization: Bearer $CTOK" "$EP_AGENT_B_URL/v1/components/$RT-driver")
 echo "  companion: url=$(echo "$COMP" | jq_ "d.get('url')") advertiseUrl=$(echo "$COMP" | jq_ "d.get('advertiseUrl')") status=$(echo "$COMP" | jq_ "d.get('status')")"
-[ "$(echo "$COMP" | jq_ "(d.get('advertiseUrl') or '').startswith('http://127.0.0.1:')")" = "True" ] && ok "companion carries Component.advertiseUrl (B's advertise host, its own port)" || bad "no advertiseUrl on the companion"
+COMP_URL=$(echo "$COMP" | jq_ "(d.get('advertiseUrl') or d.get('url') or '').rstrip('/')" 2>/dev/null)
+[ "$(echo "$COMP" | jq_ "(d.get('advertiseUrl') or '').startswith('$B_ADV_PREFIX')")" = "True" ] && ok "companion carries Component.advertiseUrl on B's advertise host ($B_ADV_PREFIX), its own port" || bad "companion advertiseUrl not on $B_ADV_PREFIX: $(echo "$COMP" | jq_ "d.get('advertiseUrl')")"
 for _ in $(seq 1 60); do
   M=$(curl -s -H "Authorization: Bearer $CTOK" "$EP_GATEWAY_URL/v1/models")
   RN=$(echo "$M" | jq_ "next((m['x_eugene_plexus'].get('ready_backends') for m in d.get('data',[]) if m['id']=='$ALIAS'), 0)" 2>/dev/null)
@@ -225,7 +277,7 @@ say "9. a request for the sleeping alias wakes it on B"
 # it. EP_WAKE_DELAY=0 reproduces. See the acceptance record.
 sleep "${EP_WAKE_DELAY:-4}"
 echo "  B says: $(curl -s -H "Authorization: Bearer $CTOK" "$EP_AGENT_B_URL/v1/runtimes" | jq_ "[(r['name'], r['status'], r.get('modelAlias'), r.get('node')) for r in d['runtimes']]")"
-echo "  driver /v1/info says: $(curl -s -H "Authorization: Bearer $CTOK" "http://127.0.0.1:8091/v1/info" | jq_ "(d.get('modelId'), d.get('runtime'), d.get('backend'))")"
+echo "  driver /v1/info says: $(curl -s -m 5 -H "Authorization: Bearer $CTOK" "$COMP_URL/v1/info" | jq_ "(d.get('modelId'), d.get('runtime'), d.get('backend'))" 2>/dev/null)"
 echo "  gateway view: $(curl -s -H "Authorization: Bearer $CTOK" "$EP_GATEWAY_URL/v1/admin/routing" | jq_ "(d.get('refreshed_at'), [(b['driver'], b['eligible'], b.get('runtime'), b.get('runtime_status'), b.get('node')) for s in d.get('slots',[]) for t in s['tiers'] for b in t['backends']])")"
 START=$(date +%s%3N); C=$(complete); END=$(date +%s%3N)
 SW=$(echo "$C" | jq_ "(d.get('x_eugene_plexus') or {}).get('swapped_in')" 2>/dev/null)
@@ -279,16 +331,42 @@ GARBAGE=$(echo "$FORGE" | PYTHONUTF8=1 python -c "import sys,json; d=json.load(s
 say "12. teardown"
 kill "$A_PID" 2>/dev/null; [ -n "$B_PID" ] && kill "$B_PID" 2>/dev/null
 sleep 5
-LEFT=$(powershell.exe -NoProfile -Command "(Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue | Measure-Object).Count" 2>/dev/null | tr -d '\r')
-[ "${LEFT:-0}" = "0" ] && ok "no llama-server survived" || bad "$LEFT llama-server process(es) survived"
+if [ "$EP_MODE" = "same-box" ]; then
+  LEFT=$(powershell.exe -NoProfile -Command "(Get-Process -Name 'llama-server' -ErrorAction SilentlyContinue | Measure-Object).Count" 2>/dev/null | tr -d '\r')
+  [ "${LEFT:-0}" = "0" ] && ok "no llama-server survived" || bad "$LEFT llama-server process(es) survived"
+else
+  # B's agent is not this script's to start or stop, so B's engine and
+  # companion are still running on purpose. Checking THIS host for a
+  # leftover engine would pass vacuously -- and would be looking for the
+  # wrong engine on the wrong machine, since B need not run llama.cpp at
+  # all. Say so rather than bank a check that cannot fail.
+  say_left=$(curl -s -m 5 -H "Authorization: Bearer $CTOK" "$EP_AGENT_B_URL/v1/runtimes" | jq_ "[(r['name'], r['status']) for r in d.get('runtimes', [])]" 2>/dev/null)
+  echo "  NOTE  host B is left running, as it was found: $say_left"
+  echo "        stop it where you started it; nothing here owns B's lifecycle."
+fi
 
 say "what this run proved / could not"
 echo "  proved: enrollment over real HTTP with real tokens; the install key on a companion born after enrollment;"
 echo "          the gateway's token verifying on it; fan-out + node attribution from a real /v1/nodes; a stop and a"
 echo "          wake for B's runtime reaching :$B_PORT; a real rotation re-keying both agents with the gateway serving"
 echo "          afterwards; a signed epoch-0 re-key fenced."
-echo "  cannot: a node genuinely offline during a rotation; clock skew; a partitioned (not dead) old root;"
-echo "          any non-loopback bind. Those are the two-machine run's, and this script is the one it starts from."
+if [ "$EP_MODE" = "two-host" ]; then
+  echo "  also:   a NON-LOOPBACK BIND on every one of A's services, and every hop above crossing a real network"
+  echo "          between two kernels -- so the last item on the old 'cannot' list is discharged."
+  echo "  cannot: a node genuinely offline during a rotation; clock skew (both clocks come from one host);"
+  echo "          a partitioned (not dead) old root. Those need two machines that can be severed independently."
+else
+  echo "  cannot: a node genuinely offline during a rotation; clock skew; a partitioned (not dead) old root;"
+  echo "          any non-loopback bind. The last one is discharged by EP_MODE=two-host; the rest are not."
+fi
 say "result"
-[ "$FAILURES" -eq 0 ] && echo "M7 acceptance PASSED — a second host is possible, on one box." || echo "$FAILURES check(s) FAILED"
+if [ "$FAILURES" -eq 0 ]; then
+  if [ "$EP_MODE" = "two-host" ]; then
+    echo "M7 acceptance PASSED — two hosts, $EP_AGENT_A_URL and $EP_AGENT_B_URL, nothing on loopback between them."
+  else
+    echo "M7 acceptance PASSED — a second host is possible, on one box."
+  fi
+else
+  echo "$FAILURES check(s) FAILED"
+fi
 exit "$FAILURES"

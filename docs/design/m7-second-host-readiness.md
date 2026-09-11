@@ -533,7 +533,9 @@ processes on different ports with different keys, and one box is enough
 for all of it. It proves nothing about a host that is genuinely
 unreachable during a rotation, about clock skew, about a root that is
 partitioned rather than dead, or about a component bound to a real
-interface. Those are the two-machine run's, and this script is the one it
+interface. Those were the two-machine run's — **which happened on
+2026-09-11 and passed, 41 checks, discharging the non-loopback-bind item
+outright; see `docs/acceptance/m7-two-host-run.md`.** This script is the one it
 starts from.
 
 Unit tests use fake control roots and fake agents as M5 and M6 did. The

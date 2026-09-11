@@ -19,6 +19,12 @@ Both "hosts" are this box. Everything below is HTTP between processes on
 different ports holding different keys until they enroll, and one box is
 enough for all of it. What one box cannot prove is at the end.
 
+**Superseded in part:** the same script ran on **two real hosts** on
+2026-09-11 and passed — see
+[`m7-two-host-run.md`](m7-two-host-run.md). The "cannot" list at the end
+of this document is still worth reading, but one of its four items is
+discharged there and the other three are now stated precisely.
+
 ---
 
 ## What it proved
