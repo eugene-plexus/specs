@@ -463,9 +463,15 @@ paths:
         slower than it is.
 
         `tokensPerSecond` is **null**, not zero, for a group whose
-        backends do not report token usage — the CLI subscription
-        backends do not. A UI that renders those the same way says "slow"
-        where it means "unmeasured".
+        backends did not report token usage. A UI that renders those the
+        same way says "slow" where it means "unmeasured".
+
+        Which backends those are is not a fixed list, and an earlier
+        draft of this text claimed it was: the CLI subscription backends
+        *do* report usage, parsing it out of Claude's envelope and
+        Codex's `turn.completed`, and return nothing only when the CLI
+        emitted none. Treat absence as a per-request fact, not a
+        property of a backend kind.
 
         Operator-only. No component needs this, so a `service:*` token
         is refused rather than accepted for reads as elsewhere; and
@@ -1149,8 +1155,13 @@ components:
       type: object
       description: |
         Token accounting in OpenAI's field names. Fields may be absent
-        when the backend does not report them — the CLI subprocess
-        backends generally do not.
+        when the backend did not report them on that request.
+
+        This used to say the CLI subprocess backends "generally do not",
+        which is wrong and was believed downstream: both of them parse a
+        usage block out of their CLI's output — Claude's envelope,
+        Codex's `turn.completed` — and omit it only when the CLI emitted
+        none.
       properties:
         prompt_tokens:
           type: integer
