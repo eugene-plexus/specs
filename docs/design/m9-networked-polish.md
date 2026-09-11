@@ -1,6 +1,8 @@
 # M9 — Networked polish (design)
 
-**Status:** designed 2026-09-11, unbuilt. Milestone **M9** of
+**Status:** designed 2026-09-11, **built and live-verified 2026-09-11**
+— §8 is the implementation record and §9 is where the build departed from
+this document. Milestone **M9** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md),
 following [M8](m8-retained-request-metrics.md). Previously numbered M7
 and then M8 — see the roadmap's §5 note for why it moved twice.
@@ -368,13 +370,128 @@ investigations. Control-root screens: **still undecided whether the
 agent should own the UI at all**, and building root workflows before
 that is decided would be building them twice.
 
-## 8. Where the build departed from this design
+## 7. Risks
+
+- **The browser suite finds something structural in the wizard.** Likely,
+  given four hand-found bugs. Mitigation: land the Playwright script
+  against the *current* wizard first, so it is a before-and-after rather
+  than a test written to pass the new code.
+- **Restart-on-login is genuinely broken from a browser** and the fix is
+  not in the UI. Possible: the fleet going away under an authenticated
+  page is a real race and nothing has looked at it. This is the one item
+  that could grow past its milestone, and finding that out is the point.
+- **Playwright in CI on Linux** needs a browser package. Mitigation: the
+  suite is opt-in by script, like every other acceptance run, and CI runs
+  vitest as now.
+- **A stale `Node.url` may already be masked by something.** The gateway
+  falls back when `advertiseUrl` is absent, not when it is *wrong*, so
+  the reproduction should come before the fix.
+
+---
+
+## 8. Implementation record
+
+**Status: built and live-verified 2026-09-11.** Contracts specs
+`094dec7`; control `71ec4fa`; agent `a2baef3`; ui `d4989e4` and the
+follow-ups below. `scripts/m9-acceptance.sh` is the durable run.
+
+### What was built
+
+| | |
+|---|---|
+| `POST /v1/node/unenroll` | agent; discards the install key, tells the root, proceeds if it cannot |
+| `PATCH /v1/nodes/{name}` | control; signed by the node, tenth `LogOp`, replay-fenced by a sequence |
+| announce-on-startup / on-change | agent; **re-derives** rather than reading the persisted value back |
+| the first-boot question | agent; TTY only, `join` subcommand, env var unchanged |
+| `eugene-plexus-agent join` | enrolls with nothing running, refuses a machine that already has components |
+| the wizard split | one module per screen, plus `draft.ts` / `start.ts` / `chrome.tsx` / `fields.tsx` |
+| `/nodes` | mint a join token, render the command |
+| Playwright | the auth arc against the system Chrome, driving a live install |
+| `docs/deployment/tailnet.md` | bind addresses, the three auth surfaces, what not to expose |
+
+### What the live run found that nothing else could
+
+Five things, in cost order. **The first two are the milestone's real
+yield** and neither was in §0.
+
+**1. The control host's agent never enrolls, so the browser's session
+cannot reach the control root.** M7's design is explicit — *"every node
+enrolls the same way, including the control host's … that is also what
+puts the control host in `/v1/nodes` at all"* — and every acceptance
+script since M7 does it. **The wizard never did.** An unenrolled agent
+mints a fresh random signing key per restart while the root mints the
+install's, so a session token from the agent does not verify at the root,
+every control-root page 401s, clears the session and bounces to login.
+Nothing had noticed because until M9 there was no control-root page to
+open. The wizard now enrolls the local agent as step 2b and replaces its
+own session, which is the price enrollment always charges.
+
+**2. `next dev` refuses to serve its own client bundle when the page is
+reached by IP.** Since Next 16, `127.0.0.1` is cross-origin against a
+server announcing itself as `localhost`, and the dev-resource block is
+**not an error**: the page server-renders, the client bundle is refused,
+hydration never runs, and the wizard sits on "Loading setup…" forever.
+Invisible to everyone who browses `localhost` — which is everyone, until
+a browser drives it by IP. For a project whose product is *reaching this
+UI from another machine*, that is worth fixing rather than working
+around: `allowedDevOrigins` in `next.config.ts`.
+
+**3. A node onboarded by `join` has no passphrase of its own, and the
+503 told it to run first-run setup.** Correct behaviour with misleading
+advice: a worker verifies tokens with the install's signing key, so an
+operator session minted at the control root already works there. The
+message now says so, and says not to run setup on a machine that has
+joined — which would raise a second install on a host already in one.
+
+**4. The `skipAuth` trap, met for the third time, plus a new shape of
+it.** `skipAuth` on a topology-resolved target 401s the *lookup*, which
+renders as "no control component in the agent topology". That one was
+already on record. The new shape is structural: the wizard needs the
+**control root's** token to mint a join token and the **agent's** token
+to discover where the control root is, and between initializing and
+enrolling those are genuinely two different credentials. One
+`Authorization` header cannot satisfy both, so the proxy grew
+`x-eugene-plexus-upstream-authorization` — one caller, and the window it
+exists for closes the moment enrollment makes the install one key.
+
+**5. A check whose subject was not where it was looking, twice more.**
+The script's §6 asserted a log line that only appears when an address
+actually changes, against a step where §5 had already moved it there —
+so it reported a correct no-op as a missing announcement. And the
+teardown killed the pid it held rather than the port, so a leftover
+`next dev` survived and the next run silently tested the previous run's
+build. Same family as M7's "the pid the script held was a subshell's",
+one layer further out.
+
+### The split duplicated every docblock, and the assertion did not catch it
+
+The wizard split was done by script precisely so bodies were lifted
+rather than retyped, and it asserted that each slice *started* with the
+signature it expected. That assertion is true of both copies: slicing a
+declaration "to the next top-level declaration" swept up the comment
+block above that next one, and then slicing *that* declaration walked
+back over the same block and took it again. Six docblocks landed twice
+and the commit carried them.
+
+The lesson is not "assert the edit" — that was done. It is that **an
+assertion about where a slice begins says nothing about where it ends.**
+
+### Open, unchanged
+
+- The five-screen wizard of §2 was not built; Troy's call was to split
+  the file and keep eight screens. The screen list is still a question.
+- Control-root workflows beyond `/nodes`, still blocked on whether the
+  agent should own the UI.
+- `test.skip` guards the playground completion unless `EP_CHAT_MODEL` is
+  set, so the run proves the arc rather than a generation.
+
+## 9. Where the build departed from this design
 
 *(Opened 2026-09-11 while landing the contracts. The convention is M5's
 §10: a design is not edited to look like it was right, it records where
 it was wrong.)*
 
-### 8.1 "Authenticated by the node's own service token" does not work
+### 9.1 "Authenticated by the node's own service token" does not work
 
 §4 settled the direction correctly and then named a credential that
 cannot do the job. Two independent reasons, found by reading
@@ -419,7 +536,7 @@ which is a denial of service that costs an attacker nothing. It resets
 with the node record on re-enrollment, because `enrollNode` replaces
 the record wholesale.
 
-### 8.2 `LogOp` opened to ten, and M5's decision did not forbid it
+### 9.2 `LogOp` opened to ten, and M5's decision did not forbid it
 
 `updateNode` is the tenth op. The M5 memo says *"LogOp stays closed at
 nine — do not relitigate"*, so this needs an argument rather than an
@@ -445,7 +562,7 @@ is the log's compacted head; every op must have somewhere to land*):
 `Snapshot.nodes` already carries `Node`, so `updateNode`'s effect lands
 with no schema change beyond the two new fields.
 
-### 8.3 §0's first finding was overstated in one respect
+### 9.3 §0's first finding was overstated in one respect
 
 *"There is no error anywhere: the node is healthy, the root is healthy,
 and requests fail at a URL nobody is listening on."* The first clause is
@@ -462,20 +579,3 @@ an operator editing state by hand. The finding stands; its second
 sentence does not.
 
 ---
-
-## 7. Risks
-
-- **The browser suite finds something structural in the wizard.** Likely,
-  given four hand-found bugs. Mitigation: land the Playwright script
-  against the *current* wizard first, so it is a before-and-after rather
-  than a test written to pass the new code.
-- **Restart-on-login is genuinely broken from a browser** and the fix is
-  not in the UI. Possible: the fleet going away under an authenticated
-  page is a real race and nothing has looked at it. This is the one item
-  that could grow past its milestone, and finding that out is the point.
-- **Playwright in CI on Linux** needs a browser package. Mitigation: the
-  suite is opt-in by script, like every other acceptance run, and CI runs
-  vitest as now.
-- **A stale `Node.url` may already be masked by something.** The gateway
-  falls back when `advertiseUrl` is absent, not when it is *wrong*, so
-  the reproduction should come before the fix.

@@ -396,19 +396,38 @@ keeps that number. Only the unbuilt milestone moved.
   a live cascade recorded a 2171ms failure then a 4189ms success out of
   a 6360ms request, so scoring the survivor by the total would have
   understated it by 34%.
-- **M9 — networked polish** *(was M7, then M8)*
-  ([design](m9-networked-polish.md))**.** Re-verify the auth arc
-  against the new topology **in a browser**, rewrite the wizard,
-  document tailnet deployment, un-enroll and re-advertise. **This is the
-  next milestone** (Troy, 2026-09-11): it is the only remaining item
-  that blocks a differentiator — #5, networked-first with auth, whose
-  crypto is built and proven process-to-process but whose browser path
-  has never been driven against the current topology. **Scoping it found
-  a defect:** a node announces its advertise address once, at
-  enrollment, and nothing re-announces it — so a host that comes back on
-  a new address leaves the root holding a stale `Node.url` while the
-  gateway, which prefers `advertiseUrl` and falls back only when it is
-  *absent*, routes to a dead URL with no error anywhere.
+- **M9 — networked polish: DONE, live-verified 2026-09-11** *(was M7,
+  then M8)* ([design](m9-networked-polish.md) §8 is the implementation
+  record; [acceptance](../acceptance/m9-onboarding-run.md))**.** The auth
+  arc driven **in a browser** for the first time, the wizard split one
+  module per screen, [`tailnet deployment`](../deployment/tailnet.md)
+  written down, `POST /v1/node/unenroll`, `PATCH /v1/nodes/{name}`, and
+  the onboarding question of §4a — an interactive first-boot prompt,
+  `eugene-plexus-agent join`, and a `/nodes` screen that mints a token
+  and renders the command. `scripts/m9-acceptance.sh` passes 40 checks
+  with **no pre-written `firstRunComplete`**, which is the bypass every
+  script since M0 had been using in place of an onboarding feature that
+  did not exist.
+
+  **The defect scoping found is closed:** a node announced its address
+  once, at enrollment, so a host that came back on a new one left the
+  root holding a `Node.url` nobody was listening on — and the root could
+  not poll its way out, because the only address it had was the stale
+  one. It now announces on every start and every change, **signed with
+  its own identity key**, mirroring the signed re-key in the other
+  direction; a service token names a *kind*, not a host, and an
+  unattended reboot has no operator to authenticate.
+
+  **The defect the build found is larger, and was in the first-run path
+  all along: the control host's own agent never enrolled.** M7 settled
+  that every node enrolls the same way, the control host's included —
+  every acceptance script does it, and the wizard did not. An unenrolled
+  agent mints its own random signing key while the root mints the
+  install's, so no browser session could reach the control root at all.
+  Nothing had noticed because until M9 there was no control-root screen
+  to open. `LogOp` also opened to ten (`updateNode`), for the reason its
+  own description gives: applied state that mutates outside the set is
+  state that would not replicate.
 - **Then:** MLX adapter, cloud providers back in the routing table, Discord
   revival.
 
