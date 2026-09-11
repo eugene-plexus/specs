@@ -732,7 +732,18 @@ engine-adapter diagnosis — M4's work included — has been invisible to
 an operator watching the console, which is exactly where they are at
 boot.
 
-#### The one open decision, and the measurement that constrains it
+#### Engines honour it too — measured, not assumed
+
+Components are Python and were measured; **engines are third-party C++
+binaries and go through the same stop path**, so if `llama-server`
+ignored the console event every idle unload would pay the full
+escalation timeout before the GPU came back. It does not: a real
+`llama-server` holding a 1.8 GB GGUF on the 5090 **exited 0.21 s after
+`CTRL_BREAK_EVENT`** with `STATUS_CONTROL_C_EXIT`. No escalation, no
+regression to M6's unload timings. vLLM is unverified on this box and
+would pay at most the 5 s deadline if it differs.
+
+#### The service decision, and the measurement that constrains it
 
 **A Windows service has no console, and `GenerateConsoleCtrlEvent`
 fails there with `WinError 6`** — verified directly by calling
