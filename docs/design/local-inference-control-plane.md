@@ -396,13 +396,19 @@ keeps that number. Only the unbuilt milestone moved.
   a live cascade recorded a 2171ms failure then a 4189ms success out of
   a 6360ms request, so scoring the survivor by the total would have
   understated it by 34%.
-- **M9 — networked polish** *(was M7, then M8)*. Re-verify the auth arc
+- **M9 — networked polish** *(was M7, then M8)*
+  ([design](m9-networked-polish.md))**.** Re-verify the auth arc
   against the new topology **in a browser**, rewrite the wizard,
   document tailnet deployment, un-enroll and re-advertise. **This is the
   next milestone** (Troy, 2026-09-11): it is the only remaining item
   that blocks a differentiator — #5, networked-first with auth, whose
   crypto is built and proven process-to-process but whose browser path
-  has never been driven against the current topology.
+  has never been driven against the current topology. **Scoping it found
+  a defect:** a node announces its advertise address once, at
+  enrollment, and nothing re-announces it — so a host that comes back on
+  a new address leaves the root holding a stale `Node.url` while the
+  gateway, which prefers `advertiseUrl` and falls back only when it is
+  *absent*, routes to a dead URL with no error anywhere.
 - **Then:** MLX adapter, cloud providers back in the routing table, Discord
   revival.
 
