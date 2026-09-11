@@ -26,7 +26,9 @@ decision (§4) and a two-agent acceptance record inside a document whose
 status line says 2026-09-09, and would make that document the longest in
 the repo. The cost of a number is that M7 now names work that is partly
 debt; the roadmap says so, and the wizard and tailnet documentation that
-were also "networked polish" move to M8.
+were also "networked polish" move to M9. *(They were assigned M8 when
+this was written; the retained-metrics work took that number first —
+see the roadmap's §5 note.)*
 
 ---
 
@@ -102,7 +104,8 @@ tradeoff; the build proceeds on the recommendation because the surrounding
 work is the same either way.
 
 **1. Milestone number.** Covered above: M7, "second-host readiness";
-"networked polish" becomes M8 for what remains of it.
+"networked polish" becomes M9 for what remains of it — M8 when this was
+written, renumbered once retained metrics shipped under that number.
 
 **2. Where the advertise address lives** (§4). An agent config field,
 `advertiseUrl`, with a derived default: when unset, the agent learns its

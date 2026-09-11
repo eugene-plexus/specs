@@ -246,6 +246,16 @@ Everything not listed here already exists and mostly survives untouched.
 
 ## 5. Milestones
 
+**A note on the numbering.** M5 through M7 were each renumbered once as
+lifecycle policy and second-host readiness were pulled forward, and the
+`*(was …)*` tags record that. One further collision is worth stating
+plainly: **"networked polish" has been M7, then M8, and is now M9**,
+because the retained-metrics work took the number M8 from a candidate
+list and was built, contracted and live-verified under it before this
+document was updated. Everything shipped as M8 — the contracts in
+`openapi/gateway.yaml`, `scripts/m8-acceptance.sh`, both M8 documents —
+keeps that number. Only the unbuilt milestone moved.
+
 - **M0 — one engine, end to end**
   ([acceptance](../acceptance/m0-four-process-run.md))**.** Supervise a single
   `llama-server` from config; a driver fronts it; `GET /v1/runtimes` reports
@@ -348,7 +358,7 @@ Everything not listed here already exists and mostly survives untouched.
   device detection, which also makes `GET /v1/node` real for the first
   time. Still on one card: two-GPU placement is unproven, same as the
   two-host question.
-- **M7 — second-host readiness** *(was: networked polish, now M8)*
+- **M7 — second-host readiness** *(was: networked polish, now M9)*
   ([design](m7-second-host-readiness.md),
   [acceptance](../acceptance/m7-two-agent-run.md))**.** Make a second
   host possible before one exists: the agent's half of M5's enrollment
@@ -363,10 +373,36 @@ Everything not listed here already exists and mostly survives untouched.
   the root never guesses from a source address; `Component.url` keeps
   its one meaning and `advertiseUrl` carries the other. Four defects the
   control repo's fake agents had agreed to are in the design's §0. What
-  one box cannot prove is in its §10.
-- **M8 — networked polish** *(was M7)*. Re-verify the auth arc against the
-  new topology in a browser, rewrite the wizard, document tailnet
-  deployment, un-enroll and re-advertise.
+  one box cannot prove is in its §10. **A real two-host run followed on
+  2026-09-11** — a Windows host A and a WSL2 host B, NAT and a firewall
+  between them, 41 checks and no component change
+  ([acceptance](../acceptance/m7-two-host-run.md)) — which closes M5's
+  largest gap and discharges the non-loopback-bind caveat outright.
+- **M8 — retained request metrics**
+  ([design](m8-retained-request-metrics.md),
+  [acceptance](../acceptance/m8-metrics-run.md))**.** The gateway keeps
+  what it serves: per-request and per-attempt rows beside its config,
+  `GET /v1/metrics{,/requests}`, a `/metrics` page, retention and
+  rollup config. **Built and live-verified 2026-09-10.** It took this
+  number from a candidate list rather than from this roadmap, which is
+  why the milestone below moved — see the note under §5.
+
+  Two results worth carrying. **The response envelope is the wrong
+  recording point**: `x_eugene_plexus` was set in one place and the
+  streaming path was not it, so a recorder hooked to the response would
+  have been blind to every streaming client. `RoutingHooks` fires around
+  every attempt on both paths and is the seam. And **two rows, not
+  one**, because a request's total latency includes its failed attempts:
+  a live cascade recorded a 2171ms failure then a 4189ms success out of
+  a 6360ms request, so scoring the survivor by the total would have
+  understated it by 34%.
+- **M9 — networked polish** *(was M7, then M8)*. Re-verify the auth arc
+  against the new topology **in a browser**, rewrite the wizard,
+  document tailnet deployment, un-enroll and re-advertise. **This is the
+  next milestone** (Troy, 2026-09-11): it is the only remaining item
+  that blocks a differentiator — #5, networked-first with auth, whose
+  crypto is built and proven process-to-process but whose browser path
+  has never been driven against the current topology.
 - **Then:** MLX adapter, cloud providers back in the routing table, Discord
   revival.
 
