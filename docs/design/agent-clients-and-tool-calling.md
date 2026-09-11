@@ -267,10 +267,18 @@ makes the bisection actionable for someone filing a bug.
 ## 8. What this does not change
 
 - **The install work still comes first.** A backend nobody can install
-  serves no harness. Build order stays as
+  serves no harness. Canonical order is
   [`install-paths-and-distribution.md`](install-paths-and-distribution.md)
-  §9; this becomes the milestone after the release, and plausibly the
-  reason for the release after that.
+  §9.
+
+  **Corrected 2026-09-11, after the first draft of this document said
+  otherwise: the release now comes AFTER this work, not before it.**
+  Troy's call and his reasoning — *if the project exists to relieve the
+  pain in that thread, the project as it stands today would fail.* A
+  control plane no agent harness can use does not answer that thread.
+  And a release is a positioning event: shipping first would announce
+  into the space `llama.app` and NVIDIA/Hugging Face just moved into
+  (§2.1), rather than the one that is unclaimed.
 - **Differentiator #7 is demoted, not deleted.** One commenter in 355 is
   weak demand *from this audience*, which is the home enthusiast. It is
   still what M5/M6/M7 built, it is still live-verified on two hosts, and

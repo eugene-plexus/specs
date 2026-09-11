@@ -339,7 +339,16 @@ it should say so.
 
 ## 9. Build order
 
-Revised 2026-09-11 after calls #2, #3 and #4.
+**CANONICAL ORDER FOR THE WHOLE ARC.** Revised twice on 2026-09-11:
+first after calls #2-#4, then again when **Troy moved the release to
+last**, behind tool calling. His reasoning, recorded because it should
+survive: *if the project exists to relieve the pain in that thread, the
+project as it stands today would fail* — a control plane no agent
+harness can use does not answer it. Add to that: **a release is a
+positioning event**, and releasing before tool calling announces into
+the commoditising space `llama.app` and NVIDIA/Hugging Face just moved
+into, rather than the unclaimed one. See
+[`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md).
 
 1. **Move the proxy into the agent (1a); ship `eugene-plexus-ui`.** The
    only real work on the auth path, and everything downstream gets
@@ -359,10 +368,21 @@ Revised 2026-09-11 after calls #2, #3 and #4.
 4. **`bootstrap.sh`** — port the developer script. Small once step 3
    exists, and it shares the prerequisite checks.
 5. **Compose file and image** for the control plane. Path C.
-6. **Then** the release.
+6. **Tool calling, end to end** —
+   [`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md)
+   §5 items 1-2. **The thesis work.** Nothing in that document matters
+   until this lands.
+7. **Context-window honesty** — that document's §6, and the actual
+   differentiator: we launch the engine, so we know the window.
+8. **The playground as a diagnostic** — tools, attachments, and the
+   `x_eugene_plexus` envelope surfaced, reached over **the same public
+   surface a harness uses** (§7.1's trap).
+9. **Then** the release.
 
-§7 (Vulkan, decided) is independent of all of it and slots in anywhere;
-it touches only the agent's llama.cpp adapter and a UI badge.
+§7 of this document (Vulkan, decided) is independent of all of it and
+slots in anywhere; it touches only the agent's llama.cpp adapter and a
+UI badge. The diagnosed-but-unfixed ~2 s post-unload routing window is
+likewise independent.
 
 ## 10. What this does not solve
 
