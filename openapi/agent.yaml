@@ -39,9 +39,13 @@ info:
          components; nothing else is.
 
       3. **Serve the UI's static assets** at the root path so the
-         operator's browser has one stable address to point at. The UI
-         proxies API calls through the agent to the gateway and the
-         other components.
+         operator's browser has one stable address to point at, and
+         **proxy the browser's API calls** to the gateway, the library,
+         the control root and each inference-driver — see `/` and
+         `/api/proxy/{target}/{path}`. The assets ship in a separate
+         Python distribution, `eugene-plexus-ui`; an install without it
+         serves the API normally and says so at `/`, because a missing
+         browser surface is a degradation and not a failure.
 
       4. **Expose its own configuration and topology over HTTP** so the
          UI can edit the install's shape without touching files on
@@ -1286,6 +1290,98 @@ paths:
             application/json:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Health'
+
+  # ---------------------------------------------------------------------
+  # The browser surface. Two paths, neither of them a typed API, both of
+  # them load-bearing: without them an install has an HTTP interface and
+  # no way for a person to use it, which removes differentiator #5
+  # (networked-first with auth) from every install path.
+  #
+  # Declared as path items WITHOUT operations, deliberately. An operation
+  # object would have to name a request body, a response schema and a
+  # status code, and all three are "whatever the component said" — a
+  # generated client for either of these would be a fiction. What a
+  # reader needs from this document is that the paths exist, what serves
+  # them, and what they are allowed to assume; that is what is here.
+  # ---------------------------------------------------------------------
+
+  /:
+    summary: The web UI, as static files.
+    description: |
+      Everything not matched by a route above is served from the static
+      export shipped in the `eugene-plexus-ui` distribution, found at
+      runtime through `importlib.resources` rather than a path in the
+      agent's own tree — so the browser half of an install is a wheel
+      you either installed or did not.
+
+      **A directory URL redirects to its trailing-slash form** (`/nodes`
+      → `/nodes/`), because the export emits one `index.html` per route.
+      Deep links therefore cost one redirect and then work; this is
+      stated because a build that drops the convention produces a page
+      that works when clicked and 404s when pasted, and the symptom
+      names neither cause.
+
+      **When the distribution is absent** this path answers `503` with a
+      human-readable page naming what to install. The API surface is
+      unaffected — `degraded-mode-required` — and `/healthz` still
+      answers `200`.
+
+  /api/proxy/{target}/{path}:
+    summary: Same-origin pass-through from the browser to any component.
+    description: |
+      The browser calls `/api/proxy/<target>/<path>`; the agent forwards
+      the request to `<component-base-url>/<path>` with the method,
+      headers, query and body it was given, and streams the response
+      back untouched. One origin for the whole install: no CORS
+      configuration on any component, and no component URL ever reaches
+      the browser.
+
+      **`target` is resolved from this agent's own topology**, in
+      process, at request time:
+
+        * `agent` — this process.
+        * `gateway`, `library`, `control` — resolved by *kind*, because
+          an install has exactly one of each. Not configuration: a
+          second place recording a component's URL is a second place it
+          can be wrong.
+        * anything else — an `inference-driver` **by name**, so a driver
+          added while the browser is open is reachable without a reload
+          and without a restart.
+
+      A target that resolves to nothing answers `503` naming what was
+      looked for, rather than falling back to a default address that
+      will also fail but less legibly.
+
+      **Unauthenticated, and it has to be**: this is the path the login
+      request itself travels. It confers no authority — the
+      `Authorization` header is forwarded verbatim and every component
+      behind it enforces its own auth — and it reaches only addresses
+      already declared in the topology.
+
+      **Every method is accepted** and the response is streamed rather
+      than buffered, so a token stream stays a token stream. Hop-by-hop
+      headers (`connection`, `transfer-encoding`, `content-length`,
+      `content-encoding`) are dropped in both directions and the
+      upstream request is made with `accept-encoding: identity`, so no
+      decoder sits in the path to re-buffer an SSE body.
+    parameters:
+      - name: target
+        in: path
+        required: true
+        schema:
+          type: string
+        description: |
+          `agent`, `gateway`, `library`, `control`, or the name of an
+          inference-driver in this agent's topology.
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: |
+          The remainder of the upstream path, slashes included — e.g.
+          `v1/chat/completions`. Not URL-encoded: this is a wildcard
+          tail, and OpenAPI has no better way to say so.
 
 components:
 
