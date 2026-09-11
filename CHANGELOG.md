@@ -181,7 +181,9 @@ It found a fourth instance of this project's POSIX/Windows path class: a Git Bas
 
 M4 is "supervise something that is not llama.cpp". Design, with every upstream claim read off vLLM's own source at v0.29.0 and the file named at each one: [`docs/design/m4-second-engine-vllm.md`](docs/design/m4-second-engine-vllm.md).
 
-**Unlike M0–M3, no live run stands behind this.** The dev box is Windows and vLLM has no Windows build, so the contracts and the adapter land with fixture tests and the acceptance run waits for a Linux host (decided 2026-09-09). The design doc says so where it will be read rather than in a footnote.
+~~**Unlike M0–M3, no live run stands behind this.**~~ **It ran 2026-09-10**, in WSL2 on the dev box — Ubuntu 26.04, Python 3.14, RTX 5090, vLLM 0.29.0 — and `scripts/m4-acceptance.sh` passed 31 checks on its first ever execution **with no change to the adapter**: every claim it was built on off vLLM's source held, including the readiness rule (every probe of the engine's port was refused across the whole load, never accepted-and-hung). Record: [`docs/acceptance/m4-vllm-run.md`](docs/acceptance/m4-vllm-run.md).
+
+**The finding with the longest reach: vLLM compiles at first use, not at install**, so the unit of *operation* is a Python environment **plus a C toolchain plus the interpreter's dev headers** — four preconditions the install command never checks, each killing the engine 20–40 s in with a traceback that names none of them. `RuntimeSpec.env` carried all of it with no contract change, and as of 2026-09-11 the adapter supplies the host env vars itself (`EngineAdapter.default_env`, overridable at two levels and logged); the two prerequisites no env var fixes are **explained rather than refused**, because a warm Triton cache runs vLLM with a broken compiler and an eager refusal would reject a launch that works.
 
 **Smaller than predicted in one direction.** The main design doc called M4 "a second adapter and a second driver kind". There is no second driver kind: vLLM speaks OpenAI-compatible HTTP, so `BackendKind.openai_compat_http` already covers it and the wire-protocol half of the two-layer split needs nothing. `EngineKind` gains `vllm`; the engine half needs all of the work. That is the `EngineKind` / `BackendKind` separation earning its keep on the first case that tested it.
 
@@ -202,9 +204,9 @@ Two drift fixes ride along, per M1's precedent of spending one re-pin on both: `
 
 Validated with `openapi-spec-validator` 0.8.5 and `@redocly/cli` 2.51.2; all four spec documents generate importable Pydantic v2 models. `ui`'s TypeScript generation was not exercised — the gap that hid the fifth consumer. `FrameworkAccelerator` is a named schema rather than an inline enum because a second inline `accelerator` arrived from codegen as `Accelerator1`.
 
-### specs — M5 (multi-host, trust, and the control root) — design only
+### specs — M5 (multi-host, trust, and the control root)
 
-Inserted 2026-09-09 **ahead of** lifecycle policy, pushing M5→M6 and M6→M7, and **M4's implementation is paused for it**. Design: [`docs/design/m5-multi-host-and-trust.md`](docs/design/m5-multi-host-and-trust.md). No contracts have changed yet; this entry records the design and its decisions.
+Inserted 2026-09-09 **ahead of** lifecycle policy, pushing M5→M6 and M6→M7, and **M4's implementation was paused for it**. Design: [`docs/design/m5-multi-host-and-trust.md`](docs/design/m5-multi-host-and-trust.md). This entry records the design and its decisions; the contracts landed at `da19cac` and the `control` repo was built the same day, with replay equivalence and a five-process acceptance run both passing. **The two-machine gap it left open closed 2026-09-11** — see M7 below.
 
 **Why it jumps the queue.** Multi-host is *designed* today — `Component.spawn` being absent already means "remote", and the gateway resolves remote driver URLs from topology — but it is **not authenticable**. The watchdog holds "the install's trust root" and service tokens are "rotated on each watchdog restart", so a driver spawned by watchdog B rejects a token signed by watchdog A. Add one master key per watchdog, per-watchdog `/v1/runtimes` with no union view, and an `os_keyring` mode that is inherently host-bound, and N hosts means N passphrases, N UIs and N key domains: uncoordinated rather than merely incomplete. A distributed trust model is expensive to retrofit, which is the whole argument for doing it before more milestones land code that assumes one host.
 
@@ -263,12 +265,42 @@ All five level with `specs` HEAD; tests, mypy, ruff, `tsc --noEmit`, eslint, Pre
 
 ---
 
+### specs — M6 (lifecycle policy)
+
+Landed at `8727736`; live-verified 2026-09-10. Design and record: [`docs/design/m6-lifecycle-policy.md`](docs/design/m6-lifecycle-policy.md), [`docs/acceptance/m6-six-process-run.md`](docs/acceptance/m6-six-process-run.md). All six consumers re-pinned.
+
+- **A companion `inference-driver` per runtime, declared by the agent.** Launching a model now ends *routable*, which closes the gap M2 left open — nothing had pointed a driver at a new runtime. Not a declared pool: one driver per backend is the M0 rule, and a runtime is a backend.
+- **The gateway decides lifecycle; the owning node's agent executes; the control root is not in the path.** Idle unload and start on demand are data-path behaviours and must survive management being down. Nothing about lifecycle is replicated — loaded/unloaded is liveness, re-read from agents after a promotion.
+- **`modelSlots`**: every model is a slot, and a slot's tiers are ordered lists of *model ids*, not driver names. A cloud subscription is a target like any other.
+- **Admission refuses with the arithmetic and a `force` override; it never queues**, and never refuses on `unknown`. `GET /v1/node` on the agent, unenrolled, to serve the live per-device numbers it needs.
+- Two defects only the live run could find: a routing table a refresh interval behind about readiness (now refresh-on-demand), and `gpuLayers: 99` read as partial offload.
+
 ### specs — M7 (second-host readiness)
 
 Landed at `a0d793e`. Design and record: [`docs/design/m7-second-host-readiness.md`](docs/design/m7-second-host-readiness.md), [`docs/acceptance/m7-two-agent-run.md`](docs/acceptance/m7-two-agent-run.md). `common.yaml` untouched; re-pin radius `agent`, `control`, `ui`, the rest bumped for levelness.
 
 - **`agent.yaml`**: `POST /v1/node/rekey`, declared for the first time — control's rotation had called it since M5. `security: []`; the credential is an Ed25519 signature by the control identity over a three-field canonical message, and 409 on a lower epoch is where fencing happens. `RekeyRequest`. `NodeIdentity` + `advertiseUrl`, `signingKeyId`, `controlPublicKey`. `Component.advertiseUrl` (read-only, derived). `POST /v1/runtimes` accepts `service:control`. The agent's port is a setting.
 - **`control.yaml`**: `EnrollmentRequest.url` — without it every really-enrolled node had no address. `Enrollment.signingKeyId`. Promotion announces its epoch through the signed re-key with the key unchanged.
+
+### specs — M8 (retained request metrics)
+
+Landed at `ebf24f7`; live-verified 2026-09-10 (late). Design and record: [`docs/design/m8-retained-request-metrics.md`](docs/design/m8-retained-request-metrics.md), [`docs/acceptance/m8-metrics-run.md`](docs/acceptance/m8-metrics-run.md). Only `gateway.yaml` changed, so the re-pin radius was `gateway` and `ui`.
+
+- **`GET /v1/metrics` and `GET /v1/metrics/requests`** on the gateway, operator-only (no service token), plus `metricsEnabled` / `metricsRetentionDays` / `metricsRollupEnabled` on its config trio, and a `/metrics` page in the UI.
+- **The response envelope is the wrong recording point.** `x_eugene_plexus` was set in one place and the streaming path was not it, so a recorder hooked to the response would have been silently blind to every streaming client. `RoutingHooks` fires around every attempt on both paths and is the seam.
+- **Two rows, not one**, because `latency_ms` includes failed attempts: a cascade recorded a 2171 ms failure then a 4189 ms success out of a 6360 ms request, so scoring the survivor by the request total would have understated it by 34%.
+- Left open by decision: the balancer does not consume the data, and hourly rollups are written but unserved, because a percentile cannot be reconstructed from sums.
+
+### specs — M9 (networked polish)
+
+Landed at `094dec7`; live-verified 2026-09-11. Design and record: [`docs/design/m9-networked-polish.md`](docs/design/m9-networked-polish.md) (§8 implementation, §9 contract departures), [`docs/acceptance/m9-onboarding-run.md`](docs/acceptance/m9-onboarding-run.md). `common.yaml` untouched; re-pin radius `agent`, `control`, `ui`, **verified by regenerating both sides and diffing rather than by counting `$ref`s**.
+
+- **`agent.yaml`: `POST /v1/node/unenroll`.** The inverse of enrolling, and safe to run from the node because it *discards* the install's signing key rather than merely dropping a registry entry — a node cannot escape revocation this way, only disarm itself. It tells the root first and proceeds anyway when the root is unreachable, reporting which happened.
+- **`control.yaml`: `PATCH /v1/nodes/{name}`.** Closes a defect that had been live for four milestones: a node announced its address exactly once, at enrollment, so a host that came back on a new one left the root holding an address nobody was listening on — with no way back, because the only address the root had was the stale one. **Signed by the node, never bearer-authenticated**, mirroring the signed re-key: a service token names a *kind* and not a host, and the case that matters is an unattended reboot with no operator. That needs a second keypair per node (`signingPublicKey`), because the existing one is X25519 for sealing and the derivation only runs the other way. A `sequence` in applied state fences replays.
+- **`LogOp` opens to ten** (`updateNode`). M5 closed it at nine over things that are not replicated state; `Node.url` lives in the snapshot, and by this schema's own words an operation not in the list is one that would not replicate.
+- **Onboarding, in the agent rather than the browser:** an interactive first-boot question, `eugene-plexus-agent join --control --token`, and the existing environment variable unchanged for service units. A worker's web UI is unreachable until it advertises a non-loopback address, and setting that is part of what joining does — the browser arrives after the thing it would configure.
+- **First browser acceptance in the project's history:** Playwright against the system Chrome drives first run, login, restart-on-login and the topology-resolved proxy. It found that **the control host's own agent had never enrolled**, so no browser session could reach the control root at all — a locked decision every acceptance script honoured and the wizard did not.
+- The wizard is split one module per screen (eight screens kept), and `/nodes` is the first control-root screen. [`docs/deployment/tailnet.md`](docs/deployment/tailnet.md) is the deployment guide.
 
 ## Superseded — local-LLM-training platform (v0.3 direction)
 

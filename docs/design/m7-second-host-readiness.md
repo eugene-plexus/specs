@@ -1,7 +1,10 @@
 # M7 — Second-host readiness (design)
 
-**Status:** designed and built 2026-09-10; live-verified on **two agents on
-one box** the same day (§11). Milestone **M7** of
+**Status:** designed and built 2026-09-10; live-verified on **two agents
+on one box** the same day (§11), and on **two real machines 2026-09-11**
+— Windows A and WSL2 Ubuntu B across NAT and a host firewall, 41 checks,
+first attempt, **with nothing in any component changed**
+([record](../acceptance/m7-two-host-run.md)). Milestone **M7** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
 Follows [M6](m6-lifecycle-policy.md). Contracts first, then implementation,
 then an acceptance run against the closest thing this machine allows.

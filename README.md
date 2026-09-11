@@ -30,16 +30,20 @@ Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-
 
 ## Current status
 
-As of **2026-09-10**, this is a pre-1.0 control plane under active development:
+As of **2026-09-11**, this is a pre-1.0 control plane under active development. Milestones M0 through M9 are built, and each has a re-runnable acceptance script rather than a claim.
 
-- **Live-verified:** llama.cpp supervision, model scanning and profiles, catalogue search and resumable downloads, quant guidance, replica balancing, priority-tier failover, idle unload, wake on demand, and memory admission.
-- **Control root and node enrollment implemented:** replicated control state, operator-driven promotion, signed rekeying, and advertised peer URLs. M7 passed with two agents on one Windows host; this is not a two-machine validation.
-- **Still unverified:** a real vLLM launch, two-machine partition/rotation behavior, two-GPU placement, and browser-driven UI workflows. MLX has no adapter yet.
-- **Known gaps:** a short post-unload routing window found by M7; no control-root management screens or structured model-slot editor in the UI. The agent still serves the UI assets; moving them to the control root is undecided.
+- **Live-verified on real hardware:** llama.cpp *and* vLLM supervision, model scanning and profiles, catalogue search and resumable downloads, quant guidance, replica balancing, priority-tier failover, idle unload, wake on demand, memory admission, and retained per-request metrics.
+- **Multi-host is proven on two real machines** (Windows + WSL2 Ubuntu, across NAT and a host firewall): non-loopback binds, derived advertise addresses, a cross-host completion, an idle unload decided on one host and executed on the other, and a full signing-key rotation. Enrollment, un-enrollment and address re-advertisement all run from a terminal on the machine being added.
+- **The browser path is verified too**, as of M9: Playwright drives first run, login, restart-on-login and the topology-resolved proxy against a live install.
+- **Still unverified:** a rotation with a genuinely offline node, clock skew between hosts, a partitioned-but-alive old control root, two-GPU placement, and AMD/Intel/Apple memory detection. **MLX has no adapter** — it is the last engine named above that is not implemented.
+- **Known gaps:** a short post-unload routing window found by M7 and never diagnosed; ~116 ms of HTTP-driver-path overhead, measured but not explained; rolling engine upgrades; and, in the UI, no structured model-slot editor and only one control-root screen (`/nodes`). The agent still serves the UI assets; moving them to the control root is undecided.
 
-See the [M6 acceptance record](docs/acceptance/m6-six-process-run.md),
-[M7 acceptance record](docs/acceptance/m7-two-agent-run.md), and
-[M4 implementation record](docs/design/m4-second-engine-vllm.md).
+Records: [M9](docs/acceptance/m9-onboarding-run.md) ·
+[M7 on two hosts](docs/acceptance/m7-two-host-run.md) ·
+[M4 vLLM](docs/acceptance/m4-vllm-run.md) ·
+[M8 metrics](docs/acceptance/m8-metrics-run.md) ·
+[M6](docs/acceptance/m6-six-process-run.md).
+Deploying over a tailnet: [`docs/deployment/tailnet.md`](docs/deployment/tailnet.md).
 
 ## Layout
 

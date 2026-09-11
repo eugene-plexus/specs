@@ -1,9 +1,12 @@
 # M8 — Retained request metrics (design)
 
-**Status:** designed 2026-09-10 (late), not built. Milestone **M8** of
+**Status:** designed 2026-09-10 (late), **built and live-verified the
+same day** — §10 is the implementation record and §11 the phase
+decomposition; `scripts/m8-acceptance.sh` passed 13 checks
+([record](../acceptance/m8-metrics-run.md)). Milestone **M8** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
-Follows [M7](m7-second-host-readiness.md), which is built and
-live-verified on one box.
+Follows [M7](m7-second-host-readiness.md), which is now live-verified on
+**two real hosts** ([record](../acceptance/m7-two-host-run.md)).
 
 **What it is.** Every completion the gateway serves already reports how
 it was served — `x_eugene_plexus` carries driver, runtime, backend,

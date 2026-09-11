@@ -1,8 +1,15 @@
 # M2 — Model library, both formats (design)
 
-**Status:** contracts landed 2026-09-08. Milestone **M2** of
+**Status:** contracts landed 2026-09-08; **built and live-verified
+2026-09-08** — the `library` repo, the UI browser and profile editor, and
+a five-process acceptance run
+([record](../acceptance/m2-five-process-run.md)). Milestone **M2** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
 Follows [M1](m1-engine-acquisition.md).
+
+**The gap this left open is closed:** launching a model did not make it
+routable, because nothing pointed a driver at the new runtime. M6 closed
+it with a companion inference-driver per runtime.
 
 Verified against real files on the dev box, not fixtures: two large GGUFs
 (21 GB `Q4_K_S`, 15 GB `Q4_K_M`) with their projectors beside them, a

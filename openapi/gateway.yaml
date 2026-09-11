@@ -30,8 +30,17 @@ info:
         front them with HTTP, and that something is the driver — so the
         driver has to be able to sit in the request path regardless.
 
-    The extra local hop is sub-millisecond against a multi-second
-    generation. It is not a cost worth optimising away.
+    The extra local *hop* is sub-millisecond against a multi-second
+    generation. **What that sentence does not license, and used to imply,
+    is that the two-layer split is free.** M8's phase decomposition
+    measured gateway-side elapsed minus the driver's own `latencyMs` at
+    **114-120 ms, consistently**, on completions of about a second — and
+    narrowed it to the HTTP driver path, since a subprocess backend shows
+    6 ms. Not the network: the loopback hop really is sub-millisecond.
+    A finding rather than a conclusion; diagnosing it is its own piece of
+    work, and `GET /v1/metrics` now has the numbers. The layering is
+    still right for the reasons above, but it is not free, and this
+    document asserted for eight milestones that it was.
 
     ## Where the routing table comes from
 
@@ -1608,13 +1617,14 @@ components:
 
             `elapsedMs - backendMs` is therefore the cost of the
             gateway-to-driver hop plus the driver's own work: the
-            control plane's overhead on this request. This document has
-            asserted since M0 that the extra local hop is
+            control plane's overhead on this request. This document
+            asserted from M0 to M8 that the extra local hop was
             "sub-millisecond against a multi-second generation" and "not
             a cost worth optimising away" - an architectural
             justification nobody had measured. Both numbers were already
-            being produced; subtracting them makes the claim checkable
-            on any install.
+            being produced; subtracting them made the claim checkable,
+            and **the first time it ran it came back 114-120 ms**. See
+            this document's overview.
           minimum: 0
         served:
           type: boolean

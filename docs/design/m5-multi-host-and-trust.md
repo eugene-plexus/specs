@@ -1,9 +1,16 @@
 # M5 — Multi-host, trust, and the control root (design)
 
-**Status:** designed 2026-09-09. Milestone **M5** of
+**Status:** designed and **built 2026-09-09** — the `control` repo,
+with both required tests passing (replay equivalence from five
+directions, and a five-process run that killed the control root through
+the OS). §10 records where the built contract departed from the sketch.
+**The two-machine gap is closed as of 2026-09-11**
+([record](../acceptance/m7-two-host-run.md)); what is left is an
+offline-node rotation, clock skew, and a partitioned-but-alive old root.
+Milestone **M5** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
-Follows [M4](m4-second-engine-vllm.md), whose contracts landed and whose
-implementation is **paused** for this.
+Follows [M4](m4-second-engine-vllm.md), whose implementation was
+**paused** for this and which ran on real hardware 2026-09-10.
 
 **Why this jumps the queue.** Decided 2026-09-09: a project that will
 support distributed deployment has to answer identity, trust direction

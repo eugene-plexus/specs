@@ -1,6 +1,9 @@
 # M3 — Discovery, download, guidance (design)
 
-**Status:** contracts landed 2026-09-08. Milestone **M3** of
+**Status:** contracts landed 2026-09-08; **built and live-verified
+2026-09-09** — the `/discover` UI and a 27-check three-process run in
+which every call went through the UI's own proxy against the live hub
+([record](../acceptance/m3-three-process-run.md)). Milestone **M3** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
 Follows [M2](m2-model-library.md).
 
