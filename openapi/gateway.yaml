@@ -258,7 +258,23 @@ paths:
         Set `stream: true` for Server-Sent Events. The stream emits
         `data:` lines carrying `ChatCompletionChunk` objects and
         terminates with `data: [DONE]`, matching OpenAI's framing
-        exactly.
+        exactly. Tokens are forwarded as the backend produces them.
+
+        **Streaming trades a failover guarantee for early delivery, and
+        the trade is not optional.** A non-streamed request that loses
+        its backend cascades to the next one in the slot and the caller
+        sees a single clean answer. A streamed request can only do that
+        until its first token: once part of an answer has been sent,
+        retrying on another backend would splice two models' output
+        together with no marker at the seam, so instead the stream is
+        **truncated** and an OpenAI-shaped `error` frame is emitted in
+        place of the rest. A caller that needs the cascade more than it
+        needs early tokens should not set `stream`.
+
+        Before the first token nothing has changed: the cascade runs
+        exactly as it does for a non-streamed request, and a backend
+        that dies during connection or before producing output is
+        failed over silently.
       requestBody:
         required: true
         content:
