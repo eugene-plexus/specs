@@ -8,6 +8,29 @@ of writing; everything else is reasoning and is marked as such.
 Precedes a release, deliberately. Publishing an installable thing whose
 only install is a Windows developer script would bake the gap in.
 
+## Decisions needed before building
+
+Five, all Troy's. Each has a recommendation in the section named, with
+the counter-argument that would overturn it. **Answers get recorded
+here as they are made**, so this block is the decision log and not just
+a question list.
+
+| #     | The call                                                                                      | §    | Recommended                                        | Status     |
+| ----- | --------------------------------------------------------------------------------------------- | ---- | -------------------------------------------------- | ---------- |
+| **1** | Move the UI proxy into the agent and static-export the UI — **now**, or bundle Node and defer? | §3   | Now                                                | **OPEN**   |
+| **2** | Linux + NVIDIA: ship Vulkan with a permanent visible degradation, or keep the refusal?          | §7   | Ship Vulkan, badge it permanently                  | **OPEN**   |
+| **3** | macOS: first-class now, or wait for MLX?                                                        | §8   | Now, decoupled from MLX                            | **OPEN**   |
+| **4** | Windows: a supported end-user target, or a dev surface only?                                    | §11  | *(no recommendation — see §11)*                     | **OPEN**   |
+| **5** | Where `install.sh` is hosted: stand up `eugeneplexus.com`, or a raw GitHub URL first?           | §4   | GitHub URL now, domain before announcing           | **OPEN**   |
+
+**#1 gates the rest** — it decides what every installer installs. #2-#4
+are independent of it and of each other. #5 is near-automatic and is
+listed only so it is not forgotten at the last moment.
+
+Deliberately **not** decided here: version policy, release workflows and
+who tags what (§6). Those belong to the release, which follows this
+work.
+
 ## 0. The reframe — two audiences, not two install systems
 
 The project has two audiences and they look like they need different
@@ -314,8 +337,41 @@ proven"* — which is a good story, not a weak one.
 - **Windows `TerminateProcess`.** `supervisor.py` notes that graceful
   shutdown is a hard kill on Windows, and says plainly that *"Windows is
   primarily a dev surface, real installs are Linux/Mac/Docker."* That
-  assumption is load-bearing for a service unit and should be revisited
-  if Windows becomes a supported end-user target rather than a dev one.
+  assumption is load-bearing for a service unit — see the open call
+  below, which it is the main evidence for.
+
+### 11.1 Open call #4 — is Windows a supported end-user target?
+
+**Not a trap but a decision, and the one with no recommendation**,
+because the evidence points both ways and the tiebreak is a product
+judgement rather than a technical one.
+
+**For dev-surface-only:** `supervisor.py` already asserts it in a
+comment that has been load-bearing since M0. Graceful shutdown is a
+hard kill, so a supervised engine can leave a GPU context to be
+reclaimed. Windows services are a genuinely different integration from
+systemd and launchd — a third one to write and keep working. And the
+M10 acceptance run recorded Windows stacking three stale stubs on one
+loopback port with the oldest still serving, which is the kind of thing
+that makes support painful.
+
+**For first-class:** audience 1 is *substantially* Windows — the home
+enthusiast with one gaming GPU is the archetype, and telling them to
+install WSL2 first is the sort of friction this whole document exists
+to remove. Windows is also where llama.cpp's CUDA prebuilts actually
+are (§7): Windows+NVIDIA is the **best**-served acquisition path in the
+project, and it would be odd to serve it least well. Troy's own box is
+Windows 11 and every milestone through M10 was driven from it.
+
+The cost is not the installer — `install.ps1` is cheap next to
+`install.sh`. The cost is committing to Windows process supervision as
+a supported surface, including the hard-kill behaviour, which is real
+work that nobody has scoped.
+
+A middle option exists and may be the honest one: **ship `install.ps1`,
+document Windows as supported for a single-machine install, and do not
+claim it for multi-host or unattended-service use** until supervision
+is hardened.
 
 ## 12. Implementation record
 
