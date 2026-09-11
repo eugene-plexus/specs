@@ -1,7 +1,18 @@
 # M9 acceptance — onboarding, leaving, moving house, and the first browser
 
-**Status:** passed 2026-09-11, **40 checks, zero failures**, on the
-fourth attempt. Script:
+**Status:** passed 2026-09-11, **39 checks, zero failures**, on the
+fourth attempt. **Re-ran green the same day on the first attempt** after
+the wizard was cut from eight screens to five (`ui` `4f07702`) — the
+browser arc is the only test of that flow, so the cut is live-verified
+rather than fixture-verified.
+
+*(This line said 40 until the re-run counted them. The script has 39
+`ok` call sites and the run emits 39 PASS lines; nothing was removed —
+`git log` shows the script untouched since `fae1970`. Recorded because a
+check count is exactly the kind of status claim this project has already
+found nobody re-checks.)*
+
+Script:
 [`scripts/m9-acceptance.sh`](../../scripts/m9-acceptance.sh). Design:
 [`m9-networked-polish.md`](../design/m9-networked-polish.md) — §8 is the
 implementation record this run produced.

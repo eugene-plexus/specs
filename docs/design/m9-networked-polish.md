@@ -151,7 +151,39 @@ topology validation and seven leaf inputs; nothing in it can be tested
 without mounting the whole wizard, which is why its test is 258 lines
 and asserts a call sequence.
 
-**Open for Troy — the screen list.** The current eight are Welcome,
+**SETTLED 2026-09-11, and the answer is five — but not for the reason
+argued below.** Troy kept eight at M9 ("just split the file for now")
+and handed the call back. Reading the split code in order to make it
+turned up what the argument below never suspected: **three of the eight
+screens did nothing at all.** `deployment`, `gatewayHost` and
+`gatewayPort` were collected, displayed on the Ready screen as though
+they were configuration, and never written by the Start transaction —
+the only reader of any of them was the summary itself. An operator who
+typed `0.0.0.0:9000` got an install on `127.0.0.1:8080` and a summary
+claiming otherwise, which is worse than a wasted screen: it is a false
+statement on the one screen whose entire job is to say what is about to
+happen. The Gateway screen additionally rendered **no inputs at all** in
+the default local path. Look & feel wrote only `localStorage`, and
+`UIPreferences` on `/config` has been the same two controls all along.
+
+So the cut is Welcome, Security, Models, Backend (optional), Ready —
+the same five recommended below, but reached by finding the inert ones
+rather than by weighing screens against each other. Shipped as `ui`
+`4f07702`; live-verified by `scripts/m9-acceptance.sh` with the browser
+arc, first attempt. Welcome also moved from third to first, where it had
+been arriving *after* the operator chose a font size and committed a
+passphrase.
+
+**The finding worth carrying past this milestone:** the e2e walk
+navigated the wizard by clicking Continue in a counted loop, naming
+screens only in a comment. It would have walked the five-screen flow
+just as happily while typing into whatever happened to be under it.
+Every step now asserts its screen's heading before acting — the same
+defect shape as the three this milestone found live, and writing the
+assertions turned up a fourth instance immediately.
+
+**The original argument, kept because it still governs the two screens
+that were not inert.** The eight are Welcome,
 Look & Feel, Security, Gateway, Models, Deployment, Backend, Pick a
 model, Done. Two are questionable now:
 
