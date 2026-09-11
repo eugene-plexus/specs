@@ -2,11 +2,12 @@
 
 **Status:** contracts designed 2026-09-09; **adapter and routing fix
 landed the same day** — agent `53d815d`, inference-driver `97f6583`,
-gateway `5ad5993`, no contract change needed. Verified against upstream
-source and fixtures only; **the live run is still pending** and
-`scripts/m4-acceptance.sh` is written for it. §8 records what the
-implementation verified, where it departed from this document, and what
-the first Linux run must measure. Milestone **M4** of
+gateway `5ad5993`, no contract change needed. **DONE: the live run
+passed 2026-09-10 in WSL2** — 31 checks, zero failures, and the adapter
+needed no change. §8 records what the implementation verified and where
+it departed from this document; **§9 is the live run**, and
+[`docs/acceptance/m4-vllm-run.md`](../acceptance/m4-vllm-run.md) is the
+record. Milestone **M4** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md).
 Follows [M3](m3-discovery-download-guidance.md).
 
@@ -14,16 +15,21 @@ Follows [M3](m3-discovery-download-guidance.md).
 something that is not llama.cpp. This is where the format abstraction and
 the two-layer split stop being speculative.
 
-**How far it is verified — read this before trusting §1.** Every claim
-below is read off vLLM's own source at **v0.29.0** (tagged 2026-09-09, the
-day this was written) or its published docs, and the file is named at each
-one. **No vLLM process has ever run for this project.** The dev box is
-Windows and vLLM has no Windows build — §1. Decided with that in view
-(Troy, 2026-09-09): land the contracts and the adapter with fixture tests
-now, and hold the acceptance run until a Linux host exists. Every
-milestone from M0 to M3 earned its best defects from a live run and M4's
-are still outstanding, so treat §2 in particular as **designed, not
-proven**.
+**How far it is verified.** Every claim below was read off vLLM's own
+source at **v0.29.0** (tagged 2026-09-09, the day this was written) or
+its published docs, and the file is named at each one — because when it
+was written **no vLLM process had ever run for this project**: the dev
+box is Windows and vLLM has no Windows build (§1). Decided with that in
+view (Troy, 2026-09-09): land the contracts and the adapter with fixture
+tests now, and hold the acceptance run until a Linux host exists.
+
+**That run happened on 2026-09-10 and §2 is now proven rather than
+designed** — see §9. It is worth knowing which way it went: reading
+source instead of running the thing cost this milestone *nothing* in the
+adapter, and every defect the run found was in the acceptance script or
+in the host's own prerequisites. That is the opposite of M0-M3's
+pattern and should not be read as a general licence; the run still
+found four things, they were just not where the risk was thought to be.
 
 Two decisions were taken to open the milestone, both 2026-09-09:
 
@@ -640,11 +646,11 @@ agent `53d815d` (`engines/vllm.py`, the readiness redefinition in
 which was the proof the milestone asked for. No spec document changed:
 every field the implementation needed already existed at `73ddc83`.
 
-**Still no vLLM process has run.** The dev box is Windows, WSL is not
-installed, and this section is honest about what that means: the state
-machine is tested against a fake process handle and a fake HTTP probe,
-and the wall-clock behaviour in §2 is a design estimate until the Linux
-run happens.
+**At the time this section was written, no vLLM process had run** — the
+dev box was Windows with no WSL, so the state machine was tested against
+a fake process handle and a fake HTTP probe and §2's wall-clock
+behaviour was a design estimate. That held until 2026-09-10; **§9 below
+is the live run**, and it changed nothing here.
 
 ### What was checked against v0.29.0 source, and where
 
@@ -738,26 +744,72 @@ Each claim below was read off the tagged tree (`gh api` on
     contract consequence and is the one piece of §6's "In" list left
     undone.
 
-### What the live run must measure
+## 9. The live run (2026-09-10) — passed, and what it revised
 
-`scripts/m4-acceptance.sh` is written for the WSL2 session that also
-answers M5's multi-host question, and **has never been executed**. It
-watches the runtime's own port while the agent reports `loading` and
-prints two lines to carry back here:
+**`scripts/m4-acceptance.sh` ran for the first time on 2026-09-10 and
+passed: 31 checks, zero failures.** Full record, with the numbers and
+the four script defects it earned, in
+[`docs/acceptance/m4-vllm-run.md`](../acceptance/m4-vllm-run.md). The
+host was WSL2 — Ubuntu 26.04, Python 3.14.4, RTX 5090, vLLM 0.29.0 on
+torch 2.13.0+cu132 — which is a genuinely separate kernel, network
+namespace and filesystem, and is what finally unblocked four
+milestones of "vLLM has nowhere to run".
 
-- **TIMING** — when `loading` was first reported and how long it lasted,
-  with `enforceEager: true`. `STARTUP_BUDGET_SECONDS = 600` is the
-  number most likely to be wrong; set it from this measurement, then run
-  once without `enforceEager` for the long path.
-- **SOCKET** — how many probes during `loading` were *refused* versus
-  *answered*. §1 Trap 1 derived "refused" from bind-without-listen; if
-  any probe is answered, the derivation is wrong for this version and
-  `interpret_readiness` needs to know about it.
+**The adapter needed no change.** Every claim §8 recorded as
+read-off-source-but-unobserved held. The three that mattered:
 
-Plus the three things that were read rather than seen: that 0.29.0's
-CLI accepts every curated flag name as generated, that `/health` 200
-means a completion actually returns, and that `max_model_len` on the
-model card equals the `maxModelLen` that was asked for.
+- **§2's readiness rule is confirmed.** Every probe of the engine's own
+  port during the load was refused — 14 of 14 on the short path, 67 of
+  67 on the long one — and not one accepted-and-hung. So "process alive,
+  connections refused" is the only signal there is, and
+  `interpret_readiness` reading it as `loading` from the process handle
+  is the only thing it could be, not a guess.
+- **Every curated flag name is accepted**, echoed back verbatim in
+  vLLM's own `non-default args` startup line.
+- **`/health` 200 means servable and `/v1/models` carries
+  `max_model_len`**, so `contextLength` is read back as asked.
+
+### The budget: 600 stays, for a different reason
+
+| | `loading` lasted |
+|---|---|
+| `enforceEager: true` | 15s, 16s on a re-run |
+| `enforceEager: false` | 72s — 13.7s compiling, 39s capturing CUDA graphs |
+
+Both are *warm-cache* numbers, and the load the budget exists for is the
+cold one: `init engine (profile, create kv cache, warmup model)` took
+**23.45s the first time and 3.25s the next**, for the identical command
+line, because vLLM caches JIT and warmup products under `~/.cache/vllm`
+and `~/.triton`. A 0.6B on a 5090 takes 40s to `ready` on its first ever
+start. `STARTUP_BUDGET_SECONDS` only decides when a still-loading
+runtime gets *flagged* on `Runtime.lastError`, so generosity is cheap
+and tightness would flag every first launch of a large model.
+
+### §1's framing needs one correction
+
+The design says the unit of installation is a Python environment, and
+that CUDA-version matching is not the hard part. Both held —
+`uv pip install vllm --torch-backend=auto` resolved `torch 2.13.0+cu132`
+against a 610.47 driver in under two minutes, all wheels, no source
+builds, on Python **3.14**, which the ROCm-only 3.12 note had made look
+riskier than it is.
+
+**What it missed is that vLLM compiles at first use, not at install.**
+The unit of *operation* is a Python environment **plus a C toolchain
+plus the interpreter's dev headers**. Four preconditions the install
+command does not check, each of which killed the engine 20-40s into a
+load with a traceback that never named the fix: pinned memory disabled
+by default on WSL2 (`VLLM_WSL2_ENABLE_PIN_MEMORY=1`, upstream's own
+switch, kernel floor 4.19.121) which 0.29.0's model runner hard-requires
+via UVA; `build-essential` and `python3-dev` for Triton's CPython
+extension; and a CUDA toolkit for FlashInfer's *sampling* kernels —
+attention picked prebuilt FlashAttention 2 and was never the problem —
+or `VLLM_USE_FLASHINFER_SAMPLER=0` instead. Only the first is
+WSL-specific. **`RuntimeSpec.env` carried all of it with no contract
+change**, which is what that field is for.
+
+Left open by this run and recorded in the acceptance doc: whether the
+adapter should set `VLLM_WSL2_ENABLE_PIN_MEMORY` itself on a WSL2 host.
 
 ### Process notes from the build
 

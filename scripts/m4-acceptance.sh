@@ -6,31 +6,38 @@
 #             ->  spawns  ->  inference-driver   (runtimeName, no baseUrl)
 #             ->  spawns  ->  vllm serve         (declared at runtime, not in the topology)
 #
-# **THIS SCRIPT HAS NEVER BEEN RUN.** It was written 2026-09-09 on a
-# Windows box where vLLM cannot run (no Windows build; WSL not installed),
-# alongside an adapter verified only against upstream source at v0.29.0
-# and against fixtures. It exists so the first Linux session — the WSL2
-# run that also answers M5's multi-host question — starts from a script
-# rather than from a blank terminal. Expect it to find defects; every
-# prior milestone's live run did. Where it does, fix the script and the
-# adapter together and record what was learned in the design doc's §8.
+# **FIRST RUN 2026-09-10: PASSED, 31 checks, zero failures** — written
+# 2026-09-09 on a Windows box where vLLM could not run, and executed for
+# the first time a day later inside WSL2 (Ubuntu 26.04, Python 3.14.4,
+# RTX 5090, vLLM 0.29.0 on torch 2.13.0+cu132). The adapter needed no
+# change: every claim it was built on held. The script needed three, all
+# below the line in `docs/acceptance/m4-vllm-run.md`:
 #
-# The three things the fixtures could not prove, and this run can:
+#   * a host-precondition preflight, because three things upstream's
+#     install command does not give you each kill the engine 20-40s in,
+#     from inside a subprocess, with a traceback that never names the fix;
+#   * `EP_ENFORCE_EAGER`, so one script measures both startup paths;
+#   * a socket instrument that separates "answered NOT ready" (which would
+#     refute §2) from "answered 200" (which only means our status poll
+#     trails the engine). The first version conflated them and reported a
+#     passing claim as a failing one.
 #
-#   1. §2's rule. While vLLM loads, its port is bound but not listening,
-#      so a connection is REFUSED — and the runtime must read `loading`,
-#      not `starting` and not `crashed`, because the supervisor holds the
-#      pid. Stage 7 probes the port itself while the agent says `loading`
-#      and records what the socket did. "Refused, not accepted-and-hung"
-#      is the one claim the design marked as needing confirmation.
-#   2. The wall clock. STARTUP_BUDGET_SECONDS is 600, a design estimate.
-#      Stage 7 records how long `loading` actually lasted for this model
-#      with `enforceEager: true` (the short path) so the budget can be set
-#      from a number rather than a guess. Run it again without
-#      `enforceEager` for the long path if there is time.
-#   3. That the twelve curated flag names are accepted by 0.29.0's CLI,
-#      that `/health` 200 means servable, and that `/v1/models` carries
-#      `max_model_len` back — all read off source, none observed.
+# The three things the fixtures could not prove, and this run did:
+#
+#   1. §2's rule. CONFIRMED. While vLLM loads its port is bound but not
+#      listening, so a connection is REFUSED — and the runtime must read
+#      `loading`, not `starting` and not `crashed`, because the supervisor
+#      holds the pid. Observed: every probe across the whole load refused,
+#      not once accepted-and-hung, on both startup paths.
+#   2. The wall clock. MEASURED, on a 0.6B with a warm JIT cache:
+#      `enforceEager: true` loads in 16s, `false` in 72s (13.7s of
+#      compilation, 39s of CUDA graph capture). But the FIRST start of a
+#      model is the one the budget is for — `init engine` took 23.45s cold
+#      against 3.25s warm for the identical command line, because vLLM
+#      caches under `~/.cache/vllm` and `~/.triton`. 600 stays.
+#   3. The twelve curated flag names: all accepted, echoed back verbatim
+#      in vLLM's own `non-default args` line. `/health` 200 does mean
+#      servable, and `/v1/models` does carry `max_model_len`.
 #
 # Plus the M2 routing gap, closed end to end: the driver is written with
 # `runtimeName` and NO `baseUrl`, comes up degraded because the runtime it
@@ -53,6 +60,9 @@
 #                  (Qwen/Qwen3-0.6B is ~1.2 GB); a real model for the
 #                  timing measurement.
 #   EP_WORKDIR     scratch directory for the throwaway install
+#   EP_ENFORCE_EAGER  true (default) for the short start, false for the
+#                  long path that torch.compile and CUDA graph capture make
+#   EP_VLLM_ENV    JSON object overriding the computed engine environment
 #
 set -uo pipefail
 
@@ -61,6 +71,9 @@ EP_AGENT_PY="${EP_AGENT_PY:-$EP_ROOT/agent/.venv/bin/python}"
 EP_VLLM_BIN="${EP_VLLM_BIN:-$HOME/vllm/.venv/bin/vllm}"
 EP_MODEL_DIR="${EP_MODEL_DIR:-$HOME/models/Qwen3-0.6B}"
 EP_WORKDIR="${EP_WORKDIR:-${TMPDIR:-/tmp}/ep-m4-acceptance}"
+# true is the short start (torch.compile and CUDA graph capture both off).
+# Set false for the long path, which is the one the startup budget is for.
+EP_ENFORCE_EAGER="${EP_ENFORCE_EAGER:-true}"
 
 AGENT_PORT=8079
 GATEWAY_PORT=8080
@@ -109,6 +122,61 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 else
   note "no nvidia-smi — expect a CPU-only vLLM, and expect it to be slow"
 fi
+# The preconditions upstream's install command does not give you. All
+# three were found the hard way on the first Linux run: each one kills the
+# engine 20-40s into a load, from inside a subprocess, with a traceback
+# that never names the fix. Checked here so they fail in preflight
+# instead.
+#
+#   gcc + Python.h  Triton JIT-compiles a CPython extension at first use,
+#                   so a clean minimal host needs build-essential and the
+#                   interpreter's dev headers. `uv pip install vllm` does
+#                   not imply a C toolchain.
+#   nvcc            FlashInfer JIT-compiles its sampling kernels and wants
+#                   a full CUDA toolkit. Without one we fall back to
+#                   PyTorch-native sampling, which is correct and slightly
+#                   slower; installing a toolkit is the alternative, but it
+#                   also puts a multi-minute first-use compile inside the
+#                   startup we are here to measure.
+#   pinned memory   On WSL2 vLLM disables pinned memory by default, and
+#                   0.29.0's model runner hard-requires it via UVA. Upstream
+#                   has the switch and a kernel floor of 4.19.121.
+#
+# Override the whole computed set with EP_VLLM_ENV (JSON object).
+VLLM_ENV_JSON="${EP_VLLM_ENV:-}"
+if [ -z "$VLLM_ENV_JSON" ]; then
+  _env_pairs=""
+  if grep -qi microsoft /proc/version 2>/dev/null; then
+    _env_pairs='"VLLM_WSL2_ENABLE_PIN_MEMORY":"1"'
+    note "WSL2 detected: adding VLLM_WSL2_ENABLE_PIN_MEMORY=1 (kernel $(uname -r))"
+  fi
+  if command -v nvcc >/dev/null 2>&1 || [ -x /usr/local/cuda/bin/nvcc ]; then
+    note "nvcc present — leaving the FlashInfer sampler on"
+  else
+    [ -n "$_env_pairs" ] && _env_pairs="$_env_pairs,"
+    _env_pairs="$_env_pairs\"VLLM_USE_FLASHINFER_SAMPLER\":\"0\""
+    note "no nvcc — adding VLLM_USE_FLASHINFER_SAMPLER=0 (native sampling)"
+  fi
+  VLLM_ENV_JSON="{$_env_pairs}"
+fi
+if command -v gcc >/dev/null 2>&1 || command -v cc >/dev/null 2>&1; then
+  ok "a C compiler is on PATH, so Triton can build its CUDA stub"
+else
+  bad "no gcc/cc — Triton will fail to compile at engine init (apt install build-essential)"
+  exit 1
+fi
+_pyinc=$(head -1 "$EP_VLLM_BIN" | sed 's/^#!//' | awk '{print $NF}')
+if [ -x "$_pyinc" ] && "$_pyinc" -c "
+import os, sys, sysconfig
+sys.exit(0 if os.path.exists(os.path.join(sysconfig.get_paths()['include'], 'Python.h')) else 1)
+" 2>/dev/null; then
+  ok "Python.h is present, so Triton's extension build has headers"
+else
+  bad "no Python.h for $_pyinc — Triton's build fails at engine init (apt install python3-dev)"
+  exit 1
+fi
+note "runtime env will be: $VLLM_ENV_JSON"
+
 MODEL_ALIAS=$(basename "$EP_MODEL_DIR")
 RUNTIME_NAME=$(echo "$MODEL_ALIAS" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\+/-/g; s/^-//; s/-$//' | cut -c1-40)
 
@@ -269,7 +337,8 @@ say "5. declare a vLLM runtime — no binary, no port, the alias is the director
 # enforceEager is the short-start path; gpuMemoryUtilization 0.5 leaves
 # room for a second runtime on the same card, which is the M5 case.
 SPEC="{\"name\":\"$RUNTIME_NAME\",\"engine\":\"vllm\",\"modelPath\":\"$EP_MODEL_DIR\",
-  \"flags\":{\"maxModelLen\":4096,\"gpuMemoryUtilization\":0.5,\"maxNumSeqs\":4,\"enforceEager\":true},
+  \"flags\":{\"maxModelLen\":4096,\"gpuMemoryUtilization\":0.5,\"maxNumSeqs\":4,\"enforceEager\":$EP_ENFORCE_EAGER},
+  \"env\":$VLLM_ENV_JSON,
   \"autoStart\":true}"
 echo "  POST /v1/runtimes $SPEC"
 RT=$(curl -s -X POST "${AUTH[@]}" "http://127.0.0.1:$AGENT_PORT/v1/runtimes" \
@@ -300,6 +369,7 @@ FIRST_LOADING=""
 FIRST_READY=""
 REFUSED_WHILE_LOADING=0
 ANSWERED_WHILE_LOADING=0
+LAGGED_WHILE_LOADING=0
 LAST_ST=""
 LAST_ERR=""
 for _ in $(seq 1 "$READY_TIMEOUT_SECONDS"); do
@@ -313,11 +383,20 @@ for _ in $(seq 1 "$READY_TIMEOUT_SECONDS"); do
     [ -z "$FIRST_LOADING" ] && FIRST_LOADING=$(($(date +%s) - T0))
     # §2's claim: bound but not listening => refused. curl exit 7 is
     # "failed to connect". Anything else means the socket accepted.
-    if curl -s -m 2 -o /dev/null "http://127.0.0.1:$RT_PORT/health" 2>/dev/null; then
+    PROBE=$(curl -s -m 2 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$RT_PORT/health" 2>/dev/null)
+    PRC=$?
+    if [ "$PRC" = "7" ]; then
+      REFUSED_WHILE_LOADING=$((REFUSED_WHILE_LOADING + 1))
+    elif [ "$PRC" = "0" ] && [ "$PROBE" = "200" ]; then
+      # Servable already. Our own status poll is a beat behind the engine,
+      # which is a property of this measurement and not of the socket — so
+      # counting it against §2 would be reading our sampling rate as a
+      # finding about vLLM.
+      LAGGED_WHILE_LOADING=$((LAGGED_WHILE_LOADING + 1))
+    elif [ "$PRC" = "0" ]; then
+      # The socket accepted and said something other than ready. THIS is
+      # the observation that would refute §2.
       ANSWERED_WHILE_LOADING=$((ANSWERED_WHILE_LOADING + 1))
-    else
-      RC=$?
-      [ "$RC" = "7" ] && REFUSED_WHILE_LOADING=$((REFUSED_WHILE_LOADING + 1))
     fi
     LE=$(echo "$R" | jq_ "d.get('lastError') or ''" 2>/dev/null)
     [ -n "$LE" ] && [ "$LE" != "$LAST_ERR" ] && { echo "  lastError: $LE"; LAST_ERR=$LE; }
@@ -342,8 +421,8 @@ else
 fi
 echo
 echo "  TIMING  first 'loading' at t+${FIRST_LOADING:-never}s, 'ready' at t+${FIRST_READY:-never}s"
-echo "  TIMING  loading phase: $(( ${FIRST_READY:-0} - ${FIRST_LOADING:-0} ))s against a 600s budget (enforceEager on)"
-echo "  SOCKET  while 'loading': refused $REFUSED_WHILE_LOADING probe(s), answered $ANSWERED_WHILE_LOADING"
+echo "  TIMING  loading phase: $(( ${FIRST_READY:-0} - ${FIRST_LOADING:-0} ))s against a 600s budget (enforceEager=$EP_ENFORCE_EAGER)"
+echo "  SOCKET  while 'loading': refused $REFUSED_WHILE_LOADING, answered-not-ready $ANSWERED_WHILE_LOADING, already-200 $LAGGED_WHILE_LOADING (status poll lag)"
 if [ -n "$FIRST_LOADING" ]; then
   ok "'loading' was reported — from the process handle, since the port was answering nothing"
 else
@@ -352,8 +431,9 @@ fi
 if [ "$REFUSED_WHILE_LOADING" -gt 0 ] && [ "$ANSWERED_WHILE_LOADING" = "0" ]; then
   ok "bound-but-not-listening confirmed: every probe during the load was refused, none hung"
 elif [ "$ANSWERED_WHILE_LOADING" -gt 0 ]; then
-  note "the port ANSWERED $ANSWERED_WHILE_LOADING time(s) during 'loading' — §1 Trap 1 needs revisiting for this version"
+  bad "the port answered NOT-READY $ANSWERED_WHILE_LOADING time(s) during 'loading' — §1 Trap 1 is wrong for this version"
 fi
+[ "$LAGGED_WHILE_LOADING" -gt 0 ] && note "$LAGGED_WHILE_LOADING probe(s) got 200 while we still said 'loading' — the status poll trails the engine by up to one interval"
 CL=$(echo "$R" | jq_ "(d.get('capabilities') or {}).get('contextLength')" 2>/dev/null)
 [ "$CL" = "4096" ] && ok "contextLength 4096 read back from /v1/models max_model_len" || note "contextLength read back as '$CL' (asked for 4096)"
 echo "$R" | jq_ "' '.join(d.get('argv') or [])" 2>/dev/null | grep -q -- "--served-model-name $MODEL_ALIAS" \
@@ -415,7 +495,7 @@ for _ in $(seq 1 30); do
 done
 [ "$ST" = "stopped" ] && ok "runtime stopped and still declared" || bad "status after stop: $ST"
 sleep 3
-LEFT=$(pgrep -fc "vllm serve" 2>/dev/null || echo 0)
+LEFT=$(pgrep -f "vllm serve" 2>/dev/null | wc -l | tr -d " ")
 [ "$LEFT" = "0" ] && ok "no vllm serve process left behind" || note "$LEFT 'vllm serve' process(es) still alive — the EngineCore child may outlive the API server; check"
 
 # --- 11. teardown ----------------------------------------------------------
