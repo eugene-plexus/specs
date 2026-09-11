@@ -121,6 +121,31 @@ We deliberately **avoid the Java-based `openapi-generator`** — verbose output,
 
 Consumers pin a specs SHA in their own `SPECS_REF` file and regenerate from GitHub at that SHA, so a change here never breaks a consumer until it chooses to bump.
 
+## Installing it
+
+One command on any machine, from nothing — no Python needed first, because
+`uv` brings its own:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.ps1 | iex
+```
+
+Both install into a single prefix they own, write an autostart unit (systemd
+user unit, launchd agent, or a Windows logon task — a real Windows service if
+you run it elevated), start it, and print the URL. `--uninstall` / `-Uninstall`
+undoes it, keeping your config and logs. A worker node for an existing install
+joins in the same command: `--join <control-root-url> --token <jwt>`.
+
+Nothing is published to PyPI or npm yet; the installers fetch GitHub archives at
+pinned commits. See
+[`docs/design/install-paths-and-distribution.md`](docs/design/install-paths-and-distribution.md)
+§6.1 and §12 for why, and for what is verified and what is not — macOS and the
+Windows service are written but have not been run.
+
 ## Setting up a dev environment
 
 Eugene Plexus is a polyrepo targeting **Python 3.12** — every component pins `requires-python = ">=3.12"`, ruff `target-version = "py312"`, and mypy `python_version = "3.12"`, and CI runs on 3.12. Develop on 3.12 so local matches CI.

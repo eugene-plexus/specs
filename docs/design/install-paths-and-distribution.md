@@ -1,12 +1,12 @@
 # Install paths and distribution
 
-**Status: §9 steps 1 and 2 are BUILT AND LIVE-VERIFIED (2026-09-11);
-steps 3-9 are still design.** Written before any implementation so a later session
+**Status: §9 steps 1, 2 and 3 are BUILT AND LIVE-VERIFIED (2026-09-11);
+steps 4-9 are still design.** Written before any implementation so a later session
 could pick it up cold. Every claim marked *verified* was checked against
 a repo, a registry or upstream on the day of writing; everything else is
 reasoning and is marked as such. **§12 is the implementation record and
-is the pickup point; step 3 (`install.sh` / `install.ps1`) is next, and
-one decision inside it is open — see §12's step 2 entry.**
+is the pickup point; step 4 (`bootstrap.sh`) is next. Every decision in
+the table below is now taken.**
 
 Precedes a release, deliberately. Publishing an installable thing whose
 only install is a Windows developer script would bake the gap in.
@@ -24,9 +24,9 @@ log** — answers are recorded here as they are made.
 | **2**  | Linux + NVIDIA: ship Vulkan with a permanent visible degradation, or keep the refusal?  | §7   | **Ship Vulkan, badge it permanently**       | **DECIDED 2026-09-11**     |
 | **3**  | macOS: first-class now, or wait for MLX?                                                | §8   | **First-class now, decoupled from MLX**     | **DECIDED 2026-09-11**     |
 | **4**  | Windows: a supported end-user target, or a dev surface only?                            | §11.1 | **Fully first-class** — parity, not a middle tier | **DECIDED 2026-09-11** |
-| **5**  | Where `install.sh` is hosted: `eugeneplexus.com`, or a raw GitHub URL first?             | §4   | *(recommended: GitHub URL now)*             | **OPEN**                   |
-| **6**  | What does `install.sh` install FROM, given nothing is published and the release is last?  | §6.1 | *(recommended: GitHub archives at a tag)*   | **OPEN — blocks step 3**   |
-| **7**  | Windows service: `pywin32` or NSSM?                                                      | §11.1 | *(recommended: pywin32)*                    | **OPEN — inside step 3**   |
+| **5**  | Where `install.sh` is hosted: `eugeneplexus.com`, or a raw GitHub URL first?             | §4   | **Raw GitHub URL, in `specs/scripts/`**     | **DONE 2026-09-11, §12**   |
+| **6**  | What does `install.sh` install FROM, given nothing is published and the release is last?  | §6.1 | **GitHub archives at pinned commits — and the UI from a `dist` branch** | **DONE 2026-09-11, §12** |
+| **7**  | Windows service: `pywin32` or NSSM?                                                      | §11.1 | **`pywin32`, as a Windows-only `[service]` extra** | **DONE 2026-09-11, §12** |
 
 **#1 was one call and is now two**, which is the substantive change
 from the first draft. Troy's question — *"I intend for the UI to get
@@ -296,6 +296,12 @@ work.
 
 ### 6.1 The gap between §6 and §9, found 2026-09-11 — call #6
 
+**ANSWERED 2026-09-11 and built: GitHub archives at pinned commits, and
+the UI from a `dist` branch because a source archive of it installs
+successfully with no UI inside.** See §12, step 3. Everything below is
+the reasoning that led there and is kept because the counter-argument
+still holds.
+
 **§6 and §9 are in tension and step 3 walks straight into it.** §9 step
 3 says `install.sh` "installs the meta-package"; §6 says publishing
 that meta-package "finally publishes the PyPI stub"; and §9 puts **the
@@ -328,6 +334,9 @@ deferred cost against making the release stop being last.
 installer genuinely cannot work without a registry, that is new
 information and it belongs back with Troy, because it moves the
 release.
+
+*It did not come to that. The one package archives could not carry
+needed a branch, not a registry — and a branch is not a release.*
 
 ## 7. Linux + NVIDIA — DECIDED 2026-09-11: ship Vulkan, badge it
 
@@ -410,15 +419,17 @@ into, rather than the unclaimed one. See
    integration. Parity was chosen with this cost visible; it is a work
    item, not an assumption. Sequenced here because step 3 writes the
    service unit that depends on it.
-3. **`install.sh` / `install.ps1`** — fetch `uv`, venv, install the
-   meta-package, write a systemd unit / launchd plist / Windows
-   service, start it. **Read §6.1 first: what it installs FROM is an
-   open call and nothing is published anywhere.** The Windows service
-   is `pywin32` or NSSM, also open; the hard-kill consequence of
-   running as one is settled and badged (§12, step 2). Path B, and also every SMB GPU box. **macOS is in
-   scope from the first version** (call #3), including a launchd plist;
-   llama.cpp acquisition on arm64 stays unverifiable on current
-   hardware and any claim about it must say so.
+3. ~~**`install.sh` / `install.ps1`**~~ **DONE 2026-09-11 — see §12.**
+   Calls #5, #6 and #7 are all taken there. macOS is written and
+   **unverified**; the Windows *service* is written and **unverified**
+   (no elevation); everything else ran live on Linux and Windows.
+
+   Original note: fetch `uv`, venv, install the meta-package, write a
+   systemd unit / launchd plist / Windows service, start it. Path B,
+   and also every SMB GPU box. **macOS is in scope from the first
+   version** (call #3), including a launchd plist; llama.cpp
+   acquisition on arm64 stays unverifiable on current hardware and any
+   claim about it must say so.
 4. **`bootstrap.sh`** — port the developer script. Small once step 3
    exists, and it shares the prerequisite checks.
 5. **Compose file and image** for the control plane. Path C.
@@ -553,8 +564,8 @@ is not a reason.
 ## 12. Implementation record
 
 Record what was built, what departed from this design, and why, as each
-step of §9 lands. **Steps 2-9 are unbuilt; step 2 (Windows supervision
-hardening) is the pickup point.**
+step of §9 lands. **Steps 4-9 are unbuilt; step 4 (`bootstrap.sh`) is
+the pickup point.**
 
 ### Step 1 — the proxy moved, and the UI ships as a wheel. DONE 2026-09-11.
 
@@ -795,3 +806,221 @@ complete` passed against `[gateway] INFO: Application shutdown
 complete.` written by an earlier step. The parent's property, asserted
 from the child's log. It greps unprefixed now, and the gateway's own
 check requires the prefix.
+
+### Step 3 — one command, from a machine with nothing on it. DONE 2026-09-11.
+
+specs `scripts/install.sh` + `scripts/install.ps1`; agent `6489aae`.
+Verified live by `scripts/install-acceptance.sh` — **27 checks, zero
+failures**, on two real machines: WSL2 Ubuntu 26.04 for the POSIX half
+and this Windows 11 box for the other. **13.9 s cold** from a guest with
+no `uv`, no Python 3.12 and no packages to a running four-process
+control plane serving a web UI; 1.3 s on a re-run.
+
+**macOS is written and unrun, and the Windows *service* is written and
+unrun.** There is no Mac here, and registering a service needs
+Administrator this session did not have. Said here rather than left to
+be inferred from a green run; `install.ps1 -Verify` prints the two
+commands that close the second one.
+
+#### Call #6, answered by measurement: archives work for five of six
+
+§6.1's recommendation was right and incomplete. `uv pip install
+"eugene-plexus-agent @ https://github.com/eugene-plexus/agent/archive/<sha>.tar.gz"`
+works exactly as predicted — no registry, no release, no
+authentication — and `uv` downloads its own CPython, so the target
+machine needs no Python at all.
+
+**It cannot work for `eugene-plexus-ui`, and the failure is silent where
+it matters.** That wheel's payload is the Next static export, which is
+`next build` output and gitignored on `main`, so a `main` archive
+contains `__init__.py` and nothing else. Verified rather than reasoned:
+
+```
++ eugene-plexus-ui==0.1.0 (from .../ui/archive/ed1182b.tar.gz)
+static_dir: .../site-packages/eugene_plexus_ui/static
+is_dir: False
+```
+
+The install *succeeds*. Step 1's `_validate` catches it at the agent
+("the UI build produced nothing"), but the **installer** would have
+reported success on a machine with no browser half — reopening the gap
+§2.1 named and step 1 closed.
+
+**Resolution: a `dist` branch in `ui` carrying the built export**
+(`a594e0f`; orphan, regenerated by `npm run build:python`, never merged
+to `main`). All six packages then install by one mechanism — a GitHub
+archive at a commit — which is what keeps the `curl | sh` short enough
+to read (§11). No PyPI, no npm, and **no GitHub Release object**: a
+release asset was the other candidate and was rejected because it reads
+as publishing, which is exactly what Troy's sequencing put last. At
+release time the PINS block becomes `eugene-plexus` and nothing else in
+either script changes.
+
+**Departed from §6 on the meta-package**: there isn't one yet. The
+installer passes six URLs to one `uv pip install`. Creating a
+URL-dependency meta-package now would be a thing to delete at release,
+and PyPI rejects direct-URL dependencies anyway.
+
+#### Call #5: `specs/scripts/`, over raw.githubusercontent.com
+
+```
+curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.sh | sh
+irm  https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.ps1 | iex
+```
+
+`bootstrap.ps1` already lives there, `main` always serves current pins,
+and `eugeneplexus.com/install.sh` becomes a redirect whenever the domain
+is stood up. Reversible; not worth blocking on.
+
+#### Call #7: `pywin32`, and two defects that only running it found
+
+NSSM would have meant a `curl | iex` script downloading, checksumming
+and vouching for a third-party binary. `pywin32` is a normal wheel in
+the venv that already *is* the component runtime — and a Windows-only
+`[service]` extra, so a Windows *developer* checkout (which runs from a
+terminal and keeps the graceful stop) carries none of it.
+
+**Neither defect below is reachable without Administrator, and both
+would have shipped.** They were found by installing pywin32 into the dev
+venv and running the command rather than reading the API.
+
+**The service class cannot live inside a factory.** The first draft
+built it in one so pywin32 could be imported lazily and the module stay
+importable on Linux. Registration died:
+
+```
+_pickle.PicklingError: Can't pickle
+<class '...build_service_class.<locals>.EugenePlexusAgentService'>
+```
+
+`InstallService` records *where to find the class again* — it writes
+`module.ClassName` into the registry, and `PythonService.exe` later
+imports that module and getattrs that name. A factory-built class has no
+importable location, and importing its module would not define it. It is
+at module scope behind an ImportError guard now, and a test asserts the
+property registration needs (`pickle.whichmodule` resolves, and not to
+`__main__`) rather than the registration nobody here can run.
+
+**`HandleCommandLine` reports failure by printing and exiting 0.** An
+unelevated `install` prints `Error installing service: Access is denied.
+(5)`, registers nothing, and returns success — and `install.ps1` tests
+`$LASTEXITCODE`. It now refuses up front when unelevated (which also
+avoids pywin32's pre-SCM side effects: it moves `pythonservice.exe` and
+copies a DLL beside the base interpreter *before* asking the SCM) and
+asks the SCM afterwards, because elevation is not the only way
+registration can fail.
+
+#### The defect with the longest reach: a scheduled task has a TTY
+
+**The non-elevated Windows autostart — which is the common Windows
+install — hung the agent at first boot, every time.** Nothing listening,
+no log file written at all, and Task Scheduler reporting `Running`.
+
+It was blocked on `input()`. `has_tty()` is a proxy for *someone is
+watching*, and a scheduled task breaks the proxy. Measured with a task
+of its own:
+
+```
+stdin.isatty=True stdout.isatty=True
+```
+
+M9 reasoned that "a service unit or container has neither a terminal nor
+anyone watching one" — true of both, and the right reading at the time.
+**A scheduled task has the terminal without the audience**, so the
+first-boot question was printed into a console nobody can see.
+
+The fix is not a better terminal test. **The unattended path is declared
+rather than inferred:** `eugene-plexus-agent --unattended` skips the
+question, every unit file these installers write passes it — systemd,
+launchd and the Windows task alike — the service passes it too, and
+**the installer owns the question instead**, which is the one moment a
+human is reliably present. `install.sh --join URL --token JWT` /
+`install.ps1 -Join URL -Token JWT` is the scripted answer, so an SMB GPU
+box stays one command. A bare terminal start keeps the prompt.
+
+*(The join path is unverified end to end here: it shells out to the
+`join` subcommand M7 and M9 already proved, but no run this session
+minted a token and enrolled through the installer.)*
+
+#### A Windows-only encoding trap, found by running the parser
+
+**A BOM-less UTF-8 `.ps1` cannot contain non-ASCII.** Windows PowerShell
+5.1 decodes such a file as CP-1252, and U+2014 (em dash) becomes three
+characters whose last is U+201D — a curly quote **PowerShell honours as
+a string delimiter**. One em dash in a comment made the file unparseable
+from disk:
+
+```
+The string is missing the terminator: ".
+```
+
+And `irm | iex` works fine, because that path decodes by the HTTP
+charset. So the script would have installed perfectly from the
+documented one-liner and failed for anyone who downloaded it first —
+which is the behaviour §11 explicitly wants people to have. The other
+five `.ps1` in `scripts/` are already pure ASCII; `install.ps1` is now
+too, and the acceptance script asserts it (check 18) beside the parse
+(check 17).
+
+#### Shape decisions taken while building
+
+- **The prefix owns everything.** `uv` goes in it
+  (`UV_UNMANAGED_INSTALL`), so does uv's downloaded interpreter
+  (`UV_PYTHON_INSTALL_DIR`), the venv, `agent.yaml`, `logs/` and every
+  component's config. Nothing on PATH is touched and no shell profile is
+  edited. Default `~/.local/share/eugene-plexus`, or
+  `%LOCALAPPDATA%\EugenePlexus`.
+- **`--python-preference only-managed`.** uv's default prefers a
+  matching interpreter already on the machine — as this box has, which
+  made the installer's own "none is required on this machine" line false
+  the first time it ran. It would also tie the install to a Python the
+  user can upgrade out from under it.
+- **User services, not system ones.** The agent reads the user's model
+  directories and writes to the user's keyring; a daemon under another
+  account is on the wrong side of both. The cost is stated where it
+  bites: a systemd *user* unit starts at login, not at boot, and the
+  installer says so and prints the `loginctl enable-linger` line rather
+  than pretending otherwise.
+- **Elevation decides the shape of a Windows install.** Windows has no
+  per-user service, so: unelevated → `%LOCALAPPDATA%` + a logon task, no
+  Administrator, and supervised children keep the graceful stop (a task
+  has a console); elevated → `%ProgramData%` + a real service, boot
+  without login, `sc stop`, a recovery policy, and step 2's hard kill.
+  Both supported, chosen by how you run the installer.
+- **Uninstall moves the prefix aside rather than deleting it.**
+  `agent.yaml` and `node.yaml` are the install's identity; an uninstall
+  must not be the thing that loses an enrollment. It also takes back the
+  environment variables it set — found by checking after a run, where
+  the User-scope one outlived the uninstall.
+
+#### Four checks that were wrong, and one that passed while wrong
+
+All in the acceptance script, all found by running it. Recorded because
+four of the five are the shape this project keeps hitting.
+
+1. **The check executed its own subject.** `powershell.exe -Command
+   '<script>' <path>` appends the path to the command *text*, so the
+   "does it parse" check ran `install.ps1` for real, installed the
+   product, and then tripped the next check on the agent it had just
+   started.
+2. **Git Bash rewrote a path argument**, turning `/mnt/d/...` into
+   `C:/Program Files/Git/mnt/d/...`. The script is piped into the guest
+   on stdin now, which has no opinion about paths.
+3. **A key that was never there.** `grep -c '^  kind: '` against
+   `agent.yaml`, whose components are a YAML *list* (`- kind:`) — so a
+   fully declared control plane was reported as empty. Compounded by
+   `grep -c` printing `0` *and* exiting 1, so the `|| echo 0` fired as
+   well and the comparison was against `"0\n0"`.
+4. **`pgrep -f` matched the shell asking the question**, whose command
+   line contains the pattern it is searching for. It counted five where
+   four were expected. It reads `/proc/PID/exe` now — the executable,
+   which a bash asking about it cannot be.
+5. **And the one that matters: the same bug made one check fail and
+   another pass.** Scoping by `$prefix` produced a pattern that matched
+   nothing, because that variable holds the literal string `$HOME/...`
+   and single quotes on the far side never expand it. Check 10 ("four
+   processes are running") failed honestly. **Check 14 ("no orphans
+   survived") passed** — because *nothing matches a pattern that matches
+   nothing* is exactly what it asked for. **A negative check cannot tell
+   a clean result from a broken instrument**, and this one was one line
+   away from being the only evidence for its claim.
