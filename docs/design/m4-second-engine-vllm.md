@@ -808,8 +808,64 @@ or `VLLM_USE_FLASHINFER_SAMPLER=0` instead. Only the first is
 WSL-specific. **`RuntimeSpec.env` carried all of it with no contract
 change**, which is what that field is for.
 
-Left open by this run and recorded in the acceptance doc: whether the
-adapter should set `VLLM_WSL2_ENABLE_PIN_MEMORY` itself on a WSL2 host.
+### The host defaults, decided and built (2026-09-11)
+
+**Decided by Troy, as a general rule rather than a one-off:** default to
+whatever makes the thing work for someone with no technical knowledge,
+and always leave an expert a way to take the wheel. Applied here, that
+splits the four preconditions in two.
+
+**The two an environment variable fixes are now the agent's job.** New
+`EngineAdapter.default_env` (agent `532be74`), applied with `setdefault`
+semantics against the ambient environment and then overridden by
+`RuntimeSpec.env`. vLLM supplies `VLLM_WSL2_ENABLE_PIN_MEMORY=1` on
+WSL2 and `VLLM_USE_FLASHINFER_SAMPLER=0` when no `nvcc` is visible.
+Three levels of control, in order: the runtime's own `env` wins
+outright — including with a value that will fail, which is an expert's
+prerogative; an exported shell variable wins next, so nobody debugging
+from a terminal fights an invisible default; and otherwise ours applies
+**and is logged**, because an environment variable nobody typed makes a
+later bug report unreadable.
+
+Only one of the two is a real trade. Pinned memory on WSL2 is free —
+upstream's own default exists for a small performance regression that
+0.29.0's model runner then makes moot by requiring the feature anyway.
+The FlashInfer sampler genuinely costs a little throughput on large
+batches, and it is still right, because what it is traded against is not
+starting. It also reverts itself the moment a toolkit appears, since the
+default is computed per launch rather than remembered.
+
+**Proved rather than asserted:** `scripts/m4-acceptance.sh` now declares
+**no** `env` on its runtime, so a green run is a test of the injection.
+It passed — 32 checks — on a host with no toolkit, with
+`VLLM_USE_FLASHINFER_SAMPLER=0, VLLM_WSL2_ENABLE_PIN_MEMORY=1 set by the
+vllm adapter as this host needs it` in the log and `ready` at t+22s.
+
+**The two no variable can fix are explained, not refused — and the
+obvious design was wrong.** The plan was to preflight the host's
+toolchain and refuse the launch early with the apt command. Measured
+first: a host whose Triton cache is already warm runs vLLM with
+`CC=/nonexistent` and served a completion in 19.9s, because Triton
+caches the compiled CPython extension under `~/.triton` and only builds
+on a miss. So a refusal on a missing compiler would have rejected a
+launch that works, on **any host that has run the engine once** — a
+false refusal, which is worse than a bad error message. Instead
+`SpawnPlanner.explain_exit` gets a bounded tail of the engine's own
+output on a non-zero exit, and the vLLM adapter turns the four known
+signatures into a sentence naming the fix. `exited with code 1` was what
+the operator used to get. **Explaining a real failure cannot be a false
+refusal**, which is the whole reason it reads output afterwards instead
+of probing beforehand.
+
+One implementation mistake worth keeping, because the test hid it: the
+first cut put `explain_exit` on `EngineAdapter` and had the supervisor
+ask the *planner* for it through `getattr`, so it silently never fired —
+and the test meant to prove otherwise asserted the adapter's own method
+while being **named** as though it proved the wiring. `mypy` caught the
+`Any`; the misleading test is the part that would have cost a day. Same
+family as the socket instrument above and the teardown check in the
+two-host run: **a test or a check whose subject is not where it is
+looking will report confidently on the wrong thing.**
 
 ### Process notes from the build
 

@@ -1,7 +1,9 @@
 # M4 acceptance — a second engine, four milestones late
 
 **Status:** passed 2026-09-10, **first execution ever**, 31 checks, zero
-failures. Script:
+failures. **Re-run 2026-09-11 with the runtime declaring no `env` at
+all** — 33 checks, zero failures, the agent supplying the host's
+prerequisites itself; see the resolution near the end. Script:
 [`scripts/m4-acceptance.sh`](../../scripts/m4-acceptance.sh); design in
 [`m4-second-engine-vllm.md`](../design/m4-second-engine-vllm.md).
 
@@ -118,21 +120,32 @@ did not provision will meet all three.
 **`RuntimeSpec.env` carried the fix with no contract change**, which is
 what it was put there for — the field description names
 `CUDA_VISIBLE_DEVICES` as the motivating case and this is the same
-shape. The acceptance script now computes the set in preflight and
-refuses early with the apt command when the toolchain is missing.
+shape. On the day of the run the acceptance script computed the set
+itself; a day later the agent does it, and the script deliberately
+declares nothing so that every run tests the agent instead. See the
+resolution below.
 
-**Open, and Troy's call:** whether the *adapter* should set
-`VLLM_WSL2_ENABLE_PIN_MEMORY` itself when it detects WSL2, instead of
-leaving every vLLM runtime on such a host to carry it by hand. The case
-for is that it is a hard precondition rather than a tuning knob, that
-the failure is unreadable, and that our own refusal text actively routes
-Windows operators into WSL2 — the exact configuration that breaks.
-The case against is that we wrap upstream and do not second-guess it,
-and an injected default outlives the upstream bug that motivated it.
-Recommendation: inject it, but only when the host is WSL2 and the
-operator has not set it in `RuntimeSpec.env`, and log the injection —
-the same shape as `manualInstall.command` naming the exact command for
-the detected host, which is a precedent this project already set.
+**RESOLVED 2026-09-11 — the agent supplies both env vars now**, on
+Troy's general rule: default to whatever makes the thing work for
+someone with no technical knowledge, and always leave an expert a way to
+take the wheel. `EngineAdapter.default_env` (agent `532be74`) injects
+`VLLM_WSL2_ENABLE_PIN_MEMORY=1` on WSL2 and
+`VLLM_USE_FLASHINFER_SAMPLER=0` with no `nvcc`, beaten by an exported
+shell variable and beaten outright by `RuntimeSpec.env`, and logged
+either way. **This script now declares no `env` at all**, so every run
+re-proves it: 32 checks green on a host with no toolkit, `ready` at
+t+22s, and the injection visible in `agent-run.log`.
+
+**The other two — `gcc` and `Python.h` — are explained, not refused,
+and the obvious design was wrong.** A preflight refusal naming the apt
+command was the plan, until it was measured: a host with a warm Triton
+cache runs vLLM with `CC=/nonexistent` and served in 19.9s, because
+Triton caches its compiled extension under `~/.triton` and builds only
+on a miss. Refusing would therefore reject a launch that works on any
+host that has run the engine once. `SpawnPlanner.explain_exit` reads a
+bounded tail of the engine's output on a non-zero exit instead, and
+turns each known signature into the fix — so the failure is as fast as
+it always was, but `exited with code 1` becomes an apt command.
 
 ## What the run changed in the script, not the adapter
 

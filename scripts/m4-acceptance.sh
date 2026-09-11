@@ -122,48 +122,57 @@ if command -v nvidia-smi >/dev/null 2>&1; then
 else
   note "no nvidia-smi — expect a CPU-only vLLM, and expect it to be slow"
 fi
-# The preconditions upstream's install command does not give you. All
-# three were found the hard way on the first Linux run: each one kills the
-# engine 20-40s into a load, from inside a subprocess, with a traceback
-# that never names the fix. Checked here so they fail in preflight
-# instead.
+# The preconditions upstream's install command does not give you,
+# because vLLM compiles at FIRST USE rather than at install. All four
+# were found the hard way on the first Linux run: each kills the engine
+# 20-40s into a load, from inside a subprocess, with a traceback that
+# names neither cause nor cure.
 #
+#   pinned memory   On WSL2 vLLM disables it by default and 0.29.0's
+#   nvcc            model runner requires it via UVA; FlashInfer
+#                   JIT-compiles its SAMPLING kernels and wants a CUDA
+#                   toolkit. **Both are the agent's job now** —
+#                   `default_env` on the vLLM adapter — so this script
+#                   declares no env and lets that be tested.
 #   gcc + Python.h  Triton JIT-compiles a CPython extension at first use,
-#                   so a clean minimal host needs build-essential and the
-#                   interpreter's dev headers. `uv pip install vllm` does
-#                   not imply a C toolchain.
-#   nvcc            FlashInfer JIT-compiles its sampling kernels and wants
-#                   a full CUDA toolkit. Without one we fall back to
-#                   PyTorch-native sampling, which is correct and slightly
-#                   slower; installing a toolkit is the alternative, but it
-#                   also puts a multi-minute first-use compile inside the
-#                   startup we are here to measure.
-#   pinned memory   On WSL2 vLLM disables pinned memory by default, and
-#                   0.29.0's model runner hard-requires it via UVA. Upstream
-#                   has the switch and a kernel floor of 4.19.121.
+#                   so a clean host needs build-essential and the
+#                   interpreter's dev headers. No environment variable
+#                   fixes these, and they are NOT checked as fatal:
+#                   measured, a host with a warm Triton cache runs vLLM
+#                   with `CC=/nonexistent` and served in 19.9s, so
+#                   refusing on a missing compiler would reject a launch
+#                   that works. Warned about here, explained by the
+#                   adapter's `explain_exit` if the engine does die.
 #
-# Override the whole computed set with EP_VLLM_ENV (JSON object).
+# **The runtime declares NO env, on purpose, and that is a test.** This
+# script used to compute the two variables itself. The agent's vLLM
+# adapter supplies them now (`default_env`, agent `532be74`), so a
+# script that also set them would make a green run say nothing about
+# whether the adapter works — the operator's `env` wins by design, which
+# means the script's value would simply mask it. Leaving it empty is how
+# every future run re-proves that a host nobody prepared still starts.
+# Set EP_VLLM_ENV to a JSON object to override, which is also how you
+# check the override path still beats the adapter.
 VLLM_ENV_JSON="${EP_VLLM_ENV:-}"
-if [ -z "$VLLM_ENV_JSON" ]; then
-  _env_pairs=""
+[ -n "$VLLM_ENV_JSON" ] || VLLM_ENV_JSON='{}'
+if [ "$VLLM_ENV_JSON" = "{}" ]; then
+  note "runtime declares no env — the agent's vllm adapter must supply what this host needs"
   if grep -qi microsoft /proc/version 2>/dev/null; then
-    _env_pairs='"VLLM_WSL2_ENABLE_PIN_MEMORY":"1"'
-    note "WSL2 detected: adding VLLM_WSL2_ENABLE_PIN_MEMORY=1 (kernel $(uname -r))"
+    note "WSL2 (kernel $(uname -r)): expect VLLM_WSL2_ENABLE_PIN_MEMORY=1 in agent-run.log"
   fi
   if command -v nvcc >/dev/null 2>&1 || [ -x /usr/local/cuda/bin/nvcc ]; then
-    note "nvcc present — leaving the FlashInfer sampler on"
+    note "nvcc present — expect the FlashInfer sampler left on"
   else
-    [ -n "$_env_pairs" ] && _env_pairs="$_env_pairs,"
-    _env_pairs="$_env_pairs\"VLLM_USE_FLASHINFER_SAMPLER\":\"0\""
-    note "no nvcc — adding VLLM_USE_FLASHINFER_SAMPLER=0 (native sampling)"
+    note "no nvcc — expect VLLM_USE_FLASHINFER_SAMPLER=0 in agent-run.log"
   fi
-  VLLM_ENV_JSON="{$_env_pairs}"
+else
+  note "EP_VLLM_ENV overrides the adapter: $VLLM_ENV_JSON"
 fi
 if command -v gcc >/dev/null 2>&1 || command -v cc >/dev/null 2>&1; then
   ok "a C compiler is on PATH, so Triton can build its CUDA stub"
 else
-  bad "no gcc/cc — Triton will fail to compile at engine init (apt install build-essential)"
-  exit 1
+  note "no gcc/cc — fine IF this host's Triton cache is already warm, and a"
+  note "  clear death naming build-essential if it is not. Not fatal: proven."
 fi
 _pyinc=$(head -1 "$EP_VLLM_BIN" | sed 's/^#!//' | awk '{print $NF}')
 if [ -x "$_pyinc" ] && "$_pyinc" -c "
@@ -172,8 +181,7 @@ sys.exit(0 if os.path.exists(os.path.join(sysconfig.get_paths()['include'], 'Pyt
 " 2>/dev/null; then
   ok "Python.h is present, so Triton's extension build has headers"
 else
-  bad "no Python.h for $_pyinc — Triton's build fails at engine init (apt install python3-dev)"
-  exit 1
+  note "no Python.h for $_pyinc — same caveat as the compiler above"
 fi
 note "runtime env will be: $VLLM_ENV_JSON"
 
