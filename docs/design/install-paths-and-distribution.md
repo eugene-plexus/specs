@@ -1,11 +1,12 @@
 # Install paths and distribution
 
-**Status: §9 step 1 is BUILT AND LIVE-VERIFIED (2026-09-11); steps 2-9
-are still design.** Written before any implementation so a later session
+**Status: §9 steps 1 and 2 are BUILT AND LIVE-VERIFIED (2026-09-11);
+steps 3-9 are still design.** Written before any implementation so a later session
 could pick it up cold. Every claim marked *verified* was checked against
 a repo, a registry or upstream on the day of writing; everything else is
 reasoning and is marked as such. **§12 is the implementation record and
-is the pickup point.**
+is the pickup point; step 3 (`install.sh` / `install.ps1`) is next, and
+one decision inside it is open — see §12's step 2 entry.**
 
 Precedes a release, deliberately. Publishing an installable thing whose
 only install is a Windows developer script would bake the gap in.
@@ -362,7 +363,12 @@ into, rather than the unclaimed one. See
    proxy does stream (measured, not asserted), and the browser arc was
    repointed at the agent rather than kept on `next dev`. 1b came out
    **export**, decided at the end as planned.
-2. **Windows supervision hardening.** Promoted into the build order by
+2. ~~**Windows supervision hardening.**~~ **DONE 2026-09-11, except
+   the service integration — see §12.** Graceful stop and port
+   diagnosis are built and live-verified; the measurements reshaped
+   what the work was. Original note:
+
+   **Windows supervision hardening.** Promoted into the build order by
    call #4: graceful shutdown, port-not-pid process reclaim, a service
    integration. Parity was chosen with this cost visible; it is a work
    item, not an assumption. Sequenced here because step 3 writes the
@@ -617,3 +623,106 @@ coexist, so both are conditional on `NODE_ENV`. **A dev build therefore
 produces no `out/`**, which the staging script checks for and names.
 Nothing is published to PyPI — publishing belongs to the release, which
 is now last (§9).
+
+---
+
+### Step 2 — children are asked to stop, not killed. DONE 2026-09-11.
+
+agent `b142c76`. Verified live by
+`scripts/windows-supervision-acceptance.sh` — **23 checks, zero
+failures** — plus 22 unit tests. **The service integration is NOT
+built; see "the one open decision" below.**
+
+**Everything in §11.1 was inherited rather than measured, and measuring
+it changed the work.** Three hazards went in; one survived, one was
+reshaped, one was replaced, and a fourth turned up that nobody had
+written down.
+
+**KEPT — `TerminateProcess` is the only stop that skips a child's ASGI
+lifespan shutdown.** That is where the gateway closes its metrics
+database and the control root closes its log. Measured with a marker
+written from inside the lifespan itself, because "it exited 0" is not
+the claim:
+
+| how it was stopped                       | rc | lifespan shutdown |
+| ---------------------------------------- | -- | ----------------- |
+| `TerminateProcess` (today's behaviour)    | 1  | **no**            |
+| `CTRL_BREAK_EVENT`, no handler installed  | 3  | yes               |
+| `CTRL_BREAK_EVENT`, handler → `SIGINT`    | 0  | yes               |
+
+**The middle row is why this became an agent-only change.** CPython
+gives `SIGBREAK` the same default handler as `SIGINT`, so a console
+event becomes a `KeyboardInterrupt` and uvicorn unwinds on its own.
+**No component needed a line of code.** The estimate going in was a
+five-repo edit, and it was wrong by five repos.
+
+**RESHAPED — nothing the agent supervises can stack on a port.** §11.1
+carried "stale processes stack on one loopback port with the oldest
+still serving" as a supervision problem, from a real M10 observation.
+Measured: two uvicorn servers cannot share a port (the second dies with
+WinError 10048); `http.server.HTTPServer` can, because it sets
+`allow_reuse_address = True`. **Every stacking process in that M10 run
+was a test stub.** So the supervisor's job here is diagnosis, not
+reclamation: it names the port and the process holding it, and says
+plainly that it will not kill it — at boot it cannot tell its own
+leftover from a server the operator meant to be running, and killing
+the wrong one is unrecoverable where explaining the right one costs
+nothing. (The observation was sound, and confirmed by being bitten: an
+M10 stub was *still* holding 8195 two days later and silently answered
+a probe written to measure something else.)
+
+**REPLACED — a graceful request can be ignored, and a hard kill never
+could.** A child that returns TRUE from a console handler outlived the
+event by six seconds. The fix therefore *introduces* a hang class, so
+every stop now carries an escalation deadline. This hazard exists only
+because the other one was fixed.
+
+**THE FOURTH, live on every Windows install and never written down: an
+operator restart counted as a crash.** A console-stopped CPython child
+exits 3; the supervision loop counted any non-zero exit as a crash. So
+every restart bought a back-off sleep, and enough in a row would trip
+the crash threshold and drop the component into **safe mode** for doing
+exactly what it was asked. POSIX never showed it — SIGTERM gets uvicorn
+to exit 0.
+
+**And one more, found by an acceptance check reading the log for
+something the API already had:** `_explain_exit` has existed since M0
+and its answer only ever reached `Component.lastError`. Every
+engine-adapter diagnosis — M4's work included — has been invisible to
+an operator watching the console, which is exactly where they are at
+boot.
+
+#### The one open decision, and the measurement that constrains it
+
+**A Windows service has no console, and `GenerateConsoleCtrlEvent`
+fails there with `WinError 6`** — verified directly by calling
+`FreeConsole()` and watching the same call that had just worked stop
+working. So **whichever autostart mechanism ships decides whether
+graceful shutdown survives into a real install**:
+
+| mechanism                     | console? | graceful stop | cost                                             |
+| ----------------------------- | -------- | ------------- | ------------------------------------------------ |
+| Scheduled Task at boot         | yes      | **works**     | not a service: no `sc stop`, no recovery policy   |
+| Real service via `pywin32`     | no       | lost          | a heavyweight dependency in the one venv          |
+| Real service via NSSM          | no       | lost          | a third-party binary in the install path          |
+| Real service + `AllocConsole()` | yes     | works         | can reassign the agent's std handles — logs vanish |
+
+We do not conjure a console: an agent whose logs disappear is a worse
+outcome than a hard kill. The agent falls back to `TerminateProcess`
+and says so once, naming the reason — an explanation of a real failure
+beats a prediction of one. **This is Troy's call and it belongs to step
+3**, which is what writes the unit.
+
+#### Two more assertions that matched the wrong subject
+
+Both in the acceptance script, both found by running it:
+
+**A 503 from the proxy and a 503 from an uninitialized trust root are
+the same status.** (That one was step 1's; noted here because step 2's
+sibling is worse.) **The agent pipes every child's stdout into its own
+log with a `[name]` prefix** — so a check for "the agent shut down
+gracefully" that grepped the whole log for `Application shutdown
+complete` passed against `[gateway] INFO: Application shutdown
+complete.` written by an earlier step. The parent's property, asserted
+from the child's log. It greps unprefixed now, and the gateway's own
+check requires the prefix.
