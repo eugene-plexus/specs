@@ -1196,6 +1196,17 @@ components:
             Including `name` is what stops one node's announcement being
             replayed against another's record.
 
+            **Verified against the raw request body, never against a
+            parsed `url`.** An OpenAPI `format: uri` becomes a URL type
+            in most generators, and those normalize — Pydantic's
+            `AnyUrl` appends a trailing slash to an authority-only URL —
+            so a verifier that parses first compares different bytes
+            from the ones the node signed, and *every* announcement
+            fails with what looks like a crypto error. Found by it
+            happening. A signature is over bytes on the wire; `format:
+            uri` stays here because the validation and the generated
+            clients are still worth having.
+
     NodeAddressAck:
       type: object
       required:
