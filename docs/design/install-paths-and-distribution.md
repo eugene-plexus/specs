@@ -708,10 +708,28 @@ graceful shutdown survives into a real install**:
 | Real service + `AllocConsole()` | yes     | works         | can reassign the agent's std handles — logs vanish |
 
 We do not conjure a console: an agent whose logs disappear is a worse
-outcome than a hard kill. The agent falls back to `TerminateProcess`
-and says so once, naming the reason — an explanation of a real failure
-beats a prediction of one. **This is Troy's call and it belongs to step
-3**, which is what writes the unit.
+outcome than a hard kill.
+
+**DECIDED 2026-09-11 (Troy): a real service, and the hard kill is
+accepted.** Row 2 or 3 of that table — call #4 committed to a service
+integration as a supported surface, and a Scheduled Task is not a
+service. The graceful path still covers the case that dominates
+audience 1: a home user running the agent from a terminal, restarting a
+component from the UI. What it does not cover is unattended service
+operation, and that is a known limitation rather than a fault.
+
+**So it is badged, the way §7's Vulkan degradation is.** The agent
+announces at boot how it stops children, as a warning when it cannot do
+it gracefully, naming the reason. Discovering it at the first stop
+would mean discovering it while something else is already going wrong.
+`console_attached()` uses `GetConsoleProcessList` and not
+`GetConsoleWindow`, which returns a null HWND under any ConPTY and so
+reports "no console" for a process that has one — it was wrong in both
+directions on this box and sent one probe run to a wrong conclusion.
+
+**Still open for step 3:** whether the service is `pywin32` or NSSM —
+a dependency in the one venv against a third-party binary in the
+install path.
 
 #### Two more assertions that matched the wrong subject
 

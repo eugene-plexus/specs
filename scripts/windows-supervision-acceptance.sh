@@ -94,6 +94,10 @@ TOK=$(curl -s -X POST "$AGENT/v1/auth/initialize" -H 'content-type: application/
 [ -n "$TOK" ] || { bad "no operator token"; exit 1; }
 wait_healthy "$GW" 90 || { bad "gateway never came up"; exit 1; }
 ok "agent and gateway up"
+# The accepted degradation has to be visible at boot, not discovered at
+# the first stop -- same shape as the Vulkan decision: ship it, badge it.
+grep -q "child shutdown:" "$WORK/agent.log"   && ok "the agent announced how it stops children: $(grep -o 'child shutdown:.*' "$WORK/agent.log" | head -1 | cut -c1-80)..."   || bad "the agent said nothing about how it stops children"
+grep -q "child shutdown: children are stopped with CTRL_BREAK_EVENT" "$WORK/agent.log"   && ok "...and this run has a console, so it claims the graceful path"   || bad "a console-attached run did not claim the graceful path"
 
 # --- 1-4. three restarts in a row -----------------------------------------------
 say "1-4. restarting the gateway three times: graceful, and not a crash"
