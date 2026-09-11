@@ -59,7 +59,26 @@ entry is the reason the milestone is worth doing rather than deferring.
    mesh-VPN decision is one of the architectural commitments, and the
    thing a reader needs — bind addresses, what to expose, what never to
    expose, how the three auth surfaces differ — does not exist.
-5. **The wizard is 1548 lines in one file.** `src/app/setup/page.tsx`,
+5. **Nothing onboards a second machine, and every test has hidden
+   it.** `default_topology.py` gets the enrolled case right — "a node
+   that has joined an install gets its topology from the install, and a
+   second node must never raise a rival control root" — and names its
+   own blind spot in the next sentence: *"the case this cannot detect: a
+   fresh node that is **about** to enroll."* The escape hatch is
+   `EUGENE_PLEXUS_AGENT_DEFAULT_TOPOLOGY=0`. So **adding a second
+   machine today means knowing to set an environment variable before the
+   agent's first boot**, or raising a rival control plane on the worker
+   and cleaning it up afterwards.
+
+   Worse, **no test has ever walked that path.** Every multi-host script
+   pre-writes `firstRunComplete: true` with an empty `components` list
+   (`m7-acceptance.sh:146`, and the host-B setup for the 2026-09-11
+   two-host run did the same by hand) — which is the bypass, written so
+   fluently that nobody noticed it was standing in for a product feature
+   that does not exist. Same shape as the v0.2 fossil config: acceptance
+   scripts build throwaway installs and never touch the path an operator
+   actually walks.
+6. **The wizard is 1548 lines in one file.** `src/app/setup/page.tsx`,
    eight screens plus a Done screen, the draft state machine, the
    backend-creation logic, the topology checks and seven leaf components
    all in the same module. It has been patched at least four times since
@@ -238,6 +257,76 @@ reach the node — the direction M5 deliberately avoided for liveness.
 Recommendation: no. Revoke at the root, un-enroll at the node; two
 operations, each local to the thing whose keys are changing.
 
+## 4a. Onboarding a machine — one question, asked three ways
+
+*(Added 2026-09-11 after Troy asked how non-root nodes get configured.
+The honest answer was: an environment variable, and no test has ever
+used it.)*
+
+`eugene-plexus-agent` is the same entry point on every machine, root
+included. **So the machine must ask, rather than require the operator to
+have known a flag.** On a boot that is genuinely fresh there is exactly
+one question — *am I the root of a new install, or joining an existing
+one?* — and everything else follows from it.
+
+`should_seed(state, enrolled)` is already the single place that decides,
+gated by `settings.default_topology`. This adds inputs to that decision;
+it does not add a second decision.
+
+### The three ways to answer
+
+| Path | When | What it is |
+|---|---|---|
+| **Interactive prompt** | fresh boot **and** a TTY | the non-CLI answer: the agent asks before `create_app()` and routes accordingly |
+| **`eugene-plexus-agent join`** | scripted, provisioning, Ansible | `--control <url> --token <jwt>` (+ optional `--name`, `--advertise`) |
+| **`EUGENE_PLEXUS_AGENT_DEFAULT_TOPOLOGY=0`** | a service unit or container that is a node | already exists; now the non-interactive expression of "node" rather than a thing operators must discover |
+
+**No TTY means today's behaviour: seed as root.** A service-managed or
+containerised start has no stdin and **must never block on a question**.
+Seeding as root is both the existing behaviour and right for the
+single-machine case, which is the overwhelmingly common one; a node
+started by a service unit is by definition being provisioned, and
+provisioning has `join` and the env var. This is the one place the
+milestone deliberately keeps a silent default, and it is the safe
+direction — a spurious control plane on a machine that meant to be a
+node is recoverable, whereas an agent that hangs at boot waiting for a
+terminal nobody is watching is not.
+
+### Why the web wizard cannot be the only path
+
+A bootstrap paradox, not a preference. You cannot reach a worker's web
+UI from your laptop until that agent binds non-loopback; it binds
+non-loopback only when it advertises a non-loopback address; and setting
+that address is part of what joining does. The browser arrives after the
+thing it would configure.
+
+This is the same argument that already settled first-boot seeding —
+*"headless is the argument that settles it; a tailnet install has no
+browser at first boot"* — and it is stronger here, because a worker in
+another building is the case the whole multi-host arc exists for.
+
+**Consequence, and it simplifies rather than complicates: the web wizard
+is the first-install experience, full stop.** A worker node's UI shows
+*which install it belongs to*, not a setup flow. The "am I a worker?"
+fork never has to exist in the browser, which is an argument for fewer
+screens rather than more.
+
+### What joining needs that does not exist yet
+
+A join token is minted at the control root
+(`POST /v1/nodes/join-token`, single-use and short-lived, built at M5).
+**Minting one from a browser needs a control-root screen, and there are
+none** — so today the answer is `curl`, which fails the rule this
+project now works to. M9 therefore owes one minimal root screen: *add a
+node* → mint a token → show the exact `eugene-plexus-agent join`
+command to paste on the other machine, the way `k3s`, `docker swarm` and
+`tailscale up` all do it.
+
+That is a *minimal* screen and not the control-root workflows that are
+still blocked on the undecided "should the agent own the UI" question —
+it mints a token and renders a command, and it would be built the same
+way wherever the UI ends up living.
+
 ## 5. Contract
 
 The first contract change since `a0d793e`, so it triggers the re-pin
@@ -262,7 +351,14 @@ their codegen lists — *verify it rather than assume it.*
 restart-on-login and one playground completion; the wizard rewritten to
 five screens with the draft extracted and each screen independently
 testable; `docs/deployment/tailnet.md`; `POST /v1/node/unenroll`;
-`PATCH /v1/nodes/{name}` plus announce-on-startup and on-change.
+`PATCH /v1/nodes/{name}` plus announce-on-startup and on-change; **and
+the onboarding question of §4a — an interactive first-boot prompt, an
+`eugene-plexus-agent join` subcommand, and one minimal "add a node"
+screen at the root that mints a token and renders the command.**
+
+**The acceptance run must stop pre-writing `firstRunComplete`.** A
+second host has to be onboarded the way an operator would, or this
+milestone repeats the omission it was written to fix.
 
 **Out.** MLX (the next item after this one). The structured `model_slots`
 editor and the `runtime_name` dropdown — real gaps in differentiator #4,
