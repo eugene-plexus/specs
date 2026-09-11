@@ -10,22 +10,30 @@ only install is a Windows developer script would bake the gap in.
 
 ## Decisions needed before building
 
-Five, all Troy's. Each has a recommendation in the section named, with
-the counter-argument that would overturn it. **Answers get recorded
-here as they are made**, so this block is the decision log and not just
-a question list.
+Each has a recommendation in the section named, with the
+counter-argument that would overturn it. **This block is the decision
+log** — answers are recorded here as they are made.
 
-| #     | The call                                                                                      | §    | Recommended                                        | Status     |
-| ----- | --------------------------------------------------------------------------------------------- | ---- | -------------------------------------------------- | ---------- |
-| **1** | Move the UI proxy into the agent and static-export the UI — **now**, or bundle Node and defer? | §3   | Now                                                | **OPEN**   |
-| **2** | Linux + NVIDIA: ship Vulkan with a permanent visible degradation, or keep the refusal?          | §7   | Ship Vulkan, badge it permanently                  | **OPEN**   |
-| **3** | macOS: first-class now, or wait for MLX?                                                        | §8   | Now, decoupled from MLX                            | **OPEN**   |
-| **4** | Windows: a supported end-user target, or a dev surface only?                                    | §11  | *(no recommendation — see §11)*                     | **OPEN**   |
-| **5** | Where `install.sh` is hosted: stand up `eugeneplexus.com`, or a raw GitHub URL first?           | §4   | GitHub URL now, domain before announcing           | **OPEN**   |
+| #      | The call                                                                              | §    | Decision                                    | Status                     |
+| ------ | ------------------------------------------------------------------------------------- | ---- | ------------------------------------------- | -------------------------- |
+| **1a** | Move the UI proxy into the agent?                                                       | §3   | *(recommended: yes, now)*                   | **OPEN**                   |
+| **1b** | Ship the UI as a static export, or as a Next server?                                    | §3.1 | *(recommended: export — but deferrable)*    | **OPEN, deliberately**     |
+| **2**  | Linux + NVIDIA: ship Vulkan with a permanent visible degradation, or keep the refusal?  | §7   | **Ship Vulkan, badge it permanently**       | **DECIDED 2026-09-11**     |
+| **3**  | macOS: first-class now, or wait for MLX?                                                | §8   | **First-class now, decoupled from MLX**     | **DECIDED 2026-09-11**     |
+| **4**  | Windows: a supported end-user target, or a dev surface only?                            | §11.1 | **Fully first-class** — parity, not a middle tier | **DECIDED 2026-09-11** |
+| **5**  | Where `install.sh` is hosted: `eugeneplexus.com`, or a raw GitHub URL first?             | §4   | *(recommended: GitHub URL now)*             | **OPEN**                   |
 
-**#1 gates the rest** — it decides what every installer installs. #2-#4
-are independent of it and of each other. #5 is near-automatic and is
-listed only so it is not forgotten at the last moment.
+**#1 was one call and is now two**, which is the substantive change
+from the first draft. Troy's question — *"I intend for the UI to get
+much more complicated and feature rich; do static pages still make
+sense?"* — is answered in §3.1, and the answer is that **the two halves
+are separable and only 1a is a commitment.** After 1a the UI is a pure
+client application either way, so 1b collapses to one line in
+`next.config.ts`: a build target, reversible after release. Do 1a; pick
+1b late.
+
+#2-#4 are independent of #1 and of each other. #5 is near-automatic and
+is listed only so it is not forgotten at the last moment.
 
 Deliberately **not** decided here: version policy, release workflows and
 who tags what (§6). Those belong to the release, which follows this
@@ -165,6 +173,47 @@ If the `eugene_plexus_ui` package is absent the agent should serve the
 API and say so, rather than fail — `degraded-mode-required` applies
 unchanged.
 
+### 3.1 "The UI is going to get much richer — does static still make sense?"
+
+Troy's question, 2026-09-11, and the reason call #1 split in two.
+
+**Static export does not mean a static website.** `output: "export"`
+emits a full client-side React SPA. What survives is everything the UI
+is made of: hooks and state, client-side routing, code splitting and
+lazy loading, WebSockets and SSE, charts, editors, virtualized tables,
+drag-and-drop, any npm component library. What is dropped is only the
+*server* half of Next — Server Components, Server Actions, middleware,
+SSR, ISR, runtime route handlers. **This UI already uses none of them**
+(§3), and the one route handler it has is the proxy 1a removes.
+
+**Feature richness is not what static export constrains.** The dominant
+pattern for self-hosted admin UIs is a static bundle served by the
+backend binary: Grafana, Home Assistant, Portainer, Immich, the Traefik
+dashboard. Home Assistant's frontend carries live WebSocket state for
+thousands of entities, a drag-and-drop dashboard editor and a card
+configuration system — as a static bundle served by Python. Nothing in
+this project's roadmap is richer than that.
+
+**The one thing that would genuinely break it** is a secret the browser
+must never hold — realistically OIDC's client secret and its
+authorization-code exchange, which §10 already names as an SMB gap. But
+by this project's own architecture that belongs in `control` or the
+agent, which own their config and secrets, not in a Node process
+sitting beside them. It argues *for* 1a rather than against it.
+
+**Hence the split.** 1a is architecture and is correct regardless of
+what the UI becomes. 1b is a build target: after 1a the UI is a pure
+client application either way, `export` and `standalone` differ by one
+config line, and the choice is reversible after release. **Do not let
+1b block 1a**, and do not treat 1b as a bet on the UI's future.
+
+**One honest caveat, not a recommendation.** Next.js is a framework
+built *around* its server; using it with `export` means carrying its
+build complexity for the client half alone. If the UI grows as large as
+intended, Vite + React Router would be leaner. That is a rewrite and is
+not proposed here — recorded only so that if Next starts fighting the
+UI later, this is the known alternative and not a fresh discovery.
+
 ## 4. Three paths, one artifact
 
 **Path A — developer.** `bootstrap.sh` + the existing `bootstrap.ps1`.
@@ -235,7 +284,13 @@ Version policy, release workflows and who tags what are **not decided
 here** and should be settled before the release, not before the install
 work.
 
-## 7. Linux + NVIDIA (open call, recommendation below)
+## 7. Linux + NVIDIA — DECIDED 2026-09-11: ship Vulkan, badge it
+
+**Troy's call, taking the recommendation.** Build the `Degraded` plan
+described below. The counter-argument is preserved at the end of the
+section because it names the failure mode to watch for: if operators
+start reporting "it's slow" without mentioning the badge, the badge is
+not doing its job and the wall was right.
 
 **The premise was re-verified against upstream on 2026-09-11**, not
 taken from the code comment. Today's `b10909` publishes 27 assets:
@@ -268,7 +323,7 @@ badge in a UI the operator may never open is weaker than a wall. If the
 refusal stays, it should become *actionable* instead — a verified
 source-build script rather than a paragraph.
 
-## 8. macOS (open call, recommendation below)
+## 8. macOS — DECIDED 2026-09-11: first-class now, decoupled from MLX
 
 **Recommendation: first-class now, decoupled from MLX.** `macos-arm64`
 and `macos-x64` prebuilts ship in that same upstream release, so macOS
@@ -284,18 +339,30 @@ it should say so.
 
 ## 9. Build order
 
-1. **Move the proxy into the agent; static-export the UI; ship
-   `eugene-plexus-ui`.** Everything downstream gets simpler, and this is
-   the only step that is real work on the auth path.
-2. **`install.sh` / `install.ps1`** — fetch `uv`, venv, install the
-   meta-package, write a systemd unit / launchd plist / Windows service,
-   start it. This is Path B, and it is also every SMB GPU box.
-3. **`bootstrap.sh`** — port the developer script. Small once step 2
-   exists, and it shares the prerequisite checks.
-4. **Compose file and image** for the control plane. Path C.
-5. **Then** the release.
+Revised 2026-09-11 after calls #2, #3 and #4.
 
-§7 is independent and slots in anywhere.
+1. **Move the proxy into the agent (1a); ship `eugene-plexus-ui`.** The
+   only real work on the auth path, and everything downstream gets
+   simpler. **Pick the build target (1b) at the end of this step, not
+   the start** — §3.1. Watch the streaming trap in §11.
+2. **Windows supervision hardening.** Promoted into the build order by
+   call #4: graceful shutdown, port-not-pid process reclaim, a service
+   integration. Parity was chosen with this cost visible; it is a work
+   item, not an assumption. Sequenced here because step 3 writes the
+   service unit that depends on it.
+3. **`install.sh` / `install.ps1`** — fetch `uv`, venv, install the
+   meta-package, write a systemd unit / launchd plist / Windows
+   service, start it. Path B, and also every SMB GPU box. **macOS is in
+   scope from the first version** (call #3), including a launchd plist;
+   llama.cpp acquisition on arm64 stays unverifiable on current
+   hardware and any claim about it must say so.
+4. **`bootstrap.sh`** — port the developer script. Small once step 3
+   exists, and it shares the prerequisite checks.
+5. **Compose file and image** for the control plane. Path C.
+6. **Then** the release.
+
+§7 (Vulkan, decided) is independent of all of it and slots in anywhere;
+it touches only the agent's llama.cpp adapter and a UI badge.
 
 ## 10. What this does not solve
 
@@ -340,11 +407,45 @@ proven"* — which is a good story, not a weak one.
   assumption is load-bearing for a service unit — see the open call
   below, which it is the main evidence for.
 
-### 11.1 Open call #4 — is Windows a supported end-user target?
+### 11.1 Windows — DECIDED 2026-09-11: fully first-class
 
-**Not a trap but a decision, and the one with no recommendation**,
-because the evidence points both ways and the tiebreak is a product
-judgement rather than a technical one.
+**Troy's call, and it overrides the recommendation** (a middle tier:
+ship `install.ps1`, support single-machine, claim nothing about
+multi-host or unattended service). Windows gets parity.
+
+**What that commits, stated plainly so it is not rediscovered as a
+surprise:** the installer is the cheap part. Parity means **Windows
+process supervision becomes a supported surface**, which is real work
+nobody has scoped, and it should be treated as a work item of this
+milestone rather than an assumption:
+
+- **`terminate()` is `TerminateProcess` — a hard kill with no graceful
+  window.** A supervised engine can leave a GPU context to be
+  reclaimed. Needs either a real graceful path or an explicit,
+  documented, tested reclaim.
+- **Stale processes stack on one loopback port with the oldest still
+  serving** — recorded live during M10, where a run read a two-runs-old
+  reply. Already survives in the standing rule *kill by port, never by
+  pid or command pattern*; as a supported surface it needs to be the
+  supervisor's behaviour, not the test harness's.
+- **A Windows service integration** alongside systemd and launchd —
+  a third one to write and keep working.
+- **`supervisor.py`'s own comment now contradicts the product**: it
+  says *"Windows is primarily a dev surface, real installs are
+  Linux/Mac/Docker."* Fix the comment when the work lands, not before,
+  so it does not claim support that does not exist yet.
+
+**The evidence that carried it**, recorded because it is good and will
+come up again: audience 1 is substantially Windows — the home
+enthusiast with one gaming GPU is the archetype; **Windows+NVIDIA is
+the best-served acquisition path in the entire project** (§7 — it is
+the only platform upstream publishes CUDA builds for, and it would be
+perverse to serve it least well); and every milestone through M10 was
+driven from a Windows box.
+
+The original both-ways analysis follows, kept because the middle option
+remains the fallback if supervision hardening proves larger than it
+looks.
 
 **For dev-surface-only:** `supervisor.py` already asserts it in a
 comment that has been load-bearing since M0. Graceful shutdown is a
@@ -368,10 +469,12 @@ The cost is not the installer — `install.ps1` is cheap next to
 a supported surface, including the hard-kill behaviour, which is real
 work that nobody has scoped.
 
-A middle option exists and may be the honest one: **ship `install.ps1`,
-document Windows as supported for a single-machine install, and do not
-claim it for multi-host or unattended-service use** until supervision
-is hardened.
+**The fallback, not taken:** ship `install.ps1`, document Windows as
+supported for a single-machine install, and do not claim it for
+multi-host or unattended-service use until supervision is hardened.
+Retreat to this only with a stated reason — the decision above was made
+with the supervision cost in front of it, so "it turned out to be work"
+is not a reason.
 
 ## 12. Implementation record
 
