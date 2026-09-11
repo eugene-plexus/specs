@@ -46,7 +46,7 @@ operational, not engine-level:
 | "Couldn't use the models I already had on disk → uninstalled it."                                                                                    | Respect for the user's own files           |
 | "Let me just go to the dumpster fire UI that is HuggingFace… no search page with summaries, just an autocomplete list. Off to a real search engine." | In-app model discovery                     |
 | "`ollama pull` takes away a lot of hugging face headaches… finding GGUF and working with HF, I wouldn't call it beginner friendly."                  | In-app download                            |
-| "Can I run this on a server?" (asked three separate times)                                                                                           | Headless + networked + authenticated       |
+| "Can I run this on a server?" (asked at least six separate times — recounted 2026-09-11; it is the thread's single most repeated question)            | Headless + networked + authenticated       |
 | llama-swap is good but "just run Docker" / "not a drop-in replacement"                                                                               | Model swapping without a container runtime |
 
 Nobody owns this layer. Everyone builds an *engine* (llama.cpp, vLLM, MLX) or a
@@ -489,3 +489,26 @@ OS behave differently from every other target.
 | **`Component.url` keeps one meaning** (what the agent binds and probes); `Component.advertiseUrl` is where peers reach it. Engines are never widened                                                             | 2026-09-10 |
 | **The install's signing key is stored in the clear on each node**, 0600. Children already hold it; a headless node has nobody to type a passphrase                                                               | 2026-09-10 |
 | **Every node enrolls the same way**, the control host's included. One mechanism                                                                                                                                  | 2026-09-10 |
+| **A desktop UI is no longer a differentiator; the networked story is.** The product's claim is the server — headless, tailnet, authenticated, many backends at once                                              | 2026-09-11 |
+
+**Note on the row above (2026-09-11).** When §1 was written the
+desktop-app alternatives were LM Studio and Ollama's own UI, and "a
+schema-driven config UI with per-model profiles" read as scarce.
+It is not scarce any more: **llama.app and Unsloth Studio are now the
+answers the community recommends** to someone who wants a local model
+with a good interface, and both are better funded and more focused on
+that single job than we will be. §6 already flagged llama.cpp moving
+into this space as a risk; the recount above is the other half of the
+same observation, and together they move the weight of the pitch.
+
+What this changes: differentiator #4 (schema-driven config, per-model
+profiles) and the UI generally are now **table stakes** — necessary,
+insufficient, and not what to lead with. What it does **not** change is
+the scope; those screens still have to exist and still have to be good.
+What to lead with instead is the part no desktop app can answer, and
+that the source thread asked for more often than anything else:
+**#5 networked-first with auth, #7 many backends at once with failover,
+and multi-host** — one endpoint over the machines and subscriptions a
+user already has, reachable from anywhere on their tailnet. That is
+also the half we have just proven on real hardware (M4, M7), and the
+half a desktop chat app is structurally unable to follow us into.

@@ -368,6 +368,101 @@ investigations. Control-root screens: **still undecided whether the
 agent should own the UI at all**, and building root workflows before
 that is decided would be building them twice.
 
+## 8. Where the build departed from this design
+
+*(Opened 2026-09-11 while landing the contracts. The convention is M5's
+§10: a design is not edited to look like it was right, it records where
+it was wrong.)*
+
+### 8.1 "Authenticated by the node's own service token" does not work
+
+§4 settled the direction correctly and then named a credential that
+cannot do the job. Two independent reasons, found by reading
+`control/dependencies.py` rather than by reasoning:
+
+1. **A service token names a kind, not a host.** `issue_service_token`
+   encodes `aud: service:<kind>`, so `service:agent` from any node in
+   the install is indistinguishable from `service:agent` from the node
+   whose address is being changed. Every agent could re-address every
+   other node.
+2. **The sharper one: it would have been the first mutation on the trust
+   root authenticated by a service credential.** Every write on
+   `control` today is `require_operator`, and the module says why — *"a
+   compromised peer holding a service token must not be able to enroll a
+   host or re-key the install"*. Re-advertising cannot be operator-
+   authenticated either, because the case that matters is an unattended
+   reboot at 3am. So the choice was never "operator or service"; it was
+   "find a third thing".
+
+**Built instead: the node signs the announcement, exactly as the control
+root signs a re-key.** The symmetry is the argument — *the root proves
+itself to a node with its identity key, and a node proves itself to the
+root with its own, and neither uses a bearer, because a bearer does not
+survive the rotation that makes these two operations necessary in the
+first place.*
+
+**Cost, stated plainly: a node needs a second keypair.** The identity
+key it has is X25519, generated to have secrets *sealed* to it, and
+X25519 does not sign. Deriving one from the other only runs
+Ed25519 → X25519, which is the direction we do not have. So
+`ensure_keypair` mints an Ed25519 pair alongside, `EnrollmentRequest`
+and `NodeIdentity` grow `signingPublicKey`, and `Node` records it.
+Optional on the wire, so an older agent still enrolls — **and a node
+enrolled before this existed cannot re-advertise and must re-enroll**,
+which is surfaced as an absent `Node.signingPublicKey` rather than left
+to be inferred from a 401.
+
+**Also added, not in §4: a `sequence`.** Strictly increasing per node,
+persisted on the node, mirrored in applied state. Without it a captured
+announcement can be replayed to pin a node to an address it has left,
+which is a denial of service that costs an attacker nothing. It resets
+with the node record on re-enrollment, because `enrollNode` replaces
+the record wholesale.
+
+### 8.2 `LogOp` opened to ten, and M5's decision did not forbid it
+
+`updateNode` is the tenth op. The M5 memo says *"LogOp stays closed at
+nine — do not relitigate"*, so this needs an argument rather than an
+edit.
+
+The rule that closed it was about what does **not** belong: minting a
+join token and initializing the install are not replicated state, so
+they got no op. `Node.url` is the opposite case — it lives in the
+snapshot, and `LogOp`'s own description says *an operation that is not
+in this list is an operation that would not replicate*, and *adding a
+mutation means adding an op here*. Closing the set at nine and then
+mutating applied state outside it is the one combination the design
+rules out.
+
+**Rejected: reusing `enrollNode` as an upsert.** It would have worked —
+`_apply_enroll_node` already replaces the record by name, so the apply
+function needs no change at all. It is worse for one reason that is not
+about correctness: the log is read by operators, and a node that moved
+house would appear in it to have enrolled again.
+
+Snapshot cost checked, per the rule M5 learned the hard way (*a snapshot
+is the log's compacted head; every op must have somewhere to land*):
+`Snapshot.nodes` already carries `Node`, so `updateNode`'s effect lands
+with no schema change beyond the two new fields.
+
+### 8.3 §0's first finding was overstated in one respect
+
+*"There is no error anywhere: the node is healthy, the root is healthy,
+and requests fail at a URL nobody is listening on."* The first clause is
+wrong. `GET /v1/components` on the control root assembles the union view
+by asking every node, and a node it cannot reach lands in
+`unreachableNodes` — deliberately, and with a comment saying why. So a
+stale `Node.url` **is** visible.
+
+What is not wrong is the defect. A node at an unknown address is
+unreachable *by the only address the root has*, so the root cannot poll
+its way out of it — which is also why "have the root ask" is not a fix
+and the announcement has to be a push. Until M9 the only recovery was
+an operator editing state by hand. The finding stands; its second
+sentence does not.
+
+---
+
 ## 7. Risks
 
 - **The browser suite finds something structural in the wizard.** Likely,

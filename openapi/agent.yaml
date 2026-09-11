@@ -1054,6 +1054,66 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/node/unenroll:
+    post:
+      tags: [node]
+      operationId: unenrollNode
+      summary: Leave an install — discard the install's key and return to this node's own.
+      description: |
+        Operator-only, and the exact inverse of `POST /v1/node/enroll`.
+        The agent discards the install's signing key, the epoch, the
+        control root's URL and identity, mints a fresh per-restart
+        signing key of its own, and restarts every supervised component
+        so they pick it up. **Its runtimes stay declared and its model
+        files are untouched** — only routing stops, which is already the
+        documented consequence of revocation.
+
+        **Why this is safe to allow locally, which is the only part that
+        needs an argument.** Revocation exists because *a node that still
+        holds the signing key can still authenticate*, so removing a
+        registry entry alone does nothing. Un-enrolling **discards** that
+        key — the opposite direction. A node cannot escape revocation by
+        un-enrolling; it can only disarm itself.
+
+        **It proceeds when the control root is unreachable**, per the
+        standing degraded-mode rule: an operator detaching a node from a
+        dead install is precisely the case where refusing is useless.
+        When the root *is* reachable the agent calls
+        `DELETE /v1/nodes/{name}` there first, forwarding the caller's
+        own operator bearer — one install, one signing key, so the
+        session that authorized this call is an operator session at the
+        root too. That rotates the install key for every remaining node,
+        which is the whole point of revoking rather than deleting.
+        `controlNotified` reports whether it happened; `false` means the
+        operator still owes the root a revocation.
+
+        **This logs out every session on this node**, exactly as
+        enrollment does and for the same reason: the key those sessions
+        were signed with has been replaced.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnenrollRequest'
+      responses:
+        '200':
+          description: |
+            Un-enrolled. Read `controlNotified` before assuming the
+            install is clean.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnenrollResult'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: This agent is not enrolled, so there is nothing to leave.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/node/rekey:
     post:
       tags: [node]
@@ -1460,6 +1520,30 @@ components:
             enrolled with, recorded then and checked against every
             `POST /v1/node/rekey` since. A dashboard can compare it with
             the root's own `Snapshot.controlPublicKey`.
+        signingPublicKey:
+          type: string
+          description: |
+            This node's **Ed25519** identity public key — the one it
+            signs `PATCH /v1/nodes/{name}` with, recorded at the control
+            root as `Node.signingPublicKey`.
+
+            Separate from `publicKey`, which is X25519 and exists to have
+            secrets sealed *to* it. One key cannot do both jobs: sealing
+            is Diffie-Hellman and signing is Ed25519, and deriving one
+            from the other only runs in the direction we do not have.
+
+            Absent on a node enrolled before this key existed, which is
+            also why its re-advertisements are refused — see
+            `PATCH /v1/nodes/{name}` in `control.yaml`.
+        advertiseSequence:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            How many address announcements this node has made since it
+            enrolled. Strictly increasing, persisted here and mirrored at
+            the control root, so a replayed announcement cannot move a
+            node back to an address it used to have.
         os:
           type: string
           enum: [windows, linux, macos]
@@ -1539,6 +1623,51 @@ components:
             `controlPublicKey` the agent recorded at enrollment. Three
             fields, one serializer, stated here so both sides implement it
             from the same sentence.
+
+    UnenrollRequest:
+      type: object
+      description: |
+        Optional. The default does the right thing; the field exists for
+        the operator who already knows the root is gone and does not want
+        to wait for the attempt to time out.
+      properties:
+        notifyControl:
+          type: boolean
+          default: true
+          description: |
+            Call `DELETE /v1/nodes/{name}` at the control root first, so
+            the install rotates its signing key and stops trusting this
+            node. Set false to skip the attempt entirely — it does not
+            change what happens *here*, only whether the root is told.
+
+    UnenrollResult:
+      type: object
+      required:
+        - identity
+        - controlNotified
+      properties:
+        identity:
+          $ref: '#/components/schemas/NodeIdentity'
+        controlNotified:
+          type: boolean
+          description: |
+            Whether the control root accepted the revocation. **False is
+            not a failure of this call** — the node has left either way.
+            It means the install still lists this node and still trusts
+            the key it just discarded, and an operator owes it a
+            `DELETE /v1/nodes/{name}`.
+        previousName:
+          type: string
+          description: The name this node had in the install it just left.
+        previousControlUrl:
+          type: string
+          format: uri
+          description: The control root it answered to.
+        detail:
+          type: string
+          description: |
+            Why the root was not told, when it was not. Present exactly
+            when `controlNotified` is false and something was attempted.
 
     # -------- Auth --------
 
