@@ -150,28 +150,38 @@ Windows service are written but have not been run.
 
 Eugene Plexus is a polyrepo targeting **Python 3.12** — every component pins `requires-python = ">=3.12"`, ruff `target-version = "py312"`, and mypy `python_version = "3.12"`, and CI runs on 3.12. Develop on 3.12 so local matches CI.
 
-Clone the **active** repos as siblings on Windows:
+One command does the whole polyrepo — it needs only `git`, because `uv` brings
+its own Python and every repo is public:
 
-```powershell
-foreach ($repo in 'specs', 'agent', 'control', 'gateway', 'inference-driver', 'library', 'ui') {
-  gh repo clone "eugene-plexus/$repo"
-}
+```sh
+git clone https://github.com/eugene-plexus/specs
+sh specs/scripts/bootstrap.sh     # Windows: powershell specs/scripts/bootstrap.ps1
 ```
 
-In each Python consumer, create a Python 3.12 virtualenv and install `.[dev]`;
-follow that repo's README and contributor guide. For a supervised local stack,
-install the component packages into the **agent's environment too**, because
-children use its interpreter. In `ui`, use Node.js 24 to match CI, `npm ci`, and
-`npm run dev`. Committed generated files already match each consumer's pin;
+It clones all eight repos as siblings, gives each Python repo a 3.12 virtualenv
+with `[dev]` and pre-commit hooks, sets up `ui` and `website` with npm, builds
+the UI export, and installs every component into the **agent's** virtualenv —
+which is the step that matters, because the supervisor spawns children with its
+own interpreter. Pass `--root DIR` / `-Root DIR` to build it somewhere else.
+Node is optional; without it the two Node repos are skipped and the dev agent
+serves no browser half.
+
+The rest of this section describes what that automates. Committed generated
+files already match each consumer's pin;
 regenerate when changing the pin or verifying freshness.
 
-**Do not use the existing bootstrap script as the current setup path.**
-[`scripts/bootstrap.ps1`](scripts/bootstrap.ps1) clones the seven live repos,
-builds a Python 3.12 venv per repo, and then installs every component into the
-**agent's** venv as well. That last step is not redundancy: the agent supervises
-children by spawning them with its own `sys.executable`, so a component missing
-from the agent's environment cannot be started by it at all, and the agent
-declines to declare it on a first boot.
+The step worth understanding, because it is the one people skip when setting up
+by hand: both bootstrap scripts install every component into the **agent's**
+venv as well as its own. That is not redundancy. The agent supervises children
+by spawning them with its own `sys.executable`, so a component missing from the
+agent's environment cannot be started by it at all — and on a first boot the
+agent checks with `find_spec` and declines to declare what it cannot import,
+leaving a working supervisor with nothing to supervise.
+
+Since the UI became a Python package, the same applies to it: without
+`eugene-plexus-ui` in the agent's venv you get the API and a "no web UI
+installed" page. The scripts install it editable, so `npm run build:python` in
+`ui` is immediately visible to a running agent.
 
 Afterwards there is nothing else to run. Start the agent and it declares and
 spawns the control root, gateway and library itself; the browser UI is for

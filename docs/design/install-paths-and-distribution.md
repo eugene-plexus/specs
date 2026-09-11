@@ -1,12 +1,12 @@
 # Install paths and distribution
 
-**Status: §9 steps 1, 2 and 3 are BUILT AND LIVE-VERIFIED (2026-09-11);
-steps 4-9 are still design.** Written before any implementation so a later session
+**Status: §9 steps 1-4 are BUILT AND LIVE-VERIFIED (2026-09-11);
+steps 5-9 are still design.** Written before any implementation so a later session
 could pick it up cold. Every claim marked *verified* was checked against
 a repo, a registry or upstream on the day of writing; everything else is
 reasoning and is marked as such. **§12 is the implementation record and
-is the pickup point; step 4 (`bootstrap.sh`) is next. Every decision in
-the table below is now taken.**
+is the pickup point; step 5 (the Compose file and image) is next. Every
+decision in the table below is taken.**
 
 Precedes a release, deliberately. Publishing an installable thing whose
 only install is a Windows developer script would bake the gap in.
@@ -226,10 +226,12 @@ UI later, this is the known alternative and not a fresh discovery.
 
 ## 4. Three paths, one artifact
 
-**Path A — developer.** `bootstrap.sh` + the existing `bootstrap.ps1`.
-Seven repos, a venv each, editable installs, pre-commit. Uses `git
-clone` rather than `gh repo clone` so it needs no authentication.
-Audience: contributors.
+**Path A — developer.** `bootstrap.sh` + `bootstrap.ps1`. **Built at
+step 4** — eight repos (the `website` joined the org on 2026-09-11), a
+venv each, editable installs, pre-commit, and the UI export. Uses `git
+clone` rather than `gh repo clone` so it needs no authentication — which
+§12 records was true of the design and false of the script for four
+milestones. Audience: contributors.
 
 **Path B — end user, host.** One command:
 
@@ -241,10 +243,13 @@ which fetches `uv`, creates a venv, installs one meta-package, writes a
 service unit, and starts it. Windows gets `install.ps1` doing the same.
 Audience: home enthusiasts, **and every GPU box in an SMB deployment**.
 
-Note the prerequisite: **`eugeneplexus.com` currently serves nothing**,
-and `specs/README.md:7` already links it. Path B needs somewhere stable
-to host the script — the domain, or a raw GitHub URL if the domain is
-not stood up first. Either is fine; leaving both undone is not.
+Note the prerequisite: Path B needs somewhere stable to host the
+script. **Answered at step 3 — raw GitHub, and deliberately not the
+domain even though the domain is now live.** See §12, call #5:
+`eugeneplexus.com` went up on 2026-09-11 (the `website` repo, Astro on
+GitHub Pages), but the installers carry pins that move on every bump
+and the site deploys by hand, so a copy there would be a second source
+of truth serving a stale installer.
 
 **Path C — control plane, container.** A Compose file and one image.
 Audience: SMB.
@@ -430,8 +435,12 @@ into, rather than the unclaimed one. See
    version** (call #3), including a launchd plist; llama.cpp
    acquisition on arm64 stays unverifiable on current hardware and any
    claim about it must say so.
-4. **`bootstrap.sh`** — port the developer script. Small once step 3
-   exists, and it shares the prerequisite checks.
+4. ~~**`bootstrap.sh`** — port the developer script.~~ **DONE
+   2026-09-11 — see §12.** It did share the prerequisite checks, as
+   predicted. What was not predicted is that the script it ports had
+   never been run against anything but an already-working tree, so both
+   halves gained a `--root` and an acceptance run; and that porting it
+   literally would have died on PEP 668.
 5. **Compose file and image** for the control plane. Path C.
 6. **Tool calling, end to end** —
    [`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md)
@@ -564,8 +573,8 @@ is not a reason.
 ## 12. Implementation record
 
 Record what was built, what departed from this design, and why, as each
-step of §9 lands. **Steps 4-9 are unbuilt; step 4 (`bootstrap.sh`) is
-the pickup point.**
+step of §9 lands. **Steps 5-9 are unbuilt; step 5 (the Compose file and
+image for the control plane) is the pickup point.**
 
 ### Step 1 — the proxy moved, and the UI ships as a wheel. DONE 2026-09-11.
 
@@ -868,9 +877,29 @@ curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/in
 irm  https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.ps1 | iex
 ```
 
-`bootstrap.ps1` already lives there, `main` always serves current pins,
-and `eugeneplexus.com/install.sh` becomes a redirect whenever the domain
-is stood up. Reversible; not worth blocking on.
+`bootstrap.ps1` already lives there and `main` always serves current
+pins.
+
+**The premise this was decided on went stale the same day, and the
+decision survives on a different reason.** §4 said "`eugeneplexus.com`
+currently serves nothing", true when written and verified. It is now
+live — the `eugene-plexus/website` repo (Astro, GitHub Pages, custom
+domain, HTTPS enforced) was built on another machine on 2026-09-11 and
+`https://eugeneplexus.com/` returns the site. So the option is real.
+
+**Do not move the installers there yet**, for a reason that has nothing
+to do with the domain: the scripts carry six pinned commits that change
+on every version bump, and the website deploys only on
+`workflow_dispatch`. A copy under `public/` would be a second source of
+truth for the pins, updated by hand, silently serving a stale installer
+to anyone who ran the advertised command — the exact failure this
+project keeps finding, with the worst possible blast radius. One copy,
+at the URL that always reflects `main`.
+
+**At release this flips**, because pins stop moving weekly: the site
+can serve `eugeneplexus.com/install.sh`, generated at build time from
+`specs` rather than copied, and the one-liner gets the short URL it
+deserves.
 
 #### Call #7: `pywin32`, and two defects that only running it found
 
@@ -1024,3 +1053,134 @@ four of the five are the shape this project keeps hitting.
    nothing* is exactly what it asked for. **A negative check cannot tell
    a clean result from a broken instrument**, and this one was one line
    away from being the only evidence for its claim.
+
+### Step 4 — the developer script, ported and tested for the first time. DONE 2026-09-11.
+
+specs: `scripts/bootstrap.sh` (new), `scripts/bootstrap.ps1` (rewritten),
+`scripts/bootstrap-acceptance.sh` (new). **19 checks, zero failures** on
+WSL2 Ubuntu 26.04 and this Windows box. **44.6 s on Linux and 47 s on
+Windows**, from an empty directory to eight repos cloned, five
+virtualenvs built, hooks installed, the UI exported, and an agent that
+starts a four-process control plane. macOS is unverified, as ever.
+
+#### "Small once step 3 exists" was right about the mechanism and wrong about the work
+
+§9 predicted this step would be small because it shares the installers'
+prerequisite checks. It does — `uv`, the same fetch-into-a-directory
+idiom, the same "assert what landed can actually serve" step. What was
+not small is that **the script it ports had never run against anything
+but a machine that was already set up.**
+
+`bootstrap.ps1` has existed since M0 and takes its polyrepo root from
+its own location, so every developer who ran it ran it against their own
+tree, where every idempotent skip fires and nothing is exercised. Both
+scripts now take `--root` / `-Root`, and that single parameter is what
+made an acceptance run possible at all. It is the same shape as the
+`.dev-install` decision: **an instrument that can only be pointed at the
+working case is not an instrument.**
+
+#### Three prerequisites deleted, one of them contradicting the design
+
+- **Python is no longer required.** `uv venv --python 3.12` downloads an
+  interpreter if the machine has none. The old instruction was
+  `winget install Python.Python.3.12` first.
+- **An authenticated `gh` is no longer required.** §4 has said since the
+  design was written that Path A clones over HTTPS *"so it needs no
+  authentication"*; `bootstrap.ps1` used `gh repo clone` anyway, for
+  four milestones, because nothing asserted it. That is the difference
+  between "a contributor can run this" and "a contributor needs a GitHub
+  CLI login first". Checks 3 and 13 assert it now.
+- **`pip install pre-commit` into the system Python is gone.** On most
+  current Linux distributions that interpreter is marked
+  externally-managed (PEP 668) and refuses outright — the first thing a
+  literal port of the Windows script would have died on. pre-commit
+  lives in its own environment under `.bootstrap/`.
+
+Everything the scripts install outside the repos is under
+`<root>/.bootstrap/`, so removing that directory undoes it.
+
+#### The assertion grew, because step 1 changed what "set up" means
+
+`bootstrap.ps1` asserted that the agent's virtualenv could import all
+five components, which was the whole story when it was written. It is
+not now: since step 1 the UI is a Python package, so an environment that
+imports every component and serves **no browser** is a half-installed
+dev setup that looks complete — the same gap §2.1 named, moved into the
+developer path.
+
+So `ui` is installed into the agent's virtualenv **editable**, which is
+better than the wheel for this purpose: `static_dir()` resolves into the
+checkout, and `npm run build:python` is immediately visible to a running
+agent with no reinstall. `EUGENE_PLEXUS_AGENT_UI_DIR` remains the
+override; this makes the default path work without one.
+
+`website` joins the clone list. It is not part of the control plane, but
+a repo nobody clones is a repo nobody discovers — and it is the one repo
+in the list with no `.pre-commit-config.yaml`, which check 7 asserts
+explicitly so that "no hooks anywhere" cannot read as a pass.
+
+#### `command -v npm` is not a test for a Node toolchain
+
+**Measured in WSL: `npm` resolves to `/mnt/c/Program Files/nodejs/npm`
+over Windows interop and answers `npm --version` with 11.8.0, while
+`node` is absent entirely.** An `npm install` run that way writes
+Windows-native binaries and `.bin` shims into a Linux tree. The guard
+requires both commands and refuses a toolchain reached through `/mnt/`,
+naming what it found.
+
+The acceptance script fetches a real Node into the throwaway root when
+the host has none that works, so the browser half is exercised rather
+than skipped — and it deletes with the root rather than leaving a
+toolchain on somebody's machine.
+
+#### Windows: `$ErrorActionPreference = "Stop"` and native commands
+
+**`npm` printing an ordinary `DeprecationWarning` killed `bootstrap.ps1`
+twice.** In Windows PowerShell 5.1, a native command writing to stderr
+while its output is piped raises a terminating `NativeCommandError` —
+and dropping the `2>&1` does not help, because the stderr still reaches
+the error stream. Every native call in both `bootstrap.ps1` and
+`install.ps1` now goes through one `Invoke-Native` helper that runs with
+`$ErrorActionPreference = "Continue"` and judges by the exit code, which
+is the only thing a native command actually asserts.
+
+**This was latent in `install.ps1`, which had already passed 27 checks.**
+`uv -q` happens not to print to stderr on a good day; a network retry
+warning would have killed the install with a `NativeCommandError` naming
+nothing useful. Fixed there too.
+
+#### Four checks that were wrong, and one PowerShell footgun
+
+1. **`/healthz` answers before the children exist.** Check 10 read the
+   process list the instant the agent's socket came up and found zero
+   children — true, and not what was being asked. Supervision starts
+   after the socket. It polls for the subject now.
+2. **A grep that could not tell code from prose.** Check 13 failed
+   against `bootstrap.ps1`'s own docstring, which contains the words
+   `gh repo clone` while explaining that the script no longer does it.
+   The natural "fix" is to delete the explanation. Instead: the shell
+   side strips comments, and the PowerShell side **tokenises** and looks
+   for a `gh` command token. Both were then sabotage-tested — a `gh repo
+   clone` spliced into a copy is detected, the real files stay clean.
+3. **The run directory was created as a sibling of the throwaway root**
+   and survived the cleanup. It lives inside the root now, so one `rm
+   -rf` takes everything.
+4. **`$R` and `$r` are the same variable.** PowerShell identifiers are
+   case-insensitive, so a `foreach ($r in ...)` loop silently overwrote
+   the `$R` holding the root, and a verification probe reported every
+   pre-commit hook missing when all six were installed. The subject was
+   fine; the instrument had been overwritten mid-loop. Not in the
+   shipped scripts — in the ad-hoc check written to verify them, which
+   is exactly where this family keeps appearing.
+
+#### The one that is worth remembering about `/proc`
+
+Step 3's acceptance counts processes by reading `/proc/PID/exe`, chosen
+because a command-line match caught the shell asking the question.
+Running `bootstrap.sh` showed that `exe` **resolves symlinks**, so it
+only lands inside the prefix because `install.sh` sets
+`UV_PYTHON_INSTALL_DIR` there; under `bootstrap.sh`, where uv's
+interpreter is shared and outside the tree, the same check reads zero —
+and the *negative* check ("no orphans survived") would have passed
+again. `install-acceptance.sh` now counts by **argv[0]**, which needs
+neither coincidence.

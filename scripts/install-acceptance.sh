@@ -160,18 +160,25 @@ run_posix() {
   [ "${decl:-0}" = 3 ] && ok "9. the agent declared control, gateway and library" \
                        || bad "9. agent.yaml declares ${decl:-0} components, expected 3"
 
-  # **Counted by executable, not by command line, and it took three
-  # tries to get the subject right.** A bare `pgrep -f eugene_plexus_`
-  # counted a leftover from an unrelated install in the same guest.
-  # Scoping it to `$prefix` matched nothing, because that variable holds
-  # the literal string "$HOME/..." and single quotes on the far side
-  # never expand it -- check 10 failed honestly and **check 14 passed**,
-  # since "nothing matches a pattern that matches nothing" is exactly
-  # what it asked. Expanding it then counted five, because `pgrep -f`
-  # matched the checking shell, whose own command line contains the
-  # pattern it is searching for. `/proc/PID/exe` is the executable
-  # itself, so a bash asking the question cannot answer it.
-  procs() { r "for d in /proc/[0-9]*; do readlink -f \$d/exe 2>/dev/null; done | grep -c '^$real/' || true"; }
+  # **Counted by argv[0], and it took four tries to get the subject
+  # right.** A bare `pgrep -f eugene_plexus_` counted a leftover from an
+  # unrelated install in the same guest. Scoping it to `$prefix` matched
+  # nothing, because that variable holds the literal string "$HOME/..."
+  # and single quotes on the far side never expand it -- check 10 failed
+  # honestly and **check 14 passed**, since "nothing matches a pattern
+  # that matches nothing" is exactly what it asked. Expanding it then
+  # counted five, because `pgrep -f` matches the checking shell, whose
+  # own command line contains the pattern it is searching for.
+  #
+  # `/proc/PID/exe` fixed that and introduced a quieter coupling: it
+  # resolves symlinks, so it only lands inside the prefix because
+  # install.sh sets UV_PYTHON_INSTALL_DIR there. Under `bootstrap.sh`,
+  # where uv's interpreter is shared and outside the tree, the same
+  # check reads 0 -- and check 14 would pass again. **argv[0] is the
+  # instrument that needs neither coincidence**: it is the path the
+  # process was started with, and the checking bash's own argv[0] is
+  # /bin/bash, not the pattern.
+  procs() { r "for d in /proc/[0-9]*; do tr '\\0' '\\n' < \$d/cmdline 2>/dev/null | head -1; done | grep -c '^$real/' || true"; }
   local kids
   kids=$(procs)
   [ "${kids:-0}" = 4 ] && ok "10. the agent and all three components are running" \

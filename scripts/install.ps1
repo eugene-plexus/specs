@@ -88,6 +88,21 @@ function Say  { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
 function Die  { param($m) Write-Host "error: $m" -ForegroundColor Red; exit 1 }
 
+# **Native commands and $ErrorActionPreference = "Stop" do not mix.**
+# In Windows PowerShell 5.1, an exe writing to stderr while its output
+# is piped raises a terminating NativeCommandError -- so `npm` printing
+# an ordinary DeprecationWarning killed this script twice before this
+# helper existed. The exit code is the truth about a native command;
+# stderr is not. Run them all through here.
+function Invoke-Native {
+    param([Parameter(Mandatory)][string]$Exe, [string[]]$Arguments, [string]$FailMessage)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Exe @Arguments 2>&1 | Out-Null }
+    finally { $ErrorActionPreference = $prev }
+    if ($LASTEXITCODE -ne 0 -and $FailMessage) { Die $FailMessage }
+}
+
 $IsElevated = ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -227,7 +242,7 @@ if (Test-Path $PyBin) {
     # wraps each stderr line in an ErrorRecord and, under
     # $ErrorActionPreference = "Stop", turns uv's ordinary progress
     # output into a terminating error. `-q` instead.
-    & $UvExe venv -q --python $PyVersion --python-preference only-managed $Venv
+    Invoke-Native $UvExe @("venv", "-q", "--python", $PyVersion, "--python-preference", "only-managed", $Venv)
     if (-not (Test-Path $PyBin)) { Die "could not create a virtualenv at $Venv" }
 }
 
@@ -237,8 +252,7 @@ $specs = foreach ($repo in $DIST.Keys) {
     $extra = if ($repo -eq "agent") { "[service]" } else { "" }
     "$($DIST[$repo])$extra @ https://github.com/eugene-plexus/$repo/archive/$($PIN[$repo]).tar.gz"
 }
-& $UvExe pip install -q --python $PyBin @specs
-if ($LASTEXITCODE -ne 0) { Die "package install failed" }
+Invoke-Native $UvExe (@("pip", "install", "-q", "--python", $PyBin) + $specs) "package install failed"
 
 # --- 4. VERIFY --------------------------------------------------------
 # "pip install exited 0" is not the claim. Three things can be true of a
