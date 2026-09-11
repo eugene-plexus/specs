@@ -737,3 +737,19 @@ Whatever it turns out to be, the point stands: **an architectural
 justification that had gone four milestones unmeasured is now a number,
 and the number is not the one the sentence implies.** Diagnosing it is
 its own piece of work, and the numbers to do it with now exist.
+
+**Narrowed the same night, for free.** Exercising the CLI subscription
+backends (record:
+[`cli-subscription-backends.md`](../acceptance/cli-subscription-backends.md))
+put a *subprocess* backend through the same subtraction:
+
+| backend | control-plane overhead |
+|---|---|
+| Ollama, over `openai_compat_http` | **116 ms** |
+| Claude Code, over `claude_code_cli` | **6 ms** |
+
+So the control plane is not uniformly slow, and the first candidate in
+the list above is now the likely one: the ~110 ms sits in **the HTTP
+driver path specifically** — `response.elapsed` not covering the body
+read, or work the engine does after it. A much smaller haystack, from a
+test aimed at something else entirely.
