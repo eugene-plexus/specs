@@ -1,6 +1,11 @@
 # M10 — token streaming, end to end
 
-**Status: design, 2026-09-11.** Renumbers the compute/storage-separation
+**Status: BUILT AND LIVE-VERIFIED 2026-09-11** — `inference-driver`
+`6317e11`, `gateway` `7a5eca7`, `ui` `307717c`, contracts `3df9cdc`.
+Record: [`m10-streaming-run.md`](../acceptance/m10-streaming-run.md),
+13 checks. §9 is the implementation record.
+
+**Status when written: design, 2026-09-11.** Renumbers the compute/storage-separation
 milestone to M11; that one is decided and undesigned, this one is the
 last functional hole a user meets in the first five minutes.
 
@@ -177,3 +182,44 @@ Streaming from the two CLI subscription backends needs those
 subscriptions live; `claude_code_cli` costs ~31k prompt tokens a
 request, so it is exercised once rather than in a loop. Everything else
 runs against a local llama.cpp.
+
+
+## 9. Implementation record
+
+Built as designed. The contract change really was the only one: one
+paragraph in `gateway.yaml`, radius `gateway` + `ui`.
+`inference-driver` stayed on `a0d793e` because it codegens only from its
+own document — computed, not levelled.
+
+**What the design got right.** The commit point is the whole milestone,
+and it survived contact: cascade before the first token, truncate after
+it, proved live by a stub that emits three deltas and vanishes while a
+healthy Ollama sits in the same install and is *not* spliced on.
+
+**What the design missed, in order of how much it mattered.**
+
+1. **`thinkingMode: off` could not have worked while streaming.** The
+   batch path regexes `<think>...</think>` out of a finished string,
+   which a stream cannot do — a block already forwarded cannot be
+   un-sent. `ThinkingFilter` withholds any tail that might still become
+   a tag, handles tags split across chunks and uppercase spellings, and
+   is tested on the invariant that any chunking reassembles to what the
+   batch stripper produces. Same defect shape as M8's, where one path
+   carried the routing envelope and the other did not.
+2. **A stream that stops is not a stream that finished.** See the
+   acceptance record; this is the defect the live run existed to find.
+3. **Breaking out of the consumer loop on `done` abandoned the
+   generator**, so `TieredClient` never reached the branch reporting the
+   attempt as served, and every streamed request recorded zero attempts.
+   M8's metrics went quietly blank.
+4. **`BackendEngine.stream` was typed as a coroutine**, because `async
+   def ... -> AsyncIterator` describes a function returning an iterator
+   rather than an async generator. Nine milestones old and invisible
+   because nothing called it. Now `def ... -> AsyncGenerator`, and
+   `AsyncGenerator` deliberately: cleanup on abandonment is load-bearing
+   and only `aclose()` runs the implementation's `finally`.
+
+**Unchanged from the design and worth restating:** time to first token
+is the number a streaming request actually wants, and this milestone
+does **not** record it. That is a metrics-schema change and belongs with
+the still-open decision about whether the balancer consumes any of it.
