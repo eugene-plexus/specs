@@ -799,7 +799,7 @@ components:
                 from the backend itself — not the model's trained
                 maximum, and never an estimate.
 
-                Absent means unknown, and unknown is a real answer: a
+                Null means unknown, and unknown is a real answer: a
                 hosted provider exposes nothing to read, and a CLI
                 subscription has no window of its own to report. The
                 gateway's `_smallest_context` folds this together with

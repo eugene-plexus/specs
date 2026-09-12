@@ -1550,9 +1550,11 @@ components:
           minimum: 1
           description: |
             The context window of the backend that actually answered, as
-            that backend resolved it. Absent when it does not expose one
-            — a hosted provider, a CLI subscription, or a local engine
-            that was not reachable to ask.
+            that backend resolved it. **Null** when it does not expose
+            one — a hosted provider, a CLI subscription, or a local
+            engine that was not reachable to ask. Null and not absent:
+            this envelope serializes its unset fields, as `runtime` has
+            since M0.
 
             Per-request, and therefore not the same number as
             `x_eugene_plexus.context_length` on `GET /v1/models`: that
@@ -1581,10 +1583,15 @@ components:
             `usage.prompt_tokens` **after** the answer, by a ratio
             chosen to be far below any real tokenizer's — so it cannot
             fire on a merely token-dense prompt, and it needs no
-            tokenizer of ours. Absent means not evaluated: the backend
-            reported no usage, or the prompt was too small for the test
-            to mean anything. `false` means it was checked and the input
-            arrived.
+            tokenizer of ours.
+
+            **Three states, and the difference matters.** `null` means
+            not evaluated — the backend reported no usage, or the prompt
+            was too small for the test to mean anything — and must not
+            be read as reassurance. `false` means it was checked and the
+            input arrived. `true` means it did not. Null and not absent:
+            this envelope serializes its unset fields, as `runtime` has
+            since M0.
 
             **Why a flag and not an error.** The answer has already been
             generated, and on a streamed request it has already been
