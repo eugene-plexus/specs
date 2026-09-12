@@ -470,6 +470,29 @@ alone. `POST /v1/auth/login` still works, so the way out is always open.
 
 ---
 
+## Where the models go
+
+The library runs **in this container**, so "Model directories" in its
+settings are paths inside the container — not paths on your desktop, and
+not paths on a GPU node. Map the directory you already keep models in
+(the UnRAID template calls it **Models**, `/models` inside; Compose has
+the line commented) and then add `/models` once, in the UI: **Config →
+Library → Model directories**. The files are catalogued as they are;
+nothing is renamed, hashed or moved. Downloads from Discover land in the
+first directory listed.
+
+**A GPU node launches a model by path, and that path must exist on the
+GPU node.** The library only knows where the files are on *its* host.
+Today that means one of two shapes: the library and the engine on the
+same host, or the same share mounted on the GPU node at the same path
+the library reports. Per-node path mapping — "`/models` here is
+`Z:\models` there" — is the compute/storage separation milestone and
+is not built yet; until it is, a model downloaded to the NAS is a model
+the NAS can serve, and the Inference screen will say so when a launch
+elsewhere is refused.
+
+---
+
 ## Adding a GPU machine
 
 1. In the UI, **Nodes → Add a node**. It mints a join token, good once, and

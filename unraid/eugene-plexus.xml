@@ -141,6 +141,17 @@
     Mask="false">/mnt/user/appdata/eugene-plexus</Config>
 
   <Config
+    Name="Models"
+    Target="/models"
+    Default="/mnt/user/models"
+    Mode="rw"
+    Description="Where your model files live, or should land. Map an existing share of GGUF / safetensors files here and they are catalogued as they are — nothing is renamed, hashed or moved; delete Eugene Plexus and they are still where you put them. Then, once, in the web UI: Config → Library → Model directories, add /models (the path INSIDE the container, which is what the library sees). Downloads from Discover land there. Note the library runs in this container, so this is the NAS's disk: a GPU node that launches a model needs to reach the same files at the same path, which today means the library and the engine on one host, or a share mounted on the GPU node with a matching path."
+    Type="Path"
+    Display="always"
+    Required="false"
+    Mask="false">/mnt/user/models</Config>
+
+  <Config
     Name="Passphrase file (optional)"
     Target="/run/secrets/passphrase"
     Default=""

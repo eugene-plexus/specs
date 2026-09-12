@@ -150,3 +150,51 @@ assets can.
 - **Two workers with a driver of the same name** would be labelled
   apart on Config but resolve to the first found by the proxy's
   name-keyed hop. Not this install's shape; noted.
+
+## Follow-up, the same day: the first walk through the new screens
+
+Troy updated the root, browsed to the worker, tried to remove the
+Ollama driver, installed llama.cpp there (the acquisition fix working
+live: `b10930`, `win-cuda-13.3-x64`), and went to Discover to fetch a
+model. Four things, each a distinct gap:
+
+**"Can not delete from config."** He exited the Ollama driver's process
+and the supervisor respawned it — which is what supervision is for.
+`DELETE /v1/components/{name}` has existed on the agent since M0 and
+**nothing in the UI had ever called it**. Config's driver tabs and the
+Inference rows now have *remove* (`ui` `de67528`, dist `58c0ebc`): the
+declaration goes, the process stops, what the driver fronted is
+untouched. Runtimes get the same, taking their companion driver.
+
+**"Which node am I selecting a directory for?"** Every path in a
+component's settings is a path on the host that component runs on —
+inside its container, if it runs in one — and on an install that spans
+hosts that is frequently not the machine the browser is on. Config now
+says so on every tab and labels tabs `Library @ <node>` once there is
+more than one node. The control root's own config trio gets a tab, which
+gui-equality always implied.
+
+**"…and this component will not invent one."** Unnecessary and rude, as
+reported. The refusal now names the UI path, the key, and **the machine**
+(library `d31bf5d`): *"paths on the machine the library runs on
+(db295fe9ecfd) — inside its container, if it runs in one."*
+
+**Nowhere for a container's models.** The UnRAID template had a `/data`
+mount and nothing for model files, so a fresh container install could
+not download anything until the operator invented a directory inside
+appdata. The template gains a **Models** path (`/models`), Compose has
+the line commented, and `container.md` says the one-time step.
+
+**Asked, not built — a folder picker for `path_list` fields.** Wanted;
+it needs a directory-listing endpoint on the library (this host's
+filesystem, directories only, operator-only), a contract addition, and
+a picker in the generic config editor. Brought as a proposal.
+
+**Asked, answered no — does a root library serve a worker's launches?**
+Not built. The library knows where files are on *its* host; a launch on
+the worker posts that path to the worker's agent, where it does not
+exist, and the agent refuses. That is M11, compute/storage separation
+(per-node path mapping, no transfer protocol, no node-side cache), still
+"decided and undesigned". Until then a model downloaded to the NAS is a
+model the NAS can serve. Said plainly in `container.md` now, and brought
+as the next design.

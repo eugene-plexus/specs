@@ -68,6 +68,12 @@ services:
       # request metrics, and the logs. A `docker compose down` must not
       # be the thing that loses an enrollment.
       - plexus-data:/data
+      # Your model files. Map the directory you already keep GGUF /
+      # safetensors files in; they are catalogued as they are, nothing is
+      # renamed or moved. Then add `/models` once under Config -> Library
+      # -> Model directories -- the path INSIDE the container is what the
+      # library sees. Downloads from Discover land there.
+      # - /srv/models:/models
 
     # The image sets every variable this needs; nothing is required here.
     # Two an operator may want, both added as an `environment:` block:
