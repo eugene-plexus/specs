@@ -157,6 +157,34 @@ close its metrics database and the control root does not close its log.
 as the one replacing it. The named volume is kept unless you ask for `down
 -v` — which is the one command in this document that destroys an install.
 
+**The restart leaves the trust root LOCKED, and nothing says so.** The
+control root holds the install's signing key sealed with your passphrase. On
+a host install the OS keyring opens it unattended; **a container has no
+keyring**, so it comes back initialized-but-locked after every restart --
+upgrades included -- until somebody signs in. Until then the gateway cannot
+read the install's topology, so it routes nothing.
+
+**Every surface reports healthy while this is true.** Measured on a real
+restart: the agent, gateway and control root all answer `/healthz` with
+`"status":"ok"`, and the control root's own health even reports
+`initialized: true`, `nodes: 2`, `epoch: 1`, `safeMode: false` -- the log is
+intact, only the seal is shut. `GET /v1/models` comes back with an empty
+`data` array and no explanation. The only surface that says what is wrong is
+the control root's own API, which 503s every path with `Locked`:
+
+```sh
+curl -s http://<control-host>:8083/v1/nodes | head -c 200
+# {"detail":{... "title":"Locked", "status":503,
+#   "detail":"This control root is initialized but locked ..."}}
+```
+
+**Open the UI and sign in.** That calls `POST /v1/auth/login` on the control
+root, which is what the 503 asks for. There is no environment variable or
+file that supplies the passphrase unattended -- verified, none exists -- so an
+unattended restart of this container always needs a human afterwards. Plan
+restarts accordingly, and check `/v1/models` is non-empty before believing an
+upgrade landed.
+
 **Then check what you actually got, from the outside.** A green build log says
 the packages installed, not that the running container is serving them — and
 the whole point of a pinned upgrade is a capability that was not there before.
