@@ -57,6 +57,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Check 5 reads the agent's own `_COMPONENT_SPECS` to derive which
+      # `<KIND>_BIND_HOST` variables the image must set, rather than
+      # trusting a list in the Dockerfile comment. Without the agent
+      # source it skips -- which it did on the first run here, quietly
+      # turning "18 checks" into 17.
+      #
+      # Cloned at the commit `install.sh` pins, so the check is made
+      # against the same agent that is going into the image. A newer
+      # `main` would be asking the wrong question.
+      - name: Check out the agent at the pinned commit
+        run: |
+          set -euo pipefail
+          pin=$(grep '^PIN_AGENT=' scripts/install.sh | cut -d= -f2)
+          echo "agent pin: $pin"
+          git clone --quiet --filter=blob:none --no-checkout             https://github.com/eugene-plexus/agent.git "$RUNNER_TEMP/agent"
+          git -C "$RUNNER_TEMP/agent" checkout --quiet "$pin"
+          echo "EP_AGENT_SRC=$RUNNER_TEMP/agent/src/eugene_plexus_agent" >> "$GITHUB_ENV"
+
       - name: Build and verify the image (18 checks)
         run: bash scripts/compose-acceptance.sh
 
