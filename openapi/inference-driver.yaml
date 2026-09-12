@@ -263,6 +263,70 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/embed:
+    post:
+      tags: [inference]
+      operationId: embed
+      summary: Turn text into vectors on the configured backend.
+      description: |
+        The embeddings counterpart to `POST /v1/generate`, and the same
+        shape of thing: the caller supplies text, the driver translates
+        into whatever wire protocol its backend speaks, and owns no
+        state.
+
+        **Always float arrays, never base64.** OpenAI's `/v1/embeddings`
+        lets a client ask for base64, and the OpenAI SDKs use it by
+        default — but that is a *transport* encoding, and making every
+        driver support it would mean depending on each backend to honour
+        a parameter some ignore. So this surface speaks one shape and
+        the gateway encodes on the way out, which makes the
+        client-visible behaviour identical regardless of what the
+        backend underneath happens to support.
+
+        **The capability is a property of the running backend, not of
+        the model**, and it cannot be read off anything — measured
+        2026-09-12: `llama-server`'s `/props` exposes no pooling or
+        embedding field at all, and an Ollama runner started for chat
+        answers `This server does not support embeddings. Start it with
+        --embeddings`. So a driver determines it by *trying*, once, and
+        reports the result as `capabilities.embeddings` on `/v1/info`.
+        The negative case is cheap: llama.cpp refuses a non-pooling
+        model in 45 ms, before any compute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmbedRequest'
+      responses:
+        '200':
+          description: Vectors produced.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmbedResponse'
+        '400':
+          description: |
+            This backend cannot embed, or rejected the request in a way
+            another backend would reject identically. Does not cascade.
+            A driver whose `capabilities.embeddings` is false fails here
+            rather than returning something that is not an embedding.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '500':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '502':
+          description: |
+            Upstream backend error, or a refusal worth retrying
+            elsewhere (`408`, `409`, `425`, `429`). Cascades — but only
+            across replicas of the SAME model; see `gateway.yaml`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/info:
     get:
       tags: [meta]
@@ -726,6 +790,61 @@ components:
           type: integer
           minimum: 0
 
+    EmbedRequest:
+      type: object
+      description: |
+        Text to embed. Batched because every backend that does this
+        accepts a batch, and a per-item round trip would multiply the
+        control plane's own overhead by the size of a document set.
+      required:
+        - input
+      properties:
+        input:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: |
+            One entry per vector to produce. Order is preserved: the
+            n-th vector in the response is the n-th input, which is the
+            only thing that lets a caller match them up, since an
+            embedding carries no identity of its own.
+        requestId:
+          type: string
+          description: Correlation id, echoed back. Same role as on `GenerateRequest`.
+
+    EmbedResponse:
+      type: object
+      required:
+        - embeddings
+      properties:
+        embeddings:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+          description: |
+            One vector per input, in the order the inputs arrived.
+            Floats, always — see the operation description for why this
+            surface does not carry base64.
+        modelId:
+          type: string
+          description: |
+            The model that produced these vectors, as the backend named
+            it. **Load-bearing beyond attribution:** vectors from two
+            models are not comparable, so a caller storing them needs to
+            know which model's space they belong to.
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        usage:
+          $ref: '#/components/schemas/Usage'
+        latencyMs:
+          type: integer
+          minimum: 0
+        requestId:
+          type: string
+
     DriverInfo:
       type: object
       description: |
@@ -791,6 +910,24 @@ components:
                 or the backend never saw the tools. A driver that says
                 `false` here is failed at the front door with a reason
                 instead.
+            embeddings:
+              type: boolean
+              description: |
+                Whether this driver can serve `POST /v1/embed`.
+
+                **A property of the running backend, not of the model**,
+                and not readable from anything: `llama-server`'s
+                `/props` carries no pooling or embedding field, and an
+                Ollama runner started for chat refuses with "This server
+                does not support embeddings". So it is determined by
+                trying once and cached for the driver's lifetime — which
+                is the right lifetime, since it cannot change without
+                the backend restarting.
+
+                The gateway reads it to mark which surface each model
+                serves on `GET /v1/models`, and to refuse a chat request
+                against an embeddings-only model with a reason instead
+                of passing it down to fail obscurely.
             maxContextTokens:
               type: integer
               minimum: 0
