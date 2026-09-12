@@ -318,7 +318,21 @@ paths:
                   these, terminated by a literal `data: [DONE]`. The
                   schema names the frame, not the whole body.
         '400':
-          description: Malformed request.
+          description: |
+            The request cannot be served as asked, and no backend would
+            serve it differently — so it is refused here rather than
+            cascaded. Three ways to get one: a malformed body; `tools`
+            for a model no backend can carry them to; or a backend that
+            rejected the request itself, which most often means **a
+            prompt longer than the context window**.
+
+            The last is passed through verbatim, and deliberately: an
+            engine that counts tokens knows exactly how many the prompt
+            had and exactly how many fit, and says both. That is a
+            better answer than any estimate this layer could make, and
+            it arrives as a 400 rather than the retryable 502 it used to
+            be — a difference that decides whether a harness fixes the
+            prompt or retries the same one forever.
           content:
             application/json:
               schema:
@@ -1531,6 +1545,54 @@ components:
           description: |
             How long the request waited for a runtime to reach `ready`
             before being sent. Zero when nothing had to be woken.
+        context_length:
+          type: integer
+          minimum: 1
+          description: |
+            The context window of the backend that actually answered, as
+            that backend resolved it. Absent when it does not expose one
+            — a hosted provider, a CLI subscription, or a local engine
+            that was not reachable to ask.
+
+            Per-request, and therefore not the same number as
+            `x_eugene_plexus.context_length` on `GET /v1/models`: that
+            one is the smallest across every backend serving the name,
+            because a request may land on any of them. This one is the
+            window that applied to *this* request, which is what makes a
+            truncated answer explicable after the fact.
+        prompt_truncated:
+          type: boolean
+          description: |
+            **The backend silently dropped input.** True when the prompt
+            we sent was far larger than the token count the backend
+            reported consuming — the signature of a server that fits an
+            over-long prompt into the window by discarding the middle of
+            the conversation and answering anyway, with a 200 and no
+            flag of its own.
+
+            This is the failure that makes a coding harness loop: it
+            sends file contents, the model never receives them, and the
+            confident answer that comes back is about code nobody read.
+            Measured on this project's own hardware: 66,389 characters
+            across six messages came back as `prompt_tokens: 86`, HTTP
+            200, nothing anywhere saying so.
+
+            Detected, not predicted. It is computed from
+            `usage.prompt_tokens` **after** the answer, by a ratio
+            chosen to be far below any real tokenizer's — so it cannot
+            fire on a merely token-dense prompt, and it needs no
+            tokenizer of ours. Absent means not evaluated: the backend
+            reported no usage, or the prompt was too small for the test
+            to mean anything. `false` means it was checked and the input
+            arrived.
+
+            **Why a flag and not an error.** The answer has already been
+            generated, and on a streamed request it has already been
+            delivered — M10's rule is that a stream cannot be unsent.
+            Failing one path and flagging the other would make the same
+            condition report two different ways, so both flag. A backend
+            that refuses instead of truncating needs none of this: its
+            refusal is exact and is passed straight through as a 400.
 
     RoutingTableView:
       type: object
