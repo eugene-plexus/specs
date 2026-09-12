@@ -1,0 +1,117 @@
+# Eugene Plexus — the control plane on an ordinary VM. Install-paths §9 step 5, Path C.
+#
+#   docker compose -f docker/compose.yaml up -d --build
+#
+# ONE SERVICE, NOT FOUR, AND THAT IS THE POINT. The container runs the
+# node agent, which declares and supervises the control root, the
+# gateway and the model library exactly as it does on bare metal. See
+# the Dockerfile for why splitting them into four services would be
+# fighting the architecture rather than using it.
+#
+# THE GPU BOXES ARE NOT IN THIS FILE. They cannot be: §1 — the agent
+# must run on the host that has the GPU, the engine binaries and the
+# user's own model directories. Each one runs `install.sh` and joins
+# this control plane over the network. That is the same two-host
+# topology `scripts/m7-acceptance.sh` proved on real hardware; only its
+# packaging was missing. There is a worked example at the bottom.
+#
+# ▲ THIS PUBLISHES AN UNAUTHENTICATED FIRST-RUN WIZARD ON EVERY
+#   INTERFACE, and it has to, because a control plane worker nodes
+#   cannot reach is not one. Until somebody completes first-run, the
+#   first person to open :8079 sets the passphrase and owns the install.
+#   Either finish the wizard immediately, or bind the published ports to
+#   an address only you can reach first — prefix each with a host
+#   address, e.g. "100.64.0.1:8079:8079" for a tailnet, or
+#   "127.0.0.1:8079:8079" plus an SSH tunnel while you set it up.
+
+name: eugene-plexus
+
+services:
+  control-plane:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: eugene-plexus/control-plane:0.1
+    container_name: eugene-plexus-control-plane
+
+    # **`init` is not optional here.** The agent is a supervisor, so
+    # PID 1 in this container has children — and a PID 1 that does not
+    # reap leaves zombies behind every engine restart and every
+    # component bounce. tini reaps, and forwards SIGTERM to the agent so
+    # the graceful path below actually happens.
+    init: true
+
+    restart: unless-stopped
+
+    # Longer than the runtime's 10s default on purpose. On SIGTERM the
+    # agent runs its ASGI lifespan shutdown, which asks each component
+    # to stop in turn — that is where the gateway closes its metrics
+    # database and the control root closes its replicated log. Killing
+    # it at 10 seconds would turn an ordinary `docker compose down` into
+    # the hard kill that install-paths §12 step 2 went to some trouble
+    # to avoid.
+    stop_grace_period: 60s
+
+    ports:
+      # The web UI and the browser's pass-through to every component.
+      - "8079:8079"
+      # The OpenAI-compatible endpoint. This is the one your tools point at.
+      - "8080:8080"
+      # The control root: where worker nodes enroll, and where a warm
+      # standby follows the log. Nothing else needs it.
+      - "8083:8083"
+      # 8082 (library) is intentionally absent — see the Dockerfile.
+
+    volumes:
+      # Everything that outlives the container: the install's identity
+      # and enrollment, the trust root's replicated log, retained
+      # request metrics, and the logs. A `docker compose down` must not
+      # be the thing that loses an enrollment.
+      - plexus-data:/data
+
+    # The image sets every variable this needs; nothing is required here.
+    # Two an operator may want, both added as an `environment:` block:
+    #
+    #   EUGENE_PLEXUS_AGENT_SAFE_MODE=1
+    #     Recovers an install whose agent.yaml will not parse. The config
+    #     endpoints stay reachable so the UI can fix it.
+    #
+    #   EUGENE_PLEXUS_AGENT_BIND_PORT=8079
+    #     Only if 8079 collides with something already on the VM. Change
+    #     the published port above to match.
+    #
+    # **There is no EUGENE_PLEXUS_AGENT_ADVERTISE_URL**, and looking for
+    # one is the obvious first move. `advertiseUrl` — the address OTHER
+    # machines reach this host at — is a config field, not a startup
+    # setting: set it in the UI under Node, or put `advertiseUrl:` in
+    # /data/agent.yaml before the first start. Leaving it unset is right
+    # for a single-container install and for workers that only ever call
+    # in, which is the common case; set it once a worker needs to be
+    # called back, or a standby needs to find this root.
+
+volumes:
+  plexus-data:
+
+# ---------------------------------------------------------------------
+# Adding a GPU box
+#
+# On the machine with the GPU — bare metal, not a container:
+#
+#   1. In the UI on this host, Nodes -> Add a node. Copy the command.
+#      It mints a join token that is good once.
+#
+#   2. On the GPU machine:
+#
+#        curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.sh \
+#          | sh -s -- --join http://<this-host>:8083 --token <jwt>
+#
+#      Windows GPU boxes use install.ps1 -Join / -Token. The machine
+#      enrolls, adopts the install's signing key, and declares no
+#      control plane of its own.
+#
+#   3. Back in the UI: launch a runtime on that node. The agent there
+#      declares a companion inference-driver for it, the gateway joins
+#      driver to runtime by name and starts routing.
+#
+# Nothing about that flow is container-specific, which is the point of
+# running an agent in here too.

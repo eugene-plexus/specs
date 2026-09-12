@@ -30,20 +30,22 @@ Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-
 
 ## Current status
 
-As of **2026-09-11**, this is a pre-1.0 control plane under active development. Milestones M0 through M9 are built, and each has a re-runnable acceptance script rather than a claim.
+As of **2026-09-11**, this is a pre-1.0 control plane under active development. Milestones M0 through M10 are built, and each has a re-runnable acceptance script rather than a claim. Installers, a developer bootstrap and a control-plane container image exist; nothing is published to a registry yet.
 
 - **Live-verified on real hardware:** llama.cpp *and* vLLM supervision, model scanning and profiles, catalogue search and resumable downloads, quant guidance, replica balancing, priority-tier failover, idle unload, wake on demand, memory admission, and retained per-request metrics.
 - **Multi-host is proven on two real machines** (Windows + WSL2 Ubuntu, across NAT and a host firewall): non-loopback binds, derived advertise addresses, a cross-host completion, an idle unload decided on one host and executed on the other, and a full signing-key rotation. Enrollment, un-enrollment and address re-advertisement all run from a terminal on the machine being added.
 - **The browser path is verified too**, as of M9: Playwright drives first run, login, restart-on-login and the topology-resolved proxy against a live install.
 - **Still unverified:** a rotation with a genuinely offline node, clock skew between hosts, a partitioned-but-alive old control root, two-GPU placement, and AMD/Intel/Apple memory detection. **MLX has no adapter** — it is the last engine named above that is not implemented.
-- **Known gaps:** a short post-unload routing window found by M7 and never diagnosed; ~116 ms of HTTP-driver-path overhead, measured but not explained; rolling engine upgrades; and, in the UI, no structured model-slot editor and only one control-root screen (`/nodes`). The agent still serves the UI assets; moving them to the control root is undecided.
+- **The gateway cannot carry a tool call.** `ChatCompletionRequest` has no `tools`, no `tool_choice`, no `response_format` and there is no `/v1/embeddings`, so agent harnesses cannot work against it yet. That is the next piece of work.
+- **Known gaps:** a short post-unload routing window found by M7 and never diagnosed; ~116 ms of HTTP-driver-path overhead, measured but not explained; rolling engine upgrades; and, in the UI, no structured model-slot editor and only one control-root screen (`/nodes`).
 
 Records: [M9](docs/acceptance/m9-onboarding-run.md) ·
 [M7 on two hosts](docs/acceptance/m7-two-host-run.md) ·
 [M4 vLLM](docs/acceptance/m4-vllm-run.md) ·
 [M8 metrics](docs/acceptance/m8-metrics-run.md) ·
 [M6](docs/acceptance/m6-six-process-run.md).
-Deploying over a tailnet: [`docs/deployment/tailnet.md`](docs/deployment/tailnet.md).
+Deploying over a tailnet: [`docs/deployment/tailnet.md`](docs/deployment/tailnet.md) ·
+in a container: [`docs/deployment/container.md`](docs/deployment/container.md).
 
 ## Layout
 
@@ -145,6 +147,22 @@ pinned commits. See
 [`docs/design/install-paths-and-distribution.md`](docs/design/install-paths-and-distribution.md)
 §6.1 and §12 for why, and for what is verified and what is not — macOS and the
 Windows service are written but have not been run.
+
+### Or in a container, for the control plane
+
+The control plane runs on an ordinary VM or NAS while the GPU machines stay on
+bare metal and join it over the network:
+
+```sh
+docker compose -f docker/compose.yaml up -d --build
+```
+
+One service, not four: the container runs a node agent that supervises the
+control root, gateway and library, exactly as it does on a host. There is no
+GPU and no engine in the image, deliberately.
+[`docs/deployment/container.md`](docs/deployment/container.md) has the
+without-Compose commands (UnRAID, Synology, plain Docker), the port table, and
+what is verified so far.
 
 ## Setting up a dev environment
 

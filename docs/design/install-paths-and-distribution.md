@@ -1,12 +1,12 @@
 # Install paths and distribution
 
-**Status: §9 steps 1-4 are BUILT AND LIVE-VERIFIED (2026-09-11);
-steps 5-9 are still design.** Written before any implementation so a later session
+**Status: §9 steps 1-4 are BUILT AND LIVE-VERIFIED, and step 5 is BUILT
+with its runtime half unrun (2026-09-11); steps 6-9 are still design.** Written before any implementation so a later session
 could pick it up cold. Every claim marked *verified* was checked against
 a repo, a registry or upstream on the day of writing; everything else is
 reasoning and is marked as such. **§12 is the implementation record and
-is the pickup point; step 5 (the Compose file and image) is next. Every
-decision in the table below is taken.**
+is the pickup point; step 6 (tool calling, the thesis work) is next.
+Every decision in the table below is taken.**
 
 Precedes a release, deliberately. Publishing an installable thing whose
 only install is a Windows developer script would bake the gap in.
@@ -441,7 +441,13 @@ into, rather than the unclaimed one. See
    never been run against anything but an already-working tree, so both
    halves gained a `--root` and an acceptance run; and that porting it
    literally would have died on PEP 668.
-5. **Compose file and image** for the control plane. Path C.
+5. ~~**Compose file and image** for the control plane. Path C.~~
+   **BUILT 2026-09-11, runtime half UNRUN — see §12.** It needed no
+   agent change at all: five `BIND_HOST` variables in the image reach
+   every component through the supervisor's `os.environ.copy()`. There
+   is no container runtime on the development machine, so the image has
+   never been built; `scripts/compose-acceptance.sh` runs nine
+   structural checks and skips eight runtime ones, loudly.
 6. **Tool calling, end to end** —
    [`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md)
    §5 items 1-2. **The thesis work.** Nothing in that document matters
@@ -573,8 +579,8 @@ is not a reason.
 ## 12. Implementation record
 
 Record what was built, what departed from this design, and why, as each
-step of §9 lands. **Steps 5-9 are unbuilt; step 5 (the Compose file and
-image for the control plane) is the pickup point.**
+step of §9 lands. **Steps 6-9 are unbuilt; step 6 — tool calling end to
+end, the thesis work — is the pickup point.**
 
 ### Step 1 — the proxy moved, and the UI ships as a wheel. DONE 2026-09-11.
 
@@ -1184,3 +1190,121 @@ interpreter is shared and outside the tree, the same check reads zero —
 and the *negative* check ("no orphans survived") would have passed
 again. `install-acceptance.sh` now counts by **argv[0]**, which needs
 neither coincidence.
+
+### Step 5 — the control plane in a container. BUILT 2026-09-11; the runtime half is UNRUN.
+
+specs: `docker/Dockerfile`, `docker/compose.yaml`,
+`docs/deployment/container.md`, `scripts/compose-acceptance.sh`.
+**9 structural checks pass; 8 runtime checks have not been run**, because
+there is no container runtime on this machine — no docker or podman on
+Windows or in WSL, and `sudo` in WSL needs a password no non-interactive
+session can supply. Troy has an UnRAID server with Docker and will close
+them there; `docs/deployment/container.md` is the instruction set.
+
+Said plainly rather than left to be inferred from a green run: **the
+image has never been built and the container has never started.**
+
+#### What the container needs turned out to be nothing at all
+
+The expectation going in was an agent change. A component binds `0.0.0.0`
+only when its node advertises a non-loopback address, and inside a
+container there is no address to advertise at build time and no config
+file to write one into — so the obvious move was a new
+`EUGENE_PLEXUS_AGENT_ADVERTISE_URL` bootstrap setting, threaded through
+the eight places that resolve an advertise URL.
+
+**It was unnecessary.** Every component already takes
+`EUGENE_PLEXUS_<KIND>_BIND_HOST`, and the supervisor spawns children with
+`os.environ.copy()` — so five variables in the image reach every
+component without the agent knowing containers exist. Verified as a plain
+process before the Dockerfile was written:
+
+```
+0.0.0.0:8079  eugene-plexus-agent
+0.0.0.0:8080  python -m eugene_plexus_gateway
+0.0.0.0:8082  python -m eugene_plexus_library
+0.0.0.0:8083  python -m eugene_plexus_control
+```
+
+**And it is better than the config route, not merely cheaper.**
+`tailnet.md` calls setting the advertise address before the first start
+*"the single most important instruction in this document"*, because
+enrollment deliberately does not restart the control root — so an
+address discovered late leaves the trust root on loopback in an install
+that otherwise looks healthy. The container cannot make that mistake:
+its environment is fixed before the first process starts.
+
+**The generalisation worth keeping:** the same five variables are the
+answer for any headless install, not just a containerised one. They are
+not in `tailnet.md`, which teaches the config-file route and its
+ordering trap instead. Worth adding there; not done here.
+
+#### The image is `install.sh`, not a reimplementation of it
+
+§4 says Path C's image is "Path B's install with no GPU and no engines",
+and the Dockerfile executes that sentence rather than restating it:
+`RUN sh /tmp/install.sh --prefix /opt/eugene-plexus --no-service
+--no-start`. The six pinned commits stay in exactly one file, a version
+bump is one edit, and **install.sh's own verification step runs at build
+time** — so a broken pin fails the build rather than somebody's first
+boot. The base is `debian:trixie-slim` with only `curl` and
+`ca-certificates` added: uv brings its own Python, so the image needs no
+system interpreter, no toolchain and no pip.
+
+#### One service, and the two flags that are easy to drop
+
+`init: true` and `stop_grace_period: 60s` are both load-bearing and both
+look like boilerplate. The agent is a supervisor, so PID 1 has children
+and something must reap them; and on SIGTERM it runs the lifespan
+shutdown where the gateway closes its metrics database and the control
+root closes its replicated log. The runtime's 10-second default would
+turn `docker compose down` into exactly the hard kill step 2 went to some
+trouble to avoid.
+
+`8082` is deliberately unpublished — the browser reaches the library
+through the agent's proxy on 8079 — and the Compose file carries a
+visible warning that publishing an un-set-up control plane means the
+first person to reach `:8079` sets the passphrase and owns the install.
+That is a real consequence of the audience (worker nodes must reach it)
+rather than an oversight, so it is badged the way §7's Vulkan
+degradation is.
+
+#### An UnRAID-specific hazard, tested before it could waste anyone's time
+
+Engine binaries live under `$HOME/.eugene-plexus/engines`, not under the
+config directory — and UnRAID's idiomatic `--user 99:100` is a uid with
+no passwd entry in this image, so `$HOME` may not be writable. Measured:
+the agent comes up healthy and supervises all three components with
+`$HOME` pointed at a directory it cannot write, with no permission error
+anywhere in its log. So both uid strategies work; what `--user 99:100`
+loses is engine acquisition, and this container has no GPU to run an
+engine on. Both are documented, with the `chown` to 10001 recommended.
+
+#### The acceptance is split, and the structural half earns its keep
+
+Nine checks need no runtime, and two of them derive what they expect
+from the agent's own source rather than restating it:
+
+- **Check 5** reads the `env_prefix` values out of `supervisor.py`'s
+  `_COMPONENT_SPECS` and requires a `BIND_HOST` in the Dockerfile for
+  each. A component kind added later fails here rather than coming up on
+  loopback inside somebody's container.
+- **Check 3** cross-checks two files: the directory of the config path
+  the Dockerfile sets against the mount point the Compose file declares.
+  Moving one without the other produces a container that starts, works,
+  and loses everything on recreate.
+
+Both were sabotage-tested — one `BIND_HOST` removed and the config path
+moved — and each failed naming exactly what was wrong.
+
+#### Three of my own checks were wrong again
+
+1. **Windows Python cannot open `/d/py/...`.** The script computes paths
+   in Git Bash and handed them to the Windows `python` on PATH, so all
+   four Compose checks failed with a `FileNotFoundError` wearing a
+   check's clothes. Converted once through `cygpath -m`.
+2. **A malformed glob.** `*[!:]` in a `case` produced `grep: Unmatched [`
+   and a check that fell through both branches.
+3. **`printf '...\$USER...'`** prints a literal backslash, so the
+   remediation command the skip message hands the operator was not
+   copy-pasteable.
