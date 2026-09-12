@@ -197,8 +197,10 @@ if ($Uninstall) {
     # the uninstall and would have pointed the next hand-started agent
     # at a prefix that no longer exists.
     [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $null, "User")
+    [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_HOST", $null, "User")
     if ($IsElevated) {
         [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $null, "Machine")
+        [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_HOST", $null, "Machine")
     }
     if (Test-Path $Prefix) {
         # agent.yaml and node.yaml are the install's identity and logs\
@@ -323,6 +325,7 @@ if (-not (Test-Path $AgentEx)) { Die "the eugene-plexus-agent command did not in
 Say "all six packages present, with a web UI"
 
 # --- 4b. join, if this machine is a worker -----------------------------
+$joined = $false
 # **The installer owns the one onboarding question, because this is the
 # only moment a human is reliably present.** See the task action below
 # for what went wrong when that was left to the agent.
@@ -335,6 +338,19 @@ if ($Join) {
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @joinArgs
     if ($LASTEXITCODE -ne 0) { Die "enrollment failed; nothing was started" }
+
+    # **A node that advertises an address must be reachable at it.**
+    # Found on the first enrollment between two genuinely separate
+    # machines: the worker advertised its LAN address, bound 127.0.0.1,
+    # and the control root could not call back -- so the union topology
+    # view, idle unload and start-on-demand would all have failed while
+    # enrollment itself looked perfect, because enrollment is outbound
+    # and nothing here tests the other direction.
+    #
+    # Joining is exactly the moment that stops being optional. A
+    # single-machine install still gets loopback, which is the
+    # conservative default and the reason the rule exists at all.
+    $joined = $true
 } elseif ($Token) {
     Die "-Token needs -Join <control-root-url>"
 }
@@ -383,9 +399,18 @@ if (-not $NoService) {
 
 # The config path has to reach the process however it is started. A task
 # inherits the user environment; a service reads the machine one, set
-# above.
+# above. Same for the wide bind on a joined node -- and in the current
+# process too, because the agent is started a few lines below and would
+# otherwise come up on loopback until the next restart.
 [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $Config, "User")
 $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
+if ($joined) {
+    [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_HOST", "0.0.0.0", "User")
+    if ($IsElevated) {
+        [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_HOST", "0.0.0.0", "Machine")
+    }
+    $env:EUGENE_PLEXUS_AGENT_BIND_HOST = "0.0.0.0"
+}
 
 # --- 6. start ---------------------------------------------------------
 if (-not $NoStart -and $autostart -ne "none") {

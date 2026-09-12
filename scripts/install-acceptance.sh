@@ -369,7 +369,14 @@ PY
 }
 
 # ---------------------------------------------------------------------
-POSIX_SCRIPT="${EP_POSIX_SCRIPT:-/tmp/ep-install.sh}"
+# Staged under /var/tmp, not /tmp, and that is not fussiness. In WSL
+# `/tmp` is tmpfs AND the distro is terminated when it goes idle, so the
+# copied script evaporates partway through a run -- check 15 failed with
+# "cannot open" while check 3 had used the same file minutes earlier.
+# It had worked all day only because a leftover agent process happened
+# to keep the distro alive; removing that stray process broke the
+# instrument, not the thing under test.
+POSIX_SCRIPT="${EP_POSIX_SCRIPT:-/var/tmp/ep-install.sh}"
 
 case "${EP_MODE:-auto}" in
   posix|auto)

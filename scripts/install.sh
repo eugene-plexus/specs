@@ -60,6 +60,7 @@ JOIN_CONTROL=
 JOIN_TOKEN=
 JOIN_NAME=
 JOIN_ADVERTISE=
+JOINED=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -260,11 +261,32 @@ if [ -n "$JOIN_CONTROL" ]; then
     if [ -n "$JOIN_NAME" ]; then set -- "$@" --name "$JOIN_NAME"; fi
     if [ -n "$JOIN_ADVERTISE" ]; then set -- "$@" --advertise "$JOIN_ADVERTISE"; fi
     EUGENE_PLEXUS_AGENT_CONFIG_FILE=$CONFIG "$VENV/bin/eugene-plexus-agent" "$@"         || die "enrollment failed; nothing was started"
+    # **A node that advertises an address must be reachable at it.**
+    # Found on the first enrollment between two genuinely separate
+    # machines: the worker advertised its LAN address, bound 127.0.0.1,
+    # and the control root could not call back -- so the union topology
+    # view, idle unload and start-on-demand would all have failed while
+    # enrollment itself looked perfect, because enrollment is outbound.
+    # Joining is exactly the moment that stops being optional, so the
+    # unit written below binds wide. A single-machine install still gets
+    # loopback, which is the conservative default and the reason the
+    # rule exists.
+    JOINED=1
 elif [ -n "$JOIN_TOKEN" ]; then
     die "--token needs --join <control-root-url>"
 fi
 
 # --- 5. service -------------------------------------------------------
+
+# Set once, used by both unit writers below.
+if [ "$JOINED" = 1 ]; then
+    WIDE_BIND_UNIT="Environment=EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0"
+    WIDE_BIND_PLIST="
+        <key>EUGENE_PLEXUS_AGENT_BIND_HOST</key><string>0.0.0.0</string>"
+else
+    WIDE_BIND_UNIT="# this install is single-machine; the agent stays on loopback"
+    WIDE_BIND_PLIST=""
+fi
 
 write_systemd_unit() {
     mkdir -p "$(dirname "$SYSTEMD_UNIT")"
@@ -279,6 +301,7 @@ Wants=network-online.target
 Type=exec
 WorkingDirectory=$PREFIX
 Environment=EUGENE_PLEXUS_AGENT_CONFIG_FILE=$CONFIG
+$WIDE_BIND_UNIT
 ExecStart=$VENV/bin/eugene-plexus-agent --unattended
 Restart=on-failure
 RestartSec=5
@@ -308,7 +331,7 @@ write_launchd_plist() {
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>EUGENE_PLEXUS_AGENT_CONFIG_FILE</key><string>$CONFIG</string>
+        <key>EUGENE_PLEXUS_AGENT_CONFIG_FILE</key><string>$CONFIG</string>$WIDE_BIND_PLIST
     </dict>
     <key>WorkingDirectory</key><string>$PREFIX</string>
     <key>RunAtLoad</key><true/>
