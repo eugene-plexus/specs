@@ -12,7 +12,7 @@ listening socket on the public internet. That matters here because
 Eugene Plexus is a *networked* control plane — a gateway on your desktop
 routing to a GPU box in another building is the shape it was built for —
 and because **nothing in it is written to survive the open internet.**
-See [What not to expose](#what-not-to-expose); that sentence is load
+See [What not to expose](#5-what-not-to-expose); that sentence is load
 bearing.
 
 This document covers Tailscale by name because it is what the project is
@@ -35,7 +35,7 @@ addresses.
 One **agent per machine**. One **control root** in the whole install, plus
 any number of warm standbys. One **gateway**, which is the address you
 point clients at. **Engines never leave loopback** — see
-[Engines are never widened](#engines-are-never-widened).
+[Engines are never widened](#3-engines-are-never-widened).
 
 ---
 
@@ -50,18 +50,22 @@ tailscale ip -4          # e.g. 100.64.0.1
 
 **Set the advertise address before the first start.** This is the single
 most important instruction in this document, and it cost an hour to
-discover:
-
-```bash
-export EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0
-```
-
-and put the address in the agent's config so it survives restarts —
+discover. It goes in the agent's config so it survives restarts —
 `agent.yaml`, beside wherever you point `EUGENE_PLEXUS_AGENT_CONFIG_FILE`:
 
 ```yaml
 advertiseUrl: http://100.64.0.1:8079
 ```
+
+**That one line is the whole of it.** A machine that advertises a
+non-loopback address binds one — the agent *and* every component it
+spawns — so there is no separate "listen wide" switch to remember.
+
+That was not true before 2026-09-11. The rule governed the components
+and not the agent itself, so a machine could advertise an address
+nothing was listening on and look healthy from every direction except
+the one that mattered. Against an agent older than that, also
+`export EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0`.
 
 Then start it:
 
@@ -77,10 +81,11 @@ first-run wizard: set a passphrase, point at your model directories.
 
 ### Why the advertise address must be set *first*
 
-A component binds `0.0.0.0` **only when its node advertises a
-non-loopback address.** That rule is what keeps a single-machine install
-from putting four services on every interface it has, and it is
-evaluated when a component is spawned.
+The agent, and every component it spawns, binds `0.0.0.0` **only when
+this node advertises a non-loopback address.** That rule is what keeps a
+single-machine install from putting five services on every interface it
+has, and it is evaluated once per process start — for a component when
+it is spawned, for the agent when it opens its own socket.
 
 Enrollment deliberately **does not restart the control root** — it is the
 trust root, and bouncing it during a trust operation is exactly the wrong
@@ -91,6 +96,39 @@ machine, in an install that otherwise looks healthy.
 
 If you have already made that mistake: set `advertiseUrl`, then restart
 the agent. The control root comes back wide with everything else.
+
+### A machine with nowhere to write a config file
+
+A container has no `agent.yaml` at image-build time and no address until
+it is running, and a hand-built service unit may have neither. For those,
+**five environment variables say "bind wide" directly**, skipping the
+advertise-address rule rather than feeding it:
+
+```bash
+EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0
+EUGENE_PLEXUS_CONTROL_BIND_HOST=0.0.0.0
+EUGENE_PLEXUS_GATEWAY_BIND_HOST=0.0.0.0
+EUGENE_PLEXUS_LIBRARY_BIND_HOST=0.0.0.0
+EUGENE_PLEXUS_DRIVER_BIND_HOST=0.0.0.0
+```
+
+Five and not one: each component reads its own, and the agent passes
+them through because it spawns children with `os.environ.copy()`. This
+is what [the container image](container.md) does, and it is why that
+image needed no code change to work — it was expected to need a new
+advertise-URL variable threaded through eight call sites, and did not.
+
+**It is also strictly safer than the config route for a headless
+install**, which is the part that is easy to miss. Setting the advertise
+address late strands the control root on loopback, because enrollment
+deliberately does not restart it; an environment variable is read at
+every process start, so there is no ordering to get wrong and no
+"already made that mistake" to recover from.
+
+**These are the topmost override.** Set explicitly, they win over what
+the node advertises — including a value that will not work, such as
+`127.0.0.1` on a machine other machines need to reach. That is
+deliberate: an expert naming an interface gets that interface.
 
 ---
 
@@ -104,7 +142,6 @@ screen renders the exact command. On B:
 
 ```bash
 tailscale up
-export EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0
 eugene-plexus-agent join \
   --control http://100.64.0.1:8083 \
   --token <the token> \
@@ -297,6 +334,7 @@ having no quorum is a window you can see.
 |---|---|
 | A node shows `none recorded` as its address | It enrolled before it had an address to give. Set `advertiseUrl` and restart, or re-enroll. |
 | The control root is unreachable from B, everything else is fine | `advertiseUrl` was set after the first start. Enrollment does not restart the root. Restart the agent on A. |
+| A node is registered at the right address and nothing can reach it | It advertised an address it did not bind — an agent older than 2026-09-11 joined without `EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0`. Enrollment is outbound, so `201 Created` proves the node reached the root and nothing about the return path. Upgrade the agent, or set the variable. |
 | A node is `down` but the machine is up | Its address changed and it has not announced, or it enrolled before nodes carried a signing identity — re-enroll it. |
 | Every call to the control root is 503 | It has no passphrase yet. Finish the first-run wizard, or `POST /v1/auth/initialize`. |
 | A node's re-advertisement is refused 401 | It enrolled before M9. Its model files and runtimes are untouched by re-enrolling. |
