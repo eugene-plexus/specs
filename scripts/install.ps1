@@ -86,7 +86,19 @@ $TaskName     = "EugenePlexusAgent"
 
 function Say  { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
-function Die  { param($m) Write-Host "error: $m" -ForegroundColor Red; exit 1 }
+# **`Die` throws; it does NOT call `exit`.** The documented way to run
+# this script with options is
+# `& ([scriptblock]::Create((irm ...))) -Join ...`, and a scriptblock
+# invoked that way runs in the CALLER'S PROCESS -- so `exit 1` closed
+# the operator's terminal, taking the error message with it and leaving
+# no way to find out what went wrong. Reported from a VS Code terminal
+# that vanished on every failure. A throw is catchable, prints, and
+# still yields exit code 1 under `powershell -File`.
+function Die  { param($m) Write-Host "error: $m" -ForegroundColor Red; throw $m }
+
+# And every early return below is `return`, never `exit` -- measured,
+# not assumed: `exit 0` inside a scriptblock ends the host session too,
+# so the SUCCESS path closed the terminal as surely as a failure did.
 
 # **Native commands and $ErrorActionPreference = "Stop" do not mix.**
 # In Windows PowerShell 5.1, an exe writing to stderr while its output
@@ -141,7 +153,7 @@ Expected: /healthz answers, and the agent's log carries the line
 console, so supervised children are hard-killed. That warning is the
 badge, not a bug.
 "@
-    exit 0
+    return
 }
 
 # --- autostart plumbing ----------------------------------------------
@@ -199,7 +211,7 @@ if ($Uninstall) {
     } else {
         Say "nothing installed at $Prefix"
     }
-    exit 0
+    return
 }
 
 # --- 1. uv ------------------------------------------------------------
@@ -391,13 +403,12 @@ if (-not $NoStart -and $autostart -ne "none") {
             Write-Host ""
             Say "Eugene Plexus is running -- open http://127.0.0.1:$Port/"
             Say "logs:  $Prefix\logs\    config: $Config"
-            exit 0
+            return
         } catch {
             Start-Sleep -Seconds 1
         }
     }
-    Warn "the agent did not answer on port $Port within 60s. Check $Prefix\logs\agent.log"
-    exit 1
+    Die "the agent did not answer on port $Port within 60s. Check $Prefix\logs\agent.log"
 }
 
 Say "installed. Start it with:"

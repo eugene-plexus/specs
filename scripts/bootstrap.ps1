@@ -66,7 +66,11 @@ $Root = (Resolve-Path $Root).Path
 
 function Say  { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
-function Die  { param($m) Write-Host "error: $m" -ForegroundColor Red; exit 1 }
+# Throws rather than exits, for the reason install.ps1 records at
+# length: `exit` inside a scriptblock ends the HOST session, and a
+# script that closes the terminal takes its own error message with it.
+# `-File` still reports exit code 1 from an uncaught throw.
+function Die  { param($m) Write-Host "error: $m" -ForegroundColor Red; throw $m }
 
 # **Native commands and $ErrorActionPreference = "Stop" do not mix.**
 # In Windows PowerShell 5.1, an exe writing to stderr while its output
