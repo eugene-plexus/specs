@@ -64,7 +64,7 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "b71743c54f13bd667e5263a34e3e89d8897358eb"
+    "agent"            = "7cb92e850b981024520e3cda96efeeea7400f85f"
     "control"          = "5293fde37179f1437fb43fda26c881387b815cc2"
     "gateway"          = "c0f1ede774ea47c8ad5dba0bc9a03993906e55b2"
     "inference-driver" = "8981fa98d21bce9af5705a568c8daaefef25a7cc"
