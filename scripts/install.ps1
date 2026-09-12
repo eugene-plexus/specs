@@ -192,10 +192,16 @@ function Remove-Autostart {
 # --- uninstall --------------------------------------------------------
 if ($Uninstall) {
     Remove-Autostart
-    # The installer sets these; the installer takes them back. Found by
-    # checking after an acceptance run: the User-scope variable outlived
-    # the uninstall and would have pointed the next hand-started agent
-    # at a prefix that no longer exists.
+    # The installer sets the config path; the installer takes it back.
+    # Found by checking after an acceptance run: the User-scope variable
+    # outlived the uninstall and would have pointed the next
+    # hand-started agent at a prefix that no longer exists.
+    #
+    # BIND_HOST is still cleared even though this installer stopped
+    # setting it on 2026-09-11, because every install made before then
+    # did -- and that variable is account-wide, so leaving it behind
+    # keeps widening the bind of every other agent on the account long
+    # after this one is gone.
     [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $null, "User")
     [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_HOST", $null, "User")
     if ($IsElevated) {
@@ -325,7 +331,6 @@ if (-not (Test-Path $AgentEx)) { Die "the eugene-plexus-agent command did not in
 Say "all six packages present, with a web UI"
 
 # --- 4b. join, if this machine is a worker -----------------------------
-$joined = $false
 # **The installer owns the one onboarding question, because this is the
 # only moment a human is reliably present.** See the task action below
 # for what went wrong when that was left to the agent.
@@ -339,18 +344,29 @@ if ($Join) {
     & $AgentEx @joinArgs
     if ($LASTEXITCODE -ne 0) { Die "enrollment failed; nothing was started" }
 
-    # **A node that advertises an address must be reachable at it.**
-    # Found on the first enrollment between two genuinely separate
+    # **A node that advertises an address must be reachable at it** --
+    # found on the first enrollment between two genuinely separate
     # machines: the worker advertised its LAN address, bound 127.0.0.1,
-    # and the control root could not call back -- so the union topology
-    # view, idle unload and start-on-demand would all have failed while
-    # enrollment itself looked perfect, because enrollment is outbound
-    # and nothing here tests the other direction.
+    # and the control root could not call back, so union topology, idle
+    # unload and start-on-demand would all have failed while enrollment
+    # itself looked perfect. Enrollment is outbound; nothing here tests
+    # the other direction.
     #
-    # Joining is exactly the moment that stops being optional. A
-    # single-machine install still gets loopback, which is the
-    # conservative default and the reason the rule exists at all.
-    $joined = $true
+    # **There is deliberately nothing to set for it here.** The agent
+    # enforces the rule itself since 6f88211: `join` has just written the
+    # advertised address into node.yaml, and every start path -- the
+    # scheduled task and the service both, via `build_server` -- reads it
+    # back and binds 0.0.0.0 when it is not loopback.
+    #
+    # This installer used to set a User-scope
+    # EUGENE_PLEXUS_AGENT_BIND_HOST here instead. That is account-wide on
+    # Windows, so it widened the bind of every *other* agent the account
+    # started, a local dev install included; and it turned a derived
+    # decision into an explicit override, which by
+    # `easy-default-expert-override` wins outright and so would have
+    # outlived an unenrollment. A single-machine install still gets
+    # loopback, which is the conservative default and the reason the rule
+    # exists at all.
 } elseif ($Token) {
     Die "-Token needs -Join <control-root-url>"
 }
@@ -399,18 +415,10 @@ if (-not $NoService) {
 
 # The config path has to reach the process however it is started. A task
 # inherits the user environment; a service reads the machine one, set
-# above. Same for the wide bind on a joined node -- and in the current
-# process too, because the agent is started a few lines below and would
-# otherwise come up on loopback until the next restart.
+# above. The bind host is deliberately not set beside it -- see the join
+# block for why the agent derives that one itself.
 [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $Config, "User")
 $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
-if ($joined) {
-    [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_HOST", "0.0.0.0", "User")
-    if ($IsElevated) {
-        [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_HOST", "0.0.0.0", "Machine")
-    }
-    $env:EUGENE_PLEXUS_AGENT_BIND_HOST = "0.0.0.0"
-}
 
 # --- 6. start ---------------------------------------------------------
 if (-not $NoStart -and $autostart -ne "none") {
