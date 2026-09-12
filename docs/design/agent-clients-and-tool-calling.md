@@ -14,7 +14,7 @@ install serves no agent harness either. See §8.
 | #     | The call                                                                      | §   | Status                 |
 | ----- | ------------------------------------------------------------------------------ | --- | ---------------------- |
 | **1** | Carry tool calls end to end                                                     | §5  | **DONE 2026-09-11** — §9 |
-| **2** | Does `/v1/embeddings` belong in scope, or is that Open WebUI's own problem?     | §5  | **OPEN**               |
+| **2** | Does `/v1/embeddings` belong in scope, or is that Open WebUI's own problem?     | §5  | **DECIDED 2026-09-12** — §5.1 |
 | **3** | Context-window honesty: refuse, truncate-and-report, or configurable?           | §6  | **DECIDED 2026-09-12** — §6.1; built, §10 |
 | **4** | The playground is a reference client and diagnostic, not a product             | §7  | **DECIDED 2026-09-11** |
 | **5** | No native OS chat/agent application                                            | §4  | **DECIDED 2026-09-11** |
@@ -183,10 +183,10 @@ In dependency order. **Nothing below item 1 matters until item 1 lands.**
    `gateway`, `inference-driver`, `ui`.
 2. **`response_format`** — JSON mode and structured outputs. Harnesses
    use it constantly.
-3. **`/v1/embeddings`** — *open call #2.* Open WebUI's RAG wants it but
-   can also use its own embedder, so this is "first-class integration"
-   rather than blocking. Worth deciding deliberately rather than by
-   drift.
+3. ~~**`/v1/embeddings`** — *open call #2.*~~ **DONE 2026-09-12 — see
+   §5.1.** The framing above turned out to be the wrong reason to
+   decide it either way: whether Open WebUI can use its own embedder is
+   about demand, and the argument that settled it was **coherence**.
 4. **Context-window honesty** — §6.
 
 **The streaming interaction is a trap.** M10 established that failover
@@ -195,6 +195,62 @@ arrives *as* streamed deltas that accumulate into a call. Deciding
 whether a partially-streamed `tool_calls` delta counts as "the first
 token" for failover purposes is a real question and must be answered in
 the contract, not discovered in an acceptance run.
+
+### 5.1 Call #2, and the rule it turned on — DECIDED 2026-09-12
+
+**Troy's call: serve what we already launch.** Not the widest scope
+(embeddings plus reranking) and not the narrowest (mark the surface,
+serve nothing).
+
+**The argument was coherence, not demand.** The library already detects
+dedicated embedding models — `is_embedding()` in the GGUF reader (a
+pooling type) and the safetensors reader (an encoder architecture),
+populating `chat`/`embedding` on every scanned model. So this install
+would discover, download and launch one, after which it sat on
+`GET /v1/models` looking like any other model and failed every request
+sent to it. **We were letting people acquire a thing we could not
+serve**, entirely inside our own UI. That is a bug with a feature-shaped
+fix, and it bounds the scope by an existing behaviour instead of by a
+guess about who wants embeddings.
+
+**THE RULE: failover does not cross models here.** Everywhere else a
+slot is an ordered list of targets and a failure cascades. For chat that
+degrades gracefully. For embeddings it is silent corruption — vectors
+from two models occupy different spaces, so a fallback writes noise into
+the caller's vector store with a 200 and no marker, and unlike a bad
+chat answer the damage outlives the request in a database. Different
+dimensions would at least raise; the *same* dimension poisons quietly.
+Replicas of one model still balance and fail over, because those are
+interchangeable by definition. Same family as M10's commit point.
+
+Three things were measured before any of it was written, and each one
+changed the design:
+
+1. **The capability belongs to the running backend, not the model, and
+   nothing exposes it.** `llama-server` b9846's `/props` carries no
+   pooling or embedding field at all; Ollama's compatible surface says
+   nothing. And an Ollama runner started for chat refuses to embed *the
+   very model it is serving*. So detection is a functional probe —
+   viable because the negative case costs **45 ms**, llama.cpp refusing
+   a non-pooling model before any compute.
+2. **The surfaces are not always disjoint.** Ollama's are; but
+   `llama-server` given `--embedding` still serves chat perfectly well.
+   `surfaces` is therefore a list rather than an enum — a guess would
+   have been wrong.
+3. **`encoding_format: base64` is what the OpenAI SDKs ask for by
+   default**, so ignoring it breaks the most common client while every
+   hand-rolled `curl` keeps working. Handled at the gateway rather than
+   passed down, since backends differ on implementing it. Verified
+   byte-for-byte against a real backend's own output.
+
+Also settled: token-array inputs are refused rather than accepted,
+because validating one needs a tokenizer this install deliberately does
+not own (§6.1), and `dimensions` passes through without emulation for
+the same reason a silently-truncated vector is a wrong answer that looks
+like a right one.
+
+Record: [`../acceptance/embeddings-run.md`](../acceptance/embeddings-run.md),
+**14 checks** against a real embedding model.
 
 ## 6. Context-window honesty is the actual differentiator
 

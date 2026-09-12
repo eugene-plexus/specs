@@ -66,10 +66,10 @@ $ErrorActionPreference = "Stop"
 $PIN = @{
     "agent"            = "b71743c54f13bd667e5263a34e3e89d8897358eb"
     "control"          = "5293fde37179f1437fb43fda26c881387b815cc2"
-    "gateway"          = "eae5d7035e4e3034e90382e3824ab49490302e96"
-    "inference-driver" = "70de63faa53d588e867cc036d08c1e5084fb4981"
+    "gateway"          = "c0f1ede774ea47c8ad5dba0bc9a03993906e55b2"
+    "inference-driver" = "8981fa98d21bce9af5705a568c8daaefef25a7cc"
     "library"          = "1a59e7e7ca3f5895a092cfeeca4a562c65d76010"
-    "ui"               = "0c10d40cc303e99705860d08c5f1c0c2b2a8586a"  # branch `dist`, not `main`
+    "ui"               = "c64469ec5541870541c3ab0d90e7ce7b79063497"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
