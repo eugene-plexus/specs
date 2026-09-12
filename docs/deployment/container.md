@@ -109,6 +109,34 @@ through the agent's proxy on 8079, so exposing it would widen the surface for
 nobody. Remap the left-hand side freely if something on the host already has
 one of these — `-p 18080:8080` and point your tools at 18080.
 
+### If you remapped a port, tell the container its own address
+
+A container derives its advertise address from the interface it used to reach
+the control root — and its control root is in the same container, so it
+derives **`http://127.0.0.1:8079/`** and registers that as this node's address.
+Correct, and reachable by nothing. The symptom is one-directional and easy to
+misread: the control host can reach every GPU machine, and no GPU machine's
+browser can reach the control host's gateway or library.
+
+Set it once, in the UI on the control host: **Config → Agent → Advertise
+address**, or over the API:
+
+```sh
+curl -X PATCH http://<nas>:8279/v1/config   -H 'authorization: Bearer <operator token>'   -H 'content-type: application/json'   -d '{"advertiseUrl":"http://<nas>:8279"}'
+```
+
+**Give the address you type in the browser, port included** — which is the
+*published* port, not the one the agent binds inside the container. It is
+announced to the control root the moment you change it; no restart, no
+re-enrollment.
+
+One caveat, and it is why this is a manual step rather than a default. The
+agent stamps each component it spawns with *the advertise host plus that
+component's own port*, which under a remap names a port the host does not
+publish. Nothing consumes those today — the gateway reaches cross-host
+**drivers**, which run on bare metal where no remap applies — but do not
+build on them from inside a container.
+
 ---
 
 ## Unraid, from the GUI

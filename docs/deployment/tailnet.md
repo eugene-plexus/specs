@@ -332,6 +332,7 @@ having no quorum is a window you can see.
 
 | Symptom | Cause |
 |---|---|
+| A GPU machine's browser cannot open the gateway, library or Nodes page, but the control host can reach the GPU machine | The control host itself advertises a loopback address, so nothing can be forwarded to it. Set `advertiseUrl` on the control host's agent — in a container this is the common case, since its control root is local and the derived route is loopback. The refusal names the field. |
 | A node shows `none recorded` as its address | It enrolled before it had an address to give. Set `advertiseUrl` and restart, or re-enroll. |
 | The control root is unreachable from B, everything else is fine | `advertiseUrl` was set after the first start. Enrollment does not restart the root. Restart the agent on A. |
 | A node is registered at the right address and nothing can reach it | It advertised an address it did not bind — an agent older than 2026-09-11 joined without `EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0`. Enrollment is outbound, so `201 Created` proves the node reached the root and nothing about the return path. Upgrade the agent, or set the variable. |
