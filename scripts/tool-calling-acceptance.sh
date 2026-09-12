@@ -23,11 +23,25 @@
 #
 # Design: docs/design/agent-clients-and-tool-calling.md
 #
-# **This script is safe to run beside a live install.** It binds the
-# agent on 8179 rather than 8079, and it tears down BY PORT, only the
-# ports it opened. Earlier scripts in this directory end with
-# `pkill -f eugene_plexus_`, which on a machine that is also a worker
-# node would kill the operator's own agent and every component under it.
+# **This script is safe to run beside a live install, in two
+# dimensions.** Ports: it binds the agent on 8179 rather than 8079, and
+# it tears down BY PORT, only the ports it opened. Earlier scripts in
+# this directory end with `pkill -f eugene_plexus_`, which on a machine
+# that is also a worker node would kill the operator's own agent and
+# every component under it.
+#
+# **And state -- which this script did NOT isolate when it was written,
+# and which was found the hard way on 2026-09-12 by the step 7 run.**
+# `install.ps1` sets `EUGENE_PLEXUS_AGENT_CONFIG_FILE` in the USER
+# environment on purpose: a scheduled task inherits the user
+# environment, and that is how the installed agent finds its install.
+# Every shell on that account inherits it too, so a throwaway agent
+# started from one loads the operator's `agent.yaml` and `node.yaml`,
+# adopts the real node's identity, tries to spawn the real components
+# on their real ports, and -- since M9 -- **announces its own address
+# to the real control root**, repointing a live install at a port that
+# dies when the script exits. Nothing in either process says so. A
+# different port does not help with any of it.
 set -uo pipefail
 
 EP_ROOT="${EP_ROOT:-/d/py/eugene-plexus}"
@@ -87,8 +101,29 @@ done
 ok "agent python, a live ollama with $MODEL, and every port free"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
-export EUGENE_PLEXUS_AGENT_BIND_PORT="$AGENT_PORT"
 trap teardown EXIT
+
+# Drop every ambient EUGENE_PLEXUS_* variable, then set only what this
+# run needs -- see the header. The loop is the load-bearing part; naming
+# the known variables would go stale the first time a third one appears.
+for v in $(env | grep -o '^EUGENE_PLEXUS_[A-Z_]*' || true); do unset "$v"; done
+# A native path: the value is read by a Windows Python that does not
+# know what `/tmp` means.
+WORK_NATIVE=$(cygpath -w "$WORK" 2>/dev/null || printf '%s' "$WORK")
+export EUGENE_PLEXUS_AGENT_CONFIG_FILE="$WORK_NATIVE/agent.yaml"
+export EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1
+export EUGENE_PLEXUS_AGENT_BIND_PORT="$AGENT_PORT"
+LEAKED=$(env | grep '^EUGENE_PLEXUS_' | grep -Fv -e "EUGENE_PLEXUS_AGENT_CONFIG_FILE=$WORK_NATIVE/agent.yaml" -e 'EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1' -e "EUGENE_PLEXUS_AGENT_BIND_PORT=$AGENT_PORT")
+# A guard rather than a check: it prints on success but does not call
+# `ok`, so the count this script's acceptance record claims stays true.
+# It aborts on failure, because carrying on would mutate a real install.
+if [ -z "$LEAKED" ]; then
+  printf '  note  isolated: no ambient EUGENE_PLEXUS_* variable survives into this run
+'
+else
+  bad "ambient config leaked in and would point this run at a real install: $LEAKED"
+  exit 1
+fi
 
 say "start the agent; it declares control, gateway and library itself"
 "$PY" -m eugene_plexus_agent --unattended >"$WORK/agent.log" 2>&1 &

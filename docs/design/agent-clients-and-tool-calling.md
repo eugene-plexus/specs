@@ -15,7 +15,7 @@ install serves no agent harness either. See §8.
 | ----- | ------------------------------------------------------------------------------ | --- | ---------------------- |
 | **1** | Carry tool calls end to end                                                     | §5  | **DONE 2026-09-11** — §9 |
 | **2** | Does `/v1/embeddings` belong in scope, or is that Open WebUI's own problem?     | §5  | **OPEN**               |
-| **3** | Context-window honesty: refuse, truncate-and-report, or configurable?           | §6  | **OPEN**               |
+| **3** | Context-window honesty: refuse, truncate-and-report, or configurable?           | §6  | **DECIDED 2026-09-12** — §6.1; built, §10 |
 | **4** | The playground is a reference client and diagnostic, not a product             | §7  | **DECIDED 2026-09-11** |
 | **5** | No native OS chat/agent application                                            | §4  | **DECIDED 2026-09-11** |
 
@@ -221,6 +221,81 @@ or configurable. The principle to apply is
 `easy-default-expert-override`, whose corollary says to explain a real
 failure rather than predict one; the failure here is real and
 measurable, not predicted, so the bar for reporting it is low.
+
+### 6.1 What the measurement said, and where §6 was wrong
+
+**Measured 2026-09-12 on this hardware, before anything was built.**
+Two of the paragraphs above are wrong, and both errors pointed the work
+in the wrong direction.
+
+**Wrong: "the tool definitions fall out of the window and the model
+loops."** They do not. Tools ride in the system block, which Ollama
+preserves. Verified at `num_ctx=2048` with a ~17k-token prompt: still
+`finish_reason=tool_calls`. Whatever makes a harness loop, it is not
+tools being evicted.
+
+**Wrong: "Ollama truncates to a tiny default."** Stale. Ollama 0.34.0
+auto-sizes to the model's full trained context — 131072 for an 8B,
+about 22 GB of VRAM — with no environment variable set.
+
+**Right, and bigger than §6 claimed: input silently does not arrive.**
+66,389 characters across six messages came back as
+`usage.prompt_tokens: 86`, HTTP 200, no flag anywhere. Ollama keeps the
+system message plus the longest fitting suffix of recent turns and drops
+the middle — canary-verified on qwen3-coder:30b, where SYS and LAST
+survived and FIRST and MID did not. **A coding harness sending file
+contents gets a confident answer about code the model never received**,
+which is indistinguishable from the model being wrong.
+
+**And the contrast that shaped the build.** `llama-server` b9846 with
+`-c 512` answers the same prompt with HTTP 400
+`exceed_context_size_error` naming both numbers (`n_prompt_tokens`,
+`n_ctx`), and exposes `/tokenize` for an exact count. Ollama 404s
+`/api/tokenize` and will never tell you. So the two engines fail in
+opposite ways, and the honest response to each is different.
+
+**A fourth thing, found in our own source rather than measured: we were
+producing the looping symptom ourselves.** The driver wrapped every
+backend failure in a 502, 4xx included. The gateway cascades a 5xx and
+hard-fails a 4xx — correct, and defeated one layer down — so
+llama.cpp's exact refusal was retried against every replica and every
+tier and came back as "every backend failed", retryable. A harness
+reading a 502 retries the same prompt forever.
+
+**THE CALL (Troy, 2026-09-12): let the engine refuse.** No tokenizer
+anywhere, no preflight, no size check. An engine that counts tokens
+counts them exactly and a count of ours would be a second
+implementation of one that is already right — and `chars/4`
+underestimates a real prompt by 19.4% (16,568 against 20,560), the
+wrong direction for a fit predictor. Three things follow, all built:
+
+1. **Advertise.** `Capabilities.maxContextTokens` was contracted at M0
+   and populated by nothing, so every unsupervised backend reported no
+   window at all. Probed from the backend now — `/props` for llama.cpp,
+   `/v1/models` for vLLM, and **`/api/ps` for Ollama, which is the only
+   place the window it actually chose appears**; the compatible surface
+   carries none of it and `/api/show` carries only the trained maximum,
+   which would overstate.
+2. **Do not swallow.** A backend 4xx another backend would repeat is a
+   400 that does not cascade. `408`/`409`/`425`/`429` keep their 502 so
+   a rate-limited cloud provider still falls through to a local engine —
+   the case failover was built for.
+3. **Detect what no engine reports.** `prompt_tokens < chars/20` proves
+   truncation after the fact with no tokenizer, and fired on both
+   truncated cases and neither intact one. A flag, never an error: a
+   stream cannot be unsent (M10), and failing one path while flagging
+   the other would report one condition two different ways.
+
+**No configuration knob, deliberately**, and this is the one place the
+answer departs from `easy-default-expert-override`'s usual shape.
+Nothing is being decided on the operator's behalf — we pass through and
+report — so there is no default to override. The override that matters
+already exists one layer down and belongs to the engine: `-c` on
+llama.cpp, `num_ctx` on Ollama. Adding a field would be a knob for a
+decision nobody is making.
+
+Record: [`../acceptance/context-honesty-run.md`](../acceptance/context-honesty-run.md),
+**18 checks against two real engines**.
 
 ## 7. The playground — DECIDED 2026-09-11
 

@@ -459,8 +459,30 @@ into, rather than the unclaimed one. See
    wider than §0 said — the driver could not carry a call either, in
    three ways, one of which meant the well-formed response was the one
    that 502'd.
-7. **Context-window honesty** — that document's §6, and the actual
-   differentiator: we launch the engine, so we know the window.
+7. ~~**Context-window honesty**~~ **DONE 2026-09-12** —
+   [`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md)
+   §6.1 is the decision and the measurements, §5 item 4 the scope.
+   Contracts `37a1d96`; inference-driver `70de63f`, gateway `eae5d70`,
+   `ui` for the playground badge; `agent`, `control` and `library` not
+   re-pinned, because regenerating them produced byte-identical models.
+   Record: [`../acceptance/context-honesty-run.md`](../acceptance/context-honesty-run.md),
+   **18 checks against two real engines**.
+
+   **Open call #3 went to "let the engine refuse"** and §6's premise
+   turned out to be wrong twice — tool definitions do *not* fall out of
+   the window, and Ollama no longer truncates to a tiny default. What is
+   actually broken is that input silently does not arrive: 66,389
+   characters came back as `prompt_tokens: 86` with a 200 and no flag.
+   Meanwhile `llama-server` refuses the same prompt with both numbers
+   and **we were flattening that into a cascading 502**, producing the
+   looping symptom ourselves.
+
+   The footnote that outlived the milestone: the first run of the new
+   acceptance script **repointed the live install at a dead port**,
+   because `install.ps1` sets `EUGENE_PLEXUS_AGENT_CONFIG_FILE` in the
+   user environment on purpose and every shell on the account inherits
+   it. "Safe beside a live install" had been verified for ports and
+   assumed for state.
 8. **The playground as a diagnostic** — tools, attachments, and the
    `x_eugene_plexus` envelope surfaced, reached over **the same public
    surface a harness uses** (§7.1's trap).
