@@ -111,6 +111,81 @@ one of these — `-p 18080:8080` and point your tools at 18080.
 
 ---
 
+## Upgrading a control plane that is already running
+
+A rebuild replaces **all six packages**, not one. The six pinned commits live
+in `scripts/install.sh`, which the image `COPY`s before running — so a version
+bump changes that layer's hash and the rebuild picks it up by itself.
+`--no-cache` is not needed, and if the pins have not moved the cache is right
+to reuse everything.
+
+**Your data directory is the install.** `agent.yaml` and `node.yaml` are its
+identity, `control.yaml` and the replicated log are the trust root's state,
+`metrics.sqlite3` is the retained request history. Keep the same `-v` and an
+upgrade is an upgrade; point at a fresh directory and you have built a second
+install, whose worker nodes are still enrolled to a root that no longer exists.
+Nothing needs to re-enroll across an upgrade that keeps the directory.
+
+```sh
+# 1. Rebuild. Nothing to clone -- the builder fetches the repo itself.
+docker build -t eugene-plexus/control-plane:0.1 \
+  -f docker/Dockerfile \
+  https://github.com/eugene-plexus/specs.git#main
+
+# 2. Stop the old one, giving it time to shut down properly.
+docker stop -t 60 eugene-plexus-control-plane
+docker rm eugene-plexus-control-plane
+
+# 3. Run the new one -- the SAME command you used the first time,
+#    with the same -v and the same port mapping.
+docker run -d --name eugene-plexus-control-plane ...
+```
+
+**`-t 60` on the stop is the flag to get right, and it is easy to miss for a
+reason that is not obvious: a container's own stop timeout was fixed when it
+was created.** If the running container was started without `--stop-timeout
+60`, it gets the runtime's 10-second default no matter what the image or this
+document says, and you cannot change that without recreating it — which is the
+thing you are trying to do. `docker stop -t 60` overrides it for that one
+call. Getting this wrong turns an ordinary upgrade into the hard kill that
+install-paths §12 step 2 went to some trouble to avoid: the gateway does not
+close its metrics database and the control root does not close its log.
+
+**Compose users have none of that to remember**: `docker compose up -d
+--build` rebuilds, stops and recreates in one step, and `stop_grace_period:
+60s` lives in the file, so it applies to the container being replaced as well
+as the one replacing it. The named volume is kept unless you ask for `down
+-v` — which is the one command in this document that destroys an install.
+
+**Then check what you actually got, from the outside.** A green build log says
+the packages installed, not that the running container is serving them — and
+the whole point of a pinned upgrade is a capability that was not there before.
+Ask the gateway's own schema:
+
+```sh
+curl -fsS http://<control-host>:8080/openapi.json | grep -q '"tool_choice"' \
+  && echo "tool calling: yes" \
+  || echo "tool calling: NO -- still the old image"
+```
+
+Only `curl` and `grep`, because a NAS shell may have neither `python3` nor
+`jq`. `/openapi.json` needs no token, which `/v1/models` does. For the whole
+field list where `python3` happens to exist:
+
+```sh
+curl -fsS http://<control-host>:8080/openapi.json | python3 -c \
+  'import json,sys; print(sorted(json.load(sys.stdin)["components"]["schemas"]["ChatCompletionRequest"]["properties"]))'
+```
+
+A build carrying tool calling lists `tools`, `tool_choice` and
+`response_format` alongside the original nine fields. One that does not lists
+exactly `max_tokens messages model seed stop stream temperature top_p user` —
+which is what every agent harness sees as "this server cannot take my tools".
+**`/healthz` reports `0.1.0` on both and cannot tell them apart**, which is why
+the check is against the schema and not the version.
+
+---
+
 ## Adding a GPU machine
 
 1. In the UI, **Nodes → Add a node**. It mints a join token, good once, and
