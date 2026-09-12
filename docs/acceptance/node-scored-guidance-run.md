@@ -128,11 +128,10 @@ the two parameter types on both operations, so it is.
 
 ## What this run does not cover
 
-- **The root's own console.** From the NAS's UI the local node has no
-  GPU, so Discover there now says so plainly and scores against host
-  memory — correct for a launch from there, and not what an operator
-  who wants to launch on the worker needs. That is the node picker,
-  which is part of the inference-screen design still to be decided.
+- ~~**The root's own console.**~~ **Closed the same day** by the node
+  picker on Discover and Library (`ui` `f2b65c6`): one choice for both
+  whose memory a verdict is about and where Launch goes. See
+  `inference-screen-run.md`.
 - **Apple silicon.** `unifiedMemory` still comes from the library's
   host and cannot be overridden, so a Mac worker scored by a Linux
   library is read as a discrete GPU with that much memory: right on the
