@@ -75,7 +75,7 @@ jobs:
           git -C "$RUNNER_TEMP/agent" checkout --quiet "$pin"
           echo "EP_AGENT_SRC=$RUNNER_TEMP/agent/src/eugene_plexus_agent" >> "$GITHUB_ENV"
 
-      - name: Build and verify the image (18 checks)
+      - name: Build and verify the image (19 checks)
         run: bash scripts/compose-acceptance.sh
 
       # Only reached when the script exited 0, which it does only with

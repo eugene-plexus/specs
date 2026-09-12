@@ -40,8 +40,11 @@
 #   15. the library's 8082 is NOT reachable from outside
 #   16. a stop runs the agent's and all three children's lifespan shutdown
 #   17. state survives down + up: the same install comes back
-#   18. the image runs as --user 99:100 -- a uid it does not contain, and
-#       the one the Unraid template ships
+#   18. the image runs as --user 99:100 against a directory OWNED by
+#       99:100 -- the uid it does not contain, and the one the Unraid
+#       template ships
+#   19. a data directory whose logs/ it cannot write degrades to console
+#       output instead of killing the agent
 #
 # Design: docs/design/install-paths-and-distribution.md §9 step 5, §1, §4
 set -uo pipefail
@@ -189,7 +192,7 @@ fi
 
 if [ -z "$RT" ]; then
   say "runtime: skipped"
-  skip "10-18. no container runtime on this machine or in WSL."
+  skip "10-19. no container runtime on this machine or in WSL."
   printf '        To close them, install one and re-run:\n'
   printf '            wsl -d Ubuntu -- sudo apt-get install -y docker.io\n'
   printf '            wsl -d Ubuntu -- sudo usermod -aG docker $USER   # then restart the distro\n'
@@ -308,26 +311,79 @@ $DCP down -v >/dev/null 2>&1 || true
 # ordinary filesystem concern the NAS gets right on its own; the unknown
 # uid is the part worth proving.
 # ---------------------------------------------------------------------
-say "runtime: the UnRAID case -- an unknown uid and no home directory"
+say "runtime: the Unraid case -- an unknown uid, and a directory it does not own"
+
+# The first version of this check made the directory `chmod 777`, which
+# meant it could not fail the way reality did: on 2026-09-12 an operator
+# mounted a data directory owned by uid 10001 into a container running as
+# `--user 99:100` and the agent died on `/data/logs/agent.log`. A
+# world-writable fixture proves the uid has no home directory and nothing
+# about ownership, which is the half that broke. So: real ownership, via
+# sudo, and skipped rather than faked where sudo is not free.
 UIDDIR=$(mktemp -d)
-chmod 777 "$UIDDIR"
-$CT rm -f ep-uid-check >/dev/null 2>&1 || true
-if $CT run -d --name ep-uid-check --init --user 99:100      -v "$UIDDIR:/data" -p 18079:8079      eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
-  uidok=""
-  for _ in $(seq 1 90); do
-    curl -sf -m 2 http://127.0.0.1:18079/healthz >/dev/null 2>&1 && { uidok=yes; break; }
-    sleep 1
-  done
-  if [ -n "$uidok" ]; then
-    ok "18. the image comes up healthy as uid 99:100, a user it does not contain"
+if sudo -n chown 99:100 "$UIDDIR" 2>/dev/null; then
+  chmod 755 "$UIDDIR"
+
+  $CT rm -f ep-uid-check >/dev/null 2>&1 || true
+  if $CT run -d --name ep-uid-check --init --user 99:100 \
+       -v "$UIDDIR:/data" -p 18079:8079 \
+       eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
+    uidok=""
+    for _ in $(seq 1 90); do
+      curl -sf -m 2 http://127.0.0.1:18079/healthz >/dev/null 2>&1 && { uidok=yes; break; }
+      sleep 1
+    done
+    [ -n "$uidok" ] \
+      && ok "18. healthy as uid 99:100 against a directory owned by 99:100" \
+      || { bad "18. as --user 99:100 the agent never answered /healthz"
+           $CT logs ep-uid-check 2>&1 | tail -12 | sed 's/^/      /'; }
   else
-    bad "18. as --user 99:100 the agent never answered /healthz"
-    $CT logs ep-uid-check 2>&1 | tail -12 | sed 's/^/      /'
+    bad "18. could not start the image with --user 99:100"
   fi
+  $CT rm -f ep-uid-check >/dev/null 2>&1 || true
+
+  # 19. The reported failure exactly: /data writable, logs/ not.
+  #
+  # `install_console_capture` used to die here, because
+  # `mkdir(exist_ok=True)` does not care who owns an existing directory
+  # and the handler that opens the file inside it does. A mirrored log is
+  # a convenience and the console copy still works, so this must degrade
+  # rather than take the supervisor down with it -- `degraded-mode-required`
+  # applied to the agent's own conveniences instead of only to config.
+  LOGDIR=$(mktemp -d)
+  sudo -n chown 99:100 "$LOGDIR" 2>/dev/null
+  sudo -n mkdir -p "$LOGDIR/logs" 2>/dev/null
+  sudo -n chown 0:0 "$LOGDIR/logs" 2>/dev/null
+  sudo -n chmod 755 "$LOGDIR/logs" 2>/dev/null
+
+  $CT rm -f ep-logs-check >/dev/null 2>&1 || true
+  if $CT run -d --name ep-logs-check --init --user 99:100 \
+       -v "$LOGDIR:/data" -p 18179:8079 \
+       eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
+    logok=""
+    for _ in $(seq 1 90); do
+      curl -sf -m 2 http://127.0.0.1:18179/healthz >/dev/null 2>&1 && { logok=yes; break; }
+      sleep 1
+    done
+    if [ -n "$logok" ]; then
+      said=$($CT logs ep-logs-check 2>&1 | grep -c "console output only")
+      [ "${said:-0}" -ge 1 ] \
+        && ok "19. an unwritable logs/ degrades to console output and says so" \
+        || bad "19. it came up with an unwritable logs/ but never said the file copy was off"
+    else
+      bad "19. an unwritable logs/ stopped the agent -- the defect this check exists for"
+      $CT logs ep-logs-check 2>&1 | tail -12 | sed 's/^/      /'
+    fi
+  else
+    bad "19. could not start the image for the unwritable-logs case"
+  fi
+  $CT rm -f ep-logs-check >/dev/null 2>&1 || true
+  sudo -n rm -rf "$LOGDIR" 2>/dev/null || rm -rf "$LOGDIR"
 else
-  bad "18. could not start the image with --user 99:100"
+  skip "18-19. passwordless sudo is needed to own a directory as 99:100; faking it with"
+  printf '        chmod 777 would remove the very thing these check.
+'
 fi
-$CT rm -f ep-uid-check >/dev/null 2>&1 || true
 rm -rf "$UIDDIR"
 
 say "result"

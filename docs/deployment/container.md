@@ -137,14 +137,34 @@ error that looks like a bad image name. Make it public once at
 `github.com/orgs/eugene-plexus/packages` → control-plane → Package settings →
 Change visibility.
 
+### The data directory must be owned by 99:100
+
+The container runs as `nobody:users`, so the directory you point Data at has
+to be writable by that user. Unraid creates appdata that way; **Docker does
+not** — a bind-mount source that does not exist yet is created as `root:root`,
+and a directory created by an *older* container of this image is owned by uid
+`10001`, which is what the image bakes in.
+
+```sh
+chown -R 99:100 /mnt/user/appdata/eugene-plexus
+```
+
+Skip it and the agent comes up without its log file and says so on the
+console; if `/data` itself is unwritable it will get further and fail on
+something else. Neither is a bug in the container — both are this one line.
+
+This is the exact failure the template's first user hit, on an appdata
+directory an earlier hand-built container had created as uid 10001.
+
 ### Adopting a container you already run
 
 The template's defaults are 8079/8080/8083 and
 `/mnt/user/appdata/eugene-plexus`. If your existing container uses different
 ones, set the template's **host-side** values to match before you hit Apply:
 
-- **Point Data at the directory you already have.** That directory is the
-  install — its identity, enrollment and replicated log. A fresh one is a
+- **Point Data at the directory you already have — and chown it**, per the
+  section above; an older container of this image owned it as uid 10001.
+  That directory is the install — its identity, enrollment and replicated log. A fresh one is a
   second install, and your GPU machines stay enrolled to a root that no
   longer exists.
 - **Keep the control-root host port the same.** Enrolled nodes record the
@@ -400,15 +420,16 @@ the agent's and all three children's ASGI lifespan shutdown. Those are the
 claims the image depends on and they were measured on Linux.
 
 **Checked by CI on every image build, and the image is published only when
-they pass:** `.github/workflows/container.yml` runs all eighteen checks in
+they pass:** `.github/workflows/container.yml` runs all nineteen checks in
 `scripts/compose-acceptance.sh` against the artifact it just built, then
 re-tags that same image for GHCR rather than rebuilding — so what ships is
-what was tested. That covers the nine runtime checks that had never run
+what was tested. That covers the ten runtime checks that had never run
 anywhere: the build itself, the container coming up healthy, all four
 services on 0.0.0.0 inside, the UI and control root on their published ports,
 8082 staying unpublished, a graceful stop, state surviving a down/up, and
-starting as `--user 99:100` — a uid the image does not contain, which is what
-the Unraid template ships.
+starting as `--user 99:100` against a directory owned by 99:100 — the uid the
+image does not contain and the one the Unraid template ships — and degrading to
+console-only output when `logs/` is unwritable instead of dying on it.
 
 There is still no container runtime on the development machine, so running
 that script locally skips the runtime half and says so. CI is where it runs.

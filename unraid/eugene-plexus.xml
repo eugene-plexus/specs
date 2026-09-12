@@ -107,7 +107,7 @@
     Target="/data"
     Default="/mnt/user/appdata/eugene-plexus"
     Mode="rw"
-    Description="THIS DIRECTORY IS THE INSTALL. It holds the identity and enrollment (agent.yaml, node.yaml), the trust root's replicated log, retained request metrics, and the logs. Keep it across updates and an update is an update; point at a fresh one and you have built a second install whose worker nodes are still enrolled to a root that no longer exists. Back it up."
+    Description="THIS DIRECTORY IS THE INSTALL. It holds the identity and enrollment (agent.yaml, node.yaml), the trust root's replicated log, retained request metrics, and the logs. Keep it across updates and an update is an update; point at a fresh one and you have built a second install whose worker nodes are still enrolled to a root that no longer exists. Back it up. IT MUST BE OWNED BY 99:100 (nobody:users), which is what this container runs as: run `chown -R 99:100` on it before you start, and especially if it was created by an older container that ran as a different user."
     Type="Path"
     Display="always"
     Required="true"
