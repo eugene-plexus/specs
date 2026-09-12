@@ -161,8 +161,9 @@ as the one replacing it. The named volume is kept unless you ask for `down
 control root holds the install's signing key sealed with your passphrase. On
 a host install the OS keyring opens it unattended; **a container has no
 keyring**, so it comes back initialized-but-locked after every restart --
-upgrades included -- until somebody signs in. Until then the gateway cannot
-read the install's topology, so it routes nothing.
+upgrades included -- until somebody logs in **to the control root itself**.
+Until then the gateway cannot read the install's topology, so it routes
+nothing.
 
 **Every surface reports healthy while this is true.** Measured on a real
 restart: the agent, gateway and control root all answer `/healthz` with
@@ -178,9 +179,26 @@ curl -s http://<control-host>:8083/v1/nodes | head -c 200
 #   "detail":"This control root is initialized but locked ..."}}
 ```
 
-**Open the UI and sign in.** That calls `POST /v1/auth/login` on the control
-root, which is what the 503 asks for. Check `/v1/models` is non-empty before
-believing an upgrade landed.
+**Signing in to the web UI does NOT unlock it**, which is the trap. That
+login posts to the *agent*, and the agent is not the thing that is sealed — so
+the UI keeps working, every page renders, and an existing browser session
+carries on as if nothing is wrong. The only UI screens that talk to the
+control root are `/nodes` and the first-run wizard, so unless you open
+`/nodes` there is nothing to see. Meanwhile `/v1/models` is empty and the
+gateway routes nothing.
+
+**Log in to the control root directly.** It is the one route a locked root
+still answers, because it is the way in:
+
+```sh
+curl -X POST http://<control-host>:8083/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"passphrase": "your-passphrase"}'
+```
+
+A wrong passphrase answers 401 and a locked-out one would answer 503, so the
+status tells you which problem you have. Then check `/v1/models` is non-empty
+before believing an upgrade landed.
 
 **Or set up unattended unlock once and stop having this problem** — see the
 next section. It is off by default because it is a real trade, and it is the
