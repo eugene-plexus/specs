@@ -848,6 +848,21 @@ paths:
         consistent with promotion being a human act anyway, but the
         wizard has to say so in words rather than let it be discovered
         during a failover.
+
+        **`securityMode: passphrase_file` is not host-bound**, and exists
+        because `os_keyring` cannot work everywhere: a container has no
+        Credential Manager, no Keychain and no Secret Service daemon, so
+        a containerised root came back from every restart sealed and
+        routing nothing until a person signed in. This mode reads the
+        passphrase from a path given by
+        `EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE` and derives the key the
+        same way login does. Mount the same secret on a standby and the
+        promotion above needs nobody either.
+
+        Both auto-unlock modes make the same trade and neither is the
+        default: whoever can read the store — this machine's keyring, or
+        that file — can unlock the install without knowing the
+        passphrase.
       responses:
         '200':
           description: Current config.

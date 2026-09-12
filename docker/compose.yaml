@@ -80,6 +80,26 @@ services:
     #     Only if 8079 collides with something already on the VM. Change
     #     the published port above to match.
     #
+    # **The one worth setting up: unattended unlock.** Without it every
+    # restart of this container leaves the trust root sealed, so the
+    # gateway routes nothing until a person signs in -- and every health
+    # check says "ok" while that is true. A container has no OS keyring,
+    # so the passphrase comes from a mounted secret. Uncomment the
+    # `secrets:` block below and the two lines here, then set
+    # `securityMode: passphrase_file` once in the UI. See
+    # docs/deployment/container.md, "Unattended unlock", for what it
+    # trades away -- it is off by default because it is a real trade.
+    #
+    # secrets:
+    #   - control_passphrase
+    # environment:
+    #   EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE: /run/secrets/control_passphrase
+    #
+    # The variable reaches the control root because the agent spawns its
+    # children with a copy of its own environment and overrides only
+    # CONFIG_FILE, BIND_PORT and SAFE_MODE -- the same mechanism the five
+    # BIND_HOST variables in the image already use.
+    #
     # **There is no EUGENE_PLEXUS_AGENT_ADVERTISE_URL**, and looking for
     # one is the obvious first move. `advertiseUrl` — the address OTHER
     # machines reach this host at — is a config field, not a startup
@@ -91,6 +111,16 @@ services:
 
 volumes:
   plexus-data:
+
+# Uncomment together with the `secrets:` and `environment:` lines above.
+# A Compose secret arrives in the container as a file on tmpfs rather
+# than as an environment variable, which is the point: an env var would
+# be copied into every component the agent spawns and shown by
+# `docker inspect` to anything that can reach the Docker socket.
+#
+# secrets:
+#   control_passphrase:
+#     file: ./control-passphrase
 
 # ---------------------------------------------------------------------
 # Adding a GPU box

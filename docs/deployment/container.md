@@ -179,11 +179,13 @@ curl -s http://<control-host>:8083/v1/nodes | head -c 200
 ```
 
 **Open the UI and sign in.** That calls `POST /v1/auth/login` on the control
-root, which is what the 503 asks for. There is no environment variable or
-file that supplies the passphrase unattended -- verified, none exists -- so an
-unattended restart of this container always needs a human afterwards. Plan
-restarts accordingly, and check `/v1/models` is non-empty before believing an
-upgrade landed.
+root, which is what the 503 asks for. Check `/v1/models` is non-empty before
+believing an upgrade landed.
+
+**Or set up unattended unlock once and stop having this problem** — see the
+next section. It is off by default because it is a real trade, and it is the
+difference between a NAS that reboots at 3am and comes back, and one that
+comes back serving nothing.
 
 **Then check what you actually got, from the outside.** A green build log says
 the packages installed, not that the running container is serving them — and
@@ -211,6 +213,82 @@ exactly `max_tokens messages model seed stop stream temperature top_p user` —
 which is what every agent harness sees as "this server cannot take my tools".
 **`/healthz` reports `0.1.0` on both and cannot tell them apart**, which is why
 the check is against the schema and not the version.
+
+---
+
+## Unattended unlock
+
+Skip this and every restart of this container needs a person at a browser.
+Set it up and the install comes back on its own.
+
+The trust root seals the install's signing key with your passphrase. On a
+host install the OS keyring opens it unattended; a container has no keyring,
+so it needs the passphrase from somewhere. **Point it at a file.**
+
+```sh
+# 1. Put the passphrase in a file. printf, not echo -- see below.
+printf 'your-passphrase' > /mnt/user/appdata/eugene-plexus-secret
+chmod 400 /mnt/user/appdata/eugene-plexus-secret
+
+# 2. Mount it and name it, adding these to your existing docker run:
+#      -v /mnt/user/appdata/eugene-plexus-secret:/run/secrets/passphrase:ro
+#      -e EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE=/run/secrets/passphrase
+
+# 3. Turn it on, once, in the UI: Settings -> Security mode ->
+#    "Passphrase file auto-unlock". Or over the API:
+curl -X PATCH http://<control-host>:8083/v1/config \
+  -H "Authorization: Bearer <operator token>" \
+  -H "Content-Type: application/json" \
+  -d '{"securityMode": "passphrase_file"}'
+```
+
+With Compose, use a real secret rather than a bind mount:
+
+```yaml
+secrets:
+  control_passphrase:
+    file: ./control-passphrase
+
+services:
+  control-plane:
+    secrets:
+      - control_passphrase
+    environment:
+      EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE: /run/secrets/control_passphrase
+```
+
+**A file and not `EUGENE_PLEXUS_CONTROL_PASSPHRASE=...`**, which is the
+obvious move and is the wrong one here. The agent spawns every component with
+a copy of its own environment and filters nothing, so a passphrase in the
+environment is handed to the gateway, the library and every inference-driver;
+and `docker inspect` shows environment values to anything that can reach the
+Docker socket, including your NAS's own container template, in a text box on
+screen. A file is neither broadcast into every process nor visible to
+`inspect`. Be honest about what it does not buy: inside one container every
+process runs as the same user and can read the file, so this is about not
+*spreading* the secret, not about hiding it from your own components.
+
+**`printf`, not `echo`.** `echo` appends a newline. One trailing newline is
+stripped for exactly this reason, so `echo` works too — but nothing else is
+trimmed, because a passphrase may legitimately start or end with a space and
+silently trimming it would present as "my passphrase is not accepted" with
+nothing to distinguish it from a typo.
+
+**What this trades away.** Anyone who can read that file can unlock the
+install without knowing the passphrase. That is the same reduction the OS
+keyring makes, moved from "can run code as this user" to "can read this
+path". It is off by default for that reason. It buys an install that survives
+a power cut with nobody present.
+
+**It is also better than the keyring in one way.** The keyring is host-bound,
+so a standby control root on another machine cannot inherit auto-unlock and
+asks for the passphrase at promotion — which is fine when a human is doing
+the promoting and not fine at 3am. A file is not host-bound: mount the same
+secret on the standby and a failover needs nobody either.
+
+If the file is missing, unreadable or holds the wrong passphrase, the root
+comes up locked, says which of those it was in the log, and leaves your file
+alone. `POST /v1/auth/login` still works, so the way out is always open.
 
 ---
 
