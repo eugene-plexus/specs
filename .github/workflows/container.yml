@@ -1,0 +1,94 @@
+# Build the control-plane image, verify it, and publish it to GHCR.
+#
+# **The image is pushed only if it passed**, because the thing being
+# published is the thing an Unraid box will pull with one click and run
+# unattended. `scripts/compose-acceptance.sh` builds it and then runs the
+# eighteen checks against the built artifact; the push re-tags that exact
+# image rather than rebuilding, so what ships is byte-identical to what
+# was tested.
+#
+# **This also closes checks 10-18, which had never run anywhere.** There
+# is no container runtime on the development machine, so the runtime half
+# of that script skipped loudly from the day it was written. A Linux
+# runner has Docker, which makes CI the first place the image has ever
+# been built or started.
+#
+# `edge`, deliberately not `latest`. Nothing in this project is released
+# (`install-paths-and-distribution.md` §9 puts the release last, behind
+# tool calling), and `latest` is the tag every registry convention reads
+# as "the supported one". `edge` says what this is: the head of main,
+# tested, and not a release.
+#
+# Triggered only by the things that change the image -- the Dockerfile,
+# the Compose file, the installer whose six pins decide what goes in it,
+# and this workflow. A docs commit does not rebuild a container.
+
+name: Container image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - "scripts/install.sh"
+      - "scripts/compose-acceptance.sh"
+      - ".github/workflows/container.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: container-image
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/control-plane
+  # What compose.yaml tags the build as, and therefore what the
+  # acceptance script verified.
+  BUILT: eugene-plexus/control-plane:0.1
+
+jobs:
+  build-verify-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and verify the image (18 checks)
+        run: bash scripts/compose-acceptance.sh
+
+      # Only reached when the script exited 0, which it does only with
+      # zero failures.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and push the image that passed
+        run: |
+          set -euo pipefail
+          short=$(git rev-parse --short HEAD)
+          docker tag "$BUILT" "$IMAGE:edge"
+          docker tag "$BUILT" "$IMAGE:sha-$short"
+          docker push "$IMAGE:edge"
+          docker push "$IMAGE:sha-$short"
+          echo "published $IMAGE:edge and $IMAGE:sha-$short"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Container image published"
+            echo
+            echo '```'
+            echo "$IMAGE:edge"
+            echo "$IMAGE:sha-$(git rev-parse --short HEAD)"
+            echo '```'
+            echo
+            echo "Verified by \`scripts/compose-acceptance.sh\` before pushing."
+            echo "Unraid template: \`unraid/eugene-plexus.xml\`."
+          } >> "$GITHUB_STEP_SUMMARY"

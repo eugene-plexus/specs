@@ -1,0 +1,146 @@
+<?xml version="1.0"?>
+<!--
+  Eugene Plexus control plane — Unraid / Community Applications template.
+
+  WHAT THIS CONTAINER IS, because the name does not say it: the control
+  plane only. The agent in here supervises the control root, the gateway
+  and the model library, and that is all. It has no GPU, no inference
+  engine, and it is not supposed to — the machines with the GPUs run
+  `install.sh` on bare metal and join this over the network. See
+  docs/deployment/container.md for why containerising the GPU half is the
+  wall Home Assistant hit.
+
+  THE IMAGE IS `:edge`, NOT `:latest`, and that is deliberate. Nothing in
+  this project is released yet. `edge` is the head of `main`, built and
+  verified by CI before it is pushed, and it says what it is rather than
+  implying support this project has not offered.
+
+  Kept in the `specs` repo and served raw from `main`, like the install
+  scripts and for the same reason: it points at pinned commits that move,
+  while the website deploys by hand, so a copy hosted there would serve a
+  stale template. See install-paths-and-distribution.md §4, call #5.
+-->
+<Container version="2">
+  <Name>eugene-plexus</Name>
+  <Repository>ghcr.io/eugene-plexus/control-plane:edge</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/eugene-plexus/specs/issues</Support>
+  <Project>https://eugeneplexus.com</Project>
+  <Overview>
+    A self-hosted control plane for local LLM inference. It supervises engine processes it does not own, keeps a model library on your own disk as plainly-named files, holds per-model settings, and exposes one OpenAI-compatible endpoint that load-balances and fails over across local runtimes and cloud subscriptions — with real auth, so it works over a tailnet and not just localhost.
+
+    THIS CONTAINER IS THE CONTROL PLANE ONLY. There is no GPU in here and no inference engine, by design. Point your tools at port 8080; run the installer on each machine that has a GPU and join it to port 8083. One click here does not give you a model — it gives you the thing that manages them.
+
+    PRE-RELEASE. The image is tagged `edge`, there is no released version, and the API may change. It is used daily by its author across two machines; it has not been used by anybody else.
+
+    FIRST START: open the WebUI and finish the wizard. It sets the passphrase that owns this install, so do it promptly — until then the first person to reach port 8079 can claim it.
+
+    RESTARTS: the trust root comes back sealed and routes nothing until somebody unlocks it, because a container has no OS keyring. Either unlock it on the Nodes page after each restart, or set up the passphrase file below once and stop thinking about it.
+  </Overview>
+  <Category>Tools: Productivity: Network:Other</Category>
+  <WebUI>http://[IP]:[PORT:8079]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.png</Icon>
+
+  <!--
+    None of these three is boilerplate.
+
+    `init`: the agent is a supervisor, so PID 1 in this container has
+    children, and a PID 1 that does not reap leaves a zombie behind every
+    component bounce.
+
+    `stop-timeout 60`: on stop the agent runs its ASGI lifespan
+    shutdown, which is where the gateway closes its metrics database and
+    the control root closes its replicated log. Docker's 10-second
+    default would make every ordinary stop the hard kill that
+    install-paths §12 step 2 went to some trouble to avoid. Note that a
+    container's stop timeout is fixed when it is created: changing this
+    later needs the container recreated, which Apply does.
+
+    `user 99:100`: the image bakes in uid 10001, and Unraid owns
+    appdata as nobody:users. Overriding it means the data directory is
+    writable without a chown. What it costs is engine acquisition, which
+    writes under $HOME — and this container has no GPU to run an engine
+    on, so there is nothing to lose. Verified in CI as check 18: the
+    image comes up healthy as a uid it does not contain.
+  -->
+  <ExtraParams>--init --stop-timeout 60 --user 99:100</ExtraParams>
+
+  <Config
+    Name="WebUI"
+    Target="8079"
+    Default="8079"
+    Mode="tcp"
+    Description="The web interface, and the browser's pass-through to every component. This is the port you open."
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8079</Config>
+
+  <Config
+    Name="OpenAI-compatible endpoint"
+    Target="8080"
+    Default="8080"
+    Mode="tcp"
+    Description="Point your tools and agent harnesses here. Speaks /v1/chat/completions and /v1/models, with tool calling and token streaming."
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8080</Config>
+
+  <Config
+    Name="Control root"
+    Target="8083"
+    Default="8083"
+    Mode="tcp"
+    Description="Where machines with GPUs enroll, and where a warm standby follows the log. If you change this, every node you have already enrolled is pointing at the old one — they record the address, not the name."
+    Type="Port"
+    Display="always"
+    Required="true"
+    Mask="false">8083</Config>
+
+  <Config
+    Name="Data"
+    Target="/data"
+    Default="/mnt/user/appdata/eugene-plexus"
+    Mode="rw"
+    Description="THIS DIRECTORY IS THE INSTALL. It holds the identity and enrollment (agent.yaml, node.yaml), the trust root's replicated log, retained request metrics, and the logs. Keep it across updates and an update is an update; point at a fresh one and you have built a second install whose worker nodes are still enrolled to a root that no longer exists. Back it up."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false">/mnt/user/appdata/eugene-plexus</Config>
+
+  <Config
+    Name="Passphrase file (optional)"
+    Target="/run/secrets/passphrase"
+    Default=""
+    Mode="ro"
+    Description="Set this AND the variable below to make restarts unattended. Put your passphrase in a file (use printf, not echo — one trailing newline is tolerated but nothing else is trimmed), chmod 400 it, and point this at it. Then set Security mode to 'Passphrase file auto-unlock' once in the web UI. Leave both blank and the trust root comes back sealed after every restart until you unlock it by hand. What it trades away: anyone who can read that file can unlock this install without knowing the passphrase."
+    Type="Path"
+    Display="advanced"
+    Required="false"
+    Mask="false"></Config>
+
+  <Config
+    Name="Passphrase file path (optional)"
+    Target="EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE"
+    Default=""
+    Description="The container-side path of the file above — /run/secrets/passphrase if you used the default. Set both or neither: set this alone and the root logs that the file is missing and stays sealed."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"></Config>
+
+  <Config
+    Name="Safe mode"
+    Target="EUGENE_PLEXUS_AGENT_SAFE_MODE"
+    Default="0"
+    Description="Set to 1 to recover an install whose agent.yaml will not parse. The config endpoints stay reachable so the web UI can fix it. Leave at 0."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">0</Config>
+</Container>

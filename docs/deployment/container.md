@@ -111,6 +111,57 @@ one of these — `-p 18080:8080` and point your tools at 18080.
 
 ---
 
+## Unraid, from the GUI
+
+There is a Community-Applications-style template in the `specs` repo:
+
+```
+https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.xml
+```
+
+**Docker → Add Container → Template → paste that URL.** It fills in the three
+ports, the data path, the `ExtraParams` that are not optional, and an advanced
+section for the passphrase file. Update, Edit, Start/Stop and the log viewer
+then work the way they do for anything else on the box.
+
+It pulls `ghcr.io/eugene-plexus/control-plane:edge`, which CI builds and
+**verifies before pushing** — `scripts/compose-acceptance.sh` runs its
+eighteen checks against the built image, and a failure means nothing is
+published. `edge` rather than `latest` on purpose: nothing here is released,
+and `latest` is the tag every registry convention reads as "the supported
+one".
+
+**One-time, and only the repository owner can do it:** a package pushed by
+Actions starts **private**, so the first pull fails with an authentication
+error that looks like a bad image name. Make it public once at
+`github.com/orgs/eugene-plexus/packages` → control-plane → Package settings →
+Change visibility.
+
+### Adopting a container you already run
+
+The template's defaults are 8079/8080/8083 and
+`/mnt/user/appdata/eugene-plexus`. If your existing container uses different
+ones, set the template's **host-side** values to match before you hit Apply:
+
+- **Point Data at the directory you already have.** That directory is the
+  install — its identity, enrollment and replicated log. A fresh one is a
+  second install, and your GPU machines stay enrolled to a root that no
+  longer exists.
+- **Keep the control-root host port the same.** Enrolled nodes record the
+  *address*, not the name. Move 8083 and every one of them is calling
+  somewhere nothing answers, with no error until routing fails.
+
+Container-side ports never change; only the left-hand side of the mapping
+does.
+
+### What the GUI still cannot do
+
+**Unlock the trust root after a restart** — but the web UI can, on the Nodes
+page, and the passphrase file in the template's advanced section removes the
+need entirely. See "Unattended unlock" below.
+
+---
+
 ## Upgrading a control plane that is already running
 
 A rebuild replaces **all six packages**, not one. The six pinned commits live
@@ -348,10 +399,19 @@ image sets; the agent survives an unwritable home directory; a SIGTERM runs
 the agent's and all three children's ASGI lifespan shutdown. Those are the
 claims the image depends on and they were measured on Linux.
 
-**Not yet verified:** the build itself, and the container coming up healthy.
-`scripts/compose-acceptance.sh` runs nine structural checks that need no
-runtime and eight more that do, and it says plainly which half it ran. If you
-have a Docker host, running it there is what closes the gap.
+**Checked by CI on every image build, and the image is published only when
+they pass:** `.github/workflows/container.yml` runs all eighteen checks in
+`scripts/compose-acceptance.sh` against the artifact it just built, then
+re-tags that same image for GHCR rather than rebuilding — so what ships is
+what was tested. That covers the nine runtime checks that had never run
+anywhere: the build itself, the container coming up healthy, all four
+services on 0.0.0.0 inside, the UI and control root on their published ports,
+8082 staying unpublished, a graceful stop, state surviving a down/up, and
+starting as `--user 99:100` — a uid the image does not contain, which is what
+the Unraid template ships.
+
+There is still no container runtime on the development machine, so running
+that script locally skips the runtime half and says so. CI is where it runs.
 
 ---
 

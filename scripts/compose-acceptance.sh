@@ -40,6 +40,8 @@
 #   15. the library's 8082 is NOT reachable from outside
 #   16. a stop runs the agent's and all three children's lifespan shutdown
 #   17. state survives down + up: the same install comes back
+#   18. the image runs as --user 99:100 -- a uid it does not contain, and
+#       the one the Unraid template ships
 #
 # Design: docs/design/install-paths-and-distribution.md §9 step 5, §1, §4
 set -uo pipefail
@@ -187,7 +189,7 @@ fi
 
 if [ -z "$RT" ]; then
   say "runtime: skipped"
-  skip "10-17. no container runtime on this machine or in WSL."
+  skip "10-18. no container runtime on this machine or in WSL."
   printf '        To close them, install one and re-run:\n'
   printf '            wsl -d Ubuntu -- sudo apt-get install -y docker.io\n'
   printf '            wsl -d Ubuntu -- sudo usermod -aG docker $USER   # then restart the distro\n'
@@ -286,6 +288,47 @@ decl=$($CT exec "$CID" sh -c "grep -c '^- kind: ' /data/agent.yaml" 2>/dev/null 
                      || bad "17. /data/agent.yaml declares '${decl:-0}' components after a restart"
 
 $DCP down -v >/dev/null 2>&1 || true
+
+# ---------------------------------------------------------------------
+# 18. The UnRAID case: a uid the image has never heard of.
+#
+# `unraid/eugene-plexus.xml` ships `--user 99:100` because that is what a
+# NAS owns its appdata with, and the image bakes in uid 10001. So the
+# container runs as a uid with **no /etc/passwd entry**, which is the
+# part that can actually break: `$HOME` resolves to nothing, and an agent
+# that insisted on a writable home would die on first start with an error
+# that reads like our bug rather than a permissions mistake.
+#
+# `container.md` has claimed this works since step 5, verified as a plain
+# process. This is the same claim in a container, which is where the
+# template puts it.
+#
+# The directory is made world-writable rather than chowned because that
+# needs root on the host and this script must not. Ownership is an
+# ordinary filesystem concern the NAS gets right on its own; the unknown
+# uid is the part worth proving.
+# ---------------------------------------------------------------------
+say "runtime: the UnRAID case -- an unknown uid and no home directory"
+UIDDIR=$(mktemp -d)
+chmod 777 "$UIDDIR"
+$CT rm -f ep-uid-check >/dev/null 2>&1 || true
+if $CT run -d --name ep-uid-check --init --user 99:100      -v "$UIDDIR:/data" -p 18079:8079      eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
+  uidok=""
+  for _ in $(seq 1 90); do
+    curl -sf -m 2 http://127.0.0.1:18079/healthz >/dev/null 2>&1 && { uidok=yes; break; }
+    sleep 1
+  done
+  if [ -n "$uidok" ]; then
+    ok "18. the image comes up healthy as uid 99:100, a user it does not contain"
+  else
+    bad "18. as --user 99:100 the agent never answered /healthz"
+    $CT logs ep-uid-check 2>&1 | tail -12 | sed 's/^/      /'
+  fi
+else
+  bad "18. could not start the image with --user 99:100"
+fi
+$CT rm -f ep-uid-check >/dev/null 2>&1 || true
+rm -rf "$UIDDIR"
 
 say "result"
 printf '  %d checks, %d failures\n' "$CHECKS" "$FAILURES"
