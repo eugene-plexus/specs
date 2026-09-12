@@ -275,6 +275,27 @@ paths:
         exactly as it does for a non-streamed request, and a backend
         that dies during connection or before producing output is
         failed over silently.
+
+        **A tool-call fragment is a first token.** The commit point is
+        the first frame carrying any part of an answer, and a
+        `tool_calls` delta is part of an answer — so a stream that has
+        emitted one fragment of one call is past the point of no return
+        exactly as if it had emitted prose.
+
+        This is the same rule, but it is worth stating separately
+        because the failure it prevents is worse. Splicing prose from
+        two models produces a visibly odd answer. Splicing a tool call
+        produces `arguments` half-written by one model and completed by
+        another, which can parse as valid JSON and name real
+        parameters — a **wrong action taken confidently**, with nothing
+        at the seam to notice. Text that reads strangely is a bad
+        answer; a call that runs cleanly against the wrong arguments is
+        a bad *effect*, and this control plane hands that call to a
+        harness that will execute it.
+
+        So: a caller that needs the cascade more than early tokens
+        should not stream, and that advice is stronger for an agent
+        loop than for a chat window.
       requestBody:
         required: true
         content:
@@ -946,6 +967,16 @@ components:
           description: |
             Smallest context window among the serving backends — the
             honest number, since a request may land on any of them.
+        tool_calling:
+          type: boolean
+          description: |
+            Whether a request for this model may carry `tools`.
+
+            **True only when every backend serving it can**, by the same
+            reasoning as `context_length` above: a request may land on
+            any of them, so the honest answer is the weakest one. A
+            harness can read this and pick a model rather than discover
+            the limit as a 400 halfway through a task.
         tiers:
           type: array
           items:
@@ -1025,6 +1056,43 @@ components:
         user:
           type: string
           description: Opaque client-supplied identifier, echoed into logs only.
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tool'
+          description: |
+            Tools the model may call. Passed through to the backend
+            unchanged; the gateway never invents, filters or reorders
+            them.
+
+            **The gateway does not execute tools.** It carries the
+            definitions down and the model's chosen calls back up, and
+            the caller runs them and sends the results as `tool` role
+            messages. That is OpenAI's contract and it is the one an
+            agent harness implements.
+
+            A backend that cannot carry tools is not silently stripped:
+            the request fails with a 400 naming the backend, because a
+            harness that receives a plain answer where it expected a
+            tool call has no way to tell "the model chose not to" from
+            "nobody ever offered it the tools" — and the second is a
+            bug that looks exactly like the first. `GET /v1/models`
+            reports which models can.
+        tool_choice:
+          description: |
+            How the model should use `tools`. `auto` is the default when
+            tools are present, `none` forbids calling one, `required`
+            forces at least one call, and an object names a specific
+            function. Passed through; the gateway does not enforce it.
+          oneOf:
+            - type: string
+              enum:
+                - none
+                - auto
+                - required
+            - $ref: '#/components/schemas/NamedToolChoice'
+        response_format:
+          $ref: '#/components/schemas/ResponseFormat'
 
     ChatCompletionMessage:
       type: object
@@ -1036,7 +1104,6 @@ components:
         SDK parses is how "compatible" quietly stops being true.
       required:
         - role
-        - content
       properties:
         role:
           type: string
@@ -1044,11 +1111,35 @@ components:
             - system
             - user
             - assistant
+            - tool
         content:
-          type: string
+          type:
+            - string
+            - 'null'
+          description: |
+            The message text. **Nullable, and that is not laxity:** an
+            assistant message that only calls a tool has no text, and
+            OpenAI sends `content: null` alongside `tool_calls` for it.
+            A schema that required a string here would reject the
+            single most common assistant turn in an agent loop.
         name:
           type: string
           description: Optional participant name, per OpenAI.
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCall'
+          description: |
+            Set on an **assistant** message, naming the tools the model
+            chose to call. The caller executes them and replies with one
+            `tool` message per call, each carrying the matching
+            `tool_call_id`.
+        tool_call_id:
+          type: string
+          description: |
+            Required on a **tool** message: which call in the preceding
+            assistant turn this is the result of. `content` is the
+            result, as a string — the caller serializes it.
 
     ChatCompletionResponse:
       type: object
@@ -1099,10 +1190,19 @@ components:
           enum:
             - stop
             - length
+            - tool_calls
           description: |
             `stop` for a natural end or a matched stop sequence,
-            `length` for hitting the token cap — OpenAI's two values for
-            a completion without tool calls.
+            `length` for hitting the token cap, `tool_calls` when the
+            model stopped because it wants one or more tools run.
+
+            Until 2026-09-11 this enum was `stop` and `length` only, and
+            its description said so in as many words — "OpenAI's two
+            values for a completion **without** tool calls". That
+            sentence was the single occurrence of the string "tool"
+            anywhere in this contract or the driver's, and it was an
+            accurate description of a control plane no agent harness
+            could use.
 
     ChatCompletionChunk:
       type: object
@@ -1158,14 +1258,27 @@ components:
           type: object
           description: |
             Incremental payload. The first chunk carries `role`;
-            subsequent chunks carry `content` fragments.
+            subsequent chunks carry `content` fragments, `tool_calls`
+            fragments, or neither on the terminal chunk.
           properties:
             role:
               type: string
               enum:
                 - assistant
             content:
-              type: string
+              type:
+                - string
+                - 'null'
+            tool_calls:
+              type: array
+              items:
+                $ref: '#/components/schemas/ToolCallDelta'
+              description: |
+                Tool-call fragments. Each carries an `index` and the
+                caller accumulates by it: `id` and `function.name`
+                arrive once, `function.arguments` arrives as a string
+                split across any number of frames. A single frame is
+                **not** parseable JSON and was never meant to be.
         finish_reason:
           type:
             - string
@@ -1173,8 +1286,176 @@ components:
           enum:
             - stop
             - length
+            - tool_calls
             - null
           description: Null until the terminal chunk.
+
+    Tool:
+      type: object
+      description: |
+        One tool offered to the model. OpenAI has only ever defined
+        `function`, and the wrapper exists so other kinds can be added
+        without reshaping the field.
+      required:
+        - type
+        - function
+      properties:
+        type:
+          type: string
+          const: function
+        function:
+          $ref: '#/components/schemas/FunctionDefinition'
+
+    FunctionDefinition:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: 'The name the model calls, e.g. `read_file`.'
+        description:
+          type: string
+          description: |
+            What the tool does. Load bearing rather than decorative —
+            it is the only thing the model has to decide *whether* to
+            call this tool.
+        parameters:
+          type: object
+          additionalProperties: true
+          description: |
+            A JSON Schema object describing the arguments. Passed
+            through verbatim: we do not validate it, rewrite it, or
+            translate dialects. A backend that rejects a construct
+            rejects it in its own words, which is more useful than a
+            guess of ours made one hop earlier.
+        strict:
+          type:
+            - boolean
+            - 'null'
+          description: |
+            Ask the backend to constrain generation to `parameters`.
+            Passed through; backends that do not support it ignore it.
+
+    NamedToolChoice:
+      type: object
+      description: Force one specific function.
+      required:
+        - type
+        - function
+      properties:
+        type:
+          type: string
+          const: function
+        function:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+
+    ToolCall:
+      type: object
+      description: One tool call the model chose to make.
+      required:
+        - id
+        - type
+        - function
+      properties:
+        id:
+          type: string
+          description: |
+            Correlation id. The caller echoes it as `tool_call_id` on
+            the message carrying the result.
+        type:
+          type: string
+          const: function
+        function:
+          $ref: '#/components/schemas/FunctionCall'
+
+    FunctionCall:
+      type: object
+      required:
+        - name
+        - arguments
+      properties:
+        name:
+          type: string
+        arguments:
+          type: string
+          description: |
+            The arguments as a **JSON string**, not an object. That is
+            OpenAI's shape and it is deliberate on their part: a model
+            can emit invalid JSON, and a string preserves what it
+            actually said instead of failing the whole response. The
+            caller parses it and handles the failure. We do not parse
+            it, so we cannot lose it.
+
+    ToolCallDelta:
+      type: object
+      description: |
+        A fragment of a `ToolCall` in a streaming response. Accumulate
+        by `index`.
+      required:
+        - index
+      properties:
+        index:
+          type: integer
+          description: |
+            Which call in the assistant turn this fragment belongs to.
+            Present on every fragment, because a model can interleave
+            fragments of two calls.
+        id:
+          type: string
+        type:
+          type: string
+          const: function
+        function:
+          type: object
+          properties:
+            name:
+              type: string
+            arguments:
+              type: string
+              description: A fragment of the arguments string, to be concatenated.
+
+    ResponseFormat:
+      type: object
+      description: |
+        Constrain the shape of the reply. Passed through to the backend;
+        the gateway does not enforce or post-validate it.
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - text
+            - json_object
+            - json_schema
+        json_schema:
+          $ref: '#/components/schemas/ResponseJsonSchema'
+          description: Required when `type` is `json_schema`.
+
+    ResponseJsonSchema:
+      type: object
+      required:
+        - name
+        - schema
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        schema:
+          type: object
+          additionalProperties: true
+          description: A JSON Schema object. Passed through verbatim.
+        strict:
+          type:
+            - boolean
+            - 'null'
 
     CompletionUsage:
       type: object

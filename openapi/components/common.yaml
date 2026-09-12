@@ -26,6 +26,7 @@ components:
         - system
         - user
         - assistant
+        - tool
     Message:
       type: object
       description: |
@@ -34,13 +35,39 @@ components:
         re-shape on every hop.
       required:
         - role
-        - content
       properties:
         role:
           $ref: '#/components/schemas/Role'
         content:
+          type:
+            - string
+            - 'null'
+          description: |
+            Message text. Text-only for now; multimodal extensions
+            deferred. **Nullable, and no longer required:** an assistant
+            turn that only calls a tool has no text to carry, and the
+            alternative — an empty string — would assert the model said
+            nothing when in fact it said something that was not text.
+        toolCalls:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: |
+            On an **assistant** message: the tool calls the model made,
+            in OpenAI's `{id, type, function: {name, arguments}}` shape.
+
+            Deliberately loose here. This is the *shared* schema, so a
+            tightly-typed copy would be a third definition of the same
+            object alongside the gateway's and the driver's, and the one
+            place all three must agree is the wire format, which is
+            OpenAI's and not ours to restate. The two API documents
+            carry the strict shapes.
+        toolCallId:
           type: string
-          description: Message text. Text-only for now; multimodal extensions deferred.
+          description: |
+            On a **tool** message: which call this is the result of.
+            `content` is the result, serialized by the caller.
         timestamp:
           type: string
           format: date-time

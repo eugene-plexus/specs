@@ -171,7 +171,9 @@ paths:
         Same request shape as `POST /v1/generate`, but the response is a
         Server-Sent Events stream. Events:
 
-        - `event: token` — `data` is a JSON `{"text": "..."}` chunk
+        - `event: token` — `data` is a JSON `StreamToken`: `text` for a
+          text fragment, `toolCalls` for tool-call fragments, never
+          both in one frame
         - `event: done`  — `data` is the final `GenerateResponse` JSON
         - `event: error` — `data` is a `Problem` JSON
 
@@ -429,21 +431,63 @@ components:
           type: string
           format: uuid
           description: Caller-supplied id for log correlation. Echoed in the response.
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tool'
+          description: |
+            Tools the model may call, in OpenAI's shape. Carried down to
+            the backend unchanged and never executed here — the driver
+            is a protocol adapter, and running a tool is the caller's
+            job by the same reasoning that keeps output-affecting
+            parameters on the gateway.
+
+            An adapter whose backend cannot carry tools MUST fail the
+            request rather than drop the field. Dropping it yields a
+            plain answer that a harness cannot distinguish from the
+            model declining to call anything.
+        toolChoice:
+          description: |
+            `none`, `auto`, `required`, or an object naming one
+            function. Passed through.
+          oneOf:
+            - type: string
+              enum:
+                - none
+                - auto
+                - required
+            - $ref: '#/components/schemas/NamedToolChoice'
+        responseFormat:
+          $ref: '#/components/schemas/ResponseFormat'
     GenerateResponse:
       type: object
       required:
-        - content
         - finishReason
       properties:
         content:
-          type: string
-          description: The generated assistant text.
+          type:
+            - string
+            - 'null'
+          description: |
+            The generated assistant text. **Nullable since tool calling
+            landed:** a turn that only calls a tool produces no text,
+            and an empty string would be a lie about what the model
+            said. Was required; a response with `toolCalls` and no
+            `content` is the common agent-loop case.
+        toolCalls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCall'
+          description: |
+            Tools the model chose to call. Present when `finishReason`
+            is `tool_calls`.
         finishReason:
           type: string
           enum:
             - stop          # natural end of generation
             - length        # hit max tokens
             - stop_sequence # matched a `stop` value
+            - tool_calls    # stopped to call one or more tools
             - error         # truncated due to backend error
         usage:
           $ref: '#/components/schemas/Usage'
@@ -458,6 +502,151 @@ components:
         latencyMs:
           type: integer
           description: End-to-end driver-side latency in milliseconds.
+
+    StreamToken:
+      type: object
+      description: |
+        One `event: token` payload. Exactly one of `text` or `toolCalls`
+        is set.
+      properties:
+        text:
+          type: string
+          description: A fragment of the assistant's text.
+        toolCalls:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolCallDelta'
+          description: |
+            Fragments of one or more tool calls, accumulated by `index`.
+
+    Tool:
+      type: object
+      required:
+        - type
+        - function
+      properties:
+        type:
+          type: string
+          const: function
+        function:
+          $ref: '#/components/schemas/FunctionDefinition'
+
+    FunctionDefinition:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+          description: A JSON Schema object, passed through verbatim.
+        strict:
+          type:
+            - boolean
+            - 'null'
+
+    NamedToolChoice:
+      type: object
+      required:
+        - type
+        - function
+      properties:
+        type:
+          type: string
+          const: function
+        function:
+          type: object
+          required:
+            - name
+          properties:
+            name:
+              type: string
+
+    ToolCall:
+      type: object
+      required:
+        - id
+        - type
+        - function
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: function
+        function:
+          $ref: '#/components/schemas/FunctionCall'
+
+    FunctionCall:
+      type: object
+      required:
+        - name
+        - arguments
+      properties:
+        name:
+          type: string
+        arguments:
+          type: string
+          description: |
+            Arguments as a JSON **string**, not an object — a model can
+            emit invalid JSON and the string preserves what it actually
+            said. Not parsed here.
+
+    ToolCallDelta:
+      type: object
+      required:
+        - index
+      properties:
+        index:
+          type: integer
+        id:
+          type: string
+        type:
+          type: string
+          const: function
+        function:
+          type: object
+          properties:
+            name:
+              type: string
+            arguments:
+              type: string
+
+    ResponseFormat:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum:
+            - text
+            - json_object
+            - json_schema
+        json_schema:
+          $ref: '#/components/schemas/ResponseJsonSchema'
+
+    ResponseJsonSchema:
+      type: object
+      required:
+        - name
+        - schema
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        schema:
+          type: object
+          additionalProperties: true
+        strict:
+          type:
+            - boolean
+            - 'null'
 
     Usage:
       type: object
@@ -526,6 +715,18 @@ components:
             streaming:
               type: boolean
               description: Whether `/v1/generate/stream` emits true incremental tokens.
+            toolCalling:
+              type: boolean
+              description: |
+                Whether this driver can carry `tools` to its backend and
+                report `toolCalls` back.
+
+                The gateway reads it to answer a question a harness
+                cannot otherwise ask: a plain answer where a tool call
+                was expected looks identical whether the model declined
+                or the backend never saw the tools. A driver that says
+                `false` here is failed at the front door with a reason
+                instead.
             maxContextTokens:
               type: integer
               minimum: 0
