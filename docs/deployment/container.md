@@ -121,8 +121,10 @@ https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.
 
 **Docker → Add Container → Template → paste that URL.** It fills in the three
 ports, the data path, the `ExtraParams` that are not optional, and an advanced
-section for the passphrase file. Update, Edit, Start/Stop and the log viewer
-then work the way they do for anything else on the box.
+section for the passphrase file.
+
+**Then do the one-line cleanup in the next section.** Until you do, Unraid has
+nowhere to keep your settings and every Force Update resets them.
 
 It pulls `ghcr.io/eugene-plexus/control-plane:edge`, which CI builds and
 **verifies before pushing** — `scripts/compose-acceptance.sh` runs its
@@ -136,6 +138,59 @@ Actions starts **private**, so the first pull fails with an authentication
 error that looks like a bad image name. Make it public once at
 `github.com/orgs/eugene-plexus/packages` → control-plane → Package settings →
 Change visibility.
+
+### After the first Apply, delete the author copy
+
+**Do this once, or every update throws your settings away.** Verified on a
+real box 2026-09-12, after it happened to the first person to use this
+template.
+
+```sh
+rm /boot/config/plugins/dockerMan/templates-user/eugene-plexus.xml
+```
+
+Then Edit the container, re-enter your values, and Apply. Confirm you now
+have a `my-eugene-plexus.xml` in that folder:
+
+```sh
+ls /boot/config/plugins/dockerMan/templates-user/ | grep eugene
+# my-eugene-plexus.xml   <- correct
+# eugene-plexus.xml      <- delete this one
+```
+
+**Why.** Pasting a URL downloads the template into `templates-user/` under
+*our* filename. Unraid treats any file already in that folder as the user
+template and writes your settings back into it, so the `my-<name>.xml` it
+normally maintains is never created — your config and the author template
+become the same file. A Community Applications app never hits this, because
+its author template lives in CA's feed and your `my-*.xml` is separate; that
+is why every other container on the box keeps its ports and this one did not.
+
+The template used to carry a `<TemplateURL>` pointing at the same raw URL,
+which is the address Unraid re-downloads that file from — so a refresh
+overwrote the user's config with the defaults. **That field is gone now**, so
+a current install no longer gets clobbered on its own. The cleanup above is
+still worth doing: it gets you a properly-named user template that nothing
+will ever overwrite, including a future re-paste of the URL.
+
+**It is not only the ports.** The whole file is replaced, so the data path
+reverts to `/mnt/user/appdata/eugene-plexus` as well — and unlike a port, that
+one is not fixed by retyping it. A fresh data directory is a *second install*,
+whose worker nodes are still enrolled to a trust root that no longer exists.
+If you customised Data, check it after any update until you have the `my-`
+file.
+
+**Untested alternative that skips the cleanup:** download the template
+straight to the user-template name and install from the dropdown instead of
+by URL.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.xml   -o /boot/config/plugins/dockerMan/templates-user/my-eugene-plexus.xml
+```
+
+Then **Docker → Add Container →** pick `eugene-plexus` from the user-template
+dropdown. This should never produce an author copy to collide with, but it has
+not been run — the paste-then-clean path above is the one that was verified.
 
 ### The data directory must be owned by 99:100
 
@@ -173,6 +228,12 @@ ones, set the template's **host-side** values to match before you hit Apply:
 
 Container-side ports never change; only the left-hand side of the mapping
 does.
+
+**Remapped ports are exactly the settings the author copy eats**, so do the
+cleanup above before you trust them to survive an update. The author of this
+project runs the control plane on 8279/8280/8283 because the defaults clash
+with other containers on that box, and re-entered all three on every update
+until this was diagnosed.
 
 ### What the GUI still cannot do
 

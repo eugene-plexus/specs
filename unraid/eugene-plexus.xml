@@ -42,7 +42,34 @@
   </Overview>
   <Category>Tools: Productivity: Network:Other</Category>
   <WebUI>http://[IP]:[PORT:8079]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.xml</TemplateURL>
+  <!--
+    NO <TemplateURL>, AND THAT IS THE FIX FOR A REAL BUG, not an omission.
+
+    Unraid's "Add Container -> Template -> paste a URL" downloads the
+    template into `/boot/config/plugins/dockerMan/templates-user/` under
+    the *author's* filename. Unraid then treats any file already in that
+    folder as the user template and writes your settings back into it,
+    so the `my-<name>.xml` it would normally maintain is never created.
+    Author template and user config become the SAME FILE — and
+    `TemplateURL` is the address Unraid re-downloads that file from.
+
+    The result, reported by the first user to run this: every Force
+    Update reset the ports to the defaults. Not only the ports. The
+    whole file is replaced, so the data path goes back to
+    `/mnt/user/appdata/eugene-plexus` too, and that one is not fixed by
+    retyping it — a fresh data directory is a second install whose
+    worker nodes are still enrolled to a trust root that no longer
+    exists.
+
+    A Community Applications app never hits this: its author template
+    lives in CA's feed and the user template is a separate `my-*.xml`,
+    so a refresh cannot touch anyone's config. Pasting a URL collapses
+    the two into one file. We are not in CA, so `TemplateURL` bought
+    nothing here and cost exactly this.
+
+    **If this is ever submitted to Community Applications, put it back** —
+    there it is both expected and harmless.
+  -->
   <Icon>https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.png</Icon>
 
   <!--
