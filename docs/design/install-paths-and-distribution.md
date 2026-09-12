@@ -448,10 +448,17 @@ into, rather than the unclaimed one. See
    is no container runtime on the development machine, so the image has
    never been built; `scripts/compose-acceptance.sh` runs nine
    structural checks and skips eight runtime ones, loudly.
-6. **Tool calling, end to end** —
+6. ~~**Tool calling, end to end**~~ **DONE 2026-09-11 (late)** —
    [`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md)
-   §5 items 1-2. **The thesis work.** Nothing in that document matters
-   until this lands.
+   §5 items 1-2, and §9 there is the implementation record. Contracts
+   `95dfa8f`; inference-driver `b2aab87`, gateway `bf2c930`, `ui`
+   `be94751`, the other three re-pinned because `common.yaml` changed.
+   Record: [`../acceptance/tool-calling-run.md`](../acceptance/tool-calling-run.md),
+   **16 checks**. A real 30B model, given real tool definitions through
+   the whole path, made a real call and the loop closed. The gap was
+   wider than §0 said — the driver could not carry a call either, in
+   three ways, one of which meant the well-formed response was the one
+   that 502'd.
 7. **Context-window honesty** — that document's §6, and the actual
    differentiator: we launch the engine, so we know the window.
 8. **The playground as a diagnostic** — tools, attachments, and the

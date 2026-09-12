@@ -13,7 +13,7 @@ install serves no agent harness either. See §8.
 
 | #     | The call                                                                      | §   | Status                 |
 | ----- | ------------------------------------------------------------------------------ | --- | ---------------------- |
-| **1** | Carry tool calls end to end — is this the milestone after the release?          | §5  | **OPEN** (recommended) |
+| **1** | Carry tool calls end to end                                                     | §5  | **DONE 2026-09-11** — §9 |
 | **2** | Does `/v1/embeddings` belong in scope, or is that Open WebUI's own problem?     | §5  | **OPEN**               |
 | **3** | Context-window honesty: refuse, truncate-and-report, or configurable?           | §6  | **OPEN**               |
 | **4** | The playground is a reference client and diagnostic, not a product             | §7  | **DECIDED 2026-09-11** |
@@ -289,5 +289,68 @@ makes the bisection actionable for someone filing a bug.
 
 ## 9. Implementation record
 
-Nothing built. Record what was built, what departed from this design,
-and why, as each item of §5 lands.
+**§5 items 1 and 2 are BUILT AND LIVE-VERIFIED, 2026-09-11 (late).**
+Contracts `95dfa8f`; inference-driver `b2aab87`, gateway `bf2c930`,
+`ui` `be94751`, the other three re-pinned because `common.yaml` changed.
+Record: [`../acceptance/tool-calling-run.md`](../acceptance/tool-calling-run.md),
+**16 checks, second attempt.** Items 3 (`/v1/embeddings`, open call #2)
+and 4 (context honesty, §6 and install-paths step 7) are still open.
+
+**§0 understated it in one direction and overstated it in another.** The
+gateway really could not carry a tool call — but the driver could not
+either, in three separate ways, each of which looked like something
+else. `_FINISH_REASON_MAP` mapped a backend's `tool_calls` to
+`FinishReason.stop`, so a model that *had* asked for a tool reported a
+clean natural end and the calls were dropped one line later. The
+non-streaming parser required `content` to be a string and raised
+otherwise — and `content` is null on every tool-call-only turn, so the
+well-formed case was the one that 502'd. And `_to_openai_messages`
+coerced any unrecognised role to `user`, which with `tool` in the enum
+would have turned a tool result into the human talking.
+
+### Decided here rather than left to a run
+
+**A backend that cannot carry tools fails the request; it is never
+silently stripped.** §0 named the harm without naming the rule. A
+harness receiving a plain answer cannot distinguish "the model chose not
+to call anything" from "nobody ever offered it the tools" — and the
+second is a bug wearing the first one's clothes, which is precisely the
+looping symptom §6 describes. Producing it ourselves while claiming to
+route around it would be worse than not shipping tools.
+`capabilities.toolCalling` and `x_eugene_plexus.tool_calling` make the
+question answerable before a request is sent.
+
+**The two capability answers differ on purpose.** `GET /v1/models`
+reports `tool_calling` only when *every* backend serving the model can —
+the honesty rule `context_length` already follows, since a request may
+land on any replica. The refusal asks whether *any* can. One advertises
+what a caller may rely on; the other decides whether to fail a request
+that would otherwise have worked.
+
+**§5's streaming trap resolved without code.** A `tool_calls` delta is a
+first token, so M10's commit point covers it, and `TieredClient.stream`
+already set `committed` on the first event of any kind. The contract now
+states it separately because the failure it prevents is worse than
+M10's: spliced prose reads oddly, while spliced `arguments` — half
+written by one model, completed by another — can parse as valid JSON
+naming real parameters. A wrong *action* taken confidently, with nothing
+at the seam to notice, handed to a harness that will execute it.
+
+### What the live run taught
+
+**Local engines do not fragment tool calls.** Ollama emits the entire
+call — id, name and complete `arguments` — in one delta. The first
+version of the streaming checks demanded many fragments and an early
+time-to-first-fragment, which is a property of the *backend*: the check
+could only have passed against a backend that fragments, and it failed
+our correct pass-through. This project's recurring failure, in the
+script written to avoid it. The checks are now equality with a baseline
+measured in the same run, and a structural assertion that fragments
+precede the terminal frame. OpenAI proper does fragment, so the
+accumulation path is real and unit-tested with a fake that splits
+`arguments` mid-token.
+
+**`content` going nullable has the widest blast radius of anything
+here** — five Python call sites and three TypeScript ones, all found by
+the type checkers rather than at runtime, none of which would have
+failed until a tool call actually came back.
