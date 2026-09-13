@@ -1123,6 +1123,85 @@ paths:
 
   # -------- Config --------
 
+  /v1/directories:
+    get:
+      tags: [config]
+      operationId: listDirectories
+      summary: List a directory on this host, for the model-roots picker.
+      description: |
+        The directory picker `path_list` has promised since M2 — *"an
+        add/remove list of directory pickers"* — finally has something
+        to list (M11). This is the library's own host: the machine whose
+        directories `modelRoots` names, inside its container if it runs
+        in one, which on a multi-host install is frequently not the
+        machine the browser is on. `host` on the response says which.
+
+        Without `path`, the places to start: every drive on Windows,
+        `/` on POSIX, and the home directory. With it, that directory's
+        children — directories only unless `includeFiles`, visible only
+        unless `showHidden`. Entries this component may not read are
+        left out rather than failing the listing.
+
+        **Operator-only and unrestricted.** An operator can already type
+        any path into `modelRoots`, and `POST /v1/config/test` already
+        stats whatever they name; listing what they could type is not a
+        new capability. It is still a walk of the host's disk on
+        request, so no service token is accepted — reads elsewhere here
+        take one, this does not.
+
+        The agent carries the same endpoint with the same schema, for
+        the paths *its* host holds. One picker in the UI, pointed at
+        whichever component owns the field.
+      parameters:
+        - in: query
+          name: path
+          required: false
+          schema:
+            type: string
+          description: |
+            Absolute path of the directory to list. Omit for the
+            starting points. A UNC path or an unmounted place is typed,
+            not browsed.
+        - in: query
+          name: includeFiles
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Also list files. The roots picker never asks for this.
+        - in: query
+          name: showHidden
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Also list dot-prefixed and hidden entries.
+      responses:
+        '200':
+          description: The listing.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/DirectoryListing'
+        '400':
+          description: '`path` exists and is not a directory.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '403':
+          description: This component may not read `path`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          description: No such directory on this host.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/config:
     get:
       tags: [config]
@@ -1336,6 +1415,14 @@ components:
             A `.gguf` file for GGUF (the **first** shard when split), a
             directory for safetensors. This is what goes on a runtime's
             `modelPath`.
+
+            **A path on the host this library runs on** — inside its
+            container, if it runs in one. A node that runs the engine
+            elsewhere reaches the same file through its agent's
+            `pathMappings` (M11): the declaration keeps this spelling,
+            and the node resolves its own at every spawn. So this string
+            is both the model's identity install-wide and the left-hand
+            side of any mapping that reaches it.
         root:
           type: string
           description: |

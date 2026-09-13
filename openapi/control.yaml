@@ -717,6 +717,17 @@ paths:
         only happen on the agent, so this endpoint's failures are largely
         relayed from there. A 502 means the agent refused or was
         unreachable, and `detail` carries what it said.
+
+        **`spec.modelPath` is the library's spelling and stays that
+        way** (M11). The library names a model by its path on the
+        library's host; the target node resolves where the same file is
+        on its own disk through its agent's `pathMappings`, at spawn,
+        and reports the result as `Runtime.localPath`. Nothing here
+        translates the path, and nothing here knows how to — a mount is
+        a fact about one host that only that host can check. A node
+        that cannot find the file refuses with a 422 naming the path,
+        the node and the mapping fix, and that refusal is what the 502
+        relays.
       requestBody:
         required: true
         content:

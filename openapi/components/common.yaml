@@ -400,6 +400,18 @@ components:
         subscription is a target like any other, because a
         `claude_code_cli` driver already serves a model id. UIs without
         a structured renderer for it fall back to editing the JSON.
+
+        `path_mappings` (M11) is an ordered JSON array of `PathMapping`
+        — `{"from": <a directory as another machine states it>, "to":
+        <the same directory on this host>}`. Its one user is the agent's
+        `pathMappings`, which is how a node opens model files a library
+        on another host described by *its* path: `/models` on the NAS
+        is `Z:\models` here. UIs render it as rows of two directory
+        fields, the right-hand one browsable on the component's own
+        host, and offer the library's configured roots as suggestions
+        for the left. Matching, precedence and translation rules are on
+        the agent's field description, not here — the type promises a
+        list of pairs and nothing about what they mean.
       enum:
         - string
         - integer
@@ -415,6 +427,7 @@ components:
         - runtime_name # name of a supervised engine runtime; see the description
         - node_name   # name of an enrolled node; see the description
         - model_slots # ordered model -> targets priority lists; see the description
+        - path_mappings # ordered {from, to} directory mappings; see the description
 
     ConfigField:
       type: object
@@ -861,6 +874,125 @@ components:
           description: |
             Optional human-readable note (e.g. "logs flushed, exiting
             now"). UI may display this in the restart-progress dialog.
+
+    # -------- Paths on another host (M11) --------
+
+    PathMapping:
+      type: object
+      description: |
+        One rule for reading a path that another machine wrote.
+
+        The library describes each model by its path **on the library's
+        own host**, and a runtime declaration copies that string
+        verbatim — so when the engine runs elsewhere, the agent there is
+        handed a path from a filesystem it does not have. A mapping says
+        where the same directory is on this host: the NAS's `/models`
+        is `Z:\models` on the Windows box that mounts it. Nothing is
+        copied or cached; the operator mounts the share, and this tells
+        the agent where they mounted it.
+
+        Shared here because it appears in two places on the agent: as
+        the entries of the `pathMappings` config field, and as
+        `ModelLocation.mapping` on an admission answer, which reports
+        the rule that applied. Two definitions of one pair would drift.
+      required:
+        - from
+        - to
+      properties:
+        from:
+          type: string
+          description: |
+            A directory as the other machine states it — in practice a
+            library root, spelled exactly as the library's own
+            `GET /v1/config` lists it. Its shape decides how it matches:
+            a drive letter or UNC prefix means Windows rules (case-
+            insensitive, `/` and `\` interchangeable); a leading `/`
+            means POSIX rules. The agent cannot know the library's
+            operating system, and the string came from it, so the
+            string stands in.
+        to:
+          type: string
+          description: |
+            The same directory on the host holding this config. Used
+            verbatim, `~` expanded; the remainder of a matched path is
+            re-joined onto it with this host's own separator.
+
+    DirectoryListing:
+      type: object
+      description: |
+        One directory on the component's own host, listed for a picker.
+
+        Returned by `GET /v1/directories` on the library (whose host
+        holds the model roots) and on the agent (whose host holds a
+        path mapping's `to`, and any engine binary an operator points
+        at). The same shape on both, because the UI has one picker and
+        the only thing that differs is which machine's disk it is
+        looking at — which is why `host` is on the response.
+
+        This is the endpoint behind the promise `path_list` has carried
+        since M2: *"an add/remove list of directory pickers"*. It lists
+        what an operator could already type into a path field, on
+        request, to the strongest credential there is; it is not a new
+        capability and it is not a file browser.
+      required:
+        - host
+        - entries
+      properties:
+        host:
+          type: string
+          description: |
+            The machine whose disk this is. On a multi-host install the
+            answer to "browse" is frequently a machine other than the
+            one the browser is on.
+        path:
+          type: string
+          description: |
+            The directory listed, absolute and as this host spells it.
+            Absent when no `path` was asked for, in which case `entries`
+            are the places to start from — every drive on Windows, `/`
+            on POSIX, and the home directory.
+        parent:
+          type: string
+          description: |
+            The directory above `path`, so a picker can go up without
+            doing path arithmetic in a browser. Absent at a filesystem
+            root and when `path` is absent.
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/DirectoryEntry'
+          description: |
+            Sorted by name, directories first. Entries this component
+            may not read are omitted rather than failing the listing.
+
+    DirectoryEntry:
+      type: object
+      required:
+        - name
+        - path
+        - kind
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+          description: Absolute path, ready to be used as a config value.
+        kind:
+          $ref: '#/components/schemas/DirectoryEntryKind'
+        hidden:
+          type: boolean
+          default: false
+          description: |
+            A dot-prefixed name, or the hidden attribute on Windows.
+            Only present in a listing that asked for `showHidden`.
+
+    DirectoryEntryKind:
+      type: string
+      enum: [directory, file]
+      description: |
+        Files appear only when a listing asked for `includeFiles`. A
+        directory picker never does; a `file_path` field's picker would,
+        which is why the flag exists on the endpoint without a UI yet.
   responses:
 
     Problem:
