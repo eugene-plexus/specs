@@ -428,6 +428,40 @@ keeps that number. Only the unbuilt milestone moved.
   to open. `LogOp` also opened to ten (`updateNode`), for the reason its
   own description gives: applied state that mutates outside the set is
   state that would not replicate.
+- **M10 — token streaming: DONE, live-verified 2026-09-11**
+  ([design](m10-token-streaming.md) §9 is the implementation record;
+  [acceptance](../acceptance/m10-streaming-run.md))**.** Real token
+  streaming through both layers, and the rule it cost: **failover is
+  possible until the first token and impossible after it.** The gap was
+  larger than the roadmap had carried — the gateway had been faking a
+  stream as one content chunk for nine milestones, and every "is it
+  streaming" check passed. This milestone took the number the next one
+  had been given, which is why compute/storage separation is M11.
+- **M11 — compute/storage separation: DONE, verified 2026-09-13**
+  ([design](m11-compute-storage-separation.md) §13 is the
+  implementation record;
+  [acceptance](../acceptance/m11-storage-separation-run.md))**.** The
+  library names a model by its path on the library's host; a node that
+  runs the engine elsewhere says where the same directory is mounted on
+  its own disk (`pathMappings`, one setting on that node's agent), and
+  the agent resolves the path at every spawn — never onto the
+  declaration, so the runtime keeps linking to its library entry.
+  Admission answers "is the model here at all" before "does it fit",
+  refuses with the fix when it is not, and a worker with no library of
+  its own reaches the install's through the owning node's agent. Plus
+  the folder picker `path_list` had promised since M2, on both
+  components that hold paths. **No transfer protocol and no node-side
+  cache**, deliberately: the operator mounts the share; we map the
+  path.
+
+  Two results worth carrying. **The refusal everyone relied on did not
+  exist**: the contract had promised a 400 for a missing model path
+  since M0 and nothing implemented it, so a launch of a path the node
+  did not have was accepted, given a companion driver, and crashed at
+  spawn. And **a worker never consulted the library**: an enrolled node
+  declares none, so every admission on the GPU node of the first
+  two-machine install had been measured by file size, and nothing said
+  so.
 - **Then:** MLX adapter, cloud providers back in the routing table, Discord
   revival.
 

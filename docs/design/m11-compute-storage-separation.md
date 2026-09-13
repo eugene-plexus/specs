@@ -1,8 +1,9 @@
 # M11 — Compute/storage separation (design)
 
-**Status:** designed 2026-09-13; **built and verified the same day** —
-§13 is the implementation record and §14 records where the build
-departed from this document. Milestone **M11** of
+**Status:** designed 2026-09-13; **BUILT AND VERIFIED THE SAME DAY** —
+`scripts/m11-acceptance.sh`, 53 checks, first execution. §13 is the
+implementation record and §14 records where the build departed from
+this document. Milestone **M11** of
 [`local-inference-control-plane.md`](local-inference-control-plane.md),
 following [M10](m10-token-streaming.md), which took its number and left
 this one as *"decided and undesigned"*.
@@ -185,8 +186,11 @@ tab over the `node:<name>` proxy target the console already has.
   has or has not matched.
 - **Longest `from` wins** (most components); ties go to the first
   listed. `to` is used verbatim (`~` expanded), the remainder re-joined
-  with *this host's* separator. Nothing matches → the path is used as
-  given, so a single-box install behaves exactly as before.
+  in the `to` side's own convention — `\` after a drive letter or UNC
+  prefix, `/` otherwise (§14.5: the first build used this host's
+  separator and CI's Linux runner produced `Z:\models/q.gguf`). Nothing
+  matches → the path is used as given, so a single-box install behaves
+  exactly as before.
 - **Applied everywhere this agent opens a model**: the spawn argv,
   admission's existence check and its file-size fallback, and the
   observed `Runtime.localPath`. **Never written onto the declaration.**
@@ -483,12 +487,137 @@ counter-argument.
 
 ---
 
-## 13. Implementation record
+## 13. Implementation record (2026-09-13)
 
-*Filled in after the build — see the bottom of this document.*
+Built the same day as the design, on the recommendations in §12.
+Contracts `df930bd`; agent `be17d9e`; library `4925e9c`; `ui`
+`e6be84c`; control `3cfa46f`, gateway `89cc1f4`, inference-driver
+`509378f` re-pinned only — their generated models gained the new
+schemas and nothing consumes them, and the config validator in each
+falls through to "unsupported valueType" as it did for `path_list` and
+`url_list`. Radius measured by regenerating every consumer: all six
+changed, because a `ConfigValueType` member reaches every generated
+model set (§8). Record:
+[`m11-storage-separation-run.md`](../acceptance/m11-storage-separation-run.md),
+**53 checks, zero failures, first execution.**
+
+### What was built
+
+- **`model_paths.py`** on the agent: `PathRule`, `resolve_model_path`
+  (component-wise match on the untouched declared string; the `from`'s
+  shape picks Windows or POSIX rules; longest wins; the remainder is
+  re-joined in the `to` side's own convention — see §14.5 for why not
+  the host's separator), `validate_rules`
+  (strict, for PATCH), `parse_rules` (lenient, for spawn — a hand-edited
+  `agent.yaml` must not stop a launch), and the Test button's
+  `check_rules` / `describe_checks`.
+- **`pathMappings`** on the agent's config trio, category `storage`,
+  new `ConfigValueType.path_mappings`. Applied in `_RuntimePlanner`
+  (the adapter is handed a copy of the spec with the local path; the
+  declaration is never written), in admission, and on
+  `RuntimeSupervisor.compose` as **`Runtime.localPath`**, live from the
+  current rules.
+- **`Admission.location` / `ModelLocation`**, computed off the event
+  loop, and the refusal for a model that is not here with the fix in
+  prose (§4). `LibraryFit` carries the library's sizes; a disagreement
+  warns.
+- **`library_client_for`**: the local library, else the install's,
+  found with `InstallTopology.owner_of("library")` and reached through
+  the owning node's agent proxy with a `service:agent` token. Any
+  failure falls back to file size and logs why.
+- **`POST /v1/config/test`** on the agent checks `pathMappings`: each
+  target stat'd, and every library model under a `from` resolved and
+  compared in size when the library can be reached. Composed with the
+  existing `securityMode` probe rather than replacing it.
+- **`GET /v1/directories`** on the agent and on the library, one module
+  (`directory_listing.py`) in two repos, operator-only on both.
+- **`default_model_alias`** takes the last component under either
+  separator convention, so a Windows-spelled library path on a Linux
+  node does not produce `D:\models\x` as a routing key.
+- **UI**: `FolderPicker`; Browse on every `path_list` row; the
+  `path_mappings` editor with the library's roots as suggestions;
+  `Agent @ <node>` tabs on Config with `?tab=`; and the launch panel's
+  preview from the picked node's admission dry run
+  (`lib/launchPreview.ts`, pure, tested against the agent's real
+  answer shapes).
+
+### What the run found
+
+- **Nothing the fixtures had not.** Every check passed on the first
+  execution, which has happened before only for M4 and M7's two-host
+  run; the difference this time is that §0's probe against the agent's
+  own test app had already shown the exact behaviour being replaced.
+- **The install-wide lookup needs a non-loopback registry on one box.**
+  `_reachable_url` refuses to dial a loopback `Node.url` (the console
+  hop's rule: "explained, not dialled"), so a same-box run with both
+  agents on `127.0.0.1` degrades check 10 to `file_size` honestly. The
+  script detects the box's LAN address, advertises both agents on it and
+  binds `0.0.0.0`, exactly as the two-host M7 mode does. Not a defect;
+  worth knowing before reading the log.
+
+### Open
+
+- **Necessity.** One box cannot show that a launch would have failed
+  without the mapping, only that the mapped path is what was opened.
+  The live two-machine install can: mount the NAS share on
+  `Amish_Station`, add `/models → <mount>`, launch from the root.
+  Troy's to run.
+- **The Inference screen does not show `localPath` yet.** The
+  `RuntimePlacement` rows it joins carry no `modelPath` either; a
+  detail line is a UI-only change.
+- **`file_path` fields have no picker.** The endpoint's `includeFiles`
+  is built; the UI half is not.
+- **Apple silicon and a Linux `to`** are unit-tested directions, not
+  live ones.
 
 ---
 
 ## 14. Where the build departed from this design
 
-*Filled in after the build.*
+### 14.1 The second library-path declaration does not run
+
+§11 item 3 planned a declaration of the library's own path that goes
+`ready`. The run declares it with `autoStart: false`: the property under
+test is the join (`modelPath` the library's, `localPath` the mount, the
+library's `?path=` lookup finding it) and check 7 had already proved an
+engine opens a mapped path. A second 1.8 GB load on the same card would
+have bought nothing but a minute.
+
+### 14.2 The size compared is the weights file, not the model
+
+§4 said `librarySizeBytes` is "what the library says the same file is".
+For a single-file GGUF that is the model's `sizeBytes`; for a sharded
+one it is the first shard, which `LibraryModel.files[]` reports with
+role `weights`; for a directory (safetensors) it is the whole model,
+because the local size is the directory's sum. `LibraryFit` therefore
+carries both numbers and admission picks by whether the local path is a
+file. The contract already said this; the design's one sentence did not.
+
+### 14.3 The refusal's prose uses `->`, the UI uses `→`
+
+Admission's `reason` is ASCII, like every other reason the agent
+writes; the launch panel renders the structured `location` and writes
+its own sentence with an arrow. Two spellings of one fact on purpose:
+the agent's text is what a script reads and greps, the panel's is what
+a person reads.
+
+### 14.4 `validate_rules` accepts a bare drive letter
+
+`D:` with nothing after it is drive-relative on Windows and would be
+rejected by a strict reading of "absolute". Accepted, because an
+operator who types `D:` means the drive, and `PureWindowsPath("D:")`
+anchors it the same way `D:\` does.
+
+### 14.5 The remainder is re-joined in the `to`'s convention, not the host's
+
+§3 said the remainder is re-joined "with *this host's* separator", and
+§11 leaned on it: the separator would be a parameter so one suite could
+run both directions. The first build did exactly that, and CI's Linux
+runner produced `Z:\models/q.gguf` — a Windows-shaped `to` joined with
+`/`. No Linux node would carry such a `to`, so no real install was
+affected, but the rule was wrong in principle: a `to` is a path on the
+host that wrote it, and its shape says how that host spells paths,
+exactly as the `from`'s shape decides how it matches (agent `73e1d67`).
+The parameter is gone; the shape decides; and the suite runs both
+directions on both platforms with nothing to get wrong, which is how
+the mistake was caught.

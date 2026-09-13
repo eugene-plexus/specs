@@ -30,7 +30,7 @@ Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-
 
 ## Current status
 
-As of **2026-09-11**, this is a pre-1.0 control plane under active development. Milestones M0 through M10 are built, and each has a re-runnable acceptance script rather than a claim. Installers, a developer bootstrap and a control-plane container image exist; nothing is published to a registry yet.
+As of **2026-09-11**, this is a pre-1.0 control plane under active development. Milestones M0 through M11 are built, and each has a re-runnable acceptance script rather than a claim. Installers, a developer bootstrap and a control-plane container image exist; nothing is published to a registry yet.
 
 - **Live-verified on real hardware:** llama.cpp *and* vLLM supervision, model scanning and profiles, catalogue search and resumable downloads, quant guidance, replica balancing, priority-tier failover, idle unload, wake on demand, memory admission, and retained per-request metrics.
 - **Multi-host is proven on two real machines** (Windows + WSL2 Ubuntu, across NAT and a host firewall): non-loopback binds, derived advertise addresses, a cross-host completion, an idle unload decided on one host and executed on the other, and a full signing-key rotation. Enrollment, un-enrollment and address re-advertisement all run from a terminal on the machine being added.

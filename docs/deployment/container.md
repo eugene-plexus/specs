@@ -481,15 +481,32 @@ Library → Model directories**. The files are catalogued as they are;
 nothing is renamed, hashed or moved. Downloads from Discover land in the
 first directory listed.
 
-**A GPU node launches a model by path, and that path must exist on the
-GPU node.** The library only knows where the files are on *its* host.
-Today that means one of two shapes: the library and the engine on the
-same host, or the same share mounted on the GPU node at the same path
-the library reports. Per-node path mapping — "`/models` here is
-`Z:\models` there" — is the compute/storage separation milestone and
-is not built yet; until it is, a model downloaded to the NAS is a model
-the NAS can serve, and the Inference screen will say so when a launch
-elsewhere is refused.
+**A GPU node launches a model by path, and the library only knows where
+the files are on *its* host** — so on a GPU node the path has to be
+translated. That is M11, compute/storage separation, and it is one
+setting on the GPU node's agent: **Config → Agent @ `<node>` → Model
+directory mappings**, one row per library directory: `/models` (the
+library's directory, exactly as its Model directories setting lists it)
+→ `Z:\models` (where you mounted the same share on that machine). The
+rest of the path is carried over, so one row covers every model under
+the root. Press **Test** before saving: it checks the mapping against
+the library's real files and says how many are reachable and whether
+their sizes agree.
+
+Nothing is copied or cached — you mount the NAS's share on the GPU box
+(SMB or NFS, however you already do it) and the mapping says where. A
+model downloaded to the NAS is then a model any node that mounts the
+share can serve. Skip the mapping and the Library screen says so before
+you press Launch: *"Not on `<node>`: `/models/…` does not exist there"*,
+with a link to the setting; a launch that slipped past would be refused
+the same way, with the same fix in the message. Before M11 it was
+accepted and crashed at spawn.
+
+The declaration keeps the library's spelling. `Runtime.modelPath` stays
+`/models/…` — that is what links the runtime to its library entry — and
+`Runtime.localPath` on the Inference screen shows what the node actually
+opened. Change the mapping and the next start uses it; nothing has to be
+re-declared.
 
 ---
 
