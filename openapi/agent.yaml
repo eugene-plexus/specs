@@ -1440,9 +1440,16 @@ paths:
       The browser calls `/api/proxy/<target>/<path>`; the agent forwards
       the request to `<component-base-url>/<path>` with the method,
       headers, query and body it was given, and streams the response
-      back untouched. One origin for the whole install: no CORS
-      configuration on any component, and no component URL ever reaches
-      the browser.
+      back untouched. One origin for the UI's own calls: none of them
+      needs CORS, and no component URL has to reach the browser for
+      the UI to work.
+
+      **The exception, by design:** the gateway's three OpenAI-compatible
+      paths answer CORS separately (see `gateway.yaml`), so a browser can
+      also reach the front door *directly* -- which is what the
+      playground's diagnostic mode does, on purpose, because a client
+      that shares this proxy's path with the thing it tests proves
+      nothing about the path a third-party client takes.
 
       **`target` is resolved from this agent's own topology**, in
       process, at request time:

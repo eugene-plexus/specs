@@ -154,6 +154,32 @@ info:
     present the operator's session token (issued by the agent after
     passphrase login); component-to-component calls present the
     per-component service token threaded via env var at spawn time.
+
+    ## Browsers, and CORS
+
+    The three OpenAI-compatible paths -- `GET /v1/models`,
+    `POST /v1/chat/completions`, `POST /v1/embeddings` -- answer CORS,
+    so a web page on another origin can use the front door the way a
+    non-browser client always could: the UI playground's direct mode,
+    Open WebUI in a tab, a web app on the OpenAI SDK. A preflight is
+    answered before auth (it carries no bearer by definition), every
+    response on those paths carries `Access-Control-Allow-Origin`, and
+    **no other path does**: `/v1/config`, `/v1/admin/*` and
+    `/v1/metrics` stay same-origin, because a browser client needs the
+    front door and nothing else.
+
+    Any origin by default, no credentials. CORS exists to stop a page
+    spending credentials the browser attaches on its own -- cookies,
+    HTTP auth -- and the front door has none: a page without the bearer
+    gets the 401 a `curl` without one gets. Two live config fields
+    change it: `corsAllowedOrigins` (a list; empty means any) and
+    `corsEnabled` (off refuses browsers entirely). A refused preflight
+    is a `403` `Problem` naming the origin and the key, because a
+    browser reports every CORS failure as `Failed to fetch`.
+
+    Until 2026-09-13 a preflight here was answered `405 Method Not
+    Allowed`, measured live; nothing had noticed because the UI
+    reaches this gateway through the agent's same-origin proxy.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
