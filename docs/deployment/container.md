@@ -147,12 +147,23 @@ There is a Community-Applications-style template in the `specs` repo:
 https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.xml
 ```
 
-**Docker → Add Container → Template → paste that URL.** It fills in the three
-ports, the data path, the `ExtraParams` that are not optional, and an advanced
-section for the passphrase file.
+**Put it where Unraid keeps user templates, under the name Unraid itself
+would give it**, then install from the dropdown:
 
-**Then do the one-line cleanup in the next section.** Until you do, Unraid has
-nowhere to keep your settings and every Force Update resets them.
+```sh
+curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.xml \
+  -o /boot/config/plugins/dockerMan/templates-user/my-eugene-plexus.xml
+```
+
+**Docker → Add Container → Template → `eugene-plexus`**, under *User
+templates*. It fills in the three ports, the Data and Models paths, the
+`ExtraParams` that are not optional, and an advanced section for the
+passphrase file. Set your host-side values and Apply; dockerMan writes them
+back into that same file.
+
+**Why that filename matters more than it looks** is the next section. In
+short: never let a second copy of the template sit in that folder under any
+other name.
 
 It pulls `ghcr.io/eugene-plexus/control-plane:edge`, which CI builds and
 **verifies before pushing** — `scripts/compose-acceptance.sh` runs its
@@ -167,58 +178,51 @@ error that looks like a bad image name. Make it public once at
 `github.com/orgs/eugene-plexus/packages` → control-plane → Package settings →
 Change visibility.
 
-### After the first Apply, delete the author copy
+### Exactly one template file, and it is named `my-eugene-plexus.xml`
 
-**Do this once, or every update throws your settings away.** Verified on a
-real box 2026-09-12, after it happened to the first person to use this
-template.
+dockerMan saves a container's settings to `templates-user/my-<Name>.xml`.
+On every **Force Update it recreates the container from the first `.xml`
+file under `templates-user/` whose `<Name>` matches the container**, walking
+the folder in case-insensitive name order (`getUserTemplate` in
+`DockerClient.php`, `updateContainer` in `CreateDocker.php`; read
+2026-09-13 in `unraid/webgui`, `master`). A copy of the author template in
+that folder under its own name, `eugene-plexus.xml`, sorts before
+`my-eugene-plexus.xml`, carries the same `<Name>`, and wins. The container
+comes back with the defaults, ports and Data path both.
+
+That is exactly what happened to the first person to run this template, on
+every update, until the copy was removed. Check once:
+
+```sh
+ls /boot/config/plugins/dockerMan/templates-user/ | grep -i eugene
+# my-eugene-plexus.xml   <- the only line you want
+```
+
+Anything else there, delete it, then Edit the container and Apply once so
+the `my-` file holds your values:
 
 ```sh
 rm /boot/config/plugins/dockerMan/templates-user/eugene-plexus.xml
 ```
 
-Then Edit the container, re-enter your values, and Apply. Confirm you now
-have a `my-eugene-plexus.xml` in that folder:
+Verified on a real box 2026-09-12. The install path above, straight to the
+`my-` name, follows from the same code and has not yet been exercised on a
+box; the cleanup has.
 
-```sh
-ls /boot/config/plugins/dockerMan/templates-user/ | grep eugene
-# my-eugene-plexus.xml   <- correct
-# eugene-plexus.xml      <- delete this one
-```
-
-**Why.** Pasting a URL downloads the template into `templates-user/` under
-*our* filename. Unraid treats any file already in that folder as the user
-template and writes your settings back into it, so the `my-<name>.xml` it
-normally maintains is never created — your config and the author template
-become the same file. A Community Applications app never hits this, because
-its author template lives in CA's feed and your `my-*.xml` is separate; that
-is why every other container on the box keeps its ports and this one did not.
-
-The template used to carry a `<TemplateURL>` pointing at the same raw URL,
-which is the address Unraid re-downloads that file from — so a refresh
-overwrote the user's config with the defaults. **That field is gone now**, so
-a current install no longer gets clobbered on its own. The cleanup above is
-still worth doing: it gets you a properly-named user template that nothing
-will ever overwrite, including a future re-paste of the URL.
+**What it was not.** For a day this document blamed the template's
+`<TemplateURL>` field and removed it. dockerMan's source says that field is
+inert: the one function that reads it, `updateUserTemplate`, returns on its
+first line ("Don't update templates, but leave code in place for future
+reference"), and nothing is ever downloaded from it. Every Community
+Applications template carries the field and none of them loses its ports.
+The field is back; the shadowing copy was the whole bug.
 
 **It is not only the ports.** The whole file is replaced, so the data path
 reverts to `/mnt/user/appdata/eugene-plexus` as well — and unlike a port, that
 one is not fixed by retyping it. A fresh data directory is a *second install*,
 whose worker nodes are still enrolled to a trust root that no longer exists.
-If you customised Data, check it after any update until you have the `my-`
-file.
-
-**Untested alternative that skips the cleanup:** download the template
-straight to the user-template name and install from the dropdown instead of
-by URL.
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/unraid/eugene-plexus.xml   -o /boot/config/plugins/dockerMan/templates-user/my-eugene-plexus.xml
-```
-
-Then **Docker → Add Container →** pick `eugene-plexus` from the user-template
-dropdown. This should never produce an author copy to collide with, but it has
-not been run — the paste-then-clean path above is the one that was verified.
+If you customised Data, check it after any update until the folder holds the
+one file.
 
 ### The data directory must be owned by 99:100
 
@@ -257,8 +261,8 @@ ones, set the template's **host-side** values to match before you hit Apply:
 Container-side ports never change; only the left-hand side of the mapping
 does.
 
-**Remapped ports are exactly the settings the author copy eats**, so do the
-cleanup above before you trust them to survive an update. The author of this
+**Remapped ports are exactly the settings a shadowing author copy eats**, so
+check the folder above before you trust them to survive an update. The author of this
 project runs the control plane on 8279/8280/8283 because the defaults clash
 with other containers on that box, and re-entered all three on every update
 until this was diagnosed.
@@ -268,6 +272,14 @@ until this was diagnosed.
 **Unlock the trust root after a restart** — but the web UI can, on the Nodes
 page, and the passphrase file in the template's advanced section removes the
 need entirely. See "Unattended unlock" below.
+
+**Pick up new template fields on its own.** The code in dockerMan that would
+merge an updated author template into your `my-*.xml` is disabled upstream,
+for every container on the box, so a Path or Variable this template gains
+later (the Models path on 2026-09-12, the model-directory variable on
+2026-09-13) has to be added on the container's Edit page by hand: **Add
+another Path, Port, Variable, Label or Device**. A fresh install from the
+current template gets them automatically.
 
 ---
 
