@@ -134,19 +134,21 @@ components:
       configFile: library.yaml
 runtimes: []
 YAML
+# No controlUrl: the gateway derives it from its own agent (2026-09-13).
+# Writing it here by hand is how two green two-host runs never touched the
+# path an operator takes, while nothing in the product set it.
 cat > a/gateway.yaml <<YAML
 logLevel: INFO
 routingRefreshSeconds: 3
 idleCheckSeconds: 5
 swapWaitSeconds: 120
-controlUrl: $EP_CONTROL_URL
 YAML
 echo "logLevel: INFO" > a/control.yaml
 printf 'logLevel: INFO\nmodelRoots:\n  - %s\n' "$(win_path "$(dirname "$EP_MODEL")")" > a/library.yaml
 printf 'firstRunComplete: true\ncomponents: []\nruntimes: []\n' > b/agent.yaml
 
 # --- 1. agent A and its fleet --------------------------------------------------
-say "1. agent A starts control, gateway (controlUrl set) and library"
+say "1. agent A starts control, gateway (controlUrl NOT set: it derives it) and library"
 # `exec`, so the pid we hold is the agent's and not a subshell's — the first
 # run killed two subshells and orphaned both agents and an engine.
 # Bind wide only when A actually advertises a non-loopback address; the

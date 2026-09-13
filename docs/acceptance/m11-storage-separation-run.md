@@ -93,6 +93,31 @@ component whose every other read takes a service token.
 
 **Teardown by pid; no `llama-server` from this run survived.**
 
+## Second execution, 2026-09-13 (later): no `controlUrl` anywhere
+
+**55 checks, zero failures, first attempt** with gateway `687f770`
+(derives the control root; contracts `5f6cd3f`). The one difference
+from the run above is what the script *stopped* doing: it no longer
+writes `controlUrl` into agent A's `gateway.yaml`, which every
+multi-host script since M7 had done by hand while nothing in the
+product set it. Two checks replace the hand-write:
+
+- **Before anyone enrolled**, `GET gateway /v1/admin/routing` reported
+  `control_root.source: agent` with `url: http://127.0.0.1:8183/` —
+  the gateway had read the `control` component out of its own agent's
+  topology on its first refresh, with `gateway.yaml` naming no root.
+- **After both nodes enrolled**, the same view read `source: agent,
+  reachable: true, nodes: 2`, and node-b's runtime was routable through
+  A's gateway exactly as in the first run: `ready_backends=1`, then a
+  completion served by `qwen-mapped`. Between the two, A's agent had
+  enrolled and the derivation had switched from the topology's
+  component to the node's own `controlUrl` — read on every refresh,
+  no restart.
+
+Everything else in this record held unchanged: the refusal, the
+mapping, the argv, the join, the metadata basis through the install,
+the Test button, both directory listings, the teardown.
+
 ## What this run does not cover
 
 - **That the mapping was necessary.** Both agents can open the

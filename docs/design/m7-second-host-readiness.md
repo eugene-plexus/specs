@@ -375,6 +375,24 @@ the lifecycle client sends a stop for a runtime on node B to node B's URL
 and never to the default agent. The live run repeats the last of those
 with two real agents on two ports.
 
+**2026-09-13 — the field nothing set.** Every acceptance script since
+this one wrote `controlUrl` into the gateway's config by hand, and
+nothing in the product ever did: not the installers, not the container,
+not the agent's first boot. So two green two-host runs never touched the
+path an operator takes, and the first real two-machine install came up
+with its worker enrolled, reachable, its driver `running` in the control
+root's own union view — and invisible to routing, with an empty
+`unreachable_drivers` saying nothing was wrong. The gateway now derives
+the root from its own agent on every refresh: `GET /v1/node`'s
+`controlUrl` when the node is enrolled, else the `control` component in
+`GET /v1/components`; `controlUrl` is the override, used as given even
+when wrong (gateway `11b1df1` and `687f770`, contracts `5f6cd3f`).
+`RoutingTableView.control_root` says which was used and whether the root
+answered — a sealed root reads `503 Locked` there and in the no-models
+404, which until then named two healthy places. The scripts no longer
+write the field, so they test the default; `m11-acceptance.sh` asserts
+the derivation before and after enrollment.
+
 **Does the gateway's `/v1/info` probe need the service token to verify on
 the remote host?** Yes, and it does, by construction rather than by
 distribution: a companion spawned *after* its agent enrolled reads

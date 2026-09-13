@@ -133,7 +133,12 @@ components:
       configFile: library.yaml
 runtimes: []
 YAML
-printf 'logLevel: INFO\nroutingRefreshSeconds: 3\nidleCheckSeconds: 5\nswapWaitSeconds: 120\ncontrolUrl: http://127.0.0.1:%s\n' "$CTL_PORT" > a/gateway.yaml
+# No controlUrl. Every script since M7 wrote it here by hand, which is how
+# two green two-host runs never touched the path an operator takes -- and
+# nothing in the product set it, so every real multi-host install came up
+# with its workers invisible to routing. The gateway derives it from its
+# own agent now; this run asserts that it did, before and after enrollment.
+printf 'logLevel: INFO\nroutingRefreshSeconds: 3\nidleCheckSeconds: 5\nswapWaitSeconds: 120\n' > a/gateway.yaml
 echo "logLevel: INFO" > a/control.yaml
 printf 'logLevel: INFO\nmodelRoots:\n  - %s\n' "$(printf '%s' "$LIB_ROOT" | sed 's|/|\\|g')" > a/library.yaml
 printf 'firstRunComplete: true\ncomponents: []\nruntimes: []\n' > b/agent.yaml
@@ -151,6 +156,10 @@ curl -s -o /dev/null -X POST "$CTL/v1/auth/initialize" -H 'content-type: applica
 CTOK=$(curl -s -X POST "$CTL/v1/auth/login" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" | jq_ "d.get('sessionToken','')")
 ATOK=$(curl -s -X POST "$A_URL/v1/auth/initialize" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" | jq_ "d.get('sessionToken','')")
 [ -n "$CTOK" ] && [ -n "$ATOK" ] && ok "control and agent A initialized" || { bad "no sessions"; exit 1; }
+# Nobody has enrolled anything yet, and gateway.yaml names no control root:
+# the gateway's own topology does, and the table's first refresh read it.
+RV=$(curl -s -H "Authorization: Bearer $ATOK" "$GW/v1/admin/routing")
+[ "$(echo "$RV" | jq_ "(d.get('control_root') or {}).get('source')")" = "agent" ] && ok "*** before anyone enrolled, the gateway found the control root in its agent's topology: $(echo "$RV" | jq_ "(d.get('control_root') or {}).get('url')") (gateway.yaml names none) ***" || bad "control_root before enrollment: $(echo "$RV" | jq_ "d.get('control_root')")"
 
 (cd b && exec env EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml EUGENE_PLEXUS_AGENT_BIND_PORT="$B_PORT" "${BIND[@]}" "$PY" -m eugene_plexus_agent > ../agent-b.log 2>&1) &
 B_PID=$!
@@ -226,6 +235,10 @@ done
 
 # --- 8. served ------------------------------------------------------------------------
 say "8. a completion through the gateway, served by $RT"
+# The node list came from a control root nothing configured, and it answered.
+RV=$(curl -s -H "Authorization: Bearer $CTOK" "$GW/v1/admin/routing")
+CR_SRC=$(echo "$RV" | jq_ "(d.get('control_root') or {}).get('source')"); CR_OK=$(echo "$RV" | jq_ "(d.get('control_root') or {}).get('reachable')"); CR_N=$(echo "$RV" | jq_ "(d.get('control_root') or {}).get('nodes')")
+[ "$CR_SRC" = "agent" ] && [ "$CR_OK" = "True" ] && [ "$CR_N" = "2" ] && ok "*** control_root: source=agent, reachable, 2 nodes -- node-b's runtime is routable through a gateway whose config names no control root ***" || bad "control_root after enrollment: $(echo "$RV" | jq_ "d.get('control_root')")"
 for _ in $(seq 1 60); do
   RN=$(curl -s -H "Authorization: Bearer $CTOK" "$GW/v1/models" | jq_ "next((m['x_eugene_plexus'].get('ready_backends') for m in d.get('data',[]) if m['id']=='$ALIAS'), 0)" 2>/dev/null)
   [ "$RN" = "1" ] && break; sleep 1
