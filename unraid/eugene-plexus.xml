@@ -38,6 +38,8 @@
 
     FIRST START: open the WebUI and finish the wizard. It sets the passphrase that owns this install, so do it promptly — until then the first person to reach port 8079 can claim it.
 
+    MODELS: point the Models path at a share. The library in here uses it with no further setup, and your GPU machines mount that same share and map /models to it — one setting on each — so a model downloaded to this NAS is a model every node can serve.
+
     RESTARTS: the trust root comes back sealed and routes nothing until somebody unlocks it, because a container has no OS keyring. Either unlock it on the Nodes page after each restart, or set up the passphrase file below once and stop thinking about it.
   </Overview>
   <Category>Tools: Productivity: Network:Other</Category>
@@ -91,7 +93,7 @@
     appdata as nobody:users. Overriding it means the data directory is
     writable without a chown. What it costs is engine acquisition, which
     writes under $HOME — and this container has no GPU to run an engine
-    on, so there is nothing to lose. Verified in CI as check 18: the
+    on, so there is nothing to lose. Verified in CI as check 20: the
     image comes up healthy as a uid it does not contain.
   -->
   <ExtraParams>--init --stop-timeout 60 --user 99:100</ExtraParams>
@@ -145,7 +147,7 @@
     Target="/models"
     Default="/mnt/user/models"
     Mode="rw"
-    Description="Where your model files live, or should land. Map an existing share of GGUF / safetensors files here and they are catalogued as they are — nothing is renamed, hashed or moved; delete Eugene Plexus and they are still where you put them. Then, once, in the web UI: Config → Library → Model directories, add /models (the path INSIDE the container, which is what the library sees). Downloads from Discover land there. Note the library runs in this container, so this is the NAS's disk. A GPU node that launches a model reaches the same files over a share you mount there, and one setting on that node says where: Config → Agent @ node → Model directory mappings, /models → where you mounted it. Press Test to check it against the library's files."
+    Description="Where your model files live, or should land. Point this at a USER SHARE (the default is a share called models; make it under Shares if it does not exist) and the library in this container uses it with no further setup — the image tells it that /models is where the models are. Files already there are catalogued as they are: nothing is renamed, hashed or moved; delete Eugene Plexus and they are still where you put them. Downloads from Discover land here. THEN LET YOUR GPU MACHINES REACH THE SAME FILES: export that share (Shares → models → SMB Security Settings → Export: Yes, and a user who can read it, or NFS for Linux boxes), mount it on each GPU machine, and set one thing on each — Config → Agent @ node → Model directory mappings: /models → where you mounted it (on Windows, prefer the UNC path, e.g. \\TOWER\models, over a drive letter: the agent runs as a background task and a drive letter mapped in your desktop session may not exist there). Press Test on that node to check the mapping against the library's real files. Leave this path unset and the library reports /models missing, on purpose, rather than scanning an empty directory inside the container."
     Type="Path"
     Display="always"
     Required="false"
@@ -171,6 +173,16 @@
     Display="advanced"
     Required="false"
     Mask="false"></Config>
+
+  <Config
+    Name="Model directory inside the container"
+    Target="EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS"
+    Default="/models"
+    Description="Leave at /models. This is how the image tells the library which directory the Models path above is mounted at; change it ONLY if you changed the container-side path of Models, and to the same value. Several directories separate with a colon. It is a default, not a lock: whatever the library's Model directories are set to in the web UI wins, and clearing them returns to this."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">/models</Config>
 
   <Config
     Name="Safe mode"

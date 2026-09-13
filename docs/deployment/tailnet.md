@@ -130,6 +130,18 @@ the node advertises — including a value that will not work, such as
 `127.0.0.1` on a machine other machines need to reach. That is
 deliberate: an expert naming an interface gets that interface.
 
+A sixth belongs to the same kind of machine, and it is a *default*
+rather than an override: `EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS`
+(`os.pathsep`-separated) is what the library's **Model directories**
+are until an operator sets them, so a host whose layout is fixed before
+any config exists — the container image, with its models volume at
+`/models` — has somewhere to scan and somewhere to put a download with
+nobody having opened Config. The UI still shows and replaces the value,
+and clearing it returns to the default. Leave it unset on a machine
+where a person will point the library at their own directories; a
+default the operator did not choose is the managed store this project
+refuses to be.
+
 ---
 
 ## 2. Machine B — every machine after the first

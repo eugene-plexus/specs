@@ -68,7 +68,7 @@ $PIN = @{
     "control"          = "3cfa46f77c0a38e5966d1e78510a5919d02df5a1"
     "gateway"          = "89cc1f4e84929ea1e62f72a08c898a56efc94aad"
     "inference-driver" = "509378ffefddc8acc5e2711bfe41af2487827a8a"
-    "library"          = "4925e9c7282d9424c2e996f889f5ea29d06c2579"
+    "library"          = "6b2da096edf69d1f1bd67de3ee8c42e573301297"
     "ui"               = "ff0f108782ae678c666014c1b96eced616dfeee1"  # branch `dist`, not `main`
 }
 $DIST = @{

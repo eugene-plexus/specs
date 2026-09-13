@@ -75,12 +75,31 @@ RUN sh /tmp/install.sh --prefix /opt/eugene-plexus --no-service --no-start \
 # warns about -- enrollment does not restart the control root, so an
 # advertise address discovered late leaves it on loopback forever. Here
 # the environment is fixed before the first process starts.
+#
+# **`LIBRARY_DEFAULT_MODEL_ROOTS` is the one that makes the library
+# useful in here, and it is a default, not a setting.** The library
+# boots with no model directories and waits for someone to add one under
+# Config -- right on bare metal, where nothing but the operator knows
+# where the models are, and useless in a container, where the only paths
+# the picker can show are paths inside the container and none of them is
+# anywhere a GPU node can reach. The image DOES know one thing about its
+# layout before anyone opens the UI: the models volume is mounted at
+# /models. So that is the field's default: the schema reports it, the UI
+# shows it and replaces it like any other value, and clearing the field
+# returns to it. Nothing about it is written to the operator's config
+# file. Mount nothing there and the library says so -- the scan reports
+# /models missing and health goes degraded naming it -- rather than
+# scanning an empty directory in the container's own layer, which is
+# where a download would then land and be lost on the next recreate.
+# That is also why the image does not `mkdir /models`: the directory
+# existing means it was mounted.
 ENV EUGENE_PLEXUS_AGENT_CONFIG_FILE=/data/agent.yaml \
     EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_CONTROL_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_GATEWAY_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_LIBRARY_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_DRIVER_BIND_HOST=0.0.0.0 \
+    EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS=/models \
     PATH=/opt/eugene-plexus/venv/bin:/usr/local/bin:/usr/bin:/bin
 
 # Everything that outlives the container. `agent.yaml` and `node.yaml`
@@ -89,6 +108,14 @@ ENV EUGENE_PLEXUS_AGENT_CONFIG_FILE=/data/agent.yaml \
 # retained request history; `logs/` is the only record of what happened.
 # The agent derives all of them from the config file's directory, so one
 # volume covers the lot.
+#
+# /models is deliberately NOT declared a VOLUME. A declared volume that
+# nobody binds becomes an anonymous one under the runtime's own
+# directory -- a managed store with the user's model files in it,
+# invisible from the host and gone with `down -v`, which is the exact
+# thing this project promises never to build. The operator binds their
+# own directory there (the Unraid template's "Models", the Compose
+# file's commented line), or the library reports it missing.
 WORKDIR /data
 VOLUME ["/data"]
 

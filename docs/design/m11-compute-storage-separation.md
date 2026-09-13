@@ -555,6 +555,25 @@ model set (§8). Record:
   binds `0.0.0.0`, exactly as the two-host M7 mode does. Not a defect;
   worth knowing before reading the log.
 
+### Found the same evening, by the operator: the library had no directory a node could reach
+
+The design assumed the library's `/models` existed. On the live install
+it did not: the container's library boots with `modelRoots: []` and
+waits for an operator to add a directory, and the picker built above
+could only show paths *inside the container* — none of them a mounted
+share, none of them anywhere `Amish_Station` could mount. So every
+mapping this milestone made possible had nothing to map from. Fixed
+with `EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS` (library `6b2da09`):
+the *default* of the roots field, set by the image to `/models`, shown
+and replaceable in the UI, never written to the config file so an
+existing container's empty list picks it up. The Unraid template and
+`container.md` now say how to export that share and how to spell the
+node's `to` on Windows (a UNC path, because the agent runs outside the
+desktop session where a drive letter was mapped). Two acceptance checks
+in `compose-acceptance.sh` cover it: nothing mounted → `/models`
+reported missing, not scanned as empty; a GGUF in a mounted directory →
+catalogued at startup with nobody having opened Config.
+
 ### Open
 
 - **Necessity.** One box cannot show that a launch would have failed

@@ -156,7 +156,7 @@ nowhere to keep your settings and every Force Update resets them.
 
 It pulls `ghcr.io/eugene-plexus/control-plane:edge`, which CI builds and
 **verifies before pushing** — `scripts/compose-acceptance.sh` runs its
-eighteen checks against the built image, and a failure means nothing is
+twenty-two checks against the built image, and a failure means nothing is
 published. `edge` rather than `latest` on purpose: nothing here is released,
 and `latest` is the tag every registry convention reads as "the supported
 one".
@@ -472,41 +472,97 @@ alone. `POST /v1/auth/login` still works, so the way out is always open.
 
 ## Where the models go
 
-The library runs **in this container**, so "Model directories" in its
-settings are paths inside the container — not paths on your desktop, and
-not paths on a GPU node. Map the directory you already keep models in
-(the UnRAID template calls it **Models**, `/models` inside; Compose has
-the line commented) and then add `/models` once, in the UI: **Config →
-Library → Model directories**. The files are catalogued as they are;
-nothing is renamed, hashed or moved. Downloads from Discover land in the
-first directory listed.
+The library runs **in this container**, so the only directories it can
+see are the container's own — and none of those is anywhere a GPU node
+can reach. Two facts follow, and the whole setup is making them meet:
+**the library's directory has to be a mounted share, and every GPU node
+has to mount the same share.**
 
-**A GPU node launches a model by path, and the library only knows where
-the files are on *its* host** — so on a GPU node the path has to be
-translated. That is M11, compute/storage separation, and it is one
-setting on the GPU node's agent: **Config → Agent @ `<node>` → Model
-directory mappings**, one row per library directory: `/models` (the
-library's directory, exactly as its Model directories setting lists it)
-→ `Z:\models` (where you mounted the same share on that machine). The
-rest of the path is carried over, so one row covers every model under
-the root. Press **Test** before saving: it checks the mapping against
-the library's real files and says how many are reachable and whether
-their sizes agree.
+### 1. Give the container the directory
 
-Nothing is copied or cached — you mount the NAS's share on the GPU box
-(SMB or NFS, however you already do it) and the mapping says where. A
-model downloaded to the NAS is then a model any node that mounts the
-share can serve. Skip the mapping and the Library screen says so before
-you press Launch: *"Not on `<node>`: `/models/…` does not exist there"*,
-with a link to the setting; a launch that slipped past would be refused
-the same way, with the same fix in the message. Before M11 it was
-accepted and crashed at spawn.
+Map the directory you keep models in — or want to — to **`/models`**
+inside the container. The UnRAID template calls it **Models** and
+defaults to the user share `/mnt/user/models`; Compose has the line
+commented, one edit away. **That is the whole library-side setup.** The
+image tells the library that `/models` is where the models are
+(`EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS`, set in the Dockerfile), so
+a fresh container scans it at startup with nobody having opened Config,
+and downloads from Discover land there. The files are catalogued as they
+are; nothing is renamed, hashed or moved; delete the container and they
+are still where you put them.
+
+It is a *default*, not a lock. **Config → Library → Model directories**
+shows `/models`, you can replace it with other directories, and clearing
+the list returns to it. It is never written into your config file, so a
+container that came up before this default existed — with an empty list
+saved from its first boot — picks it up on the next start with nothing
+to edit.
+
+**If your container predates the Models path** (the template gained it on
+2026-09-12; an existing `my-eugene-plexus.xml` does not grow new fields
+by itself): Edit the container → **Add another Path, Port, Variable…** →
+Config Type *Path*, Container Path `/models`, Host Path your share →
+Apply. Until then the library reports `/models` as **missing**, its
+health as **degraded**, and its log says what that means:
+
+```
+[library] WARNING: /models does not exist -- in a container that means nothing is mounted there.
+```
+
+That is deliberate. The alternative — an empty `/models` baked into the
+image — would scan nothing and then accept a 20 GB download into the
+container's own writable layer, where the next update deletes it.
+
+### 2. Let the GPU machines reach the same files
+
+A GPU node launches a model by path, and the library only knows the path
+on *its* host. So the node needs the files, and it needs to know where
+they are. **The files come from a share** — the NAS's, mounted on the
+GPU box however you already mount things:
+
+- **UnRAID:** the directory is already a user share. Export it: **Shares
+  → models → SMB Security Settings → Export: Yes**, with Security
+  *Private* and a user that can read it (write too, if you want to be
+  able to delete models from that machine), or *Public*. Linux GPU boxes
+  can use NFS instead: **NFS Security Settings → Export: Yes**.
+- **Windows GPU box:** the agent runs as a background task or a service,
+  **not in your desktop session**, so a drive letter you mapped there may
+  not exist for it. Use the UNC path — `\\TOWER\models` or
+  `\\192.168.1.20\models` — and, if the share is private, save the
+  credentials once for the account the agent runs as
+  (`cmdkey /add:TOWER /user:… /pass:…` in that account, or Windows
+  Credential Manager). A drive letter works only if the agent's own
+  session can see it.
+- **Linux GPU box:** mount it where you like (`/mnt/models` via `fstab`,
+  NFS or CIFS); the mapping below says where.
+
+**Then one setting on that node**, and it is the same on every node:
+**Config → Agent @ `<node>` → Model directory mappings**, one row:
+`/models` (the library's directory, exactly as its Model directories
+setting lists it) → `\\TOWER\models`, or `/mnt/models`, wherever you
+mounted it. The rest of the path is carried over, so one row covers
+every model under the root. Press **Test** before saving: it walks the
+library's real files through the mapping and says how many are reachable
+on that node and whether their sizes agree.
+
+Nothing is copied or cached. A model downloaded to the NAS is then a
+model any node that mounts the share can serve. Skip the mapping and the
+Library screen says so before you press Launch: *"Not on `<node>`:
+`/models/…` does not exist there"*, with a link to the setting; a launch
+that slipped past is refused the same way, with the same fix in the
+message. Before M11 it was accepted and crashed at spawn.
 
 The declaration keeps the library's spelling. `Runtime.modelPath` stays
 `/models/…` — that is what links the runtime to its library entry — and
 `Runtime.localPath` on the Inference screen shows what the node actually
 opened. Change the mapping and the next start uses it; nothing has to be
 re-declared.
+
+**One thing to expect the first time:** the engine reads the weights over
+the network on every cold start. A 20 GB model on gigabit Ethernet is
+three minutes before the first token, where a local disk is seconds. That
+is the trade M11 chose over a node-side cache, and it is visible in the
+Inference screen as `loading`, not a hang.
 
 ---
 
@@ -549,16 +605,20 @@ the agent's and all three children's ASGI lifespan shutdown. Those are the
 claims the image depends on and they were measured on Linux.
 
 **Checked by CI on every image build, and the image is published only when
-they pass:** `.github/workflows/container.yml` runs all nineteen checks in
+they pass:** `.github/workflows/container.yml` runs all twenty-two checks in
 `scripts/compose-acceptance.sh` against the artifact it just built, then
 re-tags that same image for GHCR rather than rebuilding — so what ships is
-what was tested. That covers the ten runtime checks that had never run
+what was tested. That covers the twelve runtime checks that had never run
 anywhere: the build itself, the container coming up healthy, all four
 services on 0.0.0.0 inside, the UI and control root on their published ports,
-8082 staying unpublished, a graceful stop, state surviving a down/up, and
+8082 staying unpublished, a graceful stop, state surviving a down/up,
 starting as `--user 99:100` against a directory owned by 99:100 — the uid the
-image does not contain and the one the Unraid template ships — and degrading to
-console-only output when `logs/` is unwritable instead of dying on it.
+image does not contain and the one the Unraid template ships — degrading to
+console-only output when `logs/` is unwritable instead of dying on it, and
+the two halves of "Where the models go": a container with nothing mounted at
+`/models` reports it **missing** rather than scanning an empty directory, and
+a GGUF placed in a directory mounted there is catalogued at startup with
+nobody having opened Config.
 
 There is still no container runtime on the development machine, so running
 that script locally skips the runtime half and says so. CI is where it runs.

@@ -68,11 +68,22 @@ services:
       # request metrics, and the logs. A `docker compose down` must not
       # be the thing that loses an enrollment.
       - plexus-data:/data
-      # Your model files. Map the directory you already keep GGUF /
-      # safetensors files in; they are catalogued as they are, nothing is
-      # renamed or moved. Then add `/models` once under Config -> Library
-      # -> Model directories -- the path INSIDE the container is what the
-      # library sees. Downloads from Discover land there.
+      # YOUR MODEL FILES. Uncomment and point the left side at the
+      # directory you already keep GGUF / safetensors files in. The
+      # library in this container scans /models with no further setup --
+      # the image tells it so (EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS
+      # in the Dockerfile) -- and catalogues them as they are: nothing is
+      # renamed, hashed or moved. Downloads from Discover land there too.
+      #
+      # Leave it commented and the library reports /models as missing and
+      # its health as degraded, by design: the alternative is scanning an
+      # empty directory inside the container and downloading into it.
+      #
+      # THE GPU MACHINES NEED THE SAME FILES. Share this directory (NFS,
+      # SMB -- however this host already shares things), mount it on each
+      # GPU box, and on that box set one thing: Config -> Agent @ <node>
+      # -> Model directory mappings, `/models` -> where you mounted it.
+      # See docs/deployment/container.md, "Where the models go".
       # - /srv/models:/models
 
     # The image sets every variable this needs; nothing is required here.

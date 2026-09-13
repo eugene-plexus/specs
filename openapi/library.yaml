@@ -156,7 +156,15 @@ tags:
     description: |
       The standard config trio. Model roots live here as a
       `path_list`, which is what makes them editable in the generic
-      config UI with no library-specific code.
+      config UI with no library-specific code. Their *default* may come
+      from the process environment
+      (`EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS`, `os.pathsep`-
+      separated): for a host whose layout is fixed before any config
+      exists, such as a container image whose models volume is at
+      `/models`. The schema's `default` for `modelRoots` reports it,
+      `GET /v1/config` shows it as the effective value, an explicit list
+      replaces it, and clearing the list returns to it. It is never
+      written to the config file.
 
       The discovery and download half adds six fields to that same
       trio and needs no new renderer for any of them: `hfToken` (a
