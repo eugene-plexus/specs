@@ -564,10 +564,118 @@ so `:root` stays first in source order.
 
 ## 10. Implementation record
 
-*(appended as the work lands)*
+**Built and verified 2026-09-13 (late), one unattended session.** `ui`
+`5cd6299` (dist `adc1926`); `specs` carries the design, the runner and
+the `PIN_UI` bump in both installers. **No contract change, no codegen,
+no consumer re-pinned** — `SPECS_REF` in `ui` did not move.
+
+### 10.1 What landed
+
+| File                              | Lines | What it is                                              |
+| --------------------------------- | ----: | ------------------------------------------------------- |
+| `src/lib/navigation.ts`           |   362 | The registry. Pure; no React, no DOM, no `next/*`        |
+| `src/lib/navigation.test.ts`      |   253 | 31 cases, five sabotage-checked                          |
+| `src/components/AppNav.tsx`       |   190 | Row 1, and `AppHeader` which composes both rows          |
+| `src/components/ScreenHeader.tsx` |    81 | Row 2 and the layer breadcrumb                           |
+| `src/components/LayerMap.tsx`     |   166 | The panel                                                |
+| `src/components/LayerIcon.tsx`    |    76 | Icon name → lucide component, plus the `data-icon` attribute |
+| `e2e/navigation.spec.ts`          |   195 | 8 browser tests                                          |
+
+Seven `page.tsx` headers went from **275 hand-written lines to 181**, and
+what is left is each screen's own controls: the diagnostic toggle and
+New, the scan buttons, the context selector, the window selector and
+Refresh, the two Inference actions, Config's tab strip. Not one link
+between screens remains in a page file. Two new tokens × three themes in
+`globals.css`, plus `.skip-link`. `lucide-react` pinned **exactly** at
+`1.45.0`, the version the website pins for `@lucide/astro`, so the two
+repos draw from one icon set.
+
+### 10.2 Verification
+
+`scripts/navigation-acceptance.sh` — **14 checks, ALL PASSED on the
+first execution**, four processes on +100 ports with the environment
+cleared and teardown by pid. It stages the export from the working tree
+first, because the agent venv on this box has `eugene-plexus-ui`
+installed editable and would otherwise serve the previous build; a
+check then greps the staged bundle for `data-icon` so "the run asserted
+about the wrong build" is a failure rather than a silent pass.
+
+**Six sabotages, each confirmed to fail the check that should catch it:**
+
+| Sabotage                                                    | Caught by                                    |
+| ----------------------------------------------------------- | -------------------------------------------- |
+| Links rendered only when `pathname === "/"` (the old state)  | reachability, and "each link navigates"      |
+| Gateway's accent changed from `right` to `left`              | the colour check, and the vitest table       |
+| `/inference` stops declaring its span                        | the three-colour breadcrumb                  |
+| `Escape` no longer closes the map                            | the map test                                 |
+| The skip link removed                                        | the Tab test                                 |
+| Segment boundary removed from `activeScreen`                 | the prefix case — **after it was fixed**     |
+
+**A test that could not fail, found by sabotage.** The prefix case was
+written as `/librarian` against `/library` — which is *not* a string
+prefix, since "librarian" diverges at the `i` — so it passed against an
+implementation with the boundary check removed. It asserts on
+`/configuration` and `/nodes-b` now, and asserts that
+`"/configuration".startsWith("/config")` first, so the example cannot
+quietly stop being one. This is the same family as M10's check 7 and
+step 6's fragmentation checks: **an assertion whose subject cannot
+produce the failure is green for the wrong reason.**
+
+Also: 153 vitest cases pass (was 122), `tsc --noEmit` clean,
+`eslint --max-warnings=0` clean, `next build` exports all twelve routes.
+
+`scripts/install-acceptance.sh` re-run after the pin bump: **checks 1-16
+pass in WSL2**, installing from nothing and serving the UI at `/` from
+the new `dist` pin. **Check 19 fails on purpose** — the live install's
+own agent holds 8079 on this box, and the Windows half refuses to run
+rather than measure someone else's process. The pinned archive was then
+fetched directly and confirmed to carry `data-icon` and a `BUILD_INFO`
+naming `ui@5cd6299`.
+
+### 10.3 What §0 predicted and the build confirmed
+
+Screenshots in all three themes: modern renders the website's exact
+palette; cyberpunk separates teal drivers from green engines from
+violet-grey hardware; **editorial's olive-gold engine role reads as a
+different thing from its deep-green `--accent-left`**, which a literal
+`#2f9e6e` would not have. At 430px the bar wraps to three rows with both
+group labels intact and nothing clipped.
 
 ---
 
 ## 11. Where the build departed from this design
 
-*(appended as the work lands)*
+1. **A fourth component file.** §8 listed `AppNav`, `ScreenHeader` and
+   `LayerMap`. `LayerIcon.tsx` is a fourth, because all three need the
+   icon-name → component mapping and putting it in one of them would
+   make the other two import a sibling for a lookup table. `AppHeader`
+   is a second export of `AppNav.tsx` rather than a fifth file.
+
+2. **`/inference`'s two actions are row-2 controls, not body elements.**
+   §7 said they stay "in the page body". They are in row 2's controls
+   slot instead, which is what row 2 is *for* — the screen's own
+   actions, as against the navigation's links. Moving them into the body
+   would have restructured a screen this slice promised not to touch.
+   They keep their explanatory `title` either way, which was the point.
+
+3. **Five sabotages on the vitest suite, not fifteen.** §6.6 said "each
+   of the above is checked to fail when the registry is perturbed".
+   Five representative ones were, plus six on the browser suite. Eleven
+   of them share one mechanism — a perturbed registry — so checking
+   every case would have re-measured the same thing.
+
+4. **Three existing test files gained a `usePathname` mock.**
+   `config`, `metrics` and `nodes` mock `next/navigation` without it,
+   and the shared nav reads it on mount, so all seventeen of their cases
+   threw until it was added. Unforeseen and trivial, recorded because it
+   is what a shared header costs in a suite that mocks the router
+   per page.
+
+5. **`__pycache__/` added to `ui/.gitignore`.** The acceptance run has
+   the agent import `eugene_plexus_ui` as an editable install, which
+   leaves bytecode in the checkout. One line, and it stops a future
+   `git add -A` committing build droppings.
+
+6. **`lucide-react` is pinned exactly**, not with a caret like the
+   repo's other dependencies, so the UI and the website cannot drift to
+   different icon sets.
