@@ -483,9 +483,31 @@ into, rather than the unclaimed one. See
    user environment on purpose and every shell on the account inherits
    it. "Safe beside a live install" had been verified for ports and
    assumed for state.
-8. **The playground as a diagnostic** — tools, attachments, and the
-   `x_eugene_plexus` envelope surfaced, reached over **the same public
-   surface a harness uses** (§7.1's trap).
+8. ~~**The playground as a diagnostic**~~ **DONE 2026-09-13 (late)** —
+   [`playground-diagnostic.md`](playground-diagnostic.md), §11 there is
+   the record. Contracts `0749c54` (prose only); gateway `f48b7c2`,
+   `ui` `f3dcce1`. Record:
+   [`../acceptance/playground-diagnostic-run.md`](../acceptance/playground-diagnostic-run.md),
+   **15 checks, 28 `PASS` lines, third attempt**, the system Chrome
+   driving the playground's direct mode against a real model.
+
+   **§0 there found the gap was in the gateway, not only the
+   playground: the gateway did not speak CORS at all** — a browser's
+   preflight got `405`, measured live — so no browser-based client could
+   use the front door, and nothing had noticed because the UI reaches
+   the gateway through the agent's same-origin proxy. The front door
+   answers CORS now, on its three OpenAI paths only, any origin by
+   default (bearer-only auth, no cookies), narrowed by two live config
+   fields. The playground gained a **direct** mode beside the proxy (the
+   same request, two paths, compared), tools with the operator as the
+   tool runtime, text attachments inlined, and a per-turn report ending
+   in a `curl` line — which the run replayed from a shell, after that
+   line had failed twice for reasons that were real (a single-quoted
+   `$TOKEN`, and non-ASCII through the Windows command line).
+
+   Original note: tools, attachments, and the `x_eugene_plexus`
+   envelope surfaced, reached over **the same public surface a harness
+   uses** (§7.1's trap).
 9. **Then** the release.
 
 §7 of this document (Vulkan, decided) is independent of all of it and
@@ -608,8 +630,11 @@ is not a reason.
 ## 12. Implementation record
 
 Record what was built, what departed from this design, and why, as each
-step of §9 lands. **Steps 6-9 are unbuilt; step 6 — tool calling end to
-end, the thesis work — is the pickup point.**
+step of §9 lands. **Steps 1-8 are built; step 9 — the release — is the
+pickup point, and the last.** Steps 6 and 7 are recorded in
+[`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md)
+§9 and §6.1; step 8 in [`playground-diagnostic.md`](playground-diagnostic.md)
+§11, with a summary at the end of this section.
 
 ### Step 1 — the proxy moved, and the UI ships as a wheel. DONE 2026-09-11.
 
@@ -1337,3 +1362,55 @@ moved — and each failed naming exactly what was wrong.
 3. **`printf '...\$USER...'`** prints a literal backslash, so the
    remediation command the skip message hands the operator was not
    copy-pasteable.
+
+### Step 8 — the playground as a diagnostic. DONE 2026-09-13 (late).
+
+Design and record: [`playground-diagnostic.md`](playground-diagnostic.md)
+§11; run [`../acceptance/playground-diagnostic-run.md`](../acceptance/playground-diagnostic-run.md),
+**15 checks, 28 `PASS` lines, third attempt.** Contracts `0749c54`
+(prose only); gateway `f48b7c2`; `ui` `f3dcce1` (dist `552afff`).
+
+**The gap was in the gateway before it was in the playground.** §7.1
+of the agent-clients design said a reference client that shares its
+path with the thing it tests proves nothing, and the playground did:
+every call went through the agent's proxy to the gateway's loopback
+topology URL. Measuring the alternative found there was none — the
+gateway answered a browser's CORS preflight `405 Method Not Allowed`
+with no `access-control-*` header, so no browser-based client at all
+could use the front door. `agent.yaml` had recorded *"no CORS
+configuration on any component"* as a design property, correct for the
+UI's own calls and fatal for the instrument. The front door speaks CORS
+now, on its three OpenAI paths only, any origin by default because it
+authenticates by an explicit bearer and never by a cookie, narrowed by
+two config fields read per request. A pure ASGI middleware, with the
+sabotage test M10's lesson demands: a buffering one deadlocks.
+
+**What the playground gained:** a **direct** mode beside the proxy —
+the browser dials a base URL with a bearer, the request body shared
+with the proxy path so the two differ only in transport; the base URL
+guessed from the topology's gateway port and the page's host, and
+labelled a guess; the key prefilled with the operator's session token
+and its 14-day lifetime stated (there is no long-lived client key yet,
+deliberately); tool definitions, `tool_choice`, `response_format`, tool
+calls as cards filling in from streamed fragments, results typed by the
+operator as the tool runtime; text attachments inlined; and a
+per-turn **Request report** — path, URL, status or the browser's error,
+first-frame clock, frame counts, envelope, body as sent, and a `curl`
+line. §0.3's defect is fixed on the way: `streamChatCompletion` had read
+`delta.content` and nothing else, so a streamed tool-call-only turn was
+an empty bubble indistinguishable from the model declining — the very
+ambiguity step 6 refused to let the driver produce.
+
+**The run's two real findings were in the `curl` line, and only
+replaying it found them:** the key placeholder was single-quoted and
+did not expand; and a model answering `-3°C` put a character outside
+ASCII into the body, which Git Bash on Windows handed to curl as one
+byte, so the gateway could not parse the request that was meant to
+reproduce another. The body is ASCII-escaped now — the same JSON value.
+Plus the recurring harness defect: a selector that did not name its
+subject waited a minute on the wrong textarea.
+
+**Left for the live install:** both ends were loopback here; CORS
+between two real hosts and Chrome's local-network permission are
+untested there, and the container needs a gateway at or past `f48b7c2`
+first.

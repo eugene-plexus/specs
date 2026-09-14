@@ -422,7 +422,12 @@ summary line and expandable:
 
 The `curl` line is the deliverable for row three of §1's table: it is
 the request the browser just made, spelled so a shell or a bug report
-can replay it. It uses the direct-mode URL whether or not direct mode is
+can replay it — the same JSON document the browser sent, with every
+character outside ASCII written as a `\uXXXX` escape. *(Corrected after
+the first run: this said "byte for byte". A model answered `-3°C`, and
+Git Bash on Windows handed curl one byte for the degree sign, because
+the argument crosses the Windows command line through the ANSI code
+page; the gateway could not parse the body. Same value, ASCII-safe.)* It uses the direct-mode URL whether or not direct mode is
 on — a `curl` against `/api/proxy/gateway` would be a reproduction of the
 proxy, not of a harness — and the report says so when the mode was
 proxy. The key is `$EUGENE_PLEXUS_TOKEN` in the copied text unless
@@ -546,4 +551,84 @@ pid**. Backend: the local Ollama with `qwen3-coder:30b`, the model step
 
 ## 11. Implementation record
 
-*Appended as the work lands.*
+**BUILT AND LIVE-VERIFIED 2026-09-13 (late), one unattended session.**
+Contracts `0749c54` (prose only, no schema change); gateway `f48b7c2`;
+`ui` `f3dcce1` (dist `552afff`). Record:
+[`../acceptance/playground-diagnostic-run.md`](../acceptance/playground-diagnostic-run.md),
+**15 checks, 28 `PASS` lines, third attempt** — the first two attempts
+failed in the harness and in the `curl` builder, not in the gateway or
+the panel.
+
+### What was built
+
+- **Gateway** — `cors.py`, a pure ASGI middleware on exactly the three
+  OpenAI-compatible paths; `corsEnabled` and `corsAllowedOrigins` on
+  the config trio, read per request, in a new *Browser clients*
+  category; `url_list` validation the gateway had never needed before
+  (it fell through to "unsupported valueType"). Twelve tests, including
+  the sabotage check §3.1 promised: a buffering middleware deadlocks
+  into a `TimeoutError`, verified by substituting one.
+- **UI** — `lib/diagnostic.ts` (pure: the base-URL guess, the hints, the
+  `curl` builder, the attachment inliner, the failure explanations, the
+  report summary); `lib/completions.ts` gains a `Transport`, a
+  `RequestReport` delivered on every request through `onReport`, and
+  `accumulateToolCallDeltas`; `DiagnosticPanel`, `ToolsPanel`,
+  `RequestReport`; `ChatLog` renders tool-call cards, tool-result
+  bubbles, the results form, and collapses long user messages;
+  `ChatInput` attaches text files. 118 unit tests (38 new), and
+  `e2e/diagnostic.spec.ts`.
+- **Specs** — `scripts/playground-diagnostic-acceptance.sh`, the prose in
+  `gateway.yaml` and `agent.yaml`, this record.
+
+### Decided during the build, within the calls above
+
+- **The base URL is displayed and copied in the `/v1` form**
+  (`http://host:8080/v1`), because that is what `OPENAI_BASE_URL`,
+  OpenCode's `baseURL` and the SDK's `base_url` want; both forms are
+  accepted and the path is appended once.
+- **`/v1/models` goes through the active transport too.** In direct
+  mode the picker is part of the surface under test, and its failure is
+  a result ("Gateway unreachable (direct) — …") rather than something
+  to route around.
+- **The key is never persisted.** Mode and base URL survive a reload in
+  `localStorage`; the key defaults to the session token on every load
+  and a typed one lives for the tab.
+- **A refused preflight is a `403 Problem`, not Starlette's bare 400.**
+  A browser reports every CORS failure as `Failed to fetch`; the `curl`
+  of the same preflight deserves the sentence naming the config key.
+- **`tool` messages are visible in the transcript.** A harness sends
+  them, and the transcript is the request.
+
+### What the run found
+
+Two defects in the `curl` builder, both real, both found only by
+replaying the copied line (§6 of the record): the key placeholder was
+single-quoted and did not expand; and non-ASCII in the body does not
+survive the Windows command line. And one harness defect of the
+recurring kind: a selector that did not name its subject. All three are
+in the acceptance record.
+
+### Open
+
+- **Two real origins.** Both ends were loopback here. The live install
+  is where CORS between hosts and Chrome's local-network permission are
+  real; nobody has clicked through the panel there yet, and the
+  container must first be updated to a gateway at or past `f48b7c2`.
+- **A long-lived client key** (§2.3) — the next slice on this surface,
+  deliberately not started here.
+- **Image attachments** need content parts in the contract (§7).
+- `response_format: json_object` is offered and was not exercised live.
+
+## 12. Where the build departed from this design
+
+- **§6 said "byte for byte"**; the `curl` body is ASCII-escaped (§6,
+  corrected in place, and the record says why).
+- **§9's check list said the browser checks read "frames > 1 and the
+  driver"**; they do, and the spec also records the prefill and the
+  key-is-session-token facts as separate lines, which is why 15 checks
+  print 28 `PASS` lines.
+- **§3.2 said a refused origin is refused**; the actual request from an
+  unlisted origin still *runs* and only the header is withheld — the
+  browser blocks the read, which is what CORS can do and all it can do.
+  A preflight from that origin is refused outright with the 403. Test
+  and script assert both halves.

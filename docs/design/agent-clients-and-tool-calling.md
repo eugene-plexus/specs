@@ -16,7 +16,7 @@ install serves no agent harness either. See §8.
 | **1** | Carry tool calls end to end                                                     | §5  | **DONE 2026-09-11** — §9 |
 | **2** | Does `/v1/embeddings` belong in scope, or is that Open WebUI's own problem?     | §5  | **DECIDED 2026-09-12** — §5.1 |
 | **3** | Context-window honesty: refuse, truncate-and-report, or configurable?           | §6  | **DECIDED 2026-09-12** — §6.1; built, §10 |
-| **4** | The playground is a reference client and diagnostic, not a product             | §7  | **DECIDED 2026-09-11** |
+| **4** | The playground is a reference client and diagnostic, not a product             | §7  | **DECIDED 2026-09-11; BUILT 2026-09-13** — [`playground-diagnostic.md`](playground-diagnostic.md) |
 | **5** | No native OS chat/agent application                                            | §4  | **DECIDED 2026-09-11** |
 
 ## 0. The finding: the gateway cannot carry a tool call
@@ -353,7 +353,13 @@ decision nobody is making.
 Record: [`../acceptance/context-honesty-run.md`](../acceptance/context-honesty-run.md),
 **18 checks against two real engines**.
 
-## 7. The playground — DECIDED 2026-09-11
+## 7. The playground — DECIDED 2026-09-11; BUILT 2026-09-13
+
+**Built as install-paths §9 step 8** — design and record in
+[`playground-diagnostic.md`](playground-diagnostic.md). Its §0 found
+that §7.1's trap was half of the story: the gateway itself answered a
+browser's preflight `405`, so *no* browser client could take the public
+path until it spoke CORS. It does now.
 
 **Troy's framing, adopted:** the playground exists to give a user a
 starting point, to let development prove the backend, and to serve as a

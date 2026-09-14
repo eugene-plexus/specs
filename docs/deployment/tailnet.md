@@ -265,6 +265,31 @@ and never a bearer for either:
   redistributes it, which means nodes that are down during the rotation
   hold a superseded key until they reconnect.
 
+### Connecting an OpenAI client, or a browser
+
+An agent harness (OpenCode, the OpenAI SDK, anything that takes a base
+URL and an API key) needs two strings: the gateway's address as
+`http://<gateway-host>:<gateway-port>/v1`, and a bearer the gateway
+accepts. Today that bearer is the **operator session token** — the one
+the UI holds after you sign in — and it expires 14 days after sign-in.
+There is no long-lived client key yet. The playground's **Diagnostic**
+panel (open it from the header) shows both strings, lets you copy them,
+and can send a turn **direct to the gateway** over exactly that path so
+you can tell a harness problem from a control-plane one before
+configuring the harness.
+
+**Browsers are a client too, since 2026-09-13.** The gateway's three
+OpenAI-compatible paths (`/v1/models`, `/v1/chat/completions`,
+`/v1/embeddings`) answer CORS for any origin by default — safe because
+the front door authenticates by an explicit bearer and never by a
+cookie, so a page cannot use a token it was not given. Narrow it with
+`corsAllowedOrigins` on the gateway's config (Config → Gateway →
+Browser clients), or turn it off with `corsEnabled`; both take effect on
+the next request. Operator paths never answer browsers from another
+origin. A page served over `https` cannot call an `http` gateway
+(mixed content), so a tailnet that serves the UI over HTTPS needs the
+gateway over HTTPS too for the direct path.
+
 ### Detaching a machine
 
 Two operations, each local to the thing whose keys are changing:
