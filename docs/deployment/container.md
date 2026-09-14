@@ -351,13 +351,16 @@ curl -s http://<control-host>:8083/v1/nodes | head -c 200
 #   "detail":"This control root is initialized but locked ..."}}
 ```
 
-**Signing in to the web UI does NOT unlock it**, which is the trap. That
-login posts to the *agent*, and the agent is not the thing that is sealed — so
-the UI keeps working, every page renders, and an existing browser session
-carries on as if nothing is wrong. The only UI screens that talk to the
-control root are `/nodes` and the first-run wizard, so unless you open
-`/nodes` there is nothing to see. Meanwhile `/v1/models` is empty and the
-gateway routes nothing.
+**Signing in to the web UI unlocks it, since 2026-09-13.** The login page
+posts your passphrase to the agent *and* to the control root, which the
+first-run wizard set up with the same passphrase — so the sign-in you do
+after an update is the unlock. **An existing browser session does not**:
+that login already happened, and it went to the agent, which is not what is
+sealed, so every page keeps rendering as if nothing is wrong. Sign out and
+in again, or open `/nodes`, which recognises the sealed root and offers its
+own unlock form (and is the fallback if the root somehow holds a different
+passphrase from the agent). Until one of those, `/v1/models` is empty and
+the gateway routes nothing.
 
 **Log in to the control root directly.** It is the one route a locked root
 still answers, because it is the way in:
