@@ -1,23 +1,22 @@
 #!/usr/bin/env bash
-# One navigation, everywhere, in the architecture page's own vocabulary.
+# The install as a tree, and a page menu for whatever is selected.
 #
-# Design: docs/design/ui-navigation.md. Its §0 measured what this replaces:
-# seven screens with seven different hand-written header rows, /metrics and
-# /nodes reachable only by going back to the playground, "Back" meaning two
-# different places, Sign out on exactly one screen, and zero occurrences of
-# aria-current, usePathname or a skip link anywhere in the app.
+# Design: docs/design/ui-tree-navigation.md. Its §0 measured what this
+# replaces: a Config tab strip that grew as `1 + nodes + up-to-3
+# singletons + every driver` -- 54 buttons on a ten-node install with
+# four models each -- because one screen held every object.
 #
 # The checks:
 #   0. isolated from any install on this machine
 #   1. the UI wheel staged from this working tree, so the agent serves THIS build
 #   2. agent + control + gateway + library up, initialized, the agent enrolled
-#   3. the agent serves the UI at / and every screen's route exists
-#   4. BROWSER: every screen reachable from every screen; each link arrives
-#   5. BROWSER: sign out on all seven
-#   6. BROWSER: the icons and colours are the website's
-#   7. BROWSER: every screen names its layer; /inference names three, in three colours
-#   8. BROWSER: the layer map holds all eight layers and all seven screens; Escape closes it
-#   9. BROWSER: the skip link is the first thing Tab reaches
+#   3. a driver declared, so the deepest path in the tree has something in it
+#   4. the agent serves the UI at / and every screen's route exists
+#   5. BROWSER: the install and its five branches
+#   6. BROWSER: every object selects and arrives, walking what the tree offers
+#   7. BROWSER: each object's page menu, and moving between one object's pages
+#   8. BROWSER: a driver under its machine; a legacy ?tab= link
+#   9. BROWSER: the layer colours; sign out everywhere; the phone drawer; the map
 #  10. teardown by pid
 #
 # Safe beside a live install: environment cleared, +100 ports, teardown by
@@ -76,9 +75,9 @@ else
   [ $? = 0 ] && ok "npm run build:python staged the export" || { bad "build failed"; tail -30 "$WORK/build.log"; exit 1; }
 fi
 STATIC="$UI_DIR/python/eugene_plexus_ui/static"
-grep -qr 'data-icon' "$STATIC/_next/static/chunks" 2>/dev/null \
-  && ok "the staged bundle carries the nav's data-icon contract" \
-  || bad "no data-icon in the staged bundle -- the agent would serve a pre-navigation build"
+grep -qr 'data-tree-sel' "$STATIC/_next/static/chunks" 2>/dev/null \
+  && ok "the staged bundle carries the tree's data-tree-sel contract" \
+  || bad "no data-tree-sel in the staged bundle -- the agent would serve a pre-tree build"
 
 cat > agent.yaml <<YAML
 firstRunComplete: true
@@ -125,7 +124,16 @@ TOK=$(curl -s -X POST "$AGENT/v1/auth/login" -H 'content-type: application/json'
 [ -n "$TOK" ] || { bad "no session after enrollment"; exit 1; }
 [ "$(code_of -H "Authorization: Bearer $TOK" "$CTL/v1/nodes")" = "200" ] && ok "four processes; enrolled; the session reaches the root" || bad "root not answering"
 
-say "3. the agent serves every screen's route"
+say "3. a driver, so the tree's deepest path is not empty"
+# type -> node -> driver is the only three-level path in the tree, and a
+# fleet with no drivers cannot exercise it. An openai_compat_http driver
+# pointed at nothing is enough: the tree is about topology, not health.
+DRIVER=tree-probe
+DRV_CODE=$(code_of -X POST -H "Authorization: Bearer $TOK" -H 'content-type: application/json'   "$AGENT/v1/components"   -d "{\"name\":\"$DRIVER\",\"kind\":\"inference-driver\",\"url\":\"http://127.0.0.1:8181/\",\"spawn\":{\"configFile\":\"$DRIVER.yaml\"}}")
+[ "$DRV_CODE" = "201" ] || [ "$DRV_CODE" = "200" ] && ok "declared the driver '$DRIVER'" || bad "declaring a driver returned $DRV_CODE"
+sleep 2
+
+say "4. the agent serves every screen's route"
 [ "$(code_of "$AGENT/")" = "200" ] && ok "the agent serves the UI at /" || bad "no UI at /"
 MISSING=""
 for r in library discover inference metrics nodes config login setup runtimes; do
@@ -133,20 +141,23 @@ for r in library discover inference metrics nodes config login setup runtimes; d
 done
 [ -z "$MISSING" ] && ok "every route is served: /, /library, /discover, /inference, /metrics, /nodes, /config, /login, /setup, /runtimes" || bad "not served:$MISSING"
 
-say "4-9. the browser drives the navigation"
-(cd "$UI_DIR" && EP_UI_URL="$AGENT" EP_PASSPHRASE="$PASS" npx playwright test e2e/navigation.spec.ts > "$WORK/playwright.log" 2>&1)
+say "5-9. the browser drives the tree"
+(cd "$UI_DIR" && EP_UI_URL="$AGENT" EP_PASSPHRASE="$PASS" EP_DRIVER_NAME="$DRIVER" npx playwright test e2e/tree.spec.ts > "$WORK/playwright.log" 2>&1)
 PW=$?
 sed -n '/Running/,$p' "$WORK/playwright.log" | grep -E '^\s+[✓✘×]|passed|failed' | head -20
 if [ "$PW" = "0" ]; then
   for t in \
-    "every screen is reachable from every screen" \
-    "each link actually navigates to its screen" \
-    "sign out is on every screen" \
-    "the icons and colours are the architecture page's" \
-    "each screen says which layer it is in" \
-    "inference shows all three of its layers, in three colours" \
-    "the layer map shows the whole system, and Escape closes it" \
-    "the skip link is the first thing a keyboard reaches"; do
+    "shows the install and its five branches" \
+    "every object in the tree selects and arrives" \
+    "the page menu lists the pages each object owns" \
+    "moving between one object's pages keeps that object selected" \
+    "a driver sits under its machine and opens its own settings" \
+    "a bare /config lands on this machine's agent" \
+    "a legacy ?tab= link still lands on its subject" \
+    "the layer colours are still the architecture page's" \
+    "sign out is reachable from every page" \
+    "the tree is a drawer on a phone, and a tap outside closes it" \
+    "the layer map still explains all eight layers"; do
     grep -qF "$t" "$WORK/playwright.log" && ok "browser: $t" || bad "browser: '$t' did not run"
   done
 else

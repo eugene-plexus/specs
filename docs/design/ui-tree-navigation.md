@@ -400,10 +400,140 @@ layer colours still match the website.
 
 ## 13. Implementation record
 
-*(appended as the work lands)*
+**Built and verified 2026-09-13 (late), one unattended session.** `ui`
+`6cc568d` (dist `cc7651b`), pinned in both installers. **No contract
+change, no codegen, no Python consumer re-pinned.**
+`scripts/navigation-acceptance.sh`, **17 checks, ALL PASSED**.
+
+### 13.1 What landed
+
+| File                              | Lines | What it is                                        |
+| --------------------------------- | ----: | ------------------------------------------------- |
+| `src/lib/resourceTree.ts`         |   626 | The model. Pure; no React, no DOM, no fetching     |
+| `src/lib/resourceTree.test.ts`    |   444 | 42 cases against four real topologies              |
+| `src/components/ResourceTree.tsx` |   341 | The tree, and the `useTopology` hook               |
+| `src/components/AppShell.tsx`     |   294 | Top bar, three columns, the page menu              |
+| `e2e/tree.spec.ts`                |   238 | 11 browser tests                                   |
+
+Gone: `AppNav.tsx` and `ScreenHeader.tsx`, the previous slice's top bar.
+Kept and unchanged: `navigation.ts`, `LayerIcon.tsx`, `LayerMap.tsx`, the
+per-theme accent tokens, the skip link.
+
+**The seven pages now spend 94 lines between them on the shell**, down
+from 181 on the previous header and 275 on the hand-written ones before
+that. Config went from 311 lines with a tab builder reading four
+endpoints to one page about one object.
+
+### 13.2 The two defects the first build had
+
+**Both were found by writing the fixture for the commonest install there
+is**, and neither would have survived it.
+
+**A standalone box has no node name anywhere.** It is not enrolled, so
+`GET /v1/node` carries none and the registry is empty, and a companion
+driver declared locally has no `node` field either. The first
+`driverBranch` grouped by label and matched against the node list, so on
+one box with a model launched it **dropped every driver**. Grouping is by
+the driver's *resolved* machine now, and that key may legitimately be
+null.
+
+**`/config` with no query asks for the bare token `agent`, and an
+enrolled node's row is `agent:<name>`.** The two never met: the page menu
+rendered nothing and the tree highlighted nothing, silently.
+`findSelected` resolves the two shapes that legitimately under-specify —
+a bare `agent` is the local one, a bare `driver:<name>` is a legacy
+`?tab=` link.
+
+That second one also proved a structural point: **the tree and the page
+menu must not build the topology separately.** The first version had each
+fetch its own, and they disagreed the moment a selection under-specified.
+One `useTopology` hook, one tree, both consumers reading the same object.
+
+And one more, found by the browser: **the page list comes from the
+selection's *kind*, not from the resolved row.** Reading it off the row
+left the menu empty between first paint and the topology arriving, which
+is a real flash and not only a test artefact.
+
+### 13.3 Verification
+
+**42 vitest cases**, five sabotage-checked, against four topologies: a
+standalone box, the same with a driver, the live two-machine install, a
+**sealed control root**, and a generated ten-node install with forty
+drivers. The sealed case is the one nobody can produce on demand, which
+is exactly why the model is pure.
+
+**11 browser tests, and three sabotages were run against them. Two
+escaped**, and one named the gap it left:
+
+| Sabotage                                               | First suite | After |
+| ------------------------------------------------------ | ----------- | ----- |
+| Drivers hang off the type, with no node level          | **passed**  | fails |
+| Page menu reads the resolved row (the empty-menu race) | fails       | fails |
+| A bare `agent` no longer resolves to this machine      | **passed**  | fails |
+
+**A check called "a driver sits under its machine" asserted only that the
+leaf existed.** It never asserted the nesting its own name claims, so a
+tree with the node level removed entirely passed it. Rows carry
+`data-tree-children` now and the check asserts the nesting; a bare
+`/config` is its own case. Same family as M10's check 7, step 6's
+fragmentation checks, and the prefix case in the slice before this: **an
+assertion whose subject cannot produce the failure is green for the wrong
+reason.**
+
+`install-acceptance.sh` after the pin bump: **checks 1-16 pass in WSL2**
+from nothing, serving the UI from the new `dist` pin. **Check 19 fails on
+purpose** — the live install's own agent holds 8079 on this box. Check 14
+failed once and passed on a re-run, so it is flaky (a child still exiting
+when the orphan count is taken); unrelated to this slice and worth
+knowing.
+
+### 13.4 Seen in a browser
+
+Screenshots at 1500px and 430px: the tree reads `Eugene Plexus` →
+Gateway, Inference drivers (→ machine → driver), Agents (→ machine),
+Library, Control root, each with its layer icon and colour and its
+machine as a muted hint. The page menu reads `nav-node · Config`, or
+`Library · Models · Discover · Config`. At 430px the tree is a drawer
+with a dimming backdrop, bounded below the header.
 
 ---
 
 ## 14. Where the build departed from this design
 
-*(appended as the work lands)*
+1. **The install root gained a third page, `Preferences`.** §3 listed
+   Playground and Inference. The old Config page had a `UI` tab holding
+   theme and font size — browser-local, the one thing there that is not a
+   component's settings — and `gui-equality-for-configurable-things` says
+   nothing may become unreachable. It hangs on the install root, the only
+   row in the tree that is not a component.
+
+2. **A node group is labelled by the machine even when the registry has
+   never heard of it.** §2.3 implied an `Unplaced` group. In practice the
+   driver's own `node` is a better label than a category, so the group is
+   named and *flagged* (`no node in the registry`) instead. The node list
+   itself is the registry plus this machine and nothing else — harvesting
+   names out of placements would mint agent leaves for machines nothing
+   has evidence of.
+
+3. **`ResourceTree` does not own its data.** §10 implied a component that
+   fetches. §13.2 is why it does not.
+
+4. **No `role="tree"` semantics.** §6 asked for them. What landed is a
+   `<nav aria-label="Install">` of links and disclosure buttons, which a
+   keyboard reaches because links and buttons already are reachable. Full
+   `treeitem` / `aria-level` semantics with arrow-key traversal is a real
+   piece of work and was not started; the honest state is that this is an
+   accessible list of links, not an accessible tree widget.
+
+5. **The install has no name, so the root is labelled `Eugene Plexus`.**
+   §2.1 said "labelled with the install's own name where the control root
+   offers one". Nothing on control's surface offers one — not
+   `/v1/control/status`, not the node registry. The model still takes an
+   `installName` and the fallback is tested, because naming an install is
+   an obvious contract addition; **an endpoint to read it was invented in
+   the first draft and removed** rather than shipped.
+
+6. **`scripts/navigation-acceptance.sh` declares a driver first.** Not in
+   the design. The three-level path (type → machine → driver) is the only
+   one of its kind in the tree, and a fleet with no drivers cannot
+   exercise it.
