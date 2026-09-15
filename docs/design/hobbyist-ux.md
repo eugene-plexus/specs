@@ -1,0 +1,904 @@
+# The weekend hobbyist: UX research and a plan (design)
+
+**Status:** researched and designed 2026-09-15, on Troy's brief, ahead of
+the release (`install-paths-and-distribution.md` §9 step 9, which stays
+last). **Nothing in this document is built.** Every claim marked
+*measured* was checked against a file or a running process on the day of
+writing. Research claims cite a URL in Appendix A; **(F)** means the page
+was opened and read, **(S)** means a search snippet only. §0 is the
+measurement, §7 the plan, §8 how we will know it worked.
+
+**Troy's words, which are the brief:**
+
+> Before we do [the release], I would like to do serious research on UX
+> and UI design, and to devise a plan to make the project's UI interface
+> as easy as possible. We want the operation of Eugene to be simple
+> enough for a weekend hobbyist to set it up and use it.
+
+**In one line.** The system underneath is right for the hobbyist — their
+own files, a detected fit, one endpoint — and the surface on top is
+written for an operator. First chat is **15 clicks, 6 route changes and
+one hand-typed filesystem path** after install, the first thing a new
+user sees is **a disabled text box**, and every product hobbyists call
+easy gets there in one to three steps. The fix is not a redesign of the
+tree or the screens; it is a **Home**, a shorter wizard, three
+"do it for me" defaults on the golden path, and a vocabulary pass.
+
+---
+
+## Decisions
+
+| #      | The call                                                                                                            | §        | Recommendation                                                                                                                                                                   | Status       |
+| ------ | ------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| **1**  | What the browser lands on after sign-in                                                                             | §6.1     | **Home** — a task-shaped page on the install root: get a model, try it, connect an app, reach it from other devices, what is running, what needs attention. The Playground becomes one of its pages | needs a call |
+| **2**  | The wizard shrinks to two screens, and Browse arrives in it                                                         | §6.2     | Yes. Passphrase, then "where should models live?" with a picker. Backend and Welcome leave; the install is enrolled on screen 1's Continue so screen 2 can browse                    | needs a call |
+| **3**  | A proposed default models folder beside Browse                                                                      | §6.2     | Yes — a plain folder under the user's home, created on first download, files plainly named. A folder the user can see is not a managed store; differentiator #3 is about renaming and hiding, not about who created the directory | **needs a call — touches the non-negotiable** |
+| **4**  | A starter set of models, and one recommended for the detected card, on Home                                         | §6.3     | Yes, as *"the most-downloaded well-known instruct GGUF in the largest size class that fits at 16k"*, shown with why and **Choose another**. M3 said a one-click "get the best one for me" is a fine wizard step and a bad default; Home is that step | **needs a call — it is a curation** |
+| **5**  | Launch without a profile                                                                                            | §7 S3    | Yes. Launch creates `default` at the context that fits (already computed) when none exists; the editor stays for experts                                                        | recommended  |
+| **6**  | Engine install happens inside the first Launch, as a task                                                           | §7 S3    | Yes. "No binary — install one from the Inference page" becomes a progress line in the same place the user is looking. Version pinning stays an expert path                     | recommended  |
+| **7**  | Long-lived client keys                                                                                              | §7 S4    | Yes: minted by the agent with the install signing key, `aud: client`, one-year default, named, listed, revoked by the existing rotation. **Contract change**                     | needs a call |
+| **8**  | "Serve to other devices" as one switch                                                                              | §7 S5    | Yes. It sets `advertiseUrl` to a detected LAN address, shows the URL a phone types, and reports what is actually bound. The minimal version is in the release                    | recommended  |
+| **9**  | Security default on a desktop OS is the keyring, written to **both** agent and control                              | §0.14    | Yes. The wizard's own copy already says the keyring is "best for AI hobbyists" and defaults to the other option. Servers and containers keep `prompt_on_startup` / `passphrase_file` | **needs a call — security posture** |
+| **10** | The tree stays; the machine level appears only once there is more than one machine                                  | §6.4     | Yes. A standalone install today shows four rows reading "This machine". Reverses `ui-tree-navigation.md` §2.3 for the one-machine case only; a second machine restores it       | needs a call |
+| **11** | No global Simple/Advanced switch                                                                                    | §4 P6    | Per-field: a collapsed **Show more** group per page where three or more fields qualify. Home Assistant is deleting its global toggle for the reasons in §2.4                    | recommended  |
+| **12** | Vocabulary                                                                                                          | §7 S8    | Keep the registry's object names; implementation nouns (`companion driver`, `declaration`, `mint`, `epoch`, `advertiseUrl`, `admission`) leave body copy for hover text; a test enforces a banned list on golden-path screens. Relabelling `Inference drivers` → `Backends` and `Playground` → `Chat` is a **separate, smaller call** | recommended; relabels need a call |
+| **13** | What gates the release                                                                                              | §7       | S0–S6 and the measurement (S10). S7–S9 follow the release                                                                                                                       | needs a call |
+| **14** | Moderated sessions with three to five real hobbyists before release                                                 | §8.4     | Yes. The author's own four days on the live install produced twenty usability incidents (§0.13); strangers will find the ones he cannot                                          | recommended  |
+
+---
+
+## 0. What measuring found
+
+### 0.1 The user in the documents is an operator
+
+*Measured.* Across the nineteen design docs the word "operator" appears
+190 times and is the user's name throughout. Three of the nineteen
+mention a hobbyist, enthusiast or beginner at all, and two of those are
+quoting the r/LocalLLaMA thread. The UI's own copy says "operator" 84
+times and "hobbyist" once — in the wizard's description of the keyring
+option (§0.14). The website's glossary has to define **Install, Node,
+Component, Runtime, Backend, Replica** before the architecture page
+makes sense.
+
+None of this is wrong. It is the vocabulary of the people who built a
+cluster manager, and it leaks into every label, tooltip and empty
+state. The plan does not rename the architecture; it stops the
+architecture from being the copy.
+
+### 0.2 First chat is fifteen clicks away, and the field does it in one to three
+
+*Measured* at desktop width against `ui` `8c1fafa`, counting one pointer
+action as a click and one route change as a transition, assuming the
+happy path at every step.
+
+| Stage                                           | Clicks | Route changes | Typed                    |
+| ----------------------------------------------- | ------ | ------------- | ------------------------ |
+| Wizard complete (five screens)                  | 5      | 2             | passphrase ×2, **a path** |
+| A download started (Library → Discover → row → download) | 9 | 4          | —                        |
+| Launched and routable (open in library → new profile → create → launch) | 13 | 5   | —                        |
+| …if llama.cpp is not installed yet (Inference → install → back → reselect) | 17 | 8 | —                        |
+| First reply in the playground                   | **15** | **6**         | the message              |
+| Base URL and key for an external client (Diagnostic → Direct → Copy → Copy) | **19** | 6 | —                     |
+
+For comparison, install-to-first-chat as documented by each product
+(Appendix A.1): Ollama CLI **1** step; Jan **~1** (a default model
+downloads itself); `llama.app` **2** commands; Msty **2–3** clicks;
+LM Studio **3**; Ollama's desktop app **3**; GPT4All **4**; Open WebUI
+**4–5** plus a backend; Unsloth Studio **5–6**; AnythingLLM **7**
+screens. Eugene is the long tail of that table, and the only product in
+it where a first chat means visiting three different objects in a tree.
+
+### 0.3 The first thing a new user sees is a disabled text box
+
+*Measured.* The wizard's Start redirects to `/`. On a fresh install
+nothing is serving, so the page-menu line reads **"No routable models.
+See what is serving."**, the body reads **"Send a message to start a
+conversation."**, and the composer is `disabled` with the placeholder
+**"Waiting…"** (`ChatInput.tsx:130`). Three sentences, each true, none
+of which says *download a model*. The link goes to Inference, whose
+empty state is a 90-word paragraph beginning "Two ways in."
+
+### 0.4 The wizard asks for the one thing a new user does not have
+
+*Measured.* Screen 3, "Your models", is a text field with the placeholder
+`D:\models  or  /home/you/models` and **no Browse** — the `FolderPicker`
+exists but is reachable only from `/config` and `/library/folders`. A
+hobbyist who has never downloaded a model has no such folder and types
+nothing; Discover then refuses the first download with a 409 whose
+remedy is "Add one under Config → Library → Model directories
+(`modelRoots`)" (`library/downloads.py:158`) — four more clicks, a
+different screen, and a typed path after all.
+
+The wizard's five screens carry 112, 186, 65, 56 and ~146 words of
+prose. Its progress bar says "Step n of 5". The "Add a backend" screen
+serves the user who already runs Ollama, which is not the first-run
+user; the Welcome screen serves nobody (`Continue →` is its only
+control).
+
+### 0.5 Three concepts stand between a downloaded file and a running model
+
+*Measured.* A finished download offers **open in the library**. There:
+
+1. **An engine.** `canLaunch` requires an installed binary
+   (`ProfileEditor.tsx:231`). On a fresh box there is none, and the
+   Library says *"…can load this, but no binary is installed. Install
+   one from the Inference page."* — a detour of four clicks to another
+   object in the tree, then back, then reselect the model.
+2. **A profile.** *"Launching from here needs one: a profile is the
+   saved engine flags for this file…"* → `new profile` → `create` (the
+   context prefills from admission since 2026-09-15; the name prefills
+   `default`) → `launch`. Three clicks for a noun the user does not have
+   yet.
+3. **Where to look.** The launch confirmation says *"Watch it load on
+   the Inference page — a large quant takes a while."* The load can be
+   four minutes over gigabit (`library-folders-run.md`), and nothing on
+   any other screen shows it.
+
+### 0.6 One hundred and twenty terms, eighty-two tooltips, no help
+
+*Measured.* Enumerating every noun and identifier in rendered copy —
+labels, buttons, body text, `title` attributes, status values, and the
+server-declared config labels the generic editor renders — and
+collapsing synonym families gives **120 distinct jargon terms**. The
+list runs from `control plane` and `trust root` through `companion
+driver`, `admission`, `mint a join token`, `epoch`, `advertiseUrl`,
+`KV cache`, `importance-matrix`, `UD-`, `tensor split` to `mmap`. The
+site's glossary defines six.
+
+There are **82 `title` tooltips** (eleven on Inference alone, several a
+paragraph long), **seven expandable explainers**, **zero links to
+documentation**, **zero post-wizard guidance** (no checklist, no next
+step, no dismissible hint; `firstRunComplete` is a boolean, not a
+progress model), **zero toasts or notifications**, and **no search**
+other than the catalogue's. Inline help is the only help, and it is
+written in the vocabulary of §0.1.
+
+### 0.7 Background work is invisible from anywhere but its own screen
+
+*Measured.* Downloads are visible in a panel on Discover and Library;
+scans on Library; model loads on Inference; engine installs on
+Inference; restarts in a modal on Config. Navigate away and the progress
+is gone. There is no header indicator of any kind. The longest waits in
+the product — a 24 GB download, a four-minute load, an engine install —
+are the ones most likely to be watched from the wrong page.
+
+### 0.8 The second job has no path
+
+The hobbyist's second job after a first chat is **pointing a tool they
+already use at it** — Continue, Cline, Open WebUI, SillyTavern, a coding
+harness. *Measured:* the only surface that shows a key is the
+playground's Diagnostic panel, 19 clicks in, and the key it shows is the
+**14-day operator session token**; `tailnet.md` says plainly *"There is
+no long-lived client key yet."* The base URL is a guess labelled as
+one, wrong on any port-remapped install. The three things that go wrong
+for everyone (§3, #6) — the `/v1` suffix, a key field that must not be
+empty, the exact model id — are shown nowhere together.
+
+### 0.9 The third job has no surface at all
+
+The third job is **opening it from the laptop or phone on the couch**.
+*Measured:* a single-box install binds loopback until `advertiseUrl` is
+set on the agent's Config page, a field whose description is written for
+a tailnet deployment. Nothing in the UI says "other devices cannot reach
+this yet", proposes the address, or reports what is bound. This is the
+largest cluster of GitHub issues across every comparable project (§3,
+#2), and the symptom is always the same: *connection refused*, or a
+client that shows *no models*.
+
+### 0.10 Config has no notion of importance
+
+*Measured.* Sixteen `ConfigValueType`s render through one editor; every
+field in every category has equal weight; the only conditional
+visibility is `showWhen`. Categories per component: gateway 6,
+library 6, agent 6, control 6, driver 3. Home Assistant's finding
+(§2.4) is that a global toggle does not fix this; a per-page **Show
+more** does, and `ConfigField.category` already exists to hang it on.
+The hobbyist's real defence is different: **if the defaults are right,
+they never open Config.** Every slice below that sets a default is a
+Config field they will not have to find.
+
+### 0.11 Phone width, focus, motion
+
+*Measured.* **Seven responsive utilities in the whole app** (five `lg:`,
+two `sm:`). Library and Discover are fixed two-column grids at every
+width; config rows are a fixed `200px_1fr`. The tree drawer engages
+below 1024 px, not only at 430 px. Every text field signals focus by a
+1 px border colour change with `outline-none`. No
+`prefers-reduced-motion` anywhere; the cyberpunk theme's loading pulse
+runs regardless. Many sizes are fixed pixels (`text-[10px]`,
+`text-[9px]`), so the font-size preference leaves the tree hints,
+routing bar, badges and table sub-lines unchanged. 65 ARIA attributes,
+one `sr-only` label, no focus trap in either modal.
+
+### 0.12 The browser suite skips the middle of the golden path
+
+*Measured.* 22 Playwright tests in five files walk the wizard, sign-in,
+the tree, the diagnostic panel, folders and the login unlock. **None
+walks Discover, the Library, profile creation or Launch** — the stages
+that cost the clicks in §0.2. The step-count above was measured by
+reading code, not by a browser, and a run that changes it has nothing
+to assert against yet.
+
+### 0.13 The author's live install is the usability study
+
+*Measured* from `CLAUDE.md` and the acceptance records: between
+2026-09-11 and 2026-09-15 Troy, who designed the system, hit at least
+twenty distinct usability incidents on the two-machine install. A
+selection, each with where it is recorded:
+
+- Could not remove a driver; the endpoint had existed since M0 and the UI never called it.
+- Could not tell **which machine** a model directory belonged to.
+- A refusal that read *"this component will not invent one"*.
+- Clicking Gateway on the worker returned 503; a worker could reach one of four proxy targets.
+- Signing in on an enrolled worker bounced into the first-run wizard.
+- Asked for the passphrase at sign-in and again on `/nodes`.
+- Discover said "no GPU detected" because the library measured the NAS.
+- Discover said `fits`, the profile was refused, and neither said the word "context".
+- Set an override to `Y:` without ever seeing the folder's Windows-mount box.
+- Read the node picker as "which node's models" when it meant "score and launch on".
+- Half a second of clock skew read as "down" with no reason given.
+- 54 buttons in a wrapping tab strip (the projection that produced the tree).
+- The Library was "useless" because the container had no folder a node could reach.
+- The container restarted sealed while every health check said `ok`.
+
+He is the most expert user this product will ever have and he had the
+architecture diagram in his head. Each incident became a fix within a
+day, which is the right loop; the point for this document is the
+**rate**. A stranger with a gaming PC will hit the same class of thing
+several times a session, will not know it is a bug, and will not file
+it.
+
+### 0.14 The security default contradicts its own copy
+
+*Measured.* The wizard's Security screen describes `OS keyring
+auto-unlock` as *"Best for: home / personal-use installs, AI hobbyists,
+anyone who wants Eugene to auto-recover after a power outage"* — and
+defaults to `prompt_on_startup` (`draft.ts:81`). The choice is written
+to the agent only; a comment in `setup/page.tsx:300` says control
+"declares the same field… but nothing in it reads either", while
+`CLAUDE.md` records control's keyring auto-unlock as built 2026-09-10.
+One of the two is stale. For a single box the gateway keeps routing this
+machine's own drivers when the root comes back sealed
+(`routing.py:548`, *measured*), so a reboot does not stop chat — but a
+cloud driver's sealed key does not open until someone signs in, and the
+tree root reads `control root unreachable` until they do.
+
+---
+
+## 1. Who this is for
+
+Two people, and the second already has a UI.
+
+**Sam — the weekend hobbyist (the brief).** Windows 11 gaming PC, one
+NVIDIA card of 12–24 GB, 32–64 GB RAM. Has installed Steam, Plex or
+Jellyfin, maybe Ollama or LM Studio once. Uses, or wants to use,
+Continue or Cline in VS Code, SillyTavern, Open WebUI, or a coding
+harness. Has heard "Q4_K_M" and does not know what it means. Does not
+know what a bind address, a JWT or a KV cache is and should never need
+to. Wants three things, in this order:
+
+1. **A model answering in the browser** from a file on their own disk.
+2. **Their tool pointed at it** — base URL, key, done.
+3. **The laptop or phone reaching it** from the couch.
+
+And later, maybe, a NAS and a second GPU — at which point Sam becomes
+Dana.
+
+**Dana — the homelabber.** Unraid or Proxmox, a NAS, two or three boxes,
+a tailnet. Knows what a node is and expects a tree. Dana is who the UI
+was built for over the last five days and is well served; nothing here
+takes anything from Dana. The measurement in §2.4 is that Sam's tools
+and Dana's tools share no landing page anywhere in the field, and that
+is the shape to copy: **a Home for Sam, the tree for Dana, one app.**
+
+**Success targets** — these are targets, not measurements; §8 says how
+they get measured.
+
+| Job                              | Target after the plan                                          | Today (§0.2)                       |
+| -------------------------------- | -------------------------------------------------------------- | ---------------------------------- |
+| First reply in the browser       | ≤ 6 clicks, one typed value (the passphrase), no typed path, no docs | 15 clicks, a typed path, 6 routes |
+| A tool connected                 | ≤ 3 clicks from Home, a key that outlives the fortnight        | 19 clicks, a 14-day session token  |
+| Reachable from another device    | one switch and one URL shown                                   | a config field in a deployment doc |
+| Time from install to first token | under ten minutes on a 100 Mbit line for an 8B model, download included | not measured                    |
+
+---
+
+## 2. What the field does
+
+Research gathered 2026-09-15 (Appendix A). The short version.
+
+### 2.1 The patterns every "easy" product shares
+
+1. **A model is proposed, not searched for, on first run** — Jan
+   downloads a default; Msty offers one at 1.6 GB; LM Studio shows "Get
+   your first LLM"; Ollama's app prompts a pick; `llama.app` shows six
+   cards with one-line blurbs.
+2. **Fit is shown at discovery time, per quant, in colour or a number** —
+   LM Studio's badges, Jan's "fits your hardware", GPT4All's **RAM
+   Required** column, Hugging Face's hardware-compatibility panel.
+3. **A plain-words rule beside the quant list** — bartowski's "Aim for a
+   quant 1–2 GB smaller than your VRAM"; LM Studio's "Choose a 4-bit
+   option or higher".
+4. **One toggle to become a server, with the warning and the key beside
+   it** — LM Studio's *Serve on Local Network*; Jellyfin's *Allow remote
+   access*; Plex's *access outside my home*.
+5. **One command to wire a coding harness** — `ollama launch claude`
+   writes the config; "no environment variables or config files needed".
+6. **Discovery before configuration** — Home Assistant's *Discovered*
+   list, Portainer auto-detecting its environment, Synology's finder.
+7. **Skippable wizard steps** — Jellyfin's libraries, Plex's Skip,
+   Portainer's *Get Started*.
+8. **A notification centre that can fix things** — Home Assistant
+   *Repairs* (a badge, three severities, each with a fix or an
+   explanation); Proxmox's bottom task log, which a 2026 homelab guide
+   calls "super beneficial — they tell you what happened and why".
+9. **A guided empty state** — "no model loaded. That is expected"; "You're
+   in! Now what?".
+10. **A daily-use rail of three to six destinations** — Chat / Discover /
+    My Models / Developer. **None of them opens on an object tree.**
+
+### 2.2 The complaints that recur
+
+Model files held hostage (Ollama's hashed blobs, four open issues over
+two years; LM Studio's mandatory folder layout and an import that
+*moves* the file). Hidden defaults with no visible number (Ollama's
+context). Misleading names. A global Advanced toggle gating essentials.
+Heavy installs ("gave up after the first 12 gigabytes of pip packages").
+Docs that lag the product. Redesign churn ("HATED it in the beginning").
+A model picker with no sizes. **"Which node am I on?"** — Proxmox's
+forum, and the same ambiguity exists in this UI's cross-node console.
+Storage mental-model gaps (TrueNAS's `mnt`). Onboarding that ends in an
+error. Licence drift.
+
+Eugene answers the first complaint outright and should say so on the
+first screen; it has the ingredients for the second and fourth; it
+shares the ninth.
+
+### 2.3 What hobbyists praise
+
+Every "it just worked" quote names the same three things: **one
+action, no decisions, built-in download.** *"I could have spent hours
+googling, but I downloaded Ollama and it just worked."* *"It makes a
+bunch of decisions for you so you don't have to think much."* Nobody
+praises control. The people who left Ollama for llama.cpp kept it *"to
+pull and list my models because it's so easy."*
+
+### 2.4 Is a Proxmox-shaped tree right for Sam?
+
+Honest reading: **for the operations half, yes; as the front door, no.**
+
+- No product hobbyists rate as easy opens on an object tree.
+  **Proxmox's own staff proposed a "simple view which reduces what's
+  visible by default to the minimum"** after users reported "first time
+  looking for where storages are" and no "indication of WHICH NODE this
+  GUI is served from" (F). TrueNAS, the other infrastructure-shaped UI,
+  is the one consistently called not beginner-friendly.
+- **Home Assistant is deleting its global Advanced mode** (2026.6): "a
+  blunt instrument", "essential features locked behind a poorly
+  discoverable toggle", a label that creates "skill-level anxiety". The
+  replacement is per-feature: *"A setting can be visible when it makes
+  sense, sit under Show more, or live beside the feature it changes."*
+  (F)
+- The tree is right for Dana, is bounded at five branches whatever the
+  install does, and answers a question no desktop app has to. Its two
+  reported failure modes — depth, and not knowing which machine you are
+  on — are both fixable in place.
+
+**So: keep the tree, change what the root renders, and never add a
+mode switch.** That is the shape of §6.
+
+---
+
+## 3. Where hobbyists actually get stuck
+
+Ranked by how many distinct primary threads carried each (Appendix A.2),
+with the current state of Eugene's answer.
+
+| #  | Failure                                                             | Representative quote                                                                                                             | Eugene today                                                                                  |
+| -- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1  | **Context vs VRAM** — silent truncation, then OOM when you raise it  | *"That 2k default is extremely low, and ollama silently discards the leading context."* (HN)                                      | **Built** 2026-09-12/15: `prompt_truncated`, `maxContextLength`, prefill, one-click fix. Discover's badge still reads a bare `fits` |
+| 2  | **Reaching the server from another device or container**            | *"only able to access it via localhost:11434… I have disabled firewall"* (ollama #8304)                                           | **Missing** as a surface (§0.9)                                                               |
+| 3  | **Model files trapped in a store**                                   | *"switching tools requires re-downloading everything… Nobody talks about it until they try to move their models."* (HN)           | **Built** — the thesis. Unsaid on any screen a new user meets                                 |
+| 4  | **Which quant, will it fit**                                         | *"Q3_K_S vs 2Q_K_M? No one fucking knows."* (r/LocalLLaMA)                                                                        | **Built** (fit, recommendation, quant table); recommendation is a tag on a row, not the first thing shown |
+| 5  | **GPU not used, silent CPU fallback**                                | *"not using the GPU even though it is available when you exec into it"* — the ROCm image on an NVIDIA box (Unraid forum)          | Partial: admission refuses with numbers; a running CPU-only runtime is not badged as a warning |
+| 6  | **Pointing an OpenAI client at it** — `/v1`, non-empty key, model id | *"The `apiBase` differs for each tool. Otherwise, getting 404"* (continue #7658)                                                  | **Missing** as a surface; the `curl` line is half of it (§0.8)                                |
+| 7  | **Slow first response — the model was unloaded**                     | *"214 model load events… 11.4s to first token vs 0.9s warm"*                                                                      | Built (M6 policy); the load is visible only on Inference; no "keep resident" from the UI      |
+| 8  | **Several models, eviction, VRAM juggling**                          | *"The log seems to say it runs out of memory, but I don't know what to do next."* (ollama #13235)                                 | Built (admission); no per-device memory bar on Inference                                      |
+| 9  | **`<think>` tags in the answer**                                     | *"raw XML-like markup in the message body"* (open-webui #24839)                                                                   | Built (`ThinkingFilter`); the profile field is `thinkingMode`, not a plain-words control       |
+| 10 | **Which model?**                                                     | *"Stop pretending like HF is in any way beginner friendly."* (HN)                                                                 | **Missing**: Discover opens on the catalogue's raw "most downloaded" list                      |
+| 11 | **Docker as a barrier**                                              | *"for many users 'just run it in docker' is a non-starter"* (r/LocalLLaMA, 38 points)                                             | Answered: the one-liner installs on the gaming PC; the container is the NAS path              |
+
+Five of eleven are built underneath and unsurfaced or half-surfaced.
+Three are missing. That ratio is the argument for a UX slice rather
+than more system work.
+
+---
+
+## 4. Principles
+
+Eight rules, each with where it comes from and which screen it governs.
+They are the review checklist for every slice in §7.
+
+- **P1 — Time to first token is the metric.** Kathy Sierra's "first
+  success in one session"; the developer-tools "time to hello world"
+  literature. *Governs:* the wizard, Home, the acceptance run (§8).
+- **P2 — Detect, don't ask.** Apple HIG, Settings: *"Avoid using
+  settings to ask for setup information you can get in other ways."*
+  GPU, free memory, OS path shape, LAN address, control-root URL, the
+  fitting context — all detected today; none should be a question.
+  *Governs:* wizard, Reach, profiles.
+- **P3 — Propose, don't search.** Hick's law; every product in §2.1.
+  One recommended thing with a **why** and a **choose another**.
+  *Governs:* Home's first-model card, Discover.
+- **P4 — Nothing silent.** NN/g visibility of status; §3's top three
+  failures all fail with a green status. The effective value and the
+  tested reach are printed where the decision is made. *Governs:*
+  Discover's badge, Reach, Inference's CPU/loading states, Issues.
+- **P5 — Speak Sam's language; hide Dana's on hover.** GOV.UK: *"If you
+  find yourself having to explain how the user interface works, that's a
+  sign something has gone wrong. Fix the interface."* Reading age 9 for
+  copy the golden path shows; specialist terms defined once, inline.
+  *Governs:* every screen; enforced by a test (S8).
+- **P6 — Disclose per field, never per mode.** NN/g progressive
+  disclosure (two levels at most); Home Assistant's removal of Advanced
+  mode. *Governs:* Config, the profile editor, Discover's table.
+- **P7 — Background work is visible everywhere.** Proxmox's task log;
+  NN/g indicators. One tray in the header for downloads, installs,
+  loads, restarts; one Issues list for things that need a person.
+  *Governs:* the shell.
+- **P8 — Every state has a next step.** NN/g empty states: *"Provide
+  direct pathways to getting started."* An empty Library, an empty
+  Inference, an empty Metrics each end in one button. *Governs:* every
+  empty and error state.
+
+Standing rules from `CLAUDE.md` that these sit under, unchanged:
+`easy-default-expert-override` (P2 and P3 are its UX form),
+`gui-equality-for-configurable-things`, `one-console-never-hop-nodes`,
+`cross-link-related-settings`, and M3's *"we recommend; the operator
+picks"*.
+
+---
+
+## 5. Screen by screen
+
+The hobbyist's question on arrival, what they meet, and the fix, keyed
+to §7.
+
+| Screen         | Sam's question                        | What Sam meets today (*measured*)                                                                              | Verdict          | Fix     |
+| -------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ---------------- | ------- |
+| Installer      | "Is it on? Where?"                    | Windows: *"Eugene Plexus is running — open http://127.0.0.1:8079/"*. Linux with a service: a `systemctl` line and no URL | Good / fix Linux | S2      |
+| Wizard         | "What do you need from me?"           | 5 screens, ~565 words, a passphrase and a hand-typed path; a backend screen for a user who has no backend        | Too long         | S2, S0  |
+| Landing        | "Now what?"                           | A disabled composer reading "Waiting…"                                                                          | Fails P8         | S1      |
+| Discover       | "Which one, and will it run?"         | Raw most-downloaded list; a recommendation as a small tag in a table sorted largest-first; `fits` with no context | Good bones, wrong emphasis | S6 |
+| Library        | "Run it."                             | Engine detour; profile before launch; "watch it load on the Inference page"                                     | Three extra concepts | S3   |
+| Playground     | "Is it working? Can I use it elsewhere?" | Adequate chat; the key is 4 clicks into a diagnostic panel and expires in a fortnight                          | Chat fine; connect missing | S4 |
+| Inference      | "What is running, and why is it slow?" | Complete for Dana; `running` where Sam needs "on CPU — driver too old"; no memory bar                          | Add two states   | S7      |
+| Config         | "Where is the one setting I need?"    | Every field at equal weight, six categories, implementation names in labels                                     | Fails P6         | S8      |
+| Nodes          | "How do I add my NAS?"                | Right for Dana. `mint`, `epoch`, `advertiseUrl` in copy                                                          | Vocabulary       | S8      |
+| Tree (1 box)   | "What are all these?"                 | Five branches, four rows saying "This machine", `control root unreachable` until sign-in                         | Noise on one box | S1, §6.4 |
+| Header         | "Is anything happening? Anything wrong?" | Brand, *The system*, Sign out                                                                                  | Fails P7         | S1, S7  |
+| Phone          | "Can I check it from the couch?"      | Fixed two-column grids; drawer works; badges and hints do not scale                                             | Secondary        | S9      |
+
+---
+
+## 6. The golden path, redesigned
+
+### 6.1 Home
+
+The install root's landing page after sign-in, and the tree's root
+selection. Task-shaped, in this order top to bottom, each card present
+only while it applies:
+
+```
+┌ This machine ──────────────────────────────────────────────────────────┐
+│ RTX 5090 · 32 GB · 29 GB free      llama.cpp b10948      2 models on disk │
+└────────────────────────────────────────────────────────────────────────┘
+┌ Get your first model ──────────────────────────────────────────────────┐
+│ Recommended for your card:  Qwen3-14B  ·  Q6_K_XL  ·  12.3 GB          │
+│ Runs entirely on the GPU with 32k of context. Files land in            │
+│ D:\Users\sam\Eugene Models, named as published.                         │
+│ [ Download and run ]   [ Choose another ]   [ I already have models ]  │
+└────────────────────────────────────────────────────────────────────────┘
+┌ Try it ────────────────────────────────────────────────────────────────┐
+│ ▸ qwen3-14b · 32k context                                              │
+│ [ Say something…                                              ] [Send] │
+└────────────────────────────────────────────────────────────────────────┘
+┌ Use it from your apps ─────────────────────────────────────────────────┐
+│ Address  http://192.168.1.20:8080/v1        [Copy]                     │
+│ Key      eugene_…k9Q  (made 15 Sep, valid a year)  [Copy] [New key]    │
+│ Model    qwen3-14b                          [Copy]                     │
+│ Set up:  Continue · Cline · Open WebUI · SillyTavern · Claude Code · curl │
+└────────────────────────────────────────────────────────────────────────┘
+┌ Reach it from other devices ───────────────── off ▢ ───────────────────┐
+│ Only this PC can reach Eugene. Turn on to open it from your laptop or  │
+│ phone at http://192.168.1.20:8079 — Windows will ask about the firewall.│
+└────────────────────────────────────────────────────────────────────────┘
+┌ Running ───────────────────────────┐ ┌ Needs attention ──────────────────┐
+│ qwen3-14b   ready   58 tok/s  0 busy│ │ nothing                            │
+└────────────────────────────────────┘ └────────────────────────────────────┘
+```
+
+In the header, beside *The system*: a **tasks** indicator (downloads,
+installs, loads, restarts — with bytes/s and an estimate) and an
+**issues** badge. Both are one component fed by polling the endpoints
+that already exist; §7 S1 and S7 say which.
+
+The Playground keeps its diagnostic panel and becomes Home's second
+page. "Try it" on Home *is* the composer, wired to the same code; a
+first reply lands on Home, not on a screen the user had to find.
+
+### 6.2 The wizard, two screens
+
+```
+1 of 2  Choose a passphrase
+        It protects the keys and settings Eugene stores on this PC.
+        [ passphrase ]  [ confirm ]
+        ☑ Start Eugene on its own after a reboot (uses Windows Credential
+          Manager). Untick to be asked for the passphrase every time.
+        [ Continue ]
+
+2 of 2  Where should models live?
+        Eugene keeps model files as plain files with their published
+        names. Move them, delete Eugene, they are still yours.
+        ◉ Make a folder for me:  D:\Users\sam\Eugene Models   [change]
+        ○ I already have models:  [ Browse… ]
+        [ Finish ]
+```
+
+Screen 1's Continue runs today's steps 1–4 (initialize, components,
+trust root, enroll), so screen 2 has a session and can browse. The
+Backend screen leaves the wizard and becomes a Home card, *"Add an app
+you already run (Ollama, a cloud CLI)"*, shown when Inference is empty.
+The Welcome screen's content becomes the header of screen 1. The
+security choice is written to both agent and control (§0.14).
+
+### 6.3 The first model
+
+"Download and run" does, in order and in one task-tray entry: download
+(resumable, verified, as today) → install llama.cpp if absent → create
+the `default` profile at the fitting context → launch → mark ready and
+light up "Try it". Every step is a thing the system already does; the
+slice is the orchestration and the one place it is reported.
+
+The recommendation is *"the most-downloaded, well-known, permissively
+licensed general-purpose instruct GGUF in the largest size class that
+fits at 16k context on the detected card"*, from a **starter set** the
+library ships as data (a handful of families across ~4B, ~8B, ~14B,
+~30B, ~70B), refreshed at release time and overridable in the library's
+config. The card says why (*"the largest of the starter set that runs
+entirely on your GPU with room for 16k of context"*), and **Choose
+another** opens Discover. That is M3's rule kept: we recommend, the user
+picks, and the pick is one click away.
+
+### 6.4 The tree on one machine
+
+When the registry holds one machine and nothing names another, the
+node level does not render: `Inference drivers` lists drivers directly,
+`Agents` is a leaf, `Library` has no machine rows. The moment a second
+machine enrolls, the level appears everywhere at once. The tree grows
+with the install instead of describing an install the user does not
+have. Everything else in `ui-tree-navigation.md` stands.
+
+---
+
+## 7. The plan
+
+Slices in recommended order. *Touches* names repos; **contract** marks a
+change to `openapi/`. Sizes are relative (S under a day, M a day or two,
+L several) and are estimates. Each ends with a **done-when** a script or
+a browser can assert.
+
+### S0 — Defaults that let a reboot come back working (S)
+
+Keyring on desktop OSes as the wizard default, written to agent *and*
+control; the wizard copy says what happens after a reboot in one line;
+`install.sh` prints the URL on every path. *Touches:* ui, agent
+(default), control (verify the keyring path is live, or make it so).
+*Done when* `m9-acceptance.sh` restarts both processes after the wizard
+and signs nothing in, and `/v1/models` and `/v1/nodes` both answer.
+Decision **#9**.
+
+### S1 — Home, and the tasks tray (L)
+
+The page in §6.1 minus the cards that need later slices (Use it from
+your apps waits for S4; Reach for S5). The tray polls
+`library /v1/downloads`, `agent /v1/engines/*/install`,
+`agent /v1/runtimes` (status + `lastError`) and the restart modal's
+state, and renders one line per task anywhere in the app. Home is the
+install root's first page; Playground its second. *Touches:* ui only.
+*Done when* the fresh-install landing page has a primary button and no
+disabled input, and a download started on Discover is visible from
+Config. Decision **#1**.
+
+### S2 — The two-screen wizard, with Browse and a proposed folder (M)
+
+§6.2. Enroll on screen 1; `FolderPicker` on screen 2 over the local
+agent's `/v1/directories`; the proposed default is a plain folder under
+the user's home, **created only when the first download lands in it**
+(the library creates a configured folder that does not exist yet when
+it is the download destination — a behaviour change in `downloads.py`,
+no contract change). *Touches:* ui, library. *Done when* the wizard is
+completed with one typed value and the first download succeeds without
+a 409. Decisions **#2, #3**.
+
+### S3 — One-click run (M)
+
+Launch with no profile creates `default` at `maxContextLength`; Launch
+on a node with no engine queues the install first and reports both in
+the tray; a finished download offers **Run** in place; the Library's
+"install one from the Inference page" sentence goes. The UI
+orchestrates (install → poll → runtime); nothing new on the agent.
+*Touches:* ui, library (implicit profile). *Done when* a fresh box goes
+from "Download and run" to `ready` with no further click. Decisions
+**#5, #6**.
+
+### S4 — Client keys, and "Use it from your apps" (M, contract)
+
+`POST /v1/auth/client-keys {name, ttl?}` on the agent, minting a token
+with the install signing key, `aud: client`, default one year; `GET`
+lists names, prefixes and expiries; `DELETE` records a revocation the
+gateway checks by `jti`, or — simpler and already the project's model —
+revocation is the existing signing-key rotation, and the list is
+informational. The gateway accepts `aud: client` on its three OpenAI
+paths only. Home's card shows address (with `/v1`), key, model id, and
+per-tool recipes as copyable snippets: Continue `config.yaml`, Cline
+"OpenAI Compatible", Open WebUI connection, SillyTavern custom endpoint,
+Claude Code / OpenCode env block, `curl`. The Diagnostic panel's key
+field offers the client key too. *Touches:* specs (`agent.yaml`,
+`gateway.yaml` prose), agent, gateway, ui; control regen. *Done when*
+`hobbyist-acceptance.sh` copies the three strings off Home, restarts the
+gateway, and completes a request with them and nothing else. Decision
+**#7**.
+
+### S5 — "Reach it from other devices" (M, small contract)
+
+One switch on Home and on the agent's Config: proposes the LAN address
+the agent already derives, sets `advertiseUrl`, restarts what must
+restart, and prints the URL a phone types. `GET /v1/node` gains
+`boundAddresses` (what each component actually listens on) so the card
+can say *"listening on all interfaces"* or *"only this PC"* from
+evidence. `install.ps1` adds a firewall rule when elevated and says the
+one-line command when not. *Touches:* specs (`agent.yaml`), agent, ui,
+scripts. *Done when* the run flips the switch and reaches the UI and the
+gateway from a second address on the same box. Decision **#8**.
+
+### S6 — Discover: recommendation first, badge names the context, paste a URL (M)
+
+The recommended quant renders as a card above the table with the fit
+sentence and a Download button; the table sits under **All versions**;
+the badge reads *fits at 32k* and the context control moves beside it;
+the search box accepts a pasted Hugging Face URL; the starter set from
+§6.3 is Discover's empty-query view. *Touches:* library (starter set,
+URL parse), ui. *Done when* the badge text contains the context and a
+pasted repo URL resolves. Decision **#4**.
+
+### S7 — Issues, and two honest states on Inference (M)
+
+The **Needs attention** card and header badge: sealed root, folder not
+mounted, node down with `lastError`, clock skew warning, engine release
+with no assets, mixed engine builds across replicas, a runtime on CPU.
+UI aggregation over existing endpoints first; a `GET /v1/issues` on the
+agent when the list stabilises. Inference gains *loading · ~2 min left*
+(from bytes and rate) and *on CPU — reason* as a warning. *Touches:* ui;
+later agent + contract. *Done when* a sealed root shows as one issue
+with the unlock as its action, from any page.
+
+### S8 — Vocabulary (M)
+
+A banned-word test over the golden-path screens (Home, wizard, Discover,
+Library, Playground): `companion driver`, `declaration`, `admission`,
+`mint`, `epoch`, `advertiseUrl`, `trust root`, `runtime` (as a noun to
+the user), `topology`, `routing table`; each occurrence moves to a
+`title` or goes. A twelve-term glossary panel replaces nothing and hangs
+off *The system*. Copy on those screens under 25 words a sentence.
+Config gets a **Show more** group per page where three or more fields
+qualify (Material's rule), with the order by change-frequency. Sizes
+and units in plain form (*12.3 GB*, *32k context*). Relabels
+(`Backends`, `Chat`) are decision **#12**'s second half. *Touches:* ui;
+config schemas for the grouping flag (a `ConfigField.advanced: bool`
+is a **contract** addition if it lives there; a UI-side list per
+component is not). *Done when* the test passes and a Hemingway pass on
+the extracted strings reports grade 9 or under. Decisions **#11, #12**.
+
+### S9 — Phone, focus, motion (S–M)
+
+Home, Playground and Library stack at one column under 640 px; a
+visible focus ring; `prefers-reduced-motion` stops the pulse; the
+fixed-pixel sizes on hints and badges move to rem so the font-size
+preference reaches them. *Touches:* ui. *Done when* the 430 px e2e case
+walks Home → Try it → a reply.
+
+### S10 — Measure it (M; runs alongside everything above)
+
+`scripts/hobbyist-acceptance.sh`: from `install.sh` on a clean guest to
+a first token, driven by the system Chrome, **counting real pointer
+actions and keystrokes**, asserting the budget in §1 and that no
+filesystem path was typed; then the three strings from Home used by a
+plain `curl`; then the Reach switch. Plus the readability lint and the
+banned-word test from S8. And **moderated sessions** (§8.4). *Done when*
+the script is green on WSL2 and this box and the session notes are in
+`docs/acceptance/`.
+
+**What gates the release (decision #13):** S0–S6 and S10. S7–S9 are
+real and can follow; none of them is on the path from install to a
+first token or a connected tool.
+
+---
+
+## 8. How we will know
+
+### 8.1 The numbers
+
+| Measure                                     | Today              | Target         | Instrument                        |
+| ------------------------------------------- | ------------------ | -------------- | --------------------------------- |
+| Clicks, install → first reply               | 15 (19)            | ≤ 6            | `hobbyist-acceptance.sh`          |
+| Typed values before first reply             | 3 (incl. a path)   | 1              | same                              |
+| Route changes before first reply            | 6                  | ≤ 1            | same                              |
+| Clicks, Home → tool connected               | 19 from landing    | ≤ 3            | same                              |
+| Time, install → first token, 8B, 100 Mbit   | not measured       | < 10 min       | same, wall clock                  |
+| Jargon terms on golden-path screens         | (not isolated)     | 0 banned words | S8 test                           |
+| Reading grade of golden-path copy           | not measured       | ≤ 9            | Hemingway over extracted strings  |
+| Docs links from the UI                      | 0                  | ≥ 1 per screen | grep                              |
+| e2e coverage of the golden path             | wizard + login     | every stage    | Playwright                        |
+
+### 8.2 Traps in the measurement, named now
+
+- **A step counter is not a click counter.** M10's check 7 passed
+  against the failure it was meant to catch; a "≤ 6 steps" assertion
+  that counts scripted actions will pass a flow with 15 real clicks.
+  Count Playwright `click()` and `fill()` calls that the script made,
+  and record the transcript as the evidence.
+- **The author's machine is not a fresh machine.** `bootstrap.ps1`
+  exercised nothing for four milestones for exactly this reason. Run on
+  a clean WSL2 guest and a clean Windows user profile, as
+  `install-acceptance.sh` already does.
+- **The proxy path proves the control plane, not reachability.** The
+  connect-a-tool check must use `curl` from outside the browser with
+  the strings copied off Home, as the playground's direct mode already
+  insists.
+- **`locator(...).first()`** has matched the wrong textarea twice in
+  this project's e2e history. Every selector on Home is a `data-testid`.
+- **A recommendation list goes stale.** It is refreshed at release time
+  and overridable; the run asserts the recommended file exists upstream
+  before downloading it.
+
+### 8.3 The standing loop
+
+The live install's incident rate (§0.13) is the leading indicator. Each
+incident keeps becoming a same-day fix, and each fix keeps landing with
+a browser check that would have caught it. That loop stays; this plan
+adds the instrument that measures the path *before* a stranger walks it.
+
+### 8.4 Three to five strangers
+
+Before the release, three to five people who match Sam — a gaming PC, no
+sysadmin background, have heard of Ollama — each given the one-liner and
+five tasks, thinking aloud, with no help: *get a model answering; make
+it answer from your phone; connect it to a tool you use; find out why an
+answer was slow; change the context size.* Record where each stalls,
+what they say, and what they type. Twenty minutes per person. Written up
+in `docs/acceptance/hobbyist-sessions.md` in the same shape as every
+other record here. GOV.UK's point 1: *"Testing your assumptions early
+and often reduces the risk of building the wrong thing."* Nothing in
+this document survives contact with those five people unchanged, and
+that is what they are for.
+
+---
+
+## 9. What stays out
+
+- **No native desktop app**, no personas, no prompt library, no chat
+  product — decided 2026-09-11 and unchanged. Home's "Try it" is the
+  playground's composer, not a new chat.
+- **No automatic quant selection** beyond one recommendation with a
+  reason and a one-click alternative — M3's rule.
+- **No renaming of the architecture.** Objects keep the registry's
+  names; only body copy changes. Relabels are a separate call.
+- **No global Simple/Advanced mode.** §2.4.
+- **No Docker on the gaming PC.** The container stays the NAS path.
+- **No managed store.** The proposed folder is visible, plainly named
+  and the user's; nothing is renamed, hashed or hidden. If that ever
+  stops being true the folder proposal goes, not the rule.
+- **No tour, no tutorial overlay.** NN/g: they interrupt and do not
+  transfer; contextual help on the field wins.
+- **No changes to the tree's model** beyond §6.4.
+- **Not in this plan:** a structured `model_slots` editor, a guided "add
+  an external backend" form, image attachments, `role="tree"` semantics.
+  Real, listed, later.
+
+---
+
+## 10. Traps known in advance
+
+1. **Vocabulary creep.** Every slice built by people who know the
+   architecture reintroduces its nouns. The banned-word test is the
+   guard, and it must run on Home from S1, not from S8.
+2. **Home must not hide the tree.** Sam becomes Dana; the tree is one
+   click away at all times, and Home is a page *in* it.
+3. **The proposed folder is one bad decision away from a store.** No
+   sub-structure beyond what the publisher named, no index file the
+   user cannot read, the path printed on every card that mentions it.
+4. **A recommended model is a liability the day it is wrong.** The
+   starter set is small, data-not-code, refreshed at release, and the
+   card always says why.
+5. **The Windows firewall.** Turning on Reach without a rule produces
+   the exact "connection refused from my phone" this slice exists to
+   remove. Elevated: add the rule. Not elevated: print the one command
+   and say so on the card.
+6. **Loopback advertise.** A card that says "reach it at
+   `127.0.0.1`" is worse than no card; the derivation already refuses
+   loopback for enrolled nodes and must here too.
+7. **Client keys and rotation.** A rotation revokes every client key
+   at once; the card must say so when it happens, or every connected
+   tool fails silently with a 401 the user cannot see.
+8. **Two wizards' worth of state.** Enrolling on screen 1 means an
+   abandoned wizard leaves an initialized, enrolled install with no
+   models folder. Screen 2 must be re-enterable from Home ("Where
+   should models live?" appears as the first card until answered).
+9. **`install.sh` on Linux with a service prints no URL.** Fix in S0,
+   or the first Linux hobbyist's first experience is a `systemctl`
+   line.
+10. **Measuring on the proxy path.** §8.2.
+
+---
+
+## Appendix A — sources
+
+Gathered 2026-09-15. **(F)** opened and read; **(S)** search snippet
+only; **(R)** the r/LocalLLaMA thread as recorded in
+`local-inference-control-plane.md` §1 and `agent-clients-and-tool-calling.md`
+§2 (Reddit refused fetches).
+
+### A.1 Products and onboarding
+
+- LM Studio modes and 0.4: https://lmstudio.ai/docs/modes (F), https://lmstudio.ai/blog/0.4.0 (F); download flow https://lmstudio.ai/docs/app/basics/download-model (F); server https://lmstudio.ai/docs/developer/core/server (F), https://lmstudio.ai/docs/developer/core/server/serve-on-network (F); import layout https://lmstudio.ai/docs/app/advanced/import-model (F); a user's manual-GGUF question https://github.com/lmstudio-ai/configs/issues/11 (F); first-run walkthrough https://houtini.com/articles/how-to-set-up-lm-studio/ (F); 0.4 reception https://alternativeto.net/news/2026/1/lm-studio-0-4-adds-parallel-model-requests-server-native-daemon-and-new-stateful-rest-api (F).
+- Ollama desktop app https://ollama.com/blog/new-app (F), walkthrough https://apidog.com/blog/ollama-windows-mac-app/ (F); `ollama launch` https://ollama.com/blog/launch (F); context docs https://docs.ollama.com/context-length (S); the critique https://sleepingrobots.com/dreams/stop-using-ollama/ (F) and its summary https://dev.to/jamilxt/1175-redditors-just-told-you-to-stop-using-ollama-heres-why-local-ai-tooling-got-serious-2eia (F); blob-store issues https://github.com/ollama/ollama/issues/1981 (F), https://github.com/ollama/ollama/issues/13760 (F), https://github.com/ollama/ollama/issues/17554 (F), https://github.com/ollama/ollama/issues/1450 (S); ignored context slider https://github.com/ollama/ollama/issues/16896 (F).
+- Open WebUI settings https://docs.openwebui.com/getting-started/quick-start/settings/ (F); HN threads https://news.ycombinator.com/item?id=48346990 (F), https://news.ycombinator.com/item?id=45798193 (F).
+- Jan https://jan.ai/docs/desktop/quickstart (F); Msty https://docs.msty.app/getting-started/onboarding (F); GPT4All https://docs.gpt4all.io/gpt4all_desktop/models.html (F); AnythingLLM https://github.com/attilaszasz/AnythingLLM_Guides (F).
+- llama.app https://llama.app/ (F), https://llama.app/docs/introduction (F), launch feedback https://github.com/ggml-org/llama.cpp/discussions/23875 (F); Unsloth Studio https://unsloth.ai/docs/new/studio/start (F), https://pinggy.io/blog/finetune_and_selfhost_llms_locally_with_unsloth/ (F).
+- Proxmox GUI https://pve.proxmox.com/pve-docs/chapter-pve-gui.html (F); the "simple view" thread https://forum.proxmox.com/threads/concept-thoughts-for-improving-the-proxmox-ve-web-interface.155016/ (F); task-log praise https://www.virtualizationhowto.com/2026/01/proxmox-tips-i-wish-i-knew-before-building-my-first-home-lab/ (F).
+- Unraid https://unraid.net/getting-started (F); Home Assistant onboarding https://www.home-assistant.io/getting-started/onboarding/ (F), integrations https://www.home-assistant.io/getting-started/integration/ (F), Repairs https://www.home-assistant.io/integrations/repairs/ (F), Advanced-mode removal https://github.com/OpenHomeFoundation/roadmap/issues/54 (F), https://developers.home-assistant.io/blog/2026/05/26/advanced-mode-config-flow-deprecation/ (F), https://community.home-assistant.io/t/advanced-mode-is-too-hidden/219516 (F), https://peyanski.com/home-assistant-advanced-mode-settings-less-scary/ (F).
+- Jellyfin https://jellyfin.org/docs/general/post-install/setup-wizard/ (F); Plex https://support.plex.tv/articles/200288896-basic-setup-wizard/ (F); Portainer https://docs.portainer.io/start/install/server/setup (F); Pi-hole v6 https://pi-hole.net/blog/2025/02/18/introducing-pi-hole-v6/ (F); DSM vs TrueNAS vs Unraid https://www.xda-developers.com/synologys-dsm-is-fine-until-truenas-or-unraid/ (F); a first TrueNAS user https://www.truenas.com/community/threads/first-time-truenas-scale-user-and-the-learning-curve.113313/ (F).
+- Hugging Face local apps https://huggingface.co/docs/hub/main/local-apps (F), hardware panel https://huggingface.co/docs/hub/en/hardware (F); a plain quant list https://huggingface.co/unsloth/Qwen3-8B-GGUF (F); bartowski's descriptions and VRAM rule https://huggingface.co/bartowski/Qwen_Qwen3-8B-GGUF (F); beginner rule of thumb https://ai-tldr.dev/learn/local-open-models/open-model-ecosystem/pick-gguf-quant-download/ (F).
+
+### A.2 Where hobbyists get stuck
+
+- Context vs VRAM: https://news.ycombinator.com/item?id=42833427 (F); https://github.com/ollama/ollama/issues/9890 (F); https://news.ycombinator.com/item?id=49613840 (F); https://github.com/ggml-org/llama.cpp/issues/8101 (S).
+- Reaching the server: https://github.com/open-webui/open-webui/discussions/5903 (F); https://github.com/ollama/ollama/issues/8304 (F); https://docs.ollama.com/faq (S).
+- Files trapped in a store: https://news.ycombinator.com/item?id=47788385 (F); (R).
+- Which quant: https://news.ycombinator.com/item?id=49341724 (F); https://news.ycombinator.com/item?id=49368302 (F); https://news.ycombinator.com/item?id=47789393 (F); (R).
+- GPU not used: https://github.com/ollama/ollama/issues/4563 (F); https://forums.unraid.net/topic/184427-ollama-not-using-nvidia-gpu/ (F).
+- Pointing a client at it: https://github.com/caliban-ai/caliban/issues/641 (F); https://github.com/continuedev/continue/issues/7658 (F); https://news.ycombinator.com/item?id=48211003 (F); https://docs.cline.bot/provider-config/openai-compatible (S).
+- Cold loads: https://dev.to/ji_ai/ollama-keepalive-my-model-reloaded-214-times-in-one-day-il4 (F); https://github.com/continuedev/continue/issues/783 (S).
+- Eviction: https://github.com/ollama/ollama/issues/4681 (F); https://github.com/ollama/ollama/issues/13235 (F).
+- `<think>`: https://github.com/open-webui/open-webui/issues/24839 (F).
+- Docker: https://news.ycombinator.com/item?id=43903154 (F); https://news.ycombinator.com/item?id=41852577 (F); (R).
+- Praise: https://news.ycombinator.com/item?id=47788385 (F); https://news.ycombinator.com/item?id=41342694 (F).
+
+### A.3 Principles
+
+- NN/g: heuristics https://www.nngroup.com/articles/ten-usability-heuristics/ (F); complex applications https://www.nngroup.com/articles/usability-heuristics-complex-applications/ (F); error messages https://www.nngroup.com/articles/error-message-guidelines/ (F); progressive disclosure https://www.nngroup.com/articles/progressive-disclosure/ (F); wizards https://www.nngroup.com/articles/wizards/ (F); empty states https://www.nngroup.com/articles/empty-state-interface-design/ (F); recognition over recall https://www.nngroup.com/articles/recognition-and-recall/ (F); onboarding tutorials https://www.nngroup.com/articles/onboarding-tutorials/ (F); indicators and notifications https://www.nngroup.com/articles/indicators-validations-notifications/ (F).
+- GOV.UK: one thing per page https://designnotes.blog.gov.uk/2015/07/03/one-thing-per-page/ (F); question pages https://design-system.service.gov.uk/patterns/question-pages/ (F); writing for interfaces https://www.gov.uk/service-manual/design/writing-for-user-interfaces (F); clear language https://guidance.publishing.service.gov.uk/writing-to-gov-uk-standards/writing-guidelines/clear-language/ (F); reading age https://design.homeoffice.gov.uk/accessibility/written-content/readability (F); point 1 https://www.gov.uk/service-manual/service-standard/point-1-understand-user-needs (F); the question protocol https://www.uxmatters.com/mt/archives/2010/06/the-question-protocol-how-to-make-sure-every-form-field-is-necessary.php (F).
+- Apple HIG Settings https://developer.apple.com/design/human-interface-guidelines/settings (F); Android settings guidelines https://source.android.com/docs/core/settings/settings-guidelines (F); VS Code settings-GUI debate https://github.com/microsoft/vscode/issues/129594 (F).
+- Krug https://charukiewi.cz/books/dont-make-me-think/ (F); Sierra https://mtlynch.io/book-reports/badass/ (F), https://businessofsoftware.org/talks/kathy-sierra-building-the-minimum-badass-user-product-development/ (F); Cooper https://thedesignersfieldguide.substack.com/p/most-users-are-intermediate-users (F); Jakob's and Hick's laws https://lawsofux.com/jakobs-law/ (F), https://lawsofux.com/hicks-law/ (F); time to hello world https://instruqt.com/glossary/time-to-hello-world (F), https://blog.postman.com/the-most-important-api-metric-is-time-to-first-call/ (F); Hemingway https://hemingwayapp.com/help/docs/readability (F).
+
+## Appendix B — the inventory in numbers
+
+*Measured* against `ui` `8c1fafa` on 2026-09-15.
+
+| Thing                                  | Count                                                                                          |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Routes / navigable screens             | 11 / 7                                                                                         |
+| Wizard screens / inputs (default path) | 5 / 5 (10 across branches)                                                                     |
+| Wizard prose per screen                | 112 · 186 · 65 · 56 · ~146 words                                                               |
+| HTTP calls on Start, no backend        | 8 (9 with a models folder)                                                                     |
+| Jargon term families                   | 120                                                                                            |
+| `title` tooltips / doc links / toasts  | 82 / 0 / 0                                                                                     |
+| Expandable explainers                  | 7                                                                                              |
+| `ConfigValueType`s rendered            | 16                                                                                             |
+| Config categories per component        | gateway 6 · library 6 · agent 6 · control 6 · driver 3                                          |
+| Responsive utilities                   | 7 (five `lg:`, two `sm:`)                                                                      |
+| ARIA attributes / `sr-only` labels     | 65 / 1                                                                                         |
+| Playwright files / tests               | 5 / 22 — none through Discover, Library or Launch                                              |
+| Vitest files / cases                   | 20 / ~185                                                                                      |
+| "operator" in design docs / UI copy    | 190 / 84; "hobbyist" 1 (the wizard's keyring option)                                            |
