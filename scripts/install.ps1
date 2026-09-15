@@ -267,6 +267,21 @@ if (Test-Path $PyBin) {
 }
 
 # --- 3. packages ------------------------------------------------------
+# **Stop a running install before replacing its files.** The logon task
+# and the service both execute `Scripts\eugene-plexus-agent.exe`, and a
+# Windows process holds its own executable open, so `uv pip install`
+# fails on an upgrade with "failed to remove file ... being used by
+# another process" (os error 32). Found 2026-09-15 upgrading the live
+# worker; the earlier upgrade that morning had passed only because the
+# console script happened not to change. Linux has no such lock, which
+# is why install.sh needs nothing here. The autostart is registered
+# again in step 5 and the agent restarted in step 6, so a running
+# install pauses across the upgrade rather than surviving it -- which is
+# also what an upgrade of a supervised install means.
+if ((Get-AgentTask) -or (Get-AgentService)) {
+    Say "stopping the running agent so its files can be replaced"
+    Remove-Autostart
+}
 Say "installing Eugene Plexus"
 $specs = foreach ($repo in $DIST.Keys) {
     $extra = if ($repo -eq "agent") { "[service]" } else { "" }
