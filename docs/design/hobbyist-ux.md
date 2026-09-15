@@ -2,8 +2,11 @@
 
 **Status:** researched and designed 2026-09-15, on Troy's brief, ahead of
 the release (`install-paths-and-distribution.md` §9 step 9, which stays
-last). **Decisions #1, #3, #4, #7, #9, #10 and #13 were taken by Troy
-the same day**; #4 on one condition, which §6.5 turns into a process.
+last). **All fourteen decisions were taken by Troy the same day**, in
+two rounds; #4 on one condition, which §6.5 turns into a process, #6
+amended to ask first, #12 on the condition that the jargon stays
+available in hints, and #8 with a question that §6.6 answers. Only the
+relabels (`Backends`, `Chat`) remain a separate open call.
 **Nothing in this document is built.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
@@ -33,19 +36,19 @@ tree or the screens; it is a **Home**, a shorter wizard, three
 | #      | The call                                                                                                            | §        | Recommendation                                                                                                                                                                   | Status       |
 | ------ | ------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
 | **1**  | What the browser lands on after sign-in                                                                             | §6.1     | **Home** — a task-shaped page on the install root: get a model, try it, connect an app, reach it from other devices, what is running, what needs attention. The Playground becomes one of its pages | **taken 2026-09-15 (Troy)** |
-| **2**  | The wizard shrinks to two screens, and Browse arrives in it                                                         | §6.2     | Yes. Passphrase, then "where should models live?" with a picker. Backend and Welcome leave; the install is enrolled on screen 1's Continue so screen 2 can browse                    | needs a call |
+| **2**  | The wizard shrinks to two screens, and Browse arrives in it                                                         | §6.2     | Yes. Passphrase, then "where should models live?" with a picker. Backend and Welcome leave; the install is enrolled on screen 1's Continue so screen 2 can browse                    | **taken 2026-09-15 (Troy): two screens** |
 | **3**  | A proposed default models folder beside Browse                                                                      | §6.2     | Yes — a plain folder under the user's home, created on first download, files plainly named. A folder the user can see is not a managed store; differentiator #3 is about renaming and hiding, not about who created the directory | **taken 2026-09-15 (Troy)** |
 | **4**  | A starter set of models, and one recommended for the detected card, on Home                                         | §6.3     | Yes, as *"the most-downloaded well-known instruct GGUF in the largest size class that fits at 16k"*, shown with why and **Choose another**. M3 said a one-click "get the best one for me" is a fine wizard step and a bad default; Home is that step | **taken 2026-09-15 (Troy), ON CONDITION: an automated pre-release review of the state of local inference that recommends keep or replace — §6.5.** Troy: *"This is something that will quickly grow stale as models continue to improve."* |
-| **5**  | Launch without a profile                                                                                            | §7 S3    | Yes. Launch creates `default` at the context that fits (already computed) when none exists; the editor stays for experts                                                        | recommended  |
-| **6**  | Engine install happens inside the first Launch, as a task                                                           | §7 S3    | Yes. "No binary — install one from the Inference page" becomes a progress line in the same place the user is looking. Version pinning stays an expert path                     | recommended  |
+| **5**  | Launch without a profile                                                                                            | §7 S3    | Yes. Launch creates `default` at the context that fits (already computed) when none exists; the editor stays for experts                                                        | **taken 2026-09-15 (Troy)** |
+| **6**  | Engine install happens inside the first Launch, as a task                                                           | §7 S3    | Yes. "No binary — install one from the Inference page" becomes a progress line in the same place the user is looking. Version pinning stays an expert path                     | **taken 2026-09-15 (Troy), AMENDED: ask first.** *"I could not find llama.cpp, would you like me to install it?"*, Yes as the default, with a warning that skipping is for advanced users only |
 | **7**  | Long-lived client keys                                                                                              | §7 S4    | Yes: minted by the agent with the install signing key, `aud: client`, one-year default, named, listed, revoked by the existing rotation. **Contract change**                     | **taken 2026-09-15 (Troy)** |
-| **8**  | "Serve to other devices" as one switch                                                                              | §7 S5    | Yes. It sets `advertiseUrl` to a detected LAN address, shows the URL a phone types, and reports what is actually bound. The minimal version is in the release                    | recommended  |
+| **8**  | "Serve to other devices" as one switch                                                                              | §7 S5    | Yes. It sets `advertiseUrl` to a detected LAN address, shows the URL a phone types, and reports what is actually bound. The minimal version is in the release                    | **taken 2026-09-15 (Troy).** His question — *can we detect the Windows Firewall disposition so we can warn when it is blocking?* — is answered **yes** in §6.6 |
 | **9**  | Security default on a desktop OS is the keyring, written to **both** agent and control                              | §0.14    | Yes. The wizard's own copy already says the keyring is "best for AI hobbyists" and defaults to the other option. Servers and containers keep `prompt_on_startup` / `passphrase_file` | **taken 2026-09-15 (Troy)** |
 | **10** | The tree stays; the machine level appears only once there is more than one machine                                  | §6.4     | Yes. A standalone install today shows four rows reading "This machine". Reverses `ui-tree-navigation.md` §2.3 for the one-machine case only; a second machine restores it       | **taken 2026-09-15 (Troy)** |
-| **11** | No global Simple/Advanced switch                                                                                    | §4 P6    | Per-field: a collapsed **Show more** group per page where three or more fields qualify. Home Assistant is deleting its global toggle for the reasons in §2.4                    | recommended  |
-| **12** | Vocabulary                                                                                                          | §7 S8    | Keep the registry's object names; implementation nouns (`companion driver`, `declaration`, `mint`, `epoch`, `advertiseUrl`, `admission`) leave body copy for hover text; a test enforces a banned list on golden-path screens. Relabelling `Inference drivers` → `Backends` and `Playground` → `Chat` is a **separate, smaller call** | recommended; relabels need a call |
+| **11** | No global Simple/Advanced switch                                                                                    | §4 P6    | Per-field: a collapsed **Show more** group per page where three or more fields qualify. Home Assistant is deleting its global toggle for the reasons in §2.4                    | **taken 2026-09-15 (Troy)** |
+| **12** | Vocabulary                                                                                                          | §7 S8    | Keep the registry's object names; implementation nouns (`companion driver`, `declaration`, `mint`, `epoch`, `advertiseUrl`, `admission`) leave body copy for hover text; a test enforces a banned list on golden-path screens. Relabelling `Inference drivers` → `Backends` and `Playground` → `Chat` is a **separate, smaller call** | **taken 2026-09-15 (Troy), ON CONDITION: the proper jargon stays available in a tooltip or other hint for advanced users.** Relabels remain a separate call |
 | **13** | What gates the release                                                                                              | §7       | S0–S6 and the measurement (S10). S7–S9 follow the release                                                                                                                       | **taken 2026-09-15 (Troy)** |
-| **14** | Moderated sessions with three to five real hobbyists before release                                                 | §8.4     | Yes. The author's own four days on the live install produced twenty usability incidents (§0.13); strangers will find the ones he cannot                                          | recommended  |
+| **14** | Moderated sessions with three to five real hobbyists before release                                                 | §8.4     | Yes. The author's own four days on the live install produced twenty usability incidents (§0.13); strangers will find the ones he cannot                                          | **taken 2026-09-15 (Troy): "2-3 friends for sure"; he is in no hurry to release** |
 
 ---
 
@@ -695,6 +698,127 @@ surfaces as REVIEW instead of being dropped. And running the review
 only on release day is too late to have two consecutive months of
 evidence — which is why it is monthly.
 
+### 6.6 Reach: detecting the firewall
+
+Troy, taking decision #8: *"Is it possible for us to detect Windows
+firewall disposition so we can warn user when it is blocking?"*
+
+**Yes, and on Windows it is the well-instrumented case.** Reasoning, not
+yet measured; S5 measures it.
+
+**What Windows does when nothing is configured.** Every profile's
+default inbound action is Block. When a program first listens on a
+non-loopback address with no rule covering it, Windows shows the
+*Windows Security Alert* dialog — if notifications are on and someone is
+at the desktop. Cancel creates an explicit Block rule for that
+executable. A process with no interactive desktop shows nothing and the
+default block applies silently — which is exactly the service and the
+scheduled task from step 3, the two ways this product runs on Windows.
+And a home network Windows has classified as *Public* is the commonest
+cause of "it worked at home yesterday".
+
+**What the agent can read without elevation** — the `NetSecurity`
+PowerShell cmdlets through a subprocess, or the `HNetCfg.FwPolicy2` COM
+object through the `pywin32` the `[service]` extra already carries:
+
+- `Get-NetFirewallProfile` — per profile: enabled, default inbound action.
+- `Get-NetConnectionProfile` — each connected adapter's network category:
+  Public, Private, Domain.
+- `Get-NetFirewallRule -Direction Inbound -Enabled True -Action Allow`
+  joined with `Get-NetFirewallPortFilter` (port, protocol) and
+  `Get-NetFirewallApplicationFilter` (program) — whether any enabled
+  Allow rule covers our TCP ports, or our interpreter's path, in each
+  active profile; and whether an explicit **Block** rule names our
+  program, which a dismissed dialog in some earlier session may have
+  left behind.
+- WMI `root\SecurityCenter2` → `FirewallProduct` — a third-party firewall
+  registered with Security Center, by name. Windows Firewall's own state
+  says nothing about it, and "Windows Firewall off" with Norton on reads
+  as *allowed* to anyone who checks only the first.
+
+**Verdict per published port:** `allowed` (an enabled Allow rule covers
+it in every active profile), `blocked` (Windows Firewall on, default
+Block, nothing covers it — or an explicit Block names our program),
+`unknown` (a third-party firewall is registered, or the query failed).
+Each carries the network category and the remedy.
+
+**Remedies, easy default first.**
+
+1. **Service install (elevated):** the agent adds the rule itself when
+   Reach is turned on and removes it when turned off —
+   `New-NetFirewallRule -DisplayName "Eugene Plexus" -Direction Inbound
+   -Protocol TCP -LocalPort 8079,8080 -Action Allow -Profile
+   Private,Domain`. Scoped to **ports, not the program**: a rule bound
+   to a venv path breaks the day the venv moves.
+2. **Logon-task install (unelevated):** the agent runs in the user's
+   own session, so the card's **Allow** button launches one elevated
+   PowerShell with the same command. Windows raises a UAC prompt on the
+   desktop; one click on Yes.
+3. **Declined or unavailable:** the card prints the command with "run
+   as administrator" and stays `blocked`.
+
+Private and Domain by default; **Public only as an explicit override**,
+beside the warning *"Windows treats your network as Public. Change it
+to Private in Settings → Network, or allow Eugene on Public networks
+too."* A tailnet adapter reports its own category and `tailnet.md` is
+the answer there; the card must never tell a tailnet user to reclassify
+their Wi-Fi.
+
+**Linux and macOS, honestly.** Whether `ufw` or `firewalld` is enabled
+is readable without root (`/etc/ufw/ufw.conf`, `systemctl is-active
+firewalld`); whether our port is allowed usually is not (`ufw status`
+and `firewall-cmd --list-ports` want root), so a user-mode agent reports
+`unknown` with the exact command to run. Neither present is `allowed`.
+macOS's application firewall reports its global state through
+`socketfilterfw --getglobalstate` and prompts per app on the desktop, so
+a launchd agent can be silently blocked exactly as on Windows; the
+remedy is `--unblockapp` on the interpreter, printed. A container is
+`unknown`: the mapping is the host's, and the template already
+publishes the ports.
+
+**The proof is from outside.** Static inspection says the firewall
+*should* allow. The only proof is a connection from another machine —
+and the install already makes one: the control root probes every
+enrolled node's advertised URL (`Node.lastSeenAt`, `reachable`). On a
+multi-machine install the card says *"the control root reached this
+machine at http://…:8079 twelve seconds ago"*, which is evidence of the
+kind nothing local can produce. On a single box there is no second
+machine; the card says *"open this on your phone — if the page loads,
+it works"* and the firewall verdict is the best available evidence.
+Nothing pretends otherwise.
+
+**Contract.** `GET /v1/node` gains `reach`:
+
+```yaml
+reach:
+  advertiseUrl: http://192.168.1.20:8079/     # null when only loopback
+  boundAddresses: [{component: agent, host: 0.0.0.0, port: 8079}, …]
+  firewall:
+    product: Windows Defender Firewall          # or the third party's name, or null
+    activeProfiles: [Private]
+    ports:
+      - {port: 8079, verdict: blocked, rule: null, remedy: "New-NetFirewallRule …"}
+      - {port: 8080, verdict: allowed, rule: "Eugene Plexus", remedy: null}
+  lastReachedByRoot: 2026-09-15T14:02:11Z        # null on a single box
+```
+
+Every field nullable; an OS the detector does not know reports
+`unknown`, never `allowed`. Read per request, cached no longer than the
+node refresh.
+
+**Traps.** Checking only Windows Firewall's state (the Security Center
+lookup is why). A stale Block rule for `python.exe` from a previous
+account or install (detection names it). A rule scoped to a program
+path (scope to ports). UAC needs a desktop: the logon task has one and
+the service does not, and the service does not need it. The PowerShell
+subprocess costs a few hundred milliseconds per read on Windows, so the
+verdict is refreshed with the node view, not on every render. And a
+`blocked` verdict with everything working — a third-party firewall
+already allowing us, say — must read as *"we could not confirm"* rather
+than as an error; the corollary of `easy-default-expert-override` is
+that an eager refusal can be wrong and an explanation of a real failure
+cannot.
+
 ---
 
 ## 7. The plan
@@ -739,14 +863,21 @@ a 409. Decisions **#2, #3**.
 
 ### S3 — One-click run (M)
 
-Launch with no profile creates `default` at `maxContextLength`; Launch
-on a node with no engine queues the install first and reports both in
-the tray; a finished download offers **Run** in place; the Library's
-"install one from the Inference page" sentence goes. The UI
+Launch with no profile creates `default` at `maxContextLength`; a
+finished download offers **Run** in place; the Library's "install one
+from the Inference page" sentence goes. **Launch on a node with no
+engine asks first (Troy's amendment to #6):** *"I could not find
+llama.cpp on this machine. Install it now?"* — **Install** is the
+default and the primary button; **Skip** carries the line *"for advanced
+users: the model cannot run until an engine is installed by hand"* and
+leaves the runtime declared but not started, with the reason on
+Inference. On Install, the tray shows the install and the launch as two
+steps of one task and names which one failed if one does. The UI
 orchestrates (install → poll → runtime); nothing new on the agent.
 *Touches:* ui, library (implicit profile). *Done when* a fresh box goes
-from "Download and run" to `ready` with no further click. Decisions
-**#5, #6**.
+from "Download and run" through the one confirmation to `ready` with no
+other click, and Skip leaves a stopped runtime whose reason is printed.
+Decisions **#5, #6**.
 
 ### S4 — Client keys, and "Use it from your apps" (M, contract)
 
@@ -770,13 +901,18 @@ gateway, and completes a request with them and nothing else. Decision
 
 One switch on Home and on the agent's Config: proposes the LAN address
 the agent already derives, sets `advertiseUrl`, restarts what must
-restart, and prints the URL a phone types. `GET /v1/node` gains
-`boundAddresses` (what each component actually listens on) so the card
-can say *"listening on all interfaces"* or *"only this PC"* from
-evidence. `install.ps1` adds a firewall rule when elevated and says the
-one-line command when not. *Touches:* specs (`agent.yaml`), agent, ui,
-scripts. *Done when* the run flips the switch and reaches the UI and the
-gateway from a second address on the same box. Decision **#8**.
+restart, and prints the URL a phone types. `GET /v1/node` gains `reach`
+(§6.6): what each component actually listens on, **the firewall's
+verdict per published port** with the active network category and the
+remedy, and when the control root last reached this machine from
+outside. The card says *"listening on your network, firewall allows
+it"*, *"blocked by Windows Firewall — Allow"* (one click through a UAC
+prompt on a logon-task install; done silently on a service install), or
+*"only this PC"*, from evidence. `install.ps1` adds the rule when
+elevated. *Touches:* specs (`agent.yaml`), agent, ui, scripts. *Done
+when* the run flips the switch, reaches the UI and the gateway from a
+second address on the same box, and — on Windows — the verdict reads
+`blocked` before the rule exists and `allowed` after. Decision **#8**.
 
 ### S6 — Discover: recommendation first, badge names the context, paste a URL (M)
 
@@ -893,9 +1029,11 @@ adds the instrument that measures the path *before* a stranger walks it.
 
 ### 8.4 Three to five strangers
 
-Before the release, three to five people who match Sam — a gaming PC, no
-sysadmin background, have heard of Ollama — each given the one-liner and
-five tasks, thinking aloud, with no help: *get a model answering; make
+Before the release, the two or three friends Troy can get — *"I can't
+promise exactly 3-5, but yes I have 2-3 friends for sure"*; two who
+match Sam are worth more than five who do not, and he is in no hurry
+to release — each given the one-liner and five tasks, thinking aloud,
+with no help: *get a model answering; make
 it answer from your phone; connect it to a tool you use; find out why an
 answer was slow; change the context size.* Record where each stalls,
 what they say, and what they type. Twenty minutes per person. Written up
