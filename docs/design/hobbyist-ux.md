@@ -2,7 +2,9 @@
 
 **Status:** researched and designed 2026-09-15, on Troy's brief, ahead of
 the release (`install-paths-and-distribution.md` §9 step 9, which stays
-last). **Nothing in this document is built.** Every claim marked
+last). **Decisions #1, #3, #4, #7, #9, #10 and #13 were taken by Troy
+the same day**; #4 on one condition, which §6.5 turns into a process.
+**Nothing in this document is built.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -30,19 +32,19 @@ tree or the screens; it is a **Home**, a shorter wizard, three
 
 | #      | The call                                                                                                            | §        | Recommendation                                                                                                                                                                   | Status       |
 | ------ | ------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
-| **1**  | What the browser lands on after sign-in                                                                             | §6.1     | **Home** — a task-shaped page on the install root: get a model, try it, connect an app, reach it from other devices, what is running, what needs attention. The Playground becomes one of its pages | needs a call |
+| **1**  | What the browser lands on after sign-in                                                                             | §6.1     | **Home** — a task-shaped page on the install root: get a model, try it, connect an app, reach it from other devices, what is running, what needs attention. The Playground becomes one of its pages | **taken 2026-09-15 (Troy)** |
 | **2**  | The wizard shrinks to two screens, and Browse arrives in it                                                         | §6.2     | Yes. Passphrase, then "where should models live?" with a picker. Backend and Welcome leave; the install is enrolled on screen 1's Continue so screen 2 can browse                    | needs a call |
-| **3**  | A proposed default models folder beside Browse                                                                      | §6.2     | Yes — a plain folder under the user's home, created on first download, files plainly named. A folder the user can see is not a managed store; differentiator #3 is about renaming and hiding, not about who created the directory | **needs a call — touches the non-negotiable** |
-| **4**  | A starter set of models, and one recommended for the detected card, on Home                                         | §6.3     | Yes, as *"the most-downloaded well-known instruct GGUF in the largest size class that fits at 16k"*, shown with why and **Choose another**. M3 said a one-click "get the best one for me" is a fine wizard step and a bad default; Home is that step | **needs a call — it is a curation** |
+| **3**  | A proposed default models folder beside Browse                                                                      | §6.2     | Yes — a plain folder under the user's home, created on first download, files plainly named. A folder the user can see is not a managed store; differentiator #3 is about renaming and hiding, not about who created the directory | **taken 2026-09-15 (Troy)** |
+| **4**  | A starter set of models, and one recommended for the detected card, on Home                                         | §6.3     | Yes, as *"the most-downloaded well-known instruct GGUF in the largest size class that fits at 16k"*, shown with why and **Choose another**. M3 said a one-click "get the best one for me" is a fine wizard step and a bad default; Home is that step | **taken 2026-09-15 (Troy), ON CONDITION: an automated pre-release review of the state of local inference that recommends keep or replace — §6.5.** Troy: *"This is something that will quickly grow stale as models continue to improve."* |
 | **5**  | Launch without a profile                                                                                            | §7 S3    | Yes. Launch creates `default` at the context that fits (already computed) when none exists; the editor stays for experts                                                        | recommended  |
 | **6**  | Engine install happens inside the first Launch, as a task                                                           | §7 S3    | Yes. "No binary — install one from the Inference page" becomes a progress line in the same place the user is looking. Version pinning stays an expert path                     | recommended  |
-| **7**  | Long-lived client keys                                                                                              | §7 S4    | Yes: minted by the agent with the install signing key, `aud: client`, one-year default, named, listed, revoked by the existing rotation. **Contract change**                     | needs a call |
+| **7**  | Long-lived client keys                                                                                              | §7 S4    | Yes: minted by the agent with the install signing key, `aud: client`, one-year default, named, listed, revoked by the existing rotation. **Contract change**                     | **taken 2026-09-15 (Troy)** |
 | **8**  | "Serve to other devices" as one switch                                                                              | §7 S5    | Yes. It sets `advertiseUrl` to a detected LAN address, shows the URL a phone types, and reports what is actually bound. The minimal version is in the release                    | recommended  |
-| **9**  | Security default on a desktop OS is the keyring, written to **both** agent and control                              | §0.14    | Yes. The wizard's own copy already says the keyring is "best for AI hobbyists" and defaults to the other option. Servers and containers keep `prompt_on_startup` / `passphrase_file` | **needs a call — security posture** |
-| **10** | The tree stays; the machine level appears only once there is more than one machine                                  | §6.4     | Yes. A standalone install today shows four rows reading "This machine". Reverses `ui-tree-navigation.md` §2.3 for the one-machine case only; a second machine restores it       | needs a call |
+| **9**  | Security default on a desktop OS is the keyring, written to **both** agent and control                              | §0.14    | Yes. The wizard's own copy already says the keyring is "best for AI hobbyists" and defaults to the other option. Servers and containers keep `prompt_on_startup` / `passphrase_file` | **taken 2026-09-15 (Troy)** |
+| **10** | The tree stays; the machine level appears only once there is more than one machine                                  | §6.4     | Yes. A standalone install today shows four rows reading "This machine". Reverses `ui-tree-navigation.md` §2.3 for the one-machine case only; a second machine restores it       | **taken 2026-09-15 (Troy)** |
 | **11** | No global Simple/Advanced switch                                                                                    | §4 P6    | Per-field: a collapsed **Show more** group per page where three or more fields qualify. Home Assistant is deleting its global toggle for the reasons in §2.4                    | recommended  |
 | **12** | Vocabulary                                                                                                          | §7 S8    | Keep the registry's object names; implementation nouns (`companion driver`, `declaration`, `mint`, `epoch`, `advertiseUrl`, `admission`) leave body copy for hover text; a test enforces a banned list on golden-path screens. Relabelling `Inference drivers` → `Backends` and `Playground` → `Chat` is a **separate, smaller call** | recommended; relabels need a call |
-| **13** | What gates the release                                                                                              | §7       | S0–S6 and the measurement (S10). S7–S9 follow the release                                                                                                                       | needs a call |
+| **13** | What gates the release                                                                                              | §7       | S0–S6 and the measurement (S10). S7–S9 follow the release                                                                                                                       | **taken 2026-09-15 (Troy)** |
 | **14** | Moderated sessions with three to five real hobbyists before release                                                 | §8.4     | Yes. The author's own four days on the live install produced twenty usability incidents (§0.13); strangers will find the ones he cannot                                          | recommended  |
 
 ---
@@ -581,6 +583,120 @@ have. Everything else in `ui-tree-navigation.md` stands.
 
 ---
 
+### 6.5 The starter set, and the review that keeps it honest
+
+Troy took decision #4 on one condition:
+
+> This is something that will quickly grow stale as models continue to
+> improve. If we make a default, this project needs an automated process
+> before new releases to review the state of local inference and make a
+> recommendation about whether we keep or replace our default selection.
+
+This section is that process. It recommends; a person decides; the
+release cannot ship past a stale or unresolved review.
+
+**The data.** `starter_models.yaml`, shipped inside the library wheel,
+one entry per size class, every field something the review can check:
+
+```yaml
+reviewed: 2026-09-15
+engine: llama_cpp b10948          # the build every entry was verified against
+classes:
+  - class: 8B                      # by parameter count: ~4B, ~8B, ~14B, ~30B, ~70B
+    baseModel: Qwen/Qwen3-8B       # what the ranking is about
+    repo: unsloth/Qwen3-8B-GGUF    # where the quants come from (one mirror of many)
+    why: most-downloaded instruct GGUF in its size class in the last 30 days
+    licence: apache-2.0
+    evidence: { downloads30d: 412000, rank: 1, consecutiveReviewsAtTop: 3 }
+```
+
+The library reads it at start; `starterModelsFile` on the library's
+config points at a different file for an expert or a fleet, and an
+empty list turns Home's card into *Find a model*, which opens Discover.
+No hard-coded model name exists anywhere in code.
+
+**What the card says, exactly.** *"Recommended for your card: Qwen3-8B ·
+Q6_K_XL · 6.2 GB. The most-downloaded well-known instruct model in the
+largest size class that runs on your GPU with room for 16k of context.
+Reviewed 15 Sep 2026."* The date is the staleness made visible (P4).
+The word "best" never appears; the criterion is downloads, which is the
+community's judgement and not ours, and M3's rule stands.
+
+**The review — `eugene-plexus-library starter-review`.** A CLI in the
+library repo, because the library already speaks the Hub, reads GGUF
+headers, knows the quant table and can tell an embedding model from a
+chat one. It runs monthly in CI and on demand, and does this:
+
+1. **Rank.** For each class, ask the Hub for text-generation GGUF
+   repos by 30-day downloads with `gguf` (architecture, parameter
+   total, chat template) and `cardData.base_model` expanded. Aggregate
+   the dozen quant mirrors of one model by `base_model` — official,
+   `unsloth`, `bartowski`, `ggml-org` are one candidate, not four — and
+   bucket by parameter count. Drop: gated repos, entries with no chat
+   template (base models), embedding and reranker models, and anything
+   the library's own preflight cannot read. A candidate whose publisher
+   is not on a short known-publisher list is **flagged, not ranked**;
+   the list grows by a human adding a line, never by the tool.
+2. **Compare** each class's current entry against the ranking.
+3. **Prove it runs.** Fetch the pinned llama.cpp build's architecture
+   list (`src/llama-arch.cpp` at the build tag) and check each
+   candidate's `general.architecture` against it. For classes whose
+   smallest quant is under 6 GB, download it and produce one token on
+   CPU in CI. Above that, the architecture check alone, **and the report
+   says which check ran.** A model the pinned engine cannot load is the
+   one recommendation that would be worse than none.
+4. **Verdict per class, with hysteresis.**
+   - **KEEP** — the current base model is still in the top three of its
+     class, ungated, its recommended file present, its architecture
+     supported.
+   - **REPLACE (candidate)** — a different base model has held first
+     place for **two consecutive monthly reviews** and passed step 3;
+     or the current entry is gated, gone, or unsupported, in which case
+     immediately.
+   - **REVIEW** — first place changed this month only (a launch-week
+     spike is not a trend); the top two are within 20 % of each other;
+     an unknown publisher or licence is at the top; or the Hub did not
+     answer. **A failed lookup is REVIEW, never a silent KEEP.**
+5. **Report.** A markdown report per run — current, candidates,
+   numbers, which check ran, verdict — plus a proposed diff to
+   `starter_models.yaml`, and a **"new this month"** section: the top
+   entries by downloads that were not in last month's top twenty, and
+   any architecture in them the pinned engine does not yet support.
+   That last section is the "state of local inference" Troy asked for,
+   and it is information for the reader, not an input to the verdict.
+   **Nothing is applied automatically.**
+
+**Cadence and the gate.** A scheduled workflow in `library` runs the
+review monthly and files the report as an issue there. The release
+step in `install-paths-and-distribution.md` §9 gains one line: *the
+latest starter review is under 30 days old and carries no unresolved
+REPLACE or REVIEW.* `hobbyist-acceptance.sh` asserts, before it
+downloads, that every entry's repo answers and its recommended quant
+file exists. A release with a stale list is a release that fails a
+check, not one that ships with a note.
+
+**What it will not do.** Judge quality — no benchmark column, no
+leaderboard, no invented score; downloads are the only ranking and the
+report says so in its header. Fetch the list at runtime from the
+network — considered and declined for the release, because a remote
+list that drives a 20 GB download is a trust and availability
+dependency the installers deliberately avoid by pinning, and Discover is
+one click from the card for anything newer. Revisit if the release
+cadence is slower than the review's.
+
+**Traps named now.** Launch spikes (the two-review hysteresis).
+Downloads split across mirrors (aggregate by `base_model`; where the
+card lacks it, fall back to name parsing and flag). A repo whose name
+does not match its base model's card — Ollama's stripped "Distill" is
+the cautionary case — is never recommended over one that does. Licence
+outside a short allowlist is REVIEW. The known-publisher list is itself
+a curation that ages, which is why an unknown publisher at the top
+surfaces as REVIEW instead of being dropped. And running the review
+only on release day is too late to have two consecutive months of
+evidence — which is why it is monthly.
+
+---
+
 ## 7. The plan
 
 Slices in recommended order. *Touches* names repos; **contract** marks a
@@ -668,9 +784,14 @@ The recommended quant renders as a card above the table with the fit
 sentence and a Download button; the table sits under **All versions**;
 the badge reads *fits at 32k* and the context control moves beside it;
 the search box accepts a pasted Hugging Face URL; the starter set from
-§6.3 is Discover's empty-query view. *Touches:* library (starter set,
-URL parse), ui. *Done when* the badge text contains the context and a
-pasted repo URL resolves. Decision **#4**.
+§6.3 is Discover's empty-query view. **The review from §6.5 ships in
+this slice**: `starter_models.yaml`, the `starter-review` CLI, the
+monthly workflow in `library`, and the release-checklist line — the
+first review report is what populates the file. *Touches:* library
+(starter set, review CLI, URL parse), ui, specs (`install-paths` §9).
+*Done when* the badge text contains the context, a pasted repo URL
+resolves, and the review has run once end to end and its report is in
+`docs/acceptance/`. Decision **#4**.
 
 ### S7 — Issues, and two honest states on Inference (M)
 
@@ -719,9 +840,10 @@ banned-word test from S8. And **moderated sessions** (§8.4). *Done when*
 the script is green on WSL2 and this box and the session notes are in
 `docs/acceptance/`.
 
-**What gates the release (decision #13):** S0–S6 and S10. S7–S9 are
-real and can follow; none of them is on the path from install to a
-first token or a connected tool.
+**What gates the release (decision #13, taken):** S0–S6 and S10, **and
+a starter review under 30 days old with no unresolved verdict (§6.5)**.
+S7–S9 are real and can follow; none of them is on the path from install
+to a first token or a connected tool.
 
 ---
 
@@ -819,8 +941,10 @@ that is what they are for.
    sub-structure beyond what the publisher named, no index file the
    user cannot read, the path printed on every card that mentions it.
 4. **A recommended model is a liability the day it is wrong.** The
-   starter set is small, data-not-code, refreshed at release, and the
-   card always says why.
+   starter set is small, data-not-code, reviewed monthly by the process
+   in §6.5 with a human accepting every change, dated on the card, and
+   the card always says why. Troy's condition on decision #4 is what
+   turned this trap into a gate.
 5. **The Windows firewall.** Turning on Reach without a rule produces
    the exact "connection refused from my phone" this slice exists to
    remove. Elevated: add the rule. Not elevated: print the one command
