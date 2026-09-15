@@ -136,10 +136,10 @@ sleep 2
 say "4. the agent serves every screen's route"
 [ "$(code_of "$AGENT/")" = "200" ] && ok "the agent serves the UI at /" || bad "no UI at /"
 MISSING=""
-for r in playground library discover inference metrics nodes config login setup runtimes; do
+for r in playground backends/add library discover inference metrics nodes config login setup runtimes; do
   [ "$(code_of "$AGENT/$r/")" = "200" ] || MISSING="$MISSING /$r"
 done
-[ -z "$MISSING" ] && ok "every route is served: /, /playground, /library, /discover, /inference, /metrics, /nodes, /config, /login, /setup, /runtimes" || bad "not served:$MISSING"
+[ -z "$MISSING" ] && ok "every route is served: /, /playground, /backends/add, /library, /discover, /inference, /metrics, /nodes, /config, /login, /setup, /runtimes" || bad "not served:$MISSING"
 
 say "5-9. the browser drives the tree, and Home (S1)"
 (cd "$UI_DIR" && EP_UI_URL="$AGENT" EP_PASSPHRASE="$PASS" EP_DRIVER_NAME="$DRIVER" npx playwright test e2e/tree.spec.ts e2e/home.spec.ts > "$WORK/playwright.log" 2>&1)

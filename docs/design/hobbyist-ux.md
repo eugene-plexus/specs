@@ -850,7 +850,7 @@ install root's first page; Playground its second. *Touches:* ui only.
 disabled input, and a download started on Discover is visible from
 Config. Decision **#1**.
 
-### S2 — The two-screen wizard, with Browse and a proposed folder (M)
+### S2 — The two-screen wizard, with Browse and a proposed folder (M) — **BUILT AND LIVE-VERIFIED 2026-09-15; record §11.3**
 
 §6.2. Enroll on screen 1; `FolderPicker` on screen 2 over the local
 agent's `/v1/directories`; the proposed default is a plain folder under
@@ -1264,6 +1264,79 @@ a candidate for S9 (render the shell during the gate), not this slice.
 install has no routable model; `playground-diagnostic-acceptance.sh`
 is where one is, and its spec was repointed at `/playground`. Nobody
 has opened Home on the live two-machine install.
+
+### 11.3 S2 — two screens, a picker, and a proposed folder. DONE 2026-09-15.
+
+`ui` `4cac718` (dist `5994dff`), pinned by both installers; library
+`1c0b062` (a test only, no pin). **No contract change.** Five screens
+carrying about 565 words and one hand-typed filesystem path (§0.4) are
+two.
+
+**Screen 1 — "Choose a passphrase."** The passphrase, its confirmation
+and S0's checkbox, under one short paragraph that replaces Welcome.
+**Continue commits**: initialize, the components check, the trust
+root, enrollment, and the `securityMode` written to both processes —
+today's steps 1–4 and 3 — so screen 2 has a session and a picker that
+can browse. There is no Back from screen 2; the install exists.
+
+**Screen 2 — "Where should models live?"** *Make a folder for me*
+proposes `<home>/Eugene Models`, where `<home>` is the `Home` entry of
+the library's own `GET /v1/directories` listing and the separator is
+the one the home path's shape implies — a pure helper, tested for a
+drive letter, a POSIX root and a UNC path — editable behind *change*;
+or *I already have models*, with Browse over the library's host and a
+typed path. **"Nothing is created until the first download lands
+there"** is true by two measured facts: `resolve_destination` never
+checks a configured root for existence, and `_transfer_one` creates
+the destination tree (`downloads.py:370`). The library gained one test
+pinning the first, so a root-must-exist check added later fails a test
+instead of turning a fresh install's first download into a 409. Finish
+writes `modelRoots` and `firstRunComplete` and opens Home. If the
+library cannot be asked, the proposal is disabled and the typed path
+is offered — no dead end.
+
+**Resume (trap 8).** One status read on mount decides the screen:
+uninitialized → 1; initialized with a session → 2, nothing re-run;
+initialized and already finished → Home, so a wander to `/setup`
+cannot overwrite existing folders; initialized without a session →
+sign in, with `/setup` as the return. The draft persists the choices
+and never the passphrase. **A trap found by the tests:** the probe
+effect must run exactly once — a per-render router identity re-ran it
+after Continue and dropped a committed install back on screen 1.
+
+**The backend flow left the wizard intact.** `/backends/add`, *Add an
+app you already run*, reuses the provider form, the model picker and
+the creation helpers, inside the shell with the install selected (the
+navigation registry gained `ROUTES_UNDER_INSTALL`, tested for
+disjointness and existence). Home's first-model card links to it in
+both of its states; Inference's *Add an external backend* points there
+instead of at Config. The plain-words test caught *"Local engine
+runtime…"* in a provider label.
+
+**Verification.** 307 unit tests from 284. The auth-arc e2e walks both
+headings and asserts the proposed folder ends in `Eugene Models`.
+**`m9-acceptance.sh`: 46 checks, zero failures**, and its check 2b
+proved the keyring default written on screen 1 survives the
+unattended restart — the two-screen wizard and S0 verified together.
+**`navigation-acceptance.sh`: 22 checks, zero failures**, the new
+route served. The one flaky Home assertion S1 left (the two cards swap
+on separate state updates) waits for the swap now; five consecutive
+runs green.
+
+**Golden path after S0–S2** (the §0.2 table, re-counted by reading
+the code, not yet by the click-counting run S10 will build): wizard
+complete in **3 clicks and one typed value** (Continue, Finish, and
+the passphrase typed twice) against 5 clicks and a typed path; the
+landing page has a primary button instead of a disabled box. The
+download-to-first-reply stretch is unchanged until S3 and S6.
+
+**Not done:** the Home card *"Where should models live?"* trap 8 also
+asked for, until the folder question is answered — the setup gate's
+`firstRunComplete` bounce covers the case today. `fields.tsx` still
+exports the unused `Radio`. The Library page still says *missing* for
+a configured folder that the first download has not yet created; the
+Home card's *"Nothing is on disk yet"* is what a fresh install sees
+first, so the wording is a wart, not a wall.
 
 ---
 
