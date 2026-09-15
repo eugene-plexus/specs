@@ -174,3 +174,28 @@ the wire, because the project keeps no node-side cache by decision
 unload included. A 2.5 GbE or 10 GbE link between the NAS and the GPU
 node is the honest fix; a local Library folder on the GPU node for the
 models it serves most is the other, and both are the operator's call.
+
+### Necessity proved, later the same morning
+
+The operator set `\\192.168.16.252\downloads\models` as the `/models`
+folder's Windows mount on Library -> Folders, cleared Amish's override,
+upgraded both hosts (worker: agent `d9fbd73`, ui dist `dc0ce63`; the
+container to the matching `edge`), and the upgrade's restart relaunched
+the runtime. It came back `ready` with
+
+    localPath: \\192.168.16.252\downloads\models\huihui-ai\...\Huihui-Qwen3.8-27B-abliterated-Q6_K_L.gguf
+
+and the folder check on Amish reads `source: inherited`, `override:
+null`, one model reachable. Nothing per node was typed: the node opened
+the library's path through the rule the folder carries, which is the
+claim the one-box acceptance run could not make. Spawn to
+`model loaded` was 3 min 55 s again, the same 102 MB/s, so the UNC path
+costs nothing over the drive letter.
+
+Control's `/v1/nodes` now carries `lastError` on both nodes and the NAS
+console serves the build whose Folders views link to each other -- the
+two fixes from earlier in the day, confirmed on the wire rather than by
+version string.
+
+**What is still open on this surface:** a POSIX node taking the POSIX
+mount, and a library that is down (redundancy). Both unchanged.
