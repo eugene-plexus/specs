@@ -13,14 +13,16 @@
 # that arc is compressed here, not re-proved.
 #
 # WHAT ONE BOX PROVES AND DOES NOT -- printed again at the end.
-#   proves: a declaration of a path this host does not have is REFUSED with the
-#           fix, before anything spawns (until M11 it was accepted and crashed);
-#           a mapping makes the same declaration launch, the engine opens the
-#           MAPPED path while the declaration keeps the library's; the runtime
-#           still resolves to its library entry; a worker with no library
-#           reaches the install's through the owning node's agent and is
-#           measured by metadata; the Test button checks a mapping against
-#           real files; the directory listing on both components.
+#   proves: a declaration of a path under no Library folder is REFUSED (400,
+#           since 2026-09-14; until then a path this host did not have was a
+#           422 after M11, and accepted-and-crashed before it); an override for
+#           the LIBRARY's folder makes a declaration from the library's own
+#           path launch, the engine opens the MAPPED path while the declaration
+#           keeps the library's; the runtime still resolves to its library
+#           entry; a worker with no library reaches the install's through the
+#           owning node's agent and is measured by metadata; the Test button
+#           checks a rule against real files; the directory listing on both
+#           components. The inherited-mount half is library-folders-acceptance.sh.
 #   cannot: that the mapping was NECESSARY -- both agents can open the
 #           library's own path here, so the necessity half is visible only on
 #           the live two-machine install; a share mounted read-only or lazily;
@@ -48,11 +50,13 @@ LIB_PORT="${EP_LIBRARY_PORT:-8182}"; CTL_PORT="${EP_CONTROL_PORT:-8183}"
 B_PORT="${EP_AGENT_B_PORT:-8184}"
 PASS="m11-$$-$(date +%s)"
 ALIAS="qwen3-1.7b"
-RT="qwen-mapped"     # launched from a path that exists nowhere on this box
-RT2="qwen-library"   # declared from the library's own path
-# The library's path, as a foreign host would state it: POSIX-shaped, so
-# on this Windows box `abspath` would read it as C:\srv\models -- a
-# different path, not a missing one, which is exactly the trap.
+RT="qwen-mapped"     # the library's path, opened through B's override
+RT2="qwen-library"   # declared from the library's own path, autoStart false
+# A path under no Library folder, POSIX-shaped so that on this Windows box
+# `abspath` would read it as C:\srv\models -- a different path, not a
+# missing one, which is exactly the trap M11 was about. Since 2026-09-14
+# it is refused for a prior reason: a node runs only what the Library
+# catalogues.
 FOREIGN_ROOT="/srv/models"
 
 # A's advertise host. Non-loopback, so the install's registry carries an
@@ -193,38 +197,52 @@ LIB_PATH_JSON=$(printf '%s' "$LIB_PATH" | sed 's|\\|\\\\|g')
 LIB_ROOT_BS=$(printf '%s' "$LIB_ROOT" | sed 's|/|\\|g')
 
 # --- 4. a path this host does not have is refused, with the fix -----------------------
-say "4. declare $RT on node-b through control: $FOREIGN_ROOT/$BASENAME exists nowhere here"
+say "4. declare $RT on node-b through control from $FOREIGN_ROOT/$BASENAME: under no Library folder"
 SPEC_FOREIGN="{\"name\":\"$RT\",\"engine\":\"llama_cpp\",\"modelPath\":\"$FOREIGN_ROOT/$BASENAME\",\"modelAlias\":\"$ALIAS\",\"binary\":\"$(json_path "$LLAMA")\",\"flags\":{\"contextSize\":4096,\"gpuLayers\":99,\"parallelSlots\":1}}"
 R=$(curl -s -w '\n%{http_code}' -X POST -H "Authorization: Bearer $CTOK" "$CTL/v1/runtimes" -H 'content-type: application/json' -d "{\"node\":\"node-b\",\"spec\":$SPEC_FOREIGN}")
 CODE=$(echo "$R" | tail -1); BODY=$(echo "$R" | sed '$d'); DETAIL=$(echo "$BODY" | jq_ "d['detail']['detail']" 2>/dev/null)
 [ "$CODE" = "502" ] && ok "control relays the node's refusal as 502" || bad "control answered $CODE: $BODY"
-echo "$DETAIL" | grep -q "answered 422" && ok "...and the node answered 422, not 201: nothing was declared" || bad "detail: $DETAIL"
-echo "$DETAIL" | grep -q "$FOREIGN_ROOT/$BASENAME is not on node-b" && ok "the refusal names the path and the node" || bad "detail: $DETAIL"
-echo "$DETAIL" | grep -q "Model directory mappings" && ok "*** ...and the fix: Config -> Agent @ node-b -> Model directory mappings ***" || bad "detail does not name the fix: $DETAIL"
+if [ "$ADV_HOST" = "127.0.0.1" ]; then
+  # B has never read the Library's folders over a loopback registry, so the
+  # folder rule is skipped with a warning and M11's own refusal is what fires.
+  echo "$DETAIL" | grep -q "answered 422" && ok "...and the node answered 422 (loopback: the folder list is unknown to B, so M11's 'not on this host' fires)" || bad "detail: $DETAIL"
+  echo "$DETAIL" | grep -q "$FOREIGN_ROOT/$BASENAME is not on node-b" && ok "the refusal names the path and the node" || bad "detail: $DETAIL"
+else
+  echo "$DETAIL" | grep -q "answered 400" && ok "*** ...and the node answered 400: not a Library model (2026-09-14) -- before M11's 'not on this host' could even be asked ***" || bad "detail: $DETAIL"
+  echo "$DETAIL" | grep -q "is not under any Library folder" && ok "the refusal names the rule" || bad "detail: $DETAIL"
+  echo "$DETAIL" | grep -q "Library -> Folders" && ok "*** ...and the fix: add the directory to the Library (Library -> Folders) ***" || bad "detail does not name the fix: $DETAIL"
+fi
 [ "$(curl -s -H "Authorization: Bearer $CTOK" "$B_URL/v1/runtimes" | jq_ "len(d['runtimes'])")" = "0" ] && ok "B has no runtime and no companion for it" || bad "B declared something"
 
 # --- 5. the dry run says the same, structured ----------------------------------------
-say "5. POST node-b /v1/runtimes/admission for the same spec"
+say "5. POST node-b /v1/runtimes/admission for the same spec (the dry run is about existence; it still refuses)"
 ADM=$(curl -s -X POST -H "Authorization: Bearer $CTOK" "$B_URL/v1/runtimes/admission" -H 'content-type: application/json' -d "$SPEC_FOREIGN")
 [ "$(echo "$ADM" | jq_ "d['decision']")" = "refuse" ] && ok "decision=refuse, fit=$(echo "$ADM" | jq_ "d['fit']")" || bad "admission: $ADM"
 [ "$(echo "$ADM" | jq_ "d['location']['exists']")" = "False" ] && [ "$(echo "$ADM" | jq_ "d['location'].get('mapping')")" = "None" ] && ok "location.exists=false, no mapping applied, localPath=$(echo "$ADM" | jq_ "d['location']['localPath']")" || bad "location: $(echo "$ADM" | jq_ "d.get('location')")"
 
 # --- 6. the mapping --------------------------------------------------------------------
-say "6. PATCH node-b config: $FOREIGN_ROOT -> $MOUNT_BS"
+say "6. PATCH node-b config: the override $LIB_ROOT_BS -> $MOUNT_BS (and a from that is no Library folder)"
 SCHEMA=$(curl -s -H "Authorization: Bearer $CTOK" "$B_URL/v1/config/schema")
 [ "$(echo "$SCHEMA" | jq_ "next((f['valueType'] for f in d['fields'] if f['key']=='pathMappings'), None)")" = "path_mappings" ] && ok "the schema offers pathMappings as path_mappings" || bad "schema: $(echo "$SCHEMA" | head -c 200)"
-PATCH=$(curl -s -X PATCH -H "Authorization: Bearer $CTOK" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$FOREIGN_ROOT\",\"to\":\"$(json_path "$WORK/node-b/mnt/models")\"}]}")
-[ "$(echo "$PATCH" | jq_ "d['applied']")" = "['pathMappings']" ] && ok "mapping applied: $(curl -s -H "Authorization: Bearer $CTOK" "$B_URL/v1/config" | jq_ "d['pathMappings']")" || bad "patch: $PATCH"
+FOREIGN_PATCH=$(curl -s -X PATCH -H "Authorization: Bearer $CTOK" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$FOREIGN_ROOT\",\"to\":\"$(json_path "$WORK/node-b/mnt/models")\"}]}")
+if [ "$ADV_HOST" = "127.0.0.1" ]; then
+  note "loopback: B cannot read the Library's folders, so an override for $FOREIGN_ROOT is accepted with a warning ($(echo "$FOREIGN_PATCH" | jq_ "d['applied']"))"
+else
+  [ "$(echo "$FOREIGN_PATCH" | jq_ "d['applied']")" = "[]" ] && echo "$FOREIGN_PATCH" | jq_ "d['rejected'][0]['message'] if d['rejected'] else ''" | grep -q "is not a Library folder" && ok "*** an override for $FOREIGN_ROOT is rejected: not a Library folder (2026-09-14) ***" || bad "foreign override: $FOREIGN_PATCH"
+fi
+PATCH=$(curl -s -X PATCH -H "Authorization: Bearer $CTOK" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$(printf '%s' "$LIB_ROOT_BS" | sed 's|\\|\\\\|g')\",\"to\":\"$(json_path "$WORK/node-b/mnt/models")\"}]}")
+[ "$(echo "$PATCH" | jq_ "d['applied']")" = "['pathMappings']" ] && ok "override applied: $(curl -s -H "Authorization: Bearer $CTOK" "$B_URL/v1/config" | jq_ "d['pathMappings']")" || bad "patch: $PATCH"
 BADPATCH=$(curl -s -X PATCH -H "Authorization: Bearer $CTOK" "$B_URL/v1/config" -H 'content-type: application/json' -d '{"pathMappings":[{"from":"models","to":"Z:\\models"}]}')
 [ "$(echo "$BADPATCH" | jq_ "d['rejected'][0]['key'] if d['rejected'] else ''")" = "pathMappings" ] && ok "a relative from is rejected: $(echo "$BADPATCH" | jq_ "d['rejected'][0]['message'][:70]")" || bad "bad patch accepted: $BADPATCH"
 
 # --- 7. the same declaration launches, and opens the MAPPED path -----------------------
-say "7. the same declaration on node-b, through control"
-R=$(curl -s -w '\n%{http_code}' -X POST -H "Authorization: Bearer $CTOK" "$CTL/v1/runtimes" -H 'content-type: application/json' -d "{\"node\":\"node-b\",\"spec\":$SPEC_FOREIGN}")
+say "7. $RT declared on node-b from the LIBRARY's path, through control: the override applies"
+SPEC_RT="{\"name\":\"$RT\",\"engine\":\"llama_cpp\",\"modelPath\":\"$LIB_PATH_JSON\",\"modelAlias\":\"$ALIAS\",\"binary\":\"$(json_path "$LLAMA")\",\"flags\":{\"contextSize\":4096,\"gpuLayers\":99,\"parallelSlots\":1}}"
+R=$(curl -s -w '\n%{http_code}' -X POST -H "Authorization: Bearer $CTOK" "$CTL/v1/runtimes" -H 'content-type: application/json' -d "{\"node\":\"node-b\",\"spec\":$SPEC_RT}")
 CODE=$(echo "$R" | tail -1); BODY=$(echo "$R" | sed '$d')
-[ "$CODE" = "201" ] && ok "*** 201: the declaration that was refused a minute ago is accepted with the mapping ***" || { bad "control answered $CODE: $BODY"; tail -20 agent-b.log; }
+[ "$CODE" = "201" ] && ok "*** 201: a declaration from the library's own path, opened on B through its override ***" || { bad "control answered $CODE: $BODY"; tail -20 agent-b.log; }
 RB=$(curl -s -H "Authorization: Bearer $CTOK" "$B_URL/v1/runtimes/$RT")
-[ "$(echo "$RB" | jq_ "d['modelPath']")" = "$FOREIGN_ROOT/$BASENAME" ] && ok "Runtime.modelPath is the declaration, untouched: $FOREIGN_ROOT/$BASENAME" || bad "modelPath: $(echo "$RB" | jq_ "d['modelPath']")"
+[ "$(echo "$RB" | jq_ "d['modelPath']")" = "$LIB_PATH" ] && ok "Runtime.modelPath is the declaration, untouched: the library's spelling" || bad "modelPath: $(echo "$RB" | jq_ "d['modelPath']")"
 [ "$(echo "$RB" | jq_ "d.get('localPath')")" = "$MOUNT_BS\\$BASENAME" ] && ok "*** Runtime.localPath is the mount: $MOUNT_BS\\$BASENAME ***" || bad "localPath: $(echo "$RB" | jq_ "d.get('localPath')")"
 for _ in $(seq 1 120); do
   RB=$(curl -s -H "Authorization: Bearer $CTOK" "$B_URL/v1/runtimes/$RT"); ST=$(echo "$RB" | jq_ "d.get('status')" 2>/dev/null)
@@ -249,9 +267,9 @@ TXT=$(echo "$C" | jq_ "(d.get('choices') or [{}])[0].get('message',{}).get('cont
 [ -n "$TXT" ] && [ "$(echo "$C" | jq_ "d['x_eugene_plexus'].get('runtime')")" = "$RT" ] && ok "*** COMPLETION from a model opened through a mapping: '$TXT' (runtime=$RT) ***" || bad "completion: $(echo "$C" | head -c 300)"
 
 # --- 9. the library's own path, mapped; the join survives --------------------------------
-say "9. map the LIBRARY's root to the mount; declare $RT2 from the library's own path"
-PATCH=$(curl -s -X PATCH -H "Authorization: Bearer $CTOK" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$FOREIGN_ROOT\",\"to\":\"$(json_path "$WORK/node-b/mnt/models")\"},{\"from\":\"$(printf '%s' "$LIB_ROOT_BS" | sed 's|\\|\\\\|g')\",\"to\":\"$(json_path "$WORK/node-b/mnt/models")\"}]}")
-[ "$(echo "$PATCH" | jq_ "d['applied']")" = "['pathMappings']" ] && ok "two mappings applied" || bad "patch: $PATCH"
+say "9. declare $RT2 from the library's own path, autoStart false; the join survives"
+PATCH=$(curl -s -X PATCH -H "Authorization: Bearer $CTOK" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$(printf '%s' "$LIB_ROOT_BS" | sed 's|\\|\\\\|g')\",\"to\":\"$(json_path "$WORK/node-b/mnt/models")\"}]}")
+[ "$(echo "$PATCH" | jq_ "d['applied']")" = "['pathMappings']" ] && ok "the one override re-applied" || bad "patch: $PATCH"
 SPEC_LIB="{\"name\":\"$RT2\",\"engine\":\"llama_cpp\",\"modelPath\":\"$LIB_PATH_JSON\",\"modelAlias\":\"qwen3-lib\",\"binary\":\"$(json_path "$LLAMA")\",\"autoStart\":false,\"flags\":{\"contextSize\":4096,\"gpuLayers\":99}}"
 R=$(curl -s -w '\n%{http_code}' -X POST -H "Authorization: Bearer $CTOK" "$CTL/v1/runtimes" -H 'content-type: application/json' -d "{\"node\":\"node-b\",\"spec\":$SPEC_LIB}")
 CODE=$(echo "$R" | tail -1)

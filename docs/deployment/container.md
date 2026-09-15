@@ -549,29 +549,36 @@ GPU box however you already mount things:
   Credential Manager). A drive letter works only if the agent's own
   session can see it.
 - **Linux GPU box:** mount it where you like (`/mnt/models` via `fstab`,
-  NFS or CIFS); the mapping below says where.
+  NFS or CIFS); the folder's mounts, below, say where.
 
-**Then one setting on that node**, and it is the same on every node:
-**Config → Agent @ `<node>` → Model directory mappings**, one row:
-`/models` (the library's directory, exactly as its Model directories
-setting lists it) → `\\TOWER\models`, or `/mnt/models`, wherever you
-mounted it. The rest of the path is carried over, so one row covers
-every model under the root. Press **Test** before saving: it walks the
-library's real files through the mapping and says how many are reachable
-on that node and whether their sizes agree.
+**Then one setting, on the folder, once** (2026-09-14): **Library →
+Folders**, the row for `/models`, two boxes — *mounted on Windows nodes
+at* `\\TOWER\models`, *mounted on Linux/macOS nodes at* `/mnt/models`.
+Every node of that kind inherits it; a new GPU box needs nothing typed.
+The rest of the path is carried over, so one folder record covers every
+model under it. A machine that mounts the share somewhere else gets one
+override under **Library → `<node>` → Folders**, whose **Browse** lists
+that machine's own disk from whichever console you are sitting at, and
+whose **Test** checks the unsaved override against the library's real
+files on that node. (Before 2026-09-14 the same row lived on every node's
+agent as *Model directory mappings*, one per node per folder; those rows
+still work, as that node's overrides.)
 
 Nothing is copied or cached. A model downloaded to the NAS is then a
-model any node that mounts the share can serve. Skip the mapping and the
+model any node that mounts the share can serve. Skip the mount and the
 Library screen says so before you press Launch: *"Not on `<node>`:
 `/models/…` does not exist there"*, with a link to the setting; a launch
 that slipped past is refused the same way, with the same fix in the
-message. Before M11 it was accepted and crashed at spawn.
+message. Before M11 it was accepted and crashed at spawn. **And a node
+runs only what the Library catalogues**: a runtime declared from a path
+under no Library folder is refused outright (*"is not under any Library
+folder"*) — add the directory under **Library → Folders** first.
 
 The declaration keeps the library's spelling. `Runtime.modelPath` stays
 `/models/…` — that is what links the runtime to its library entry — and
 `Runtime.localPath` on the Inference screen shows what the node actually
-opened. Change the mapping and the next start uses it; nothing has to be
-re-declared.
+opened. Change the folder's mount or a node's override and the next
+start uses it; nothing has to be re-declared.
 
 **One thing to expect the first time:** the engine reads the weights over
 the network on every cold start. A 20 GB model on gigabit Ethernet is

@@ -537,3 +537,15 @@ with a dimming backdrop, bounded below the header.
    the design. The three-level path (type → machine → driver) is the only
    one of its kind in the tree, and a fleet with no drivers cannot
    exercise it.
+
+7. **Machines appear under Library too (2026-09-14).** §2 measured that
+   machines belong only under the two kinds that multiply, and the
+   Library is a singleton. The exception is deliberate and is not an
+   instance list: a machine under Library is *how that machine reaches
+   the Library's folders*, with one page (Folders) whose picker browses
+   that machine. It exists because Troy's principle — *"once a node is
+   connected, I never want to hop to another node's UI to do
+   anything"* — needs a place in the Library branch to set a node's
+   override from, and the Agents branch is where nobody looks for
+   library work. The Library leaf itself gained a Folders page, second
+   after Models. Design: [`library-folders-and-reach.md`](library-folders-and-reach.md).

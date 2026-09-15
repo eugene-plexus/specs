@@ -1,7 +1,11 @@
 # Library folders, and how every node reaches them
 
-**Status: designed 2026-09-14, on Troy's calls. Build follows in the
-same session.** Supersedes the *storage half* of
+**Status: designed 2026-09-14, on Troy's calls; BUILT AND LIVE-VERIFIED
+THE SAME SESSION** — `scripts/library-folders-acceptance.sh`, 61 checks,
+second execution (the first found three harness defects and no product
+defect); `m11-acceptance.sh` rewritten to the new rule, 56 checks, first
+execution. §13 is the implementation record, §14 where the build
+departed from this document. Supersedes the *storage half* of
 [`m11-compute-storage-separation.md`](m11-compute-storage-separation.md):
 the mechanism M11 built (a path rule on the node's agent, applied at
 every spawn, never written onto the declaration) stays exactly as it
@@ -445,3 +449,126 @@ ports, environment cleared, teardown by pid:
    tree build dropped every driver on exactly that install.
 - **Codegen from each repo's own `.venv`**, never the ambient 3.14 —
    the `ToolCallDelta` incident.
+
+---
+
+## 13. Implementation record (2026-09-14)
+
+Built in one unattended session after the design; record
+[`../acceptance/library-folders-run.md`](../acceptance/library-folders-run.md).
+
+**Contracts** — specs `26b0592` (`ConfigValueType.library_folders`,
+`LibraryFolder`, `POST /v1/library/folders/check` and its three
+schemas, the 400 on `POST`/`PATCH /v1/runtimes`, the config-tag prose)
+and `81919bd` (`GET /v1/folders` on the library, service-readable — see
+§14.2). Radius: every consumer, as §7 predicted; `control`, `gateway`
+and `inference-driver` are regen-only re-pins (`21c34ad`, `e0931b6`,
+`7b4161c`).
+
+**Library `daae53e`.** `folders.py` (coercion, validation, the shape
+classifier restated), `modelRoots` as `library_folders` with bare
+strings accepted everywhere and the object form on the wire and in the
+file, `library_folders()` on the store, `GET /v1/folders`, category
+label **Library**. 325 tests, 12 new, two sabotage-checked.
+
+**Agent `4e2a113`.** `library_folders.py`: `FolderRecord`,
+`LibraryFolderCache` (persisted beside `agent.yaml`, refreshed on every
+request-scoped path that talks to the library, never by a loop —
+§0.5), `effective_rules` (overrides first, inherited not shadowed),
+`folder_for`, `check_reach`. `LibraryFitClient.folders()`. The runtime
+supervisor and planner take an `inherited_rules` provider and resolve
+through the effective rules at plan and compose. `create_runtime` /
+`update_runtime` refresh the copy and call `require_library_folder`
+before the companion; `_admission_for` refreshes and uses the effective
+rules; `POST /v1/config/test` checks the effective rules; `PATCH
+/v1/config` rejects an override whose `from` is no known folder and
+applies the rest of the patch; `POST /v1/library/folders/check`. Labels
+**Library** / **Library folder overrides**; admission's refusal names
+`Library -> <node> -> Folders`. 537 tests, 20 new, two sabotage-checked
+(the folder check removed from create: 3 fail; inherited put before
+overrides: 2 fail).
+
+**UI `ce08a8e`, dist `27c2983`.** `lib/libraryReach.ts` (pure; 11
+tests), `components/LibraryFolders.tsx` (grid and node views),
+`app/library/folders/page.tsx`, `libraryNode` in `resourceTree.ts`
+(`library:node:<name>` / bare `library:node`, leaves under the Library
+row, PAGES, parse/format/configTabFor/findSelected), `FolderTree` icon,
+the `library_folders` renderer in the generic editor, the overrides copy
+on `path_mappings`, the picker label *score & launch on*, the launch
+preview's fix sentence and link, `e2e/library-folders.spec.ts` (5
+tests). 207 vitest, lint and types clean, static export builds.
+
+**Scripts and docs.** `scripts/library-folders-acceptance.sh` (61
+checks); `m11-acceptance.sh` steps 4/6/7/9 rewritten (§14.4);
+`tailnet.md`, `container.md`, the tree design's §14.7, the M11 design's
+supersession banner; both installers pin the six new commits and every
+archive was fetched.
+
+### What the run found
+
+Nothing in the product. Three harness defects on the first execution,
+all in the record: a Windows path inside a CSS attribute selector, a
+`sed` over a JSON-escaped path, and the consequence of the first on the
+"B's log gained a listing" check. The second execution was clean, and
+the m11 rewrite passed first time.
+
+### Open
+
+- **Necessity**, as at M11: one box cannot show that the inherited rule
+  was needed. The live install is where it shows — set the container's
+  `/models` folder's Windows mount to the share's UNC path once, clear
+  `Amish_Station`'s override, launch from the root. Troy's to run.
+- **A POSIX node taking the POSIX mount.** This host is Windows; the
+  decoy being *refused* exercises the classifier from the other side,
+  and the unit tests cover both shapes, but no Linux agent inherited a
+  mount in a live run.
+- **Library redundancy** — the answer to "the library is down", not
+  started. Until then the copy and its age are the mitigation.
+- **Two-machine CORS/Chrome local-network permission** on the Folders
+  page, as for the playground: both ends were loopback here.
+
+## 14. Where the build departed from this design
+
+### 14.1 Folders is the Library's second page, not its first
+
+§5.1 said "before Models". On the commonest install — one box — Models
+is what the operator came for, and Folders would say *same path* once
+per folder. Models, Folders, Discover, Config.
+
+### 14.2 `GET /v1/folders` on the library, rather than reading `GET /v1/config`
+
+§3.2 said the agent reads the folder list from the library's config.
+The library's config trio is operator-only for the whole router (a
+measurement, not an assumption), and a worker reaches the library with
+a `service:agent` token. Rather than widen the config GET to service
+tokens — which would expose the whole document, `catalogueBaseUrl` and
+all — the folders became a resource of their own, readable at the same
+level as `GET /v1/models`, whose paths already contain the same
+information. One more contract commit (`81919bd`), radius library and
+ui only.
+
+### 14.3 The Library leaves under machines do not carry `local`
+
+`local` marks the one row that *is* the browser's machine — its agent —
+and `findSelected` resolves a bare `agent` by it. A test asserts there
+is exactly one such row per tree, and it was right to: the bare
+`library:node` is resolved by matching the leaf's `node` to the local
+agent row's node instead.
+
+### 14.4 `m11-acceptance.sh` keeps its foreign-root arc, inverted
+
+§10.8 said "rewritten, not deleted". The declaration from `/srv/models`
+is now refused **400** for being under no Library folder (before M11's
+"not on this host" 422 can be asked), an override for `/srv/models` is
+rejected at PATCH, and the mapped launch declares from the library's own
+path through an override for the library's folder. On a loopback
+registry (B unable to read the folder list) the script says so and
+expects M11's 422, which is the degraded path §3.2 describes.
+
+### 14.5 The grid's mount editor browses through a node picker, and the picked path's shape decides the box
+
+§5.2 said "two boxes … with *Browse on…* opening a node picker". Built
+as a select of nodes plus one Browse button per folder; the path that
+comes back lands in the POSIX or Windows box by its own shape, so an
+operator cannot file a UNC path under Linux by clicking the wrong
+button.

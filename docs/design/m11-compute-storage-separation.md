@@ -1,5 +1,17 @@
 # M11 — Compute/storage separation (design)
 
+> **Superseded in part, 2026-09-14** by
+> [`library-folders-and-reach.md`](library-folders-and-reach.md). The
+> *mechanism* here stands — a path rule on the node's agent, applied at
+> every spawn, never written onto the declaration. What changed is who
+> states it: a Library folder now carries its `mounts` and a node
+> inherits the one of its OS shape, so `pathMappings` is that node's
+> **overrides**, and a declaration under no Library folder is refused
+> (400) before any of this applies. §2's "on the library, per root per
+> node — rejected" is the call that moved; the reasons it gave (only the
+> node can stat the path; launches that bypass the library) are answered
+> by keeping the *data* on the node and the *statement* on the folder.
+
 **Status:** designed 2026-09-13; **BUILT AND VERIFIED THE SAME DAY** —
 `scripts/m11-acceptance.sh`, 53 checks, first execution. §13 is the
 implementation record and §14 records where the build departed from

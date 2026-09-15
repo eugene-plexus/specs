@@ -376,7 +376,8 @@ having no quorum is a window you can see.
 | A node is `down` but the machine is up | Its address changed and it has not announced, or it enrolled before nodes carried a signing identity — re-enroll it. |
 | Every call to the control root is 503 | It has no passphrase yet. Finish the first-run wizard, or `POST /v1/auth/initialize`. |
 | A node's re-advertisement is refused 401 | It enrolled before M9. Its model files and runtimes are untouched by re-enrolling. |
-| Launching on a GPU node says *"Not on `<node>`"*, or a launch there is refused with *"is not on `<node>`"* | The library runs on another host and names the model by its path there. Mount the library's model directory on the GPU node and add a mapping under **Config → Agent @ `<node>` → Model directory mappings** (`/models` → where it is mounted). **Test** checks it against the library's real files. |
+| Launching on a GPU node says *"Not on `<node>`"*, or a launch there is refused with *"is not on `<node>`"* | The library runs on another host and names the model by its path there. Mount the library's folder on the GPU node and say where, **once, on the folder**: **Library → Folders**, the row for `/models`, *mounted on Windows nodes at* (`\\NAS\models`) or *on Linux/macOS nodes at* (`/mnt/models`). Every node of that kind inherits it. A machine that mounts it somewhere else gets one override under **Library → `<node>` → Folders**, whose Browse lists that machine's own disk. **Test** checks a rule against the library's real files. |
+| A launch is refused with *"is not under any Library folder"* | A node runs only what the Library catalogues (2026-09-14). Add the directory that holds the model under **Library → Folders**, then scan. |
 
 ---
 
