@@ -2216,8 +2216,18 @@ components:
           description: |
             For CUDA, the highest version the installed driver supports.
             Selection takes the highest published build whose major
-            matches and whose minor is no greater than this; a higher
-            major is never chosen.
+            matches and whose minor is no greater than this. When the
+            release publishes no such build — upstream moved from 13.3
+            to 13.4 on 2026-09-15 and stopped shipping 13.3 — the lowest
+            published minor **above** it within the same major is taken
+            instead, under CUDA's minor-version compatibility (an
+            application built with any 13.x toolkit runs on any 13.x
+            driver, minus PTX JIT for newer PTX and APIs the driver
+            lacks; verified live with b10990's 13.4 build on a 13.3
+            driver), and the agent logs the choice. A different major
+            is never chosen, and the refusal says so. The candidate
+            minors are read from the release's own asset names, not a
+            table: the table this replaced went stale in a day.
 
     EngineInstallRequest:
       type: object
