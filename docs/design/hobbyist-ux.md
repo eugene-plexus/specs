@@ -828,7 +828,7 @@ change to `openapi/`. Sizes are relative (S under a day, M a day or two,
 L several) and are estimates. Each ends with a **done-when** a script or
 a browser can assert.
 
-### S0 — Defaults that let a reboot come back working (S)
+### S0 — Defaults that let a reboot come back working (S) — **BUILT AND LIVE-VERIFIED 2026-09-15**
 
 Keyring on desktop OSes as the wizard default, written to agent *and*
 control; the wizard copy says what happens after a reboot in one line;
@@ -836,7 +836,7 @@ control; the wizard copy says what happens after a reboot in one line;
 (default), control (verify the keyring path is live, or make it so).
 *Done when* `m9-acceptance.sh` restarts both processes after the wizard
 and signs nothing in, and `/v1/models` and `/v1/nodes` both answer.
-Decision **#9**.
+Decision **#9**. **Record: §11.1.**
 
 ### S1 — Home, and the tasks tray (L)
 
@@ -1101,6 +1101,106 @@ that is what they are for.
    or the first Linux hobbyist's first experience is a `systemctl`
    line.
 10. **Measuring on the proxy path.** §8.2.
+
+---
+
+## 11. Implementation record
+
+### 11.1 S0 — a reboot comes back working. DONE 2026-09-15.
+
+Contracts `e953c74` (`AuthStatus.unlocked`, `AuthStatus.keyringAvailable`
+on both `agent.yaml` and `control.yaml`); agent `1e062e4`, control
+`b3961df`, `ui` `c16cf50` + `53f4bd4` (dist `5b87c01`); both installers
+pin all three. Radius measured: the three consumers that codegen the
+two documents re-pinned; gateway, inference-driver and library generate
+from neither and did not move.
+
+**Which claim was stale: the wizard's.** `setup/page.tsx` carried a
+comment saying the control root "declares the same field… but nothing
+in it reads either", and wrote `securityMode` to the agent alone.
+Control has read it since 2026-09-10 — `_auto_unlock` at startup, the
+store on login, the store-or-delete on the config flip — so every
+install whose operator ticked the keyring came back with a **sealed
+root** after a restart, on the word of a comment. The wizard writes to
+both now, after enrollment, so the one session it holds verifies at
+both.
+
+**The default follows a measurement, not the platform.** `GET
+/v1/auth/status` gained `keyringAvailable`: a write, read-back and
+delete of a throwaway entry, run once per process in a thread with a
+3 s budget (a present-but-locked Secret Service can block on a prompt
+nobody will answer; past the budget the field is absent, not `false`).
+The config test endpoint runs the same probe in place of a read that
+could not tell a working keyring with nothing stored from a `fail`
+backend. The wizard reads the field before it has a token and defaults
+to `os_keyring` on `true`; on `false` the checkbox is disabled and one
+sentence says Eugene will ask for the passphrase after every restart,
+naming the file-based path for servers and containers. Two radios and
+two paragraphs became one checkbox — *"Start Eugene on its own after a
+reboot"* — and one line. A choice made before a tab refresh survives
+the probe.
+
+**THE FINDING THE BUILD MADE, and it changed the code in both
+processes: the keyring entry was one slot per product.**
+`eugene-plexus-agent` / `master-key`, shared by every install on the
+machine. With the keyring the desktop default, a second install's
+wizard — a `.dev-install` beside the live worker, or **every acceptance
+run on this box** — would have overwritten the live install's stored
+key, and the live agent would have come back locked on its next start
+with a warning nobody was watching for. Control's `_auto_unlock` would
+have then discarded a key it thought was its own. The entry name now
+carries a twelve-hex fingerprint of the install's master-key salt —
+unique per install, minted before the master key, stored beside it — on
+both agent and control (same shape, deliberately not shared code). A
+legacy single-slot entry is read once, moved under the scoped name and
+deleted, written-then-deleted so a failure between the two leaves a
+duplicate rather than nothing; a root that predates scoping still
+auto-unlocks across the upgrade (tested). Deleting clears both names.
+
+**`unlocked` is on the wire too**, on both processes: the sealed root
+said in a word, for S7's Issues list to read instead of parsing a 503.
+
+**Verification.** 18 new tests across the two Python repos (both
+keyring suites memoise the probe to `false` under test so no test
+reaches the developer's real Credential Manager); 3 new wizard tests
+(the healthy fixture answers `keyringAvailable: false` so the existing
+sequence tests keep seeing the default path). `scripts/m9-acceptance.sh`
+gained **check 2b**: after the browser walks the wizard, every process
+is killed and the agent started again from the same state directory
+with nobody signing in; where the host reported a keyring it asserts
+both processes were written `os_keyring`, the agent reports `unlocked`,
+and control answers `/v1/nodes` with `200`; where it did not, it asserts
+`prompt_on_startup` was kept and both came back sealed as documented,
+then signs in for the rest of the run. Either branch is a record, not a
+skip. It flips both back to `prompt_on_startup` afterwards, which
+deletes the throwaway entries. **Ran green on this box on the second
+execution: 45 checks, zero failures**, `keyringAvailable=True`, both
+modes `os_keyring`, the agent unlocked and the root answering its
+registry with nobody present — on ports +100 so the live worker's agent
+on 8079 was never in reach.
+
+**The first execution failed one check, and it was the harness.** The
+script ran `npx playwright test` unfiltered, so the specs added since
+M9 — the tree's declared-driver case, the diagnostic's chat model, the
+folders' second agent — failed for want of what their own scripts stand
+up (8 failed, 4 did not run, 14 passed, 4.9 min). And the M9 arc's own
+Nodes check asserted a screen heading the tree redesign removed on
+2026-09-13; nothing it tests had changed. The script now runs only
+`e2e/auth-arc.spec.ts`; the check waits for the registry's *"This
+install"* heading, which renders only when the root answered. Same
+family as every other "the instrument aged" entry in this repo.
+
+**Also:** the Linux installer's service path ended in a `systemctl` line
+and no URL; every path of both installers now ends with the URL and the
+log and config locations. **Trap recorded:** a GitHub archive for a
+commit pushed seconds earlier answers 404 for up to a minute, so a
+codegen run straight after `git push` fails once and passes on retry.
+
+**Not done, deliberately:** S0 did not touch the wizard's screen count
+(S2), and the `Done` screen's summary line still reads in the wizard's
+old register. Nobody has restarted the *live* two-machine install under
+the new default; the worker there is `prompt_on_startup` and stays so
+until Troy flips it under Config → Agent.
 
 ---
 

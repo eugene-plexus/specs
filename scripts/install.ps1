@@ -64,12 +64,12 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "d9fbd7303a981e9bc40a3adfe8e95cebfb393083"
-    "control"          = "f0f7942dc566c807f2dc084aacd96fcbcea0a75e"
+    "agent"            = "1e062e47fd21f4bf6b9df47e8c21f26a1a718531"
+    "control"          = "b3961df6c96a82acbc2344d99bcc1a9382501231"
     "gateway"          = "f8ba0a3a3c2c9b969863bf2895fb0ac413be290e"
     "inference-driver" = "9e698f8a6887b9563dc07fd7a762de6d39514bdb"
     "library"          = "0b9f0f08bc442d6950d555dced37596a5ffad525"
-    "ui"               = "dc0ce6308aa5dd71e3b17fe320cc9a9393380812"  # branch `dist`, not `main`
+    "ui"               = "5b87c016dbe4dad913b06fa82f948df93731d41e"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -463,3 +463,5 @@ Say "installed. Start it with:"
 if ($autostart -eq "service")   { Write-Host "    Start-Service $ServiceName" }
 elseif ($autostart -eq "task")  { Write-Host "    Start-ScheduledTask -TaskName $TaskName" }
 else { Write-Host "    `$env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = '$Config'; & '$AgentEx'" }
+Write-Host "    then open http://127.0.0.1:$Port/"
+Write-Host "    logs:  $Prefix\logs\    config: $Config"

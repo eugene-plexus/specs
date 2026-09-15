@@ -41,12 +41,12 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=d9fbd7303a981e9bc40a3adfe8e95cebfb393083
-PIN_CONTROL=f0f7942dc566c807f2dc084aacd96fcbcea0a75e
+PIN_AGENT=1e062e47fd21f4bf6b9df47e8c21f26a1a718531
+PIN_CONTROL=b3961df6c96a82acbc2344d99bcc1a9382501231
 PIN_GATEWAY=f8ba0a3a3c2c9b969863bf2895fb0ac413be290e
 PIN_DRIVER=9e698f8a6887b9563dc07fd7a762de6d39514bdb
 PIN_LIBRARY=0b9f0f08bc442d6950d555dced37596a5ffad525
-PIN_UI=dc0ce6308aa5dd71e3b17fe320cc9a9393380812   # branch `dist`, not `main`
+PIN_UI=5b87c016dbe4dad913b06fa82f948df93731d41e   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
@@ -407,3 +407,10 @@ elif [ "$DO_SERVICE" = 1 ]; then
 else
     echo "    EUGENE_PLEXUS_AGENT_CONFIG_FILE=$CONFIG $VENV/bin/eugene-plexus-agent"
 fi
+# Every path ends with the same two facts a first-time user needs and the
+# service path already printed: where the browser goes, and where the
+# files are. Found by the hobbyist UX measurement (docs/design/hobbyist-ux.md
+# §5): a Linux install with a service ended in a systemctl line and nothing
+# else.
+echo "    then open http://127.0.0.1:$PORT/"
+echo "    logs:  $PREFIX/logs/    config: $CONFIG"

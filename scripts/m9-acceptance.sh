@@ -42,6 +42,7 @@ EP_AGENT_B_URL="${EP_AGENT_B_URL:-http://127.0.0.1:8084}"
 EP_AGENT_B2_URL="${EP_AGENT_B2_URL:-http://127.0.0.1:8085}"
 EP_CONTROL_URL="${EP_CONTROL_URL:-http://127.0.0.1:8083}"
 EP_GATEWAY_URL="${EP_GATEWAY_URL:-http://127.0.0.1:8080}"
+EP_LIBRARY_URL="${EP_LIBRARY_URL:-http://127.0.0.1:8082}"
 # **The browser drives the agent, not a dev server.** Until
 # install-paths §9 step 1 this was `next dev` on :3100, which is the one
 # thing an install never runs: the UI now ships as a static export inside
@@ -160,8 +161,15 @@ if [ "$BROWSER" = "1" ]; then
   # nothing about whether the wheel is mounted.
   if wait_http "$EP_UI_URL/" 30; then
     ok "the agent is serving the UI at $EP_UI_URL"
+    # Only the arc this script builds an install for. The other spec files
+    # each belong to the script that stands up what they need -- a
+    # declared driver (navigation-acceptance.sh), a chat model
+    # (playground-diagnostic-acceptance.sh), a second enrolled agent
+    # (library-folders-acceptance.sh), a root restarted sealed
+    # (login-unlock-check.sh) -- and an unfiltered run here fails eight of
+    # them for want of that, which is what the first S0 run reported.
     if (cd "$EP_UI_DIR" && EP_UI_URL="$EP_UI_URL" EP_PASSPHRASE="$PASSPHRASE" \
-         npx playwright test > "$EP_WORKDIR/playwright.log" 2>&1); then
+         npx playwright test e2e/auth-arc.spec.ts > "$EP_WORKDIR/playwright.log" 2>&1); then
       ok "the browser arc passed (first run, login, restart-on-login, proxy)"
     else
       bad "the browser arc failed -- see $EP_WORKDIR/playwright.log"
@@ -181,6 +189,67 @@ ATOK=$(agent_login "$EP_AGENT_A_URL")
 CTOK=$(ctl_login)
 [ -n "$ATOK" ] && ok "agent A has an operator session" || { bad "no agent A session"; exit 1; }
 [ -n "$CTOK" ] && ok "the trust root is initialized and issues sessions" || { bad "control is not initialized -- did the wizard reach it?"; exit 1; }
+
+# --- 2b. every process is killed and the agent started again; nobody signs in ----
+# S0 of the hobbyist UX plan (docs/design/hobbyist-ux.md, decision #9). The
+# wizard defaults securityMode to os_keyring where this host has a keyring
+# and writes it to BOTH the agent and the control root, so a hard restart
+# of everything must need nobody. Where there is no keyring (CI, a
+# container) the wizard says so, keeps prompt_on_startup, and the same
+# restart comes back sealed -- the documented behaviour, asserted rather
+# than skipped so the record says which branch ran. Only after a browser
+# walked the wizard: the curl path above sets no mode at all.
+#
+# Before S0 this exact restart came back with the control root sealed on
+# every install whose operator had ticked the keyring option, because the
+# choice was written to the agent alone behind a comment claiming the root
+# ignored the field. Nothing had ever restarted an install the wizard made.
+if [ "$BROWSER" = "1" ]; then
+  say "2b. every process is killed and the agent started again; nobody signs in"
+  KEYRING=$(curl -s "$EP_AGENT_A_URL/v1/auth/status" | jq_ "d.get('keyringAvailable')")
+  A_MODE=$(curl -s -H "Authorization: Bearer $ATOK" "$EP_AGENT_A_URL/v1/config" | jq_ "d.get('securityMode', d.get('values', {}).get('securityMode'))")
+  C_MODE=$(curl -s -H "Authorization: Bearer $CTOK" "$EP_CONTROL_URL/v1/config" | jq_ "d.get('securityMode', d.get('values', {}).get('securityMode'))")
+  echo "  keyringAvailable=$KEYRING  agent.securityMode=$A_MODE  control.securityMode=$C_MODE"
+  kill "$A_PID" 2>/dev/null; wait "$A_PID" 2>/dev/null; A_PID=""
+  for url in "$EP_AGENT_A_URL" "$EP_CONTROL_URL" "$EP_GATEWAY_URL" "$EP_LIBRARY_URL"; do kill_port "${url##*:}"; done
+  sleep 1
+  (cd a && exec env EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml "$EP_AGENT_PY" -m eugene_plexus_agent >> ../agent-a.log 2>&1) &
+  A_PID=$!
+  if wait_healthy "$EP_AGENT_A_URL" && wait_healthy "$EP_CONTROL_URL"; then
+    ok "agent A and the control root are back from the same state directory"
+  else
+    bad "the restart did not come back"; tail -30 agent-a.log
+  fi
+  UNLOCKED=$(curl -s "$EP_AGENT_A_URL/v1/auth/status" | jq_ "d.get('unlocked')")
+  NODES=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $CTOK" "$EP_CONTROL_URL/v1/nodes")
+  if [ "$KEYRING" = "True" ]; then
+    [ "$A_MODE" = "os_keyring" ] && ok "this host has a keyring, so the wizard defaulted the agent to os_keyring" \
+      || bad "keyring available but the agent's securityMode is '$A_MODE'"
+    [ "$C_MODE" = "os_keyring" ] && ok "and wrote the same to the control root" \
+      || bad "keyring available but control's securityMode is '$C_MODE' -- the agent-only write is back"
+    [ "$UNLOCKED" = "True" ] && ok "the agent unlocked itself from the keyring" \
+      || bad "the agent came back sealed (unlocked=$UNLOCKED)"
+    [ "$NODES" = "200" ] && ok "the control root answers its registry with nobody signed in" \
+      || bad "the control root came back sealed (HTTP $NODES on /v1/nodes)"
+    # Leave the machine as it was found: flipping back deletes this
+    # throwaway install's keyring entries. They are scoped per install
+    # since S0, so the live install's entry was never in reach -- and a
+    # run should not leave secrets behind either way.
+    curl -s -o /dev/null -X PATCH "$EP_AGENT_A_URL/v1/config" -H "Authorization: Bearer $ATOK" -H 'content-type: application/json' -d '{"securityMode":"prompt_on_startup"}'
+    curl -s -o /dev/null -X PATCH "$EP_CONTROL_URL/v1/config" -H "Authorization: Bearer $CTOK" -H 'content-type: application/json' -d '{"securityMode":"prompt_on_startup"}'
+    ok "flipped both back to prompt_on_startup, which deletes the throwaway keyring entries"
+  else
+    [ "$A_MODE" = "prompt_on_startup" ] && ok "no keyring on this host, so the wizard kept prompt_on_startup and said so" \
+      || bad "no keyring but the agent's securityMode is '$A_MODE'"
+    [ "$UNLOCKED" = "False" ] && ok "the agent is sealed after the restart, as prompt_on_startup documents" \
+      || bad "unlocked=$UNLOCKED after a restart with no keyring"
+    [ "$NODES" = "503" ] && ok "the control root is sealed too; sign-in is what opens it" \
+      || bad "expected 503 Locked from the sealed root, got $NODES"
+    CTOK=$(ctl_login); ATOK=$(agent_login "$EP_AGENT_A_URL")
+    [ -n "$CTOK" ] && [ -n "$ATOK" ] && ok "signed in again so the rest of the run has an open install" \
+      || bad "could not sign back in after the restart"
+  fi
+fi
 
 # --- 3. onboarding host B without a browser -------------------------------------
 say "3. host B joins with a minted token, on its own terminal"
