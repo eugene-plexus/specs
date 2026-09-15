@@ -123,3 +123,54 @@ slice.
 | agent unit tests | 537 passed (20 new; 2 sabotage-checked) |
 | ui vitest | 207 passed (11 new) |
 | directory listings on B during the browser run | 2 |
+
+## Live install, 2026-09-15 -- the first model served from the NAS library by a GPU node
+
+Not a scripted run: the operator's own two-machine install, the morning
+after the clock-skew fix. Recorded here because it is the first time the
+sequence this design exists for ran end to end on real hardware, and the
+first time control's `POST /v1/runtimes {node, spec}` was exercised at
+all.
+
+**The sequence.** Discover, on the NAS console, downloaded
+`huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF` Q6_K_L (23.8 GB, plus an
+888 MB mmproj) into the container's `/models`, which is the `downloads`
+share's `models` folder. Library -> Models with the picker on
+`Amish_Station`, a profile at `contextSize: 70000` after the launch panel
+had refused the model's own 262,144 and named 75,520 as the largest that
+fits (see the admission record in CLAUDE.md), Launch. The UI posted to
+control, control forwarded the declaration to Amish's agent, which
+declared the companion driver and spawned `llama-server b10948` on the
+resolved local path.
+
+| Step | Time | Note |
+| --- | --- | --- |
+| Declaration accepted, companion declared, engine spawned | 09:46:47 | `opening /models/... as Y:\models\...` in the agent log |
+| `llama_server: model loaded` | 09:50:42 | **3 min 55 s** for 23.8 GB over SMB: 102 MB/s, a saturated gigabit link |
+| Driver reads the context window off the engine | 09:50:55 | 70,144 tokens (llama.cpp rounded 70,000 up) |
+| First completion through the NAS gateway | 09:52 | prompt 350-520 tok/s, **decode 56-58 tok/s** |
+
+The gateway on the NAS lists the model; the runtime shows `ready` with
+`localPath: Y:\models\...`; the folder check on Amish reports the one
+model under `/models` reachable.
+
+**What it proved, and what it did not.** It proved the cross-host launch
+path, the companion-per-runtime shape, the library path resolved on a
+node that is not the library's host, and the read-only-share model of
+storage: nothing was copied, and the file is where the operator put it.
+**It did not prove the inherited mount.** The folder check says
+`source: override` -- the operator mapped `/models -> Y:\models` under
+Library -> Amish_Station -> Folders, and the folder's own Windows mount
+is still unset. `Y:` is a drive letter mapped in the desktop session,
+which works here only because the agent is a **logon task** in that same
+session; the container template's advice to prefer a UNC path stands,
+and a service install would not see `Y:` at all. The necessity proof is
+still one edit away: set the folder's Windows mount to
+`\\192.168.16.252\downloads\models`, clear the override, relaunch.
+
+**Cost worth knowing.** Every start of this runtime re-reads 23.8 GB over
+the wire, because the project keeps no node-side cache by decision
+(M11). At gigabit that is four minutes of `loading` per start, idle
+unload included. A 2.5 GbE or 10 GbE link between the NAS and the GPU
+node is the honest fix; a local Library folder on the GPU node for the
+models it serves most is the other, and both are the operator's call.
