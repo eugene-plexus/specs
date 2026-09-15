@@ -154,10 +154,18 @@ tags:
       reason it is a milestone rather than a tooltip.
   - name: config
     description: |
-      The standard config trio. Model roots live here as a
-      `path_list`, which is what makes them editable in the generic
-      config UI with no library-specific code. Their *default* may come
-      from the process environment
+      The standard config trio. Model roots live here as
+      `modelRoots`, a `library_folders` list (2026-09-14; a `path_list`
+      before that): each entry is a `LibraryFolder` — the directory as
+      this host spells it, plus the mounts other machines reach it by,
+      one per OS shape — and a bare string is still accepted as a folder
+      with no mounts. **A node runs a model only from one of these
+      folders**: the agent refuses a runtime declared from anywhere
+      else (`agent.yaml`, `POST /v1/runtimes`, 400
+      `model-not-in-library`), and resolves a folder's path on its own
+      disk from the folder's mounts before it consults its own
+      `pathMappings`. The library never opens a mount; it states them.
+      Their *default* may come from the process environment
       (`EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS`, `os.pathsep`-
       separated): for a host whose layout is fixed before any config
       exists, such as a container image whose models volume is at
