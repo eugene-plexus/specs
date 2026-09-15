@@ -838,7 +838,7 @@ control; the wizard copy says what happens after a reboot in one line;
 and signs nothing in, and `/v1/models` and `/v1/nodes` both answer.
 Decision **#9**. **Record: §11.1.**
 
-### S1 — Home, and the tasks tray (L)
+### S1 — Home, and the tasks tray (L) — **BUILT AND LIVE-VERIFIED 2026-09-15; record §11.2**
 
 The page in §6.1 minus the cards that need later slices (Use it from
 your apps waits for S4; Reach for S5). The tray polls
@@ -1201,6 +1201,69 @@ codegen run straight after `git push` fails once and passes on retry.
 old register. Nobody has restarted the *live* two-machine install under
 the new default; the worker there is `prompt_on_startup` and stays so
 until Troy flips it under Config → Agent.
+
+### 11.2 S1 — Home, the tasks tray, and a tree that fits one machine. DONE 2026-09-15.
+
+`ui` `71130c5` (dist `9486086`), pinned by both installers. **No
+contract change, no codegen, no Python consumer moved.** Built by two
+agents on disjoint files in one session, integrated and verified here.
+
+**What landed.** `/` is **Home**, the install root's first page; the
+playground is unchanged at `/playground`, its second. Home is the page
+in §6.1 minus S4's, S5's and S7's cards: a *This machine* strip (name,
+GPU memory, engine build, models on disk — each source soft), a
+**first-model card** that is a state machine with one primary action
+(*Get your first model* → Find a model / I already have models when
+nothing is on disk; *Run a model* → Choose a model to run when models
+exist and nothing routes; one sentence when the library did not
+answer; hidden once something routes — S6's recommendation arrives as
+one more state), a **Try it** card (model picker, one-line composer,
+the first reply streamed in place, the exchange written into the
+playground's own transcript so *Continue in the Playground* carries it
+over — one definition of that sessionStorage shape now, used by both
+pages), and a **Running** card from the join the Inference screen
+uses. The **tasks tray** sits beside *The system* on every signed-in
+screen: downloads, the library scan, models loading anywhere in the
+install, engine installs on this machine; five-second poll, paused
+while the tab is hidden; each task a link with a progress bar where
+progress is known. The tree renders the **machine level only once the
+install has more than one machine**: drivers straight under their
+type, a single *Agent* leaf, no machine rows under Library, every
+selection token unchanged; a driver naming a node the registry lacks
+still counts as a second machine, so the flag from the tree design's
+§14.2 never hides.
+
+**What it does not discover:** engine installs on *other* machines (a
+read per node per poll; deferred with the reason in the code). The
+strip scores the machine the browser is served from, so on the NAS
+root it reads "no GPU"; correct, and the Library's node picker remains
+where a launch target is chosen.
+
+**Verification.** 284 unit tests from 214 (the pure `tasks.ts`,
+`home.ts` and transcript helpers, a jsdom Home render driving a
+streamed turn end to end, the tray, ten new tree cases with four
+sabotages confirmed failing). New `e2e/home.spec.ts`: sign-in lands on
+Home with **no disabled text input anywhere** and one primary action,
+the tray opens with its empty state and closes on Escape, the
+playground exists one page over. `tree.spec.ts` asserts the one- and
+two-machine shapes by reading the registry through the proxy rather
+than the tree, so a wrongly collapsed two-machine tree cannot pass.
+**`scripts/navigation-acceptance.sh`: 22 checks, zero failures**
+(14 browser tests) on the second execution; **`m9-acceptance.sh`: 46
+checks, zero failures**, the wizard landing on Home, on ports +100.
+
+**The first navigation run failed one check, and it was timing.** The
+page-menu test read `a[data-page]` the instant `goto` returned and got
+`[]`; the menu renders after the setup gate answers, and Home carries
+more script than the playground did, so the gate's fetch now outlives
+the load event on `/`. The read waits for the first entry now. The
+gate-before-shell order itself is unchanged from the playground and is
+a candidate for S9 (render the shell during the gate), not this slice.
+
+**Not done:** Try it has not streamed a reply in a browser — this
+install has no routable model; `playground-diagnostic-acceptance.sh`
+is where one is, and its spec was repointed at `/playground`. Nobody
+has opened Home on the live two-machine install.
 
 ---
 

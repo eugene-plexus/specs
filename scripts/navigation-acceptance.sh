@@ -136,13 +136,13 @@ sleep 2
 say "4. the agent serves every screen's route"
 [ "$(code_of "$AGENT/")" = "200" ] && ok "the agent serves the UI at /" || bad "no UI at /"
 MISSING=""
-for r in library discover inference metrics nodes config login setup runtimes; do
+for r in playground library discover inference metrics nodes config login setup runtimes; do
   [ "$(code_of "$AGENT/$r/")" = "200" ] || MISSING="$MISSING /$r"
 done
-[ -z "$MISSING" ] && ok "every route is served: /, /library, /discover, /inference, /metrics, /nodes, /config, /login, /setup, /runtimes" || bad "not served:$MISSING"
+[ -z "$MISSING" ] && ok "every route is served: /, /playground, /library, /discover, /inference, /metrics, /nodes, /config, /login, /setup, /runtimes" || bad "not served:$MISSING"
 
-say "5-9. the browser drives the tree"
-(cd "$UI_DIR" && EP_UI_URL="$AGENT" EP_PASSPHRASE="$PASS" EP_DRIVER_NAME="$DRIVER" npx playwright test e2e/tree.spec.ts > "$WORK/playwright.log" 2>&1)
+say "5-9. the browser drives the tree, and Home (S1)"
+(cd "$UI_DIR" && EP_UI_URL="$AGENT" EP_PASSPHRASE="$PASS" EP_DRIVER_NAME="$DRIVER" npx playwright test e2e/tree.spec.ts e2e/home.spec.ts > "$WORK/playwright.log" 2>&1)
 PW=$?
 sed -n '/Running/,$p' "$WORK/playwright.log" | grep -E '^\s+[✓✘×]|passed|failed' | head -20
 if [ "$PW" = "0" ]; then
@@ -151,13 +151,16 @@ if [ "$PW" = "0" ]; then
     "every object in the tree selects and arrives" \
     "the page menu lists the pages each object owns" \
     "moving between one object's pages keeps that object selected" \
-    "a driver sits under its machine and opens its own settings" \
+    "a driver sits under its machine once there are two, straight under its type with one, and opens its own settings" \
     "a bare /config lands on this machine's agent" \
     "a legacy ?tab= link still lands on its subject" \
     "the layer colours are still the architecture page's" \
     "sign out is reachable from every page" \
     "the tree is a drawer on a phone, and a tap outside closes it" \
-    "the layer map still explains all eight layers"; do
+    "the layer map still explains all eight layers" \
+    "signing in lands on Home, and Home has a primary action instead of a disabled box" \
+    "the tasks tray opens, says what is running, and closes on Escape" \
+    "the playground still exists, one page over"; do
     grep -qF "$t" "$WORK/playwright.log" && ok "browser: $t" || bad "browser: '$t' did not run"
   done
 else
