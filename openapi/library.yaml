@@ -501,6 +501,31 @@ paths:
 
   # -------- Scan --------
 
+  /v1/folders:
+    get:
+      tags: [models]
+      operationId: listFolders
+      summary: The Library's folders, with where nodes reach them.
+      description: |
+        `modelRoots` as a resource (2026-09-14): one `LibraryFolder` per
+        configured directory, mounts included. **Readable with a
+        service token**, unlike the config trio it mirrors, because the
+        reader that matters is a node's agent inheriting its path rules
+        — a worker with no library of its own reaches this through the
+        install (`agent.yaml`, `POST /v1/library/folders/check`) with a
+        `service:agent` token, at every launch, and holds a copy for
+        spawns the library is not around for. Nothing here is secret:
+        the same paths appear on every model in `GET /v1/models`, and
+        the mounts are addresses an operator typed for other machines
+        to use. Editing them is still `PATCH /v1/config`, operator-only.
+      responses:
+        '200':
+          description: Every configured folder, in the operator's order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryFolderList'
+
   /v1/scan:
     get:
       tags: [scan]
@@ -1364,6 +1389,20 @@ components:
   schemas:
 
     # -------- Models --------
+
+    LibraryFolderList:
+      type: object
+      description: |
+        The folders the library catalogues, as `GET /v1/folders` answers
+        them — the same objects `modelRoots` holds, one shape on the
+        wire whatever shape the config was given in.
+      required:
+        - folders
+      properties:
+        folders:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/LibraryFolder'
 
     LibraryModelList:
       type: object
