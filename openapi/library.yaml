@@ -3099,6 +3099,12 @@ components:
             directories the operator nominated. Defaults to the first,
             which is what the `path_list` config type has promised
             since M2.
+        subdirectory:
+          type: string
+          description: |
+            Relative destination under `root`, overriding the configured
+            layout. Path traversal is rejected; the result must stay
+            inside the root.
         runWhenReady:
           type: boolean
           default: false
