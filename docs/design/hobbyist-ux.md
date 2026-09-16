@@ -2276,21 +2276,24 @@ is one machine.
 
 ### 11.9 S7 — measured, one contract field landed, PAUSED mid-slice 2026-09-16.
 
-**State: contracts and the agent are DONE and pushed; the UI has the
-rules and the reads, and still renders nothing.** Paused at the user's
-ask, not because anything was blocked. Steps 1 and 2 of *Where to
-resume* were taken on 2026-09-16; pick up at step 3, the badge.
+**State: contracts and the agent are DONE and pushed, and the slice's
+*Done when* is MET — a sealed root shows as one issue with the unlock as
+its action, from any page.** What is left is Home's card and Inference's
+two states. Steps 1-3 of *Where to resume* were taken on 2026-09-16;
+pick up at step 4.
 
 | Repo      | Commit    | What it carries                                                  |
 | --------- | --------- | ---------------------------------------------------------------- |
 | `specs`   | `4a72644` | `NodeIdentity.time` on `agent.yaml`                              |
 | `agent`   | `763d10d` | serves it, two tests, both sabotage-checked; suite 641 green     |
 | `control` | `f84373c` | regen-only (`agent_models.py` changed, `models.py` untouched)    |
-| `ui`      | `acfac86` | `issues.ts` + `useIssues.ts` and both suites; **still unwired**   |
+| `ui`      | `9dbfd40` | `issues.ts` + `useIssues.ts` + the header badge; **wired**        |
 
 `ui` `055a9a4` is the pin bump, the regen and `issues.ts`; `f67e001` is
-its test file (step 1) and `acfac86` the polling hook (step 2), both
-landed 2026-09-16.
+its test file (step 1), `acfac86` the polling hook (step 2) and
+`9dbfd40` the header badge (step 3), all landed 2026-09-16. **`issues.ts`
+is referenced now, so the next `dist` build carries it** — which is why
+step 7's re-pin is no longer a formality.
 
 **Radius was measured by regenerating all six.** `gateway`, `library`
 and `inference-driver` came back byte-identical apart from the SHA in a
@@ -2471,13 +2474,25 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
    **Both constants are load-bearing to that argument** — raising the
    timeout past the warning threshold makes a false clock warning
    reachable, and the docblock says so.
-3. **`ui/src/components/IssuesBadge.tsx`** — beside `TasksTray` in
-   `AppShell`'s header, with the same disclosure behaviour (Escape,
-   click outside, focus returns to the button). The sealed-root row
-   carries the unlock form **inline** — that is the slice's *Done when*,
-   "from any page" — reusing `lib/controlUnlock.ts`, which already posts
-   to control with the session token as `bearer` so a 401 cannot clear
-   the session.
+3. ~~**`ui/src/components/IssuesBadge.tsx`**~~ — **DONE 2026-09-16,
+   `ui` `9dbfd40`. The slice's *Done when* is met.** Beside `TasksTray`,
+   same disclosure, and it **renders nothing at all** when there is
+   nothing to say *or* before the first read has answered — an all-clear
+   shown half a second before the list fills, to somebody whose root is
+   sealed, is worse than silence.
+
+   **Every other issue links to the screen that owns its fix; the sealed
+   root does not, and the asymmetry is the argument.** A one-click
+   remedy for something with consequences belongs beside the words that
+   explain them — but a locked root is the one case where every other
+   screen is already useless, so a link is a door that is shut. A failed
+   unlock is also not called a wrong password: the session is already
+   good, and what failed is the root holding a *different* secret, which
+   is a real state and is named as one.
+
+   Eight sabotages, all caught, including the two that would quietly
+   undo the slice: linking away instead of carrying the form, and
+   treating a mismatch as success.
 4. **`ui/src/components/home/NeedsAttentionCard.tsx`** — Home's card,
    beside `RunningCard`; and the line in `page.tsx`'s docblock reading
    *"Not here yet, by plan: Needs attention (S7)"* comes out.
