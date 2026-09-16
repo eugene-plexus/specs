@@ -1742,9 +1742,9 @@ against those products.
 ### 11.6 S5 — three things have to be true, and now three lines say which. DONE 2026-09-15.
 
 Contracts `a80e169` + `6ff4f96` (`agent.yaml`: one operation, eight
-schemas, one field on `NodeIdentity`); agent `dfbd178` + `ef7511d`,
-control `c19b2d1` (regen-only), `ui` `d74ce6f` (dist `0cd34cb`); both
-installers re-pinned. `gateway`, `library` and `inference-driver`
+schemas, one field on `NodeIdentity`); agent `dfbd178` + `ef7511d` +
+`f9cc927`, control `ff71f75` (regen-only), `ui` `d74ce6f` (dist
+`0cd34cb`); both installers re-pinned. `gateway`, `library` and `inference-driver`
 codegen neither document and stay back — measured by regenerating, not
 by reading the diff. Record:
 [`../acceptance/reach-run.md`](../acceptance/reach-run.md),
