@@ -2108,6 +2108,39 @@ components:
             it.
         agentVersion:
           type: string
+        time:
+          type: string
+          format: date-time
+          description: |
+            This host's wall clock at the moment it answered.
+
+            One field, and it exists because **no component put its own
+            current time on any response body**, so nothing outside a
+            host could tell that its clock was wrong. On 2026-09-15 a
+            control root running 0.50 s ahead of a worker whose Windows
+            Time service had stopped refused that worker's traffic as
+            "not yet valid (iat)" on every token minted in the first
+            half of a second; every health check said `ok`, the node was
+            listed `down` with no reason, and the cause took a morning
+            to find. Components tolerate 300 s of skew now — which buys
+            time, and makes the drift *silent* until it crosses the
+            threshold and the install stops working.
+
+            A console reads this from two hosts a few milliseconds
+            apart and knows what they disagree by. Bound the round trip
+            around the read (`t0` before, `t1` after) and the true
+            offset is inside `[time - t1, time - t0]`; report a skew
+            only where that interval clears zero by a margin, because a
+            slow proxy hop must not read as a broken clock.
+
+            **Not** a remembered observation of skew. A remembered one
+            says a peer was wrong at some past minute; this says what
+            this host thinks the time is now, which is the quantity,
+            and it needs no state. It is also why the field is on the
+            host's own identity rather than under `reach`: a clock is a
+            property of a machine, not of who can get to it.
+          examples:
+            - '2026-09-16T14:03:21.482Z'
         reach:
           $ref: '#/components/schemas/NodeReach'
 
