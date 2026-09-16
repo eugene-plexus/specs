@@ -313,6 +313,29 @@ done
 [ -z "$missing" ] && ok "13. all four components listen on 0.0.0.0 inside the container" \
                   || bad "13. these are not on 0.0.0.0 inside the container:$missing (wide: $wide, all: $binds)"
 
+# 23b. The hostname the CONTAINER REALLY HAS, read off the container
+# Compose started -- not off one this script launched itself.
+#
+# The first version of this check ran its own `docker run` with no
+# `--hostname` and then asserted the hostname was not the container id.
+# It could only ever fail, and it did, in CI, on the very commit that
+# added the setting: "the container's hostname is 'f98493efad09' and its
+# id is 'f98493efad09'". The subject was a container that had never been
+# given the thing under test. Same family as M10's check 7 and the
+# tool-call fragmentation checks: an assertion pointed somewhere its
+# subject was not.
+if [ -n "$CID" ]; then
+  got=$($CT exec "$CID" hostname 2>/dev/null | tr -d '\r\n')
+  short=$(printf '%s' "$CID" | cut -c1-12)
+  if [ -n "$got" ] && [ "$got" != "$short" ]; then
+    ok "23b. the Compose container's hostname is '$got', not its id '$short' -- it will not enrol as hex"
+  else
+    bad "23b. the container's hostname is '$got' against id '$short' -- it would enrol as a hex string"
+  fi
+else
+  bad "23b. no compose container to read a hostname from"
+fi
+
 say "runtime: the surface from outside"
 root=$(curl -fsS -m 5 http://127.0.0.1:8079/ 2>/dev/null | head -c 200)
 if printf '%s' "$root" | grep -q '<!DOCTYPE html>' \
@@ -438,23 +461,6 @@ PY
 chmod 644 "$MODELSDIR"/*.gguf
 
 $CT rm -f ep-models-check >/dev/null 2>&1 || true
-# 23b. And the container actually has it. A declaration that the runtime
-# ignores would leave the defect in place while the structural check
-# above went green, which is the shape of every "asserted the fixture,
-# not the subject" failure in this repo.
-if $CT run -d --name ep-hostname-check --init -p 18379:8079 eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
-  got=$($CT exec ep-hostname-check hostname 2>/dev/null | tr -d '\r\n')
-  cid=$($CT inspect --format '{{.Id}}' ep-hostname-check 2>/dev/null | cut -c1-12)
-  if [ -n "$got" ] && [ "$got" != "$cid" ]; then
-    ok "23b. the running container's hostname is '$got', not its id '$cid'"
-  else
-    bad "23b. the container's hostname is '$got' and its id is '$cid' -- it would enrol as a hex string"
-  fi
-  $CT rm -f ep-hostname-check >/dev/null 2>&1
-else
-  bad "23b. could not start the image to read its hostname"
-fi
-
 if $CT run -d --name ep-models-check --init -v "$MODELSDIR:/models:ro" -p 18279:8079 \
      eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
   verdict=""
