@@ -97,6 +97,22 @@ machine, in an install that otherwise looks healthy.
 If you have already made that mistake: set `advertiseUrl`, then restart
 the agent. The control root comes back wide with everything else.
 
+**There is a one-click version of all of this now** (2026-09-15):
+**Reach it from other devices** on Home. It writes `advertiseUrl` to the
+address this host uses on its own network, tells the control root,
+restarts the components, offers to add the host firewall rule, and then
+says plainly that **this agent's own socket has not moved yet** — a
+listening socket is fixed for the life of a process, so the agent has to
+be restarted before it answers anywhere new. The card offers to do that
+where something would start it again (a service, a logon task, a systemd
+unit, a launchd agent) and prints the command where nothing would.
+
+Use the switch for a single machine you want to open to your own
+network. Keep reading this section for a tailnet, a container, or a
+port-remapped install: the switch proposes the address this host routes
+through, which is the LAN interface and not necessarily the one you
+mean, and `advertiseUrl` remains the override that wins.
+
 ### A machine with nowhere to write a config file
 
 A container has no `agent.yaml` at image-build time and no address until
@@ -406,6 +422,10 @@ having no quorum is a window you can see.
 | A component logs `accepted a token issued N s in this host's future` | Its clock or the issuer's is wrong by N seconds. Nothing is refused until N passes 300; fix the clock before it does. The message repeats at most once a minute. |
 | Launching on a GPU node says *"Not on `<node>`"*, or a launch there is refused with *"is not on `<node>`"* | The library runs on another host and names the model by its path there. Mount the library's folder on the GPU node and say where, **once, on the folder**: **Library → Folders**, the row for `/models`, *mounted on Windows nodes at* (`\\NAS\models`) or *on Linux/macOS nodes at* (`/mnt/models`). Every node of that kind inherits it. A machine that mounts it somewhere else gets one override under **Library → `<node>` → Folders**, whose Browse lists that machine's own disk. **Test** checks a rule against the library's real files. |
 | A launch is refused with *"is not under any Library folder"* | A node runs only what the Library catalogues (2026-09-14). Add the directory that holds the model under **Library → Folders**, then scan. |
+| Home says *"Eugene needs to restart before http://… starts working"* after you turned reach on | Working as intended. The components rebound when you flipped the switch; this agent's own socket cannot move without a restart. Press **Restart Eugene** if it is offered, or stop and start the agent the way you started it. |
+| A phone still cannot open the address, and Home says the firewall is turning connections away | Run the command the card prints, as administrator. It is scoped to the ports, not to the program — a rule bound to Eugene's interpreter stops applying the day that interpreter is upgraded, which is how an install that worked last month stops. |
+| Home says *"Windows treats this network as Public"* | Windows classifies unknown networks as Public and blocks more on them, and it reclassifies on its own after a router change. Settings → Network → your connection → **Private**, or allow Eugene on Public networks too if you mean to. |
+| Home will not say whether the firewall allows it | Another firewall product is registered with the OS, or the read failed. Nothing local can settle it — open the address on your phone; if the page loads, it works. Home says *"something at `<address>` reached this machine"* once anything has. |
 
 ---
 

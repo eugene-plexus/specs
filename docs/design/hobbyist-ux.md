@@ -7,8 +7,8 @@ two rounds; #4 on one condition, which §6.5 turns into a process, #6
 amended to ask first, #12 on the condition that the jargon stays
 available in hints, and #8 with a question that §6.6 answers. Only the
 relabels (`Backends`, `Chat`) remain a separate open call.
-**S0, S1, S2, S3 and S4 are built and live-verified (all on 2026-09-15;
-records in §11), S5 to S10 are not started.** Every claim marked
+**S0, S1, S2, S3, S4 and S5 are built and live-verified (all on
+2026-09-15; records in §11), S6 to S10 are not started.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -43,7 +43,7 @@ tree or the screens; it is a **Home**, a shorter wizard, three
 | **5**  | Launch without a profile                                                                                            | §7 S3    | Yes. Launch creates `default` at the context that fits (already computed) when none exists; the editor stays for experts                                                        | **taken 2026-09-15 (Troy)** — **built, §11.4** |
 | **6**  | Engine install happens inside the first Launch, as a task                                                           | §7 S3    | Yes. "No binary — install one from the Inference page" becomes a progress line in the same place the user is looking. Version pinning stays an expert path                     | **taken 2026-09-15 (Troy), AMENDED: ask first.** *"I could not find llama.cpp, would you like me to install it?"*, Yes as the default, with a warning that skipping is for advanced users only — **built, §11.4** |
 | **7**  | Long-lived client keys                                                                                              | §7 S4    | Yes: minted by the agent with the install signing key, `aud: client`, one-year default, named, listed, revoked by the existing rotation. **Contract change**                     | **taken 2026-09-15 (Troy)** — **built, §11.5**, with per-key revocation rather than rotation: a Turn-off button that turns nothing off is P4's silent failure |
-| **8**  | "Serve to other devices" as one switch                                                                              | §7 S5    | Yes. It sets `advertiseUrl` to a detected LAN address, shows the URL a phone types, and reports what is actually bound. The minimal version is in the release                    | **taken 2026-09-15 (Troy).** His question — *can we detect the Windows Firewall disposition so we can warn when it is blocking?* — is answered **yes** in §6.6 |
+| **8**  | "Serve to other devices" as one switch                                                                              | §7 S5    | Yes. It sets `advertiseUrl` to a detected LAN address, shows the URL a phone types, and reports what is actually bound. The minimal version is in the release                    | **taken 2026-09-15 (Troy)** — **built, §11.6**. His question — *can we detect the Windows Firewall disposition so we can warn when it is blocking?* — is answered **yes**, and §6.6's reasoning was corrected in four places by measuring it |
 | **9**  | Security default on a desktop OS is the keyring, written to **both** agent and control                              | §0.14    | Yes. The wizard's own copy already says the keyring is "best for AI hobbyists" and defaults to the other option. Servers and containers keep `prompt_on_startup` / `passphrase_file` | **taken 2026-09-15 (Troy)** — **built, §11.1** |
 | **10** | The tree stays; the machine level appears only once there is more than one machine                                  | §6.4     | Yes. A standalone install today shows four rows reading "This machine". Reverses `ui-tree-navigation.md` §2.3 for the one-machine case only; a second machine restores it       | **taken 2026-09-15 (Troy)** — **built, §11.2** |
 | **11** | No global Simple/Advanced switch                                                                                    | §4 P6    | Per-field: a collapsed **Show more** group per page where three or more fields qualify. Home Assistant is deleting its global toggle for the reasons in §2.4                    | **taken 2026-09-15 (Troy)** |
@@ -707,6 +707,32 @@ firewall disposition so we can warn user when it is blocking?"*
 **Yes, and on Windows it is the well-instrumented case.** Reasoning, not
 yet measured; S5 measures it.
 
+> **S5 measured it, 2026-09-15, and four things below are wrong.** They
+> are left in place because the corrections are the interesting part.
+> (a) **The cmdlets are the wrong instrument** — `Get-NetFirewallPortFilter`
+> raises *Access is denied* unelevated **and returns a truncated list on
+> the way out**, so a detector built on them reports "nothing covers our
+> port" from a partial read; COM enumerated all 708 rules with no error,
+> in 78 ms against ~2.8 s. Nothing here uses a cmdlet. (b) **"Every
+> profile's default inbound action is Block"** is true of the machine
+> and not of the *report*: `Get-NetFirewallProfile` says
+> `NotConfigured`, which means block and reads as not-blocking to a
+> string comparison; `DefaultInbound` carries `unknown` as a third
+> member for that reason. (c) **"Scope to ports, not the program"** is
+> right for a rule we add and wrong as a detector: the rule that makes
+> the live install on the measured host reachable is bound to the
+> **program**, created by Windows' own Security Alert dialog, and there
+> is no rule mentioning its ports at all — so a port-only detector calls
+> that machine `blocked` while the control root probes it successfully
+> every fifteen seconds. Program rules count, and `FirewallPort.scope`
+> reports which kind decided, because the program it names is a
+> **versioned** interpreter path that stops applying the day the
+> interpreter is upgraded. (d) **`lastReachedByRoot` is not something
+> the agent can know** — the root already records it as
+> `Node.lastSeenAt` — and the useful field is any off-host caller, which
+> on a standalone install is the person's own phone doing the test the
+> card asked for.
+
 **What Windows does when nothing is configured.** Every profile's
 default inbound action is Block. When a program first listens on a
 non-loopback address with no rule covering it, Windows shows the
@@ -906,7 +932,7 @@ the not-yet-written `hobbyist-acceptance.sh`. Claude Code is **not** in
 the recipe list: it speaks the Anthropic Messages API, which this
 gateway does not serve (§11.5).
 
-### S5 — "Reach it from other devices" (M, small contract)
+### S5 — "Reach it from other devices" (M, small contract) — **BUILT AND LIVE-VERIFIED 2026-09-15; record §11.6**
 
 One switch on Home and on the agent's Config: proposes the LAN address
 the agent already derives, sets `advertiseUrl`, restarts what must
@@ -922,6 +948,25 @@ elevated. *Touches:* specs (`agent.yaml`), agent, ui, scripts. *Done
 when* the run flips the switch, reaches the UI and the gateway from a
 second address on the same box, and — on Windows — the verdict reads
 `blocked` before the rule exists and `allowed` after. Decision **#8**.
+
+*As built (§11.6):* four sentences above were wrong and measuring fixed
+them. **"the LAN address the agent already derives"** — it derives
+`127.0.0.1` on a standalone install, because the derivation reads the
+route to a control root that is on loopback, so `proposedUrl` is a new
+derivation off the routing table. **"restarts what must restart"** — it
+restarts the components, and *cannot* restart itself without being
+asked, because a listening socket is fixed for the life of a process;
+`restartRequired` says so rather than reporting success. **"when the
+control root last reached this machine"** — the agent cannot observe
+that and the root already records it as `Node.lastSeenAt`; what the
+agent can observe is any off-host caller, which is better for a
+standalone install because the phone the card told them to try *is* the
+evidence. **The firewall verdict is not the done-when it looked like**:
+`blocked` for a port and "the UI loads from the second address" are both
+true in the same run, because host-local traffic is not filtered — which
+is §6.6's own thesis, reproduced. The `blocked → allowed` half needs
+administrator rights and is `EP_FIREWALL=1`, skipped and reported as
+skipped.
 
 ### S6 — Discover: recommendation first, badge names the context, paste a URL (M)
 
@@ -1691,6 +1736,215 @@ has no live proof at the contract's default 15 s interval — the run uses
 real Continue, Cline or Open WebUI at a real install with one of these
 keys**; the recipes are asserted against their documented shapes, not
 against those products.
+
+---
+
+### 11.6 S5 — three things have to be true, and now three lines say which. DONE 2026-09-15.
+
+Contracts `a80e169` + `6ff4f96` (`agent.yaml`: one operation, eight
+schemas, one field on `NodeIdentity`); agent `dfbd178` + `ef7511d`,
+control `c19b2d1` (regen-only), `ui` `d74ce6f` (dist `0cd34cb`); both
+installers re-pinned. `gateway`, `library` and `inference-driver`
+codegen neither document and stay back — measured by regenerating, not
+by reading the diff. Record:
+[`../acceptance/reach-run.md`](../acceptance/reach-run.md),
+**39 checks, zero failures, second execution**. Decision **#8**.
+
+**What §0.9 had measured.** The hobbyist's third job — opening the
+install from a phone or a laptop — had no surface at all, and the
+symptom of every way it can fail is the same: *connection refused*. A
+standalone install answers only `127.0.0.1`, nothing says so, and the
+person cannot tell whether the fault is Eugene, the firewall, the
+router or the address they typed.
+
+**What landed.** `GET /v1/node` carries `reach`, and
+`POST /v1/node/reach` is the switch behind Home's **Reach it from other
+devices**. Three things have to be true, each fails on its own, and each
+now gets its own line, its own remedy and its own source of evidence:
+something is listening off loopback (`boundAddresses`, from the value
+each process was handed at bind time), the node advertises that address
+(`enabled` / `advertiseUrl`), and the host firewall lets the connection
+in (`firewall`, through `HNetCfg.FwPolicy2`). `lastReachedFrom` is the
+fourth thing and the only *proof*.
+
+**The plan's first sentence was wrong, and it is the measurement the
+slice turns on.** *"Proposes the LAN address the agent already
+derives"* — the agent derives that address from the local end of a TCP
+connection **to the control root**, which on a tailnet is exactly the
+interface the root can reach back on and on a **standalone install is
+`127.0.0.1`**, because the root is on loopback. The one address that
+cannot be it. `reach.proposed_host` is a second derivation for the
+person S5 is for: a UDP socket connected to TEST-NET-1, which sends no
+packet — the kernel picks a route and binds a local end — so it costs
+half a millisecond, needs no network, and answers on a machine that has
+never enrolled and never will.
+
+**COM, not the cmdlets, and not on style.** Measured unelevated on this
+host: `Get-NetFirewallPortFilter` raised *Access is denied* **and
+returned a truncated list on the way out**, so a cmdlet-based detector
+reports "nothing covers our port" from a partial read. `HNetCfg.FwPolicy2`
+enumerated all 708 rules with no error, in **78 ms** against ~2.8 s for
+three cmdlets — before a PowerShell subprocess has started. §6.6
+budgeted "a few hundred milliseconds" and worried about caching; at
+78 ms the read happens with the node view.
+
+**THE FINDING WITH THE LONGEST REACH: this machine is allowed by a
+PROGRAM rule, and there is no rule mentioning its ports at all.** The
+live worker is probed successfully by the control root every fifteen
+seconds, and no enabled rule names 8079 or 8080. What allows it is an
+inbound allow for
+`%LOCALAPPDATA%\EugenePlexus\pythons\cpython-3.12.14-...\python.exe`,
+created by Windows' own *Windows Security Alert* dialog the first time
+the agent listened off loopback in an interactive session. **A port-only
+detector — which is what §6.6 specified — would have reported `blocked`
+on a machine that demonstrably is not.** So program rules count, and
+`FirewallPort.scope` says which kind decided, because that program is a
+**versioned** path: the allow a person clicked once stops applying the
+day the interpreter is upgraded, with nothing anywhere saying so. A rule
+*we* add is scoped to ports, which is §6.6's advice kept for the half it
+was right about.
+
+**`NotConfigured` means block.** That is what `Get-NetFirewallProfile`
+reports on a stock machine, while the COM property returns
+`NET_FW_ACTION_BLOCK`. Compare the cmdlet's string to `"Block"` and a
+blocking machine reads as not blocking. `DefaultInbound` has `unknown`
+as a third member so the distinction survives into the contract.
+
+**The agent's own socket cannot follow the setting, and saying so is the
+design.** A listening socket is fixed for the life of a process.
+Supervised components take their bind host from the environment at
+spawn, so restarting them is the whole of their half and the switch does
+it — the gateway answers on the LAN address within seconds, with no
+agent restart. This agent does not, and reporting success there would be
+exactly the silent failure the slice exists to remove:
+`restartRequired` is true until the socket and the setting agree, and
+`AgentRestart` says whether this agent can arrange its own restart and
+what to type when it cannot.
+
+**A restart asks this agent's own supervisor**, and never spawns a
+replacement. A detached copy would not be a child of the service or the
+task, so the next boot would start a *second* agent onto a port the
+orphan holds — the stacking failure `ports.py` exists to diagnose,
+manufactured on purpose. `restartAgent` is opt-in, because the browser
+making the call is talking to the process that would go away, and it is
+refused outright where nothing would start the agent again: **a browser
+click must not be able to end an install.**
+
+**`lastReachedByRoot` was contracted and then replaced, on the second
+day of its life.** The agent cannot observe it, and the control root
+already records the same fact as `Node.lastSeenAt` — a second copy on
+the node would be a second source of truth. What the agent *can*
+observe is better for the person this is for: the last connection from
+anywhere other than this machine, whoever made it. On a standalone
+install there is no root probing from elsewhere, and the phone the card
+told them to try is both the test and the evidence it passed. Not
+persisted: it describes this process, and a restart is exactly when
+somebody wants to know whether reach still works rather than whether it
+once did.
+
+**A connect probe was written for `boundAddresses` and thrown away.**
+Probing this host's own address to see what is reachable conflates two
+answers — a closed local port on Windows is **dropped, not refused**
+(362 ms to time out against 6.6 ms for an open one), and a connection to
+the host's own LAN address is evaluated by the firewall, so a failure
+could not say whether the bind was narrow or the firewall shut.
+`restartRequired` hangs off that answer, and telling somebody to restart
+Eugene when the problem is a firewall rule is precisely the confident
+wrong advice this card exists to avoid. The bind value is exact, free,
+and is the property being asked about.
+
+**Departures, recorded.**
+
+1. **`NodeReach`, beside `LibraryFolderReach`.** One word, two meanings
+   in one document: that one asks whether *this node* can open a folder
+   elsewhere, this one whether elsewhere can open a socket *here*. Both
+   schemas say so in prose. Renaming either would be worse than the
+   collision.
+2. **The switch does not restart the agent by default**, and the plan's
+   "restarts what must restart" reads as though it would. See above.
+3. **Linux and macOS print the command rather than running it.** Adding
+   a rule needs root on both, and the two ways for a web server to have
+   root are a password prompt it has no terminal for and a permanent
+   sudoers entry. Windows is the exception because an elevated service
+   already has the right and an unelevated logon task can raise one UAC
+   prompt on a desktop it demonstrably has.
+4. **`install.ps1` does not add the rule when elevated**, which the plan
+   said it would. The switch does, and an installer that opens a port
+   before anybody has asked to share anything is the opposite of the
+   default this slice is about.
+5. **No Config-page switch.** The plan said "on Home and on the agent's
+   Config". Config already has `advertiseUrl`, which is the expert
+   override and must stay the thing that wins; a second control writing
+   the same field from the same page would be two front doors one click
+   apart. Instead the two **cross-link** — `cross-link-related-settings`,
+   Troy's standing rule — with a test on the link.
+
+**THE RUN'S ONE NOTE WAS A DANGEROUS DEFECT, AND THREE SABOTAGES
+ESCAPED.**
+
+**(a) A note that should have been a check.** Execution 1 printed
+`canSelfRestart=True` for a throwaway agent started from a shell, in
+this checkout's own virtualenv, on ports +100 — because the **live
+worker install on this box owns a scheduled task by that name**, and the
+detector asked only whether one existed. Pressing the card's restart
+there would have run `schtasks /End /TN "EugenePlexusAgent"` against the
+operator's real agent: stopping the live install and starting it again
+while the throwaway kept its ports. Nothing was harmed because nothing
+in the run asked for a restart — luck, not design. Same family as the
+step-7 finding where a throwaway agent inherited the live install's
+identity through the user environment. **A machine can hold two
+installs**, and the rest of this codebase knows it: `keyring_store`
+scopes its entry by install (S0), and every script since 2026-09-12
+clears `EUGENE_PLEXUS_*`. Fixed by matching the task's program against
+this process's **`sys.prefix`** — not `sys.executable`, which in a
+uv-made virtualenv is the base interpreter under `pythons\cpython-...`,
+outside the prefix and shared between installs, so comparing it would
+call the real install's own task somebody else's. Verified both
+directions on this box. `launchd` had the same shape and now requires
+the parent to be pid 1. And the note is a check: **a note is what you
+write when you do not want to decide**, and deciding it is the whole
+reason to run on a box that also holds a live install.
+
+**(b) Three sabotages escaped, all the same mistake** — the test
+exercised a pure helper rather than the function that uses it. Removing
+the `canSelfRestart` guard from `restart_argv` passed 34 tests, because
+the only case asserted was `mechanism: none`, where no branch matches
+and the guard is redundant; the case that matters is a mechanism
+detected while its tool is absent. Replacing
+`_windows_task_runs_this_install`'s body with `return True` passed 36 —
+undoing (a) in the session that fixed it. Loosening the prefix
+comparison to its **parent** passed 36, because the only negative case
+was a task under another user's home; a negative case has to be near the
+positive one. Same family as M10's check 7, step 6's fragmentation
+checks and the navigation slice's `/librarian` case.
+
+**(c) The run proves the bind, not reach, and says so.** Check 8 loads
+the UI from `192.168.16.75` while check 10 reports that port `blocked`,
+in the same run — because host-local traffic is not filtered by the host
+firewall. Not a contradiction: §6.6's thesis reproduced. The only proof
+is from outside, which is what `lastReachedFrom` is for and why the card
+never dresses a firewall verdict up as one.
+
+**Verification.** Agent: 639 tests (38 new), three sabotage-checked
+after two escaped and were covered, mypy clean. UI: 392 tests (21 new),
+four sabotage-checked, tsc and eslint clean. Control: 127, regen-only.
+`scripts/reach-acceptance.sh`: **39 checks, zero failures, second
+execution** — four processes with **nothing declared about binding**, so
+the run tests the default rather than a value.
+
+**Not done.** Reach from a genuinely second device (the run is one box).
+`blocked → allowed` needs administrator rights and is `EP_FIREWALL=1`,
+skipped and reported as skipped. Nobody has clicked Yes on the UAC
+prompt. The Linux and macOS detectors are written, unit-tested and never
+run against a live `ufw`, `firewalld` or `socketfilterfw`. No self-restart
+has actually been executed — every mechanism's argv is asserted, and the
+run restarts by hand, which is what the card tells an unsupervised
+install to do. A third-party firewall registered with Security Center
+turns every verdict `unknown`, and that branch is unit-tested only
+because this box has none.
+
+**Next: S6** (Discover recommendation-first, and the starter-model review
+from §6.5).
 
 ---
 
