@@ -2279,20 +2279,21 @@ is one machine.
 **State: contracts and the agent are DONE and pushed, and the slice's
 *Done when* is MET — a sealed root shows as one issue with the unlock as
 its action, from any page.** What is left is Home's card and Inference's
-two states. Steps 1-4 of *Where to resume* were taken on 2026-09-16;
-pick up at step 5, Inference.
+two states — **and both are built**. What is left is the acceptance run
+and the pins. Steps 1-5 of *Where to resume* were taken on 2026-09-16;
+pick up at step 6.
 
 | Repo      | Commit    | What it carries                                                  |
 | --------- | --------- | ---------------------------------------------------------------- |
 | `specs`   | `4a72644` | `NodeIdentity.time` on `agent.yaml`                              |
 | `agent`   | `763d10d` | serves it, two tests, both sabotage-checked; suite 641 green     |
 | `control` | `f84373c` | regen-only (`agent_models.py` changed, `models.py` untouched)    |
-| `ui`      | `8979d4e` | rules, reads, the badge and Home's card; **wired**                |
+| `ui`      | `70dd910` | rules, reads, badge, Home's card, Inference's two states          |
 
 `ui` `055a9a4` is the pin bump, the regen and `issues.ts`; `f67e001` is
 its test file (step 1), `acfac86` the polling hook (step 2) and
-`9dbfd40` the header badge (step 3) and `8979d4e` Home's card (step 4),
-all landed 2026-09-16. **`issues.ts` is referenced now, so the next
+`9dbfd40` the header badge (step 3), `8979d4e` Home's card (step 4) and
+`70dd910` Inference's two states (step 5), all landed 2026-09-16. **`issues.ts` is referenced now, so the next
 `dist` build carries it** — which is why step 7's re-pin is no longer a
 formality.
 
@@ -2517,10 +2518,31 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
    clearing the issue rather than leaving a fixed problem on screen for
    the rest of the interval. **A component test is not a wiring test,
    and this slice has now produced that lesson twice.**
-5. **Inference's two states** — `describeCompute` and `describeLoading`
-   on the row, which needs the per-node runtime read added to
-   `inference/page.tsx`'s `load()`; today it reads only the root's thin
-   union. Share one fetch with `useIssues` rather than polling twice.
+5. ~~**Inference's two states**~~ — **DONE 2026-09-16, `ui` `70dd910`.**
+   Shared with `useIssues` as planned: it already makes the four reads
+   per node, so the screen consumes them rather than asking the same
+   endpoints again.
+
+   **The status comes from the fast poll and the fields from the slow
+   one**, and that split is the only honest one: this screen reads every
+   3 s and the Issues poll every 30, so a model that has finished
+   loading must stop saying it has not at *this* screen's cadence. What
+   the slow read carries is `lastRestart` — an absolute instant, so a
+   stale read cannot make elapsed wrong — plus the share the bytes are
+   crossing.
+
+   `lib/loadMemory.ts` is the only material an estimate can have, since
+   nothing counts a load: per browser **and per node**, because the
+   number is dominated by where the bytes come from. The last
+   observation, not an average.
+
+   **Driving the page found a real defect in it**, and it was the one
+   `nodeDetails` exists to prevent: `detail.devices ?? []` turned *that
+   node has not answered* into *that machine has no accelerator*, which
+   prints "on the processor" on every row of a node that is merely slow
+   to reply. Two of seven sabotages escaped the first pass and both were
+   fixtures that could not tell two things apart — the fast and slow
+   status agreeing, and one assertion of a clock that never moved.
 6. **`scripts/issues-acceptance.sh`** in `specs`, plus
    `docs/acceptance/issues-run.md`. The sealed root is producible:
    initialize the control root, restart it with no keyring, and it comes
