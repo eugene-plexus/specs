@@ -81,20 +81,41 @@ OLLAMA_BASE="${EP_OLLAMA_BASE:-huihui_ai/dolphin3-abliterated:8b-llama3.1-q4_K_M
 OLLAMA_CTX="${EP_OLLAMA_CTX:-2048}"
 
 # llama.cpp, started by this script so the window is ours to choose.
-LLAMA_BIN="${EP_LLAMA_BIN:-/c/Users/troyc/OneDrive/Desktop/llamacpp/llama-server.exe}"
-LLAMA_GGUF="${EP_LLAMA_GGUF:-/c/Users/troyc/.lmstudio/models/lmstudio-community/Qwen3.6-27B-GGUF/Qwen3.6-27B-Q4_K_M.gguf}"
+# The engine and the model come from the shared helper now. Both used to
+# be hardcoded developer paths and BOTH were dead when this was checked
+# on 2026-09-16: the `llama-server.exe` on the Desktop is a 9 KB OneDrive
+# placeholder rather than a binary, and the LM Studio model directory is
+# empty. So this script could not have run even with an Ollama present.
+. "$(dirname "$0")/lib/llama-backend.sh"
 LLAMA_PORT="${EP_LLAMA_PORT:-8299}"
 LLAMA_CTX="${EP_LLAMA_CTX:-512}"
 LLAMA_MODEL="ctx-probe"
+# A SECOND llama.cpp with a roomy window, and it is what makes check 6
+# mean anything without Ollama. That check asserts a refusal did not
+# cascade, and its own comment says the assertion is empty unless there
+# is somewhere for a cascade to GO. Ollama used to be that somewhere.
+# A second engine that WOULD have served the prompt happily is a
+# stricter tier 2 than Ollama was, because it would have answered
+# correctly rather than answered truncated.
+BIG_PORT="${EP_BIG_PORT:-8298}"
+BIG_CTX="${EP_BIG_CTX:-8192}"
+BIG_MODEL="ctx-roomy"
 
 FAILURES=0
+SKIPS=0
 say() { printf '\n== %s\n' "$*"; }
 ok() { printf '  PASS  %s\n' "$*"; }
 bad() { printf '  FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
+# A skip is not a pass and must be visible as neither. Four `note`
+# calls arrived with the ollama gates and this function did not, so
+# bash printed `note: command not found` to stderr and the run read
+# as a clean 10/10 with three whole sections silently absent.
+note() { printf '  NOTE  %s\n' "$*"; SKIPS=$((SKIPS + 1)); }
 jq_() { PYTHONUTF8=1 python -c "import sys,json; d=json.load(sys.stdin); print($1)"; }
 wait_healthy() { for _ in $(seq 1 "${2:-60}"); do curl -sf -m 2 "$1/healthz" >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 
-OWNED_PORTS="$AGENT_PORT 8080 8082 8083 $LLAMA_DRIVER_PORT $OLLAMA_DRIVER_PORT $LLAMA_PORT"
+BIG_DRIVER_PORT="${EP_BIG_DRIVER_PORT:-8192}"
+OWNED_PORTS="$AGENT_PORT 8080 8082 8083 $LLAMA_DRIVER_PORT $OLLAMA_DRIVER_PORT $BIG_DRIVER_PORT $LLAMA_PORT $BIG_PORT"
 STARTED_LLAMA=0
 CREATED_OLLAMA_MODEL=0
 
@@ -109,6 +130,7 @@ free_port() { # port
 }
 
 teardown() {
+  llama_stop_all
   for p in $OWNED_PORTS; do free_port "$p"; done
   # Leave the operator's Ollama exactly as we found it. The derived
   # model is the only thing this script adds to it.
@@ -124,17 +146,29 @@ teardown() {
 
 say "preflight"
 [ -f "$PY" ] || { bad "no agent python at $PY"; exit 1; }
-[ -f "$LLAMA_BIN" ] || { bad "no llama-server at $LLAMA_BIN (set EP_LLAMA_BIN)"; exit 1; }
-[ -f "$LLAMA_GGUF" ] || { bad "no gguf at $LLAMA_GGUF (set EP_LLAMA_GGUF)"; exit 1; }
-curl -sf -m 3 "$OLLAMA/api/tags" >/dev/null || { bad "ollama is not answering at $OLLAMA"; exit 1; }
-curl -s -m 5 "$OLLAMA/api/tags" | grep -q "$OLLAMA_BASE" || { bad "$OLLAMA_BASE is not pulled into ollama"; exit 1; }
+llama_preflight || exit 1
+# **Ollama is OPTIONAL now, and its absence SKIPS rather than passes.**
+# Half of this script tests a property only Ollama has -- it counts
+# nothing and truncates silently -- and half tests llama.cpp, which
+# counts and refuses. The llama.cpp half is the half we changed code
+# for (a 400 that does not cascade), so it must always run. The Ollama
+# half is a record of somebody else's behaviour; with Ollama removed
+# from this box on 2026-09-16 it cannot run, and a check that silently
+# passed when its subject was absent would be worse than no check.
+HAVE_OLLAMA=0
+if curl -sf -m 3 "$OLLAMA/api/tags" >/dev/null 2>&1 \
+   && curl -s -m 5 "$OLLAMA/api/tags" | grep -q "$OLLAMA_BASE"; then
+  HAVE_OLLAMA=1
+fi
 for p in $OWNED_PORTS; do
   if netstat -ano 2>/dev/null | grep ":$p " | grep -q LISTENING; then
     bad "port $p is already in use; set the matching EP_* variable or stop it"
     exit 1
   fi
 done
-ok "agent python, llama-server, a gguf, a live ollama, and every port free"
+ok "agent python, llama.cpp $(llama_build), a model on disk, every port free"
+[ "$HAVE_OLLAMA" = 1 ] && ok "an ollama with $OLLAMA_BASE: the truncation half will run" \
+  || note "no ollama with $OLLAMA_BASE -- checks 2 and 8-13 will SKIP, not pass"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
 trap teardown EXIT
@@ -170,25 +204,28 @@ LEAKED=$(env | grep '^EUGENE_PLEXUS_' | grep -Fv -e "EUGENE_PLEXUS_AGENT_CONFIG_
 # the two engines
 # --------------------------------------------------------------------- #
 
-say "an ollama model with a pinned $OLLAMA_CTX-token window"
-# Derived rather than configured globally: OLLAMA_CONTEXT_LENGTH would
-# mean restarting the operator's Ollama, and on this machine that is the
-# backend a live install routes to.
-curl -s -m 120 -X POST "$OLLAMA/api/create" -H 'content-type: application/json' \
-  -d "{\"model\":\"$OLLAMA_MODEL\",\"from\":\"$OLLAMA_BASE\",\"parameters\":{\"num_ctx\":$OLLAMA_CTX}}" \
-  | tail -1
-CREATED_OLLAMA_MODEL=1
-curl -s -m 10 "$OLLAMA/api/tags" | grep -q "${OLLAMA_MODEL%%:*}" \
-  && ok "created $OLLAMA_MODEL" || { bad "could not create $OLLAMA_MODEL"; exit 1; }
+if [ "$HAVE_OLLAMA" = 1 ]; then
+  say "an ollama model with a pinned $OLLAMA_CTX-token window"
+  # Derived rather than configured globally: OLLAMA_CONTEXT_LENGTH would
+  # mean restarting the operator's Ollama, and on this machine that is the
+  # backend a live install routes to.
+  curl -s -m 120 -X POST "$OLLAMA/api/create" -H 'content-type: application/json' \
+    -d "{\"model\":\"$OLLAMA_MODEL\",\"from\":\"$OLLAMA_BASE\",\"parameters\":{\"num_ctx\":$OLLAMA_CTX}}" \
+    | tail -1
+  CREATED_OLLAMA_MODEL=1
+  curl -s -m 10 "$OLLAMA/api/tags" | grep -q "${OLLAMA_MODEL%%:*}" \
+    && ok "created $OLLAMA_MODEL" || { bad "could not create $OLLAMA_MODEL"; exit 1; }
 
-say "llama-server with -c $LLAMA_CTX"
-"$LLAMA_BIN" -m "$LLAMA_GGUF" -c "$LLAMA_CTX" -ngl 99 \
-  --host 127.0.0.1 --port "$LLAMA_PORT" --alias "$LLAMA_MODEL" >"$WORK/llama.log" 2>&1 &
+else
+  note "SKIPPED (the pinned-window ollama model): no ollama on this machine"
+fi
+
+say "llama-server with -c $LLAMA_CTX, and a roomy one behind it"
+llama_start "$LLAMA_PORT" "$LLAMA_MODEL" --ctx "$LLAMA_CTX" \
+  || { bad "the small-window engine never came up"; tail -20 "llama-$LLAMA_PORT.log"; exit 1; }
+llama_start "$BIG_PORT" "$BIG_MODEL" --ctx "$BIG_CTX" \
+  || { bad "the roomy engine never came up"; tail -20 "llama-$BIG_PORT.log"; exit 1; }
 STARTED_LLAMA=1
-for _ in $(seq 1 180); do
-  curl -sf -m 2 "http://127.0.0.1:$LLAMA_PORT/props" >/dev/null 2>&1 && break
-  sleep 1
-done
 RESOLVED=$(curl -s -m 5 "http://127.0.0.1:$LLAMA_PORT/props" | jq_ "(d.get('default_generation_settings') or {}).get('n_ctx')" 2>/dev/null)
 [ "$RESOLVED" = "$LLAMA_CTX" ] && ok "llama-server resolved n_ctx=$RESOLVED" \
   || { bad "llama-server did not come up with n_ctx=$LLAMA_CTX (got '$RESOLVED')"; tail -5 "$WORK/llama.log"; exit 1; }
@@ -222,9 +259,12 @@ add_driver() { # name port provider model [baseUrl]
   curl -s -o /dev/null -X POST "$AGENT/v1/components/$1/restart" -H "Authorization: Bearer $TOK" -d '{}'
 }
 
-say "two drivers: one on llama.cpp, one on ollama"
-add_driver ctx-llama "$LLAMA_DRIVER_PORT" openai_compat_custom "$LLAMA_MODEL" "http://127.0.0.1:$LLAMA_PORT"
-add_driver ctx-ollama "$OLLAMA_DRIVER_PORT" ollama_local "$OLLAMA_MODEL"
+say "drivers: the small window, the roomy one, and ollama if it is here"
+add_driver ctx-llama "$LLAMA_DRIVER_PORT" openai_compat_custom "$LLAMA_MODEL" "$(llama_base_url "$LLAMA_PORT")"
+add_driver ctx-big "$BIG_DRIVER_PORT" openai_compat_custom "$BIG_MODEL" "$(llama_base_url "$BIG_PORT")"
+if [ "$HAVE_OLLAMA" = 1 ]; then
+  add_driver ctx-ollama "$OLLAMA_DRIVER_PORT" ollama_local "$OLLAMA_MODEL"
+fi
 sleep 10
 
 # --- 1 -----------------------------------------------------------------------
@@ -236,22 +276,27 @@ echo "  maxContextTokens: $A_CTX"
   || bad "expected $LLAMA_CTX, got '$A_CTX': $A_INFO"
 
 # --- 2 -----------------------------------------------------------------------
-say "2. the ollama driver reports the window /api/ps resolved"
-# The headline of the advertising half. Ollama's OpenAI-compatible
-# surface carries no window at all and /api/show carries only the trained
-# maximum; /api/ps is the only place the number it actually chose
-# appears. Before this, every unsupervised backend reported nothing.
-# `/api/ps` is empty until something loads the model, so warm it first --
-# the same thing a first real request does.
-curl -s -o /dev/null -m 300 -X POST "$OLLAMA/v1/chat/completions" -H 'content-type: application/json' \
-  -d "{\"model\":\"$OLLAMA_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":2}"
-curl -s -o /dev/null -X POST "$AGENT/v1/components/ctx-ollama/restart" -H "Authorization: Bearer $TOK" -d '{}'
-sleep 8
-B_INFO=$(curl -s -m 15 "http://127.0.0.1:$OLLAMA_DRIVER_PORT/v1/info" -H "Authorization: Bearer $TOK")
-B_CTX=$(printf '%s' "$B_INFO" | jq_ "(d.get('capabilities') or {}).get('maxContextTokens')" 2>/dev/null)
-echo "  maxContextTokens: $B_CTX"
-[ "$B_CTX" = "$OLLAMA_CTX" ] && ok "ollama driver advertises $B_CTX" \
-  || bad "expected $OLLAMA_CTX, got '$B_CTX': $B_INFO"
+if [ "$HAVE_OLLAMA" = 1 ]; then
+  say "2. the ollama driver reports the window /api/ps resolved"
+  # The headline of the advertising half. Ollama's OpenAI-compatible
+  # surface carries no window at all and /api/show carries only the trained
+  # maximum; /api/ps is the only place the number it actually chose
+  # appears. Before this, every unsupervised backend reported nothing.
+  # `/api/ps` is empty until something loads the model, so warm it first --
+  # the same thing a first real request does.
+  curl -s -o /dev/null -m 300 -X POST "$OLLAMA/v1/chat/completions" -H 'content-type: application/json' \
+    -d "{\"model\":\"$OLLAMA_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":2}"
+  curl -s -o /dev/null -X POST "$AGENT/v1/components/ctx-ollama/restart" -H "Authorization: Bearer $TOK" -d '{}'
+  sleep 8
+  B_INFO=$(curl -s -m 15 "http://127.0.0.1:$OLLAMA_DRIVER_PORT/v1/info" -H "Authorization: Bearer $TOK")
+  B_CTX=$(printf '%s' "$B_INFO" | jq_ "(d.get('capabilities') or {}).get('maxContextTokens')" 2>/dev/null)
+  echo "  maxContextTokens: $B_CTX"
+  [ "$B_CTX" = "$OLLAMA_CTX" ] && ok "ollama driver advertises $B_CTX" \
+    || bad "expected $OLLAMA_CTX, got '$B_CTX': $B_INFO"
+
+else
+  note "SKIPPED (check 2, the /api/ps window): no ollama on this machine"
+fi
 
 # --- 3 -----------------------------------------------------------------------
 say "3. GET /v1/models publishes a context_length for both"
@@ -271,12 +316,12 @@ MISSING=$(printf '%s' "$MODELS" | jq_ "len([m for m in d['data'] if m.get('x_eug
 # llama.cpp: it counts, and it refuses
 # --------------------------------------------------------------------- #
 
-say "a two-tier slot: llama.cpp first, ollama behind it"
+say "a two-tier slot: the small window first, the roomy one behind it"
 # Check 6 needs somewhere for a cascade to GO. Without a second tier,
 # "did not cascade" and "had nowhere to cascade to" look identical.
 curl -s -o /dev/null -X PATCH "$GW/v1/config" -H "Authorization: Bearer $TOK" \
   -H 'content-type: application/json' \
-  -d "{\"modelSlots\":[{\"model\":\"$LLAMA_MODEL\",\"targets\":[\"$LLAMA_MODEL\",\"$OLLAMA_MODEL\"]}]}"
+  -d "{\"modelSlots\":[{\"model\":\"$LLAMA_MODEL\",\"targets\":[\"$LLAMA_MODEL\",\"$BIG_MODEL\"]}]}"
 sleep 18
 
 say "4-6. an over-long prompt to an engine that counts"
@@ -313,9 +358,12 @@ case "$DETAIL" in *n_prompt_tokens*) BOTH=$((BOTH + 1)) ;; esac
   || bad "the backend's numbers did not survive the trip: $DETAIL"
 
 # --- 6 -----------------------------------------------------------------------
-# If it had cascaded, ollama sits in tier 2 with a window of its own and
-# would have TRUNCATED and answered 200 -- so a 200 here is not a
-# near-miss, it is the failure: a wrong answer in place of a right error.
+# If it had cascaded, tier 2 is a healthy engine with an 8192-token
+# window that would have served this prompt correctly -- so a 200 here
+# is not a near-miss, it is the failure: the caller gets an answer and
+# never learns their prompt did not fit the model they asked for.
+# (Tier 2 was Ollama until 2026-09-16, which would have TRUNCATED and
+# answered 200; a tier that answers correctly is the stricter test.)
 SERVED=$(printf '%s' "$DETAIL" | jq_ "d.get('choices') is not None" 2>/dev/null)
 [ "$SERVED" != "True" ] && ok "tier 2 was not tried; the refusal stands" \
   || bad "it cascaded and tier 2 answered -- a truncated answer in place of an exact refusal"
@@ -333,114 +381,124 @@ FIN=$(printf '%s' "$FITS" | jq_ "d['choices'][0]['finish_reason']" 2>/dev/null)
 # ollama: it counts nothing, and it truncates
 # --------------------------------------------------------------------- #
 
-say "8-10. a prompt far past the window, to an engine that does not refuse"
-# Canaries in each message, so "it truncated" is a statement about WHICH
-# parts arrived rather than an inference from a token count alone.
-TRUNC=$(PYTHONUTF8=1 python -c "
-import json
-print(json.dumps({
-  'model': '$OLLAMA_MODEL',
-  'messages': [
-    {'role': 'system', 'content': 'CANARY-SYS. ' * 10},
-    {'role': 'user', 'content': 'CANARY-FIRST. ' + 'filler text here. ' * 1200},
-    {'role': 'assistant', 'content': 'ok. ' + 'more filler. ' * 1200},
-    {'role': 'user', 'content': 'CANARY-MID. ' + 'yet more filler. ' * 1200},
-    {'role': 'assistant', 'content': 'ok. ' + 'padding. ' * 1200},
-    {'role': 'user', 'content': 'CANARY-LAST. Reply with the single word OK.'},
-  ],
-  'max_tokens': 8,
-}))
-")
-printf '%s' "$TRUNC" > trunc.json
-CHARS=$(printf '%s' "$TRUNC" | jq_ "sum(len(m['content']) for m in d['messages'])")
-TCODE=$(curl -s -m 300 -o truncated.json -w '%{http_code}' -X POST "$GW/v1/chat/completions" \
-  -H "Authorization: Bearer $TOK" -H 'content-type: application/json' -d @trunc.json)
-PT=$(jq_ "d.get('usage',{}).get('prompt_tokens')" < truncated.json 2>/dev/null)
-FLAG=$(jq_ "d.get('x_eugene_plexus',{}).get('prompt_truncated')" < truncated.json 2>/dev/null)
-CL=$(jq_ "d.get('x_eugene_plexus',{}).get('context_length')" < truncated.json 2>/dev/null)
-echo "  HTTP $TCODE -- sent $CHARS chars, backend reported prompt_tokens=$PT"
-echo "  prompt_truncated=$FLAG  context_length=$CL"
+if [ "$HAVE_OLLAMA" = 1 ]; then
+  say "8-10. a prompt far past the window, to an engine that does not refuse"
+  # Canaries in each message, so "it truncated" is a statement about WHICH
+  # parts arrived rather than an inference from a token count alone.
+  TRUNC=$(PYTHONUTF8=1 python -c "
+  import json
+  print(json.dumps({
+    'model': '$OLLAMA_MODEL',
+    'messages': [
+      {'role': 'system', 'content': 'CANARY-SYS. ' * 10},
+      {'role': 'user', 'content': 'CANARY-FIRST. ' + 'filler text here. ' * 1200},
+      {'role': 'assistant', 'content': 'ok. ' + 'more filler. ' * 1200},
+      {'role': 'user', 'content': 'CANARY-MID. ' + 'yet more filler. ' * 1200},
+      {'role': 'assistant', 'content': 'ok. ' + 'padding. ' * 1200},
+      {'role': 'user', 'content': 'CANARY-LAST. Reply with the single word OK.'},
+    ],
+    'max_tokens': 8,
+  }))
+  ")
+  printf '%s' "$TRUNC" > trunc.json
+  CHARS=$(printf '%s' "$TRUNC" | jq_ "sum(len(m['content']) for m in d['messages'])")
+  TCODE=$(curl -s -m 300 -o truncated.json -w '%{http_code}' -X POST "$GW/v1/chat/completions" \
+    -H "Authorization: Bearer $TOK" -H 'content-type: application/json' -d @trunc.json)
+  PT=$(jq_ "d.get('usage',{}).get('prompt_tokens')" < truncated.json 2>/dev/null)
+  FLAG=$(jq_ "d.get('x_eugene_plexus',{}).get('prompt_truncated')" < truncated.json 2>/dev/null)
+  CL=$(jq_ "d.get('x_eugene_plexus',{}).get('context_length')" < truncated.json 2>/dev/null)
+  echo "  HTTP $TCODE -- sent $CHARS chars, backend reported prompt_tokens=$PT"
+  echo "  prompt_truncated=$FLAG  context_length=$CL"
 
-# --- 8 -----------------------------------------------------------------------
-# The whole reason this half exists: it is a 200. Nothing about the
-# response says the input was thrown away, which is why a harness cannot
-# tell this from the model simply being wrong.
-[ "$TCODE" = "200" ] && [ -n "$PT" ] && [ "$PT" -lt 1000 ] \
-  && ok "ollama answered 200 having consumed only $PT tokens of $CHARS characters" \
-  || bad "expected a 200 with a tiny prompt_tokens; got HTTP $TCODE, prompt_tokens=$PT"
+  # --- 8 -----------------------------------------------------------------------
+  # The whole reason this half exists: it is a 200. Nothing about the
+  # response says the input was thrown away, which is why a harness cannot
+  # tell this from the model simply being wrong.
+  [ "$TCODE" = "200" ] && [ -n "$PT" ] && [ "$PT" -lt 1000 ] \
+    && ok "ollama answered 200 having consumed only $PT tokens of $CHARS characters" \
+    || bad "expected a 200 with a tiny prompt_tokens; got HTTP $TCODE, prompt_tokens=$PT"
 
-# --- 9 -----------------------------------------------------------------------
-[ "$FLAG" = "True" ] && ok "the gateway flagged it as prompt_truncated" \
-  || bad "prompt_truncated was '$FLAG'; the silent case stayed silent"
+  # --- 9 -----------------------------------------------------------------------
+  [ "$FLAG" = "True" ] && ok "the gateway flagged it as prompt_truncated" \
+    || bad "prompt_truncated was '$FLAG'; the silent case stayed silent"
 
-# --- 10 ----------------------------------------------------------------------
-[ "$CL" = "$OLLAMA_CTX" ] && ok "the completion reports the window that applied ($CL)" \
-  || bad "context_length was '$CL', expected $OLLAMA_CTX"
+  # --- 10 ----------------------------------------------------------------------
+  [ "$CL" = "$OLLAMA_CTX" ] && ok "the completion reports the window that applied ($CL)" \
+    || bad "context_length was '$CL', expected $OLLAMA_CTX"
 
-# --- 11 ----------------------------------------------------------------------
-say "11. a prompt that arrived intact is NOT flagged"
-# The half that makes check 9 worth anything. A detector that fires on
-# everything proves nothing, and this is the same shape as step 6's
-# fragmentation checks, which passed against a property of the backend
-# rather than of our code.
-INTACT=$(curl -s -m 300 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" \
-  -H 'content-type: application/json' \
-  -d "{\"model\":\"$OLLAMA_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"$(python -c "print('Summarise this sentence in one word. ' * 60)")\"}],\"max_tokens\":8}")
-IFLAG=$(printf '%s' "$INTACT" | jq_ "d.get('x_eugene_plexus',{}).get('prompt_truncated')" 2>/dev/null)
-IPT=$(printf '%s' "$INTACT" | jq_ "d.get('usage',{}).get('prompt_tokens')" 2>/dev/null)
-echo "  prompt_tokens=$IPT prompt_truncated=$IFLAG"
-[ "$IFLAG" = "False" ] && ok "an intact prompt reports prompt_truncated=false" \
-  || bad "an intact prompt reported '$IFLAG' -- the detector does not discriminate"
+  # --- 11 ----------------------------------------------------------------------
+  say "11. a prompt that arrived intact is NOT flagged"
+  # The half that makes check 9 worth anything. A detector that fires on
+  # everything proves nothing, and this is the same shape as step 6's
+  # fragmentation checks, which passed against a property of the backend
+  # rather than of our code.
+  INTACT=$(curl -s -m 300 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" \
+    -H 'content-type: application/json' \
+    -d "{\"model\":\"$OLLAMA_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"$(python -c "print('Summarise this sentence in one word. ' * 60)")\"}],\"max_tokens\":8}")
+  IFLAG=$(printf '%s' "$INTACT" | jq_ "d.get('x_eugene_plexus',{}).get('prompt_truncated')" 2>/dev/null)
+  IPT=$(printf '%s' "$INTACT" | jq_ "d.get('usage',{}).get('prompt_tokens')" 2>/dev/null)
+  echo "  prompt_tokens=$IPT prompt_truncated=$IFLAG"
+  [ "$IFLAG" = "False" ] && ok "an intact prompt reports prompt_truncated=false" \
+    || bad "an intact prompt reported '$IFLAG' -- the detector does not discriminate"
 
-# --- 12 ----------------------------------------------------------------------
-say "12. a streamed request carries the flag on its final frame"
-# M10's rule is that a stream cannot be unsent, which is exactly why this
-# is a flag on both paths rather than an error on one of them.
-printf '%s' "$TRUNC" | PYTHONUTF8=1 python -c "
-import sys, json
-d = json.load(sys.stdin); d['stream'] = True
-open('trunc-stream.json', 'w').write(json.dumps(d))
-"
-curl -s -N -m 300 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" \
-  -H 'content-type: application/json' -d @trunc-stream.json > stream.sse
-SFLAG=$(PYTHONUTF8=1 python -c "
-import json
-flag = None
-for line in open('stream.sse', encoding='utf-8'):
-    if not line.startswith('data: ') or line[6:].strip() == '[DONE]':
-        continue
-    try:
-        chunk = json.loads(line[6:])
-    except ValueError:
-        continue
-    if chunk.get('x_eugene_plexus'):
-        flag = chunk['x_eugene_plexus'].get('prompt_truncated')
-print(flag)
-")
-echo "  final frame prompt_truncated=$SFLAG"
-[ "$SFLAG" = "True" ] && ok "the streamed path reports it too" \
-  || bad "the streamed final frame said '$SFLAG' -- one condition, two answers"
+  # --- 12 ----------------------------------------------------------------------
+  say "12. a streamed request carries the flag on its final frame"
+  # M10's rule is that a stream cannot be unsent, which is exactly why this
+  # is a flag on both paths rather than an error on one of them.
+  printf '%s' "$TRUNC" | PYTHONUTF8=1 python -c "
+  import sys, json
+  d = json.load(sys.stdin); d['stream'] = True
+  open('trunc-stream.json', 'w').write(json.dumps(d))
+  "
+  curl -s -N -m 300 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" \
+    -H 'content-type: application/json' -d @trunc-stream.json > stream.sse
+  SFLAG=$(PYTHONUTF8=1 python -c "
+  import json
+  flag = None
+  for line in open('stream.sse', encoding='utf-8'):
+      if not line.startswith('data: ') or line[6:].strip() == '[DONE]':
+          continue
+      try:
+          chunk = json.loads(line[6:])
+      except ValueError:
+          continue
+      if chunk.get('x_eugene_plexus'):
+          flag = chunk['x_eugene_plexus'].get('prompt_truncated')
+  print(flag)
+  ")
+  echo "  final frame prompt_truncated=$SFLAG"
+  [ "$SFLAG" = "True" ] && ok "the streamed path reports it too" \
+    || bad "the streamed final frame said '$SFLAG' -- one condition, two answers"
 
-# --- 13 ----------------------------------------------------------------------
-say "13. the truncation is in the gateway log too"
-# The flag rides a namespaced field most clients drop on the floor. An
-# operator chasing "the model keeps ignoring my files" needs a line
-# somewhere they will actually look.
-GWLOG=$(find "$WORK" .. -name 'gateway*.log' 2>/dev/null | head -1)
-[ -z "$GWLOG" ] && GWLOG=$(find "$HOME/.eugene-plexus" "$WORK" -name '*.log' 2>/dev/null | xargs grep -l 'discarded most of the prompt' 2>/dev/null | head -1)
-if [ -n "$GWLOG" ] && grep -q 'discarded most of the prompt' "$GWLOG" 2>/dev/null; then
-  ok "gateway log names it: $(grep -m1 -o 'reported consuming only [0-9]* prompt tokens for [0-9]* characters' "$GWLOG")"
-elif grep -rq 'discarded most of the prompt' "$WORK" 2>/dev/null; then
-  ok "gateway log names it: $(grep -rhm1 -o 'reported consuming only [0-9]* prompt tokens for [0-9]* characters' "$WORK")"
+  # --- 13 ----------------------------------------------------------------------
+  say "13. the truncation is in the gateway log too"
+  # The flag rides a namespaced field most clients drop on the floor. An
+  # operator chasing "the model keeps ignoring my files" needs a line
+  # somewhere they will actually look.
+  GWLOG=$(find "$WORK" .. -name 'gateway*.log' 2>/dev/null | head -1)
+  [ -z "$GWLOG" ] && GWLOG=$(find "$HOME/.eugene-plexus" "$WORK" -name '*.log' 2>/dev/null | xargs grep -l 'discarded most of the prompt' 2>/dev/null | head -1)
+  if [ -n "$GWLOG" ] && grep -q 'discarded most of the prompt' "$GWLOG" 2>/dev/null; then
+    ok "gateway log names it: $(grep -m1 -o 'reported consuming only [0-9]* prompt tokens for [0-9]* characters' "$GWLOG")"
+  elif grep -rq 'discarded most of the prompt' "$WORK" 2>/dev/null; then
+    ok "gateway log names it: $(grep -rhm1 -o 'reported consuming only [0-9]* prompt tokens for [0-9]* characters' "$WORK")"
+  else
+    bad "no warning in any log under $WORK"
+  fi
+
+  # --------------------------------------------------------------------- #
+
 else
-  bad "no warning in any log under $WORK"
+  note "SKIPPED (checks 8-13, silent truncation): no ollama on this machine"
 fi
 
-# --------------------------------------------------------------------- #
-
 say "result"
-if [ "$FAILURES" = "0" ]; then
+if [ "$FAILURES" = "0" ] && [ "$SKIPS" = "0" ]; then
   printf '\n  ALL CHECKS PASSED\n\n'
+elif [ "$FAILURES" = "0" ]; then
+  # Never just "ALL CHECKS PASSED" with sections skipped: that sentence
+  # is what a reader takes away, and it would be false about the half of
+  # this script that needs an ollama to mean anything.
+  printf '\n  PASSED, with %d section(s) SKIPPED -- see the NOTE lines\n\n' "$SKIPS"
 else
   printf '\n  %d CHECK(S) FAILED\n\n' "$FAILURES"
 fi

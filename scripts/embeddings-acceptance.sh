@@ -10,7 +10,19 @@
 #     model -- a runner started for chat refuses to embed the very model
 #     it is serving, and nothing exposes which it is
 #   * a dedicated embedding model refuses chat, so the two surfaces are
-#     disjoint for Ollama even though they are not for llama.cpp
+#     disjoint
+#
+# **The second claim was recorded as an Ollama-only property and that no
+# longer reproduces (2026-09-16).** The design says `surfaces` is a list
+# rather than an enum because "`llama-server --embedding` still chats".
+# Measured on b10948, it does not: an embedding server answers
+# `/v1/chat/completions` with a 500 ("the current context does not logits
+# computation"), and a chat server answers `/v1/embeddings` with a clean
+# 501 naming the flag it was not given. So on the current engine the
+# surfaces are disjoint BOTH ways and this script asserts that. The
+# list-shaped schema may still be right for some backend somewhere, but
+# the evidence cited for it is stale and is flagged here rather than
+# quietly asserted around.
 #
 # And one rule that a fixture can assert but only a live run can make
 # convincing: **failover does not cross models here.**
@@ -50,9 +62,19 @@ DEAD_PORT="${EP_DEAD_PORT:-8197}"
 REPLICA_PORT="${EP_REPLICA_PORT:-8198}"
 PASS="embed-live-$$"
 
-OLLAMA="${EP_OLLAMA:-http://127.0.0.1:11434}"
-EMB_MODEL="${EP_EMB_MODEL:-nomic-embed-text}"
-CHAT_MODEL="${EP_CHAT_MODEL:-huihui_ai/dolphin3-abliterated:8b-llama3.1-q4_K_M}"
+EMB_MODEL="${EP_EMB_MODEL:-emb-acceptance-model}"
+CHAT_MODEL="${EP_CHAT_MODEL:-chat-acceptance-model}"
+EMB_ENGINE_PORT="${EP_EMB_ENGINE_PORT:-8193}"
+CHAT_ENGINE_PORT="${EP_CHAT_ENGINE_PORT:-8194}"
+# The backend: two local llama.cpp servers, not ollama. One started with
+# `--embedding --pooling mean`, one without -- which is the whole point,
+# because the capability under test belongs to the RUNNING BACKEND and
+# not to the model.
+. "$(dirname "$0")/lib/llama-backend.sh"
+# A real embedding model. Qwen3-0.6B is not one, and an "embedding" test
+# against a chat model proves only that something returned numbers.
+EP_EMB_GGUF="${EP_EMB_GGUF:-$HOME/.eugene-plexus/acceptance-models/nomic-embed-text-v1.5.Q8_0.gguf}"
+EP_EMB_GGUF_URL="${EP_EMB_GGUF_URL:-https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf}"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }
@@ -77,28 +99,26 @@ wait_models() { # 'python expression over d' expected-value seconds
   return 1
 }
 
-OWNED_PORTS="$AGENT_PORT 8080 8082 8083 $EMB_PORT $CHAT_PORT $DEAD_PORT $REPLICA_PORT"
+OWNED_PORTS="$AGENT_PORT 8080 8082 8083 $EMB_PORT $CHAT_PORT $DEAD_PORT $REPLICA_PORT $EMB_ENGINE_PORT $CHAT_ENGINE_PORT"
 
 free_port() {
   for pid in $(netstat -ano 2>/dev/null | grep ":$1 " | grep LISTENING | awk '{print $5}' | sort -u); do
     taskkill //PID "$pid" //F >/dev/null 2>&1 || kill -9 "$pid" 2>/dev/null
   done
 }
-teardown() { for p in $OWNED_PORTS; do free_port "$p"; done; }
+teardown() { llama_stop_all; for p in $OWNED_PORTS; do free_port "$p"; done; }
 
 say "preflight"
 [ -f "$PY" ] || { bad "no agent python at $PY"; exit 1; }
-curl -sf -m 3 "$OLLAMA/api/tags" >/dev/null || { bad "ollama is not answering at $OLLAMA"; exit 1; }
-curl -s -m 5 "$OLLAMA/api/tags" | grep -q "${EMB_MODEL%%:*}" \
-  || { bad "$EMB_MODEL is not pulled into ollama (ollama pull $EMB_MODEL)"; exit 1; }
-curl -s -m 5 "$OLLAMA/api/tags" | grep -q "${CHAT_MODEL%%:*}" \
-  || { bad "$CHAT_MODEL is not pulled into ollama"; exit 1; }
+llama_preflight || exit 1
+llama_fetch_model "$EP_EMB_GGUF" "$EP_EMB_GGUF_URL" \
+  || { bad "no embedding model at $EP_EMB_GGUF and could not fetch $EP_EMB_GGUF_URL"; exit 1; }
 for p in $OWNED_PORTS; do
   if netstat -ano 2>/dev/null | grep ":$p " | grep -q LISTENING; then
     bad "port $p is already in use; set the matching EP_* variable or stop it"; exit 1
   fi
 done
-ok "agent python, a live ollama with both models, and every port free"
+ok "agent python, llama.cpp $(llama_build), a chat and an embedding model, every port free"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
 trap teardown EXIT
@@ -137,13 +157,16 @@ add_driver() { # name port provider model [baseUrl]
 }
 
 say "drivers: one on an embedding model, one on a chat model"
-# Warm the embedding model first: the capability probe asks the backend
-# to embed, and a cold Ollama would otherwise load the model inside the
-# probe's own timeout.
-curl -s -o /dev/null -m 300 -X POST "$OLLAMA/v1/embeddings" -H 'content-type: application/json' \
-  -d "{\"model\":\"$EMB_MODEL\",\"input\":\"warm\"}"
-add_driver emb "$EMB_PORT" ollama_local "$EMB_MODEL"
-add_driver chat "$CHAT_PORT" ollama_local "$CHAT_MODEL"
+# Two servers of the SAME binary, differing only in `--embedding`. That
+# is the cleanest possible statement of the claim under test: the
+# capability is a property of how the backend was STARTED, not of the
+# model, and here the start flags are the only difference there is.
+llama_start "$EMB_ENGINE_PORT" "$EMB_MODEL" -m "$EP_EMB_GGUF" --ctx 2048 --embedding --pooling mean \
+  || { bad "the embedding engine never came up"; tail -20 "llama-$EMB_ENGINE_PORT.log"; exit 1; }
+llama_start "$CHAT_ENGINE_PORT" "$CHAT_MODEL" --ctx 2048 \
+  || { bad "the chat engine never came up"; tail -20 "llama-$CHAT_ENGINE_PORT.log"; exit 1; }
+add_driver emb "$EMB_PORT" openai_compat_custom "$EMB_MODEL" "$(llama_base_url "$EMB_ENGINE_PORT")"
+add_driver chat "$CHAT_PORT" openai_compat_custom "$CHAT_MODEL" "$(llama_base_url "$CHAT_ENGINE_PORT")"
 sleep 12
 
 # --- 1, 2 --------------------------------------------------------------------
@@ -216,19 +239,35 @@ U=$(jq_ "bool(d.get('usage') and d['usage'].get('prompt_tokens'))" < emb.json 2>
 [ "$U" = "True" ] && ok "usage reported" || bad "no usage: $(head -c 200 emb.json)"
 
 # --- 6 -----------------------------------------------------------------------
-say "6. base64 decodes to exactly the floats the float request returned"
+say "6. base64 decodes to exactly the floats the SAME-SHAPED request returned"
+# **Both requests send one input, and that is the fix rather than a
+# detail.** This check used to compare the base64 answer against
+# `emb.json`'s first vector -- which came from a batch of THREE. Ollama
+# returned bit-identical floats either way so it passed; llama.cpp does
+# not, because batch shape changes the arithmetic, and the check failed
+# on a difference that was never ours. The claim in its own title is
+# "the same request", so the comparison is now actually that: one
+# float request and one base64 request, identical but for
+# `encoding_format`. A backend that is non-deterministic even then
+# would fail this, correctly.
+curl -s -m 300 -X POST "$GW/v1/embeddings" -H "Authorization: Bearer $TOK" \
+  -H 'content-type: application/json' \
+  -d "{\"model\":\"$EMB_MODEL\",\"input\":\"the cat sat on the mat\"}" > one.json
 curl -s -m 300 -X POST "$GW/v1/embeddings" -H "Authorization: Bearer $TOK" \
   -H 'content-type: application/json' \
   -d "{\"model\":\"$EMB_MODEL\",\"input\":\"the cat sat on the mat\",\"encoding_format\":\"base64\"}" > b64.json
 B64=$(PYTHONUTF8=1 python -c "
 import json, base64, struct
-want = json.load(open('emb.json'))['data'][0]['embedding']
+want = json.load(open('one.json'))['data'][0]['embedding']
 got = json.load(open('b64.json'))['data'][0]['embedding']
 if not isinstance(got, str):
     print('not-a-string'); raise SystemExit
 raw = base64.b64decode(got)
 dec = list(struct.unpack('<%df' % (len(raw)//4), raw))
-print('ok' if len(dec) == len(want) and all(abs(a-b) < 1e-6 for a, b in zip(dec, want)) else 'mismatch')
+if len(dec) != len(want):
+    print('length %d vs %d' % (len(dec), len(want))); raise SystemExit
+worst = max(abs(a-b) for a, b in zip(dec, want))
+print('ok' if worst < 1e-6 else 'mismatch, worst delta %g' % worst)
 ")
 # The OpenAI SDKs ask for base64 by default, so this is what most
 # clients will actually receive.
@@ -280,7 +319,7 @@ say "11. ...while replicas of the SAME model still fail over"
 # A second driver on the same model. The dead one above is a different
 # model, so this is the other half of the rule: same model id, so a
 # failure between them is as safe as it is for chat.
-add_driver emb2 "$REPLICA_PORT" ollama_local "$EMB_MODEL"
+add_driver emb2 "$REPLICA_PORT" openai_compat_custom "$EMB_MODEL" "$(llama_base_url "$EMB_ENGINE_PORT")"
 REPLICAS="len([m for m in d['data'] if m['id'].startswith('$EMB_MODEL')][0].get('x_eugene_plexus',{}).get('drivers') or [])"
 wait_models "$REPLICAS" "2" 40 || true
 REPS=$(curl -s -m 20 "$GW/v1/models" -H "Authorization: Bearer $TOK" | jq_ "$REPLICAS" 2>/dev/null)

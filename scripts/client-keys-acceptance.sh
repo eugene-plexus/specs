@@ -19,7 +19,7 @@
 #   0. isolated from any install on this machine, and from its ports
 #   1. the UI wheel staged from this working tree AND served by this agent
 #   2. agent + control + gateway + library up, the root initialized and
-#      this node ENROLLED; a driver on the local ollama
+#      this node ENROLLED; a driver on a local llama.cpp
 #   3. no client keys yet; the revoked set is empty
 #   4. a minted key returns its token ONCE and the record never carries it
 #   5. the key completes a chat through the gateway, as a harness would
@@ -57,9 +57,12 @@ GW="http://127.0.0.1:$GW_PORT"
 LIB="http://127.0.0.1:$LIB_PORT"
 CTL="http://127.0.0.1:$CTL_PORT"
 PASS="client-keys-$$"
-OLLAMA="${EP_OLLAMA:-http://127.0.0.1:11434}"
-MODEL="${EP_MODEL:-qwen3-coder:30b}"
-OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT $DRIVER_PORT"
+# The backend: a real llama.cpp, not ollama. lib/llama-backend.sh has the
+# reasoning, the provider-key trap and the /v1 trap.
+. "$(dirname "$0")/lib/llama-backend.sh"
+ENGINE_PORT="${EP_ENGINE_PORT:-8192}"
+MODEL="${EP_MODEL:-keys-acceptance-model}"
+OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT $DRIVER_PORT $ENGINE_PORT"
 SKIP_BUILD="${EP_SKIP_BUILD:-0}"
 # The gateway's routing refresh here, which is also the revocation
 # window the contract promises. Small, so check 8 is a run and not a wait.
@@ -78,6 +81,7 @@ listening_pids() { netstat -ano 2>/dev/null | grep ":$1 " | grep LISTENING | awk
 A_PID=""
 teardown() {
   [ -n "$A_PID" ] && { kill "$A_PID" 2>/dev/null; sleep 3; }
+  llama_stop_all
   for p in $OWNED_PORTS; do
     for pid in $(listening_pids "$p"); do
       taskkill //PID "$pid" //F >/dev/null 2>&1 || kill -9 "$pid" 2>/dev/null
@@ -90,10 +94,9 @@ say "preflight"
 "$PY" -c "import eugene_plexus_agent, eugene_plexus_control, eugene_plexus_gateway, eugene_plexus_inference_driver, eugene_plexus_library, eugene_plexus_ui" 2>/dev/null \
   || { bad "the five components and eugene_plexus_ui must import from $PY"; exit 1; }
 [ -d "$UI_DIR/node_modules/@playwright" ] || { bad "no Playwright in $UI_DIR (npm install)"; exit 1; }
-curl -sf -m 3 "$OLLAMA/api/tags" >/dev/null || { bad "ollama is not answering at $OLLAMA"; exit 1; }
-curl -s -m 5 "$OLLAMA/api/tags" | grep -q "\"$MODEL\"" || { bad "$MODEL is not pulled into ollama"; exit 1; }
+llama_preflight || exit 1
 for p in $OWNED_PORTS; do [ -n "$(listening_pids "$p")" ] && { bad "port $p in use"; exit 1; }; done
-ok "agent python with six packages, Playwright, a live ollama with $MODEL, every port free"
+ok "agent python with six packages, Playwright, llama.cpp $(llama_build), a model on disk, every port free"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
 trap teardown EXIT
@@ -151,7 +154,9 @@ echo "logLevel: INFO" > control.yaml
 printf 'logLevel: INFO\nmodelRoots: []\n' > library.yaml
 
 # --- 2 -----------------------------------------------------------------------
-say "2. the fleet, and a driver on the local ollama"
+say "2. the fleet, and a driver on a local llama.cpp"
+llama_start "$ENGINE_PORT" "$MODEL"   && ok "llama-server $(llama_build) serves $MODEL on $ENGINE_PORT"   || { bad "the engine never came up"; tail -20 "llama-$ENGINE_PORT.log"; exit 1; }
+
 (exec env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$WORK_NATIVE/agent.yaml" EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1 EUGENE_PLEXUS_AGENT_BIND_PORT="$AGENT_PORT" \
   "$PY" -m eugene_plexus_agent --unattended > agent.log 2>&1) &
 A_PID=$!
@@ -196,11 +201,10 @@ TOK=$(curl -s -X POST "$AGENT/v1/auth/login" -H 'content-type: application/json'
 wait_healthy "$GW" 120 || { bad "gateway did not come back after enrollment"; exit 1; }
 
 curl -s -o /dev/null -X POST "$AGENT/v1/components" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
-  -d "{\"name\":\"keys-ollama\",\"kind\":\"inference-driver\",\"url\":\"http://127.0.0.1:$DRIVER_PORT\",\"spawn\":{\"configFile\":\"keys-ollama.yaml\"}}"
+  -d "{\"name\":\"keys-llama\",\"kind\":\"inference-driver\",\"url\":\"http://127.0.0.1:$DRIVER_PORT\",\"spawn\":{\"configFile\":\"keys-llama.yaml\"}}"
 wait_healthy "http://127.0.0.1:$DRIVER_PORT" 60 || { bad "driver never came up"; tail -20 agent.log; exit 1; }
-curl -s -o /dev/null -X PATCH "http://127.0.0.1:$DRIVER_PORT/v1/config" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
-  -d "{\"provider\":\"ollama_local\",\"modelId\":\"$MODEL\"}"
-curl -s -o /dev/null -X POST "$AGENT/v1/components/keys-ollama/restart" -H "Authorization: Bearer $TOK" -d '{}'
+llama_configure_driver "http://127.0.0.1:$DRIVER_PORT" "$TOK" "$MODEL" "$ENGINE_PORT"   && ok "the driver took provider, baseUrl and modelId" || exit 1
+curl -s -o /dev/null -X POST "$AGENT/v1/components/keys-llama/restart" -H "Authorization: Bearer $TOK" -d '{}'
 ROUTABLE=""
 for _ in $(seq 1 60); do
   MODELS=$(curl -s -m 10 "$GW/v1/models" -H "Authorization: Bearer $TOK")
@@ -238,7 +242,7 @@ say "5. the key works on the front door, exactly as a harness uses it"
 R=$(curl -s -m 300 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
   -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ok\"}],\"max_tokens\":20}")
 DRV=$(printf '%s' "$R" | jq_ "d.get('x_eugene_plexus',{}).get('driver','')" 2>/dev/null)
-[ "$DRV" = "keys-ollama" ] && ok "a completion with the client key as the only credential, served by $DRV" \
+[ "$DRV" = "keys-llama" ] && ok "a completion with the client key as the only credential, served by $DRV" \
   || bad "completion: $(printf '%s' "$R" | head -c 300)"
 [ "$(code_of -H "Authorization: Bearer $KEY" "$GW/v1/models")" = "200" ] && ok "GET /v1/models: 200" || bad "models refused"
 

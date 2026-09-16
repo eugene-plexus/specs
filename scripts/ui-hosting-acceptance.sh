@@ -20,10 +20,11 @@
 # would be testing a build of unknown age -- the stale-instrument trap,
 # which has already cost this project a misattributed failure.
 #
-# Ollama is the backend for the same reason M8 and M10 used it: it is
-# already on this box, it speaks the OpenAI-compatible SSE the
+# A local llama.cpp is the backend, for the reason Ollama used to be: it
+# is already on this box, it speaks the OpenAI-compatible SSE the
 # `openai_compat_http` engine consumes, and it makes these measurements
-# real rather than fixtures.
+# real rather than fixtures. It is now also the engine this project
+# itself acquires and supervises, which Ollama never was.
 #
 # Checks:
 #   1. the wheel builds from the checkout and carries an index.html
@@ -43,12 +44,32 @@ EP_ROOT="${EP_ROOT:-/d/py/eugene-plexus}"
 PY="${EP_AGENT_PY:-$EP_ROOT/agent/.venv/Scripts/python.exe}"
 UI_DIR="${EP_UI_DIR:-$EP_ROOT/ui}"
 WORK="${EP_WORKDIR:-${TMPDIR:-/tmp}/ep-uihost-live}"
-AGENT=http://127.0.0.1:8079
-GW=http://127.0.0.1:8080
-BARE=http://127.0.0.1:8086
+# Ports, and why they are not the defaults any more (2026-09-16).
+#
+# This script bound the agent on 8079, its driver on 8091, and called
+# `free_port` on both before starting -- then ended with
+# `pkill -f eugene_plexus_`. The development box is a live worker node
+# whose agent holds 8079 and whose companion driver holds 8091, so
+# running this file here KILLED the operator's own install twice over,
+# once on the way in and once on the way out. Every script written since
+# tool-calling uses +100 and tears down by pid; this one predates that
+# rule, and CLAUDE.md has recorded the hazard the whole time.
+AGENT_PORT="${EP_AGENT_PORT:-8179}"
+GW_PORT="${EP_GW_PORT:-8180}"
+LIB_PORT="${EP_LIB_PORT:-8182}"
+CTL_PORT="${EP_CTL_PORT:-8183}"
+BARE_PORT="${EP_BARE_PORT:-8186}"
+DRIVER_PORT="${EP_DRIVER_PORT:-8191}"
+ENGINE_PORT="${EP_ENGINE_PORT:-8192}"
+AGENT="http://127.0.0.1:$AGENT_PORT"
+GW="http://127.0.0.1:$GW_PORT"
+BARE="http://127.0.0.1:$BARE_PORT"
+OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT $BARE_PORT $DRIVER_PORT $ENGINE_PORT"
 PASS="uihost-live-$$"
-OLLAMA="${EP_OLLAMA:-http://127.0.0.1:11434}"
-MODEL="${EP_MODEL:-huihui_ai/dolphin3-abliterated:8b-llama3.1-q4_K_M}"
+# The backend: a real llama.cpp, not ollama. lib/llama-backend.sh has the
+# reasoning, the provider-key trap and the /v1 trap.
+. "$(dirname "$0")/lib/llama-backend.sh"
+MODEL="${EP_MODEL:-uihost-acceptance-model}"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }
@@ -70,10 +91,17 @@ free_port() { # Windows lets a second process bind an already-bound
 say "preflight"
 [ -f "$PY" ] || { bad "no agent python at $PY"; exit 1; }
 [ -d "$UI_DIR/node_modules" ] || { bad "$UI_DIR/node_modules is absent (npm ci first)"; exit 1; }
-curl -sf -m 3 "$OLLAMA/api/tags" >/dev/null || { bad "ollama is not answering at $OLLAMA"; exit 1; }
-ok "agent python, a ui checkout, and a live ollama"
-
-for p in 8079 8080 8082 8083 8086 8091; do free_port "$p"; done
+llama_preflight || exit 1
+# Drop the ambient environment before anything reads Settings: install.ps1
+# sets the config-file variable in the USER environment, so a throwaway
+# agent would otherwise come up as the live worker (2026-09-12).
+for v in $(env | grep -o '^EUGENE_PLEXUS_[A-Z_]*' || true); do unset "$v"; done
+# Refuse rather than seize. The old version called free_port on ports it
+# did not own, which on this box killed the operator's agent.
+for p in $OWNED_PORTS; do
+  netstat -ano 2>/dev/null | grep ":$p " | grep -q LISTENING && { bad "port $p is already in use"; exit 1; }
+done
+ok "agent python, a ui checkout, llama.cpp $(llama_build), every port free"
 rm -rf "$WORK"; mkdir -p "$WORK"
 
 # --- 1. the wheel ---------------------------------------------------------------
@@ -101,13 +129,41 @@ PYEOF
 # --- the install ----------------------------------------------------------------
 say "start the agent; it declares control, gateway and library itself"
 cd "$WORK" || exit 1
-"$PY" -m eugene_plexus_agent >"$WORK/agent.log" 2>&1 &
+cat > agent.yaml <<YAML
+firstRunComplete: true
+components:
+  - name: control
+    kind: control
+    url: http://127.0.0.1:$CTL_PORT
+    spawn:
+      configFile: control.yaml
+  - name: gateway
+    kind: gateway
+    url: http://127.0.0.1:$GW_PORT
+    spawn:
+      configFile: gateway.yaml
+  - name: library
+    kind: library
+    url: http://127.0.0.1:$LIB_PORT
+    spawn:
+      configFile: library.yaml
+runtimes: []
+YAML
+echo "logLevel: INFO" > control.yaml
+echo "logLevel: INFO" > gateway.yaml
+printf 'logLevel: INFO
+modelRoots: []
+' > library.yaml
+env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$(cygpath -w "$WORK" 2>/dev/null || printf '%s' "$WORK")/agent.yaml"     EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1 EUGENE_PLEXUS_AGENT_BIND_PORT="$AGENT_PORT"     "$PY" -m eugene_plexus_agent >"$WORK/agent.log" 2>&1 &
 AGENT_PID=$!
 BARE_PID=""
 cleanup() {
-  kill -9 "$AGENT_PID" "$BARE_PID" 2>/dev/null
-  pkill -f eugene_plexus_ 2>/dev/null
-  for p in 8079 8080 8082 8083 8086 8091; do free_port "$p"; done
+  # By pid and by OWNED port only. Never `pkill -f eugene_plexus_`:
+  # this box is a worker node and that pattern matches the operator's
+  # own agent and every component under it.
+  kill "$AGENT_PID" "$BARE_PID" 2>/dev/null; sleep 2
+  llama_stop_all
+  for p in $OWNED_PORTS; do free_port "$p"; done
 }
 trap cleanup EXIT
 wait_healthy "$AGENT" 60 || { bad "agent never answered"; tail -20 "$WORK/agent.log"; exit 1; }
@@ -121,7 +177,7 @@ wait_healthy "$GW" 90 || { bad "gateway never answered"; exit 1; }
 # refusal as a resolution failure and reported the proxy broken. Hence
 # both this line and the `component` assertion below: a status code alone
 # cannot tell those two apart, and the body can.
-curl -s -o /dev/null -X POST "http://127.0.0.1:8083/v1/auth/initialize" \
+curl -s -o /dev/null -X POST "http://127.0.0.1:$CTL_PORT/v1/auth/initialize" \
   -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}"
 ok "agent and gateway up, trust root initialized"
 grep -q "serving the web UI from" "$WORK/agent.log" \
@@ -224,13 +280,14 @@ wait_for_model() { # Matches a model ID exactly: grepping raw JSON lets a
   done
   return 1
 }
-add_driver ollama-proxied 8091 ollama_local "$MODEL" "$OLLAMA"
+llama_start "$ENGINE_PORT" "$MODEL" || { bad "the engine never came up"; tail -20 "$WORK/llama-$ENGINE_PORT.log"; exit 1; }
+add_driver llama-proxied "$DRIVER_PORT" openai_compat_custom "$MODEL" "$(llama_base_url "$ENGINE_PORT")"
 wait_for_model "$MODEL" 60 || { bad "the model never became routable"; exit 1; }
 ok "the model is routable"
 
 # A driver's own surface, by name, is the target shape nothing else here
 # covers -- and the one an operator's config page uses most.
-DRV=$(curl -s "$AGENT/api/proxy/ollama-proxied/v1/info" -H "Authorization: Bearer $TOK" | jq_ "d.get('modelId','')")
+DRV=$(curl -s "$AGENT/api/proxy/llama-proxied/v1/info" -H "Authorization: Bearer $TOK" | jq_ "d.get('modelId','')")
 [ "$DRV" = "$MODEL" ] && ok "a driver resolved by NAME through the proxy reports its model" \
   || bad "driver-by-name returned modelId=$DRV"
 
@@ -316,7 +373,7 @@ say "8. an agent with no UI serves the API and says so"
 # suite does that, by refusing the import -- and saying so here is
 # cheaper than discovering later that this check meant less than it read.
 mkdir -p "$WORK/bare" && cd "$WORK/bare" || exit 1
-env EUGENE_PLEXUS_AGENT_BIND_PORT=8086 EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml \
+env EUGENE_PLEXUS_AGENT_BIND_PORT="$BARE_PORT" EUGENE_PLEXUS_AGENT_CONFIG_FILE=agent.yaml \
     EUGENE_PLEXUS_AGENT_DEFAULT_TOPOLOGY=0 EUGENE_PLEXUS_AGENT_UI_DIR="$WORK/nope" \
     "$PY" -m eugene_plexus_agent > "$WORK/bare.log" 2>&1 &
 BARE_PID=$!

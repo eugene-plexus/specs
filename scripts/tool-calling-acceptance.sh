@@ -53,12 +53,16 @@ GW="${EP_GW:-http://127.0.0.1:8080}"
 DRIVER_PORT="${EP_DRIVER_PORT:-8191}"
 CLI_PORT="${EP_CLI_PORT:-8192}"
 PASS="tools-live-$$"
-OLLAMA="${EP_OLLAMA:-http://127.0.0.1:11434}"
+ENGINE_PORT="${EP_ENGINE_PORT:-8193}"
+# The backend: a real llama.cpp, not ollama. lib/llama-backend.sh has the
+# reasoning, the provider-key trap and the /v1 trap.
+. "$(dirname "$0")/lib/llama-backend.sh"
+ENGINE="$(llama_base_url "$ENGINE_PORT")"
 # A tool-calling model. qwen3-coder is trained for it; a model that is
 # not would make a failed check ambiguous between "our stack lost the
 # tools" and "this model does not do tools", which is exactly the
 # confusion the milestone exists to remove.
-MODEL="${EP_MODEL:-qwen3-coder:30b}"
+MODEL="${EP_MODEL:-tools-acceptance-model}"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }
@@ -67,7 +71,7 @@ bad() { printf '  FAIL  %s\n' "$*"; FAILURES=$((FAILURES + 1)); }
 jq_() { PYTHONUTF8=1 python -c "import sys,json; d=json.load(sys.stdin); print($1)"; }
 wait_healthy() { for _ in $(seq 1 "${2:-60}"); do curl -sf -m 2 "$1/healthz" >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 
-OWNED_PORTS="$AGENT_PORT 8080 8082 8083 $DRIVER_PORT $CLI_PORT"
+OWNED_PORTS="$AGENT_PORT 8080 8082 8083 $DRIVER_PORT $CLI_PORT $ENGINE_PORT"
 
 free_port() { # port
   # By port, never by pid or command pattern. Windows lets a second
@@ -80,6 +84,7 @@ free_port() { # port
 }
 
 teardown() {
+  llama_stop_all
   for p in $OWNED_PORTS; do free_port "$p"; done
 }
 
@@ -87,8 +92,7 @@ TOOLS='[{"type":"function","function":{"name":"get_weather","description":"Get t
 
 say "preflight"
 [ -f "$PY" ] || { bad "no agent python at $PY"; exit 1; }
-curl -sf -m 3 "$OLLAMA/api/tags" >/dev/null || { bad "ollama is not answering at $OLLAMA"; exit 1; }
-curl -s -m 5 "$OLLAMA/api/tags" | grep -q "$MODEL" || { bad "$MODEL is not pulled into ollama"; exit 1; }
+llama_preflight || exit 1
 # Refuse to run if something already owns a port we are about to take --
 # including the operator's own worker agent on 8079, which this script
 # deliberately does not use.
@@ -98,7 +102,7 @@ for p in $OWNED_PORTS; do
     exit 1
   fi
 done
-ok "agent python, a live ollama with $MODEL, and every port free"
+ok "agent python, llama.cpp $(llama_build), a model on disk, and every port free"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
 trap teardown EXIT
@@ -139,12 +143,13 @@ add_driver() { # name port provider model
     -d "{\"name\":\"$1\",\"kind\":\"inference-driver\",\"url\":\"http://127.0.0.1:$2\",\"spawn\":{\"configFile\":\"$1.yaml\"}}"
   sleep 3
   curl -s -o /dev/null -X PATCH "http://127.0.0.1:$2/v1/config" -H "Authorization: Bearer $TOK" \
-    -H 'content-type: application/json' -d "{\"provider\":\"$3\",\"modelId\":\"$4\"}"
+    -H 'content-type: application/json' -d "{\"provider\":\"$3\",\"modelId\":\"$4\"${5:+,\"baseUrl\":\"$5\"}}"
   curl -s -o /dev/null -X POST "$AGENT/v1/components/$1/restart" -H "Authorization: Bearer $TOK" -d '{}'
 }
 
-say "a driver on the local ollama"
-add_driver tools-ollama "$DRIVER_PORT" ollama_local "$MODEL"
+say "a driver on a local llama.cpp"
+llama_start "$ENGINE_PORT" "$MODEL" || { bad "the engine never came up"; tail -20 "llama-$ENGINE_PORT.log"; exit 1; }
+add_driver tools-llama "$DRIVER_PORT" openai_compat_custom "$MODEL" "$ENGINE"
 sleep 10
 
 # --- 1 -----------------------------------------------------------------------
@@ -252,23 +257,27 @@ say "7-10. streaming a tool call"
 # called it a property of us**, which is this project's recurring
 # failure and it turned up here in the script written to avoid it.
 # They demanded the call arrive in many fragments with an early time to
-# first fragment. Measured directly against Ollama afterwards: it emits
+# first fragment. Measured directly against Ollama afterwards: it emitted
 # the entire call -- id, name and complete `arguments` -- in ONE delta
-# and never fragments. So the check could only have passed against a
+# and never fragmented. So the check could only have passed against a
 # backend that fragments, and it was failing our correct pass-through.
 #
-# OpenAI proper does fragment, so the accumulation path is real and is
-# unit-tested on both sides with a fake that splits `arguments`
-# mid-token. What a live run against a local engine can prove is the
-# part we own: **we forward exactly what the backend sent, in its own
-# frame, before the terminal one.** So the baseline is measured from
-# the backend rather than assumed, and the assertion is equality.
+# **And the backend swap proved the point twice over (2026-09-16).** The
+# same prompt against llama.cpp b10948 emits **nine** tool-call deltas
+# where Ollama emitted one. Fragmentation is a property of the backend,
+# exactly as recorded -- and a check hard-coded either way would now be
+# wrong in the opposite direction. Because the baseline is measured in
+# the same run and the assertion is equality, the swap needed no edit.
+#
+# It also closes a gap the original note flagged: the accumulation path
+# was unit-tested with a fake that splits `arguments` mid-token and
+# "live-tested nowhere". It is live-tested now.
 #
 # `curl -sN` piped into `python -u`, never urllib: M10's first
 # instrument buffered and reported time-to-first-token at 94% of a
 # request in which it also counted 79 frames, which cannot both be true.
 say "  baseline: what the backend itself emits for this prompt"
-BASELINE=$(curl -sN -m 300 "$OLLAMA/v1/chat/completions" -H 'content-type: application/json' \
+BASELINE=$(curl -sN -m 300 "$ENGINE/v1/chat/completions" -H 'content-type: application/json' \
   -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"What is the weather in Bergen? Use your tools.\"}],\"tools\":$TOOLS,\"stream\":true}" \
   | PYTHONUTF8=1 python -u -c "
 import json, sys

@@ -11,10 +11,11 @@
 # nothing here is allowed to check framing alone: it counts frames, and
 # it measures the gap between the first one and the last.
 #
-# Ollama is the backend for the same reason M8 used it: it is already
-# running on this box, it speaks the OpenAI-compatible SSE the
+# A local llama.cpp is the backend, for the reason Ollama used to be: it
+# is already on this box, it speaks the OpenAI-compatible SSE the
 # `openai_compat_http` engine consumes, and it makes these measurements
-# rather than fixtures.
+# real rather than fixtures. It is now also the engine this project
+# itself acquires and supervises, which Ollama never was.
 #
 # Checks:
 #   1. /v1/info reports capabilities.streaming, which nothing populated
@@ -33,11 +34,30 @@ set -uo pipefail
 EP_ROOT="${EP_ROOT:-/d/py/eugene-plexus}"
 PY="${EP_AGENT_PY:-$EP_ROOT/agent/.venv/Scripts/python.exe}"
 WORK="${EP_WORKDIR:-${TMPDIR:-/tmp}/ep-m10-live}"
-AGENT=http://127.0.0.1:8079
-GW=http://127.0.0.1:8080
+# Ports, and why they are not the defaults any more (2026-09-16).
+#
+# This script bound the agent on 8079 and its drivers on 8091-8093, then
+# ended with `pkill -f eugene_plexus_`. The development box is a live
+# worker node whose agent holds 8079 and whose companion driver holds
+# 8091, so running this file here killed the operator's own install and
+# took its ports while doing it. Every script written since tool-calling
+# uses +100 and tears down by pid; this one predates that rule.
+AGENT_PORT="${EP_AGENT_PORT:-8179}"
+GW_PORT="${EP_GW_PORT:-8180}"
+LIB_PORT="${EP_LIB_PORT:-8182}"
+CTL_PORT="${EP_CTL_PORT:-8183}"
+STREAM_DRIVER_PORT="${EP_STREAM_DRIVER_PORT:-8191}"
+UPFRONT_DRIVER_PORT="${EP_UPFRONT_DRIVER_PORT:-8192}"
+MID_DRIVER_PORT="${EP_MID_DRIVER_PORT:-8193}"
+ENGINE_PORT="${EP_ENGINE_PORT:-8194}"
+AGENT="http://127.0.0.1:$AGENT_PORT"
+GW="http://127.0.0.1:$GW_PORT"
 PASS="m10-live-$$"
-OLLAMA="${EP_OLLAMA:-http://127.0.0.1:11434}"
-MODEL="${EP_MODEL:-huihui_ai/dolphin3-abliterated:8b-llama3.1-q4_K_M}"
+# The backend: a real llama.cpp, not ollama. lib/llama-backend.sh has the
+# reasoning, the provider-key trap and the /v1 trap.
+. "$(dirname "$0")/lib/llama-backend.sh"
+MODEL="${EP_MODEL:-m10-stream-model}"
+OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT $STREAM_DRIVER_PORT $UPFRONT_DRIVER_PORT $MID_DRIVER_PORT $ENGINE_PORT 8195 8196"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }
@@ -63,11 +83,46 @@ free_port() { # port
 
 say "preflight"
 [ -f "$PY" ] || { bad "no agent python at $PY"; exit 1; }
-curl -sf -m 3 "$OLLAMA/api/tags" >/dev/null || { bad "ollama is not answering at $OLLAMA"; exit 1; }
-ok "agent python and a live ollama"
+llama_preflight || exit 1
+# Safe beside a live install: drop every ambient EUGENE_PLEXUS_* first.
+# install.ps1 sets the config-file variable in the USER environment, so a
+# throwaway agent would otherwise load the live worker's agent.yaml AND
+# node.yaml, come up enrolled, and announce a dying port to the real
+# control root (that happened, 2026-09-12).
+for v in $(env | grep -o '^EUGENE_PLEXUS_[A-Z_]*' || true); do unset "$v"; done
+for p in $OWNED_PORTS; do [ -n "$(netstat -ano 2>/dev/null | grep ":$p " | grep LISTENING || true)" ] && { bad "port $p in use"; exit 1; }; done
+ok "agent python, llama.cpp $(llama_build), a model on disk, every port free"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
-export EUGENE_PLEXUS_AGENT_BIND_PORT=8079
+WORK_NATIVE=$(cygpath -w "$WORK" 2>/dev/null || printf '%s' "$WORK")
+cat > agent.yaml <<YAML
+firstRunComplete: true
+components:
+  - name: control
+    kind: control
+    url: http://127.0.0.1:$CTL_PORT
+    spawn:
+      configFile: control.yaml
+  - name: gateway
+    kind: gateway
+    url: http://127.0.0.1:$GW_PORT
+    spawn:
+      configFile: gateway.yaml
+  - name: library
+    kind: library
+    url: http://127.0.0.1:$LIB_PORT
+    spawn:
+      configFile: library.yaml
+runtimes: []
+YAML
+echo "logLevel: INFO" > control.yaml
+echo "logLevel: INFO" > gateway.yaml
+printf 'logLevel: INFO
+modelRoots: []
+' > library.yaml
+export EUGENE_PLEXUS_AGENT_CONFIG_FILE="$WORK_NATIVE/agent.yaml"
+export EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1
+export EUGENE_PLEXUS_AGENT_BIND_PORT="$AGENT_PORT"
 
 # --- a stub backend that dies mid-stream ------------------------------------
 # Emits a few real SSE deltas and then drops the connection. This is how
@@ -127,7 +182,16 @@ PYEOF
 say "start the agent; it declares control, gateway and library itself"
 "$PY" -m eugene_plexus_agent >"$WORK/agent.log" 2>&1 &
 AGENT_PID=$!
-trap 'kill -9 $AGENT_PID 2>/dev/null; pkill -f eugene_plexus_ 2>/dev/null; pkill -f flaky.py 2>/dev/null' EXIT
+# Teardown by pid and by OWNED port only. Never `pkill -f
+# eugene_plexus_`: this box is a worker node and that pattern matches the
+# operator's own agent and every component under it.
+teardown() {
+  kill "$AGENT_PID" 2>/dev/null; sleep 2
+  llama_stop_all
+  pkill -f "flaky.py" 2>/dev/null
+  for p in $OWNED_PORTS; do free_port "$p"; done
+}
+trap teardown EXIT
 wait_healthy "$AGENT" 60 || { bad "agent never answered"; tail -20 "$WORK/agent.log"; exit 1; }
 TOK=$(curl -s -X POST "$AGENT/v1/auth/initialize" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" | jq_ "d['sessionToken']")
 [ -n "$TOK" ] || { bad "no operator token"; exit 1; }
@@ -164,14 +228,15 @@ wait_for_model() { # model, seconds
   return 1
 }
 
-say "one ollama driver"
-add_driver ollama-stream 8091 ollama_local "$MODEL" "$OLLAMA"
+say "one driver on a local llama.cpp"
+llama_start "$ENGINE_PORT" "$MODEL" || { bad "the engine never came up"; tail -20 "llama-$ENGINE_PORT.log"; exit 1; }
+add_driver llama-stream "$STREAM_DRIVER_PORT" openai_compat_custom "$MODEL" "$(llama_base_url "$ENGINE_PORT")"
 wait_for_model "$MODEL" 60 || { bad "the model never became routable";   echo "  gateway lists: $(curl -s "$GW/v1/models" -H "Authorization: Bearer $TOK" | head -c 300)"; exit 1; }
 ok "the model is routable"
 
 # --- 1 ----------------------------------------------------------------------
 say "1. capabilities.streaming on /v1/info - contracted at M0, populated at M10"
-INFO=$(curl -s "http://127.0.0.1:8091/v1/info" -H "Authorization: Bearer $TOK")
+INFO=$(curl -s "http://127.0.0.1:$STREAM_DRIVER_PORT/v1/info" -H "Authorization: Bearer $TOK")
 echo "  info: $(printf '%s' "$INFO" | head -c 200)"
 STREAMING=$(printf '%s' "$INFO" | jq_ "(d.get('capabilities') or {}).get('streaming')")
 [ "$STREAMING" = "True" ] && ok "the driver reports capabilities.streaming=true" \
@@ -256,9 +321,9 @@ say "6. a backend that dies BEFORE the first token still cascades"
 free_port 8195
 "$PY" flaky.py 8195 upfront >/dev/null 2>&1 &
 sleep 2
-add_driver flaky-upfront 8092 openai_compat_custom "$MODEL" "http://127.0.0.1:8195"
+add_driver flaky-upfront "$UPFRONT_DRIVER_PORT" openai_compat_custom "$MODEL" "http://127.0.0.1:8195"
 sleep 20  # one refresh interval, so the dead backend is in the table
-# One slot, two tiers: the dead stub first, ollama behind it.
+# One slot, two tiers: the dead stub first, the real engine behind it.
 curl -s -o /dev/null -X PATCH "$GW/v1/config" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
   -d "{\"modelSlots\":{\"cascade-test\":[\"$MODEL\"]}}"
 sleep 3
@@ -274,10 +339,10 @@ say "7. THE COMMIT POINT: a backend that dies AFTER the first token truncates"
 free_port 8196
 "$PY" flaky.py 8196 midstream >/dev/null 2>&1 &
 sleep 2
-add_driver flaky-mid 8093 openai_compat_custom flaky "http://127.0.0.1:8196"
+add_driver flaky-mid "$MID_DRIVER_PORT" openai_compat_custom flaky "http://127.0.0.1:8196"
 wait_for_model flaky 60 || bad "the flaky stub never became routable"
 echo "  gateway models: $(curl -s "$GW/v1/models" -H "Authorization: Bearer $TOK" | jq_ "[m['id'] for m in d['data']]")"
-echo "  flaky driver info: $(curl -s -m 5 http://127.0.0.1:8093/v1/info -H "Authorization: Bearer $TOK" | head -c 200)"
+echo "  flaky driver info: $(curl -s -m 5 http://127.0.0.1:$MID_DRIVER_PORT/v1/info -H "Authorization: Bearer $TOK" | head -c 200)"
 MID=$(curl -s -N -m 120 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
   -d "{\"model\":\"flaky\",\"messages\":[{\"role\":\"user\",\"content\":\"anything\"}],\"max_tokens\":64,\"stream\":true}")
 echo "  what came back (first 400 chars, newlines shown as |):"

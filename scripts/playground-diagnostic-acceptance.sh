@@ -13,7 +13,7 @@
 # The checks:
 #   0. this run is isolated from any install on this machine
 #   1. agent, control, gateway, library up; the UI served at /
-#   2. a driver on Ollama; /v1/models lists the model with tool_calling
+#   2. a driver on a local llama.cpp; /v1/models lists it with tool_calling
 #   3. a browser preflight on /v1/chat/completions is answered with CORS
 #   4. a GET /v1/models with an Origin carries Allow-Origin: *
 #   5. a preflight on /v1/config is NOT answered with CORS
@@ -58,13 +58,16 @@ GW="http://127.0.0.1:$GW_PORT"
 LIB="http://127.0.0.1:$LIB_PORT"
 CTL="http://127.0.0.1:$CTL_PORT"
 PASS="diag-live-$$"
-OLLAMA="${EP_OLLAMA:-http://127.0.0.1:11434}"
+ENGINE_PORT="${EP_ENGINE_PORT:-8192}"
+# The backend: a real llama.cpp, not ollama. lib/llama-backend.sh has the
+# reasoning, the provider-key trap and the /v1 trap.
+. "$(dirname "$0")/lib/llama-backend.sh"
 # A tool-calling model: the same one step 6 proved calls tools, so a
 # failure here is ours rather than "this model does not do tools".
-MODEL="${EP_MODEL:-qwen3-coder:30b}"
+MODEL="${EP_MODEL:-diag-acceptance-model}"
 # The origin the browser will have, and the one the narrowing check lists.
 UI_ORIGIN="http://127.0.0.1:$AGENT_PORT"
-OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT $DRIVER_PORT"
+OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT $DRIVER_PORT $ENGINE_PORT"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }
@@ -82,6 +85,7 @@ listening_pids() { netstat -ano 2>/dev/null | grep ":$1 " | grep LISTENING | awk
 
 A_PID=""
 teardown() {
+  llama_stop_all
   # The agent by pid first -- it asks its children to stop -- then
   # whatever still holds a port this run opened, by the pid holding it.
   [ -n "$A_PID" ] && { kill "$A_PID" 2>/dev/null; sleep 3; }
@@ -98,12 +102,11 @@ say "preflight"
 "$PY" -c "import eugene_plexus_agent, eugene_plexus_control, eugene_plexus_gateway, eugene_plexus_inference_driver, eugene_plexus_library, eugene_plexus_ui" 2>/dev/null \
   || { bad "the five components and eugene_plexus_ui must import from $PY"; exit 1; }
 [ -d "$UI_DIR/node_modules/@playwright" ] || { bad "no Playwright in $UI_DIR (npm install)"; exit 1; }
-curl -sf -m 3 "$OLLAMA/api/tags" >/dev/null || { bad "ollama is not answering at $OLLAMA"; exit 1; }
-curl -s -m 5 "$OLLAMA/api/tags" | grep -q "\"$MODEL\"" || { bad "$MODEL is not pulled into ollama"; exit 1; }
+llama_preflight || exit 1
 for p in $OWNED_PORTS; do
   if [ -n "$(listening_pids "$p")" ]; then bad "port $p is already in use; set EP_*_PORT or stop it"; exit 1; fi
 done
-ok "agent python with six packages, Playwright, a live ollama with $MODEL, every port free"
+ok "agent python with six packages, Playwright, llama.cpp $(llama_build), a model on disk, every port free"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
 trap teardown EXIT
@@ -153,13 +156,14 @@ TOK=$(curl -s -X POST "$AGENT/v1/auth/initialize" -H 'content-type: application/
 wait_healthy "$GW" 90 || { bad "gateway did not come back after initialize"; exit 1; }
 
 # --- 2 -----------------------------------------------------------------------
-say "2. a driver on the local ollama; the gateway lists the model with tool_calling"
+say "2. a driver on a local llama.cpp; the gateway lists the model with tool_calling"
+llama_start "$ENGINE_PORT" "$MODEL" || { bad "the engine never came up"; tail -20 "llama-$ENGINE_PORT.log"; exit 1; }
 curl -s -o /dev/null -X POST "$AGENT/v1/components" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
-  -d "{\"name\":\"diag-ollama\",\"kind\":\"inference-driver\",\"url\":\"http://127.0.0.1:$DRIVER_PORT\",\"spawn\":{\"configFile\":\"diag-ollama.yaml\"}}"
+  -d "{\"name\":\"diag-llama\",\"kind\":\"inference-driver\",\"url\":\"http://127.0.0.1:$DRIVER_PORT\",\"spawn\":{\"configFile\":\"diag-llama.yaml\"}}"
 wait_healthy "http://127.0.0.1:$DRIVER_PORT" 60 || { bad "driver never came up"; tail -20 agent.log; exit 1; }
 curl -s -o /dev/null -X PATCH "http://127.0.0.1:$DRIVER_PORT/v1/config" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
-  -d "{\"provider\":\"ollama_local\",\"modelId\":\"$MODEL\"}"
-curl -s -o /dev/null -X POST "$AGENT/v1/components/diag-ollama/restart" -H "Authorization: Bearer $TOK" -d '{}'
+  -d "{\"provider\":\"openai_compat_custom\",\"modelId\":\"$MODEL\",\"baseUrl\":\"$(llama_base_url "$ENGINE_PORT")\"}"
+curl -s -o /dev/null -X POST "$AGENT/v1/components/diag-llama/restart" -H "Authorization: Bearer $TOK" -d '{}'
 # A bounded wait on the condition, not a sleep: the routing refresh is 3 s
 # here, and a fixed sleep is either too long or -- the embeddings run's
 # first failure -- one second too short.
@@ -221,7 +225,7 @@ say "8. the session token is the bearer a harness uses"
 R=$(curl -s -m 300 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" -H "Origin: $UI_ORIGIN" -H 'content-type: application/json' \
   -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ok\"}],\"max_tokens\":20}")
 DRV=$(printf '%s' "$R" | jq_ "d.get('x_eugene_plexus',{}).get('driver','')" 2>/dev/null)
-[ "$DRV" = "diag-ollama" ] && ok "a completion with the session token as bearer, served by $DRV" || bad "direct completion: $(printf '%s' "$R" | head -c 300)"
+[ "$DRV" = "diag-llama" ] && ok "a completion with the session token as bearer, served by $DRV" || bad "direct completion: $(printf '%s' "$R" | head -c 300)"
 
 # --- 9-14 (browser) ----------------------------------------------------------
 say "9-14. the system Chrome drives the playground's direct mode"

@@ -23,9 +23,37 @@ set -uo pipefail
 EP_ROOT="${EP_ROOT:-/d/py/eugene-plexus}"
 PY="${EP_AGENT_PY:-$EP_ROOT/agent/.venv/Scripts/python.exe}"
 WORK="${EP_WORKDIR:-${TMPDIR:-/tmp}/ep-m8-live}"
-AGENT=http://127.0.0.1:8079
-GW=http://127.0.0.1:8080
+# Ports, and why they are not the defaults any more (2026-09-16). This
+# script bound the agent on 8079 and its drivers on 8091-8093, then ended
+# with `pkill -f eugene_plexus_`. The development box is a live worker
+# node holding 8079 and 8091, so running this file here killed the
+# operator's own install. +100 and teardown by pid, like every script
+# written since tool-calling.
+AGENT_PORT="${EP_AGENT_PORT:-8179}"
+GW_PORT="${EP_GW_PORT:-8180}"
+LIB_PORT="${EP_LIB_PORT:-8182}"
+CTL_PORT="${EP_CTL_PORT:-8183}"
+FAST_DRIVER_PORT="${EP_FAST_DRIVER_PORT:-8191}"
+SLOW_DRIVER_PORT="${EP_SLOW_DRIVER_PORT:-8192}"
+DEAD_DRIVER_PORT="${EP_DEAD_DRIVER_PORT:-8193}"
+FAST_ENGINE_PORT="${EP_FAST_ENGINE_PORT:-8194}"
+SLOW_ENGINE_PORT="${EP_SLOW_ENGINE_PORT:-8196}"
+AGENT="http://127.0.0.1:$AGENT_PORT"
+GW="http://127.0.0.1:$GW_PORT"
+OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT $FAST_DRIVER_PORT $SLOW_DRIVER_PORT $DEAD_DRIVER_PORT $FAST_ENGINE_PORT $SLOW_ENGINE_PORT"
 PASS="m8-live-$$"
+# The backend: a real llama.cpp, not ollama. lib/llama-backend.sh has the
+# reasoning, the provider-key trap and the /v1 trap.
+#
+# **The two backends M8 compares are the SAME model on different
+# hardware**, one fully offloaded to the GPU and one pinned to the CPU
+# with `--ngl 0`. That is a genuine and large throughput difference --
+# which is all this milestone needs -- and it needs no second download.
+# It is also closer to a question an operator actually asks than "is a
+# 30B slower than an 8B", which everyone already knows.
+. "$(dirname "$0")/lib/llama-backend.sh"
+SMALL="${EP_SMALL_MODEL:-m8-gpu}"
+BIG="${EP_BIG_MODEL:-m8-cpu}"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }
@@ -36,18 +64,60 @@ wait_healthy() { for _ in $(seq 1 "${2:-60}"); do curl -sf -m 2 "$1/healthz" >/d
 
 say "preflight"
 [ -f "$PY" ] || { bad "no agent python at $PY"; exit 1; }
-curl -sf -m 3 http://127.0.0.1:11434/api/tags >/dev/null || { bad "ollama is not answering on 11434"; exit 1; }
-ok "agent python and a live ollama"
+llama_preflight || exit 1
+for v in $(env | grep -o '^EUGENE_PLEXUS_[A-Z_]*' || true); do unset "$v"; done
+for p in $OWNED_PORTS; do
+  netstat -ano 2>/dev/null | grep ":$p " | grep -q LISTENING && { bad "port $p is already in use"; exit 1; }
+done
+ok "agent python, llama.cpp $(llama_build), a model on disk, every port free"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
 export EP_WORK="$WORK"
 export EP_GATEWAY_SRC="${EP_GATEWAY_SRC:-$EP_ROOT/gateway/src}"
-export EUGENE_PLEXUS_AGENT_BIND_PORT=8079
+cat > agent.yaml <<YAML
+firstRunComplete: true
+components:
+  - name: control
+    kind: control
+    url: http://127.0.0.1:$CTL_PORT
+    spawn:
+      configFile: control.yaml
+  - name: gateway
+    kind: gateway
+    url: http://127.0.0.1:$GW_PORT
+    spawn:
+      configFile: gateway.yaml
+  - name: library
+    kind: library
+    url: http://127.0.0.1:$LIB_PORT
+    spawn:
+      configFile: library.yaml
+runtimes: []
+YAML
+echo "logLevel: INFO" > control.yaml
+echo "logLevel: INFO" > gateway.yaml
+printf 'logLevel: INFO
+modelRoots: []
+' > library.yaml
+export EUGENE_PLEXUS_AGENT_CONFIG_FILE="$(cygpath -w "$WORK" 2>/dev/null || printf '%s' "$WORK")/agent.yaml"
+export EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1
+export EUGENE_PLEXUS_AGENT_BIND_PORT="$AGENT_PORT"
 
 say "start the agent; it declares control, gateway and library itself"
 "$PY" -m eugene_plexus_agent >"$WORK/agent.log" 2>&1 &
 AGENT_PID=$!
-trap 'kill -9 $AGENT_PID 2>/dev/null; pkill -f eugene_plexus_ 2>/dev/null' EXIT
+# By pid and by OWNED port only. Never `pkill -f eugene_plexus_`: this
+# box is a worker node and that pattern matches the operator's own agent.
+teardown() {
+  kill "$AGENT_PID" 2>/dev/null; sleep 2
+  llama_stop_all
+  for p in $OWNED_PORTS; do
+    for pid in $(netstat -ano 2>/dev/null | grep ":$p " | grep LISTENING | awk '{print $5}' | sort -u); do
+      taskkill //PID "$pid" //F >/dev/null 2>&1 || kill -9 "$pid" 2>/dev/null
+    done
+  done
+}
+trap teardown EXIT
 wait_healthy "$AGENT" 60 || { bad "agent never answered"; exit 1; }
 TOK=$(curl -s -X POST "$AGENT/v1/auth/initialize" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" | jq_ "d['sessionToken']")
 [ -n "$TOK" ] || { bad "no operator token"; exit 1; }
@@ -56,25 +126,26 @@ ok "agent up, install initialized"
 wait_healthy "$GW" 90 || { bad "gateway never answered"; exit 1; }
 ok "gateway up"
 
-say "two ollama drivers, one per model - the comparison M8 is for"
-add_driver() { # name port model
+say "two engines - the same weights on GPU and on CPU - and a driver each"
+llama_start "$FAST_ENGINE_PORT" "$SMALL" --ngl 99 || { bad "the GPU engine never came up"; exit 1; }
+llama_start "$SLOW_ENGINE_PORT" "$BIG" --ngl 0 || { bad "the CPU engine never came up"; exit 1; }
+add_driver() { # name port model enginePort
   curl -s -o /dev/null -w '%{http_code}' -X POST "$AGENT/v1/components" -H "Authorization: Bearer $TOK" \
     -H 'content-type: application/json' \
     -d "{\"name\":\"$1\",\"kind\":\"inference-driver\",\"url\":\"http://127.0.0.1:$2\",\"spawn\":{\"configFile\":\"$1.yaml\"}}"
   sleep 3
   curl -s -o /dev/null -X PATCH "http://127.0.0.1:$2/v1/config" -H "Authorization: Bearer $TOK" \
     -H 'content-type: application/json' \
-    -d "{\"provider\":\"ollama_local\",\"modelId\":\"$3\",\"baseUrl\":\"http://127.0.0.1:11434\"}"
+    -d "{\"provider\":\"openai_compat_custom\",\"modelId\":\"$3\",\"baseUrl\":\"$(llama_base_url "$4")\"}"
   curl -s -o /dev/null -X POST "$AGENT/v1/components/$1/restart" -H "Authorization: Bearer $TOK" -d '{}'
 }
-add_driver ollama-small 8091 "huihui_ai/dolphin3-abliterated:8b-llama3.1-q4_K_M"
-add_driver ollama-big 8092 "qwen3-coder:30b"
+add_driver llama-gpu "$FAST_DRIVER_PORT" "$SMALL" "$FAST_ENGINE_PORT"
+add_driver llama-cpu "$SLOW_DRIVER_PORT" "$BIG" "$SLOW_ENGINE_PORT"
 sleep 12
 MODELS=$(curl -s "$GW/v1/models" -H "Authorization: Bearer $TOK" | jq_ "[m['id'] for m in d['data']]")
 echo "  gateway lists: $MODELS"
-case "$MODELS" in *dolphin3*) ok "the small model is routable";; *) bad "gateway lists $MODELS";; esac
+case "$MODELS" in *"$SMALL"*) ok "the small model is routable";; *) bad "gateway lists $MODELS";; esac
 
-SMALL="huihui_ai/dolphin3-abliterated:8b-llama3.1-q4_K_M"
 
 say "1. a non-streaming completion"
 R=$(curl -s -m 180 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
@@ -131,7 +202,6 @@ say "   warming both backends (their own model load is inside the first request)
 warm() { curl -s -o /dev/null -m 600 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" \
   -H 'content-type: application/json' \
   -d "{\"model\":\"$1\",\"messages\":[{\"role\":\"user\",\"content\":\"Say ready.\"}],\"max_tokens\":10}"; }
-BIG="${EP_BIG_MODEL:-qwen3-coder:30b}"
 warm "$SMALL"; warm "$BIG"
 
 for i in 1 2 3; do
@@ -173,9 +243,9 @@ say "5. a cascade: an error row for the dead backend, and the survivor unharmed"
 # recorded a success. Only the custom provider honours a URL.
 curl -s -o /dev/null -w '%{http_code}' -X POST "$AGENT/v1/components" -H "Authorization: Bearer $TOK" \
   -H 'content-type: application/json' \
-  -d '{"name":"dead-backend","kind":"inference-driver","url":"http://127.0.0.1:8093","spawn":{"configFile":"dead-backend.yaml"}}'
+  -d '{"name":"dead-backend","kind":"inference-driver","url":"http://127.0.0.1:'"$DEAD_DRIVER_PORT"'","spawn":{"configFile":"dead-backend.yaml"}}'
 sleep 3
-curl -s -o /dev/null -X PATCH "http://127.0.0.1:8093/v1/config" -H "Authorization: Bearer $TOK" \
+curl -s -o /dev/null -X PATCH "http://127.0.0.1:$DEAD_DRIVER_PORT/v1/config" -H "Authorization: Bearer $TOK" \
   -H 'content-type: application/json' \
   -d '{"provider":"openai_compat_custom","modelId":"dead-model","baseUrl":"http://127.0.0.1:1"}'
 curl -s -o /dev/null -X POST "$AGENT/v1/components/dead-backend/restart" -H "Authorization: Bearer $TOK" -d '{}'
@@ -183,7 +253,7 @@ sleep 10
 # The driver must be REACHABLE for the gateway to include it; only its
 # backend refuses. A driver the gateway cannot reach is dropped from the
 # table and produces no cascade at all, which is a different scenario.
-DEADINFO=$(curl -s "http://127.0.0.1:8093/v1/info" -H "Authorization: Bearer $TOK")
+DEADINFO=$(curl -s "http://127.0.0.1:$DEAD_DRIVER_PORT/v1/info" -H "Authorization: Bearer $TOK")
 echo "  dead driver advertises: $(printf '%s' "$DEADINFO" | jq_ "(d.get('modelId'), d.get('backend'))" 2>/dev/null)"
 case "$DEADINFO" in *dead-model*) ok "the failing backend is reachable and advertises dead-model";; *) bad "dead driver did not come up: $(printf '%s' "$DEADINFO" | head -c 200)";; esac
 curl -s -o /dev/null -X PATCH "$GW/v1/config" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
