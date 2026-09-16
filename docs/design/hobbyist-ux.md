@@ -861,7 +861,7 @@ no contract change). *Touches:* ui, library. *Done when* the wizard is
 completed with one typed value and the first download succeeds without
 a 409. Decisions **#2, #3**.
 
-### S3 — One-click run (M)
+### S3 — One-click run (M) — **BUILT AND LIVE-VERIFIED 2026-09-15; record §11.4**
 
 Launch with no profile creates `default` at `maxContextLength`; a
 finished download offers **Run** in place; the Library's "install one
@@ -877,7 +877,8 @@ orchestrates (install → poll → runtime); nothing new on the agent.
 *Touches:* ui, library (implicit profile). *Done when* a fresh box goes
 from "Download and run" through the one confirmation to `ready` with no
 other click, and Skip leaves a stopped runtime whose reason is printed.
-Decisions **#5, #6**.
+Decisions **#5, #6**. *As built:* ui only for the slice, plus two agent
+fixes the acceptance run forced (§11.4) — the library needed nothing.
 
 ### S4 — Client keys, and "Use it from your apps" (M, contract)
 
@@ -1337,6 +1338,158 @@ exports the unused `Radio`. The Library page still says *missing* for
 a configured folder that the first download has not yet created; the
 Home card's *"Nothing is on disk yet"* is what a fresh install sees
 first, so the wording is a wart, not a wall.
+
+---
+
+### 11.4 S3 — one-click run, and what a fresh box taught the agent. DONE 2026-09-15.
+
+`ui` `75fb2a0` (dist `ddd4db8`), pinned by both installers; agent
+`df22e8c`, pinned by both installers; contracts `c0a6c06` (prose on
+`HostAccelerator.acceleratorVersion`, nothing generated changed but a
+docstring). **The library was not touched** — the design's "library
+(implicit profile)" turned out to be nothing: the store already makes a
+model's first profile its default, and the UI composes the profile it
+would have made by hand. Decisions **#5** and **#6** as amended.
+
+**What landed.** **Run** is one button, in three places: the Library's
+model detail (above the profile editor, which is labelled *for experts*
+now and whose empty state says Run will make the profile), a finished
+download's row on Discover and Library (beside *open in the library*,
+reading the entry off the record's `modelId`), and Home's first-model
+card when exactly one model is on disk and an engine here reads its
+format (*"Qwen3-0.6B-Q4_K_M is on disk and not running." → Run*). Run
+is orchestration and nothing else — `ui/src/lib/oneClickRun.ts`, a
+module-level store the header tray and the pressing card both render:
+**checking** (which engines the target node has) → **the one question**
+(only when no installed engine reads the format and one can be fetched:
+*"I could not find llama.cpp on this machine. Install it now?"*, Install
+focused as the default, Skip under the line that it is for advanced
+users, Cancel/Escape abandons) → **installing** (the agent's own install,
+polled with the bytes) → **settings** (a profile named `default` at the
+context the node's admission dry run says fits, made only when the model
+has none for this engine — the profile form's own prefill rule, lifted
+to `lib/launchSpec.ts` so the two cannot disagree) → **launching** (the
+declaration, or a `start` when a runtime for this file already exists,
+which is exactly what Skip leaves behind) → **loading** → **ready — try
+it on Home**. Skip declares the runtime with `autoStart: false` and the
+Inference row prints the reason under `stopped (autoStart)`: *"llama.cpp
+is not installed on this machine, so this cannot start. Install it above,
+then press start"* — derived on the client from the node's engines, not
+a new field. The tray gains a `run` task kind with a dismiss (the only
+verb allowed there, because dismissing changes nothing on any
+component), a red failure line that never truncates, and one line per
+thing happening: while a run installs or starts, the tray's own
+`install:` and `load:` rows for the same engine and runtime are
+suppressed. **Nothing new on the agent or the library for the slice**,
+as the plan said; every call existed. The `Launch profiles` section, the
+Inference row's `start`, and the old sentence's Inference page are all
+still there for the expert; the sentence *"Install one from the
+Inference page"* is gone, and the Library says instead what Run will ask.
+
+**Departures, recorded.** (1) *The run is browser-local.* A reload
+loses the compound framing (install → settings → start → ready) and
+nothing else: the install and the runtime are then visible through the
+endpoints the tray already polls. The honest cost of "nothing new on the
+agent"; a run record on the agent is the fix if it is ever wanted. (2)
+*A failed install declares nothing.* The plan said the tray "names which
+one failed", and it does; a runtime declared after a failed install
+could only crash, so none is. Run again re-asks. (3) *Run on Home is one
+machine.* Home is about the machine the browser is served from; another
+node is chosen on the Library's picker, as before. (4) *A generation on
+every run.* Ids are per model per node and reused, so an orchestrator
+between two polls must not adopt a newer task with its id; found by the
+tests when one test's held install leaked into the next.
+
+**THE RUN FOUND THREE THINGS BEFORE IT COULD RUN ANYTHING, and two are
+upstream.** A fresh box is made by pointing the agent's engine root at
+an empty directory, and the first execution's step 3 read *"llama.cpp
+is not installable here"* on this Windows/5090 box. **(a) Upstream had
+moved the Windows CUDA build from 13.3 to 13.4 that afternoon** — every
+release from b10983 (13:09Z) ships `win-cuda-13.4-x64` and no 13.3 — and
+the adapter's hardcoded matrix (`_PUBLISHED_CUDA`, written from b10867)
+had no 13.4-x64 entry, so a driver reporting 13.3 chose 13.3 and read
+*"release b10990 has no asset for 'win-cuda-13.3-x64'"*: a sentence
+about upstream's publishing presented as one about the host, and **the
+live worker (on b10948) had read it all day**. A table cannot fail
+loudly on an entry it lacks. Fixed by reading the candidate minors off
+the release's asset names, and by a rule NVIDIA's rather than ours: when
+nothing at or below the driver's minor is published within its major,
+take the lowest published minor above it under **CUDA minor-version
+compatibility**, and log it; a different major is still never crossed.
+**Verified empirically before it was coded:** b10990's 13.4 build was
+downloaded by hand, loaded the 1.8 GB Qwen3-1.7B Q8 on this 13.3 driver
+with every layer on `CUDA0`, `model loaded` at 1.6 s, and served a
+completion (the build carries SASS for arch 1200, which is what the
+guarantee needs). **(b) Forty minutes later the same check read "not
+installable" again, for a different reason**: upstream had published
+b10991 at 23:42Z and its CI had uploaded **five of thirty-three**
+assets — a cudart for 12.4 and no server build — so *"the newest build
+that has assets"*, the rule the 2026-09-12 b10931 finding left behind,
+picked it and every host read *"publishes no Windows CUDA build for
+x64"*. A release is complete for a host only when it carries THAT host's
+assets; a count says nothing about which. `plan_latest` now plans
+against the newest build and, when the only obstacle is an asset that
+build lacks (`Unavailable.release_bound`), steps back up to eight builds
+— about a day — logging *"b10991 has no 'win-cuda-13.4-x64' asset yet (5
+asset(s) up; upstream's CI may still be uploading); using b10990"*; a
+refusal about the host (Linux with NVIDIA, a driver with no CUDA
+version) still stops at once. `latestVersion` keeps meaning the newest
+build known (b10991) while the install fetches b10990, and the tray
+names the build it installs. Sixth and seventh entries in M1's list of
+upstream traps; 44 acquisition tests, both rules sabotage-checked. **The
+step-back is unit-tested against b10991's five-asset shape as the run
+saw it and has not fired live**: by the time the fix was in, b10991's
+upload had completed and the recorded run installed it directly.
+**(c) Four runs asserted about a build no browser ever saw.** Home's
+card kept rendering the S1 wording while the pure state function, the
+compiled bundle and the real bodies (captured by a diagnostic the
+browser test now prints on failure) all said Run should be there. The
+agent venv's `eugene-plexus-ui` was **a wheel installed from `ui/dist`
+at 15:39**, not the editable install CLAUDE.md said it was, so the agent
+served that afternoon's build; and the script's check *"the staged
+bundle carries the run dialog"* grepped the staged directory rather
+than what the agent serves — the recurring shape, a check looking
+somewhere its subject had not arrived. The run now asserts that
+`eugene_plexus_ui.static_dir()` in the agent venv IS the staged
+directory and that a chunk the served `/` names carries the marker;
+`navigation-acceptance.sh` got the served check too, because S1's and
+S2's green runs rested on the same assumption. **A fourth, mine:**
+editing an acceptance script while bash is still running it — bash reads
+incrementally and died on a shifted line with `EXIT 2` and the fleet's
+ports still held.
+
+**Verification.** UI: 350 unit tests from 307 (`oneClickRun.test.ts`
+drives the orchestration against the bodies the components return, in
+call order — install before profile before runtime, Skip's `autoStart:
+false`, a 422 relayed verbatim, cancel touching nothing; `launchSpec`,
+the merge, the dialog, Home's one-model card). Agent: 566 tests, mypy
+clean. **`scripts/one-click-run-acceptance.sh`: 26 checks, zero
+failures, on the seventh execution** (the six before it were the three
+findings above and two harness defects): a fresh box (empty engine root,
+`llama-server` off PATH), the model downloaded from the hub through the
+library, Chrome driving Home's Run, the finished download's Run, Run →
+Skip → `stopped` on Inference with the reason, Run → Install → a real
+llama.cpp fetched into the run's own engine root → the same runtime
+started rather than a second declared → `ready`, 15.3 s after
+pressing Install (the two assets, 570 MB, the unpack, the start and the load) → the first reply on Home; then exactly one profile named
+`default`, one runtime, the alias on the gateway, a completion through
+it. Record: this section; the runner and `e2e/one-click-run.spec.ts`.
+
+**Golden path after S0–S3**, from a finished download to a first reply
+(§0.2 counted 15 clicks, 6 route changes and a typed path; 19 when
+llama.cpp had to be installed): **Run · Install · Send** — three clicks,
+one route change (Home), nothing typed. Without an engine to install,
+two. Still by reading the code, not by S10's click-counting run.
+
+**Not done.** The run store is per tab (departure 1). The recommended
+model in the first card is S6; until then a person with several models
+on disk still chooses in the Library. The dialog has no focus trap
+beyond autofocus. The Inference reason is derived and so appears only
+once that node's engines have loaded. `role="dialog"` and the tray's
+dismiss have no browser test. Whether the run should re-ask about
+installing on a node that refused once is left to the person: it does.
+The live worker still runs b10948 and still needs the upgraded agent
+before *update* offers it b10990.
 
 ---
 

@@ -123,6 +123,13 @@ sleep 2
 TOK=$(curl -s -X POST "$AGENT/v1/auth/login" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" | jq_ "d.get('sessionToken','')")
 [ -n "$TOK" ] || { bad "no session after enrollment"; exit 1; }
 [ "$(code_of -H "Authorization: Bearer $TOK" "$CTL/v1/nodes")" = "200" ] && ok "four processes; enrolled; the session reaches the root" || bad "root not answering"
+# Staging is not serving (found 2026-09-15: the agent venv held a wheel
+# from ui/dist, and step 1's grep of the staged directory passed for
+# four runs no browser ever saw). Read the marker off what the agent
+# actually serves at /.
+FOUND=0
+for c in $(curl -s "$AGENT/" | grep -o '_next/static/chunks/[^"]*\.js' | sort -u); do curl -s "$AGENT/$c" | grep -q 'data-tree-sel' && FOUND=1 && break; done
+[ "$FOUND" = "1" ] && ok "the agent SERVES a bundle with the tree's data-tree-sel contract" || { bad "the agent serves a bundle without data-tree-sel -- is eugene-plexus-ui installed editable in the agent venv?"; exit 1; }
 
 say "3. a driver, so the tree's deepest path is not empty"
 # type -> node -> driver is the only three-level path in the tree, and a
