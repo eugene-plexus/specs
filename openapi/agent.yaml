@@ -2190,16 +2190,31 @@ components:
           $ref: '#/components/schemas/AgentRestart'
         firewall:
           $ref: '#/components/schemas/HostFirewall'
-        lastReachedByRoot:
+        lastReachedFrom:
+          type: string
+          description: |
+            The address of the last connection to this agent that came
+            from somewhere other than this machine.
+
+            **The only proof from outside.** Static inspection of a
+            firewall says what *should* happen; a connection that
+            arrived says what did. Deliberately *any* off-host caller
+            rather than the control root specifically: on a standalone
+            install there is no root probing from elsewhere, and the
+            person opening this page on their phone is both the test
+            they were told to run and the evidence it passed. The
+            control root's own view of the same fact is
+            `Node.lastSeenAt` in `control.yaml`, which is where a
+            multi-machine console should read it.
+
+            Absent until something off this machine connects. Not
+            persisted: it describes this process, and a restart is
+            exactly when a person wants to know whether reach still
+            works rather than whether it once did.
+        lastReachedAt:
           type: string
           format: date-time
-          description: |
-            When the control root last reached this node at its
-            advertised address. **The only proof from outside** — static
-            inspection of a firewall says what *should* happen, and a
-            connection another machine made says what did. Absent on a
-            standalone install, where there is no second machine and the
-            honest answer is that the person's own phone is the test.
+          description: When that connection arrived.
 
     BoundAddress:
       type: object
