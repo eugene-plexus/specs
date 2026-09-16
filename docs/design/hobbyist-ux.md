@@ -2279,21 +2279,22 @@ is one machine.
 **State: contracts and the agent are DONE and pushed, and the slice's
 *Done when* is MET — a sealed root shows as one issue with the unlock as
 its action, from any page.** What is left is Home's card and Inference's
-two states. Steps 1-3 of *Where to resume* were taken on 2026-09-16;
-pick up at step 4.
+two states. Steps 1-4 of *Where to resume* were taken on 2026-09-16;
+pick up at step 5, Inference.
 
 | Repo      | Commit    | What it carries                                                  |
 | --------- | --------- | ---------------------------------------------------------------- |
 | `specs`   | `4a72644` | `NodeIdentity.time` on `agent.yaml`                              |
 | `agent`   | `763d10d` | serves it, two tests, both sabotage-checked; suite 641 green     |
 | `control` | `f84373c` | regen-only (`agent_models.py` changed, `models.py` untouched)    |
-| `ui`      | `9dbfd40` | `issues.ts` + `useIssues.ts` + the header badge; **wired**        |
+| `ui`      | `8979d4e` | rules, reads, the badge and Home's card; **wired**                |
 
 `ui` `055a9a4` is the pin bump, the regen and `issues.ts`; `f67e001` is
 its test file (step 1), `acfac86` the polling hook (step 2) and
-`9dbfd40` the header badge (step 3), all landed 2026-09-16. **`issues.ts`
-is referenced now, so the next `dist` build carries it** — which is why
-step 7's re-pin is no longer a formality.
+`9dbfd40` the header badge (step 3) and `8979d4e` Home's card (step 4),
+all landed 2026-09-16. **`issues.ts` is referenced now, so the next
+`dist` build carries it** — which is why step 7's re-pin is no longer a
+formality.
 
 **Radius was measured by regenerating all six.** `gateway`, `library`
 and `inference-driver` came back byte-identical apart from the SHA in a
@@ -2493,9 +2494,29 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
    Eight sabotages, all caught, including the two that would quietly
    undo the slice: linking away instead of carrying the form, and
    treating a mismatch as success.
-4. **`ui/src/components/home/NeedsAttentionCard.tsx`** — Home's card,
-   beside `RunningCard`; and the line in `page.tsx`'s docblock reading
-   *"Not here yet, by plan: Needs attention (S7)"* comes out.
+4. ~~**`ui/src/components/home/NeedsAttentionCard.tsx`**~~ — **DONE
+   2026-09-16, `ui` `8979d4e`.** Beside `RunningCard`, per §6.1's
+   wireframe, and the docblock line came out.
+
+   **It says "nothing" where the badge says nothing at all.** The header
+   is chrome on every screen, so an all-clear there is a decoration that
+   teaches people to stop reading it; Home is where somebody asks *how
+   is it?*, and there "nothing needs you" is the answer rather than the
+   absence of one. Before the first read it says it is still looking.
+
+   `IssueRow` and the unlock form moved into their own module, shared by
+   both surfaces — a second copy is a second chance to get wrong the one
+   form in this UI where a person types a secret outside the sign-in
+   page.
+
+   **Two sabotages escaped the first pass, both the same shape: the card
+   was proved and its wiring was not.** Home could have fed it `[]`
+   forever, or omitted `onFixed`, with every test of the card green
+   because the card is fine. Both are covered now by driving *Home* — a
+   sealed root arriving through the real poll, and an unlock from Home
+   clearing the issue rather than leaving a fixed problem on screen for
+   the rest of the interval. **A component test is not a wiring test,
+   and this slice has now produced that lesson twice.**
 5. **Inference's two states** — `describeCompute` and `describeLoading`
    on the row, which needs the per-node runtime read added to
    `inference/page.tsx`'s `load()`; today it reads only the root's thin
