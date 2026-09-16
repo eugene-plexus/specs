@@ -8,7 +8,11 @@ amended to ask first, #12 on the condition that the jargon stays
 available in hints, and #8 with a question that §6.6 answers. Only the
 relabels (`Backends`, `Chat`) remain a separate open call.
 **S0 through S6 are built and live-verified (S0-S5 on 2026-09-15, S6
-on 2026-09-16; records in §11), S7 to S10 are not started.** Every claim marked
+on 2026-09-16; records in §11). S7 is STARTED AND PAUSED** — its
+measurement is done and falsified four of its seven issue kinds, the one
+contract field it needed is landed and served, and the UI half is one
+pure unwired module; §11.9 is the record and says where to resume.
+**S8 to S10 are not started.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -1068,7 +1072,7 @@ ranking call, four of whose assumptions about the hub's listing API were
 wrong, and its "404" for an unresolvable URL, which the hub answers as
 401.
 
-### S7 — Issues, and two honest states on Inference (M)
+### S7 — Issues, and two honest states on Inference (M) — **STARTED AND PAUSED 2026-09-16; record §11.9**
 
 The **Needs attention** card and header badge: sealed root, folder not
 mounted, node down with `lastError`, clock skew warning, engine release
@@ -1078,6 +1082,27 @@ agent when the list stabilises. Inference gains *loading · ~2 min left*
 (from bytes and rate) and *on CPU — reason* as a warning. *Touches:* ui;
 later agent + contract. *Done when* a sealed root shows as one issue
 with the unlock as its action, from any page.
+
+**Four of those seven were not observable, and §11.9 has the
+measurement.** Clock skew was **log only** — and behind it, *no
+component put its own current time on any response body*, which is why
+the slice's one contract change is `NodeIdentity.time` (landed, served,
+`specs` `4a72644` / `agent` `763d10d`). Mixed builds, on-CPU and the
+loading state all need per-node reads, because the control root's
+`RuntimePlacement` carries no `engineVersion`, `flags`, `lastRestart`
+or `localPath`. "Engine cannot be installed" **must exclude
+`policy: manual`**, or vLLM puts a permanent unfixable issue on every
+install there will ever be. And a machine with no accelerator is a
+*state*, not an issue, while the case that would earn one — a CPU-only
+engine build on a machine with a card — is not observable at all.
+
+**And *loading · ~2 min left (from bytes and rate)* cannot be built as
+written: there are no bytes.** No engine reports load progress, and
+process I/O counters do not rescue it because llama.cpp memory-maps the
+model and faulted pages are not read I/O on Windows. What is honest is
+elapsed, plus the share the bytes are crossing — which is what actually
+explains the four-minute load on the live install — plus an estimate
+only once this browser has watched the same model load before.
 
 ### S8 — Vocabulary (M)
 
@@ -2248,6 +2273,185 @@ sequential claims, not two simultaneous ones. A chained run targeting
 another node (`node:<name>`) is unit-tested and has never been executed:
 Home runs models on the machine the browser is served from, and this box
 is one machine.
+
+### 11.9 S7 — measured, one contract field landed, PAUSED mid-slice 2026-09-16.
+
+**State: contracts and the agent are DONE and pushed; the UI is one
+pure module with no consumers and no tests.** Paused at the user's ask,
+not because anything was blocked. Pick up at *Where to resume*, below.
+
+| Repo      | Commit    | What it carries                                                  |
+| --------- | --------- | ---------------------------------------------------------------- |
+| `specs`   | `4a72644` | `NodeIdentity.time` on `agent.yaml`                              |
+| `agent`   | `763d10d` | serves it, two tests, both sabotage-checked; suite 641 green     |
+| `control` | `f84373c` | regen-only (`agent_models.py` changed, `models.py` untouched)    |
+| `ui`      | `055a9a4` | pin bump + regen + `src/lib/issues.ts`, **unwired and untested** |
+
+**Radius was measured by regenerating all six.** `gateway`, `library`
+and `inference-driver` came back byte-identical apart from the SHA in a
+generated header and were reverted rather than re-pinned; they codegen
+neither changed document. **No installer was re-pinned**, deliberately:
+nothing user-visible shipped, and `issues.ts` is unreferenced, so it is
+tree-shaken out of the bundle.
+
+#### Measuring the seven named issue kinds falsified four of them
+
+The brief lists *sealed root, folder not mounted, node down with
+`lastError`, clock skew warning, engine release with no assets, mixed
+engine builds across replicas, a runtime on CPU*, over "existing
+endpoints". Checked one at a time against the contracts and the agent's
+source:
+
+| Kind                  | Observable today?                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| sealed root           | **Yes**, twice over: `RoutingTableView.control_root.error` matching `locked`, and control's own `503 #locked` |
+| node down + reason    | **Yes** — `Node.reachable` + `Node.lastError` on the root's `GET /v1/nodes`                                   |
+| folder not mounted    | **Yes** — agent `POST /v1/library/folders/check`, `exists` / `isDirectory` / `problem`, per node              |
+| clock skew            | **NO.** Log only. Fixed by this slice; see below                                                              |
+| engine with no assets | **Yes**, with a trap that would have made the list permanently wrong                                          |
+| mixed engine builds   | **Yes on one machine, no across the install**                                                                 |
+| a runtime on CPU      | **Partly**, and the useful case is not observable at all                                                      |
+
+**Clock skew was log-only, and the gap behind it was wider than skew.**
+`_note_clock_skew` in all five `security.py` copies computes `iat - now`
+exactly, on every token decode, and writes it to a log at most once a
+minute. Nothing carries it. The wider finding: **no component put its
+own current time on any response body**, so from outside a host there
+was no way to tell that its clock was wrong until the drift crossed the
+300 s leeway and the install stopped working — which is how half a
+second of it took a morning to find on 2026-09-15.
+
+The fix is one field, `NodeIdentity.time`, and it is deliberately **not**
+a remembered skew observation: a remembered one says a peer was wrong at
+some past minute, this says what this host thinks the time is *now*,
+which is the quantity, and it needs no state. A console reads it from
+two hosts milliseconds apart, brackets each read (`t0` before, `t1`
+after), and the offset between two hosts is the difference of two
+intervals — so a slow proxy hop widens the interval, shrinks the
+reported number, and can only ever **hide** a skew, never invent one.
+
+**Measured between nodes and never between a node and the browser.** A
+laptop back from sleep, or a VM whose clock jumped, would otherwise
+accuse every machine in the install of being wrong. What breaks an
+install is two *hosts* disagreeing — the tokens one mints and the other
+refuses — and a one-machine install has one clock and cannot have the
+problem at all.
+
+**`policy: manual` must be excluded from "engine cannot be installed",
+or the list is permanently wrong on every install.** vLLM's
+`acquisition.installable` is `false` on **every host that will ever
+run** — its unit of installation is a Python environment we do not own,
+which is a decision and not a fault. A rule that flagged every
+`installable: false` would put an unfixable issue in front of every user
+forever, which is how a needs-attention list becomes a thing nobody
+reads. What is left is real: a *managed* engine with no build for this
+machine (llama.cpp on Linux with an NVIDIA card) and a release upstream
+shipped with its assets missing.
+
+**The install-wide runtime view is too thin for three of the rules.**
+`RuntimePlacement` on the control root is `{node, name, modelAlias,
+status, url, engine}` — no `engineVersion`, no `flags`, no
+`lastRestart`, no `localPath`. Mixed builds, on-CPU and the loading
+state all need those, so they need the agent's own `GET /v1/runtimes`
+**per node**, through the `node:<name>` hop that
+`one-console-never-hop-nodes` exists for. That settles the polling
+shape: four reads per node on a slow cadence, not the tray's five
+seconds — an issue is not a task and does not change second to second.
+
+**"A runtime on CPU" split into a state and an issue, and the useful
+half is not observable.**
+
+- *A machine with no accelerator.* True, permanent, needs nobody. A
+  **state** on the Inference row, not an issue.
+- *A profile declaring `gpuLayers: 0` on a machine that has a card.* An
+  **issue**, read from the declaration. The agent's own rule has to be
+  restated exactly: unset is *full* offload for llama.cpp, negative is
+  "all", 99 or more is full — so **only an explicit zero** means the
+  processor. Getting that backwards would warn about every correctly
+  configured model in the install.
+- *A CPU-only engine build on a machine with a card.* The commonest
+  complaint in the field research (§3), and **not observable**.
+  `EngineDescriptor` carries `version` and `binaryPath` and no installed
+  variant; the managed store's layout is `<engine>/<version>/` with the
+  variant only inside `install.json`; and
+  `GET /v1/engines/{engine}/install` describes the last install *this
+  agent performed*, not the build in use. It wants one more field,
+  `EngineDescriptor.installedVariant`, and was not taken here.
+
+#### §7's *loading · ~2 min left (from bytes and rate)* cannot be built — there are no bytes
+
+Nothing on any wire counts a model load. `llama-server`'s `/health`
+answers `503 {"status": "loading model"}` with no fraction; vLLM binds
+its port and answers nothing at all until the weights are resident;
+`RuntimeCapabilities` is read back from the engine and carries
+`contextLength`, `parallelSlots`, `embeddings`, `multimodal` and nothing
+about memory; and `Runtime` has no progress field.
+
+**Reading the process's own I/O counters does not rescue it, and that is
+the finding worth keeping.** llama.cpp memory-maps the model by default,
+and faulted pages are **not** read I/O in `GetProcessIoCounters` on
+Windows — so the obvious agent-side fix would report ~0 bytes for the
+commonest case on the platform this project treats as first-class.
+`/proc/<pid>/io` on Linux counts major faults under `read_bytes` but not
+`rchar`, so the two platforms would disagree about the same load. And a
+VRAM-delta estimate from `devices.py` is not a measurement: other
+processes move VRAM, and two runtimes loading at once cannot be told
+apart.
+
+So `describeLoading` reports what is exact — **elapsed**, from
+`Runtime.lastRestart` — plus **where the bytes are coming from**, which
+is the thing that actually explains a four-minute load: on the live
+install a 23.8 GB model crosses a gigabit link from a NAS on *every*
+start, and the UNC path says so. An estimate appears only once this
+browser has watched the same model finish loading before. A first load
+has nothing honest to predict from, and says nothing rather than
+guessing.
+
+#### Where to resume
+
+`ui/src/lib/issues.ts` is written, typechecks, lints, and is committed
+at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
+`declaresNoOffload`, `hasAccelerator`, `describeCompute` and
+`describeLoading`. **Nothing imports it.** In order:
+
+1. **`ui/src/lib/issues.test.ts`** — the pure rules, against bodies the
+   live install returns rather than fixtures invented to match the code,
+   with sabotages confirmed failing. Two must be sabotage-checked
+   because getting them backwards is worse than saying nothing:
+   `declaresNoOffload` (unset is not CPU) and the `policy: manual`
+   exclusion.
+2. **`ui/src/lib/useIssues.ts`** — the polling, modelled on
+   `useTasks.ts`: every read soft, paused while the tab is hidden, a
+   slow cadence (~30 s), per-node reads through
+   `targetFor(name, localName)` from `nodeBudget.ts`. It **must** bracket
+   each `GET /v1/node` with `Date.now()` either side and pass the window
+   as `NodeFacts.readWindow`, or the skew rule silently measures
+   nothing and every test of it passes.
+3. **`ui/src/components/IssuesBadge.tsx`** — beside `TasksTray` in
+   `AppShell`'s header, with the same disclosure behaviour (Escape,
+   click outside, focus returns to the button). The sealed-root row
+   carries the unlock form **inline** — that is the slice's *Done when*,
+   "from any page" — reusing `lib/controlUnlock.ts`, which already posts
+   to control with the session token as `bearer` so a 401 cannot clear
+   the session.
+4. **`ui/src/components/home/NeedsAttentionCard.tsx`** — Home's card,
+   beside `RunningCard`; and the line in `page.tsx`'s docblock reading
+   *"Not here yet, by plan: Needs attention (S7)"* comes out.
+5. **Inference's two states** — `describeCompute` and `describeLoading`
+   on the row, which needs the per-node runtime read added to
+   `inference/page.tsx`'s `load()`; today it reads only the root's thin
+   union. Share one fetch with `useIssues` rather than polling twice.
+6. **`scripts/issues-acceptance.sh`** in `specs`, plus
+   `docs/acceptance/issues-run.md`. The sealed root is producible:
+   initialize the control root, restart it with no keyring, and it comes
+   back `503 Locked`. Clock skew is **not** producible on one box and
+   should be reported as not produced rather than faked.
+7. **Then** re-pin both installers with the new `ui` and `dist`, and
+   write the record.
+
+**Known trap for the acceptance run, unchanged since S0:** the live
+worker agent holds 8079 on this box. Run on +100 ports, clear every
+ambient `EUGENE_PLEXUS_*` variable first, and tear down by pid.
 
 ---
 
