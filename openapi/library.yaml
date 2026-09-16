@@ -1137,6 +1137,51 @@ paths:
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
+  /v1/downloads/{id}/claim:
+    post:
+      tags: [downloads]
+      operationId: claimDownload
+      summary: Take responsibility for what a finished download was started for.
+      description: |
+        Atomically clears `runWhenReady` and reports whether this caller
+        was the one who cleared it.
+
+        **It exists because two browsers are two browsers.** A person
+        starts a download in order to run a model, closes the tab, and
+        opens the UI again — possibly on another machine, possibly
+        twice. Every console can see the finished download and its
+        intent; without this, every console would create a profile and
+        launch a runtime for the same model. First caller wins, the
+        rest get `claimed: false` and do nothing.
+
+        **It is also what stops a deliberate stop from being undone.**
+        Without the clear, a console opening a week after the operator
+        stopped that runtime on purpose would see the same finished
+        download with the same intent and start it again.
+
+        Idempotent: claiming a download that has no intent, or has
+        already been claimed, is a `200` with `claimed: false` rather
+        than an error. Nothing about the transfer changes.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Whether this caller took it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadClaim'
+        '404':
+          description: No such download.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/downloads/{id}/pause:
     parameters:
       - name: id
@@ -3054,12 +3099,25 @@ components:
             directories the operator nominated. Defaults to the first,
             which is what the `path_list` config type has promised
             since M2.
-        subdirectory:
-          type: string
+        runWhenReady:
+          type: boolean
+          default: false
           description: |
-            Relative destination under `root`, overriding the configured
-            layout. Path traversal is rejected; the result must stay
-            inside the root.
+            The operator asked for this model to be **run** when it
+            lands, not merely fetched.
+
+            **This component records it and never acts on it.** The
+            library does not launch anything — a launch is a profile, an
+            engine and a runtime on some node's agent, and which node is
+            a question the library has no business answering. What this
+            field buys is that the *intent* outlives the browser tab
+            that expressed it: a 16 GB download takes long enough that
+            the person will close the laptop lid, and a console opening
+            later can see that a download was started in order to run
+            something and carry on from there.
+
+            Exactly one console should carry on, which is what
+            `POST /v1/downloads/{id}/claim` is for.
         filename:
           type: string
           description: |
@@ -3120,6 +3178,13 @@ components:
         etaSeconds:
           type: integer
           minimum: 0
+        runWhenReady:
+          type: boolean
+          description: |
+            The operator asked for this model to be run when it lands.
+            Recorded, never acted on here — see `DownloadSpec`. Cleared
+            by `POST /v1/downloads/{id}/claim`, so a finished download
+            whose flag is still set is one nobody has picked up yet.
         attempts:
           type: integer
           minimum: 0
@@ -3202,6 +3267,24 @@ components:
           $ref: '#/components/schemas/ModelFileRole'
         error:
           type: string
+
+    DownloadClaim:
+      type: object
+      description: |
+        The answer to "am I the one who continues this?". `claimed` is
+        true for exactly one caller per download.
+      required:
+        - claimed
+      properties:
+        claimed:
+          type: boolean
+        modelId:
+          type: string
+          description: |
+            The local model the download produced, when the scan that
+            follows a completed transfer has named it. Absent while the
+            scan is still running, which is a reason to wait rather than
+            a reason to give up — the claim is already yours.
 
     DownloadState:
       type: string
