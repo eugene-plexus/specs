@@ -640,6 +640,18 @@ paths:
             Free-text query, passed to upstream's own search. Omit to
             browse by `sort` alone, which is how the "what is popular
             right now" landing view works.
+
+            **A pasted repo reference is looked up, not searched.** A
+            hub URL (`https://huggingface.co/owner/name`, with or
+            without a `/tree/<rev>` or `/blob/<rev>/<file>` tail) or a
+            bare `owner/name` is resolved with one repo lookup and
+            comes back as a single result with `interpretedAs: repo`.
+            This is the answer to the commonest way a person arrives
+            with a model in mind: someone linked them one. A URL that
+            does not resolve is a `404`, naming the repo; a bare
+            `owner/name` that does not resolve falls through to an
+            ordinary search, because it may simply be what they meant
+            to type.
         - name: format
           in: query
           schema:
@@ -690,6 +702,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CatalogueSearchPage'
+        '404':
+          description: |
+            `q` was a repo URL and upstream has no such repo. Only a
+            URL produces this: it names one repo and nothing else, so
+            an empty result list would be the silent failure.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
         '502':
           $ref: 'components/common.yaml#/components/responses/Problem'
         '503':
@@ -840,6 +861,82 @@ paths:
           $ref: 'components/common.yaml#/components/responses/Problem'
         '502':
           $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/catalogue/starter:
+    get:
+      tags: [catalogue]
+      operationId: getStarterModels
+      summary: The shipped starter set, scored against this machine.
+      description: |
+        A handful of general-purpose instruct models, one per size
+        class, and which of them this machine should take. The answer
+        to "I have no idea which of the four hundred thousand models on
+        that site I want", which is where a first install actually
+        stalls.
+
+        **It answers with no upstream call.** Every number a fit needs --
+        the recommended file's size, the model's parameter count, layer
+        and attention counts, trained context -- was measured once by the
+        review that produced the list and is carried in it, so this
+        endpoint works with the catalogue disabled, the hub down, or no
+        internet at all. Downloading one still needs the hub; choosing
+        one does not.
+
+        **The list is data, not code.** It ships inside the wheel as
+        `starter_models.yaml` and `starterModelsFile` points at another
+        one. An empty list is a valid answer and means "we have no
+        recommendation" -- a client should offer search rather than
+        invent a model. No model name is hard-coded anywhere in this
+        component.
+
+        **`reviewed` is on the wire because staleness is the failure
+        mode.** Models move fast enough that a list nobody has looked at
+        for a year is worse than no list, so the date travels with the
+        recommendation and a client is expected to show it. A release is
+        gated on a review under thirty days old.
+
+        Ranking is by upstream's 30-day download count and says so.
+        There is no quality score here, invented or borrowed -- the same
+        rule the quant table follows.
+      parameters:
+        - name: contextLength
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: |
+            Context to score against. Defaults to the configured
+            `guidanceContextLength`. The recommendation is the largest
+            class that fits entirely in GPU memory *at this number*,
+            which is why a client showing the verdict should show the
+            context beside it.
+        - name: kvCacheType
+          in: query
+          schema:
+            $ref: '#/components/schemas/KvCacheType'
+        - name: vramBytes
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: |
+            Override the detected VRAM budget, in bytes -- how a starter
+            model gets scored against the machine a launch would
+            actually run on, which on a multi-host install is not the
+            one the library runs on.
+        - name: ramBytes
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Override the detected host-memory budget, in bytes.
+      responses:
+        '200':
+          description: The starter set, with a recommendation or a reason there is none.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StarterSet'
 
   /v1/catalogue/model/preflight:
     get:
@@ -2178,6 +2275,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CatalogueSearchResult'
+        interpretedAs:
+          type: string
+          enum: [search, repo]
+          description: |
+            How `q` was read. `repo` means it parsed as a repo
+            reference -- a hub URL, or a bare `owner/name` that
+            resolved -- and `results` holds that one repo; a client
+            should select it rather than make the person click the only
+            row. `search` is an ordinary query, including a bare
+            `owner/name` that upstream had no repo for.
+        interpretedFrom:
+          type: string
+          description: |
+            The repo id a `repo` interpretation resolved to, which is
+            not always what was typed: a URL carries a `/tree/` or
+            `/blob/` tail and a person pastes the whole thing.
         nextCursor:
           type: string
           description: |
@@ -2586,6 +2699,166 @@ components:
             one, because the library deliberately never hashes model
             content (a 40 GB read per scan is not on the table), so for
             most entries name and size is all there is to compare.
+
+    StarterSet:
+      type: object
+      description: |
+        The starter set as this install has it, scored against one
+        machine. Every field that could go stale carries the evidence
+        for how stale it is.
+      required:
+        - reviewed
+        - source
+        - models
+      properties:
+        reviewed:
+          type: string
+          format: date
+          description: |
+            When a human last accepted a review of this list. Shown to
+            the person, not just logged: "Reviewed 15 Sep 2026" is the
+            one thing that lets them judge a recommendation about a
+            field that moves monthly.
+        reviewedDaysAgo:
+          type: integer
+          description: |
+            Computed here so a client does not have to do date
+            arithmetic to decide whether to say "this is old".
+        engine:
+          type: string
+          description: |
+            The engine build every entry was verified to load, e.g.
+            `llama_cpp b10948`. A starter model the installed engine
+            cannot load is the one recommendation worse than none, so
+            the build that proved it is recorded rather than assumed.
+        source:
+          type: string
+          enum: [shipped, configured]
+          description: |
+            `shipped` is the list inside the wheel; `configured` is a
+            file `starterModelsFile` points at. An operator who
+            replaced the list should see that they did.
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/StarterModel'
+          description: |
+            One entry per size class. Empty is valid and means there is
+            no recommendation to make; a client offers search instead.
+        recommended:
+          $ref: '#/components/schemas/StarterRecommendation'
+        notes:
+          type: array
+          items:
+            type: string
+          description: |
+            What the caller should know about this answer: an empty
+            list and why, a list older than the release gate allows, a
+            budget that came from an override.
+
+    StarterModel:
+      type: object
+      description: |
+        One entry: a base model, the repo a quant of it comes from, the
+        one file to fetch, and everything a fit needs -- measured once by
+        the review, carried here so no upstream call is required.
+      required:
+        - sizeClass
+        - baseModel
+        - repo
+        - file
+        - label
+        - sizeBytes
+        - why
+      properties:
+        sizeClass:
+          type: string
+          description: |
+            The bucket this entry fills, by total parameter count:
+            `4B`, `8B`, `14B`, `30B`, `70B`. Total, not active -- a
+            mixture-of-experts model holds every expert in memory, so
+            30B-A3B is a 30B for the only purpose this number serves.
+        baseModel:
+          type: string
+          description: |
+            The model itself, e.g. `Qwen/Qwen3.5-9B`. What the ranking
+            is about: a dozen publishers mirror one model and they are
+            one candidate, not a dozen.
+        repo:
+          type: string
+          description: |
+            The repo the file comes from -- one mirror of many, chosen
+            from a short list of publishers a human maintains. Never the
+            highest-download repo automatically; that is how a
+            keyword-stuffed finetune becomes a default.
+        file:
+          type: string
+          description: The repo-relative path of the recommended quant.
+        label:
+          type: string
+          description: The quant, e.g. `Q4_K_M`.
+        sizeBytes:
+          type: integer
+          format: int64
+        parameters:
+          type: integer
+          format: int64
+        architecture:
+          type: string
+          description: |
+            The GGUF architecture id, e.g. `qwen35`. Recorded because
+            the review checks it against the pinned engine's own
+            architecture list -- a model no engine here can load must
+            never be recommended.
+        contextLength:
+          type: integer
+          description: What the model was trained for, not what fits.
+        license:
+          type: string
+        why:
+          type: string
+          description: |
+            One sentence, in the review's words: why this entry is in
+            the list. Downloads, and the window they were counted over.
+        downloads30d:
+          type: integer
+          format: int64
+          description: |
+            The 30-day download count the ranking used, as of
+            `reviewed`. A number with a date on it rather than a live
+            one, because this endpoint makes no upstream call.
+        fit:
+          $ref: '#/components/schemas/Fit'
+        maxContextLength:
+          type: integer
+          description: |
+            The largest context this entry fits entirely in GPU memory
+            at, on the scored machine. The number a profile takes, and
+            the reason a client can say *fits at 75,520* rather than
+            just *fits*.
+        alreadyOwned:
+          $ref: '#/components/schemas/AlreadyOwned'
+
+    StarterRecommendation:
+      type: object
+      description: |
+        Which entry this machine should take, and why -- or, when
+        `sizeClass` is absent, why none of them.
+      required:
+        - reason
+      properties:
+        sizeClass:
+          type: string
+          description: |
+            The recommended entry's `sizeClass`. Absent when nothing in
+            the list fits, in which case `reason` says what would.
+        reason:
+          type: string
+          description: |
+            Prose naming the numbers, the same rule
+            `CatalogueRecommendation` follows: the largest of the set
+            that runs entirely on this GPU with room for the scored
+            context, said with the sizes that make it checkable.
 
     CatalogueCard:
       type: object
