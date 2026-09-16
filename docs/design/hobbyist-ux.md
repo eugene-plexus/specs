@@ -2277,15 +2277,19 @@ is one machine.
 ### 11.9 S7 — measured, one contract field landed, PAUSED mid-slice 2026-09-16.
 
 **State: contracts and the agent are DONE and pushed; the UI is one
-pure module with no consumers and no tests.** Paused at the user's ask,
-not because anything was blocked. Pick up at *Where to resume*, below.
+pure module, now tested, with no consumers.** Paused at the user's ask,
+not because anything was blocked. Step 1 of *Where to resume* was taken
+on 2026-09-16; pick up at step 2.
 
 | Repo      | Commit    | What it carries                                                  |
 | --------- | --------- | ---------------------------------------------------------------- |
 | `specs`   | `4a72644` | `NodeIdentity.time` on `agent.yaml`                              |
 | `agent`   | `763d10d` | serves it, two tests, both sabotage-checked; suite 641 green     |
 | `control` | `f84373c` | regen-only (`agent_models.py` changed, `models.py` untouched)    |
-| `ui`      | `055a9a4` | pin bump + regen + `src/lib/issues.ts`, **unwired and untested** |
+| `ui`      | `f67e001` | `issues.ts` + `issues.test.ts` (63 cases); **still unwired**      |
+
+`ui` `055a9a4` is the pin bump, the regen and `issues.ts`; `f67e001` is
+its test file, landed 2026-09-16 as step 1 below.
 
 **Radius was measured by regenerating all six.** `gateway`, `library`
 and `inference-driver` came back byte-identical apart from the SHA in a
@@ -2414,12 +2418,29 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
 `declaresNoOffload`, `hasAccelerator`, `describeCompute` and
 `describeLoading`. **Nothing imports it.** In order:
 
-1. **`ui/src/lib/issues.test.ts`** — the pure rules, against bodies the
-   live install returns rather than fixtures invented to match the code,
-   with sabotages confirmed failing. Two must be sabotage-checked
-   because getting them backwards is worse than saying nothing:
-   `declaresNoOffload` (unset is not CPU) and the `policy: manual`
-   exclusion.
+1. ~~**`ui/src/lib/issues.test.ts`**~~ — **DONE 2026-09-16, `ui`
+   `f67e001`.** 63 cases over the pure rules, against the bodies the
+   live install returns. **Eight sabotages confirmed failing**,
+   including the two that had to be: `declaresNoOffload` written as
+   `!layers` (unset is not CPU) takes four cases with it, and dropping
+   the `policy: manual` filter puts vLLM's permanent refusal in front of
+   every user. Also caught: `Number(null) === 0`; `count <= 0`
+   swallowing `-1`, which is upstream's *all layers*; `locked` inferred
+   from any unreachable root; stale-build counting stopped runtimes;
+   blocking-first ordering.
+
+   **One sabotage ESCAPED and is recorded rather than patched over.**
+   `clockSkewIssues`'s `measured.length < 2` guard is unreachable — the
+   pairwise loop already yields nothing for a single node — so no test
+   can distinguish it. The property it exists to protect, *compare node
+   to node and never node to browser*, is caught by a different
+   sabotage: counting the browser as a node fails five cases, the
+   one-machine install among them.
+
+   **And step 2's trap is an assertion now, not a sentence here.** A
+   node read without a `readWindow` contributes no measurement, silently
+   — `skewBetween` returns null and `issuesFrom` returns `[]` — which is
+   pinned by its own test so that the omission below fails something.
 2. **`ui/src/lib/useIssues.ts`** — the polling, modelled on
    `useTasks.ts`: every read soft, paused while the tab is hidden, a
    slow cadence (~30 s), per-node reads through
