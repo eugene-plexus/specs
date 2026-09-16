@@ -2276,20 +2276,21 @@ is one machine.
 
 ### 11.9 S7 — measured, one contract field landed, PAUSED mid-slice 2026-09-16.
 
-**State: contracts and the agent are DONE and pushed; the UI is one
-pure module, now tested, with no consumers.** Paused at the user's ask,
-not because anything was blocked. Step 1 of *Where to resume* was taken
-on 2026-09-16; pick up at step 2.
+**State: contracts and the agent are DONE and pushed; the UI has the
+rules and the reads, and still renders nothing.** Paused at the user's
+ask, not because anything was blocked. Steps 1 and 2 of *Where to
+resume* were taken on 2026-09-16; pick up at step 3, the badge.
 
 | Repo      | Commit    | What it carries                                                  |
 | --------- | --------- | ---------------------------------------------------------------- |
 | `specs`   | `4a72644` | `NodeIdentity.time` on `agent.yaml`                              |
 | `agent`   | `763d10d` | serves it, two tests, both sabotage-checked; suite 641 green     |
 | `control` | `f84373c` | regen-only (`agent_models.py` changed, `models.py` untouched)    |
-| `ui`      | `f67e001` | `issues.ts` + `issues.test.ts` (63 cases); **still unwired**      |
+| `ui`      | `acfac86` | `issues.ts` + `useIssues.ts` and both suites; **still unwired**   |
 
 `ui` `055a9a4` is the pin bump, the regen and `issues.ts`; `f67e001` is
-its test file, landed 2026-09-16 as step 1 below.
+its test file (step 1) and `acfac86` the polling hook (step 2), both
+landed 2026-09-16.
 
 **Radius was measured by regenerating all six.** `gateway`, `library`
 and `inference-driver` came back byte-identical apart from the SHA in a
@@ -2441,13 +2442,35 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
    node read without a `readWindow` contributes no measurement, silently
    — `skewBetween` returns null and `issuesFrom` returns `[]` — which is
    pinned by its own test so that the omission below fails something.
-2. **`ui/src/lib/useIssues.ts`** — the polling, modelled on
-   `useTasks.ts`: every read soft, paused while the tab is hidden, a
-   slow cadence (~30 s), per-node reads through
-   `targetFor(name, localName)` from `nodeBudget.ts`. It **must** bracket
-   each `GET /v1/node` with `Date.now()` either side and pass the window
-   as `NodeFacts.readWindow`, or the skew rule silently measures
-   nothing and every test of it passes.
+2. ~~**`ui/src/lib/useIssues.ts`**~~ — **DONE 2026-09-16, `ui`
+   `acfac86`.** Six reads on a one-box install, four per node beyond
+   it, all soft, 30 s, hidden tabs skipped. The identity read **is**
+   bracketed, and `useIssues.test.tsx` drives two hosts 45 s apart end
+   to end so that dropping a mark fails something. **Seven sabotages,
+   six caught.**
+
+   **Two decisions this step took that the plan did not name.** Every
+   read passes the session token as an explicit `bearer`, because
+   `api.ts` exempts a supplied credential from the 401 interceptor:
+   without it, M9's shape — root initialized, local agent not enrolled,
+   so the root refuses every session the agent mints, which S4 hit live
+   — logs the operator out every thirty seconds from every page, with no
+   window in which to read the issue explaining why. And `isLocked` came
+   out of `nodes/page.tsx` into `controlUnlock.ts` as `isLockedError`:
+   two copies of sealed-vs-uninitialized are two chances to flatten a
+   distinction this UI flattened once already, and the badge asks it
+   everywhere now.
+
+   **The seventh sabotage escapes, and is documented rather than
+   covered.** Taking both `Date.now()` marks *after* the request narrows
+   the interval to nothing and loses the property that latency can only
+   ever hide a skew. It cannot be caught through this surface: the
+   invented skew is bounded by the hop's own latency, and
+   `READ_TIMEOUT_MS` (10 s) is a third of `SKEW_WARN_SECONDS` (30 s), so
+   a read slow enough to invent a warning has already been aborted.
+   **Both constants are load-bearing to that argument** — raising the
+   timeout past the warning threshold makes a false clock warning
+   reachable, and the docblock says so.
 3. **`ui/src/components/IssuesBadge.tsx`** — beside `TasksTray` in
    `AppShell`'s header, with the same disclosure behaviour (Escape,
    click outside, focus returns to the button). The sealed-root row
