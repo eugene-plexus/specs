@@ -7,8 +7,8 @@ two rounds; #4 on one condition, which §6.5 turns into a process, #6
 amended to ask first, #12 on the condition that the jargon stays
 available in hints, and #8 with a question that §6.6 answers. Only the
 relabels (`Backends`, `Chat`) remain a separate open call.
-**S0, S1, S2 and S3 are built and live-verified (all on 2026-09-15;
-records in §11), S4 to S10 are not started.** Every claim marked
+**S0, S1, S2, S3 and S4 are built and live-verified (all on 2026-09-15;
+records in §11), S5 to S10 are not started.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -42,7 +42,7 @@ tree or the screens; it is a **Home**, a shorter wizard, three
 | **4**  | A starter set of models, and one recommended for the detected card, on Home                                         | §6.3     | Yes, as *"the most-downloaded well-known instruct GGUF in the largest size class that fits at 16k"*, shown with why and **Choose another**. M3 said a one-click "get the best one for me" is a fine wizard step and a bad default; Home is that step | **taken 2026-09-15 (Troy), ON CONDITION: an automated pre-release review of the state of local inference that recommends keep or replace — §6.5.** Troy: *"This is something that will quickly grow stale as models continue to improve."* |
 | **5**  | Launch without a profile                                                                                            | §7 S3    | Yes. Launch creates `default` at the context that fits (already computed) when none exists; the editor stays for experts                                                        | **taken 2026-09-15 (Troy)** — **built, §11.4** |
 | **6**  | Engine install happens inside the first Launch, as a task                                                           | §7 S3    | Yes. "No binary — install one from the Inference page" becomes a progress line in the same place the user is looking. Version pinning stays an expert path                     | **taken 2026-09-15 (Troy), AMENDED: ask first.** *"I could not find llama.cpp, would you like me to install it?"*, Yes as the default, with a warning that skipping is for advanced users only — **built, §11.4** |
-| **7**  | Long-lived client keys                                                                                              | §7 S4    | Yes: minted by the agent with the install signing key, `aud: client`, one-year default, named, listed, revoked by the existing rotation. **Contract change**                     | **taken 2026-09-15 (Troy)** |
+| **7**  | Long-lived client keys                                                                                              | §7 S4    | Yes: minted by the agent with the install signing key, `aud: client`, one-year default, named, listed, revoked by the existing rotation. **Contract change**                     | **taken 2026-09-15 (Troy)** — **built, §11.5**, with per-key revocation rather than rotation: a Turn-off button that turns nothing off is P4's silent failure |
 | **8**  | "Serve to other devices" as one switch                                                                              | §7 S5    | Yes. It sets `advertiseUrl` to a detected LAN address, shows the URL a phone types, and reports what is actually bound. The minimal version is in the release                    | **taken 2026-09-15 (Troy).** His question — *can we detect the Windows Firewall disposition so we can warn when it is blocking?* — is answered **yes** in §6.6 |
 | **9**  | Security default on a desktop OS is the keyring, written to **both** agent and control                              | §0.14    | Yes. The wizard's own copy already says the keyring is "best for AI hobbyists" and defaults to the other option. Servers and containers keep `prompt_on_startup` / `passphrase_file` | **taken 2026-09-15 (Troy)** — **built, §11.1** |
 | **10** | The tree stays; the machine level appears only once there is more than one machine                                  | §6.4     | Yes. A standalone install today shows four rows reading "This machine". Reverses `ui-tree-navigation.md` §2.3 for the one-machine case only; a second machine restores it       | **taken 2026-09-15 (Troy)** — **built, §11.2** |
@@ -168,7 +168,7 @@ is gone. There is no header indicator of any kind. The longest waits in
 the product — a 24 GB download, a four-minute load, an engine install —
 are the ones most likely to be watched from the wrong page.
 
-### 0.8 The second job has no path
+### 0.8 The second job has no path — **CLOSED by S4, 2026-09-15 (§11.5)**
 
 The hobbyist's second job after a first chat is **pointing a tool they
 already use at it** — Continue, Cline, Open WebUI, SillyTavern, a coding
@@ -407,7 +407,7 @@ with the current state of Eugene's answer.
 | 3  | **Model files trapped in a store**                                   | *"switching tools requires re-downloading everything… Nobody talks about it until they try to move their models."* (HN)           | **Built** — the thesis. Unsaid on any screen a new user meets                                 |
 | 4  | **Which quant, will it fit**                                         | *"Q3_K_S vs 2Q_K_M? No one fucking knows."* (r/LocalLLaMA)                                                                        | **Built** (fit, recommendation, quant table); recommendation is a tag on a row, not the first thing shown |
 | 5  | **GPU not used, silent CPU fallback**                                | *"not using the GPU even though it is available when you exec into it"* — the ROCm image on an NVIDIA box (Unraid forum)          | Partial: admission refuses with numbers; a running CPU-only runtime is not badged as a warning |
-| 6  | **Pointing an OpenAI client at it** — `/v1`, non-empty key, model id | *"The `apiBase` differs for each tool. Otherwise, getting 404"* (continue #7658)                                                  | **Missing** as a surface; the `curl` line is half of it (§0.8)                                |
+| 6  | **Pointing an OpenAI client at it** — `/v1`, non-empty key, model id | *"The `apiBase` differs for each tool. Otherwise, getting 404"* (continue #7658)                                                  | **Built** 2026-09-15 (S4): Home's card carries all three plus seven per-app recipes, and a long-lived revocable key |
 | 7  | **Slow first response — the model was unloaded**                     | *"214 model load events… 11.4s to first token vs 0.9s warm"*                                                                      | Built (M6 policy); the load is visible only on Inference; no "keep resident" from the UI      |
 | 8  | **Several models, eviction, VRAM juggling**                          | *"The log seems to say it runs out of memory, but I don't know what to do next."* (ollama #13235)                                 | Built (admission); no per-device memory bar on Inference                                      |
 | 9  | **`<think>` tags in the answer**                                     | *"raw XML-like markup in the message body"* (open-webui #24839)                                                                   | Built (`ThinkingFilter`); the profile field is `thinkingMode`, not a plain-words control       |
@@ -881,7 +881,7 @@ other click, and Skip leaves a stopped runtime whose reason is printed.
 Decisions **#5, #6**. *As built:* ui only for the slice, plus two agent
 fixes the acceptance run forced (§11.4) — the library needed nothing.
 
-### S4 — Client keys, and "Use it from your apps" (M, contract)
+### S4 — Client keys, and "Use it from your apps" (M, contract) — **BUILT AND LIVE-VERIFIED 2026-09-15; record §11.5**
 
 `POST /v1/auth/client-keys {name, ttl?}` on the agent, minting a token
 with the install signing key, `aud: client`, default one year; `GET`
@@ -897,7 +897,14 @@ field offers the client key too. *Touches:* specs (`agent.yaml`,
 `gateway.yaml` prose), agent, gateway, ui; control regen. *Done when*
 `hobbyist-acceptance.sh` copies the three strings off Home, restarts the
 gateway, and completes a request with them and nothing else. Decision
-**#7**.
+**#7**. *As built:* the revocation went the **first** way — a list the
+gateway polls from its own node's agent, bounded by the routing refresh
+interval — because a "Turn off" button that only pretends is the silent
+failure P4 forbids, and because a key per app is pointless if revoking
+one revokes them all. `scripts/client-keys-acceptance.sh` stands in for
+the not-yet-written `hobbyist-acceptance.sh`. Claude Code is **not** in
+the recipe list: it speaks the Anthropic Messages API, which this
+gateway does not serve (§11.5).
 
 ### S5 — "Reach it from other devices" (M, small contract)
 
@@ -1491,6 +1498,199 @@ dismiss have no browser test. Whether the run should re-ask about
 installing on a node that refused once is left to the person: it does.
 The live worker still runs b10948 and still needs the upgraded agent
 before *update* offers it b10990.
+
+### 11.5 S4 — a key you can hand out, and a key you can take back. DONE 2026-09-15.
+
+Contracts `f794916` (`agent.yaml`: four operations, five schemas;
+`gateway.yaml`: prose); agent `e0ec0fc`, gateway `079d9bd`, control
+`2ea881b` (regen-only), `ui` `b9e617c` (dist `b44c7db`); both installers
+re-pinned. `library` and `inference-driver` codegen neither document and
+stay a pin back, correctly. Decision **#7**.
+
+**What §0.8 had measured.** The hobbyist's second job — pointing an app
+they already use at the install — had no path. The only bearer on offer
+was the **operator session token**: authority over every component,
+reachable only from the playground's diagnostic panel nineteen clicks
+in, dead fourteen days after sign-in. `tailnet.md` said so in as many
+words — *"There is no long-lived client key yet."* And §3's
+sixth-commonest failure across every comparable project (the `/v1`
+suffix, a key field that must not be empty, the exact model id) had the
+three strings shown nowhere together.
+
+**What landed.** `POST /v1/auth/client-keys {name, ttlDays?}` on the
+agent mints a JWT with the install's signing key, `aud: client`, a year
+by default. `GET` lists the records, `DELETE` revokes one,
+`GET .../revoked` serves the ids the gateway polls. Home gains **Use it
+from your apps**: the address (with `/v1`), the model id, **Make a key**,
+the live keys with **Turn off** beside each, and seven recipes —
+Continue's `config.yaml`, Cline's settings, Open WebUI's connection,
+SillyTavern's custom endpoint, OpenCode's `opencode.json`, the
+`OPENAI_BASE_URL`/`OPENAI_API_KEY` pair every SDK reads, and `curl` —
+each naming **where** the value goes. The diagnostic panel mints one
+too, and stops describing the session token as the thing to give a
+harness.
+
+**The audience does its work by shape, not by a list anyone maintains.**
+`client` is neither `operator` nor a `service:` audience, and every
+check in every component tests for one of those two — so the agent, the
+control root, the library and the gateway's own config, admin and
+metrics paths refuse a client key **without having been taught it
+exists**. Exactly one place opts in: `accept_client=True`, passed by
+`require_authorized` and nowhere else, so an endpoint added later is
+safe by omission rather than by vigilance. Thirteen live checks and
+eight unit tests hold it down, including through
+`require_operator_or_service` — the dependency a new endpoint is most
+likely to reach for, and the one that accepts *any* service token.
+
+**Revocation went the first way the plan offered, and the second way
+would have been a lie.** The plan allowed "the list is informational,
+revocation is the existing signing-key rotation". That makes a **Turn
+off** button that turns nothing off — P4's silent failure — and it makes
+a key per app pointless, since revoking one would revoke every session
+and every node's credential at once. So: the record file keeps a
+revoked stamp, the gateway polls `GET /v1/auth/client-keys/revoked` from
+**its own node's agent**, caches it for the routing refresh interval,
+and refuses a matching `jti`. Three properties, each deliberate:
+
+- **Cached, not asked per request.** A round trip per completion would
+  put the agent in the inference path, which the two-layer split exists
+  to avoid. Revoking bites within about one refresh interval; the
+  contract says that rather than promising instant. Measured live at
+  **3 s with a 3 s interval**.
+- **Fail-open on the list, never on the token.** An unreachable agent
+  leaves the previous answer in place and requests keep being served:
+  taking every harness in an install down for the length of an agent
+  restart is a worse failure than a revoked key living fifteen seconds
+  longer, and the token still needs a valid signature and an unexpired
+  `exp`. A gateway that *emptied* the list on a failed read would
+  un-revoke everything on the first blip, which is the shape that makes
+  fail-open indefensible — there is a test for exactly that.
+- **Nothing is fetched until a client key arrives.** An install where
+  nobody minted one never makes the call.
+
+**Where the record lives is the multi-node answer.** A client key is
+install-wide — one signing key, so a key minted anywhere verifies
+everywhere — but its *record* is not. It lives on the agent that minted
+it, and the gateway asks its own node's agent. So the UI mints against
+**the node the gateway runs on**, resolved from the control root's
+placement view and reached through `node:<name>`; the card names the
+machine. Nobody opens a browser over there
+(`one-console-never-hop-nodes`). A root that did not answer falls back
+to the local agent, which on a standalone install is the same thing.
+
+**The token is never stored.** `client_keys.json` beside `agent.yaml`
+keeps name, created, expires, revoked and the token's **tail** — six
+characters off the *end*, because every JWT this install mints begins
+`eyJhbGciOiJIUzI1NiIs` and a prefix identifies nothing. A live check
+greps the file, the config files and the list response for the token and
+finds it in none of them. Its own file rather than `agent.yaml` for two
+reasons: `AgentState.set_passphrase` replaces the whole `auth` block,
+and a growing list does not belong in a document the config trio serves.
+
+**Departures, recorded.**
+
+1. **Claude Code is not in the recipe list, and the plan named it.** It
+   takes `ANTHROPIC_BASE_URL` and speaks the Anthropic Messages API at
+   `/v1/messages`; this gateway serves the OpenAI shape at
+   `/v1/chat/completions`. A recipe for it would 404 for everyone who
+   followed it. A test asserts its absence so nobody adds it back from
+   the plan. **Serving `/v1/messages` is a real thing to want** — it is
+   the one shape a whole class of harnesses speaks — and it is a slice,
+   not a snippet.
+2. **The list shows a tail, not a prefix.** The plan said "names,
+   prefixes and expiries". See above.
+3. **`hobbyist-acceptance.sh` does not exist yet** (S10), so this slice
+   has its own script. S10 absorbs it.
+4. **`lastUsedAt` is on the contract and nothing writes it.** The agent
+   never sees a client key — the gateway does — and a *last used* the
+   install cannot observe would be worse than none. The field is in the
+   shape so a future gateway-side counter has somewhere to land.
+5. **No "never expires".** A ten-year ceiling, a one-year default. A
+   token with no expiry at all leans entirely on a bounded-staleness
+   revocation list.
+6. **The address is still a guess.** Same derivation as the diagnostic
+   panel's — the page's host plus the gateway's port from the topology —
+   wrong on the container install by exactly as much as a harness handed
+   the same numbers would be. It is labelled, and editable, and the
+   correction is remembered per browser.
+
+**THE RUN'S FINDINGS WERE ALL ABOUT THE HARNESS, AND TWO OF THEM WOULD
+HAVE PASSED AS PRODUCT DEFECTS.**
+
+**(a) A check that reported a defect that was not there.** Execution 1's
+*"the control root refuses a client key"* failed — and the control root
+was **uninitialized**, so it was 503ing every path and had never looked
+at the audience. A refusal is not evidence of the refusal you meant. The
+script initializes the root now, and the failure message names 503 as
+the case that proves nothing.
+
+**(b) A 401 from one component signs the operator out of another, and
+that is real.** Executions 2 and 3 failed every browser test at sign-in
+against a form that had just succeeded: login 200, navigate to Home,
+then `GET /api/proxy/control/v1/runtimes` **401**, and `lib/api.ts`
+treats *any* 401 as "this session is over" — it clears the token and
+bounces to `/login`, after which the agent's own reads 401 for the
+honest reason. The root cause was the install shape execution 1 had
+created by accident and execution 2 made worse: **the control root
+initialized while the local agent was not enrolled**, which is M9's
+finding exactly — an unenrolled agent mints a fresh random signing key
+per restart while the root mints the install's, so the root refuses
+every session the agent issues. Fixed in the script by enrolling, which
+is what M7 settled every node does and what the wizard has done since
+M9. **Left standing, and worth knowing: the interceptor's rule is too
+broad.** A 401 from the control root is not evidence about the agent
+session, and on a degenerate install it logs a working operator out of a
+working console. Not fixed here — it is the auth path of every screen
+and not S4's to change on the way past.
+
+**(c) A form that is inert until it hydrates.** `output: export` serves
+the login form as static HTML, and React replaces it on hydration with a
+controlled input whose state is `""` — so a `fill` landing between
+"visible" and "hydrated" is silently discarded, leaving a filled-looking
+form that submits nothing and a disabled button. The accessibility tree
+in the failure artifact showed it: an empty Passphrase box and
+`button "Unlock" [disabled]`. The spec's sign-in asserts the value stuck
+and re-fills until it does. Same family as M9's *"`isVisible()` does not
+wait"* and S1's *"the page menu renders after the setup gate"*, and
+**the other four browser specs share the un-fixed helper** — they have
+not flaked yet, which is not the same as being right.
+
+**(d) A browser cannot observe the 401 it was written to expect.**
+`/v1/config` deliberately answers no CORS, so Chrome blocks the
+cross-origin fetch before a status exists and `fetch` rejects; the spec
+asserted `401` and read the correct behaviour as a failure. It accepts
+either refusal now and says why, and the script's `curl` — which does
+not enforce the same-origin policy — is what pins the 401.
+
+**Verification.** Agent: 601 tests (35 new), four sabotage-checked, mypy
+clean. Gateway: 232 (20 new), five sabotage-checked — the first version
+of that file patched the guard's `_fetch`, so the fail-open branch was
+asserted about rather than run; it uses an `httpx.MockTransport` now, and
+that change found the **401 case**, where a guard catching only
+connection errors would parse the agent's refusal as an empty list and
+silently un-revoke everything. UI: 371 tests (21 new), four
+sabotage-checked. **`scripts/client-keys-acceptance.sh`: 45 checks
+(52 `PASS` lines), zero failures, fourth execution** — a real fleet with
+a real model, a key minted through the API and through the browser, a
+completion carrying only that key, thirteen refusals across four
+components, a revocation biting in 3 s, a second key still working after
+it, and both surviving a restart of the agent because an enrolled node
+keeps the install's signing key.
+
+**Golden path after S0–S4**, from a finished download to a connected
+app: **Run · Install · Send**, then **Make a key · Copy · paste**. Still
+by reading the code, not by S10's click-counting run.
+
+**Not done.** The address guess is not corrected automatically on a
+port-remapped install — the person types it once. Nothing records when a
+key was last used (departure 4). `ttlDays` is not exposed in the UI; the
+card always takes the year. There is no "rotate this key" that mints a
+replacement and revokes the old one in one step. The revoked-list poll
+has no live proof at the contract's default 15 s interval — the run uses
+3 s so the check is a run rather than a wait. And **nobody has pointed a
+real Continue, Cline or Open WebUI at a real install with one of these
+keys**; the recipes are asserted against their documented shapes, not
+against those products.
 
 ---
 

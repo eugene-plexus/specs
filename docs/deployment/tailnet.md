@@ -270,13 +270,39 @@ and never a bearer for either:
 An agent harness (OpenCode, the OpenAI SDK, anything that takes a base
 URL and an API key) needs two strings: the gateway's address as
 `http://<gateway-host>:<gateway-port>/v1`, and a bearer the gateway
-accepts. Today that bearer is the **operator session token** — the one
-the UI holds after you sign in — and it expires 14 days after sign-in.
-There is no long-lived client key yet. The playground's **Diagnostic**
-panel (open it from the header) shows both strings, lets you copy them,
-and can send a turn **direct to the gateway** over exactly that path so
-you can tell a harness problem from a control-plane one before
-configuring the harness.
+accepts. Three, really — the exact model id, which `GET /v1/models`
+gives.
+
+**Use a client key, not your session token** (since 2026-09-15). Open
+**Home** and look for *Use it from your apps*: it shows the address with
+the `/v1` already on it, the model id, and a **Make a key** button. A
+client key is named ("Continue on the laptop"), lives a year, and is
+accepted by the gateway's three OpenAI-compatible paths and **nothing
+else** — not this gateway's own config or metrics, not the agent, not
+the library, not the control root. It is shown once; copy it then.
+Turning one off is a button beside it, and the gateway stops accepting
+it within one routing refresh (15 s by default). The card also carries
+ready-made snippets for Continue, Cline, Open WebUI, SillyTavern,
+OpenCode, `OPENAI_BASE_URL`/`OPENAI_API_KEY`, and `curl`.
+
+Two things a client key is not. It is **not** an operator credential —
+anything you do in the UI still needs the passphrase. And revoking one
+is **not** the same as the install-wide revocation: that is still a
+signing-key rotation, which invalidates every token everywhere at once.
+
+The **operator session token** still works as a bearer, and the
+playground's **Diagnostic** panel still shows it — but it can do
+everything you can and expires 14 days after sign-in, so it is right for
+a one-off check and wrong for a harness you leave configured. That panel
+can mint a client key too, and can send a turn **direct to the gateway**
+over exactly the path a harness takes, so you can tell a harness problem
+from a control-plane one before configuring anything.
+
+**Which machine mints the key matters on a multi-machine install.** The
+record lives on the agent that made it, and the gateway asks its own
+node's agent about revocations — so Home mints against the node the
+gateway runs on, and says which machine that is, whichever console you
+are sitting at. Nothing needs a browser opened over there.
 
 **Browsers are a client too, since 2026-09-13.** The gateway's three
 OpenAI-compatible paths (`/v1/models`, `/v1/chat/completions`,
