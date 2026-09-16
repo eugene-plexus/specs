@@ -505,9 +505,9 @@ only while it applies:
 │ D:\Users\sam\Eugene Models, named as published.                         │
 │ [ Download and run ]   [ Choose another ]   [ I already have models ]  │
 └────────────────────────────────────────────────────────────────────────┘
-        ▲ S6 ships this card with **Download** as the primary, and S3's
-          **Run** appears in its place once the file lands. The single
-          chained "Download and run" of §6.3 is NOT built — see §11.7.
+        ▲ Built. One action, one tray entry, and it survives the tab:
+          the intent rides on the download record, so a console opening
+          after the laptop was shut claims it and carries on (§11.8).
 ┌ Try it ────────────────────────────────────────────────────────────────┐
 │ ▸ qwen3-14b · 32k context                                              │
 │ [ Say something…                                              ] [Send] │
@@ -569,17 +569,23 @@ the `default` profile at the fitting context → launch → mark ready and
 light up "Try it". Every step is a thing the system already does; the
 slice is the orchestration and the one place it is reported.
 
-> **▶ BUILT AS TWO ACTIONS, NOT ONE (S6, §11.7).** Every step exists —
-> S3 built install/profile/launch behind **Run**, S6 built the download
-> behind **Download** — and the card hands the person the second the
-> moment the first finishes, so the path is *Download · Run · Send*
-> rather than *Download and run · Send*. **The orchestration this
-> paragraph asks for is the part that is missing**, and it is a real
-> difference: the person is asked twice, and the second ask arrives
-> minutes later when a multi-gigabyte download lands, which is exactly
-> when they may have walked away. Closing it is a small slice on top of
-> `oneClickRun.ts` — chain its store onto the download's completion —
-> and it is Troy's call whether it goes before or after S7.
+> **▶ BUILT, 2026-09-16 (§11.8).** One click, one task-tray entry, all
+> the way to a first reply. It shipped as two actions for a few hours
+> after S6 — Home offering **Download**, S3's **Run** taking its place
+> when the file landed — which asked the person twice, the second time
+> minutes later when a multi-gigabyte download finishes and they may
+> have walked away.
+>
+> **The hard half was never the chain: it was that a 16 GB transfer
+> outlives the browser.** So the intent is not in a browser-side store;
+> it rides on the **download record** as `runWhenReady`, which the
+> library records and never acts on — a launch is a profile, an engine
+> and a runtime on some node's agent, and which node is a question the
+> library has no business answering. A console opening later claims the
+> record and carries on. `POST /v1/downloads/{id}/claim` makes that safe
+> from every console at once, and is also what stops a deliberate stop
+> from being undone a week later by a browser that still sees the old
+> intent.
 
 The recommendation is *"the most-downloaded, well-known, permissively
 licensed general-purpose instruct GGUF in the largest size class that
@@ -2148,18 +2154,12 @@ mistake once, in the other direction.
 
 #### Not done
 
-**§6.3's single "Download and run" is not built, and it is the one
-place this slice fell short of the design rather than corrected it.**
-Home's card offers **Download**; S3's **Run** takes its place when the
-file lands; the engine question, the profile and the launch all happen
-behind Run as they did before. So the golden path is *Download · Run ·
-Send* and the person is asked twice — the second time minutes later,
-when a multi-gigabyte download finishes and they may have walked away.
-Every step exists and nothing new is needed to join them: chaining
-`oneClickRun.ts`'s store onto the download's completion is the whole
-slice. Deliberately left, because doing it properly means deciding what
-happens when the browser is closed across a 16 GB download, which is a
-question about where the chain lives rather than about the button.
+~~**§6.3's single "Download and run" is not built**~~ — **closed the
+same day, §11.8.** It shipped here as two actions, which asked the
+person twice; the answer to "what happens when the browser is closed
+across a 16 GB download" turned out to decide the design, and it is that
+the intent belongs on the download record rather than in a browser-side
+store.
 
 Nothing is downloaded by this run: the set's sizes and filenames are
 asserted, and no starter model has been fetched and launched end to end
@@ -2172,6 +2172,82 @@ tests and nothing else until October. The monthly workflow has not run
 on a schedule yet. And Discover's **search rows** still carry no fit
 verdict, which is upstream's constraint rather than ours and is stated
 on the endpoint.
+
+### 11.8 §6.3 — one action, and one that survives the tab. DONE 2026-09-16.
+
+Contracts `6e860bf` + `3d7921c`; library `fd7aeb7`, `ui` `1157da6` (dist
+`32ba5f4`); both installers re-pinned. Record:
+[`../acceptance/download-and-run-run.md`](../acceptance/download-and-run-run.md),
+`scripts/download-and-run-acceptance.sh` — **28 `PASS` lines, zero
+failures, second execution**.
+
+**What it closes.** S6 left Home offering **Download**, with S3's
+**Run** taking its place when the file landed. Every step existed; the
+orchestration §6.3 calls "the slice" did not. So the person was asked
+twice, and the second ask arrived minutes later.
+
+**The hard half was never the chain.** Joining four calls in a browser
+store is an afternoon. What decided the design is that a 16 GB transfer
+outlives the tab that asked for it, so a store in the browser is a store
+that forgets. Four places the intent could live were considered and
+three rejected:
+
+- **The browser, reconstructed on load.** Cheap, and wrong: it cannot
+  tell a download someone started *in order to run* from one they
+  started to keep, so it would launch things nobody asked to launch.
+- **The agent.** It would have to drive the library's downloader, which
+  is a component it supervises and does not command.
+- **The library, acting on it.** The library cannot launch — a launch is
+  a profile, an engine and a runtime on some node's agent — so it would
+  have to call the agent, which is the boundary backwards.
+- **The library, RECORDING it.** `runWhenReady` on the download record;
+  the library never acts on it. The durable half lives beside the
+  durable thing, and the interactive half — the engine question — stays
+  where a person is. If nobody ever opens a browser again, nothing
+  happens, which is correct, because the chain contains a question.
+
+**`POST /v1/downloads/{id}/claim` is the other half, and it is not
+bookkeeping.** Two browsers are two browsers: every console on the
+install can see the same finished download, and without an atomic clear
+every one of them would create a profile and launch a runtime for the
+same model. It is also what stops a *deliberate* stop from being undone
+— a console opening a week after someone stopped that runtime on purpose
+would otherwise see the same intent and start it again. Idempotent by
+construction, because a client that retried after a timeout has not done
+anything wrong.
+
+**One tray entry**, which is §6.3's actual words, and it needed no new
+mechanism: a run already claims the tray's `install:` and `load:` rows
+while it owns those steps, and the download row joins them. The browser
+check asserts the count is exactly one.
+
+**`findRunFor` scans rather than looking up by key.** A chained run is
+filed under its *download's* id, because the model does not exist until
+the file lands and the library's post-download scan names it — and the
+moment it does, the Library and Home would otherwise offer Run for a
+model the task above them is already running.
+
+#### The one defect, and it was the harness, twice
+
+Both browser passes of the first execution failed on
+`getByTestId('home-try-it').locator('textarea')` — **Home's composer is
+an `input`**. Sixty seconds of waiting for an element that does not
+exist, in both passes, while the API checks in the same run reported the
+runtime `ready`, the profile made, llama.cpp installed, and *"a runtime
+exists that no human asked for in this browser"*. The product did the
+whole job both times and the test could not see it. Same family as M10's
+check 7.
+
+#### Not done
+
+The run arranges the closed-laptop state **through the API** — a
+finished download with its intent still set — rather than by killing
+Chrome mid-transfer and reopening it. The state the console meets is
+identical; the path to it is not. Two consoles racing is asserted as two
+sequential claims, not two simultaneous ones. A chained run targeting
+another node (`node:<name>`) is unit-tested and has never been executed:
+Home runs models on the machine the browser is served from, and this box
+is one machine.
 
 ---
 
