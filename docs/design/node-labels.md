@@ -98,18 +98,61 @@ the console gets less pretty and stays correct.
 
 ## §2 Radius
 
-`control.yaml` only. Its codegen consumers are exactly `control` and
-`ui`, so those two re-pin and the other four stay back — **measured by
-regenerating all six and diffing, not by counting `$ref`s**
+**Two documents, because decision #2 was taken** (§6). The label alone
+would be `control.yaml` only — consumers `control` and `ui`. Carrying a
+label through `join` adds `agent.yaml`, because enrollment is two hops:
+
+    operator / CLI  ->  agent   POST /v1/node/enroll   (enrollWithControl)
+    agent           ->  control POST /v1/nodes/enroll  (enrollNode)
+
+so both request bodies gain an optional `label`. `agent.yaml`'s consumers
+are `agent`, `control` and `ui`; the union is **`agent`, `control`,
+`ui`** and the other three stay back — **measured by regenerating all six
+and diffing, not by counting `$ref`s**
 (`polyrepo-spec-codegen-workflow`).
 
-Work: contract; control's apply + snapshot + the endpoint; the UI helper
-and ten call sites; the Nodes screen gains the edit affordance, since it
-is already the control-root screen.
+Work: the contracts; control's apply + snapshot + the endpoint; the
+agent's `join --label` and its enroll passthrough; both installers, which
+already take `--join URL --token JWT` and are the unattended path where
+nobody can answer a prompt; the UI helper and ten call sites; the Nodes
+screen's edit affordance, since it is already the control-root screen;
+`tailnet.md` and `container.md`.
 
 ---
 
-## §3 Acceptance
+## §3 The control host does not join, and this is the gap
+
+**Taking #2 does not fix the case that prompted the slice**, and that is
+worth stating plainly rather than discovering during the build.
+
+`--label` rides on `join`, which is how a **worker** enters an existing
+install. The **control host never joins**: the first-run wizard enrolls
+the local agent itself (M9's *"the control host's own agent never
+enrolled"* fix), and it does so with no name at all —
+
+    ui/src/app/setup/start.ts
+    await api.post("agent", "/v1/node/enroll", { controlUrl, token: minted.token });
+
+— so the agent falls back to `socket.gethostname()`. On a container that
+is the container ID. That is the exact path that produced
+`468e3ed662bf`, and a `join` flag never touches it.
+
+Three ways to close it, and they are not exclusive:
+
+1. **`--hostname` in the template** — done (2026-09-16), and it fixes
+   every *new* containerised install without any of this slice.
+2. **The wizard asks.** One field on the passphrase screen, defaulted to
+   the detected hostname, passed as the enroll `name`. This is the honest
+   fix for the control host and it is small, but it adds a field to a
+   two-screen wizard that S2 deliberately shrank — so it is a decision
+   rather than an obvious yes (§6 #5).
+3. **The label, applied afterwards** — which is this slice, and is what
+   rescues installs that already exist. It is the only one of the three
+   that helps `468e3ed662bf` today.
+
+---
+
+## §4 Acceptance
 
 `scripts/node-label-acceptance.sh`, two agents in M7's shape:
 
@@ -127,7 +170,7 @@ Check 2 is the one that earns the slice. The rest are ordinary.
 
 ---
 
-## §4 Non-goals
+## §5 Non-goals
 
 - **Renaming the identity.** Separate, larger, and distributed: control
   moves the record, the agent must rewrite `node.yaml`, and until it
@@ -139,18 +182,19 @@ Check 2 is the one that earns the slice. The rest are ordinary.
 
 ---
 
-## §5 Decisions needed
+## §6 Decisions needed
 
 | # | Question | Recommendation |
 | --- | --- | --- |
 | 1 | Label in the replicated log, or control config? | **The log.** A config map needs a new `ConfigValueType`, which reaches every consumer through `ConfigField` (the M11 rule) — a six-repo re-pin to avoid a one-op change to a two-repo document. |
-| 2 | Also accept a label at join time (`join --label "NAS"`)? | **Yes.** It stops the problem at the source for new installs and costs one flag; the container path has no TTY and never sees the first-boot question. |
+| 2 | Also accept a label at join time (`join --label "NAS"`)? | **TAKEN 2026-09-16: yes.** One flag on `join`, through both enroll bodies, and on both installers. Note what it does *not* cover: §3a — the control host does not join, so this helps the next worker and not the machine that prompted the slice. |
 | 3 | Show the real name anywhere alongside the label? | **Yes, on the Nodes screen only** — it is the identity, and an operator debugging a proxy hop needs it. Everywhere else the label alone. |
-| 4 | Label the control host at first boot from something friendlier than the hostname? | **No.** Guessing a name is how we got `468e3ed662bf`; `--hostname` in the template plus #2 covers it honestly. |
+| 4 | Label the control host at first boot from something friendlier than the hostname? | **No.** Guessing a name is how we got `468e3ed662bf`. Detecting one and *asking* is #5; inventing one is not. |
+| 5 | Should the wizard ask for this machine's name? | **Recommended yes**, defaulted to the detected hostname, one field on the existing passphrase screen. It is the only thing that stops a fresh container install from enrolling as hex in the first place. The cost is a field on a wizard S2 deliberately cut to two screens, which is why it is a question and not an assumption. |
 
 ---
 
-## §6 Effort
+## §7 Effort
 
 Small. One contract change to one document, a narrow op, a pure helper
 with ten call sites, one form, one acceptance script. The risk is
