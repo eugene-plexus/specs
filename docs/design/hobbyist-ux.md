@@ -2276,12 +2276,15 @@ is one machine.
 
 ### 11.9 S7 — measured, one contract field landed, PAUSED mid-slice 2026-09-16.
 
-**State: contracts and the agent are DONE and pushed, and the slice's
-*Done when* is MET — a sealed root shows as one issue with the unlock as
-its action, from any page.** What is left is Home's card and Inference's
-two states — **and both are built**. What is left is the acceptance run
-and the pins. Steps 1-5 of *Where to resume* were taken on 2026-09-16;
-pick up at step 6.
+**State: BUILT AND SHIPPED, AND NOT VERIFIED LIVE.** Steps 1-5 and 7
+were taken on 2026-09-16; the slice's *Done when* is met, and both
+installers now pin it. **Step 6, the acceptance run, was skipped at the
+user's direction** — so every screen here has been driven in jsdom and
+by nothing else: no browser, no live install, no
+`scripts/issues-acceptance.sh`. Every previous slice in this project ran
+its acceptance script before its pins and each one found something the
+fixtures could not, so that gap is the one thing left and it is
+unclosed.
 
 | Repo      | Commit    | What it carries                                                  |
 | --------- | --------- | ---------------------------------------------------------------- |
@@ -2289,6 +2292,8 @@ pick up at step 6.
 | `agent`   | `763d10d` | serves it, two tests, both sabotage-checked; suite 641 green     |
 | `control` | `f84373c` | regen-only (`agent_models.py` changed, `models.py` untouched)    |
 | `ui`      | `70dd910` | rules, reads, badge, Home's card, Inference's two states          |
+| `dist`    | `893b669` | the static export of `70dd910`, pinned by both installers        |
+| `specs`   | `f2f0a10` | the pins: ui `893b669`, agent `763d10d`, control `f84373c`       |
 
 `ui` `055a9a4` is the pin bump, the regen and `issues.ts`; `f67e001` is
 its test file (step 1), `acfac86` the polling hook (step 2) and
@@ -2548,8 +2553,40 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
    initialize the control root, restart it with no keyring, and it comes
    back `503 Locked`. Clock skew is **not** producible on one box and
    should be reported as not produced rather than faked.
-7. **Then** re-pin both installers with the new `ui` and `dist`, and
-   write the record.
+6. **`scripts/issues-acceptance.sh`** in `specs`, plus
+   `docs/acceptance/issues-run.md`. **NOT DONE — skipped at the user's
+   direction, 2026-09-16, and step 7 went ahead without it.** Still the
+   one thing outstanding. The sealed root is producible: initialize the
+   control root, restart it with no keyring, and it comes back
+   `503 Locked`. Clock skew is **not** producible on one box and should
+   be reported as not produced rather than faked. Note the run now has
+   more to check than when this was written — the two Inference states,
+   Home's card, and the badge's inline unlock.
+
+7. ~~**Then** re-pin both installers~~ — **DONE 2026-09-16, `specs`
+   `f2f0a10`. THREE pins moved, not one.**
+
+   - `ui` `11e7767` → **`893b669`** (`dist`, built from `ui@70dd910`).
+   - `agent` `f9cc927` → **`763d10d`**, and this is the one that
+     mattered: it **serves `NodeIdentity.time`**. Without it no host
+     reports what time it thinks it is, `skewBetween` has nothing to
+     measure, and the clock-skew rule can never fire on a fresh
+     install. Pinning only the UI would have shipped a rule with no
+     input — the same shape of defect this slice's own measurement was
+     written to catch.
+   - `control` `ff71f75` → **`f84373c`**, regen-only at specs
+     `4a72644`, so the trust root's generated view of the agent's
+     surface matches the agent it reads.
+
+   `gateway` and `inference-driver` were already at their HEADs.
+   `library` stays at `fd7aeb7`: its only commit since is a README, so
+   the installed code is byte-identical.
+
+   All three archives were verified to resolve, and **the pinned UI
+   archive was unpacked and grepped** — it carries the built export and
+   the strings S7 added, so "pinned a commit with no UI in it", the trap
+   that produced the `dist` branch in the first place, cannot have
+   happened silently.
 
 **Known trap for the acceptance run, unchanged since S0:** the live
 worker agent holds 8079 on this box. Run on +100 ports, clear every
