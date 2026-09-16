@@ -155,6 +155,44 @@ info:
     passphrase login); component-to-component calls present the
     per-component service token threaded via env var at spawn time.
 
+    ### Client keys, on the front door only (2026-09-15)
+
+    A third audience arrived with the hobbyist UX work: `aud: client`,
+    a long-lived named key the agent mints
+    (`POST /v1/auth/client-keys`) for an app outside the install --
+    Continue, Cline, Open WebUI, SillyTavern, the OpenAI SDK, `curl`.
+    **This gateway accepts it on the three OpenAI-compatible paths and
+    nowhere else.** `/v1/config`, `/v1/admin/*` and `/v1/metrics` refuse
+    it exactly as they refuse a driver's service token, and so does
+    every other component in the install: `client` matches neither
+    `operator` nor the `service:` prefix that every other check tests
+    for.
+
+    That narrowing is the point of the audience. Before it, the only
+    bearer a person could paste into a harness was their **operator
+    session token** -- full authority over every component, obtainable
+    only from a diagnostic panel inside the UI, and dead fourteen days
+    after sign-in. A key scoped to the front door can be handed out,
+    written into a config file, and revoked one at a time.
+
+    **Revocation is a list this gateway polls, and it is bounded rather
+    than instant.** A client token carries a `jti`; the agent on this
+    gateway's own node keeps the records and serves the revoked ids at
+    `GET /v1/auth/client-keys/revoked`. This gateway re-reads that list
+    when its copy is older than the routing refresh interval, so
+    revoking a key stops it here within about that interval. **If the
+    agent cannot be reached the previous list keeps being used and
+    requests keep being served** -- taking every harness in an install
+    down because the local agent restarted would be a worse failure than
+    a revoked key living a few seconds longer, and the token still has
+    to carry a valid signature and an unexpired `exp`. The instant,
+    total revocation is the one that has existed since M7: rotate the
+    install's signing key and every token everywhere stops verifying.
+
+    A client key is **not** a per-request identity. Nothing here records
+    which key served a request; `/v1/metrics` counts backends, not
+    callers.
+
     ## Browsers, and CORS
 
     The three OpenAI-compatible paths -- `GET /v1/models`,
@@ -973,10 +1011,13 @@ components:
       scheme: bearer
       bearerFormat: opaque
       description: |
-        Bearer session token issued by the agent. Operator
-        sessions are issued via `POST /v1/auth/login` on the
-        agent; component-internal calls use service tokens
-        threaded to spawned children via env var at startup.
+        Bearer token issued by the agent. Operator sessions come from
+        `POST /v1/auth/login`; component-internal calls use service
+        tokens threaded to spawned children via env var at startup; and
+        an outside app uses a **client key** from
+        `POST /v1/auth/client-keys`, which this gateway accepts on the
+        three OpenAI-compatible paths and refuses everywhere else. See
+        "Client keys, on the front door only" above.
 
   schemas:
     DriverProbeRequest:
