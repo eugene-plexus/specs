@@ -106,8 +106,19 @@
     writes under $HOME — and this container has no GPU to run an engine
     on, so there is nothing to lose. Verified in CI as check 20: the
     image comes up healthy as a uid it does not contain.
+
+    `hostname`: the node's name in this install comes from
+    `socket.gethostname()` at enrollment (`enrollment.py`), and a
+    container's default hostname is its own CONTAINER ID. Without this
+    the control host enrols as something like `468e3ed662bf` and that
+    hex string is then its name everywhere — the node registry, the
+    Config tab, the resource tree, and the sentence on Home saying which
+    machine holds a key. It is cosmetic, but it is the first name a new
+    operator ever sees and it looks like a fault. A node cannot be
+    renamed afterwards: the name is the registry key and
+    `PATCH /v1/nodes/{name}` announces an address, not a name.
   -->
-  <ExtraParams>--init --stop-timeout 60 --user 99:100</ExtraParams>
+  <ExtraParams>--init --stop-timeout 60 --user 99:100 --hostname eugene-plexus</ExtraParams>
 
   <Config
     Name="WebUI"

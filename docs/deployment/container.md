@@ -165,9 +165,20 @@ back into that same file.
 short: never let a second copy of the template sit in that folder under any
 other name.
 
+**Leave `--hostname` in `ExtraParams`.** A node's name in this install is
+whatever `socket.gethostname()` returns when it enrols, and a container's
+default hostname is its own container ID — so without it the control host
+joins as something like `468e3ed662bf` and carries that hex string in the
+node registry, on its Config tab, in the resource tree, and in Home's
+"kept on …" line. **A node cannot be renamed afterwards**: the name is the
+registry key, and `PATCH /v1/nodes/{name}` announces an address rather than
+a name. Changing it later means un-enrolling and re-enrolling the control
+host, which replaces the install's signing key. Set it before the first
+start, or accept it.
+
 It pulls `ghcr.io/eugene-plexus/control-plane:edge`, which CI builds and
 **verifies before pushing** — `scripts/compose-acceptance.sh` runs its
-twenty-two checks against the built image, and a failure means nothing is
+twenty-three checks against the built image, and a failure means nothing is
 published. `edge` rather than `latest` on purpose: nothing here is released,
 and `latest` is the tag every registry convention reads as "the supported
 one".
@@ -627,7 +638,7 @@ the agent's and all three children's ASGI lifespan shutdown. Those are the
 claims the image depends on and they were measured on Linux.
 
 **Checked by CI on every image build, and the image is published only when
-they pass:** `.github/workflows/container.yml` runs all twenty-two checks in
+they pass:** `.github/workflows/container.yml` runs all twenty-three checks in
 `scripts/compose-acceptance.sh` against the artifact it just built, then
 re-tags that same image for GHCR rather than rebuilding — so what ships is
 what was tested. That covers the twelve runtime checks that had never run

@@ -51,6 +51,8 @@
 #       template ships
 #   21. a data directory whose logs/ it cannot write degrades to console
 #       output instead of killing the agent
+#   23. the container declares a hostname, so the control host does not
+#       enrol under its own container ID
 #   22. a GGUF in a directory mounted at /models is catalogued at
 #       startup with nobody having opened Config
 #
@@ -141,6 +143,27 @@ case "$initflag" in
     bad "4. init/stop_grace_period are '$initflag'; a supervisor as PID 1 needs a reaper and more than 10s to stop its children" ;;
 esac
 
+# 23a. **A node cannot be renamed, so the name it takes on its first
+# boot is the name forever.** It comes from `socket.gethostname()` at
+# enrollment (`enrollment.py`), and a container's default hostname is its
+# own container ID -- so without an explicit one the control host enrols
+# as something like `468e3ed662bf` and wears that hex string in the node
+# registry, the Config tab, the resource tree and Home's "kept on ..."
+# line. Found on the live install 2026-09-16, after it had been true for
+# every containerised install ever made.
+compose_host=$(py -c "
+import yaml
+d = yaml.safe_load(open(r'$COMPOSE_P', encoding='utf-8'))
+print((d['services']['control-plane'].get('hostname') or '').strip())
+" 2>&1)
+tmpl_host=$(py -c "
+import xml.etree.ElementTree as ET
+print('--hostname' in (ET.parse(r'$TEMPLATE_P').getroot().findtext('ExtraParams') or ''))
+" 2>&1)
+[ -n "$compose_host" ] && [ "$tmpl_host" = "True" ] \
+  && ok "23. Compose sets hostname '$compose_host' and the template passes --hostname" \
+  || bad "23. no explicit hostname (compose '$compose_host', template --hostname $tmpl_host); the control host would enrol as its container ID"
+
 say "structural: the image"
 
 # 5 is the one that matters most, and it reads the answer out of the
@@ -230,7 +253,7 @@ fi
 
 if [ -z "$RT" ]; then
   say "runtime: skipped"
-  skip "11-22. no container runtime on this machine or in WSL."
+  skip "11-23. no container runtime on this machine or in WSL."
   printf '        To close them, install one and re-run:\n'
   printf '            wsl -d Ubuntu -- sudo apt-get install -y docker.io\n'
   printf '            wsl -d Ubuntu -- sudo usermod -aG docker $USER   # then restart the distro\n'
@@ -415,6 +438,23 @@ PY
 chmod 644 "$MODELSDIR"/*.gguf
 
 $CT rm -f ep-models-check >/dev/null 2>&1 || true
+# 23b. And the container actually has it. A declaration that the runtime
+# ignores would leave the defect in place while the structural check
+# above went green, which is the shape of every "asserted the fixture,
+# not the subject" failure in this repo.
+if $CT run -d --name ep-hostname-check --init -p 18379:8079 eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
+  got=$($CT exec ep-hostname-check hostname 2>/dev/null | tr -d '\r\n')
+  cid=$($CT inspect --format '{{.Id}}' ep-hostname-check 2>/dev/null | cut -c1-12)
+  if [ -n "$got" ] && [ "$got" != "$cid" ]; then
+    ok "23b. the running container's hostname is '$got', not its id '$cid'"
+  else
+    bad "23b. the container's hostname is '$got' and its id is '$cid' -- it would enrol as a hex string"
+  fi
+  $CT rm -f ep-hostname-check >/dev/null 2>&1
+else
+  bad "23b. could not start the image to read its hostname"
+fi
+
 if $CT run -d --name ep-models-check --init -v "$MODELSDIR:/models:ro" -p 18279:8079 \
      eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
   verdict=""

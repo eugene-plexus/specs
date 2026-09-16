@@ -34,6 +34,12 @@ services:
     image: eugene-plexus/control-plane:0.1
     container_name: eugene-plexus-control-plane
 
+    # The node's name in this install is `socket.gethostname()` at
+    # enrollment, and a container's default hostname is its container ID
+    # -- so without this the control host enrols as a hex string and
+    # wears it everywhere, permanently: a node cannot be renamed.
+    hostname: eugene-plexus
+
     # **`init` is not optional here.** The agent is a supervisor, so
     # PID 1 in this container has children — and a PID 1 that does not
     # reap leaves zombies behind every engine restart and every
