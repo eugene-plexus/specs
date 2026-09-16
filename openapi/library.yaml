@@ -704,9 +704,18 @@ paths:
                 $ref: '#/components/schemas/CatalogueSearchPage'
         '404':
           description: |
-            `q` was a repo URL and upstream has no such repo. Only a
-            URL produces this: it names one repo and nothing else, so
-            an empty result list would be the silent failure.
+            `q` was a repo URL and this install cannot see that repo.
+            Only a URL produces it: a URL names one repo and nothing
+            else, so an empty result list would be the silent failure.
+
+            **Upstream does not answer 404 for a missing repo** --
+            measured, it answers `401 Invalid username or password`,
+            because to an unauthenticated caller "gone" and "private"
+            are deliberately the same answer. So this covers all three
+            causes and the detail names all three rather than asserting
+            the one that cannot be told from the others. A repo that is
+            merely *gated* keeps its own `403`, since accepting a
+            licence is something the operator can go and do.
           content:
             application/problem+json:
               schema:
