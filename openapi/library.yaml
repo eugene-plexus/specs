@@ -2732,12 +2732,7 @@ components:
             cannot load is the one recommendation worse than none, so
             the build that proved it is recorded rather than assumed.
         source:
-          type: string
-          enum: [shipped, configured]
-          description: |
-            `shipped` is the list inside the wheel; `configured` is a
-            file `starterModelsFile` points at. An operator who
-            replaced the list should see that they did.
+          $ref: '#/components/schemas/StarterSetSource'
         models:
           type: array
           items:
@@ -2755,6 +2750,22 @@ components:
             What the caller should know about this answer: an empty
             list and why, a list older than the release gate allows, a
             budget that came from an override.
+
+    StarterSetSource:
+      type: string
+      enum: [shipped, configured]
+      description: |
+        `shipped` is the list inside the wheel; `configured` is a file
+        `starterModelsFile` points at. An operator who replaced the list
+        should see that they did.
+
+        A named schema rather than an inline enum, and the reason is a
+        codegen hazard rather than taste: `datamodel-code-generator`
+        names an inline enum after its property, so a second inline
+        `source:` anywhere in this document renames the FIRST one --
+        `MemoryBudget.source` became `Source1` and every existing
+        `Source.override` call site broke. Inline enums in a document
+        this size are a collision waiting for the next schema.
 
     StarterModel:
       type: object
