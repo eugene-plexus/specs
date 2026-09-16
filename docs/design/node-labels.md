@@ -187,7 +187,7 @@ Check 2 is the one that earns the slice. The rest are ordinary.
 | # | Question | Recommendation |
 | --- | --- | --- |
 | 1 | Label in the replicated log, or control config? | **The log.** A config map needs a new `ConfigValueType`, which reaches every consumer through `ConfigField` (the M11 rule) — a six-repo re-pin to avoid a one-op change to a two-repo document. |
-| 2 | Also accept a label at join time (`join --label "NAS"`)? | **TAKEN 2026-09-16: yes.** One flag on `join`, through both enroll bodies, and on both installers. Note what it does *not* cover: §3a — the control host does not join, so this helps the next worker and not the machine that prompted the slice. |
+| 2 | Also accept a label at join time (`join --label "NAS"`)? | **TAKEN 2026-09-16: yes.** One flag on `join`, through both enroll bodies, and on both installers. Note what it does *not* cover: §3 — the control host does not join, so this helps the next worker and not the machine that prompted the slice. |
 | 3 | Show the real name anywhere alongside the label? | **Yes, on the Nodes screen only** — it is the identity, and an operator debugging a proxy hop needs it. Everywhere else the label alone. |
 | 4 | Label the control host at first boot from something friendlier than the hostname? | **No.** Guessing a name is how we got `468e3ed662bf`. Detecting one and *asking* is #5; inventing one is not. |
 | 5 | Should the wizard ask for this machine's name? | **Recommended yes**, defaulted to the detected hostname, one field on the existing passphrase screen. It is the only thing that stops a fresh container install from enrolling as hex in the first place. The cost is a field on a wizard S2 deliberately cut to two screens, which is why it is a question and not an assumption. |
