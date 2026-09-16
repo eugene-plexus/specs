@@ -39,7 +39,7 @@ tree or the screens; it is a **Home**, a shorter wizard, three
 | **1**  | What the browser lands on after sign-in                                                                             | §6.1     | **Home** — a task-shaped page on the install root: get a model, try it, connect an app, reach it from other devices, what is running, what needs attention. The Playground becomes one of its pages | **taken 2026-09-15 (Troy)** — **built, §11.2** |
 | **2**  | The wizard shrinks to two screens, and Browse arrives in it                                                         | §6.2     | Yes. Passphrase, then "where should models live?" with a picker. Backend and Welcome leave; the install is enrolled on screen 1's Continue so screen 2 can browse                    | **taken 2026-09-15 (Troy): two screens** — **built, §11.3** |
 | **3**  | A proposed default models folder beside Browse                                                                      | §6.2     | Yes — a plain folder under the user's home, created on first download, files plainly named. A folder the user can see is not a managed store; differentiator #3 is about renaming and hiding, not about who created the directory | **taken 2026-09-15 (Troy)** — **built, §11.3** |
-| **4**  | A starter set of models, and one recommended for the detected card, on Home                                         | §6.3     | Yes, as *"the most-downloaded well-known instruct GGUF in the largest size class that fits at 16k"*, shown with why and **Choose another**. M3 said a one-click "get the best one for me" is a fine wizard step and a bad default; Home is that step | **taken 2026-09-15 (Troy), ON CONDITION: an automated pre-release review of the state of local inference that recommends keep or replace — §6.5.** Troy: *"This is something that will quickly grow stale as models continue to improve."* |
+| **4**  | A starter set of models, and one recommended for the detected card, on Home                                         | §6.3     | Yes, as *"the most-downloaded well-known instruct GGUF in the largest size class that fits at 16k"*, shown with why and **Choose another**. M3 said a one-click "get the best one for me" is a fine wizard step and a bad default; Home is that step | **taken 2026-09-15 (Troy), ON CONDITION: an automated pre-release review of the state of local inference that recommends keep or replace — §6.5.** Troy: *"This is something that will quickly grow stale as models continue to improve."* — **built, §11.7**, condition included: `starter-review` ran once end to end against the live hub and the list it produced is what ships |
 | **5**  | Launch without a profile                                                                                            | §7 S3    | Yes. Launch creates `default` at the context that fits (already computed) when none exists; the editor stays for experts                                                        | **taken 2026-09-15 (Troy)** — **built, §11.4** |
 | **6**  | Engine install happens inside the first Launch, as a task                                                           | §7 S3    | Yes. "No binary — install one from the Inference page" becomes a progress line in the same place the user is looking. Version pinning stays an expert path                     | **taken 2026-09-15 (Troy), AMENDED: ask first.** *"I could not find llama.cpp, would you like me to install it?"*, Yes as the default, with a warning that skipping is for advanced users only — **built, §11.4** |
 | **7**  | Long-lived client keys                                                                                              | §7 S4    | Yes: minted by the agent with the install signing key, `aud: client`, one-year default, named, listed, revoked by the existing rotation. **Contract change**                     | **taken 2026-09-15 (Troy)** — **built, §11.5**, with per-key revocation rather than rotation: a Turn-off button that turns nothing off is P4's silent failure |
@@ -631,16 +631,48 @@ library repo, because the library already speaks the Hub, reads GGUF
 headers, knows the quant table and can tell an embedding model from a
 chat one. It runs monthly in CI and on demand, and does this:
 
-1. **Rank.** For each class, ask the Hub for text-generation GGUF
-   repos by 30-day downloads with `gguf` (architecture, parameter
-   total, chat template) and `cardData.base_model` expanded. Aggregate
-   the dozen quant mirrors of one model by `base_model` — official,
-   `unsloth`, `bartowski`, `ggml-org` are one candidate, not four — and
-   bucket by parameter count. Drop: gated repos, entries with no chat
-   template (base models), embedding and reranker models, and anything
-   the library's own preflight cannot read. A candidate whose publisher
-   is not on a short known-publisher list is **flagged, not ranked**;
-   the list grows by a human adding a line, never by the tool.
+> **▶ FIVE OF THIS SECTION'S CLAIMS ABOUT THE HUB WERE WRONG, and the
+> corrections are in place below rather than appended, because the
+> corrections are the value.** Measured 2026-09-16 against the live
+> listing API while building this. (a) **`full=true` and `expand[]` are
+> mutually destructive** — `full=true` returns neither `gguf` nor
+> `cardData`, and passing both leaves a projection of three keys with
+> the sort and filter silently ignored, so the ranking call cannot be a
+> flag on the existing search one. (b) **`pipeline_tag` cannot be a
+> filter**: adding `filter=text-generation` dropped the *second*
+> most-downloaded GGUF repo on the hub, because the field is absent on
+> many repos; the discriminator that works is a **chat template** in the
+> repo's own `gguf` block, which also excludes the ASR, TTS, embedding
+> and projector repos that made up 21 of the top 100. (c) **`base_model`
+> is sometimes a list of sixty** — one top-twenty repo bundles every
+> model it supports — so a multi-valued one is not an aggregation key.
+> (d) **`gguf.total` is read off one file in the repo and is sometimes
+> the wrong file**: a 27B repo reported 0.5B because the hub read its
+> vision projector, so a class's parameter count is the **mode** of its
+> contributors. (e) **Capitalisation splits a family** —
+> `google/gemma-4-E4B-it` and `google/gemma-4-e4b-it` are one model
+> spelled two ways by two publishers, and unnormalised they rank as two
+> candidates with half the downloads each.
+
+1. **Rank.** Ask the Hub for GGUF repos by 30-day downloads with
+   `expand[]=gguf` (architecture, parameter total, chat template) and
+   `expand[]=cardData` (`base_model`, licence) — **not** `full=true`,
+   and **not** filtered by `pipeline_tag`; see the correction above for
+   both. Aggregate the dozen quant mirrors of one model by a
+   **case-folded** `base_model` — official, `unsloth`, `bartowski`,
+   `ggml-org` and `lmstudio-community` are one candidate, not five —
+   and bucket by the **mode** of its contributors' parameter counts.
+   Drop: gated repos, and entries with no chat template, which is what
+   removes base models, embedding models, rerankers, ASR, TTS and
+   projectors in one rule. A candidate is **flagged, not ranked** — and
+   so appears in the report but produces no proposal — when its
+   publisher is not on a short known-publisher list, when its licence is
+   not on a short allowlist, when its name carries a specialisation
+   (`coder`, `ocr`, `embed`, …) or a de-alignment (`abliterated`,
+   `uncensored`, …), when it declares many base models or none, or when
+   **only one repo mirrors it**: one repo is a publisher, not a
+   consensus, and the ranking is a consensus measure. Both lists grow by
+   a human adding a line, never by the tool.
 2. **Compare** each class's current entry against the ranking.
 3. **Prove it runs.** Fetch the pinned llama.cpp build's architecture
    list (`src/llama-arch.cpp` at the build tag) and check each
@@ -648,7 +680,14 @@ chat one. It runs monthly in CI and on demand, and does this:
    smallest quant is under 6 GB, download it and produce one token on
    CPU in CI. Above that, the architecture check alone, **and the report
    says which check ran.** A model the pinned engine cannot load is the
-   one recommendation that would be worse than none.
+   one recommendation that would be worse than none. *(Built: the
+   architecture half. The CPU-token half is not, and the report says
+   `proof: architecture` rather than implying both.)*
+
+   The same step reads the chosen file's own header over a ranged
+   request — about 11 MB — and records its shape, which is what lets
+   `GET /v1/catalogue/starter` answer with `basis: metadata` and no
+   upstream call at all.
 4. **Verdict per class, with hysteresis.**
    - **KEEP** — the current base model is still in the top three of its
      class, ungated, its recommended file present, its architecture
@@ -687,6 +726,21 @@ list that drives a 20 GB download is a trust and availability
 dependency the installers deliberately avoid by pinning, and Discover is
 one click from the card for anything newer. Revisit if the release
 cadence is slower than the review's.
+
+**Which quant ships, and it is one axis.** One file per class, and
+the family decides before the width: `Q4_K_M` and its `UD-` and `-L`
+relatives first, then any other K-quant, then everything else. Width
+alone is not enough and the first run of this review proved it — at a
+4.8-bit target it chose `IQ4_XS` for one class and `Q4_0` for another,
+both within 0.1 bits of `Q4_K_M` and neither the file a stranger should
+be handed first. **And the repo cannot be chosen before the quant:**
+`ggml-org`'s gemma repo holds `Q4_0`, `Q8_0` and `BF16` and no K-quant
+at all, so "the most-downloaded repo from a publisher we know" picked a
+legacy layout for a model two other publishers ship a full ladder for.
+The review opens up to three known-publisher repos and stops at the
+first offering a preferred family. Offering a stranger eleven quants at
+the same moment as a size class is the wall §0.5 measured; an expert
+changes it in Discover, one click away.
 
 **Traps named now.** Launch spikes (the two-review hysteresis).
 Downloads split across mirrors (aggregate by `base_model`; where the
@@ -968,7 +1022,7 @@ is §6.6's own thesis, reproduced. The `blocked → allowed` half needs
 administrator rights and is `EP_FIREWALL=1`, skipped and reported as
 skipped.
 
-### S6 — Discover: recommendation first, badge names the context, paste a URL (M)
+### S6 — Discover: recommendation first, badge names the context, paste a URL (M) — **BUILT AND LIVE-VERIFIED 2026-09-16; record §11.7**
 
 The recommended quant renders as a card above the table with the fit
 sentence and a Download button; the table sits under **All versions**;
@@ -982,6 +1036,16 @@ first review report is what populates the file. *Touches:* library
 *Done when* the badge text contains the context, a pasted repo URL
 resolves, and the review has run once end to end and its report is in
 `docs/acceptance/`. Decision **#4**.
+
+**Done, all three, plus one the slice could not ship without.** The
+first accepted list scored a mainstream 12B as *partial offload* on a
+32 GB card because `attention.head_count_kv` is an **array** on it and
+five of every six of its layers slide over a 1024-token window — the
+scalar arithmetic read 24.0 GiB of KV cache at 16k where the truth is
+0.56 GiB. §11.7 has the table. Also corrected: the design's step-1
+ranking call, four of whose assumptions about the hub's listing API were
+wrong, and its "404" for an unresolvable URL, which the hub answers as
+401.
 
 ### S7 — Issues, and two honest states on Inference (M)
 
@@ -1944,7 +2008,141 @@ turns every verdict `unknown`, and that branch is unit-tested only
 because this box has none.
 
 **Next: S6** (Discover recommendation-first, and the starter-model review
-from §6.5).
+from §6.5). — **done, §11.7.**
+
+### 11.7 S6 — a suggestion before a search box, and the review that keeps it honest. DONE 2026-09-16.
+
+Contracts `e130f36` + `2eb8afa` + `8a1abc9`; library `ec8c5dd`, `ui`
+`5faad3e` (dist `d9f35c1`); both installers re-pinned. Gateway, agent,
+control and inference-driver codegen neither document and stay back.
+Record: [`../acceptance/starter-set-run.md`](../acceptance/starter-set-run.md),
+`scripts/starter-set-acceptance.sh` — **41 `PASS` lines, zero failures,
+third execution**.
+
+**The shape.** `GET /v1/catalogue/starter` serves the list scored
+against one machine, and it makes **no upstream call at all**: every
+number a fit needs — the recommended file's size, the parameter count,
+the layer and attention counts, the trained context — was measured once
+by the review that produced `starter_models.yaml` and is carried in it.
+The screen where someone picks their first model is not the screen that
+fails first. `starterModelsFile` replaces the list, an empty one is a
+valid "no recommendation", and no model name appears in the library's
+source.
+
+**Discover opens on it.** With nothing typed the screen is one card
+naming the model this machine should take — with the sentence that says
+why, and a Download button — above the rest of the set, rather than
+whatever the hub sorted to the top today. A repo detail is the same
+shape one level down: one suggested version with its own button, and
+every other version under **All versions**. A pasted hub link resolves
+to one repo and the screen selects it. Every verdict reads *fits at
+32k*, and the context control moved from the window header to beside the
+verdicts it governs.
+
+**Home's empty-disk card gained a state of its own**
+(`no-models-recommended`), which is what the card's S1 comment predicted
+it would: one primary button that fetches a named file instead of
+opening a catalogue.
+
+#### ▶ THE FINDING WITH THE LONGEST REACH IS NOT ABOUT DISCOVERY: the KV cache was 43× too large on a mainstream 12B
+
+The first accepted list scored its 12B as **partial offload** on a
+29 GiB card while the 27B beside it read **fits**. The file declares
+`attention.head_count_kv` as **an array of 48** — eight heads on five
+layers of every six, one on the sixth — and five of every six layers are
+sliding-window with their own shorter key and value lengths and a
+1024-token window. `shape_from_gguf`'s scalar reader returns `None` for
+a list and falls back to `head_count`, which is the pre-grouped-query
+assumption, and nothing read `sliding_window_pattern` at all:
+
+| context | scalar arithmetic | per-layer truth | over |
+| ------- | ----------------- | --------------- | ---- |
+| 4k      | 6.0 GiB           | 0.375 GiB       | 16×  |
+| 16k     | 24.0 GiB          | 0.562 GiB       | 43×  |
+| 256k    | 384 GiB           | 4.31 GiB        | 83×  |
+
+**And it reported `basis: metadata` throughout**, because the layer
+count *did* come from metadata — only the load-bearing term did not.
+That is the failure this project keeps recording in other places: a
+confident answer with no note saying which of its terms was guessed.
+
+Built: `ModelShape.layers`, a per-layer form that wins over every
+scalar; `kv_terms()` so `max_context_that_fits` solves an **affine**
+cache rather than a linear one, since a sliding layer stops growing at
+its window and the cache is therefore a line with an intercept; and a
+run-length layer table in the starter file (`[count, heads, key, value,
+window]`) so a person accepting the review's proposal can read the
+pattern. It is the same *class* of defect `attention_layers()` was
+written for at M3 — one architecture generation on, which is the reason
+to expect a third.
+
+**It is also why the acceptance script's context check had to be
+rewritten.** It asked for the recommendation at 4k and 256k on a 12 GiB
+card and expected them to differ; they do not, correctly, because a
+sliding-window model's fit is nearly context-independent. A check that
+assumes a linear cache is a check asserting the arithmetic this slice
+replaced. It asks on a 24 GiB card now, from a measured table.
+
+#### The hub does not answer 404 for a repo that does not exist
+
+Check 7 of the first run wanted a 404 for a pasted URL naming nothing
+and got 403, and the bare-`owner/name` fall-through raised instead of
+searching. Measured: `GET /api/models/nobody/nothing` answers **401
+`Invalid username or password`** — to an unauthenticated caller "gone"
+and "private" are deliberately the same answer, an enumeration defence.
+So "could not resolve" is 401, 403 and 404 together, and the 404 this
+endpoint returns names all three causes instead of asserting the one it
+cannot tell from the others. A gated repo keeps its own 403 and its own
+advice, because accepting a licence is something an operator can do.
+
+**The unit test passed against the broken code**, because its fixture
+returned the 404 the contract described rather than the 401 the hub
+sends. Fixtures invented from a contract test the contract.
+
+#### A codegen hazard the contract change walked into
+
+`datamodel-code-generator` names an inline enum after its property, so
+`StarterSet.source` took the name `Source` and renamed the existing one
+— `MemoryBudget.source`, `detected|override` — to `Source1`. Every
+`Source.override` call site in the library broke, at a site the contract
+change never mentioned. Found by regenerating and diffing the class
+names, not by reading the spec diff. The fix is a named
+`StarterSetSource`, and the schema says why, because the next inline
+enum in that document will do it again.
+
+#### Calls taken in the build
+
+**One quant per class, family before width**, and the reason is
+measured: at a 4.8-bit target the first review chose `IQ4_XS` and
+`Q4_0`, both within 0.1 bits of `Q4_K_M` and neither the file to hand a
+stranger. **The repo is chosen with the quant, not before it** —
+`ggml-org`'s gemma repo ships no K-quant at all. **A single-mirror
+leader is flagged**, which is why the 70B class shipped empty: one repo
+is a publisher, not a consensus. **A de-aligned derivative is never a
+default** — not a judgement about whether they should exist, but a
+default is the one place this project's own choice shows, and shipping
+an abliterated model to someone who did not ask for one is a choice made
+for them. **On a machine with no accelerator the recommendation inverts
+to the smallest**, because "fits" is a question about memory and the
+question a person on a CPU actually has is about speed: 16 GB of weights
+fits comfortably in 32 GB of host memory and generates at a couple of
+tokens a second, which as a first sentence out of this software is
+indistinguishable from broken. The guidance record already has this
+mistake once, in the other direction.
+
+#### Not done
+
+Nothing is downloaded by this run: the set's sizes and filenames are
+asserted, and no starter model has been fetched and launched end to end
+(`one-click-run-acceptance.sh` fetches a different repo). The review's
+**CPU-token proof** is unbuilt — the architecture check alone runs, and
+the report says so. The **hysteresis has never fired**: this is the
+first review, so every class was `REPLACE` from an empty list once and
+`KEEP` since, and the two-consecutive-months path is exercised by unit
+tests and nothing else until October. The monthly workflow has not run
+on a schedule yet. And Discover's **search rows** still carry no fit
+verdict, which is upstream's constraint rather than ours and is stated
+on the endpoint.
 
 ---
 

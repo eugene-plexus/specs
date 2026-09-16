@@ -510,6 +510,19 @@ into, rather than the unclaimed one. See
    uses** (§7.1's trap).
 9. **Then** the release.
 
+   **Two checks gate it, and both are failing checks rather than notes
+   somebody is supposed to read.** The `dist` branch in `ui` must have
+   been rebuilt from the `main` commit being pinned, or the installers
+   ship an API with a stale browser half. And **the latest starter
+   review must be under thirty days old and carry no unresolved
+   `REPLACE` or `REVIEW`** — `eugene-plexus-library starter-review`
+   exits non-zero when any class is either, and
+   `GET /v1/catalogue/starter` puts the `reviewed` date on the wire so
+   an install past the window says so on the screen itself. A default
+   recommendation in a field that moves monthly fails by going quietly
+   out of date, not by erroring, which is why it is a gate and not a
+   habit. See `hobbyist-ux.md` §6.5.
+
 §7 of this document (Vulkan, decided) is independent of all of it and
 slots in anywhere; it touches only the agent's llama.cpp adapter and a
 UI badge. The diagnosed-but-unfixed ~2 s post-unload routing window is
