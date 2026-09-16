@@ -7,8 +7,8 @@ two rounds; #4 on one condition, which §6.5 turns into a process, #6
 amended to ask first, #12 on the condition that the jargon stays
 available in hints, and #8 with a question that §6.6 answers. Only the
 relabels (`Backends`, `Chat`) remain a separate open call.
-**S0, S1, S2, S3, S4 and S5 are built and live-verified (all on
-2026-09-15; records in §11), S6 to S10 are not started.** Every claim marked
+**S0 through S6 are built and live-verified (S0-S5 on 2026-09-15, S6
+on 2026-09-16; records in §11), S7 to S10 are not started.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -505,6 +505,9 @@ only while it applies:
 │ D:\Users\sam\Eugene Models, named as published.                         │
 │ [ Download and run ]   [ Choose another ]   [ I already have models ]  │
 └────────────────────────────────────────────────────────────────────────┘
+        ▲ S6 ships this card with **Download** as the primary, and S3's
+          **Run** appears in its place once the file lands. The single
+          chained "Download and run" of §6.3 is NOT built — see §11.7.
 ┌ Try it ────────────────────────────────────────────────────────────────┐
 │ ▸ qwen3-14b · 32k context                                              │
 │ [ Say something…                                              ] [Send] │
@@ -565,6 +568,18 @@ security choice is written to both agent and control (§0.14).
 the `default` profile at the fitting context → launch → mark ready and
 light up "Try it". Every step is a thing the system already does; the
 slice is the orchestration and the one place it is reported.
+
+> **▶ BUILT AS TWO ACTIONS, NOT ONE (S6, §11.7).** Every step exists —
+> S3 built install/profile/launch behind **Run**, S6 built the download
+> behind **Download** — and the card hands the person the second the
+> moment the first finishes, so the path is *Download · Run · Send*
+> rather than *Download and run · Send*. **The orchestration this
+> paragraph asks for is the part that is missing**, and it is a real
+> difference: the person is asked twice, and the second ask arrives
+> minutes later when a multi-gigabyte download lands, which is exactly
+> when they may have walked away. Closing it is a small slice on top of
+> `oneClickRun.ts` — chain its store onto the download's completion —
+> and it is Troy's call whether it goes before or after S7.
 
 The recommendation is *"the most-downloaded, well-known, permissively
 licensed general-purpose instruct GGUF in the largest size class that
@@ -1598,9 +1613,10 @@ llama.cpp had to be installed): **Run · Install · Send** — three clicks,
 one route change (Home), nothing typed. Without an engine to install,
 two. Still by reading the code, not by S10's click-counting run.
 
-**Not done.** The run store is per tab (departure 1). The recommended
-model in the first card is S6; until then a person with several models
-on disk still chooses in the Library. The dialog has no focus trap
+**Not done.** The run store is per tab (departure 1). ~~The recommended
+model in the first card is S6~~ — **done 2026-09-16, §11.7**, though as
+a separate Download button rather than chained into Run. A person with
+several models on disk still chooses in the Library. The dialog has no focus trap
 beyond autofocus. The Inference reason is derived and so appears only
 once that node's engines have loaded. `role="dialog"` and the tray's
 dismiss have no browser test. Whether the run should re-ask about
@@ -2007,8 +2023,8 @@ install to do. A third-party firewall registered with Security Center
 turns every verdict `unknown`, and that branch is unit-tested only
 because this box has none.
 
-**Next: S6** (Discover recommendation-first, and the starter-model review
-from §6.5). — **done, §11.7.**
+**Next: S6** (Discover recommendation-first, and the starter-model
+review from §6.5) — **done 2026-09-16, §11.7.**
 
 ### 11.7 S6 — a suggestion before a search box, and the review that keeps it honest. DONE 2026-09-16.
 
@@ -2131,6 +2147,19 @@ indistinguishable from broken. The guidance record already has this
 mistake once, in the other direction.
 
 #### Not done
+
+**§6.3's single "Download and run" is not built, and it is the one
+place this slice fell short of the design rather than corrected it.**
+Home's card offers **Download**; S3's **Run** takes its place when the
+file lands; the engine question, the profile and the launch all happen
+behind Run as they did before. So the golden path is *Download · Run ·
+Send* and the person is asked twice — the second time minutes later,
+when a multi-gigabyte download finishes and they may have walked away.
+Every step exists and nothing new is needed to join them: chaining
+`oneClickRun.ts`'s store onto the download's completion is the whole
+slice. Deliberately left, because doing it properly means deciding what
+happens when the browser is closed across a 16 GB download, which is a
+question about where the chain lives rather than about the button.
 
 Nothing is downloaded by this run: the set's sizes and filenames are
 asserted, and no starter model has been fetched and launched end to end

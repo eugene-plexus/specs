@@ -752,7 +752,12 @@ post-download rescan, and the discovery + download UI.
 - **Automatic quant selection.** We recommend; the operator picks. A
   one-click "get the best one for me" is a fine M6 wizard step and a bad
   default, because the whole complaint is about not being told what is
-  happening.
+  happening. *(**The wizard step exists as of 2026-09-16** — the starter
+  set, `hobbyist-ux.md` §6.3 and §11.7. It honours this bullet rather
+  than reversing it: one model is suggested, the sentence that says why
+  is printed beside it with the numbers in it, and **Choose another** is
+  the button next to it. What it is not is automatic — nothing selects
+  anything without a click.)*
 - **Re-quantizing locally.** `llama-quantize` exists and this is not the
   milestone.
 - **Adopting `general.sampling.*`** from a preflight. Still reported,
@@ -767,7 +772,13 @@ post-download rescan, and the discovery + download UI.
   the official release. We can rank, filter and describe better, but we
   cannot fix the index — and the source complaint was *specifically* about
   HF's search. Partly answered by rendering the card prose and the
-  publisher prominently; not fully answerable.
+  publisher prominently; not fully answerable. **Answered twice more on
+  2026-09-16** (`hobbyist-ux.md` §11.7), both by routing around the index
+  rather than improving it: the screen's empty state is a reviewed
+  **starter set** rather than a search result, so a person with no
+  candidate need not search at all; and a **pasted repo link is a lookup**,
+  which is how someone who was sent a model arrives. The keyword-stuffed
+  finetune is still what the index returns for a typed query.
 - **The remote-metadata preflight is 12 MB of someone else's bandwidth**
   per candidate examined. Fine for the file an operator is about to
   download; abusive if a UI fires it on hover. It is an explicit endpoint,
