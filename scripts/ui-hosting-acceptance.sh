@@ -102,6 +102,21 @@ for p in $OWNED_PORTS; do
   netstat -ano 2>/dev/null | grep ":$p " | grep -q LISTENING && { bad "port $p is already in use"; exit 1; }
 done
 ok "agent python, a ui checkout, llama.cpp $(llama_build), every port free"
+# **This script REPLACES the agent venv's `eugene-plexus-ui` with a
+# wheel, which is the thing it exists to test -- and on a developer
+# box that package is normally an EDITABLE install pointing at the
+# working tree. Leaving the wheel behind silently sabotages the next
+# script's instrument**, because `client-keys`, `one-click-run` and
+# `navigation` all assert that the agent SERVES the staged export
+# rather than some build of unknown age. S3 lost four runs to exactly
+# that state before those assertions existed; this run reproduced it
+# the moment the assertion caught it. So the previous install is
+# recorded here and restored in cleanup.
+UI_WAS_EDITABLE=0
+SERVED_BEFORE=$("$PY" -c "from eugene_plexus_ui import static_dir; print(static_dir())" 2>/dev/null | tr -d '\r')
+case "$SERVED_BEFORE" in
+  *[Uu]i"\\"python*|*ui/python*) UI_WAS_EDITABLE=1 ;;
+esac
 rm -rf "$WORK"; mkdir -p "$WORK"
 
 # --- 1. the wheel ---------------------------------------------------------------
@@ -163,6 +178,11 @@ cleanup() {
   # own agent and every component under it.
   kill "$AGENT_PID" "$BARE_PID" 2>/dev/null; sleep 2
   llama_stop_all
+  if [ "$UI_WAS_EDITABLE" = "1" ]; then
+    "$PY" -m pip install --quiet -e "$UI_DIR" >/dev/null 2>&1 \
+      && printf "  NOTE  restored the editable eugene-plexus-ui install\n" \
+      || printf "  NOTE  COULD NOT restore the editable install: run pip install -e %s\n" "$UI_DIR"
+  fi
   for p in $OWNED_PORTS; do free_port "$p"; done
 }
 trap cleanup EXIT
@@ -306,7 +326,7 @@ printf '%s' "$PLAIN" | jq_ "d['choices'][0]['message']['content'][:60]" >/dev/nu
 measure() { # url -> json on stdout
   curl -sN -m 300 -X POST "$1" \
     -H "Authorization: Bearer $TOK" -H 'content-type: application/json' \
-    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Count slowly from 1 to 40, one number per line.\"}],\"max_tokens\":200,\"stream\":true}" \
+    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Count from 1 to 250, one number per line. Do not stop early.\"}],\"max_tokens\":900,\"stream\":true}" \
   | PYTHONUTF8=1 python -u -c "
 import json, sys, time
 started = time.monotonic(); first = None; content = 0; chars = 0
@@ -349,21 +369,27 @@ print('  %-9s contentFrames=%d chars=%d ttft=%.2fs total=%.2fs (%.1f%%)' % (
 " "$WORK/$f.json" "$f"
 done
 PCF=$(jq_ "d['contentFrames']" < "$WORK/via-proxy.json")
-PRATIO=$(ratio "$WORK/via-proxy.json")
-DRATIO=$(ratio "$WORK/direct.json")
+PTT=$(jq_ "int(1000*(d['ttft'] or 99))" < "$WORK/via-proxy.json")
+DTT=$(jq_ "int(1000*(d['ttft'] or 99))" < "$WORK/direct.json")
 [ "${PCF:-0}" -gt 1 ] && ok "$PCF content frames arrived through the proxy" \
   || bad "only $PCF content frame(s) through the proxy"
-[ "${PRATIO:-100}" -lt 50 ] \
-  && ok "*** first token at ${PRATIO}% of the request THROUGH THE PROXY -- it does not buffer ***" \
-  || bad "first token through the proxy arrived at ${PRATIO}% of the request: it buffers"
-# The comparison is what makes the number mean something: a proxy that
-# buffered would still deliver every frame, so the frame count alone
-# cannot tell the two apart -- only the clock can, and only against the
-# same measurement taken without the proxy in the way.
-printf '  direct %s%% vs proxied %s%%\n' "$DRATIO" "$PRATIO"
-[ $(( PRATIO - DRATIO )) -lt 25 ] \
-  && ok "the proxy adds no meaningful delay to the first token" \
-  || bad "the proxy delayed the first token by $(( PRATIO - DRATIO )) points of the request"
+# **Absolute milliseconds against the same measurement without the proxy,
+# not a percentage of the request.** The percentage version divided by a
+# denominator the MODEL chooses, and on a 0.6B on a 5090 the whole
+# request is ~150 ms: one run generated 98 characters through the proxy
+# and 247 direct, so the proxy scored 77% and direct 40% while their
+# time-to-first-token was 0.11 s against 0.10 s. It reported a buffering
+# proxy on evidence that the proxy was fine and the answer was short.
+#
+# A proxy that buffers delivers its first token only once the whole
+# response is in hand, so its TTFT would sit near its own total and far
+# above the direct baseline. Comparing the two clocks in the same run is
+# what M10 and step 6 settled on for exactly this reason: measure the
+# baseline, do not assume it.
+printf '  ttft: proxied %s ms vs direct %s ms\n' "$PTT" "$DTT"
+[ "$(( PTT - DTT ))" -lt 250 ] \
+  && ok "*** first token through the proxy within 250 ms of direct -- it does not buffer ***" \
+  || bad "the proxy delayed the first token by $(( PTT - DTT )) ms over direct: it buffers"
 
 # --- 8. degraded ----------------------------------------------------------------
 say "8. an agent with no UI serves the API and says so"
