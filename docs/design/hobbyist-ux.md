@@ -2276,15 +2276,13 @@ is one machine.
 
 ### 11.9 S7 — measured, one contract field landed, PAUSED mid-slice 2026-09-16.
 
-**State: BUILT AND SHIPPED, AND NOT VERIFIED LIVE.** Steps 1-5 and 7
-were taken on 2026-09-16; the slice's *Done when* is met, and both
-installers now pin it. **Step 6, the acceptance run, was skipped at the
-user's direction** — so every screen here has been driven in jsdom and
-by nothing else: no browser, no live install, no
-`scripts/issues-acceptance.sh`. Every previous slice in this project ran
-its acceptance script before its pins and each one found something the
-fixtures could not, so that gap is the one thing left and it is
-unclosed.
+**State: DONE — built, shipped and live-verified.** All seven steps taken
+on 2026-09-16, though **6 came after 7**: the pins went out first at the
+user's direction and the acceptance run followed. It found one thing in
+that day, which is about the rate every other acceptance run here has
+found. `scripts/issues-acceptance.sh`, **20 PASS lines, zero failures,
+one deliberate SKIP, second execution**; record
+[`../acceptance/issues-run.md`](../acceptance/issues-run.md).
 
 | Repo      | Commit    | What it carries                                                  |
 | --------- | --------- | ---------------------------------------------------------------- |
@@ -2553,15 +2551,40 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
    initialize the control root, restart it with no keyring, and it comes
    back `503 Locked`. Clock skew is **not** producible on one box and
    should be reported as not produced rather than faked.
-6. **`scripts/issues-acceptance.sh`** in `specs`, plus
-   `docs/acceptance/issues-run.md`. **NOT DONE — skipped at the user's
-   direction, 2026-09-16, and step 7 went ahead without it.** Still the
-   one thing outstanding. The sealed root is producible: initialize the
-   control root, restart it with no keyring, and it comes back
-   `503 Locked`. Clock skew is **not** producible on one box and should
-   be reported as not produced rather than faked. Note the run now has
-   more to check than when this was written — the two Inference states,
-   Home's card, and the badge's inline unlock.
+6. ~~**`scripts/issues-acceptance.sh`**~~ — **DONE 2026-09-16, after
+   step 7.** 20 PASS, zero failures, one SKIP.
+
+   **Every issue in the run is produced by the install rather than by a
+   fixture:** two Library folders with one never created; a real 0.6B on
+   a real `llama-server` declared `gpuLayers: 0` on a box with a 5090;
+   two runtimes pinned by `binary` to `b10930` and `b10948`, **both
+   serving** — the mixed fleet nothing detected before S7; and a root
+   restarted with no keyring. vLLM is deliberately *absent* from the
+   list: it really does report `policy: manual, installable: false`
+   here, so the exclusion is exercised against a host that reports the
+   case rather than against a fixture.
+
+   **THE FINDING, and it is about the product: a fresh sign-in cannot
+   meet a sealed root.** The first execution sealed the root, signed a
+   browser in, and found nothing to report — because since 2026-09-13
+   the login page posts the passphrase to the control root too, so
+   signing in *unlocks* it. The check was measuring a state its own
+   setup had just destroyed. That is the two halves fitting together,
+   and it names what the badge is for: login-time unlock covers the
+   person who arrives after the root sealed, and **the badge covers the
+   person already signed in when it sealed underneath them** — the case
+   the live install produced on 2026-09-13, carried as open ever since
+   (*"an already-open browser session still does not unlock it — sign
+   out and in"*). **S7 closes it.** Check 11 seals the root from inside
+   the page with the session the browser already holds, starts on
+   `/library`, and asserts both that the issue clears and that the URL
+   never changed — the *Done when* measured rather than asserted.
+
+   **Clock skew was not produced and says so.** The rule compares two
+   *hosts* and this box has one clock; moving the system clock would
+   change the clock the live worker install is using, whose tokens a
+   control root on another machine would then refuse. Also unproven:
+   `node-down`, and the estimate half of `describeLoading`.
 
 7. ~~**Then** re-pin both installers~~ — **DONE 2026-09-16, `specs`
    `f2f0a10`. THREE pins moved, not one.**
