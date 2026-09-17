@@ -38,6 +38,19 @@ Ollama's managed store, and the rule this project keeps is that the
 user's files stay where the user put them. The operator mounts the
 share; we map the path. **Nothing here moves a byte.**
 
+> **SUPERSEDED IN PART, 2026-09-17 (Troy).** *"Not a node-side cache"*
+> no longer holds: a node may keep a local copy of the models its own
+> runtimes point at, behind a per-node toggle, and
+> [`node-local-model-copy.md`](node-local-model-copy.md) is the design.
+> What survives unchanged is the sentence after it — the user's files
+> stay where the user put them. A copy is ours, in a directory we made,
+> plainly named; a Library folder is the operator's and is never
+> written to. **The rest of this document is untouched:** the mapping
+> still lives on the node's agent, is still never written onto the
+> declaration, and the copy is resolved one step ahead of it.
+> *Nothing here moves a byte* is now a statement about M11, not about
+> the product.
+
 ---
 
 ## 0. What scoping this found, before any of it was built
@@ -380,7 +393,10 @@ regenerating each side and diffing, never by reading the spec diff.
 **Out, deliberately:**
 
 - **Any file transfer, cache or store.** The rule that made this project
-  worth building.
+  worth building. **Half-overturned 2026-09-17** — see the banner in the
+  introduction. A node may copy the models it runs; nothing may build a
+  store an operator can put a model into by choosing, and nothing writes
+  to a Library folder.
 - **Automatic mount detection.** There is no way to know that `Z:\` is
   the NAS's `/models` without comparing content, and comparing content
   is hashing, which is the store arriving by the back door. The operator

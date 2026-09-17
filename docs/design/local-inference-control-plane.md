@@ -76,6 +76,16 @@ these are the product.
    downloads land *in those same directories as plainly-named files*. No
    content-addressed cache, no hash mismatches, no opaque store. **Non-negotiable.**
 
+   **What it does not forbid, clarified 2026-09-17 (Troy):** a node keeping a
+   **local copy** of the models its own runtimes point at, behind a per-node
+   toggle — [`node-local-model-copy.md`](node-local-model-copy.md). The line is
+   **we manage what we made and never touch what you put there**: a copy is in a
+   directory we created, named at the model's own relative path, deleted by us;
+   a Library folder is the operator's and is never written to. It is also not an
+   opaque store, because **nothing can be put into it by choosing** — the set is
+   exactly that node's declared runtimes' model files, and what is left on that
+   disk if you delete us is a folder of correctly-named GGUFs.
+
    These two are in obvious tension, and resolving it correctly is the whole
    trick: **acquisition is a convenience layer over a plain filesystem, never a
    managed store.** `ollama pull` was right; the blob cache behind it was wrong.

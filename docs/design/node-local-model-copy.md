@@ -8,10 +8,15 @@ that arrived together out of one misdiagnosis and land independently:
 then the rest, because §7 makes the rest observable.
 
 Reopens the storage half of
-[`m11-compute-storage-separation.md`](m11-compute-storage-separation.md),
-whose §12 decision #4 was **"no node-side cache"**. That decision was
-correct when it was taken and is overturned here by Troy, who is the
-person it belonged to. The mechanism M11 built — a path rule on the
+[`m11-compute-storage-separation.md`](m11-compute-storage-separation.md).
+**It was never a numbered decision there** — it is in that document's
+§"What it is not" (*"Not a file-transfer protocol, not a node-side
+cache, not a managed store... Nothing here moves a byte"*) and in its
+§9 scope, as *"Any file transfer, cache or store. The rule that made
+this project worth building."* Which is worth knowing: a scope
+exclusion carries no counter-argument and no owner, so nothing in M11
+recorded what it would cost or who could reverse it. Troy reversed it
+on 2026-09-17. The mechanism M11 built — a path rule on the
 node's agent, applied at every spawn, never written onto the
 declaration — is untouched; this inserts one step ahead of it.
 
@@ -48,7 +53,7 @@ taken as recommended so a build can proceed; each is his to overturn.
 
 | # | The call | Recommendation | Counter-argument | Status |
 | --- | --- | --- | --- | --- |
-| 1 | Whether a node may keep local copies at all | **Yes**, overturning M11 decision #4 | M11 scoped it out to keep the slice finite, and differentiator #3 forbids a managed store — §1.3 is the line that keeps #3 honest | Troy's call |
+| 1 | Whether a node may keep local copies at all | **Yes**, overturning M11's scope exclusion (not a numbered decision — see above) | M11 scoped it out to keep the slice finite, and differentiator #3 forbids a managed store — §1.3 is the line that keeps #3 honest | Troy's call |
 | 2 | The toggle is per node, not per model | **Per node.** *"Some machines an operator is comfortable using local storage and some others they may not"* | A per-model pin is finer-grained — and is a decision the operator would have to take again for every model, on every node | Troy's call |
 | 3 | The unit of a copy | **The model file**, and the set is the distinct files of that node's declared runtimes (§2) | Troy proposed one per active inference engine; that double-counts M6 replicas, which are N runtimes over one file (§2.1) | taken, from Troy's call |
 | 4 | The disk knob | **Minimum free space to leave**, not a maximum to use (§3) | A cap is easier to reason about in isolation — but headroom is the quantity the operator actually cares about and stays meaningful as the disk fills for unrelated reasons | Troy's call |

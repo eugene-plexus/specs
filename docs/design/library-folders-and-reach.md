@@ -373,9 +373,14 @@ doc's departure note, the M11 doc's supersession banner.
 - **Library redundancy.** Troy's answer to "the library is down" and the
   right one; a separate slice. Until then §3.2's copy is the mitigation
   and the check endpoint says how old it is.
-- **Transfer or a node-side cache.** Still refused; a folder's reach is a
-  mount. The grid makes the mount question visible, which is how we
-  learn whether it is a real complaint.
+- **Transfer or a node-side cache.** Still refused *here*; a folder's
+  reach is a mount. The grid makes the mount question visible, which is
+  how we learn whether it is a real complaint. **It turned out to be
+  one: OVERTURNED 2026-09-17** (Troy), after a 24.95 GB model was
+  measured taking ten minutes to read over SMB on every single start —
+  [`node-local-model-copy.md`](node-local-model-copy.md). A folder's
+  reach is still a mount and nothing in this document changes; the copy
+  is resolved one step ahead of it.
 - **Per-model mounts.** A mount is per folder; a model is under one.
 - **Mounting the share for the operator.** We say where; they mount.
 - **A structured `source` on `ModelLocation`.** The check endpoint
