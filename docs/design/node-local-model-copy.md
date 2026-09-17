@@ -1,13 +1,13 @@
 # A node keeps its own copy, and a load says how far along it is
 
-**Status: designed 2026-09-17, on Troy's calls, from measurements taken
-the same day on the live two-machine install. §7 IS BUILT AND PINNED**
-(the same day: contracts `3ec7251`, agent `acd8b25`, ui `ca0215f` /
-dist `d33525f`, both installers at `18d8014`; record §14.1). **§1-§6 ARE
-NOT BUILT.** Two features that arrived together out of one misdiagnosis
-and land independently: **§7, load progress**, was small, contract-light
-and shipped on its own; **§1-§6, the node-local copy**, is the larger
-one. **§13 is the build order and the pickup point.** §7 went first
+**Status: designed and BUILT 2026-09-17, on Troy's calls, from
+measurements taken the same day on the live two-machine install.** Both
+halves are in: **§7, load progress** (contracts `3ec7251`, agent
+`acd8b25`, ui `ca0215f`) and **§1-§6, the node-local copy** (contracts
+`db5c279`; agent `c78c2f5` → `64c8eae`, gateway `6d4d059`, control
+`ac3d2ee`, ui `7969cf2` / dist `3e07e7d`; acceptance
+[`../acceptance/model-copy-run.md`](../acceptance/model-copy-run.md),
+30 PASS). **§13 is the build order and §14 the record.** §7 went first
 because it makes the rest observable — a copy that takes four minutes
 needs the same honesty about bytes that a load does.
 
@@ -274,10 +274,16 @@ that says "never make the first run slower":
 | launch from the share, copy behind it | **4m16s**, then 3m40s more | ~20s | 49.9 GB |
 | today | 4m16s | 4m16s | 24.95 GB |
 
-You pay the wire once either way, and a plain copy moves bytes faster
-(113.6 MB/s) than an engine reading them (97 MB/s). Copy-first is
-already marginally faster than today on the very first run and halves
-the traffic against the background alternative.
+You pay the wire once either way, and a plain copy was expected to move
+bytes faster (113.6 MB/s) than an engine reading them (97 MB/s).
+
+**Measured on the live install 2026-09-17 (§14.3), and this half was
+wrong:** the copy ran at **91 MB/s** and the engine's own read at
+**~94**, so copy-first cost **24 s more** on the first run rather than
+saving 16. The decision stands on the other two columns — the wire is
+paid once, and every start after the first is 21 s against 266 — but the
+first run is *about the same*, not faster, and this table said otherwise
+for a day.
 
 ### 4.2 Resolution order
 
@@ -585,7 +591,7 @@ rather than pretended away: **no acceptance script covers §7**, so
 **absent** under mmap — has been run by hand and by unit test, and never
 by the suite.
 
-### Step 1 — the contract, and the radius measured (S, **contract**)
+### Step 1 — the contract, and the radius measured (S, **contract**) — **DONE 2026-09-17** (specs `db5c279`; record §14.2)
 
 *Touches:* specs, then whichever consumers the measurement names.
 `agent.yaml` only:
@@ -621,7 +627,7 @@ three predictions.
 (never the ambient interpreter — [[project_ci_hygiene_and_devenv_mismatch]]) and
 every diff has been looked at.
 
-### Step 2 — the gateway survives a status it has never seen (S, no contract)
+### Step 2 — the gateway survives a status it has never seen (S, no contract) — **DONE 2026-09-17** (gateway `6d4d059`)
 
 *Touches:* gateway. **Measured 2026-09-17 in the gateway's own source,
 not assumed.** It reads another node's runtimes over HTTP and parses
@@ -642,7 +648,7 @@ the runtime as coming up, and a test asserts an unrecognised status is
 carried through rather than raising — the general version-skew property,
 which is worth having whatever this slice does next.
 
-### Step 3 — the copier, pure and tested (L, no contract)
+### Step 3 — the copier, pure and tested (L, no contract) — **DONE 2026-09-17** (agent `c78c2f5`)
 
 *Touches:* agent. A `model_copies.py` beside `model_paths.py`: the set
 (§2.4), temp name then fsync then rename (§3.3), headroom checked before
@@ -671,7 +677,7 @@ deleted → its copy goes; a partial never carries the final name; a
 headroom breach before the copy skips it and the launch still succeeds;
 a breach during it aborts and leaves nothing behind.
 
-### Step 4 — wired into the lifecycle, and reported (M, no contract)
+### Step 4 — wired into the lifecycle, and reported (M, no contract) — **DONE 2026-09-17** (agent `35142d3`)
 
 *Touches:* agent. The runtime holds `copying` while its task runs,
 `copyProgress` is populated from the bytes this agent has written, and
@@ -693,7 +699,7 @@ step 3's tests pass against a copier nothing calls. Drive the lifecycle.
 after a copy exists makes the next start open the share, with no state
 to unwind (§4.2).
 
-### Step 5 — the UI (M, no contract)
+### Step 5 — the UI (M, no contract) — **DONE 2026-09-17** (ui `7969cf2`)
 
 *Touches:* ui. Config → **Model storage** on the node, cross-linked both
 ways with the Library folder overrides
@@ -715,7 +721,7 @@ is the difference between S2's "no typed path" and a typed path.
 during a copy, reads the source on Inference, and gets a report from
 Clear naming what it skipped.
 
-### Step 6 — the acceptance run (M)
+### Step 6 — the acceptance run (M) — **DONE 2026-09-17**: 30 PASS, second execution; record [`../acceptance/model-copy-run.md`](../acceptance/model-copy-run.md)
 
 *Touches:* specs. `scripts/model-copy-acceptance.sh`, §11's nine items
 **including item 9**, which step 0 shipped without. It clears the
@@ -738,7 +744,7 @@ bought.
 *Done when* the script passes twice, the second time on a tree where
 every sabotage has been restored.
 
-### Step 7 — the pins (S)
+### Step 7 — the pins (S) — **DONE 2026-09-17** (specs `a4dfb49`, then re-pinned twice for step 8's findings)
 
 *Touches:* specs, and `dist` in ui. Whichever repos actually serve or
 consume the change, plus **`dist` rebuilt because the UI moved** — both
@@ -749,7 +755,7 @@ the new build carries.
 *Done when* both installers name the new SHAs and the archives have been
 opened and checked, not assumed.
 
-### Step 8 — the live install, and the only proof of the claim (S)
+### Step 8 — the live install, and the only proof of the claim (S) — **DONE 2026-09-17: 21 s against 266 s; record §14.3**
 
 **The pair is already up and has been for days**, so nothing in this
 step waits on hardware. Verified 2026-09-17 by `/healthz` on each: the
@@ -825,3 +831,107 @@ for) and macOS (`proc_pid_rusage`) are written and unverified.
 **Not done in step 0:** no acceptance script asserts any of it, and the
 negative case is the one worth asserting — a bar that appears when it
 cannot be true is the failure mode. Step 6.
+
+### 14.2 Steps 1-7 — the node-local copy, 2026-09-17
+
+Contracts `db5c279` (`agent.yaml` only); gateway `6d4d059`; agent
+`c78c2f5` (the copier) → `35142d3` (the wiring) → `4380f22` (an integer
+field could never be saved) → `4003c99` (a restart is a launch) →
+`64c8eae` (the prune race); control `ac3d2ee` regen-only; ui `7969cf2`,
+dist `3e07e7d`. Both installers at specs `a4dfb49` and after.
+Acceptance: [`../acceptance/model-copy-run.md`](../acceptance/model-copy-run.md),
+**30 PASS, second execution**.
+
+**The radius came out exactly as §8 predicted, and was measured anyway.**
+Regenerating all six at `db5c279`: `agent`, `control` and `ui` changed;
+`gateway`, `library` and `inference-driver` came back byte-identical
+apart from the header SHA and were reverted. The gateway re-pinned
+anyway because it **implements** the version-skew rule — the `a83df4b`
+precedent — and `library` and `inference-driver` did not move at all.
+
+**Two decisions the build forced, recorded as #10 and #11.**
+`copyProgress` is its own field because `loadProgress`'s absence already
+means *the bytes cannot be observed* and a copy's bytes always can be;
+`copying` is a new `RuntimeStatus` because `starting`'s own contract
+text says "spawned" and a copy happens before there is a process.
+`Runtime.localPathSource` came out `same_path | inherited | override |
+copy` rather than §8's `folder | override | copy`, because
+`FolderReachSource` already names the first three.
+
+**Four things nothing had walked before, each found by the thing that
+walked it:**
+
+1. **A path under no Library folder could escape the copy directory**
+   (found by writing the test for it, step 3). `_parts` answers with
+   case-folded components and keeps the anchor, and
+   `os.path.join(copy_dir, "D:\\", …)` resolves to `D:\` on Windows.
+2. **An integer config field could never be saved** (found by the
+   acceptance run, step 6). `_validate` had no `integer` branch and
+   `modelCopyMinFreeGb` is the first integer field this agent has ever
+   declared — so the headroom was settable only by editing `agent.yaml`
+   by hand. The refusal is reported inside a **200**, which is why no
+   status-code check could see it.
+3. **A restart is a launch, and did not copy** (found on the live
+   install, step 8). `SupervisedProcess.restart` re-plans in place and
+   never passes through the code that copies, so the most natural
+   gesture after switching the option on did nothing and explained
+   nothing.
+4. **The reconcile deleted the directory out from under an in-flight
+   copy** (found on the live install's first boot with copying on, step
+   8). A copy creates its directory and then opens a temp file in it;
+   between those instants the directory is empty and looks exactly like
+   the scaffolding `_prune_empty_dirs` exists to clear. **Not
+   reproducible in the acceptance run**, where the copies are small
+   enough that the window is microseconds.
+
+**And one test defect worth keeping**: a fake copy that blocks until the
+test releases it, spinning in a worker thread `asyncio.to_thread` cannot
+interrupt, turns a *failing* assertion into a *hung suite* — the first
+sabotage tripped an assert before the release and pytest never exited.
+`spin_until` is bounded now.
+
+### 14.3 Step 8 — the live install, and the claim measured
+
+**2026-09-17, on the running two-machine install**: the control root in
+its container at 192.168.16.252 (agent 8279, gateway 8280, control 8283)
+and `Amish_Station`, this Windows box with the RTX 5090, on 8079. The
+subject is §0's own runtime —
+`huihui-qwen3-8-27b-abliterated-q6-k-l`, a **24.95 GB** Q6_K_L declared
+as `/models/huihui-ai/…` and mounted here over SMB. Copy directory
+`D:\eugene-models`, headroom 100 GB.
+
+| | Time to serving | Rate |
+| --- | --- | --- |
+| **Baseline**, read over SMB (`--load-mode none`) | **266 s** | ~94 MB/s |
+| **First start with copying on** | 260 s copy + 30 s load = **290 s** | 91 MB/s copy |
+| **Second start, from the local copy** | **21 s** | — |
+
+**The claim is met: 21 s against 266 s, 12.7x.** It matches the
+design's "roughly twenty seconds" exactly. Then a completion through the
+NAS gateway, from the local copy, in **856 ms**.
+
+**And §4.1's arithmetic is wrong in its first row, measured.** It
+predicted copy-first would be *faster* than reading over the share even
+on the first run, from a plain copy moving bytes at 113.6 MB/s against
+an engine reading at 97. Today the copy ran at **91 MB/s** and the
+engine's own read at **~94** — so copy-first cost **24 s more**, not 16 s
+less. The conclusion it was supporting is untouched (you pay the wire
+once either way, and every start after the first is 21 s), but the
+first-run claim should read *about the same*, not *faster*.
+
+**Two defects that only this step could find**, both fixed and both in
+§14.2's list: a **restart** never passed through the code that copies,
+and the reconcile **deleted the directory out from under the copy** on
+the very first boot with the option on. The second is the more
+interesting: the acceptance run cannot produce it, because its copies
+are small enough that the window between `makedirs` and the first write
+is microseconds.
+
+**Confirmed unharmed by three upgrade cycles**: the control root lists
+both nodes `reachable: true` with `lastSeenAt` seconds old, and the
+runtime came back each time.
+
+**Worth knowing about the 21 s:** the page cache was warm — the file had
+been written minutes earlier. A start after a reboot reads it off NVMe
+instead, which is seconds rather than the four minutes it replaces, but
+the exact number is unmeasured.
