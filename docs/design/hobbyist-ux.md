@@ -12,7 +12,11 @@ on 2026-09-16; records in §11). S7 is STARTED AND PAUSED** — its
 measurement is done and falsified four of its seven issue kinds, the one
 contract field it needed is landed and served, and the UI half is one
 pure unwired module; §11.9 is the record and says where to resume.
-**S8 to S10 are not started.** Every claim marked
+**S10 is BUILT and green on this box** (§11.10) — the budget is
+measured, and the run found a golden-path defect that was fixed on
+`main` and shipped in no build. **Its WSL2 half is not written, so S10
+is not finished, and the release gate is not met.** **S8 and S9 are not
+started.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -1140,6 +1144,15 @@ banned-word test from S8. And **moderated sessions** (§8.4). *Done when*
 the script is green on WSL2 and this box and the session notes are in
 `docs/acceptance/`.
 
+**BUILT 2026-09-16, green on this box, NOT finished** — §11.10 is the
+record and `docs/acceptance/hobbyist-run.md` is the run. Green on
+Windows with 22 checks: **5 clicks** where §0.2 measured 15, one typed
+value and no typed path, **1 click** from Home to a connected tool where
+§0.2 measured 19, a key good for a year, one Reach switch, zero banned
+words. Still owed by the *Done when* above: **the `install.sh` half on
+WSL2** (not written), **`EP_DOWNLOAD=1`** for §1's ten-minute target
+(not measured), and **the moderated sessions** (§8.4).
+
 **What gates the release (decision #13, taken):** S0–S6 and S10, **and
 a starter review under 30 days old with no unresolved verdict (§6.5)**.
 S7–S9 are real and can follow; none of them is on the path from install
@@ -1153,12 +1166,12 @@ to a first token or a connected tool.
 
 | Measure                                     | Today              | Target         | Instrument                        |
 | ------------------------------------------- | ------------------ | -------------- | --------------------------------- |
-| Clicks, install → first reply               | 15 (19)            | ≤ 6            | `hobbyist-acceptance.sh`          |
-| Typed values before first reply             | 3 (incl. a path)   | 1              | same                              |
+| Clicks, install → first reply               | 15 (19)            | ≤ 6            | **5** — §11.10                    |
+| Typed values before first reply             | 3 (incl. a path)   | 1              | **1**, no path — §11.10           |
 | Route changes before first reply            | 6                  | ≤ 1            | same                              |
-| Clicks, Home → tool connected               | 19 from landing    | ≤ 3            | same                              |
-| Time, install → first token, 8B, 100 Mbit   | not measured       | < 10 min       | same, wall clock                  |
-| Jargon terms on golden-path screens         | (not isolated)     | 0 banned words | S8 test                           |
+| Clicks, Home → tool connected               | 19 from landing    | ≤ 3            | **1** — §11.10                    |
+| Time, install → first token, 8B, 100 Mbit   | not measured       | < 10 min       | not measured (`EP_DOWNLOAD=1`)    |
+| Jargon terms on golden-path screens         | (not isolated)     | 0 banned words | **0**, four screens — §11.10      |
 | Reading grade of golden-path copy           | not measured       | ≤ 9            | Hemingway over extracted strings  |
 | Docs links from the UI                      | 0                  | ≥ 1 per screen | grep                              |
 | e2e coverage of the golden path             | wizard + login     | every stage    | Playwright                        |
@@ -2614,6 +2627,134 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
 **Known trap for the acceptance run, unchanged since S0:** the live
 worker agent holds 8079 on this box. Run on +100 ports, clear every
 ambient `EUGENE_PLEXUS_*` variable first, and tear down by pid.
+
+### 11.10 S10 — the budget, counted. GREEN ON WINDOWS 2026-09-16; the WSL2 half is not written.
+
+`scripts/hobbyist-acceptance.sh`, **22 checks, zero failures, fourth
+execution**. Record: [`../acceptance/hobbyist-run.md`](../acceptance/hobbyist-run.md).
+No contract change. One consumer moved, and it was not a code change:
+`ui` `dist` `893b669` → **`50e0248`**, re-pinned in both installers.
+
+**The numbers §1 committed to, measured rather than reasoned:**
+
+| | §0.2 before | Target | Measured |
+| --- | --- | --- | --- |
+| Clicks, wizard → first reply | 15 | ≤ 6 | **5** |
+| Typed values | 3, one a path | 1 | **1**, the passphrase |
+| Paths typed | 1 | 0 | **0** |
+| Clicks, Home → a connected tool | 19 | ≤ 3 | **1** |
+| The key's life | 14 days | > 14 | **a year** |
+| Banned words, four screens | — | 0 | **0** |
+
+The five clicks are **Continue · Finish · Run · Install the default ·
+Send**, counted by `pointerdown` listeners the page installs on itself
+rather than by counting the lines of the test — §8.2's first trap, which
+this project has produced twice.
+
+`install.ps1` from nothing in **7 s**; wizard to a reply in **21 s**, on
+a cold engine store (`askedAboutEngine: true`, llama.cpp **b11010**
+fetched into the run's own prefix, the CUDA **13.4** build taken on a
+**13.3** driver under the minor-version rule S3 taught the adapter).
+
+---
+
+**THE RUN'S FINDING IS ABOUT SHIPPING, NOT ABOUT CLICKS: a fix can be
+on `main`, tested, merged, and in no build anyone installs.**
+
+The third execution clicked a **16 GB download beside a folder that
+already held a model** — the exact defect `ui` `f267fbd` had fixed hours
+earlier. The fix was real and its tests passed. But `dist` was still
+`893b669`, the export of ui@`70dd910`, and f267fbd is a child of that
+commit that was never exported. **Both installers pin `dist`.** So the
+fix could not reach a user, and this run — which is an *installer* test —
+measured a UI without it.
+
+Measured, not suspected: `"library","/v1/scan"` is in **five** chunks of
+a build of ui@f267fbd and **zero** chunks of `893b669`.
+
+This is S3's *"staging is not serving"* one layer over. There it was an
+agent venv serving a wheel while the script grepped a staged directory,
+and four runs asserted about a build no browser saw. Here it is a commit
+on `main` that no `dist` build carries — and **the installer is the only
+thing that can notice**, because the installer is `dist`'s only consumer.
+A unit test cannot see it, CI cannot see it, and a developer running
+`next dev` cannot see it.
+
+Fixed: `dist` rebuilt as `50e0248`, both installers re-pinned, and **the
+pinned archive downloaded, unpacked and grepped** before the re-run —
+the precaution S7 introduced for this trap's other direction.
+
+---
+
+**AND THE SPEC DID NOT DETECT THAT DEFECT — IT DEPENDED ON IT.**
+
+The arc waited for `data-testid="home-primary"` and clicked it. But
+`home-primary` is the testid of `FirstModelCard`'s **no-models**
+branches; the one-model branch renders a `run-button` and carries no
+`home-primary` at all. So the spec could only ever match the state where
+Home has nothing on disk, and it reported that state as a **pass**. With
+the fix in place the old spec would have hung for two minutes on a
+testid that no longer renders.
+
+A check that cannot distinguish the failure it exists to catch is this
+repo's most-repeated defect: M10's check 7 asserted on `"The "` and
+matched `"The model 'flaky' does not exist"`; the tree slice's *"a driver
+sits under its machine"* passed against a tree with the node level
+removed; step 6's fragmentation checks demanded a property of the
+*backend*. Here the shape is new and worse — the assertion was satisfied
+**by** the bug.
+
+The arc now waits on `run-button`, **races the download card against
+it**, and fails if the download appeared; check 4e is that assertion in
+the shell, so the wizard-scan regression is a gate rather than a
+surprise.
+
+---
+
+**Three more harness defects, two of them guaranteed failures on any
+run:**
+
+- **Two checks read keys the spec never wrote.** The shell read
+  `firstReply.text` and `connect.expiry`; the spec writes `turn`,
+  `transcript` and `lifetime`. `jq_` raises, the substitution captures
+  empty, and with no `set -e` checks 4d and 7 fail on a perfectly green
+  install. Found by reading the two halves against each other rather
+  than by spending a run on it.
+- **Sixteen tokens is not a budget an answer fits in.** Check 6 asked
+  for `max_tokens: 16` and got a `200` with empty `content`: the starter
+  models are hybrid reasoning models whose first tokens are a thinking
+  block the gateway strips. The check would have read a working install
+  as a broken one. 256 now, with `finish_reason` on failure.
+- **The run binds four ports, not one.** The header said "+100" and the
+  preflight checked one. First-boot seeding declares the gateway,
+  library and control root at the contract defaults — 8080, 8082, 8083 —
+  whatever port the agent took (`default_topology.py`). All four are
+  preflighted and reclaimed now, which is safe *because* the preflight
+  proved they were free.
+
+---
+
+**Not done, and each for a stated reason:**
+
+1. **WSL2.** The `install.sh` half is not written, so the *Done when* is
+   not met and **the release gate is not satisfied**.
+2. **`EP_DOWNLOAD=1`.** §1's ten-minute install-to-first-token target,
+   download included, is still unmeasured. The default seeds a small
+   GGUF because the subject of the other three targets is the **count**,
+   and a download changes how long the arc takes without changing how
+   many times it is clicked. (The third execution accidentally
+   downloaded a 27B and reached a reply in 261 s — wrong build, wrong
+   model, an anecdote rather than the measurement.)
+3. **Moderated sessions** (§8.4). Needs real people.
+4. **The keystroke count is not a measurement.** Playwright's `fill()`
+   sets a value and dispatches `change` with no `keydown`, so the run
+   reports **0 keystrokes** where a person types about thirty. §1's claim
+   is *one typed **value***, which the `change` listener does measure;
+   the keystroke number is the counter's own blind spot and is recorded
+   here so nobody quotes it.
+5. **Reading grade** (§8.1) is still unmeasured. The run reports
+   sentences over 25 words — Home 6, Discover 5, Library 2, Playground 2
+   — as the number S8 has to drive down.
 
 ---
 

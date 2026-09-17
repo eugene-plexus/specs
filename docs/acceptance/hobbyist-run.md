@@ -1,0 +1,185 @@
+# The hobbyist budget, counted
+
+`scripts/hobbyist-acceptance.sh` — **22 checks, zero failures, fourth
+execution**, 2026-09-16 on this Windows box (RTX 5090, CUDA driver 13.3).
+
+Design: [`../design/hobbyist-ux.md`](../design/hobbyist-ux.md) §1 (the
+targets), §7 S10, §8.1 (the table this run fills in).
+
+This is the only acceptance script in the repo that measures **a number
+the plan committed to** rather than a behaviour. Everything else here
+asks "does it work"; this asks "how many times did a person have to
+click".
+
+---
+
+## 1. The budget, measured
+
+| Measure                               | §0.2 before          | Target | This run                     |
+| ------------------------------------- | -------------------- | ------ | ---------------------------- |
+| Clicks, wizard → first reply          | 15                   | ≤ 6    | **5**                        |
+| Typed values before the first reply   | 3, including a path  | 1      | **1**, the passphrase        |
+| Filesystem paths typed                | 1                    | 0      | **0**                        |
+| Clicks, Home → a connected tool       | 19 from landing      | ≤ 3    | **1**                        |
+| The key's life                        | 14-day session token | > 14 d | **a year**                   |
+| Reach switches on Home                | —                    | 1      | **1**                        |
+| Banned words on the golden path       | —                    | 0      | **0** across four screens    |
+| `install.ps1` from nothing            | —                    | —      | **7 s**                      |
+| Wizard → a reply on Home              | —                    | —      | **21 s**                     |
+
+The five clicks: **Continue** past the passphrase, **Finish** on the
+models folder, **Run**, **Install the default** in the engine dialog,
+**Send**.
+
+The one typed value is `hobbyist-25941` — the passphrase, typed twice
+into two fields and counted once because it is one value a person
+invents. Nothing else on the path was typed, and no path was typed at
+all.
+
+Everything after the wizard came from a real cold install: no llama.cpp
+on the machine, no engine store, no config. `askedAboutEngine: true`,
+and the agent fetched **b11010** into
+`…\EugenePlexusHobbyist\.eugene-plexus\engines\llama_cpp\b11010\` —
+taking the CUDA **13.4** build on a **13.3** driver under minor-version
+compatibility, the rule M1 learned in S3. The model answered in 0.8 s.
+
+The three strings Home gives — `http://127.0.0.1:8080/v1`,
+`Qwen3-0.6B-Q4_K_M`, and a fresh `aud: client` key — worked in a plain
+`curl` with nothing else: no session token, no proxy, no UI.
+`finish_reason: stop`, content *"Hi there! 😊 What's up?"*.
+
+---
+
+## 2. What the run found, and it was in the shipped build
+
+**The third execution clicked a 16 GB download beside a folder that
+already held a model.** That is the defect
+[`ui` f267fbd](https://github.com/eugene-plexus/ui/commit/f267fbd) was
+written to fix, hours earlier — the library boots with no roots and
+skips its startup scan, the wizard writes the folder with a `PATCH` that
+deliberately never scans, and nothing goes back to look.
+
+**The fix was on `main` and in no build.** `dist` was at `893b669`, the
+export of ui@`70dd910`; f267fbd is a child of that commit and was never
+exported. Both installers pin `dist`. So the fix could not ship, and
+this run — which is an **installer** test — measured a UI without it.
+
+Proof rather than suspicion: the string `"library","/v1/scan"` appears
+in **five** chunks of a build of ui@f267fbd and in **zero** chunks of
+`893b669`.
+
+This is the S3 trap one layer over. There, the agent venv served a
+**wheel** while the script asserted about a **staged** directory — four
+runs measured a build no browser saw. Here it is a commit on `main` that
+no `dist` build carries, and the installer is the thing that notices,
+because the installer is the only consumer of `dist`.
+
+Fixed: `dist` rebuilt as
+[`50e0248`](https://github.com/eugene-plexus/ui/commit/50e0248) (export
+of ui@f267fbd), both installers re-pinned, and **the pinned archive was
+downloaded, unpacked and grepped** for the scan call before the re-run —
+the precaution S7 introduced for exactly this.
+
+---
+
+## 3. Three harness defects, two of which passed while broken
+
+**A spec that could not tell the two journeys apart.** The arc waited
+for `data-testid="home-primary"` and clicked it. But `home-primary` is
+the testid of the **no-models** branches of `FirstModelCard`; the
+one-model branch renders a `run-button` and carries no `home-primary`
+at all. So the spec could only ever match the state where Home has
+nothing, and it reported that state as a pass. It did not detect the
+missing fix — **it depended on it.** With the fix in place the old spec
+would have hung for two minutes on a testid that no longer renders.
+
+The arc now waits on `run-button`, **races the download card against
+it**, and fails if the download is what appeared. Check 4e is that
+assertion in the shell. Same family as M10's check 7 and the tree
+slice's *"a driver sits under its machine"*: an assertion about a
+surface that cannot distinguish the failure it exists to catch.
+
+**Two checks read keys the spec never wrote.** The shell read
+`firstReply.text` and `connect.expiry`; the spec writes `turn`,
+`transcript` and `lifetime`. `jq_` raises, the substitution captures
+empty, and with no `set -e` both checks report failure — so checks 4d
+and 7 were **guaranteed to fail** on any run, green install or not.
+Caught by reading the two halves against each other before the third
+execution rather than by running it.
+
+**Sixteen tokens is not a budget an answer fits in.** Check 6 asked for
+`max_tokens: 16` and got a `200` with an empty `content` — the starter
+models are hybrid reasoning models whose first tokens are a thinking
+block the gateway strips, so the budget was spent before a word of the
+answer. The check would have read a working install as a broken one.
+256 now, with `finish_reason` printed on failure.
+
+**And the run binds four ports, not one.** The header claimed "+100" and
+the preflight checked one port. First-boot seeding declares the gateway,
+library and control root at the contract's defaults — 8080, 8082, 8083 —
+whatever port the agent took (`default_topology.py`). All four are
+checked in the preflight and reclaimed in the teardown now, which is
+safe *because* the preflight proved they were free.
+
+---
+
+## 4. The hazard this script is built around
+
+`install.ps1` writes `EUGENE_PLEXUS_AGENT_CONFIG_FILE` into the **USER**
+environment, deliberately, because a logon task inherits the user
+environment. This box is a worker node of the live two-machine install,
+so a second install on the same account silently repoints the first.
+
+The run saves the value before installing, restores it in the teardown
+trap, and **check 2 asserts it came back**. Both executions recorded the
+`NOTE` that the installer had repointed it and then the `PASS` that it
+was put back. Check 10 asserts it again after teardown.
+
+`HOME` and `USERPROFILE` point inside the throwaway prefix so the
+wizard's proposed `<home>/Eugene Models` lands there: the arc must accept
+the proposal **without typing**, and the run must leave nothing in the
+operator's home.
+
+---
+
+## 5. What this run does not prove
+
+- **WSL2.** The `install.sh` half of the script is not written. §7 S10's
+  *Done when* asks for green on both, so S10 is not finished.
+- **The ten-minute target.** §1's fourth number — install to first token
+  **with the download included** — needs `EP_DOWNLOAD=1` and has not been
+  measured. The default seeds a small GGUF, because the subject of the
+  other three targets is the count and a download changes how long the
+  arc takes without changing how many times it is clicked. (The third
+  execution accidentally measured something adjacent: it downloaded a 27B
+  and reached a reply in 261 s. That was the wrong build and the wrong
+  model, so it is an anecdote, not the measurement.)
+- **Moderated sessions with strangers** (§8.4). Needs real people.
+- **The keystroke count is not a measurement.** Playwright's `fill()`
+  sets a value and dispatches `change` without individual `keydown`
+  events, so the run reports `0 keystrokes` while a person would type
+  about thirty. The claim §1 actually makes is *one typed **value***, and
+  that is what the `change` listener measures. The keystroke number is
+  the counter's blind spot and is not evidence of anything.
+- **Reading grade** (§8.1) is still unmeasured; the run reports sentences
+  over 25 words (Home 6, Discover 5, Library 2, Playground 2) as the
+  number S8 has to drive down.
+- **One box, one account.** A clean Windows *user profile* — what
+  `install-acceptance.sh` uses — is not what this run gets; it gets a
+  clean *prefix* on a dirty account, with the ambient `EUGENE_PLEXUS_*`
+  dropped at check 0.
+
+---
+
+## 6. Reproducing it
+
+```bash
+cd specs && bash scripts/hobbyist-acceptance.sh
+```
+
+~2 minutes with a seeded model; it really installs llama.cpp over the
+network. `EP_DOWNLOAD=1` fetches the starter model instead.
+`$LOCALAPPDATA\EugenePlexusHobbyist` is the throwaway prefix.
+
+**Never run it while the live worker agent holds 8079** — it uses 8179,
+but check 2's hazard is about the account, not the port.
