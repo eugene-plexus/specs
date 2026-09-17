@@ -3609,6 +3609,75 @@ components:
             Most recent failure for this runtime — a spawn error, a
             non-zero exit, or a readiness probe that never passed.
             Cleared on a successful start.
+        loadProgress:
+          $ref: '#/components/schemas/LoadProgress'
+
+    LoadProgress:
+      type: object
+      description: |
+        How far into reading its model an engine is, **present only while
+        that is a thing anyone can honestly say**.
+
+        A large model on shared storage takes minutes to load, and for
+        those minutes a healthy node and a hung one look identical: the
+        status is `loading`, the engine answers 503, and nothing says
+        whether bytes are moving. This is what distinguishes them.
+
+        **Absent is the normal case, not an error.** It is absent
+        whenever the read cannot be observed:
+
+          * the engine **memory-maps** its model, which llama.cpp does by
+            default — faulted pages are not read I/O, so the counter sees
+            a few megabytes of header and then nothing. Measured
+            2026-09-17 on Windows: 268 MB touched through a mapping moved
+            `ReadTransferCount` by 0.0 MB, against +268.4 MB for the same
+            bytes read normally, over SMB and on local disk alike;
+          * the host has no counter this agent knows;
+          * the runtime is not loading, or has no process.
+
+        So a consumer renders a bar when this is present and elapsed time
+        when it is not, and never infers one from the other. A field that
+        was always present would force every consumer to invent the
+        distinction, and one of them would get it wrong by showing a bar
+        frozen at 0.1% for four minutes — which is the question this
+        answers, made worse by looking authoritative.
+      required:
+        - bytesRead
+        - source
+      properties:
+        bytesRead:
+          type: integer
+          format: int64
+          description: |
+            Bytes this engine process has read since it started. Includes
+            whatever else it read — its own binary, CUDA libraries — which
+            is noise against a model measured in gigabytes.
+        totalBytes:
+          type: integer
+          format: int64
+          description: |
+            Size of the model file this runtime is opening, when it could
+            be measured. Null when the path could not be stat'd, which is
+            a share that has gone away — exactly when a load is worth
+            watching, so progress is still reported without a percentage.
+        bytesPerSecond:
+          type: number
+          format: double
+          description: |
+            Observed over a short window, so it tracks a share that has
+            just got slower rather than averaging the whole load. Null on
+            the first pair of readings.
+        source:
+          type: string
+          description: |
+            Which counter answered. On the wire so that "this host cannot
+            measure it" stays distinguishable from "this engine is not
+            reading" — both of which make the field absent, and only one
+            of which is worth reporting to whoever runs the host.
+          enum:
+            - windows_io_counters
+            - proc_io_rchar
+            - rusage_diskio
 
     RuntimeStatus:
       type: string
