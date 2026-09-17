@@ -1,11 +1,15 @@
 # A node keeps its own copy, and a load says how far along it is
 
 **Status: designed 2026-09-17, on Troy's calls, from measurements taken
-the same day on the live two-machine install. NOT BUILT.** Two features
-that arrived together out of one misdiagnosis and land independently:
-**§7, load progress**, is small, contract-light and can ship on its own;
-**§1-§6, the node-local copy**, is the larger one. Build order is §7
-then the rest, because §7 makes the rest observable.
+the same day on the live two-machine install. §7 IS BUILT AND PINNED**
+(the same day: contracts `3ec7251`, agent `acd8b25`, ui `ca0215f` /
+dist `d33525f`, both installers at `18d8014`; record §14.1). **§1-§6 ARE
+NOT BUILT.** Two features that arrived together out of one misdiagnosis
+and land independently: **§7, load progress**, was small, contract-light
+and shipped on its own; **§1-§6, the node-local copy**, is the larger
+one. **§13 is the build order and the pickup point.** §7 went first
+because it makes the rest observable — a copy that takes four minutes
+needs the same honesty about bytes that a load does.
 
 Reopens the storage half of
 [`m11-compute-storage-separation.md`](m11-compute-storage-separation.md).
@@ -62,6 +66,8 @@ taken as recommended so a build can proceed; each is his to overturn.
 | 7 | A **Clear local copies** button | **Yes**, and it says out loud that copies return while the toggle is on (§5.2) | Troy's call | Troy's call |
 | 8 | Whether the adapter forces `--load-mode none` for network paths | **No.** Guidance on the field, not automation (§6.2) | It would make every network launch faster with no thought — and `easy-default-expert-override` says default only when the thing *cannot work* otherwise, never when it merely performs better | taken |
 | 9 | Progress bar driven by a flag, or self-detecting | **Self-detecting** from the byte counter (§7.2) | A flag is simpler — and would be wrong for vLLM, for whatever upstream changes next, and for the mmap path where there are genuinely no bytes | taken |
+| 10 | Whether copy progress reuses `loadProgress` | **A separate `Runtime.copyProgress`**, same shape, different meaning (§13 step 1) | One field is one less schema — but `loadProgress` is absent exactly when the bytes cannot be observed, and a copy's bytes are always observable because we are the ones moving them; reusing it would make *absent* mean two things and hand every consumer the distinction to reinvent | taken, from the roadmap |
+| 11 | What a runtime's status is while its copy runs | **A new `copying` member**, and the gateway taught it *before* anything emits it (§13 step 2) | `starting` already exists — and its own contract text says "spawned", which a pre-spawn copy is not, so reusing it would put a four-minute lie in the field §0.3 exists to remove | taken, from the roadmap |
 
 ---
 
@@ -374,7 +380,7 @@ when a runtime is opening its model over a network path.
 
 ---
 
-## 7. Load progress — the small half, which lands first
+## 7. Load progress — the small half, which landed first — **BUILT 2026-09-17; record §14.1**
 
 ### 7.1 Why it is worth its own section
 
@@ -426,13 +432,28 @@ not reading.
 `agent.yaml`:
 
 - config trio: `modelCopyEnabled`, `modelCopyDir`, `modelCopyMinFreeGb`
-- `Runtime.loadProgress` (§7.5)
+- ~~`Runtime.loadProgress` (§7.5)~~ **landed 2026-09-17** — specs
+  `3ec7251`, §14.1
 - `Runtime.localPathSource`: `folder | override | copy`
 - `Runtime.localPathNote`: why a copy was not used, when it was not
+- `Runtime.copyProgress` — the `LoadProgress` shape, present while a copy
+  is in flight. **Added by the roadmap, decision #10:** this list was
+  written before §10's risk 4 (*the tray entry is not optional*) had
+  anything to carry it, and reusing `loadProgress` would make its
+  absence mean two different things
+- `RuntimeStatus.copying` — **added by the roadmap, decision #11**, for
+  the same reason: `starting`'s own contract text says "spawned", and
+  the copy happens before there is a process
 - an operation to clear the copies, reporting what was skipped
 
 `library.yaml`: nothing. The library remains authoritative and is not
 told that copies exist.
+
+**No `common.yaml` change.** The three config fields are `boolean`,
+`file_path` and `integer`, all existing `ConfigValueType` members —
+unlike `path_mappings` at M11 and `library_folders` at the folders
+slice, each of which added a member and so reached all six consumers
+through `ConfigField`. That is what makes the radius below narrow.
 
 **Radius, to be measured rather than assumed** — regenerate all six and
 diff, per [[polyrepo-spec-codegen-workflow]]. Expected: `agent`,
@@ -525,3 +546,270 @@ baseline assertion that the suite passes unsabotaged.
   ([[project-acceptance-scripts-must-clear-the-environment]]) and must
   not run on the default ports on the box that also runs the live
   worker.
+
+---
+
+## 13. Build order
+
+**This is the pickup point.** Step 0 is done; steps 1-8 are not. Sizes
+are relative (S under a day, M a day or two, L several) and are
+estimates. *Touches* names repos; **contract** marks a change to
+`openapi/`. Each step ends with a **done when** a test, a script or a
+browser can assert, per [`hobbyist-ux.md`](hobbyist-ux.md) §7's
+convention.
+
+The order is not arbitrary in two places, and both are version skew.
+**Step 2 goes before anything can emit the new status**, because the
+gateway re-pins independently of the agent and an install can run a
+newer agent against an older gateway. **Step 7's pins come after step
+6's run**, because S10 found a UI fix that was committed, tested,
+merged — and in no build at all.
+
+### Step 0 — load progress (§7) — **DONE 2026-09-17**
+
+Record: §14.1. One thing is owed from it and is deferred to step 6
+rather than pretended away: **no acceptance script covers §7**, so
+§11's item 9 — a bar that advances under `--load-mode none` and is
+**absent** under mmap — has been run by hand and by unit test, and never
+by the suite.
+
+### Step 1 — the contract, and the radius measured (S, **contract**)
+
+*Touches:* specs, then whichever consumers the measurement names.
+`agent.yaml` only:
+
+- the `config` tag's prose gains `modelCopyEnabled`, `modelCopyDir` and
+  `modelCopyMinFreeGb`, beside `pathMappings`, which is where a node's
+  config keys are stated;
+- `Runtime.localPathSource` (`folder | override | copy`) and
+  `Runtime.localPathNote` (§8);
+- `Runtime.copyProgress`, decision #10 — the `LoadProgress` shape with
+  its own meaning: **present whenever a copy is in flight**, because
+  unlike a read through someone else's mapping this is our own transfer
+  and the bytes are never unobservable;
+- `RuntimeStatus.copying`, decision #11;
+- the clear operation, whose response is what was deleted, what was
+  skipped, and why (§5.2).
+
+**No `common.yaml` change, and that is the whole radius argument.** The
+three config fields are `boolean`, `file_path` and `integer` — all
+existing `ConfigValueType` members, unlike `path_mappings` at M11 and
+`library_folders` at the folders slice, each of which added a member and
+therefore reached all six consumers through `ConfigField`. Expected
+radius: `agent`, `control` (regen-only, it reads the agent's surface)
+and `ui`.
+
+**Expected is not measured.** Regenerate all six at the new SHA, diff
+each, and revert the ones that come back byte-identical apart from the
+header SHA rather than re-pinning them — the standing rule in
+[[polyrepo-spec-codegen-workflow]], and right twice out of the last
+three predictions.
+
+*Done when* all six are regenerated from **each repo's own `.venv`**
+(never the ambient interpreter — [[project_ci_hygiene_and_devenv_mismatch]]) and
+every diff has been looked at.
+
+### Step 2 — the gateway survives a status it has never seen (S, no contract)
+
+*Touches:* gateway. **Measured 2026-09-17 in the gateway's own source,
+not assumed.** It reads another node's runtimes over HTTP and parses
+`status` as a plain string (`routing.py:809`), so an unknown member
+cannot raise — that half is already safe. What is not: `waking()`
+matches `("starting", "loading")` literally (`routing.py:289`), so a
+`copying` runtime is neither `startable()` nor `waking()`, and `wake()`
+(`lifecycle.py:252`) would answer
+
+> nothing serving this model is ready, and none of its runtimes asked to
+> be started on demand
+
+about a runtime that is four minutes from serving. Wrong during exactly
+the window §1.4 exists to make cheap, and it is one line.
+
+*Done when* a fixture agent reporting `copying` makes `wake()` report
+the runtime as coming up, and a test asserts an unrecognised status is
+carried through rather than raising — the general version-skew property,
+which is worth having whatever this slice does next.
+
+### Step 3 — the copier, pure and tested (L, no contract)
+
+*Touches:* agent. A `model_copies.py` beside `model_paths.py`: the set
+(§2.4), temp name then fsync then rename (§3.3), headroom checked before
+and during (§3.2), abort and remove the partial, staleness by
+size + mtime (§4.3), eviction oldest-first with the platform difference
+reported (§3.4), named at the model's own relative path (§4.4).
+
+The copy goes ahead of M11's rule at **one** seam, and all three of
+today's resolution call sites must go through it or they will disagree
+about which file is under discussion: `runtimes.py:212` (the spawn's
+`_launch_spec`), `runtimes.py:440` (the `localPath` on the runtime view)
+and `admission.py:614`. Admission is the one that would bite quietly —
+it answers "is it here", and would say no about a model that is here.
+
+**The constraint that shapes the implementation:** `_launch_spec()` is
+called synchronously while the supervisor builds argv, so the copy
+cannot happen inside it — blocking there stalls the supervisor for four
+minutes. The copy belongs to the runtime's own task with the spawn
+deferred until it finishes or is skipped, which is also why step 4 is
+separate from this one.
+
+*Done when* unit tests cover: two GPUs and two models → two copies;
+four M6 replicas of one model → **one** copy (§2.2, the assertion that
+distinguishes this design from the shape first proposed); a runtime
+deleted → its copy goes; a partial never carries the final name; a
+headroom breach before the copy skips it and the launch still succeeds;
+a breach during it aborts and leaves nothing behind.
+
+### Step 4 — wired into the lifecycle, and reported (M, no contract)
+
+*Touches:* agent. The runtime holds `copying` while its task runs,
+`copyProgress` is populated from the bytes this agent has written, and
+`localPathSource` / `localPathNote` are populated on the view —
+including the note for a copy that was **not** used, which is what the
+Inference screen renders. **The clear operation's handler lands here
+too**, not in step 3: deleting is the copier's job, but answering *what
+I could not delete and why* is an HTTP surface, and §5.2 turns entirely
+on that answer being honest rather than the button reporting success and
+stopping runtimes to get at their files.
+
+**A component test is not a wiring test**, a lesson S7 produced twice:
+step 3's tests pass against a copier nothing calls. Drive the lifecycle.
+
+*Done when* a runtime with the toggle on goes
+`copying → starting → loading → ready` and ends at
+`localPathSource: copy`; with the toggle off it goes straight to
+`starting` at `localPathSource: folder`; and turning the toggle off
+after a copy exists makes the next start open the share, with no state
+to unwind (§4.2).
+
+### Step 5 — the UI (M, no contract)
+
+*Touches:* ui. Config → **Model storage** on the node, cross-linked both
+ways with the Library folder overrides
+([[cross-link-related-settings]]); the Clear button carrying §5.2's
+sentence; a tasks-tray entry while a copy runs — **risk #4, not
+optional**, or the feature built to end the misdiagnosis reintroduces
+it; and the Inference screen's source line with the skip reason (§5.3).
+S8's vocabulary gate applies: the word "cache" appears nowhere in the
+copy.
+
+**§5.1 assumes one thing that is not true today, measured in
+`ConfigField.tsx`:** the folder picker is wired into `path_list` rows, a
+mapping's `to` and the Library's folders, and a **scalar `file_path`
+field renders a plain text input with no Browse at all**. So "a path,
+with the folder picker" is a UI change rather than a value type — and it
+is the difference between S2's "no typed path" and a typed path.
+
+*Done when* a browser test round-trips the toggle, sees the tray entry
+during a copy, reads the source on Inference, and gets a report from
+Clear naming what it skipped.
+
+### Step 6 — the acceptance run (M)
+
+*Touches:* specs. `scripts/model-copy-acceptance.sh`, §11's nine items
+**including item 9**, which step 0 shipped without. It clears the
+ambient `EUGENE_PLEXUS_*` environment and does not run on the default
+ports ([[project-acceptance-scripts-must-clear-the-environment]] — this box also
+runs the live worker). Sabotage each check, restoring **from a copy and
+never with `git checkout --`**
+([[feedback-sabotage-runs-restore-from-a-copy]]), and open with a
+baseline assertion that the suite passes unsabotaged.
+
+**What one box can and cannot show.** Items 3-9 are local questions and
+are reachable here: a second runtime, replicas, a deleted runtime, a
+filled disk, a mid-copy breach, Clear with something running, and §7's
+bar. Items 1-2 — the timing claim — are **not**, because the claim is
+about a node whose models live on another machine. They are step 8, and
+the pair for it is already running (step 8 names the addresses), so this
+is a sequencing note rather than a dependency on anything being built or
+bought.
+
+*Done when* the script passes twice, the second time on a tree where
+every sabotage has been restored.
+
+### Step 7 — the pins (S)
+
+*Touches:* specs, and `dist` in ui. Whichever repos actually serve or
+consume the change, plus **`dist` rebuilt because the UI moved** — both
+installers are that branch's only consumers, so nothing else can notice
+a stale one. Fetch the pinned archives and grep them for a string only
+the new build carries.
+
+*Done when* both installers name the new SHAs and the archives have been
+opened and checked, not assumed.
+
+### Step 8 — the live install, and the only proof of the claim (S)
+
+**The pair is already up and has been for days**, so nothing in this
+step waits on hardware. Verified 2026-09-17 by `/healthz` on each: the
+control root in its container at **192.168.16.252** — agent 8279,
+gateway 8280, control **8283**, library 8282 deliberately unpublished,
+the +200 remap — and the worker is **this Windows box, `Amish_Station`,
+running the agent alone on 8079**, its inference driver being a
+companion spawned per runtime rather than a standing process.
+
+**§0's exact subject is still declared on it**, so the baseline is that
+runtime and not a stand-in: `huihui-qwen3-8-27b-abliterated-q6-k-l`,
+`llama_cpp`, `modelPath`
+`/models/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF/...-Q6_K_L.gguf`
+— the library's own spelling, resolved here through the folder's
+inherited Windows mount.
+
+Turn the toggle on for that node, pointed at its local NVMe, and time
+three things against §0.1: the first launch after enabling (the copy,
+expected around 4m at 113.6 MB/s, then a local load), the second launch
+(expected around 20s), and the same runtime with the toggle off (10m01s
+mapped, 4m16s with `--load-mode none`). Record it in `docs/acceptance/`
+beside the others.
+
+**This is the step the document exists for**, and the one no amount of
+local testing substitutes for — not because the hardware is scarce, but
+because a copy only means anything when the original is on another
+machine.
+
+---
+
+## 14. Implementation record
+
+### 14.1 Step 0 — load progress, 2026-09-17
+
+Contracts `3ec7251` — `Runtime.loadProgress` and the `LoadProgress`
+schema, 69 lines of `agent.yaml` and no other document. Agent
+`acd8b25`: `process_io.py` reads the counter per platform and is allowed
+to answer *I cannot tell*, which is not the same as zero. UI `ca0215f`
+renders the bar on the Inference screen; dist `d33525f`. Both installers
+at `18d8014`. **No other consumer re-pinned** — control's generated view
+of the agent is worth a bump when something there reads the field.
+
+Three things worth carrying into §1-§6, because the copy has the same
+shape of problem:
+
+- **Detection is "the bytes are moving", not "the bytes are non-zero".**
+  llama.cpp mmaps by default and still reads a GGUF's header normally,
+  so a mapped load twitches the counter a few megabytes and stops dead.
+  A non-zero test would render a bar frozen at 0.1% for four minutes —
+  the question being asked, made worse by looking like an answer.
+- **Absent is the normal case.** A consumer draws a bar when the field
+  is present and elapsed when it is not, and never infers one from the
+  other. `source` is on the wire because "this host has no counter" and
+  "this engine is not reading" both produce an absent field, and only
+  one of them is worth telling whoever runs the host. That is the
+  argument decision #10 turns on: a copy is never in that position, so
+  it gets its own field rather than borrowing one whose absence already
+  means something else.
+- **The measurement that agreed with what was already believed was the
+  wrong one** (§0.2). `GetCurrentProcess` through ctypes returned a
+  truncated pseudo-handle, `GetProcessIoCounters` returned FALSE, and
+  the zeroed struct read as a clean confirmation of S7's *there are no
+  bytes*.
+
+§7.4 is built: past 99.9% the line reads *read; uploading to the GPU*
+rather than letting 100% mean nothing for twenty seconds.
+
+**Uneven, and saying so:** Windows is measured; Linux (`/proc/<pid>/io`
+`rchar`, deliberately not `read_bytes`, which counts block-layer I/O and
+can be 0 for a model on an SMB or NFS mount — the exact case this exists
+for) and macOS (`proc_pid_rusage`) are written and unverified.
+
+**Not done in step 0:** no acceptance script asserts any of it, and the
+negative case is the one worth asserting — a bar that appears when it
+cannot be true is the failure mode. Step 6.
