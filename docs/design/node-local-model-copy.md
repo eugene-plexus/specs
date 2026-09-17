@@ -434,17 +434,29 @@ not reading.
 - config trio: `modelCopyEnabled`, `modelCopyDir`, `modelCopyMinFreeGb`
 - ~~`Runtime.loadProgress` (§7.5)~~ **landed 2026-09-17** — specs
   `3ec7251`, §14.1
-- `Runtime.localPathSource`: `folder | override | copy`
+- `Runtime.localPathSource` — **`same_path | inherited | override |
+  copy`**, not the `folder | override | copy` this line said before the
+  contract was written. `FolderReachSource` already names the first
+  three and the Library's Folders page already renders them, so
+  inventing `folder` would have been a second word for `inherited` in a
+  neighbouring field. It is a **separate enum** rather than that one
+  with `copy` added, because a *folder* can never be a copy and the
+  Folders page would be handed a value it can never receive
 - `Runtime.localPathNote`: why a copy was not used, when it was not
-- `Runtime.copyProgress` — the `LoadProgress` shape, present while a copy
-  is in flight. **Added by the roadmap, decision #10:** this list was
+- `Runtime.copyProgress` → `CopyProgress`, the `LoadProgress` shape as
+  its own schema. **Added by the roadmap, decision #10:** this list was
   written before §10's risk 4 (*the tray entry is not optional*) had
   anything to carry it, and reusing `loadProgress` would make its
-  absence mean two different things
+  absence mean two different things — *the bytes cannot be observed* and
+  *no copy is running*
 - `RuntimeStatus.copying` — **added by the roadmap, decision #11**, for
   the same reason: `starting`'s own contract text says "spawned", and
   the copy happens before there is a process
-- an operation to clear the copies, reporting what was skipped
+- `POST /v1/model-copies/clear` → `ModelCopyClearResult`: what was
+  deleted, what survived and why (`ModelCopySkipped`). It stops nothing
+  and switches nothing off, and the description says both, because a
+  button labelled "clear" must not decide to end someone's inference
+  session to reclaim disk
 
 `library.yaml`: nothing. The library remains authoritative and is not
 told that copies exist.
