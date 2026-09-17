@@ -55,6 +55,21 @@
 # subject of the other three targets is the COUNT, and a download changes
 # how long the arc takes without changing how many times it is clicked.
 #
+# **TWO TARGETS, one driver.** `EP_TARGET=windows` (the default) installs
+# with `install.ps1` on this box. `EP_TARGET=wsl` installs with
+# `install.sh` INSIDE the WSL2 guest and drives the same browser arc
+# against it from here, because WSL2 forwards a guest listener on
+# 127.0.0.1 to the same port on Windows (measured, and the preflight
+# checks it). The guest has no Node and no browser -- `npm` there is the
+# WINDOWS npm reached over interop, which answers `--version` while
+# `node` does not exist -- so installing Playwright into it would be a
+# change to the machine that proves nothing the UI does not already
+# prove: the UI is one static export and the browser's OS is not what
+# WSL2 is here to test. What WSL2 IS here to test is `install.sh`: a
+# Linux CPython, Linux wheels, the `dist` pin resolving, and a Linux
+# agent serving the UI it installed. SS5 of the record names what this
+# split does not prove.
+#
 # Safe beside a live install: the agent is on +100, teardown is by pid,
 # and never `pkill -f eugene_plexus_`.
 #
@@ -77,9 +92,16 @@ PORT="${EP_AGENT_PORT:-8179}"
 OWNED_PORTS="${EP_OWNED_PORTS:-$PORT 8080 8082 8083}"
 BASE="http://127.0.0.1:$PORT"
 PASS="hobbyist-$$"
+TARGET="${EP_TARGET:-windows}"
 PREFIX_WIN="${EP_PREFIX_WIN:-$LOCALAPPDATA\\EugenePlexusHobbyist}"
 PREFIX_UNIX=$(cygpath -u "$PREFIX_WIN" 2>/dev/null || printf '%s' "$PREFIX_WIN")
 MODEL_SRC="${EP_MODEL:-$HOME/.eugene-plexus/acceptance-models/Qwen3-0.6B-Q4_K_M.gguf}"
+# The guest's own view of the same two places. `install.sh` defaults its
+# prefix under $HOME; this one is a throwaway beside it, and the agent is
+# started with HOME pointed at it so the wizard's proposed models folder
+# lands inside the run rather than in the operator's home.
+PREFIX_WSL="${EP_PREFIX_WSL:-/home/tcorbin/.eugene-plexus-hobbyist}"
+MODEL_SRC_WSL="${EP_MODEL_WSL:-/mnt/c/Users/troyc/.eugene-plexus/acceptance-models/Qwen3-0.6B-Q4_K_M.gguf}"
 DO_DOWNLOAD="${EP_DOWNLOAD:-0}"
 
 # §1's targets, as numbers this script can fail on.
@@ -97,6 +119,17 @@ jq_() { PYTHONUTF8=1 python -c "import sys,json; d=json.load(sys.stdin); print($
 wait_healthy() { for _ in $(seq 1 "${2:-60}"); do curl -sf -m 2 "$1/healthz" >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 listening_pids() { netstat -ano 2>/dev/null | grep ":$1 " | grep LISTENING | awk '{print $5}' | sort -u; }
 win_path() { cygpath -w "$1" 2>/dev/null || printf '%s' "$1"; }
+# One command, run where the install lives. `bash -lc` so the guest's
+# profile is loaded: `uv` is under ~/.local/bin there and a non-login
+# shell would not find it.
+on_target() {
+  if [ "$TARGET" = "wsl" ]; then wsl.exe -e bash -lc "$1" 2>&1 | tr -d "\r"
+  else bash -lc "$1"; fi
+}
+# A guest listener is forwarded to this port on Windows, so `netstat`
+# above sees it -- but the pid it reports is the RELAY, and killing that
+# leaves the real process running. Ports are reclaimed where they live.
+guest_listening() { wsl.exe -e bash -lc "ss -ltn 2>/dev/null | grep -c ':$1 '" 2>/dev/null | tr -d "\r\n"; }
 
 SAVED_CONFIG_VAR=""
 A_PID=""
@@ -109,24 +142,52 @@ restore_account_env() {
 }
 teardown() {
   [ -n "$A_PID" ] && { kill "$A_PID" 2>/dev/null; sleep 3; }
-  for p in $OWNED_PORTS; do
-    for pid in $(listening_pids "$p"); do
-      taskkill //PID "$pid" //F >/dev/null 2>&1 || kill -9 "$pid" 2>/dev/null
+  if [ "$TARGET" = "wsl" ]; then
+    # By port, inside the guest, and never `pkill -f eugene_plexus_`:
+    # this box is a worker node of the live install.
+    for p in $OWNED_PORTS; do
+      wsl.exe -e bash -lc "fuser -k -TERM $p/tcp 2>/dev/null; true" >/dev/null 2>&1
     done
-  done
+    sleep 2
+    for p in $OWNED_PORTS; do
+      wsl.exe -e bash -lc "fuser -k -KILL $p/tcp 2>/dev/null; true" >/dev/null 2>&1
+    done
+  else
+    for p in $OWNED_PORTS; do
+      for pid in $(listening_pids "$p"); do
+        taskkill //PID "$pid" //F >/dev/null 2>&1 || kill -9 "$pid" 2>/dev/null
+      done
+    done
+  fi
   restore_account_env
   rm -f "$UI_DIR/e2e/hobbyist-live.spec.ts" 2>/dev/null
 }
 
 say "preflight"
-[ -f "$MODEL_SRC" ] || { bad "no model at $MODEL_SRC (set EP_MODEL)"; exit 1; }
+case "$TARGET" in
+  windows|wsl) ;;
+  *) bad "EP_TARGET=$TARGET is not windows or wsl"; exit 1 ;;
+esac
+if [ "$TARGET" = "wsl" ]; then
+  wsl.exe -e true >/dev/null 2>&1 || { bad "no WSL guest answers here"; exit 1; }
+  on_target "test -f '$MODEL_SRC_WSL'" >/dev/null 2>&1 \
+    || { bad "the guest cannot see a model at $MODEL_SRC_WSL (set EP_MODEL_WSL)"; exit 1; }
+  on_target "command -v uv" >/dev/null 2>&1 || { bad "no uv in the guest"; exit 1; }
+else
+  [ -f "$MODEL_SRC" ] || { bad "no model at $MODEL_SRC (set EP_MODEL)"; exit 1; }
+fi
+# Playwright always runs HERE, against whichever target holds the
+# install. The guest has no Node -- see the header.
 [ -d "$UI_DIR/node_modules/@playwright" ] || { bad "no Playwright in $UI_DIR (npm install)"; exit 1; }
 for p in $OWNED_PORTS; do
   [ -n "$(listening_pids "$p")" ] && { bad "port $p in use -- the checks below would be about whatever holds it"; exit 1; }
+  if [ "$TARGET" = "wsl" ] && [ "$(guest_listening "$p")" != "0" ]; then
+    bad "port $p is held INSIDE the guest -- the forwarder would hide it until something connected"; exit 1
+  fi
 done
 SAVED_CONFIG_VAR=$(powershell.exe -NoProfile -NonInteractive -Command \
   "[Environment]::GetEnvironmentVariable('EUGENE_PLEXUS_AGENT_CONFIG_FILE','User')" 2>/dev/null | tr -d '\r')
-ok "ports free ($OWNED_PORTS); the account's config variable saved ('${SAVED_CONFIG_VAR:-<unset>}')"
+ok "target=$TARGET; ports free ($OWNED_PORTS); the account's config variable saved ('${SAVED_CONFIG_VAR:-<unset>}')"
 
 rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
 trap teardown EXIT
@@ -138,24 +199,56 @@ for v in $(env | grep -o '^EUGENE_PLEXUS_[A-Z_]*' || true); do unset "$v"; done
 
 # --- 1 -----------------------------------------------------------------------
 say "1. install from nothing"
-powershell.exe -NoProfile -NonInteractive -Command \
-  "if (Test-Path '$PREFIX_WIN') { Remove-Item -Recurse -Force '$PREFIX_WIN' }" >/dev/null 2>&1
-T0=$(date +%s)
-# `-NoService`: no logon task is registered on this box. The port comes
-# from the environment because that is the installer's own knob.
-OUT=$(EUGENE_PLEXUS_AGENT_BIND_PORT="$PORT" powershell.exe -NoProfile -NonInteractive \
-  -File "$(win_path "$HERE/install.ps1")" -Prefix "$PREFIX_WIN" -NoService 2>&1 | tr -d '\r')
-T_INSTALL=$(( $(date +%s) - T0 ))
-if printf '%s' "$OUT" | grep -qi "installed\|is running"; then
-  ok "install.ps1 completed from nothing in ${T_INSTALL}s"
+INSTALLER=install.ps1
+if [ "$TARGET" = "wsl" ]; then
+  INSTALLER=install.sh
+  on_target "rm -rf '$PREFIX_WSL'" >/dev/null 2>&1
+  T0=$(date +%s)
+  # `--no-service`: no systemd user unit is written, so unlike the
+  # Windows path there is nothing account-wide to save -- install.sh
+  # puts the config path in the UNIT, not in the environment.
+  OUT=$(on_target "EUGENE_PLEXUS_AGENT_BIND_PORT=$PORT sh '/mnt/d/py/eugene-plexus/specs/scripts/install.sh' --prefix '$PREFIX_WSL' --no-service --no-start")
+  T_INSTALL=$(( $(date +%s) - T0 ))
 else
-  bad "install.ps1 did not finish"; printf '%s\n' "$OUT" | tail -15 | sed 's/^/      /'; exit 1
+  powershell.exe -NoProfile -NonInteractive -Command \
+    "if (Test-Path '$PREFIX_WIN') { Remove-Item -Recurse -Force '$PREFIX_WIN' }" >/dev/null 2>&1
+  T0=$(date +%s)
+  # `-NoService`: no logon task is registered on this box. The port comes
+  # from the environment because that is the installer's own knob.
+  OUT=$(EUGENE_PLEXUS_AGENT_BIND_PORT="$PORT" powershell.exe -NoProfile -NonInteractive \
+    -File "$(win_path "$HERE/install.ps1")" -Prefix "$PREFIX_WIN" -NoService 2>&1 | tr -d '\r')
+  T_INSTALL=$(( $(date +%s) - T0 ))
 fi
-AGENT_EXE="$PREFIX_UNIX/venv/Scripts/eugene-plexus-agent.exe"
-[ -f "$AGENT_EXE" ] || { bad "no agent console script at $AGENT_EXE"; exit 1; }
+if printf '%s' "$OUT" | grep -qi "installed\|is running"; then
+  ok "$INSTALLER completed from nothing in ${T_INSTALL}s"
+else
+  bad "$INSTALLER did not finish"; printf '%s\n' "$OUT" | tail -15 | sed 's/^/      /'; exit 1
+fi
+if [ "$TARGET" = "wsl" ]; then
+  AGENT_EXE="$PREFIX_WSL/venv/bin/eugene-plexus-agent"
+  on_target "test -x '$AGENT_EXE'" >/dev/null 2>&1 \
+    || { bad "no agent console script at $AGENT_EXE in the guest"; exit 1; }
+else
+  AGENT_EXE="$PREFIX_UNIX/venv/Scripts/eugene-plexus-agent.exe"
+  [ -f "$AGENT_EXE" ] || { bad "no agent console script at $AGENT_EXE"; exit 1; }
+fi
 
 # --- 2 -----------------------------------------------------------------------
 say "2. the account's environment is put back"
+if [ "$TARGET" = "wsl" ]; then
+  # **The hazard is a property of install.ps1, not of installing.**
+  # `install.sh` writes the config path into the systemd unit it
+  # generates, so a second Linux install cannot repoint a first one
+  # through the environment. Asserted rather than assumed: the account
+  # variable is untouched by a guest install, and --no-service means no
+  # unit was written either.
+  UNIT_WRITTEN=$(on_target "test -f '$HOME/.config/systemd/user/eugene-plexus-agent.service' && echo yes || echo no")
+  NOW_VAR=$(powershell.exe -NoProfile -NonInteractive -Command \
+    "[Environment]::GetEnvironmentVariable('EUGENE_PLEXUS_AGENT_CONFIG_FILE','User')" 2>/dev/null | tr -d '\r')
+  [ "$NOW_VAR" = "$SAVED_CONFIG_VAR" ] \
+    && ok "install.sh touched no account-wide variable (it puts the config path in a unit); unit written: $UNIT_WRITTEN" \
+    || bad "a Linux install changed the Windows account variable to '$NOW_VAR' -- impossible, so something else did"
+else
 NOW_VAR=$(powershell.exe -NoProfile -NonInteractive -Command \
   "[Environment]::GetEnvironmentVariable('EUGENE_PLEXUS_AGENT_CONFIG_FILE','User')" 2>/dev/null | tr -d '\r')
 if [ "$NOW_VAR" != "$SAVED_CONFIG_VAR" ]; then
@@ -167,28 +260,58 @@ BACK=$(powershell.exe -NoProfile -NonInteractive -Command \
 [ "$BACK" = "$SAVED_CONFIG_VAR" ] \
   && ok "the live install's config path is intact ('${BACK:-<unset>}')" \
   || bad "the account variable is '$BACK', not '$SAVED_CONFIG_VAR' -- the live worker would come back on the wrong config"
+fi
 
 # --- 3 -----------------------------------------------------------------------
 say "3. the agent, from the installed prefix"
 # HOME and USERPROFILE point inside the prefix so the wizard's proposed
 # models folder lands there: the arc has to accept it WITHOUT TYPING, and
 # the run must not leave a folder in the operator's home.
-MODELS_DIR="$PREFIX_UNIX/Eugene Models"
-mkdir -p "$MODELS_DIR"
-if [ "$DO_DOWNLOAD" = "1" ]; then
-  note "EP_DOWNLOAD=1: the arc will fetch the starter model instead of finding one"
+if [ "$TARGET" = "wsl" ]; then
+  MODELS_DIR="$PREFIX_WSL/Eugene Models"
+  on_target "mkdir -p \"$MODELS_DIR\"" >/dev/null 2>&1
+  if [ "$DO_DOWNLOAD" = "1" ]; then
+    note "EP_DOWNLOAD=1: the arc will fetch the starter model instead of finding one"
+  else
+    on_target "cp '$MODEL_SRC_WSL' \"$MODELS_DIR/\"" >/dev/null 2>&1 \
+      || { bad "could not seed the proposed folder in the guest"; exit 1; }
+    note "seeded the guest's proposed folder with $(basename "$MODEL_SRC_WSL") -- see the header on why"
+  fi
+  # Bound to 127.0.0.1 in the guest, which WSL2 forwards to the same
+  # port here -- so the browser arc below needs no change at all.
+  #
+  # **Backgrounded on THIS side, not in the guest.** The first execution
+  # started it with `setsid nohup ... &` inside `wsl.exe -e bash -lc` and
+  # got a zero-byte log and nothing listening: the interop session ends
+  # when that command returns and takes the agent with it, and `setsid`
+  # does not save it. A `wsl.exe` left running here holds the session
+  # open for the life of the run, gives the teardown a pid symmetric with
+  # the Windows path, and puts the log where the failure paths already
+  # look. `exec` so the pid we hold is the agent's own relay.
+  wsl.exe -e bash -lc "cd '$PREFIX_WSL' && exec env -u EUGENE_PLEXUS_AGENT_CONFIG_FILE HOME='$PREFIX_WSL' EUGENE_PLEXUS_AGENT_CONFIG_FILE='$PREFIX_WSL/agent.yaml' EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1 EUGENE_PLEXUS_AGENT_BIND_PORT=$PORT '$AGENT_EXE' --unattended" >> "$WORK/agent.log" 2>&1 &
+  A_PID=$!
 else
-  cp "$MODEL_SRC" "$MODELS_DIR/" || { bad "could not seed the proposed folder"; exit 1; }
-  note "seeded the proposed folder with $(basename "$MODEL_SRC") -- see the header on why"
+  MODELS_DIR="$PREFIX_UNIX/Eugene Models"
+  mkdir -p "$MODELS_DIR"
+  if [ "$DO_DOWNLOAD" = "1" ]; then
+    note "EP_DOWNLOAD=1: the arc will fetch the starter model instead of finding one"
+  else
+    cp "$MODEL_SRC" "$MODELS_DIR/" || { bad "could not seed the proposed folder"; exit 1; }
+    note "seeded the proposed folder with $(basename "$MODEL_SRC") -- see the header on why"
+  fi
+  (exec env -u EUGENE_PLEXUS_AGENT_CONFIG_FILE \
+    HOME="$PREFIX_UNIX" USERPROFILE="$PREFIX_WIN" \
+    EUGENE_PLEXUS_AGENT_CONFIG_FILE="$PREFIX_WIN\\agent.yaml" \
+    EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1 \
+    EUGENE_PLEXUS_AGENT_BIND_PORT="$PORT" \
+    "$AGENT_EXE" --unattended >> "$WORK/agent.log" 2>&1) &
+  A_PID=$!
 fi
-(exec env -u EUGENE_PLEXUS_AGENT_CONFIG_FILE \
-  HOME="$PREFIX_UNIX" USERPROFILE="$PREFIX_WIN" \
-  EUGENE_PLEXUS_AGENT_CONFIG_FILE="$PREFIX_WIN\\agent.yaml" \
-  EUGENE_PLEXUS_AGENT_BIND_HOST=127.0.0.1 \
-  EUGENE_PLEXUS_AGENT_BIND_PORT="$PORT" \
-  "$AGENT_EXE" --unattended >> "$WORK/agent.log" 2>&1) &
-A_PID=$!
-wait_healthy "$BASE" 90 || { bad "the installed agent never answered"; tail -20 "$WORK/agent.log"; exit 1; }
+if ! wait_healthy "$BASE" 120; then
+  bad "the installed agent never answered"
+  tail -30 "$WORK/agent.log"
+  exit 1
+fi
 curl -fsS -m 5 "$BASE/" | grep -q '<!DOCTYPE html>' \
   && ok "the agent answers on $BASE and serves its own UI" \
   || { bad "the agent serves no UI"; exit 1; }
@@ -580,7 +703,12 @@ note "sentences over 25 words: $(jq_ "d['words']['longSentences']" < "$REPORT")"
 say "10. teardown"
 teardown; A_PID=""
 STILL=""
-for p in $OWNED_PORTS; do [ -n "$(listening_pids "$p")" ] && STILL="$STILL $p"; done
+for p in $OWNED_PORTS; do
+  [ -n "$(listening_pids "$p")" ] && STILL="$STILL $p"
+  # The forwarder can linger a moment after the guest process is gone,
+  # so on that target the guest is the authority, not netstat here.
+  if [ "$TARGET" = "wsl" ] && [ "$(guest_listening "$p")" != "0" ]; then STILL="$STILL $p(guest)"; fi
+done
 [ -z "$STILL" ]   && ok "10. none of the four ports this run owned is still listening ($OWNED_PORTS)"   || bad "10. still held:$STILL"
 BACK=$(powershell.exe -NoProfile -NonInteractive -Command \
   "[Environment]::GetEnvironmentVariable('EUGENE_PLEXUS_AGENT_CONFIG_FILE','User')" 2>/dev/null | tr -d '\r')

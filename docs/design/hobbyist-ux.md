@@ -12,11 +12,14 @@ on 2026-09-16; records in §11). S7 is STARTED AND PAUSED** — its
 measurement is done and falsified four of its seven issue kinds, the one
 contract field it needed is landed and served, and the UI half is one
 pure unwired module; §11.9 is the record and says where to resume.
-**S10 is BUILT and green on this box** (§11.10) — the budget is
-measured, and the run found a golden-path defect that was fixed on
-`main` and shipped in no build. **Its WSL2 half is not written, so S10
-is not finished, and the release gate is not met.** **S8 and S9 are not
-started.** Every claim marked
+**S10 is BUILT and GREEN ON BOTH TARGETS** (§11.10) — the budget is
+measured on Windows and on WSL2, and each run found a defect that had
+shipped: a fix that was on `main` and in no build, and a refusal that
+rested on an upstream fact which had changed. **What the *Done when*
+still lacks is the moderated sessions (§8.4), so the release gate is
+not met.** **S8 is PART-BUILT** — the banned-word test and the one
+offender it found have landed; the glossary panel, Config's Show more
+grouping and plain units have not. **S9 is not started.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -1144,14 +1147,17 @@ banned-word test from S8. And **moderated sessions** (§8.4). *Done when*
 the script is green on WSL2 and this box and the session notes are in
 `docs/acceptance/`.
 
-**BUILT 2026-09-16, green on this box, NOT finished** — §11.10 is the
-record and `docs/acceptance/hobbyist-run.md` is the run. Green on
-Windows with 22 checks: **5 clicks** where §0.2 measured 15, one typed
-value and no typed path, **1 click** from Home to a connected tool where
-§0.2 measured 19, a key good for a year, one Reach switch, zero banned
-words. Still owed by the *Done when* above: **the `install.sh` half on
-WSL2** (not written), **`EP_DOWNLOAD=1`** for §1's ten-minute target
-(not measured), and **the moderated sessions** (§8.4).
+**BUILT 2026-09-16, GREEN ON BOTH TARGETS** — §11.10 is the record and
+`docs/acceptance/hobbyist-run.md` is the run. 22 checks on Windows and
+22 with `EP_TARGET=wsl`: **5 clicks** on each where §0.2 measured 15,
+one typed value and no typed path, **1 click** from Home to a connected
+tool where §0.2 measured 19, a key good for a year, one Reach switch,
+zero banned words. `install.sh` from nothing in 4 s, `install.ps1` in
+7 s. The WSL2 half drives the guest install from a Windows browser,
+because the guest has no Node and no browser and the UI is one static
+export — what WSL2 is there to test is `install.sh`. Still owed by the
+*Done when* above: **`EP_DOWNLOAD=1`** for §1's ten-minute target (not
+measured) and **the moderated sessions** (§8.4), which gate the release.
 
 **What gates the release (decision #13, taken):** S0–S6 and S10, **and
 a starter review under 30 days old with no unresolved verdict (§6.5)**.
@@ -2755,6 +2761,96 @@ run:**
 5. **Reading grade** (§8.1) is still unmeasured. The run reports
    sentences over 25 words — Home 6, Discover 5, Library 2, Playground 2
    — as the number S8 has to drive down.
+
+### 11.11 S10 on WSL2 — green, and the refusal it found had expired. 2026-09-16.
+
+`EP_TARGET=wsl`, **22 checks, zero failures, third execution**. Record:
+[`../acceptance/hobbyist-run.md`](../acceptance/hobbyist-run.md) §4b.
+Agent `b4c0679`, re-pinned in both installers. No contract change.
+
+**The budget holds on Linux**, identically: 5 clicks, one typed value,
+no typed path, 1 click from Home to a connected tool. `install.sh` from
+nothing in **4 s** against `install.ps1`'s 7 s; wizard to a reply in
+39 s against 21 s.
+
+**The shape: the install is Linux, the browser is Windows.** WSL2
+forwards a guest listener on `127.0.0.1:8179` to the same port on the
+host, so the same arc runs unchanged. The guest has `uv`, `python3`,
+`curl` and `git` and **no Node and no browser** — `npm` there is the
+*Windows* npm over interop, which answers `--version` while `node` does
+not exist. Installing Playwright into it would change the machine to
+prove something the UI does not depend on, because the UI is one static
+export and the browser's OS is not what WSL2 tests. `install.sh` is.
+
+**One platform difference is a finding, not a skip.** The account hazard
+belongs to `install.ps1`, not to installing: `install.sh` writes the
+config path into the systemd unit it generates, so a second Linux
+install cannot repoint a first through the environment. Check 2 asserts
+that rather than skipping.
+
+---
+
+**THE RUN'S FINDING: A REFUSAL THAT RESTED ON AN UPSTREAM FACT, AND THE
+FACT HAD CHANGED.**
+
+The first WSL2 execution reached one-click Run and stopped on M1's
+deliberate refusal — *"llama.cpp publishes no prebuilt CUDA build for
+Linux… we will not substitute [Vulkan] for CUDA without being asked"*.
+`install-paths-and-distribution.md` decision **#2**, *"ship Vulkan,
+badge it permanently"*, **DECIDED 2026-09-11**, was the agreed answer
+and had never been built: zero occurrences of `vulkan` in the agent, and
+the only one anywhere was a test asserting the refusal.
+
+**Checking upstream before building it showed there was nothing to
+build.** §7 of that document says the premise "was re-verified against
+upstream on 2026-09-11, not taken from the code comment"; re-verifying
+five days later, b11010 publishes `ubuntu-cuda-12.8-x64`,
+`ubuntu-cuda-13.3-x64` and `ubuntu-cuda-13.3-arm64`. Decision #2 was a
+workaround for a missing asset that now exists, so the fix was to map
+the Linux CUDA variants — no degradation, no badge, no contract change.
+
+**A second trap in the same change would have shipped a server that
+could not start.** The companion archives are not named alike:
+`cudart-llama-bin-win-cuda-13.4-x64.zip` carries no build number and
+`cudart-llama-b11010-bin-ubuntu-cuda-13.3-x64.tar.gz` carries one.
+`_CUDART_RE` required the Windows shape, and the companion is only
+*demanded* for a variant the matcher recognises, so a Linux CUDA install
+would have fetched the server, reported success, and died at load on a
+missing libcudart.
+
+**Proved, not inferred.** A 0.6B runs fine on a CPU, so a green run is
+not evidence of a CUDA install. The guest's `install.json` reads
+`"variant": "ubuntu-cuda-13.3-x64"` with the companion unpacked beside
+it, and the installed binary answers `--list-devices` with
+`CUDA0: NVIDIA GeForce RTX 5090 (32606 MiB, 30927 MiB free)`.
+
+**Linux + NVIDIA is §7's own "most common serious setup, and the one
+where differentiator #1 is currently false".** It was false for five
+days longer than it needed to be, and the reason it went unseen is the
+reason this slice exists: **nothing had ever walked the install path on
+Linux with an NVIDIA card.** A design section is not re-verified by
+being read.
+
+---
+
+**Two harness defects, both about the seam rather than the product:**
+
+- **`setsid nohup` does not survive `wsl.exe -e`.** The interop session
+  ends when the command returns and takes the agent with it. The symptom
+  was a **zero-byte log and nothing listening** — no error, because
+  nothing got far enough to write one; running the same command in the
+  foreground showed all four components healthy, which is what isolated
+  it. The agent is backgrounded from the Windows side now, which holds
+  the session open, gives teardown a pid symmetric with the Windows
+  path, and puts the log where the failure paths already look.
+- **Windows `netstat` sees a forwarded guest port, but the pid is the
+  relay.** `taskkill` on it would leave the real process running. Ports
+  are reclaimed inside the guest with `fuser`, and check 10 treats the
+  guest as the authority rather than the forwarder, which can linger.
+
+**Still not done:** `EP_DOWNLOAD=1` and §1's ten-minute target; the
+moderated sessions (§8.4); a Linux-native browser; a systemd-supervised
+agent; the macOS/launchd path.
 
 ---
 

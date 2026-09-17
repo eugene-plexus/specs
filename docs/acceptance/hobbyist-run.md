@@ -1,7 +1,8 @@
 # The hobbyist budget, counted
 
-`scripts/hobbyist-acceptance.sh` — **22 checks, zero failures, fourth
-execution**, 2026-09-16 on this Windows box (RTX 5090, CUDA driver 13.3).
+`scripts/hobbyist-acceptance.sh` — **22 checks, zero failures, on both
+targets**, 2026-09-16. Windows (RTX 5090, CUDA driver 13.3) on the fourth
+execution; **WSL2 Ubuntu 26.04 on the third**, with `EP_TARGET=wsl`.
 
 Design: [`../design/hobbyist-ux.md`](../design/hobbyist-ux.md) §1 (the
 targets), §7 S10, §8.1 (the table this run fills in).
@@ -142,10 +143,108 @@ operator's home.
 
 ---
 
+## 4b. WSL2, and the product defect it found
+
+`EP_TARGET=wsl` installs with **`install.sh` inside the guest** and drives
+the same browser arc against it from Windows, because WSL2 forwards a
+guest listener on `127.0.0.1:8179` to the same port here. The guest has
+`uv`, `python3`, `curl` and `git` and **no Node and no browser** — `npm`
+there is the *Windows* npm reached over interop, answering `--version`
+while `node` does not exist, which is the trap `bootstrap.sh` already
+paid for. Installing Playwright into it would change the machine to
+prove something the UI does not depend on: the UI is one static export,
+so the browser's OS is not what WSL2 tests. What WSL2 tests is
+`install.sh`.
+
+| | Windows | WSL2 |
+| --- | --- | --- |
+| install from nothing | 7 s | **4 s** |
+| clicks, wizard → reply | 5 | **5** |
+| typed values / paths | 1 / 0 | **1 / 0** |
+| clicks, Home → a tool | 1 | **1** |
+| wizard → a reply | 21 s | **39 s** |
+
+**One platform difference is a finding rather than a skip.** The account
+hazard is a property of `install.ps1`, not of installing: `install.sh`
+writes the config path into the systemd unit it generates, so a second
+Linux install cannot repoint a first one through the environment. Check
+2 asserts that on both targets — on Linux, that the Windows account
+variable was untouched and that `--no-service` wrote no unit.
+
+### The run found a product defect, and the fix was not the one on file
+
+The first WSL2 execution reached one-click Run and stopped:
+
+> *"llama.cpp publishes no prebuilt CUDA build for Linux… A Vulkan build
+> would install cleanly and run on this card, but it is materially slower
+> at prompt processing and we will not substitute it for CUDA without
+> being asked."*
+
+That is M1's deliberate refusal, and
+`install-paths-and-distribution.md` **decision #2 — "ship Vulkan, badge
+it permanently", DECIDED 2026-09-11** — was the agreed answer. It had
+never been built: `grep -ri vulkan` over the agent returned zero hits,
+and the only occurrence anywhere was a test asserting the refusal.
+
+**Checking upstream before building it showed the premise had already
+changed.** §7 says the refusal "was re-verified against upstream on
+2026-09-11, not taken from the code comment"; re-verifying it again five
+days later, b11010 publishes `ubuntu-cuda-12.8-x64`,
+`ubuntu-cuda-13.3-x64` and `ubuntu-cuda-13.3-arm64`. **Decision #2 was a
+workaround for a missing asset that now exists.** So the fix was to map
+the Linux CUDA variants (agent `b4c0679`), not to ship a degraded engine.
+
+**A second trap in the same change would have shipped a server that
+could not start.** The two companion archives are not named alike:
+
+```
+cudart-llama-bin-win-cuda-13.4-x64.zip                no build number
+cudart-llama-b11010-bin-ubuntu-cuda-13.3-x64.tar.gz   has one
+```
+
+`_CUDART_RE` required the Windows shape, and the companion is only
+*demanded* for a variant the matcher recognises — so a Linux CUDA install
+would have fetched the server, reported success, and died at load on a
+missing libcudart.
+
+**Proved end to end, not inferred from a green run.** A 0.6B runs fine on
+a CPU, so "it answered" is not evidence of a CUDA install. The guest's
+`install.json` reads `"variant": "ubuntu-cuda-13.3-x64"` with the cudart
+companion unpacked beside it, and the installed binary answers:
+
+```
+$ llama-server --list-devices
+Available devices:
+  CUDA0: NVIDIA GeForce RTX 5090 (32606 MiB, 30927 MiB free)
+```
+
+Linux + NVIDIA — in §7's own words *"the most common serious setup, and
+the one where differentiator #1 is currently false"* — works through the
+product's own acquisition path now. It was false for five days longer
+than it needed to be because **nothing had ever walked the install path
+on Linux with an NVIDIA card**; this run was the first.
+
+### Two harness defects on the way
+
+**`setsid nohup` does not survive `wsl.exe -e`.** The agent was started
+and backgrounded inside the guest; the interop session ends when that
+command returns and takes the agent with it. The symptom was a
+**zero-byte log and nothing listening** — no error, because nothing got
+far enough to write one. It is backgrounded from the Windows side now: a
+`wsl.exe` left running holds the session open, gives teardown a pid
+symmetric with the Windows path, and puts the log where the failure
+paths already look.
+
+**Windows `netstat` sees a forwarded guest port, but the pid is the
+relay.** `taskkill` on it leaves the real process running, so ports are
+reclaimed inside the guest with `fuser`, and check 10 treats the guest as
+the authority rather than the forwarder, which can linger a moment.
+
 ## 5. What this run does not prove
 
-- **WSL2.** The `install.sh` half of the script is not written. §7 S10's
-  *Done when* asks for green on both, so S10 is not finished.
+- **A browser running on Linux.** The guest install is genuine; the
+  Chrome driving it is the Windows one. A Linux-native browser, a
+  systemd-supervised agent and the macOS/launchd path are all untested.
 - **The ten-minute target.** §1's fourth number — install to first token
   **with the download included** — needs `EP_DOWNLOAD=1` and has not been
   measured. The default seeds a small GGUF, because the subject of the

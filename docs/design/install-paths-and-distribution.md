@@ -21,7 +21,7 @@ log** — answers are recorded here as they are made.
 | ------ | ------------------------------------------------------------------------------------- | ---- | ------------------------------------------- | -------------------------- |
 | **1a** | Move the UI proxy into the agent?                                                       | §3   | **Yes — moved; the agent serves the UI too** | **DONE 2026-09-11, §12** |
 | **1b** | Ship the UI as a static export, or as a Next server?                                    | §3.1 | **Export** — decided at the end of 1a, on evidence | **DONE 2026-09-11, §12** |
-| **2**  | Linux + NVIDIA: ship Vulkan with a permanent visible degradation, or keep the refusal?  | §7   | **Ship Vulkan, badge it permanently**       | **DECIDED 2026-09-11**     |
+| **2**  | Linux + NVIDIA: ship Vulkan with a permanent visible degradation, or keep the refusal?  | §7   | **Ship Vulkan, badge it permanently** — **SUPERSEDED 2026-09-16, never built: upstream now publishes `ubuntu-cuda-*`, so the asset the workaround existed for is there. Linux+NVIDIA installs CUDA (agent `b4c0679`)** | **DECIDED 2026-09-11, MOOT 2026-09-16** |
 | **3**  | macOS: first-class now, or wait for MLX?                                                | §8   | **First-class now, decoupled from MLX**     | **DECIDED 2026-09-11**     |
 | **4**  | Windows: a supported end-user target, or a dev surface only?                            | §11.1 | **Fully first-class** — parity, not a middle tier | **DECIDED 2026-09-11** |
 | **5**  | Where `install.sh` is hosted: `eugeneplexus.com`, or a raw GitHub URL first?             | §4   | **Raw GitHub URL, in `specs/scripts/`**     | **DONE 2026-09-11, §12**   |
@@ -343,7 +343,31 @@ release.
 *It did not come to that. The one package archives could not carry
 needed a branch, not a registry — and a branch is not a release.*
 
-## 7. Linux + NVIDIA — DECIDED 2026-09-11: ship Vulkan, badge it
+## 7. Linux + NVIDIA — SUPERSEDED 2026-09-16: upstream ships CUDA now
+
+**This section's premise expired before its plan was built, and the
+section is kept because that is the lesson.** It says, correctly, that
+the refusal "was re-verified against upstream on 2026-09-11, not taken
+from the code comment" — and on **2026-09-16** the same check against
+b11010 found `ubuntu-cuda-12.8-x64`, `ubuntu-cuda-13.3-x64` and
+`ubuntu-cuda-13.3-arm64`, each with a cudart companion. The `Degraded`
+plan below was a workaround for a missing asset. The asset exists, so
+Linux+NVIDIA installs a real CUDA build and there is nothing to degrade
+or badge (agent `b4c0679`; `docs/acceptance/hobbyist-run.md` §4b).
+
+**Nobody noticed for five days because nothing had ever walked the
+install path on Linux with an NVIDIA card.** S10's WSL2 run was the
+first, and it stopped exactly here. A design section is not re-verified
+by being read.
+
+**What survives, as its own test:** when a release publishes no Linux
+CUDA build but does publish `ubuntu-vulkan-x64`, we still refuse rather
+than substitute. The reasoning below for *why* is untouched and is why
+the fallback is not silent.
+
+The original section follows.
+
+### Original: DECIDED 2026-09-11: ship Vulkan, badge it
 
 **Troy's call, taking the recommendation.** Build the `Degraded` plan
 described below. The counter-argument is preserved at the end of the
