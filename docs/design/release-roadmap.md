@@ -83,7 +83,7 @@ Each has a recommendation and the counter-argument that would overturn it.
 | **4** | Windows autostart: fix the copy, or change the mechanism?                                 | §3.2, §3.6 | **Fix the copy now (R2.2); treat a boot-time task or the service as its own slice** — S4U costs the mapped drive  | **TAKEN 2026-09-18 (Troy): THE REAL SERVICE, as its own slice (R2.6). The copy fix is REJECTED, and the reason generalises — *"we're not releasing until the copy as it stands is TRUE, so fixing the copy only satisfies a checklist, not a real user pain point."* The recommendation had the dependency right and the goal wrong: the promise is the requirement, not the thing to negotiate down** |
 | **5** | The shared HS256 key (review §6.4): split it, withhold it from drivers, or accept it?     | §8, §10 | **Withhold it from processes that unseal nothing, and constrain `binary`/`extraArgs`; do not split the key yet**  | **TAKEN 2026-09-18 (Troy): SPLIT IT, AND BEFORE THE RELEASE.** *“I would rather release with things correct than release too early and lose trust.”* Scheduled as §10 **R7**; the recommendation’s two halves become its first step rather than the whole answer |
 | **6** | A benchmark button on a profile — "measure, don't predict" (review §1.9/§5 #4)?           | §7, §8 | **Yes, but after the release gate**, and not under the name "Measure it" (that is hobbyist S10)                   | **TAKEN 2026-09-18 (Troy): BEFORE the release, in R6, for R5's reason** — *“it belongs in R5/R6 where the positioning is.”* The recommendation deferred it past the gate; the counter-argument in this row is the one that held, so the **depth number is a differentiator rather than a follow-up**. R5 is *no code*, so the surface lands in R6 and the claim it produces is R5's |
-| **7** | Release timing, against a clock that is now visible on both sides of the thesis           | §9   | **Keep decision #14 as taken** ("2-3 friends for sure", no hurry) and let R1-R2 be the reason, not the delay      | **OPEN** |
+| **7** | Release timing, against a clock that is now visible on both sides of the thesis           | §9   | **Keep decision #14 as taken** ("2-3 friends for sure", no hurry) and let R1-R2 be the reason, not the delay      | **TAKEN 2026-09-18 (Troy): THE ROADMAP DOES NOT SET A RELEASE TIME, AND CARRIES NO ESTIMATE.** Finish the work as it stands, then re-assess where the project is and where the competition is, and decide then. *“Agents are notoriously bad at predicting the passage of time and the length of time it takes to do things.”* The forecast that used to sit in §9 is **deleted**, not revised — including the one added the same day for R2.6. Decisions #13 and #14 are untouched |
 
 ---
 
@@ -1238,13 +1238,29 @@ with no unresolved verdict, and the `dist` branch rebuilt from the pinned
 commit. R1 and R2 sit in front of it. *(Both numbers are cited here because
 four documents cite one or the other and disagree.)*
 
-**The estimate is the review's, at this project's observed pace of one slice a
-day with an acceptance run: two to three days for R1, about a week for R1 and
-R2 together** — before the sessions, not instead of them. Nobody has held a
-stopwatch to it. **R2.6 is outside that estimate and is the one slice in R2
-that is not a day**: it changes what an ordinary Windows install *is*, it has
-to migrate the installs that already exist, and its first step is a
-measurement against a real SMB share rather than code.
+**▶ THERE IS NO ESTIMATE HERE, AND THAT IS DECISION #7 (Troy, 2026-09-18).**
+This paragraph used to carry one — *two to three days for R1, about a week for
+R1 and R2* — and it is deleted rather than revised, along with the R2.6
+addendum written the same day. Troy: *“agents are notoriously bad at predicting
+the passage of time and the length of time it takes to do things.”* He is
+right, and the record here proves it from both sides: R1's six slices were
+forecast at two to three days by the same reasoning that then had to add *“R2.6
+is outside that estimate”* within a day of two decisions being taken. **A
+roadmap that forecasts is a roadmap that will be wrong in public.** This one
+says what the work is and what order it goes in, and nothing about when.
+
+**So the release is not scheduled, it is decided afterwards.** Power through
+the stages as they stand; when they are done, re-assess **where the project is
+and where the competition is**, and make the call then. That re-assessment is
+real work, not a formality: the market read this roadmap rests on was taken on
+2026-09-17 and has a shelf life — llamactl released twice during the review
+week, router mode landed inside the engine, and the beginner thread's answers
+converged in ten days. Read the field again before deciding, rather than
+deciding against a snapshot.
+
+**Decisions #13 and #14 are untouched by this.** They say *what* gates the
+release and *who* sees it first; #7 says only that nothing here predicts the
+calendar.
 
 ---
 
