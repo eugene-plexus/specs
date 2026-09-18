@@ -823,6 +823,40 @@ to R3: it needs a Mac, and the Intel half should not wait for one.
 
 ### 3.4 R2.4 — Credentials proportionate to the job
 
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18.** `scripts/r24-acceptance.sh`, **21
+PASS, zero failures, second execution**; record
+[`../acceptance/proportionate-credentials-run.md`](../acceptance/proportionate-credentials-run.md).
+Findings §6.2 #12, §6.2 #15 and §6.3 #33 are closed. **20 scripted sabotages,
+20 caught** ([`../../scripts/r24-sabotage.py`](../../scripts/r24-sabotage.py))
+across four gates, **the three findings themselves put back against the LIVE
+processes** — after two escaped on the first pass and **each named a missing
+check rather than a weak fix**: the agent's parametrized scheme cases could not
+tell whether the scheme was looked at (`file:///…` has no host and was refused
+by the next branch), and nothing asserted that the address check runs *before*
+the join token is consumed. **Prose only in two contract documents**; models
+came back byte-identical in both repos, and `control` and `gateway` re-pinned
+because they IMPLEMENT the prose. Repos: `specs`, `control`, `agent`,
+`gateway`. **Both installers re-pinned; no UI change, so no `dist` rebuild.**
+
+**▶ THE RULE IS *BECOMING PUBLIC*, NOT *WIDENING*, AND THE REPRODUCTION CHECK
+IS WHAT SAID SO.** Written first as a rank comparison — `loopback` < `private`
+< `public`, refuse anything moving right — it refused `loopback → private`,
+which is the **S5 Reach switch**: one click, on Home, on the commonest install
+there is. The check went red immediately and the rule narrowed to the one
+transition a homelab node never makes by itself. The rank version is a sabotage
+of its own now. **And `is_private` is the wrong predicate**:
+`ip_address("100.64.0.7").is_private` is **False** on the Python both installers
+provision, and that is where a tailnet address lives — so the classes come from
+the negation of `is_global`. The same trap bit the fixtures: `203.0.113.9` is
+TEST-NET-3 and reports `is_global: False`, so the first "moves onto the open
+internet" case was an address the rule reads as private.
+
+**Left undone and named** in the record: the operator has **no surface** for a
+refused announcement (it wants a contract field this slice does not take, so the
+node reads `reachable: false` with a *probe* error rather than the real reason);
+re-enrollment as the confirmation path is asserted in words and never walked;
+and no browser drove any of it.
+
 *Findings: §6.2 #12, §6.2 #15, §6.3 #33. Size: S + M + S. Touches: `control`,
 `agent`, `gateway`.*
 
@@ -1403,10 +1437,10 @@ failing check. Nothing here needs confirming again.
 | 6.1 #9 | A failed agent read closes that node's clients `[D]`          | **R2.1 — done 2026-09-18** |
 | 6.1 #10| Elevated re-install strands the first install `[F]`           | **R2.2 — done 2026-09-18** |
 | 6.1 #11| Non-NVIDIA Windows GPU gets a CPU build silently `[F]`        | **R2.3 — done 2026-09-18** |
-| 6.2 #12| Control snapshot readable by any service token `[S]`          | R2.4  |
+| 6.2 #12| Control snapshot readable by any service token `[S]`          | **R2.4 — done 2026-09-18** |
 | 6.2 #13| GPU-sized timeouts cascade healthy CPU inference `[D]`        | R2.5  |
 | 6.2 #14| Download `filename` escapes every model root `[S]`            | **R1.2 — done 2026-09-18** |
-| 6.2 #15| A worker names the URL the root will dial `[S]`                | R2.4  |
+| 6.2 #15| A worker names the URL the root will dial `[S]`                | **R2.4 — done 2026-09-18** |
 | 6.2 #16| No cancel on client disconnect; SDKs retry `[D]`               | R2.5  |
 | 6.2 #17| Idle unload races an arriving request `[D]`                    | **R2.1 — done 2026-09-18** |
 | 6.2 #18| `runtime is None` = always eligible `[D]`                      | **R2.1 — done 2026-09-18** |
@@ -1424,7 +1458,7 @@ failing check. Nothing here needs confirming again.
 | 6.2 #30| `tailnet.md` / `container.md` describe another install `[F]`   | **R2.2 — done 2026-09-18** |
 | 6.3 #31| Uninstall leaves engines, two keyring entries, copies `[F]`    | **R2.2 — done 2026-09-18** |
 | 6.3 #32| No frame-ancestors on the agent-served UI `[S]`                | **R1.2 — done 2026-09-18** |
-| 6.3 #33| Operator-gated SSRF; probe spends a service token `[S]`        | R2.4  |
+| 6.3 #33| Operator-gated SSRF; probe spends a service token `[S]`        | **R2.4 — done 2026-09-18** (probe only; the SSRF reachability stays, by the slice's own call) |
 | 6.3 #34| A non-ASCII prefix defeats self-restart detection `[F]`        | **R2.2 — done 2026-09-18** |
 | 6.3 #35| Banned vocabulary through the wizard's error path `[F]`        | R1.5  |
 | 6.3 #36| Parallel slots divide the context; the copy says otherwise `[me]` | **R1.3 — done 2026-09-18, premise MEASURED** |
