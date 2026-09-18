@@ -41,11 +41,11 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=64c8eaeeea52c10328e43cd8ce60eaecfad7d3dd
-PIN_CONTROL=b842238f0d5d9d0758eb6b0402436a3cd0afe79c
-PIN_GATEWAY=6d4d0595364a4399d64109b1a234afa66a1df3b2
-PIN_DRIVER=9e698f8a6887b9563dc07fd7a762de6d39514bdb
-PIN_LIBRARY=0252b3836bd905eafcd1cb50836d333f1a758228
+PIN_AGENT=2ac84866acd1a05a36f83f8a6befe61e9bd4dc40
+PIN_CONTROL=f72921be83cba9ede8c55d89947b501d7619ed3e
+PIN_GATEWAY=6d0e62b6d678e286f4c49ddbd3aabd22fd1144bb
+PIN_DRIVER=e4ac3c1d2f917c683212e148f0ab01b1f59e6610
+PIN_LIBRARY=3e125f3209216db839d92c6cdd7808e6c34cadab
 PIN_UI=9fccf05ba95f635085b9e1c75c93cd7fa3431a69   # branch `dist`, not `main`
 
 PY_VERSION=3.12
@@ -61,6 +61,8 @@ JOIN_TOKEN=
 JOIN_NAME=
 JOIN_ADVERTISE=
 JOINED=0
+DO_PURGE_COPIES=0
+ADVERTISED=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -69,6 +71,7 @@ while [ $# -gt 0 ]; do
         --no-service) DO_SERVICE=0; shift ;;
         --no-start) DO_START=0; shift ;;
         --uninstall) DO_UNINSTALL=1; shift ;;
+        --purge-downloads|--purge-model-copies) DO_PURGE_COPIES=1; shift ;;
         --join) JOIN_CONTROL=$2; shift 2 ;;
         --token) JOIN_TOKEN=$2; shift 2 ;;
         --name) JOIN_NAME=$2; shift 2 ;;
@@ -76,7 +79,10 @@ while [ $# -gt 0 ]; do
         -h|--help)
             sed -n '2,40p' "$0" 2>/dev/null || true
             echo "options: --prefix DIR  --no-service  --no-start  --uninstall"
+            echo "           --purge-downloads  (with --uninstall: delete this install's model"
+            echo "                              copies and engine builds, which live outside the prefix)"
             echo "  worker node: --join URL --token JWT [--name NAME] [--advertise URL]"
+            echo "  standalone:  --advertise URL   (the address other devices reach this one at)"
             exit 0 ;;
         *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
     esac
@@ -89,6 +95,33 @@ UV=$PREFIX/bin/uv
 say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# **Every network step said nothing about why it failed** (review §6.2
+# #24). `uv venv` and `uv pip install` both ran under `>/dev/null 2>&1`,
+# so a TLS-intercepting corporate proxy -- the commonest reason either
+# fails on a machine that is otherwise fine -- read as *could not create
+# a virtualenv*, which sends a person to look at a directory. The output
+# still does not scroll past on a good install: it goes to a file, and
+# only a failure prints it.
+STEP_LOG=
+run_step() {
+    _what=$1; shift
+    if [ -z "$STEP_LOG" ]; then
+        STEP_LOG=$PREFIX/logs/install.log
+        mkdir -p "$PREFIX/logs"
+        : > "$STEP_LOG"
+    fi
+    printf '\n### %s\n' "$_what" >> "$STEP_LOG"
+    if "$@" >> "$STEP_LOG" 2>&1; then
+        return 0
+    fi
+    _rc=$?
+    printf '\033[31merror:\033[0m %s\n' "$_what" >&2
+    printf 'The command that failed:\n  %s\n' "$*" >&2
+    printf 'What it said (full log: %s):\n' "$STEP_LOG" >&2
+    tail -n 20 "$STEP_LOG" | sed 's/^/  /' >&2
+    exit $_rc
+}
 
 # --- platform ---------------------------------------------------------
 OS=$(uname -s)
@@ -123,11 +156,123 @@ service_stop() {
 }
 
 # --- uninstall --------------------------------------------------------
+
+# **Two keyring entries, not one** (review §6.3 #31). The agent stores
+# its master key under the service `eugene-plexus-agent` and the control
+# root stores the install's signing key under `eugene-plexus-control`,
+# each scoped by a fingerprint of that install's master salt (S0). An
+# uninstall that leaves them behind leaves two secrets in the OS keyring
+# belonging to an install that no longer exists -- and the salt they are
+# named after goes into the `.removed-` directory with everything else,
+# so after this runs nothing can work out what to delete.
+#
+# The install's own interpreter is what holds `keyring`, so it is what
+# has to be asked; a missing library or a locked backend is a warning,
+# never a failure, because an uninstall that refuses to finish is worse
+# than one that leaves a credential.
+drop_keyring_entries() {
+    [ -x "$PYBIN" ] || return 0
+    [ -f "$PREFIX/agent.yaml" ] || return 0
+    "$PYBIN" - "$PREFIX/agent.yaml" <<'PYEOF' 2>&1 | sed 's/^/  /'
+import base64, hashlib, sys
+
+try:
+    import keyring
+    import yaml
+except Exception as exc:  # noqa: BLE001
+    print(f"could not open the OS keyring ({exc}); entries left in place")
+    raise SystemExit(0)
+
+try:
+    doc = yaml.safe_load(open(sys.argv[1], encoding="utf-8").read()) or {}
+    salt = ((doc.get("auth") or {}).get("masterSalt")) or ""
+except Exception as exc:  # noqa: BLE001
+    print(f"could not read agent.yaml ({exc}); keyring entries left in place")
+    raise SystemExit(0)
+
+# The scoped username is a fingerprint of the install's master salt --
+# `keyring_store.install_id_for`, duplicated here rather than imported
+# because the packages may already be gone by the time anyone runs this.
+names = ["master-key"]
+if salt:
+    try:
+        names.append("master-key-" + hashlib.sha256(base64.b64decode(salt)).hexdigest()[:12])
+    except Exception:  # noqa: BLE001
+        pass
+
+removed = 0
+for service in ("eugene-plexus-agent", "eugene-plexus-control"):
+    for username in names:
+        try:
+            if keyring.get_password(service, username) is not None:
+                keyring.delete_password(service, username)
+                print(f"removed the {service} keyring entry")
+                removed += 1
+        except Exception:  # noqa: BLE001
+            pass
+if removed == 0:
+    print("no keyring entries belonged to this install")
+PYEOF
+}
+
+# **The node-local model copy directory is ours and is not under the
+# prefix** (review §6.3 #31). The agent creates it, fills it with whole
+# model files and deletes from it; a Library folder is the operator's
+# and is never written to. So this is the one thing an uninstall can
+# offer to remove -- and it is offered, not taken, because tens of
+# gigabytes is not a thing to delete on somebody's behalf.
+# **The engine store is ours too, and it is not under the prefix.** The
+# agent downloads llama.cpp builds into `~/.eugene-plexus/engines` (or
+# wherever `EUGENE_PLEXUS_AGENT_ENGINE_ROOT` says), keeps two of them,
+# and nothing else on the machine writes there. An uninstall that leaves
+# it leaves gigabytes nobody will ever attribute to us.
+engine_root() {
+    printf '%s' "${EUGENE_PLEXUS_AGENT_ENGINE_ROOT:-$HOME/.eugene-plexus/engines}"
+}
+
+model_copy_dir() {
+    [ -f "$PREFIX/agent.yaml" ] || return 0
+    # `yaml.safe_dump` writes a POSIX path as a plain scalar; a quoted
+    # form is possible and is the only one that escapes anything.
+    sed -n 's/^modelCopyDir:[[:space:]]*//p' "$PREFIX/agent.yaml" | head -1 \
+        | sed "s/^['\"]//; s/['\"]$//"
+}
+
 if [ "$DO_UNINSTALL" = 1 ]; then
     say "stopping the service"
     service_stop
     rm -f "$SYSTEMD_UNIT" "$LAUNCHD_PLIST"
     [ "$PLATFORM" = linux ] && systemctl --user daemon-reload >/dev/null 2>&1 || true
+
+    COPIES=$(model_copy_dir || true)
+    say "clearing this install's OS keyring entries"
+    drop_keyring_entries
+
+    if [ -n "${COPIES:-}" ] && [ -d "$COPIES" ]; then
+        SIZE=$(du -sh "$COPIES" 2>/dev/null | cut -f1 || echo "?")
+        if [ "$DO_PURGE_COPIES" = 1 ]; then
+            say "removing this node's model copies at $COPIES ($SIZE)"
+            rm -rf "$COPIES"
+        else
+            say "this node's model copies are at $COPIES ($SIZE) — they are copies, so"
+            say "  deleting them loses nothing. Re-run with --purge-model-copies, or: rm -rf $COPIES"
+        fi
+    elif [ -n "${COPIES:-}" ]; then
+        say "no model copies on disk (modelCopyDir was $COPIES)"
+    fi
+
+    ENGINES=$(engine_root)
+    if [ -d "$ENGINES" ]; then
+        ESIZE=$(du -sh "$ENGINES" 2>/dev/null | cut -f1 || echo "?")
+        if [ "$DO_PURGE_COPIES" = 1 ]; then
+            say "removing the engine store at $ENGINES ($ESIZE)"
+            rm -rf "$ENGINES"
+        else
+            say "the engine builds this install downloaded are at $ENGINES ($ESIZE) —"
+            say "  re-run with --purge-downloads, or: rm -rf $ENGINES"
+        fi
+    fi
+
     if [ -d "$PREFIX" ]; then
         # `agent.yaml` and `node.yaml` are the install's identity, and
         # `logs/` is the only record of what it did. Moving the prefix
@@ -154,9 +299,24 @@ else
     # UV_UNMANAGED_INSTALL puts uv exactly here and edits no shell
     # profile and no PATH. The installer owns its own copy, so nothing
     # the user already has is touched and `rm -rf $PREFIX` is complete.
+    # **`sh -c "$(curl ...)"` cannot fail** (review §6.2 #24). When curl
+    # exits non-zero the command substitution is empty, `sh -c ""` exits
+    # 0, and the `|| die` naming the URL never fires -- the run died one
+    # line later on "uv did not land at ...", a true sentence about the
+    # wrong subject. Fetch to a file, check curl, then run the file.
+    UV_BOOTSTRAP=$PREFIX/bin/uv-install.sh
+    mkdir -p "$PREFIX/logs"
+    if ! curl -fsSL -o "$UV_BOOTSTRAP" https://astral.sh/uv/install.sh \
+            2>"$PREFIX/logs/uv-fetch.err"; then
+        printf '\033[31merror:\033[0m could not fetch https://astral.sh/uv/install.sh\n' >&2
+        sed 's/^/  /' "$PREFIX/logs/uv-fetch.err" >&2
+        printf '  A proxy that intercepts TLS is the usual cause. Set HTTPS_PROXY, or\n' >&2
+        printf '  install uv yourself and put it at %s.\n' "$UV" >&2
+        exit 1
+    fi
     UV_UNMANAGED_INSTALL="$PREFIX/bin" \
-        sh -c "$(curl -fsSL https://astral.sh/uv/install.sh)" >/dev/null 2>&1 \
-        || die "could not install uv from https://astral.sh/uv/install.sh"
+        run_step "installing uv from https://astral.sh/uv/install.sh" sh "$UV_BOOTSTRAP"
+    rm -f "$UV_BOOTSTRAP"
     [ -x "$UV" ] || die "uv did not land at $UV"
     say "uv $("$UV" --version | cut -d' ' -f2)"
 fi
@@ -176,23 +336,23 @@ else
     # sentence above false wherever it is true -- and it would tie the
     # install to a Python the user can upgrade or remove out from under
     # it, which contradicts "removing the prefix is complete".
-    "$UV" venv --python "$PY_VERSION" --python-preference only-managed "$VENV" >/dev/null 2>&1 \
-        || die "could not create a virtualenv at $VENV"
+    run_step "creating a Python $PY_VERSION virtualenv at $VENV" \
+        "$UV" venv --python "$PY_VERSION" --python-preference only-managed "$VENV"
+    [ -x "$PYBIN" ] || die "uv reported success but there is no interpreter at $PYBIN"
 fi
 
 # --- 3. packages ------------------------------------------------------
 gh_archive() { printf 'https://github.com/eugene-plexus/%s/archive/%s.tar.gz' "$1" "$2"; }
 
 say "installing Eugene Plexus"
-"$UV" pip install --python "$PYBIN" \
+run_step "installing the six Eugene Plexus packages" \
+    "$UV" pip install --python "$PYBIN" \
     "eugene-plexus-agent @ $(gh_archive agent "$PIN_AGENT")" \
     "eugene-plexus-control @ $(gh_archive control "$PIN_CONTROL")" \
     "eugene-plexus-gateway @ $(gh_archive gateway "$PIN_GATEWAY")" \
     "eugene-plexus-inference-driver @ $(gh_archive inference-driver "$PIN_DRIVER")" \
     "eugene-plexus-library @ $(gh_archive library "$PIN_LIBRARY")" \
-    "eugene-plexus-ui @ $(gh_archive ui "$PIN_UI")" \
-    >/dev/null 2>&1 || die "package install failed — re-run with the pip output visible:
-  $UV pip install --python $PYBIN 'eugene-plexus-agent @ $(gh_archive agent "$PIN_AGENT")'"
+    "eugene-plexus-ui @ $(gh_archive ui "$PIN_UI")"
 
 # --- 4. VERIFY --------------------------------------------------------
 # "pip install exited 0" is not the claim. Three things can be true of a
@@ -274,18 +434,62 @@ if [ -n "$JOIN_CONTROL" ]; then
     JOINED=1
 elif [ -n "$JOIN_TOKEN" ]; then
     die "--token needs --join <control-root-url>"
+elif [ -n "$JOIN_ADVERTISE" ]; then
+    # **`--advertise` was accepted on any invocation and honoured only
+    # here** (review §6.2 #30), so the standalone case -- one machine,
+    # no control root to join, an operator who already knows the address
+    # their phone will use -- typed a flag that did nothing and got an
+    # install on loopback. It is the same field `PATCH /v1/config` sets
+    # and the Reach card writes; setting it before the first start is
+    # what `tailnet.md` has always said matters, because enrollment does
+    # not restart anything and a listening socket cannot follow a
+    # setting.
+    #
+    # Written as YAML text rather than through the install's Python: at
+    # this point in a fresh install `agent.yaml` does not exist yet, and
+    # the file is a flat mapping of config keys, so replacing one
+    # top-level line is exact. An existing file keeps everything else,
+    # which a re-run has to be true of or the installer is the thing
+    # that loses an install's state.
+    say "advertising this machine at $JOIN_ADVERTISE"
+    mkdir -p "$PREFIX"
+    if [ -f "$CONFIG" ]; then
+        grep -v '^advertiseUrl:' "$CONFIG" > "$CONFIG.tmp"
+        printf 'advertiseUrl: %s\n' "$JOIN_ADVERTISE" >> "$CONFIG.tmp"
+        mv "$CONFIG.tmp" "$CONFIG"
+    else
+        printf 'advertiseUrl: %s\n' "$JOIN_ADVERTISE" > "$CONFIG"
+    fi
+    ADVERTISED=1
 fi
 
 # --- 5. service -------------------------------------------------------
 
 # Set once, used by both unit writers below.
-if [ "$JOINED" = 1 ]; then
+if [ "$JOINED" = 1 ] || [ "$ADVERTISED" = 1 ]; then
     WIDE_BIND_UNIT="Environment=EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0"
     WIDE_BIND_PLIST="
         <key>EUGENE_PLEXUS_AGENT_BIND_HOST</key><string>0.0.0.0</string>"
 else
     WIDE_BIND_UNIT="# this install is single-machine; the agent stays on loopback"
     WIDE_BIND_PLIST=""
+fi
+
+# **The one lever when 8079 is taken, and it reached nothing** (review
+# §6.2 #24). `EUGENE_PLEXUS_AGENT_BIND_PORT` was read for the health
+# wait at the end of this script and never written into the unit or the
+# plist, so the install that answered on the chosen port during the run
+# came back on 8079 at the next boot -- and the closing line told the
+# person to open the port it would not be on. The port is decided once,
+# here, above everything that quotes it.
+PORT=${EUGENE_PLEXUS_AGENT_BIND_PORT:-8079}
+if [ "$PORT" != 8079 ]; then
+    PORT_UNIT="Environment=EUGENE_PLEXUS_AGENT_BIND_PORT=$PORT"
+    PORT_PLIST="
+        <key>EUGENE_PLEXUS_AGENT_BIND_PORT</key><string>$PORT</string>"
+else
+    PORT_UNIT="# the agent takes its default port, 8079"
+    PORT_PLIST=""
 fi
 
 write_systemd_unit() {
@@ -302,6 +506,7 @@ Type=exec
 WorkingDirectory=$PREFIX
 Environment=EUGENE_PLEXUS_AGENT_CONFIG_FILE=$CONFIG
 $WIDE_BIND_UNIT
+$PORT_UNIT
 ExecStart=$VENV/bin/eugene-plexus-agent --unattended
 Restart=on-failure
 RestartSec=5
@@ -331,7 +536,7 @@ write_launchd_plist() {
     </array>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>EUGENE_PLEXUS_AGENT_CONFIG_FILE</key><string>$CONFIG</string>$WIDE_BIND_PLIST
+        <key>EUGENE_PLEXUS_AGENT_CONFIG_FILE</key><string>$CONFIG</string>$WIDE_BIND_PLIST$PORT_PLIST
     </dict>
     <key>WorkingDirectory</key><string>$PREFIX</string>
     <key>RunAtLoad</key><true/>
@@ -368,7 +573,6 @@ elif [ "$DO_SERVICE" = 1 ]; then
 fi
 
 # --- 6. start ---------------------------------------------------------
-PORT=${EUGENE_PLEXUS_AGENT_BIND_PORT:-8079}
 if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
     say "starting the agent"
     if [ "$PLATFORM" = linux ]; then

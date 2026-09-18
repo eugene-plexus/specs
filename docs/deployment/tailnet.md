@@ -64,15 +64,26 @@ already enrolled itself on loopback. Use **one** of these instead:
 - **The Reach switch in the UI** — Home → *Reach it from other devices*. It
   sets the advertise address, restarts the components so they bind it, and
   tells you what is actually listening. This is the normal answer.
-- **`--advertise` on the install command — but only together with `--join`.**
-  Both installers parse the flag unconditionally and pass it on **only in the
-  join branch** (`install.sh` uses it inside `if [ -n "$JOIN_CONTROL" ]`;
-  `install.ps1` appends it to `$joinArgs`), so on the FIRST machine it is
-  accepted and silently discarded. Verified 2026-09-17 — it is §2's answer, not
-  §1's. Making the standalone path honour it is an installer change, not a
-  sentence here.
+- **`--advertise` on the install command — now on any install, not only a
+  join** (fixed 2026-09-18, roadmap R2.2 / review §6.2 #30). On the first
+  machine it writes `advertiseUrl` into `agent.yaml` before the agent is
+  started, which is the *before the first start* this whole section is about;
+  the agent then binds wide by itself, and on Linux the unit gets
+  `EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0` beside it.
+
+  ```bash
+  curl -fsSL .../install.sh | sh -s -- --advertise http://100.64.0.1:8079
+  ```
+
+  Historical, because the correction is the useful part: until then both
+  installers parsed the flag unconditionally and passed it on **only in the
+  join branch**, so on the FIRST machine it was accepted and silently
+  discarded.
 - **The five bind variables in the unit**, for a headless install you want wide
-  from the first second:
+  from the first second — and note `EUGENE_PLEXUS_AGENT_BIND_PORT` is written
+  into the unit, plist and Windows environment as of 2026-09-18, so a machine
+  whose 8079 is taken keeps its chosen port across a reboot rather than coming
+  back on 8079 (review §6.2 #24):
   `EUGENE_PLEXUS_AGENT_BIND_HOST`, `EUGENE_PLEXUS_GATEWAY_BIND_HOST`,
   `EUGENE_PLEXUS_LIBRARY_BIND_HOST`, `EUGENE_PLEXUS_CONTROL_BIND_HOST`,
   `EUGENE_PLEXUS_DRIVER_BIND_HOST`, all `0.0.0.0`. This is what the container

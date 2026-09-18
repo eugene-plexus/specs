@@ -674,6 +674,21 @@ not a theoretical one**.
 
 ### 3.2 R2.2 — The installer's own advice, and the promise the wizard makes
 
+**▶ BUILT AND VERIFIED 2026-09-18.** `scripts/r22-acceptance.sh`, **49 PASS
+across three gates, zero failures**; record
+[`../acceptance/installer-advice-run.md`](../acceptance/installer-advice-run.md).
+Findings §6.1 #10, §6.2 #24, §6.2 #30, §6.3 #31 and §6.3 #34 are closed.
+**29 scripted sabotages, 29 caught — after five escaped on the first pass, and
+every one of the five named a missing check rather than a missing fix** (§6 of
+the record). `scripts/install-acceptance.sh EP_MODE=posix` re-ran green
+afterwards: a real install from nothing in WSL2, 16 checks, zero failures.
+Repos: `specs` (both installers) and `agent` (`reach.py`); no contract change,
+no UI change. **Both installers re-pinned** — the component pins had been five
+repos stale since R1.1 because nothing until now shipped through them, and
+#34's fix is in the agent, so it reaches nobody without a bump; all five go to
+current HEADs and `ui` stays at dist `9fccf05`. **`ui` is untouched, so #10's
+dependency for R2.6 is met.**
+
 *Findings: §6.1 #10, §6.2 #24, §6.2 #30, §6.3 #31, §6.3 #34. Size:
 M + S + S + S + S. Touches: `specs/scripts`, `specs/docs/deployment`,
 `agent`, `ui`. **§6.2 #26 moved to R2.6 on 2026-09-18** — see below.*
@@ -1215,7 +1230,7 @@ Each with the reason, so silence is not read as an oversight.
 R1.1 → R1.2 → R1.3 → R1.4 → R1.5 → R1.6      before any public link
   ^^^^^^^^^^^^^^^^^^^^^^^^^ DONE 2026-09-18
 R2.1 → R2.2 → R2.3 → R2.4 → R2.5 → R2.6     before the first hostile review
-  ^^^^ DONE 2026-09-18              ^^^^ R2.6 needs R2.2's #10 first
+  ^^^^^^^^^^^ DONE 2026-09-18       ^^^^ R2.6 needs R2.2's #10 — now met
 R4  (alongside R2)                            decision #1, TAKEN: in front
 R3                                            the correctness pass
 R7  (before R2.6 if the order is free)        decision #5, TAKEN: split the key
@@ -1365,7 +1380,7 @@ failing check. Nothing here needs confirming again.
 | 6.1 #7 | A taken port; no `component-down` issue kind `[F]`            | R1.5  |
 | 6.1 #8 | Runtimes merged by bare name across nodes `[D]`               | R1.6  |
 | 6.1 #9 | A failed agent read closes that node's clients `[D]`          | **R2.1 — done 2026-09-18** |
-| 6.1 #10| Elevated re-install strands the first install `[F]`           | R2.2  |
+| 6.1 #10| Elevated re-install strands the first install `[F]`           | **R2.2 — done 2026-09-18** |
 | 6.1 #11| Non-NVIDIA Windows GPU gets a CPU build silently `[F]`        | R2.3  |
 | 6.2 #12| Control snapshot readable by any service token `[S]`          | R2.4  |
 | 6.2 #13| GPU-sized timeouts cascade healthy CPU inference `[D]`        | R2.5  |
@@ -1379,17 +1394,17 @@ failing check. Nothing here needs confirming again.
 | 6.2 #21| Thinking filter swallows the answer when streaming `[D]`       | R3    |
 | 6.2 #22| Contract drift: `top_p`/`seed`/profile/`content_filter`/401 `[D]` | R3 |
 | 6.2 #23| `latencyMs` semantics + the 15.6 ms Windows grid `[D]`         | R1.1  |
-| 6.2 #24| Installers swallow network errors; port override ignored `[F]` | R2.2  |
+| 6.2 #24| Installers swallow network errors; port override ignored `[F]` | **R2.2 — done 2026-09-18** |
 | 6.2 #25| `HTTP_PROXY` applied to loopback traffic `[F]`                 | R1.1  |
 | 6.2 #26| The wizard promises an autostart the default lacks `[F]`       | **R2.6** (decision #4 taken 2026-09-18: the real service, not a copy edit) |
 | 6.2 #27| Symlinks dropped unreported; `followSymlinks` inert `[F]`      | R3    |
 | 6.2 #28| Intel reports zero VRAM; Rosetta hides Apple silicon `[F]`     | R2.3 / R3 |
 | 6.2 #29| An `nvidia-smi` that fails reads as "not on PATH" `[F]`        | R2.3  |
-| 6.2 #30| `tailnet.md` / `container.md` describe another install `[F]`   | done 2026-09-17 / R2.2 |
-| 6.3 #31| Uninstall leaves engines, two keyring entries, copies `[F]`    | R2.2  |
+| 6.2 #30| `tailnet.md` / `container.md` describe another install `[F]`   | **R2.2 — done 2026-09-18** |
+| 6.3 #31| Uninstall leaves engines, two keyring entries, copies `[F]`    | **R2.2 — done 2026-09-18** |
 | 6.3 #32| No frame-ancestors on the agent-served UI `[S]`                | **R1.2 — done 2026-09-18** |
 | 6.3 #33| Operator-gated SSRF; probe spends a service token `[S]`        | R2.4  |
-| 6.3 #34| A non-ASCII prefix defeats self-restart detection `[F]`        | R2.2  |
+| 6.3 #34| A non-ASCII prefix defeats self-restart detection `[F]`        | **R2.2 — done 2026-09-18** |
 | 6.3 #35| Banned vocabulary through the wizard's error path `[F]`        | R1.5  |
 | 6.3 #36| Parallel slots divide the context; the copy says otherwise `[me]` | **R1.3 — done 2026-09-18, premise MEASURED** |
 | 6.3 #37| Five respawns of an engine that dies during load `[D]`         | R3    |

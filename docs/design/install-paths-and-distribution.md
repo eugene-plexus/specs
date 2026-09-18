@@ -1184,6 +1184,33 @@ too, and the acceptance script asserts it (check 18) beside the parse
   must not be the thing that loses an enrollment. It also takes back the
   environment variables it set — found by checking after a run, where
   the User-scope one outlived the uninstall.
+- **And it takes back two OS keyring entries and names the model copy
+  directory** (2026-09-18, roadmap R2.2 / review §6.3 #31). The agent
+  stores its master key under `eugene-plexus-agent` and the control root
+  stores the install's signing key under `eugene-plexus-control`, each
+  scoped by a fingerprint of that install's master salt — and the salt
+  goes into the `.removed-` directory with everything else, so after the
+  uninstall nothing can work out what to delete. It has to happen there
+  or not at all, and it is done by the install's own interpreter, since
+  that is what holds `keyring`. The node-local model copy directory is
+  *named with its size* rather than deleted: it is ours, but tens of
+  gigabytes is not a thing to remove on somebody's behalf. The engine
+  store (`~/.eugene-plexus/engines`) is named the same way, for the same
+  reason. `--purge-downloads` / `-PurgeDownloads` is the explicit answer
+  for both.
+- **A second install on one machine is refused rather than built**
+  (2026-09-18, review §6.1 #10). `install.ps1` used to tell an
+  unelevated user to re-run elevated — and doing exactly that switched
+  the prefix, unregistered the first install's task by name without a
+  word, repointed the config-file variable and raised a second trust
+  root. The discriminator is the one `reach.py` already uses for the
+  same question: the autostart's own program path against this run's
+  virtualenv. `-Detect` prints the verdict without changing anything;
+  `-Migrate` is the explicit override. An elevated install also pins
+  `EUGENE_PLEXUS_AGENT_ENGINE_ROOT` and
+  `EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS` under the prefix, so a
+  LocalSystem service does not propose
+  `C:\Windows\System32\config\systemprofile\Eugene Models`.
 
 #### Four checks that were wrong, and one that passed while wrong
 
