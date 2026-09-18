@@ -607,6 +607,37 @@ reproduction — and it passes.
 
 ### 3.1 R2.1 — A node that did not answer is not a node with nothing on it
 
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18.** `scripts/r21-acceptance.sh`, **14
+PASS, zero failures, second execution**; record
+[`../acceptance/node-read-failures-run.md`](../acceptance/node-read-failures-run.md).
+Findings §6.1 #9, §6.2 #18 and §6.2 #17 are closed. 19 unit checks in
+`gateway`, **15 scripted sabotages, 15 caught**
+([`../../scripts/r21-sabotage.py`](../../scripts/r21-sabotage.py)), **and all
+three findings were put back against the LIVE gateway** and each failed the
+checks written for it. No contract change and no UI change; nothing re-pinned.
+
+**▶ THE LIVE SABOTAGE IS WHERE THE SEVERITY CAME OUT.** With §6.1 #9 restored,
+**ten of ten completions died** across a failing read — not a narrow window.
+With §6.2 #18 restored, a request for a *stopped* engine returned **200**: it
+was routed to it. With §6.2 #17 restored, a backend was still eligible while its
+engine was being stopped.
+
+**One escape, and it named a missing check.** Removing the `try/finally` from
+the reservation passed, because the test drove it with an `httpx.ConnectError`
+and `AgentLifecycleClient.stop` catches **every** `httpx.HTTPError` and returns
+`False` — so the exception never reached the `with` block. The `finally` earns
+its place against what `stop()` does *not* catch: the idle loop's task cancelled
+mid-stop at shutdown. Both are checks now.
+
+**One harness defect:** check 3 asserted 404 where the product answers **503**,
+which is the better sentence — the model *is* served by something this gateway
+knows about and none of it can take a request.
+
+**Window B is open by decision, and the record says why.** The reservation
+covers the stop *call*; between the agent's 202 and the next refresh the
+snapshot still says `ready`. Widening it needs a release rule that cannot get
+stuck, and a healthy runtime permanently unroutable is worse than the window.
+
 *Findings: §6.1 #9, §6.2 #18, §6.2 #17. Size: M + M + S. Touches: `gateway`.*
 
 **One failed agent read destroys that node's driver clients under in-flight
@@ -1091,6 +1122,7 @@ Each with the reason, so silence is not read as an oversight.
 R1.1 → R1.2 → R1.3 → R1.4 → R1.5 → R1.6      before any public link
   ^^^^^^^^^^^^^^^^^^^^^^^^^ DONE 2026-09-18
 R2.1 → R2.2 → R2.3 → R2.4 → R2.5             before the first hostile review
+  ^^^^ DONE 2026-09-18
 R4  (alongside R2)                            decision #1, TAKEN: in front
 R3                                            the correctness pass
 R5  (no code; can land any time)
@@ -1136,7 +1168,7 @@ failing check. Nothing here needs confirming again.
 | 6.1 #6 | `agent.yaml` non-atomic write + unguarded load `[F]`          | R1.5  |
 | 6.1 #7 | A taken port; no `component-down` issue kind `[F]`            | R1.5  |
 | 6.1 #8 | Runtimes merged by bare name across nodes `[D]`               | R1.6  |
-| 6.1 #9 | A failed agent read closes that node's clients `[D]`          | R2.1  |
+| 6.1 #9 | A failed agent read closes that node's clients `[D]`          | **R2.1 — done 2026-09-18** |
 | 6.1 #10| Elevated re-install strands the first install `[F]`           | R2.2  |
 | 6.1 #11| Non-NVIDIA Windows GPU gets a CPU build silently `[F]`        | R2.3  |
 | 6.2 #12| Control snapshot readable by any service token `[S]`          | R2.4  |
@@ -1144,8 +1176,8 @@ failing check. Nothing here needs confirming again.
 | 6.2 #14| Download `filename` escapes every model root `[S]`            | **R1.2 — done 2026-09-18** |
 | 6.2 #15| A worker names the URL the root will dial `[S]`                | R2.4  |
 | 6.2 #16| No cancel on client disconnect; SDKs retry `[D]`               | R2.5  |
-| 6.2 #17| Idle unload races an arriving request `[D]`                    | R2.1  |
-| 6.2 #18| `runtime is None` = always eligible `[D]`                      | R2.1  |
+| 6.2 #17| Idle unload races an arriving request `[D]`                    | **R2.1 — done 2026-09-18** |
+| 6.2 #18| `runtime is None` = always eligible `[D]`                      | **R2.1 — done 2026-09-18** |
 | 6.2 #19| Admission reserves nothing; fallback context-blind `[D]`       | R3    |
 | 6.2 #20| `tier` renumbered for the natural slot shape `[D]`             | R3    |
 | 6.2 #21| Thinking filter swallows the answer when streaming `[D]`       | R3    |
