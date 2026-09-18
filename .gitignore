@@ -76,3 +76,6 @@ memory.sqlite3-shm
 memory.sqlite3-wal
 component-configs/
 logs/
+
+# --- Private working notes (competitive/adversarial reviews, not for the repo) ---
+docs/private/
