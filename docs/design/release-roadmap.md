@@ -82,7 +82,7 @@ Each has a recommendation and the counter-argument that would overturn it.
 | **3** | Are the eight pre-link fixes a new numbered step in install-paths §9, or a gate inside step 9? | §9   | **A gate inside step 9 (9a/9b)**, because "step 9 is the release" is cited in CLAUDE.md, the memory files and §12. **Written that way provisionally on 2026-09-17** — the call is whether to keep it or promote it to a numbered step | **OPEN (provisionally taken in the doc)** |
 | **4** | Windows autostart: fix the copy, or change the mechanism?                                 | §3.2, §3.6 | **Fix the copy now (R2.2); treat a boot-time task or the service as its own slice** — S4U costs the mapped drive  | **TAKEN 2026-09-18 (Troy): THE REAL SERVICE, as its own slice (R2.6). The copy fix is REJECTED, and the reason generalises — *"we're not releasing until the copy as it stands is TRUE, so fixing the copy only satisfies a checklist, not a real user pain point."* The recommendation had the dependency right and the goal wrong: the promise is the requirement, not the thing to negotiate down** |
 | **5** | The shared HS256 key (review §6.4): split it, withhold it from drivers, or accept it?     | §8, §10 | **Withhold it from processes that unseal nothing, and constrain `binary`/`extraArgs`; do not split the key yet**  | **TAKEN 2026-09-18 (Troy): SPLIT IT, AND BEFORE THE RELEASE.** *“I would rather release with things correct than release too early and lose trust.”* Scheduled as §10 **R7**; the recommendation’s two halves become its first step rather than the whole answer |
-| **6** | A benchmark button on a profile — "measure, don't predict" (review §1.9/§5 #4)?           | §8   | **Yes, but after the release gate**, and not under the name "Measure it" (that is hobbyist S10)                   | **OPEN** |
+| **6** | A benchmark button on a profile — "measure, don't predict" (review §1.9/§5 #4)?           | §7, §8 | **Yes, but after the release gate**, and not under the name "Measure it" (that is hobbyist S10)                   | **TAKEN 2026-09-18 (Troy): BEFORE the release, in R6, for R5's reason** — *“it belongs in R5/R6 where the positioning is.”* The recommendation deferred it past the gate; the counter-argument in this row is the one that held, so the **depth number is a differentiator rather than a follow-up**. R5 is *no code*, so the surface lands in R6 and the claim it produces is R5's |
 | **7** | Release timing, against a clock that is now visible on both sides of the thesis           | §9   | **Keep decision #14 as taken** ("2-3 friends for sure", no hurry) and let R1-R2 be the reason, not the delay      | **OPEN** |
 
 ---
@@ -1083,7 +1083,12 @@ proxies at 5-6.8 % of the request against 12.9 % direct**, and **a 24 GB model
 serving in 21 s from a local copy against 266 s over SMB**. Publish those.
 **tok/s is the engine's number, not ours** — and PolyServe's numbers are not
 comparable to anything a hobbyist does, so borrow its method and never its
-benchmark.
+benchmark. **The one number that is ours to publish and is not yet measurable
+by a user is the depth curve**, which is why decision #6 put the benchmark
+button in front of the release rather than behind it: R6 item 1 builds the
+instrument, and what it produces — *decode at the context you chose is a third
+of decode at zero* — is a claim about the reader's own machine that nobody
+else in this field offers to make.
 
 **The order and the words, as adopted 2026-09-18.** Led by what router mode,
 llamactl and Unsloth do *not* do: installs, updates and restarts the engine for
@@ -1109,10 +1114,47 @@ node-local copy falsified the same day it shipped (the replacement line exists:
 
 ## 7. R6 — the hobbyist remainder
 
-S8's glossary and Config grouping, S9's phone/focus/motion pass, and the two
-items S10 still owes its own *Done when*: `EP_DOWNLOAD=1` for the ten-minute
-target, and the moderated sessions, which are decision #14 and gate the
-release.
+**1. The benchmark button (decision #6, taken 2026-09-18).** It is here rather
+than after the gate because the number it produces is **positioning**, not a
+convenience: prediction answers *does it fit*, measurement answers *how fast is
+it here*, and only the second is a claim about this machine that no competitor
+makes. R5 is *no code*, so the surface lands in this stage and the claim it
+yields belongs to R5's publish-the-numbers half.
+
+**The expensive half needs no building.** `llama-bench` is already in the
+engine store in both retained builds, is already a sweep engine, and its
+`--progress` output is the tasks tray's fraction for free.
+
+**▶ AND THE KNOB THE REVIEW NAMED IS THE WRONG ONE.** Measured on this box,
+`gpuLayers` 0→99 is **7.2×** — but only on a partial offload, and a model that
+fits is already at 99, so there is nothing there to learn. What is invisible is
+**depth, the context axis: 3.4×**, at 902 / 678 / 262 tok/s for 0 / 4096 /
+16384. The library prints *the largest context that fits is N* and **nothing in
+the product says decode at N is a third of decode at zero** — so an operator
+can pick 70k context and pay two thirds of their speed for it without being
+told. That sentence is the feature.
+
+**`llama-bench` has no `--parallel` and no `-c`**, so `parallelSlots` is not
+measurable with that instrument at all — which matters because R1.3 has just
+made the *arithmetic* about slots honest, and this cannot confirm it.
+
+**Naming is a real constraint, not a preference.** Not **“Measure it”**:
+hobbyist S10 already owns that name. *Benchmark* is the obvious candidate and
+is the word this audience uses; it must clear S8's banned-word gate for
+whichever screens it appears on, and the button sits on a settings profile
+rather than on Home, which is the expert side of decision #12.
+
+**And the standing rule this must not violate:** *prediction is a filter, never
+the decision* — PolyServe's own predictor ranked the true winner 15th of 25.
+A measured number replaces nothing the fit verdict does; it answers the next
+question.
+
+---
+
+**The rest of R6.** S8's glossary and Config grouping, S9's phone/focus/motion
+pass, and the two items S10 still owes its own *Done when*: `EP_DOWNLOAD=1` for
+the ten-minute target, and the moderated sessions, which are decision #14 and
+gate the release.
 
 **One concrete check the review names and nothing has ever run:** score the
 starter set against **8 GB of VRAM with 16 GB of RAM**, the beginner thread's
@@ -1134,20 +1176,11 @@ Each with the reason, so silence is not read as an oversight.
   split, before the release, on the grounds that releasing early and losing
   trust costs more than the slice does. The two recommended halves survive as
   R7's first step.
-- **A benchmark button on a profile.** Decision #6, and it is better than the
-  review framed it. The expensive half needs no building: `llama-bench` is
-  already in the engine store in both retained builds, is already a sweep
-  engine, and its `--progress` output is the tasks tray's fraction for free.
-  **The knob the review named is the wrong one:** measured on this box,
-  `gpuLayers` 0→99 is 7.2× but only on a partial offload, while **depth — the
-  context axis — is 3.4× and completely invisible today** (902 / 678 / 262 tok/s
-  at 0 / 4096 / 16384). The library prints *the largest context that fits is N*
-  and nothing says decode at N is a third of decode at zero. `llama-bench` has
-  no `--parallel` and no `-c`, so `parallelSlots` is not measurable by that
-  instrument at all. **Name it something other than "Measure it"** — hobbyist
-  S10 already has that name. The framing that makes it not an admission of
-  defeat: prediction answers *does it fit*, measurement answers *how fast is it
-  here*, and they are not competing.
+- ~~**A benchmark button on a profile.**~~ **SCHEDULED 2026-09-18 as R6 item 1**
+  — decision #6 taken the other way. Kept here for the reasoning that moved it:
+  the recommendation was *yes, but after the release gate*, and the
+  counter-argument in the decision row is the one that held. Troy: *“it belongs
+  in R5/R6 where the positioning is.”*
 - **Concurrent users on one runtime.** Never measured, and LM Studio leads with
   it. R1.3 makes the verdict honest about slots, which is the prerequisite.
 - **MLX on `main`.** Still blocked on a real problem no Mac fixes: the server
