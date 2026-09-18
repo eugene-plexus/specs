@@ -287,6 +287,42 @@ test asserts no loopback client picks up an ambient `HTTP_PROXY`.
 
 ### 2.2 R1.2 — Two rules the product states and does not enforce
 
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18.** `scripts/r12-acceptance.sh`, **21
+PASS, zero failures, third execution**; record
+[`../acceptance/two-rules-run.md`](../acceptance/two-rules-run.md). Findings
+§6.1 #1, §6.2 #14 and §6.3 #32 are closed. 35 unit checks across five repos,
+**20 scripted sabotages, 20 caught**
+([`../../scripts/r12-sabotage.py`](../../scripts/r12-sabotage.py)). No contract
+change and no UI change, so `dist` is untouched and neither installer is
+re-pinned — the six pins stay as R1.1 left them, to be bumped once at the end of
+R1.
+
+**The shape it came out as.** `peer.py` in `agent` and `control` (a copy, like
+`security.py`'s five): the proxy strips every forwarding header *and* a
+caller's copy of `PEER_HEADER`, sets `PEER_HEADER` from the peer it saw, all
+five entrypoints pass `forwarded_allow_ips=[]`, and both login routes plus the
+off-host witness read the header **only when the TCP peer is loopback** — the
+one case where the peer is our own proxy and says nothing. `resolve_file` in
+`library/downloads.py` bounds-checks the destination of *every* file (not just a
+renamed one) and refuses with `PathTraversal`. `FRAME_HEADERS` in
+`ui_assets.py`, on the static mount and on the degraded page.
+
+**Three things the build found that the plan did not have.** (a) **The strip and
+the overwrite are not redundant, and the sabotage pass is what proved it**:
+removing `PEER_HEADER` from the stripped set escaped every check, because the
+proxy overwrites it a line later — except when `scope["client"]` is `None`,
+which ASGI permits and where the strip is the only guard. The guard was untested
+rather than unnecessary; that case is a check now. (b) **The live instrument had
+to bind its own source address** (`127.0.0.2` vs `127.0.0.3`): two loopback
+peers is exactly the arrangement the finding is about, and `curl` cannot do it,
+so the run carries a raw client. (c) **A check was green for the wrong reason**
+— with the catalogue off, the library refuses a download before the resolver
+runs, so "an ordinary rename is not refused as a traversal" would have passed
+against a guard that refused everything; the hub is a dead port now, so an
+accepted name must reach it.
+
+**The original scope follows.**
+
 *Findings: §6.1 #1, §6.2 #14, §6.3 #32. Size: M + S + S. Touches: `agent`,
 `control`, `library`, and all five uvicorn entrypoints.*
 
@@ -1019,7 +1055,7 @@ failing check. Nothing here needs confirming again.
 
 | #      | Finding                                                     | Slice |
 | ------ | ----------------------------------------------------------- | ----- |
-| 6.1 #1 | Login limiter driven by a supplied forwarded header `[S]`     | R1.2  |
+| 6.1 #1 | Login limiter driven by a supplied forwarded header `[S]`     | **R1.2 — done 2026-09-18** |
 | 6.1 #2 | Per-call `httpx.AsyncClient` = 104 ms on the loop `[D]`       | R1.1  |
 | 6.1 #3 | Disconnect mid-stream leaks the in-flight counters `[D]`      | R1.4  |
 | 6.1 #4 | Two fit paths; the golden path uses the scalar one `[F]`      | R1.3  |
@@ -1032,7 +1068,7 @@ failing check. Nothing here needs confirming again.
 | 6.1 #11| Non-NVIDIA Windows GPU gets a CPU build silently `[F]`        | R2.3  |
 | 6.2 #12| Control snapshot readable by any service token `[S]`          | R2.4  |
 | 6.2 #13| GPU-sized timeouts cascade healthy CPU inference `[D]`        | R2.5  |
-| 6.2 #14| Download `filename` escapes every model root `[S]`            | R1.2  |
+| 6.2 #14| Download `filename` escapes every model root `[S]`            | **R1.2 — done 2026-09-18** |
 | 6.2 #15| A worker names the URL the root will dial `[S]`                | R2.4  |
 | 6.2 #16| No cancel on client disconnect; SDKs retry `[D]`               | R2.5  |
 | 6.2 #17| Idle unload races an arriving request `[D]`                    | R2.1  |
@@ -1050,7 +1086,7 @@ failing check. Nothing here needs confirming again.
 | 6.2 #29| An `nvidia-smi` that fails reads as "not on PATH" `[F]`        | R2.3  |
 | 6.2 #30| `tailnet.md` / `container.md` describe another install `[F]`   | done 2026-09-17 / R2.2 |
 | 6.3 #31| Uninstall leaves engines, two keyring entries, copies `[F]`    | R2.2  |
-| 6.3 #32| No frame-ancestors on the agent-served UI `[S]`                | R1.2  |
+| 6.3 #32| No frame-ancestors on the agent-served UI `[S]`                | **R1.2 — done 2026-09-18** |
 | 6.3 #33| Operator-gated SSRF; probe spends a service token `[S]`        | R2.4  |
 | 6.3 #34| A non-ASCII prefix defeats self-restart detection `[F]`        | R2.2  |
 | 6.3 #35| Banned vocabulary through the wizard's error path `[F]`        | R1.5  |
