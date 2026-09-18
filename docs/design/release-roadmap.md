@@ -759,6 +759,27 @@ it exists to offer. Read it through the `Schedule.Service` COM object, as
 
 ### 3.3 R2.3 — A card we cannot see is not a machine without one
 
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18.** `scripts/r23-acceptance.sh`, **14
+PASS live, zero failures**; record
+[`../acceptance/unseen-card-run.md`](../acceptance/unseen-card-run.md).
+Findings §6.1 #11, §6.2 #29 and §6.2 #28 (the Intel half) are closed. **21
+scripted sabotages, 21 caught**, across four gates — after two escaped and each
+named something real (an unreachable filter, deleted; and a sabotage that
+stopped expressing its defect once the fix moved). **Two contract documents**,
+`agent.yaml` (`vulkan`) and `library.yaml` (`unknown`); radius measured by
+regenerating all six, with `gateway` and `inference-driver` byte-identical and
+reverted. Repos: `specs`, `agent`, `library`, `ui`, `control` regen-only. **Both
+installers re-pinned and `dist` rebuilt**, because the UI changed.
+
+**The live run and the install run each found something reading did not.** On
+this box — which has an AMD integrated adapter beside the 5090 — a real agent
+with no working `nvidia-smi` now picks `win-vulkan-x64` off a real upstream
+release where it picked `win-cpu-x64`. And `install-acceptance.sh` failed check
+14 at the new pins, twice, bisecting to `library` in two runs: the first version
+of #29's fix answered *which tool failed* by re-probing all three vendor tools
+on every hardware read, which in WSL2 left a library process alive after its own
+shutdown. Same family as §6.1 #5.
+
 *Findings: §6.1 #11, §6.2 #29, §6.2 #28 (the Intel half). Size: L + S + S.
 Touches: `specs/openapi/agent.yaml` (a contract change), `agent`, `library`,
 `ui`.*
@@ -1230,7 +1251,7 @@ Each with the reason, so silence is not read as an oversight.
 R1.1 → R1.2 → R1.3 → R1.4 → R1.5 → R1.6      before any public link
   ^^^^^^^^^^^^^^^^^^^^^^^^^ DONE 2026-09-18
 R2.1 → R2.2 → R2.3 → R2.4 → R2.5 → R2.6     before the first hostile review
-  ^^^^^^^^^^^ DONE 2026-09-18       ^^^^ R2.6 needs R2.2's #10 — now met
+  ^^^^^^^^^^^^^^^^^^ DONE 2026-09-18 ^^^^ R2.6 needs R2.2's #10 — now met
 R4  (alongside R2)                            decision #1, TAKEN: in front
 R3                                            the correctness pass
 R7  (before R2.6 if the order is free)        decision #5, TAKEN: split the key
@@ -1381,7 +1402,7 @@ failing check. Nothing here needs confirming again.
 | 6.1 #8 | Runtimes merged by bare name across nodes `[D]`               | R1.6  |
 | 6.1 #9 | A failed agent read closes that node's clients `[D]`          | **R2.1 — done 2026-09-18** |
 | 6.1 #10| Elevated re-install strands the first install `[F]`           | **R2.2 — done 2026-09-18** |
-| 6.1 #11| Non-NVIDIA Windows GPU gets a CPU build silently `[F]`        | R2.3  |
+| 6.1 #11| Non-NVIDIA Windows GPU gets a CPU build silently `[F]`        | **R2.3 — done 2026-09-18** |
 | 6.2 #12| Control snapshot readable by any service token `[S]`          | R2.4  |
 | 6.2 #13| GPU-sized timeouts cascade healthy CPU inference `[D]`        | R2.5  |
 | 6.2 #14| Download `filename` escapes every model root `[S]`            | **R1.2 — done 2026-09-18** |
@@ -1398,8 +1419,8 @@ failing check. Nothing here needs confirming again.
 | 6.2 #25| `HTTP_PROXY` applied to loopback traffic `[F]`                 | R1.1  |
 | 6.2 #26| The wizard promises an autostart the default lacks `[F]`       | **R2.6** (decision #4 taken 2026-09-18: the real service, not a copy edit) |
 | 6.2 #27| Symlinks dropped unreported; `followSymlinks` inert `[F]`      | R3    |
-| 6.2 #28| Intel reports zero VRAM; Rosetta hides Apple silicon `[F]`     | R2.3 / R3 |
-| 6.2 #29| An `nvidia-smi` that fails reads as "not on PATH" `[F]`        | R2.3  |
+| 6.2 #28| Intel reports zero VRAM; Rosetta hides Apple silicon `[F]`     | **Intel half R2.3 — done 2026-09-18**; Apple half R3 |
+| 6.2 #29| An `nvidia-smi` that fails reads as "not on PATH" `[F]`        | **R2.3 — done 2026-09-18** |
 | 6.2 #30| `tailnet.md` / `container.md` describe another install `[F]`   | **R2.2 — done 2026-09-18** |
 | 6.3 #31| Uninstall leaves engines, two keyring entries, copies `[F]`    | **R2.2 — done 2026-09-18** |
 | 6.3 #32| No frame-ancestors on the agent-served UI `[S]`                | **R1.2 — done 2026-09-18** |
