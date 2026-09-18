@@ -466,6 +466,28 @@ descriptions agree with the arithmetic.
 
 ### 2.4 R1.4 — A stream that ends leaves nothing behind
 
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18.** `scripts/r14-acceptance.sh`, **18
+PASS, zero failures, third execution**; record
+[`../acceptance/stream-bookkeeping-run.md`](../acceptance/stream-bookkeeping-run.md).
+Findings §6.1 #3 and §6.3 #38 are closed, **and so is the second leak this
+section named below**. 14 unit checks in `gateway`, **13 scripted sabotages, 13
+caught** ([`../../scripts/r14-sabotage.py`](../../scripts/r14-sabotage.py)). No
+contract change and no UI change; nothing re-pinned.
+
+**▶ AND THE RUN'S OWN FINDING IS ABOUT A CHECK, NOT THE PRODUCT: check 5
+PASSED AGAINST A DELIBERATELY SABOTAGED GATEWAY.** It read `idle_seconds` off
+the admin view, which is computed from the last-served mark and is blind to the
+in-flight counter — so it answered the same whether or not the counter leaked.
+This project's recurring failure, caught this time only because the live
+sabotage run was performed rather than assumed. What cannot be faked is **the
+agent being asked to stop**, so the stub records every stop it receives and the
+check asserts the unload really happens. Sabotaged, it reads `stops the agent
+was asked for: []` — and check 4 reads `in_flight is 4`, one per closed tab,
+accumulating. Two harness defects besides: `tail -1` on an SSE file is the
+blank line after the frame (two checks reported the product broken while it was
+right), and `attempts` on a metrics row is a **count** — the per-attempt facts
+are under `tries[]`.
+
 *Findings: §6.1 #3, §6.3 #38. Size: S, one commit, ~45 lines, one test module.
 Touches: `gateway`.*
 
@@ -492,7 +514,10 @@ worse: a request that starts while facts are missing and ends after they return
 decrements a counter it never incremented, `max(0, …)` absorbs it, and a live
 in-flight request reads as zero in flight, after which the idle pass unloads a
 runtime **mid-answer**. Capture the name at start and pass it through, or key
-the counter on an attempt identity.
+the counter on an attempt identity. **Done the first way:
+`on_attempt_start` RETURNS the runtime it counted against and the slot hands it
+straight back, on all three methods. R2.1 still owns the reads that make the
+snapshot wrong; this owns the pairing, which is wrong whatever the reads do.**
 
 **Done when:** a test drives `TieredClient.stream`, consumes one event, closes
 the generator, and asserts `runtime_inflight(name) == 0`; a stream that returns
@@ -611,8 +636,9 @@ the same window up to eight times on a path a user is actively waiting on. It
 is lower severity than the other two — one stop-latency wide, once per idle
 timeout — except on the streamed path, where M10's commit-point rule turns a
 retryable race into a visible truncation. **Fixing R1.4 makes it reachable**,
-because today a leaked counter is what accidentally keeps a runtime out of the
-idle pass.
+because until then a leaked counter was what accidentally kept a runtime out of
+the idle pass — **and R1.4 landed 2026-09-18, so this is a live race now and
+not a theoretical one**.
 
 ### 3.2 R2.2 — The installer's own advice, and the promise the wizard makes
 
@@ -1063,7 +1089,7 @@ Each with the reason, so silence is not read as an oversight.
 
 ```
 R1.1 → R1.2 → R1.3 → R1.4 → R1.5 → R1.6      before any public link
-  ^ DONE 2026-09-18
+  ^^^^^^^^^^^^^^^^^^^^^^^^^ DONE 2026-09-18
 R2.1 → R2.2 → R2.3 → R2.4 → R2.5             before the first hostile review
 R4  (alongside R2)                            decision #1, TAKEN: in front
 R3                                            the correctness pass
@@ -1073,7 +1099,8 @@ R6 → the release                              decision #13's gate, unchanged
 
 **R1.1 first** because every other measurement is taken through its
 instrument. **R1.4 before R2.1** because a leaked counter currently masks the
-race. **R2.2's #10 before any behaviour change to the Windows autostart.**
+race — and it no longer does, so R2.1's idle-unload race is reachable now
+rather than hypothetical. **R2.2's #10 before any behaviour change to the Windows autostart.**
 Everything else is independent.
 
 **The release gate is unchanged and this roadmap does not shorten it:** it is
@@ -1103,7 +1130,7 @@ failing check. Nothing here needs confirming again.
 | ------ | ----------------------------------------------------------- | ----- |
 | 6.1 #1 | Login limiter driven by a supplied forwarded header `[S]`     | **R1.2 — done 2026-09-18** |
 | 6.1 #2 | Per-call `httpx.AsyncClient` = 104 ms on the loop `[D]`       | R1.1  |
-| 6.1 #3 | Disconnect mid-stream leaks the in-flight counters `[D]`      | R1.4  |
+| 6.1 #3 | Disconnect mid-stream leaks the in-flight counters `[D]`      | **R1.4 — done 2026-09-18** |
 | 6.1 #4 | Two fit paths; the golden path uses the scalar one `[F]`      | **R1.3 — done 2026-09-18** |
 | 6.1 #5 | `/v1/engines` blocks the loop on `nvidia-smi` + GitHub `[F]`  | R1.5  |
 | 6.1 #6 | `agent.yaml` non-atomic write + unguarded load `[F]`          | R1.5  |
@@ -1138,6 +1165,6 @@ failing check. Nothing here needs confirming again.
 | 6.3 #35| Banned vocabulary through the wizard's error path `[F]`        | R1.5  |
 | 6.3 #36| Parallel slots divide the context; the copy says otherwise `[me]` | **R1.3 — done 2026-09-18, premise MEASURED** |
 | 6.3 #37| Five respawns of an engine that dies during load `[D]`         | R3    |
-| 6.3 #38| A stream with no `done` frame is recorded served `[D]`         | R1.4  |
+| 6.3 #38| A stream with no `done` frame is recorded served `[D]`         | **R1.4 — done 2026-09-18** |
 | §6.4   | One HS256 key mints sessions and signs service tokens `[S]`    | §8, decision #5 |
 | §5 #1  | No Anthropic `/v1/messages` — **a market threat, not a defect** | R4 — decision #1 **TAKEN 2026-09-18: in front of the release** |
