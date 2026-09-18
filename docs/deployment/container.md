@@ -551,14 +551,21 @@ GPU box however you already mount things:
   *Private* and a user that can read it (write too, if you want to be
   able to delete models from that machine), or *Public*. Linux GPU boxes
   can use NFS instead: **NFS Security Settings → Export: Yes**.
-- **Windows GPU box:** the agent runs as a background task or a service,
-  **not in your desktop session**, so a drive letter you mapped there may
-  not exist for it. Use the UNC path — `\\TOWER\models` or
-  `\\192.168.1.20\models` — and, if the share is private, save the
-  credentials once for the account the agent runs as
-  (`cmdkey /add:TOWER /user:… /pass:…` in that account, or Windows
-  Credential Manager). A drive letter works only if the agent's own
-  session can see it.
+- **Windows GPU box — and which install you have decides the answer**
+  (corrected 2026-09-17; this bullet used to say the agent runs "not in your
+  desktop session", which is false for the default install — and is why a
+  mapped `Y:` worked on the live worker).
+  - **Default, unelevated install (a logon task):** the agent runs **in your
+    own session**, so a mapped drive letter and your own saved share
+    credentials both work. The cost is that it starts at sign-in and stops at
+    sign-out.
+  - **Elevated install (the real service):** it runs as LocalSystem, where a
+    drive letter does not exist and `cmdkey` in your account buys nothing —
+    the credential would have to belong to the machine account. Use the UNC
+    path and prefer a share the machine account can read (Public, or an ACL
+    granting the computer object) over saved credentials.
+  - Either way the UNC path is the portable answer, and it is what the
+    folder's Windows mount should carry.
 - **Linux GPU box:** mount it where you like (`/mnt/models` via `fstab`,
   NFS or CIFS); the folder's mounts, below, say where.
 
@@ -575,8 +582,14 @@ files on that node. (Before 2026-09-14 the same row lived on every node's
 agent as *Model directory mappings*, one per node per folder; those rows
 still work, as that node's overrides.)
 
-Nothing is copied or cached. A model downloaded to the NAS is then a
-model any node that mounts the share can serve. Skip the mount and the
+**A node can keep its own copy since 2026-09-17, and by default does not.** A
+model downloaded to the NAS is a model any node that mounts the share can
+serve, read over the wire on every start; turn the per-node copy on and the
+first start copies it once to local disk and every start after that is local.
+Measured on the live install: **21 s to serving against 266 s** for a 23.8 GB
+model. The copy lives in a directory we created, named at the model's own
+relative path, and is deleted by us — your Library folder is never written to.
+See `docs/design/node-local-model-copy.md`. Skip the mount and the
 Library screen says so before you press Launch: *"Not on `<node>`:
 `/models/…` does not exist there"*, with a link to the setting; a launch
 that slipped past is refused the same way, with the same fix in the
@@ -591,11 +604,18 @@ The declaration keeps the library's spelling. `Runtime.modelPath` stays
 opened. Change the folder's mount or a node's override and the next
 start uses it; nothing has to be re-declared.
 
-**One thing to expect the first time:** the engine reads the weights over
-the network on every cold start. A 20 GB model on gigabit Ethernet is
-three minutes before the first token, where a local disk is seconds. That
-is the trade M11 chose over a node-side cache, and it is visible in the
-Inference screen as `loading`, not a hang.
+**One thing to expect the first time:** without the per-node copy, the engine
+reads the weights over the network on every cold start, and it is slower than
+arithmetic suggests. Measured 2026-09-17 on the live install: a ~24 GB model
+over gigabit took **ten minutes**, not the three this paragraph used to claim —
+because llama.cpp memory-maps the file by default and **a mapped read over SMB
+gets 41 MB/s where a buffered read gets 97 and a plain copy gets 113.6**
+(`--load-mode none` on that runtime brought it to 4m16s). It is visible on the Inference screen as
+`loading` — **with a real progress bar only on the buffered path**
+(`--load-mode none`), because a memory-mapped read moves no counted bytes, so
+the default path shows elapsed time instead. Either way it is a state, not a
+hang. **Turning the
+per-node copy on takes the second and every later start to 21 s.**
 
 ---
 

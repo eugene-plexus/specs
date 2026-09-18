@@ -569,7 +569,9 @@ baseline assertion that the suite passes unsabotaged.
 
 ## 13. Build order
 
-**This is the pickup point.** Step 0 is done; steps 1-8 are not. Sizes
+~~**This is the pickup point.** Step 0 is done; steps 1-8 are not.~~ **ALL OF
+IT IS DONE, BUILT AND LIVE-VERIFIED 2026-09-17 — §14 is the record, and the
+pickup point for the project is `release-roadmap.md`.** Sizes
 are relative (S under a day, M a day or two, L several) and are
 estimates. *Touches* names repos; **contract** marks a change to
 `openapi/`. Each step ends with a **done when** a test, a script or a

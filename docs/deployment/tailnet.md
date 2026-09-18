@@ -48,10 +48,47 @@ tailscale up
 tailscale ip -4          # e.g. 100.64.0.1
 ```
 
-**Set the advertise address before the first start.** This is the single
-most important instruction in this document, and it cost an hour to
-discover. It goes in the agent's config so it survives restarts —
-`agent.yaml`, beside wherever you point `EUGENE_PLEXUS_AGENT_CONFIG_FILE`:
+**Set the advertise address before the first start.** That is still the single
+most important thing on this page — but **how you set it depends on how you
+installed, and the sequence below this box was written for an install nobody
+produces any more** (corrected 2026-09-17).
+
+**If you installed with `install.sh` or `install.ps1`** — which is everyone —
+the installer starts the agent itself, so *before the first start* has already
+happened by the time you have a shell prompt: there is no `eugene-plexus-agent`
+on your `PATH` (it lives in `$PREFIX/venv/bin`), the unit passes
+`--unattended` so nothing asks you anything, `agent.yaml` does not exist until
+the agent writes it, and on a single-machine install the control host has
+already enrolled itself on loopback. Use **one** of these instead:
+
+- **The Reach switch in the UI** — Home → *Reach it from other devices*. It
+  sets the advertise address, restarts the components so they bind it, and
+  tells you what is actually listening. This is the normal answer.
+- **`--advertise` on the install command — but only together with `--join`.**
+  Both installers parse the flag unconditionally and pass it on **only in the
+  join branch** (`install.sh` uses it inside `if [ -n "$JOIN_CONTROL" ]`;
+  `install.ps1` appends it to `$joinArgs`), so on the FIRST machine it is
+  accepted and silently discarded. Verified 2026-09-17 — it is §2's answer, not
+  §1's. Making the standalone path honour it is an installer change, not a
+  sentence here.
+- **The five bind variables in the unit**, for a headless install you want wide
+  from the first second:
+  `EUGENE_PLEXUS_AGENT_BIND_HOST`, `EUGENE_PLEXUS_GATEWAY_BIND_HOST`,
+  `EUGENE_PLEXUS_LIBRARY_BIND_HOST`, `EUGENE_PLEXUS_CONTROL_BIND_HOST`,
+  `EUGENE_PLEXUS_DRIVER_BIND_HOST`, all `0.0.0.0`. This is what the container
+  image does, and it cannot get the ordering wrong.
+
+**Everything from here to the end of §1 describes running the agent by hand**,
+which is a real path (a checkout, `uv run eugene-plexus-agent`) and is not the
+installed one. The *reason* the ordering matters is unchanged and is worth
+reading either way.
+
+---
+
+**Set the advertise address before the first start — running the agent BY HAND,
+from a checkout.** (Not the installed path; see the box above.) It goes in the
+agent's config so it survives restarts — `agent.yaml`, beside wherever you point
+`EUGENE_PLEXUS_AGENT_CONFIG_FILE`:
 
 ```yaml
 advertiseUrl: http://100.64.0.1:8079
@@ -67,7 +104,8 @@ nothing was listening on and look healthy from every direction except
 the one that mattered. Against an agent older than that, also
 `export EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0`.
 
-Then start it:
+Then start it — **by hand, from a checkout; the installed unit is already
+running and would fight this one for port 8079**:
 
 ```bash
 eugene-plexus-agent
@@ -166,7 +204,18 @@ Same package, same command, same entry point. **There is no separate
 "worker" build.**
 
 On A, open the UI and go to **Nodes → Add a node**. Mint a token; the
-screen renders the exact command. On B:
+screen renders the exact command. On B, **use the installer's own join — it is
+the only path that also writes the wide bind into the unit** (corrected
+2026-09-17; the two bare `eugene-plexus-agent` commands below are the
+by-hand-from-a-checkout version, and there is no such binary on `PATH` after
+an install):
+
+```bash
+tailscale up
+curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.sh | sh -s -- --join http://100.64.0.1:8083 --token <the token> --name gpu-box --advertise http://100.64.0.2:8079
+```
+
+By hand, from a checkout, it is the same two steps the installer performs:
 
 ```bash
 tailscale up
@@ -438,8 +487,19 @@ stops.
   two-specific, but nobody has run it.
 - **An offline-node rotation** — revoking while a node is genuinely
   powered off — needs independent power and has not been run.
-- **Clock skew between buildings.** Log ordering is by index and never by
-  timestamp, deliberately, so this should not matter. Untested.
+- ~~**Clock skew between buildings.** Log ordering is by index and never by
+  timestamp, deliberately, so this should not matter. Untested.~~
+  **▶ PRODUCED BY THE LIVE INSTALL ON 2026-09-15, AND NOT IN THE WAY THIS
+  BULLET PREDICTED.** Log ordering was never the exposure; token `iat` was. The
+  control root ran **0.50 s ahead**, every component decoded tokens with zero
+  leeway, and a token minted in the first half of a second arrived *not yet
+  valid*: the worker left the install, every surface said "down" with no
+  reason, and the operator's own browsing kept working. Fixed — 300 s of
+  leeway everywhere, a log line when a token arrives more than 2 s in this
+  host's future, and `Node.lastError` carrying the refusing agent's own words.
+  **Trap worth keeping: uvicorn's `Date` header cannot measure sub-second
+  skew** — it is cached and refreshed once a second at an arbitrary phase, and
+  it read 0.18 s in the wrong direction; a per-request server timestamp can.
 - **A partitioned-but-alive old control root**, as opposed to a shut-down
   one. Epoch fencing exists for exactly this and has only been exercised
   against a root that was stopped.

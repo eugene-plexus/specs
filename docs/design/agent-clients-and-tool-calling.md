@@ -50,6 +50,16 @@ if a backend emitted one.
 > **Claude Code, OpenCode, Hermes and every other agent harness cannot
 > work against Eugene Plexus today. Not "works badly" — cannot.**
 
+**▶ HALF-TRUE SINCE STEP 6, AND STILL LITERALLY TRUE OF THE FIRST CLIENT IT
+NAMES (2026-09-17).** Tool calling was built end to end on 2026-09-11 and every
+harness that speaks the OpenAI shape works. **Claude Code does not, because it
+speaks the Anthropic Messages API and we serve no `/v1/messages`** — S4 left it
+out of the seven recipes deliberately, and a test asserts its absence, because
+a recipe would 404 for everyone who followed it. The adversarial review ranks
+that shim as **the single highest-leverage feature gap in the field matrix**,
+because llama-swap, llamactl and LM Studio all serve it: Claude Code can be
+pointed at every peer with a UI and not at us. Scoped in §5.2.
+
 This is the same shape of gap as M10's: carried as a small thing, and in
 fact a whole capability that was never built rather than one that was
 broken. Nothing had noticed because nothing had pointed a harness at it.
@@ -188,6 +198,19 @@ In dependency order. **Nothing below item 1 matters until item 1 lands.**
    decide it either way: whether Open WebUI can use its own embedder is
    about demand, and the argument that settled it was **coherence**.
 4. **Context-window honesty** — §6.
+5. **Anthropic `/v1/messages`** — added 2026-09-17, and the one item here that
+   nobody else's absence excuses: every peer with a UI has it. §5.2 is the
+   scope and roadmap R4 the slice. **▶ IT GOES IN FRONT OF THE RELEASE — Troy,
+   2026-09-18, roadmap decision #1**, alongside R2 and after R1. **Step one is
+   a measurement, not code:** point a real Claude Code at a throwaway listener
+   with `ANTHROPIC_BASE_URL` and capture the request, because §5.2's
+   `x-api-key` claim is upstream client behaviour that was reasoned about and
+   never observed here — and the whole auth half of the shim rests on it.
+6. **The request path does not match the contract it already has** — added
+   2026-09-17: `top_p` and `seed` accepted and never forwarded, `max_tokens`
+   and `temperature` from gateway-wide defaults rather than a profile,
+   `content_filter` reported as `stop`, and a driver 401 reported as the
+   caller's fault. §5.3.
 
 **The streaming interaction is a trap.** M10 established that failover
 is possible until the first token and impossible after it. A tool call
@@ -252,6 +275,118 @@ like a right one.
 Record: [`../acceptance/embeddings-run.md`](../acceptance/embeddings-run.md),
 **14 checks** against a real embedding model.
 
+### 5.2 Anthropic `/v1/messages` — scoped 2026-09-17, not built
+
+**Why it is not an aside.** `llama-swap`, `llamactl` and LM Studio all serve
+it; Claude Code is named in both Reddit threads; we ship seven client recipes
+and a test asserting Claude Code is *not* among them. Two slices of about a
+day, one contract change, radius `gateway` + `ui`.
+
+**The blocker nobody had named, and it would have shipped:** Claude Code with
+`ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` sends **`x-api-key`**, not
+`Authorization: Bearer` — only `ANTHROPIC_AUTH_TOKEN` produces a bearer — and
+the gateway's scheme reads the `Authorization` header and nothing else.
+**Which half is which: the gateway half was read in our own source and holds;
+the Claude Code half is upstream behaviour that was reasoned about and NEVER
+CAPTURED HERE.** It is the premise the whole auth design rests on, so R4's step
+one is to point a real Claude Code at a throwaway listener and read the
+request — minutes, and the only thing in this slice that is worth checking
+before writing code. A shim
+wired to the existing dependency would 401 the one client it exists for, and
+the 401 would read as *my key is wrong*. Support both, and write the recipe
+with `ANTHROPIC_API_KEY`, which is what people actually set. `/v1/messages`
+also has to be added to the CORS front-door set explicitly, which is
+exact-match by design.
+
+**Translate at the edge into the existing `ChatCompletionRequest`, never
+directly to the driver.** `create_chat_completion` carries six behaviours a
+second front door must not re-implement: the surface refusal, the tools refusal
+checked *before* a backend is picked so the answer cannot depend on the
+balancer, refresh-and-wake, the install defaults, the truncation detector, and
+the recording. Extracting a shared `_serve()` is the slice's one real refactor
+— and sharing it is what keeps `GET /v1/metrics` from being blind to the new
+door, **which is M8's finding ("the response envelope is the wrong recording
+point") in a new place**.
+
+**Mechanical:** most of the request and response mapping, and every stream
+event but one. `tool_use` ↔ `tool_calls` (their `input` is an object, ours is a
+string); a user turn carrying N `tool_result` blocks **splits** into N OpenAI
+`tool` messages, which a one-result fixture cannot catch; `stop_reason` maps
+`stop`/`length`/`tool_calls` → `end_turn`/`max_tokens`/`tool_use`.
+
+**Hard, and it is the difficulty of the slice: Anthropic numbers content blocks
+statefully and we do not.** Our text events carry no index and our tool
+fragments carry a per-call `index` that is independent of whether text came
+first, so the translator holds `text_open` and a map from tool index to block
+index. Get it wrong and a strict SDK rejects a stream *inside* a 200 — the same
+failure class as the `index` guard step 6 already needed. Their stream also has
+**no `data: [DONE]`**, and ours emits one on four paths including two degraded
+ones, each of which needs a `message_delta` + `message_stop` counterpart or a
+client waits on a stream that never closes.
+
+**Refused with a 400 naming the field:** `thinking` (nothing below us has a
+per-request reasoning control, and the driver's `thinkingMode` does the
+opposite operation), image and document blocks (the contract has no
+content-parts shape, and flattening one would make a vision model silently
+blind), server-side tools, `mcp_servers`, more than four `stop_sequences` (our
+`maxItems`, and a dropped stop sequence is a generation that does not stop), and
+a missing `max_tokens`, which their wire requires.
+
+**Dropped silently, and this one is load-bearing: `cache_control`.** Claude
+Code sets it on every system block, so **a blanket unknown-field refusal would
+pass every refusal test and then fail on its first real request.** `top_k` is
+dropped too, and that is a real loss — both engines take it and neither
+contract has the field, the same omission `top_p` and `seed` already have
+(§5.3). `POST /v1/messages/count_tokens` is deliberately a 404: nothing here
+tokenizes, and an agent that sizes a context off our estimate overflows
+silently, which is worse than a 404 it can handle.
+
+**Two rules survive and one must not be forced.** The failover commit point
+sits below both translators, so *failover ends at the first token* carries over
+unchanged — but **`message_start` must be emitted on the first driver event and
+never on request acceptance**, or it commits a model name the cascade can still
+change. And **the `x_eugene_plexus` envelope does not go in the Anthropic
+body**: their wire is typed events and a strict client is exactly who we are
+courting, so the envelope rides in response headers while the recording rides
+the shared path. Map our 400 to `invalid_request_error` and to nothing Claude
+Code retries, or step 7's looping symptom returns one layer up, inside the
+client we are courting.
+
+**The proof is not a unit test.** Every fixture here asserts our translation
+against itself. The acceptance check that matters is **Claude Code, pointed at
+this gateway with a local model id, completing a tool loop — asserted from a
+file on disk** rather than from Claude Code's own account of itself, which is
+the harness lie this project has recorded three times. [`release-roadmap.md`](release-roadmap.md) §5 names that check and budgets
+twenty; and the operator must be told
+to set **both** `ANTHROPIC_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL`, or a
+background title call 404s on a model the user never asked for.
+
+### 5.3 The request path does not match its own contract — found 2026-09-17
+
+Four drifts, whose fixes split between the contract and the code (review
+§6 #22, Confirmed; roadmap R3):
+
+- **`top_p` and `seed` are accepted and never forwarded.** `_to_generate_request`
+  reads neither, and `GenerateRequest` has no such fields — so
+  `gateway.yaml`'s *"passed through… dropped with a warning"* is unfulfillable
+  and nothing is logged. `top_p` carries no description at all, which is worse:
+  the surrounding prose reads as covering it. **Recommendation: correct the
+  contract** (accepted and discarded) unless determinism is wanted.
+- **`max_tokens` and `temperature` come from gateway-wide defaults**, not from
+  "the model's settings profile" the contract names — *"profile" occurs in
+  gateway source only inside docstrings regenerated from that sentence.* The
+  library owns profiles and the gateway has no path to them, so either the
+  sentence goes or a slice starts.
+- **`content_filter` becomes `stop`**, so a filtered answer reads as a natural
+  end. **The same map, the next value** — step 6 fixed `tool_calls` → `stop` in
+  this exact function and left this one standing.
+- **A driver 401 is reported to the caller as `invalid_request_error`.** That is
+  the shape a rotated service token takes on one node of a multi-node install,
+  and it tells a harness its request is malformed when nothing the caller can
+  change will help. Locked in by a passing test that uses 401 specifically, so
+  that test is amended rather than added to.
+
+
 ## 6. Context-window honesty is the actual differentiator
 
 This is the one that earns the operations layer its keep, and it is
@@ -271,6 +406,17 @@ decide things:
 
 > **Point a harness at Ollama and it loops. Point it at Eugene Plexus
 > and it either works, or it tells you exactly why it can't.**
+
+**▶ A TESTABLE SLOGAN, TESTED 2026-09-17, AND IT FAILS FOUR WAYS — each of them
+a wrong answer rather than a wrong explanation.** With `thinkingMode: off` a
+`<thinking>`-tagged model **streams an empty 200** (§6.2). A slow-but-healthy
+CPU backend is reported as *"Every backend serving this model failed"* after
+240 s, with the prompt computed twice and the words "timed out" nowhere
+(roadmap R2.5). A filtered answer is reported as a natural end, and a driver
+401 as the caller's malformed request (§5.3). And nothing cancels the backend
+when the client gives up, so an SDK's two retries queue three identical
+generations for a caller who left. The slogan is the right target; it is not
+yet true.
 
 The behaviour itself is **open call #3** — refuse, truncate-and-report,
 or configurable. The principle to apply is
@@ -353,6 +499,27 @@ decision nobody is making.
 Record: [`../acceptance/context-honesty-run.md`](../acceptance/context-honesty-run.md),
 **18 checks against two real engines**.
 
+### 6.2 The filter that was built to protect the answer eats it — found 2026-09-17
+
+`thinkingMode: off` needed a streaming filter, because a `<think>` block already
+sent cannot be un-sent. **The filter it got matches `<think` with a bare `find()` and no word
+boundary where the batch stripper uses `<think`, and waits for a literal
+`</think>` close.** Executed rather than reasoned (review §6 #21, Confirmed by
+execution): `"<thinking>secret plan</thinking>The answer is 4."` streams **`''`
+at every chunking** while the batch path keeps the whole string, and
+`"I think <thinker> is a word. Answer: 4"` streams `'I think '`. So a
+Claude-distill fine-tune with `thinkingMode: off` returns an **empty 200** —
+step 6's empty-bubble ambiguity in a second costume, and the one finding on the
+review's whole list that produces a wrong answer rather than an error.
+
+Two things make it worth its own subsection. **The invariant is asserted in the
+module's own docstring (`feed*+flush == strip_thinking_blocks`) and there is no
+test file at all** — the reverse of this project's usual failure: not a test
+asserting its fixture, but a prose claim of coverage standing in for a test.
+And it is **two implementations of one rule**, the shape that produced the M2
+routing gap, the two fit paths and the six places a theme default must agree.
+Roadmap R3, first item, S.
+
 ## 7. The playground — DECIDED 2026-09-11; BUILT 2026-09-13
 
 **Built as install-paths §9 step 8** — design and record in
@@ -404,9 +571,11 @@ makes the bisection actionable for someone filing a bug.
 ## 8. What this does not change
 
 - **The install work still comes first.** A backend nobody can install
-  serves no harness. Canonical order is
+  serves no harness. ~~Canonical order is
   [`install-paths-and-distribution.md`](install-paths-and-distribution.md)
-  §9.
+  §9.~~ **§9 IS NO LONGER THE CANONICAL ORDER (2026-09-17):** its steps 1-8 are
+  done and its step 9 is a gate. The order is
+  [`release-roadmap.md`](release-roadmap.md).
 
   **Corrected 2026-09-11, after the first draft of this document said
   otherwise: the release now comes AFTER this work, not before it.**
@@ -415,7 +584,9 @@ makes the bisection actionable for someone filing a bug.
   control plane no agent harness can use does not answer that thread.
   And a release is a positioning event: shipping first would announce
   into the space `llama.app` and NVIDIA/Hugging Face just moved into
-  (§2.1), rather than the one that is unclaimed.
+  (§2.1), rather than an unclaimed one — **and as of 2026-09-17 there is no
+  unclaimed one: llamactl has held this slot since 2025-09.** See
+  `local-inference-control-plane.md` §1 as corrected.
 - **Differentiator #7 is demoted, not deleted.** One commenter in 355 is
   weak demand *from this audience*, which is the home enthusiast. It is
   still what M5/M6/M7 built, it is still live-verified on two hosts, and

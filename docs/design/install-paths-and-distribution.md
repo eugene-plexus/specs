@@ -1,12 +1,18 @@
 # Install paths and distribution
 
-**Status: §9 steps 1-4 are BUILT AND LIVE-VERIFIED, and step 5 is BUILT
-with its runtime half unrun (2026-09-11); steps 6-9 are still design.** Written before any implementation so a later session
+**Status (2026-09-17): §9 steps 1-8 are ALL BUILT AND LIVE-VERIFIED; §12 is the
+implementation record. Step 9 is the release, and it is now a GATE rather than
+a next action** — the pre-release adversarial review
+(`docs/private/adversarial-review-2026-09-17.md`) returns *not releasable this
+week*, with eleven High findings of which **six are this document's own
+subject** (the elevated re-install, the Windows GPU probe, the installers'
+swallowed errors, the autostart promise, the deployment docs, uninstall
+residue). **The order of work is [`release-roadmap.md`](release-roadmap.md);
+step 9 is its last item.** Written before any implementation so a later session
 could pick it up cold. Every claim marked *verified* was checked against
 a repo, a registry or upstream on the day of writing; everything else is
-reasoning and is marked as such. **§12 is the implementation record and
-is the pickup point; step 6 (tool calling, the thesis work) is next.
-Every decision in the table below is taken.**
+reasoning and is marked as such. **Every decision in the table below is taken,
+except that #2 was never built and is moot (see §7) and #8 is new and open.**
 
 Precedes a release, deliberately. Publishing an installable thing whose
 only install is a Windows developer script would bake the gap in.
@@ -27,6 +33,8 @@ log** — answers are recorded here as they are made.
 | **5**  | Where `install.sh` is hosted: `eugeneplexus.com`, or a raw GitHub URL first?             | §4   | **Raw GitHub URL, in `specs/scripts/`**     | **DONE 2026-09-11, §12**   |
 | **6**  | What does `install.sh` install FROM, given nothing is published and the release is last?  | §6.1 | **GitHub archives at pinned commits — and the UI from a `dist` branch** | **DONE 2026-09-11, §12** |
 | **7**  | Windows service: `pywin32` or NSSM?                                                      | §11.1 | **`pywin32`, as a Windows-only `[service]` extra** | **DONE 2026-09-11, §12** |
+| **8**  | Windows non-NVIDIA GPUs: probe and serve them, or keep handing them a CPU build?          | §7.1 | **Probe (`Win32_VideoController`, via the WMI path `agent/firewall/windows.py` already uses — 112 ms, measured) and serve `win-vulkan`/`win-rocm`; add `vulkan` to `Accelerator`** — today a 7900 XTX owner silently gets `win-cpu-x64`, is scored as having no GPU, and is offered the SMALLEST starter model | **OPEN 2026-09-17** (review §6 #11; roadmap R2.3) |
+| **9**  | Windows autostart: fix the wizard's copy, or change the mechanism?                        | §11.1 | **Fix the copy and render the mechanism the agent already reports.** A boot-time S4U task costs the interactive session — the mapped drive letter AND the UNC Library mount the live install depends on — and whether it keeps a console, i.e. the graceful stop, is unmeasured; the service path cannot land before the elevated-reinstall fix | **OPEN 2026-09-17** (review §6 #26; roadmap R2.2) |
 
 **#1 was one call and is now two**, which is the substantive change
 from the first draft. Troy's question — *"I intend for the UI to get
@@ -406,6 +414,40 @@ badge in a UI the operator may never open is weaker than a wall. If the
 refusal stays, it should become *actionable* instead — a verified
 source-build script rather than a paragraph.
 
+## 7.1 Windows non-NVIDIA — OPEN 2026-09-17: nothing probes for the card
+
+**§7 expired because an asset appeared. This one is open because a probe was
+never written** — the same shape on the other platform, and the more expensive
+one, because it fails silently instead of refusing.
+
+`agent/engines/host.py` decides the accelerator by looking for `rocm-smi` or
+`/opt/rocm` and for `sycl-ls` or Linux sysfs. **None of those exist on
+Windows**, there is no Vulkan probe, and there is no `Win32_VideoController`
+query — so `_variant_for` falls to `win-cpu-{arch}` although upstream publishes
+`win-vulkan-x64.zip` and `win-rocm-10.0-x64.zip` (both present in this repo's
+own recorded release fixture; `win-sycl-x64` is an unverified external claim,
+nothing in-tree carries it). The `win-rocm` branch is reachable in principle and
+dead in practice, since `_has_rocm` can never be true there — which reads as AMD
+support the product does not have.
+
+**What the owner of that card experiences:** one-click Run installs a CPU build;
+the library reports *"no accelerator was detected"* and blames a vendor tool's
+PATH; the fit budget is scored against RAM; **the starter set inverts and offers
+the SMALLEST model**, because on a machine with no accelerator the question
+changes from memory to speed; and `issues.ts` records in its own comments that a
+CPU build on a GPU machine is unobservable, so nothing ever says why it is slow.
+Meanwhile Lemonade is AMD-backed with 5,737 stars for exactly this user.
+
+**Cost of the probe: no new dependency.** `pywin32` is installed on every
+Windows install regardless of elevation, and `agent/firewall/windows.py`
+already dispatches a WMI query in a measured 112 ms with an `ImportError`
+guard. The contract change is a `vulkan` member on `Accelerator`, which reaches
+`agent`, `control` and `ui` through codegen — the M11 enum rule. Decision #8;
+roadmap R2.3, which also carries the `nvidia-smi`-ran-and-failed half, because
+that is one `_run` helper away.
+
+---
+
 ## 8. macOS — DECIDED 2026-09-11: first-class now, decoupled from MLX
 
 **Recommendation: first-class now, decoupled from MLX.** `macos-arm64`
@@ -532,10 +574,20 @@ into, rather than the unclaimed one. See
    Original note: tools, attachments, and the `x_eugene_plexus`
    envelope surfaced, reached over **the same public surface a harness
    uses** (§7.1's trap).
-9. **Then** the release.
+9. **Then** the release — **and since 2026-09-17 it is two halves.**
 
-   **Two checks gate it, and both are failing checks rather than notes
-   somebody is supposed to read.** The `dist` branch in `ui` must have
+   **9a — the pre-release hardening, which is not in this document.** The
+   adversarial review's eight fixes before any public link and five before the
+   first hostile review, ordered as slices in
+   [`release-roadmap.md`](release-roadmap.md) §2-§3, plus the Anthropic
+   `/v1/messages` gap alongside if decision #1 there says in front. Six of the
+   eleven High findings are this document's subject and land in R2.2 and R2.3.
+   **This is a gate inside step 9 rather than a new numbered step** (roadmap
+   decision #3, open), because *"step 9 is the release"* is cited in CLAUDE.md,
+   the memory files and §12 of this document.
+
+   **9b — the release itself. Two checks gate it, and both are failing checks
+   rather than notes somebody is supposed to read.** The `dist` branch in `ui` must have
    been rebuilt from the `main` commit being pinned, or the installers
    ship an API with a stale browser half. And **the latest starter
    review must be under thirty days old and carry no unresolved
@@ -565,9 +617,15 @@ Install is not the only thing standing between the project and audience
 - **Rolling engine upgrades are unbuilt** (already an open item), which
   matters when inference cannot be taken down during business hours.
 
-None of these block a release. They do mean the honest framing of the
-first release is *"audience 1, with audience 2's topology already
-proven"* — which is a good story, not a weak one.
+None of these block a release. **▶ BUT SOMETHING ELSE DOES, AS OF 2026-09-17:**
+this was the document's only sentence about what blocks a release, and the
+adversarial review's eleven High findings are each reachable by a hobbyist on
+day one or a reviewer in an hour — eight of them before any public link (§9a).
+The second half is dented too: *audience 2's topology already proven* holds for
+M7's two-host run and not for the replica case, which cross-wires whenever one
+model is launched on two nodes (review §6 #8, roadmap R1.6). What survives is
+the framing: the honest first release is *"audience 1, with audience 2's
+topology already proven"* — a good story, not a weak one, once §9a is done.
 
 ## 11. Traps known in advance
 
@@ -625,11 +683,16 @@ milestone rather than an assumption:
 
 **The evidence that carried it**, recorded because it is good and will
 come up again: audience 1 is substantially Windows — the home
-enthusiast with one gaming GPU is the archetype; **Windows+NVIDIA is
+enthusiast with one gaming GPU is the archetype; ~~**Windows+NVIDIA is
 the best-served acquisition path in the entire project** (§7 — it is
 the only platform upstream publishes CUDA builds for, and it would be
-perverse to serve it least well); and every milestone through M10 was
-driven from a Windows box.
+perverse to serve it least well)~~ **— FALSE IN BOTH DIRECTIONS NOW: upstream
+publishes `ubuntu-cuda-*` since about 2026-09-16 (§7), so Windows is not the
+only CUDA platform; and on Windows only NVIDIA is served AT ALL, because there
+is no Windows GPU probe (review §6 #11, §7.1, decision #8) — so the platform
+this argument called best-served is the one platform where a whole GPU vendor
+gets a CPU build.** What survives is the audience claim, and every milestone
+through M10 was driven from a Windows box.
 
 The original both-ways analysis follows, kept because the middle option
 remains the fallback if supervision hardening proves larger than it
@@ -667,8 +730,9 @@ is not a reason.
 ## 12. Implementation record
 
 Record what was built, what departed from this design, and why, as each
-step of §9 lands. **Steps 1-8 are built; step 9 — the release — is the
-pickup point, and the last.** Steps 6 and 7 are recorded in
+step of §9 lands. **Steps 1-8 are built; step 9 is the release and
+since 2026-09-17 it is a GATE rather than the next action — its 9a hardening is
+[`release-roadmap.md`](release-roadmap.md) §2-§3, which is the order of work.** Steps 6 and 7 are recorded in
 [`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md)
 §9 and §6.1; step 8 in [`playground-diagnostic.md`](playground-diagnostic.md)
 §11, with a summary at the end of this section.

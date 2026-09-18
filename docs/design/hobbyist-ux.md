@@ -7,17 +7,35 @@ two rounds; #4 on one condition, which §6.5 turns into a process, #6
 amended to ask first, #12 on the condition that the jargon stays
 available in hints, and #8 with a question that §6.6 answers. Only the
 relabels (`Backends`, `Chat`) remain a separate open call.
-**S0 through S6 are built and live-verified (S0-S5 on 2026-09-15, S6
-on 2026-09-16; records in §11). S7 is STARTED AND PAUSED** — its
-measurement is done and falsified four of its seven issue kinds, the one
-contract field it needed is landed and served, and the UI half is one
-pure unwired module; §11.9 is the record and says where to resume.
-**S10 is BUILT and GREEN ON BOTH TARGETS** (§11.10) — the budget is
+**S0 through S7 are built and live-verified (S0-S5 on 2026-09-15, S6 and S7 on
+2026-09-16; records in §11).** S7's measurement falsified four of its seven
+issue kinds, the one contract field it needed is landed and served, and the
+whole UI half shipped and was pinned; §11.9 is the record. **(This header said
+PAUSED until 2026-09-17, in three places, while §11.9's own body said DONE —
+the status line is what nobody updates.)**
+**S10 is BUILT and GREEN ON BOTH TARGETS** (§11.10 Windows, §11.11 WSL2) — the budget is
 measured on Windows and on WSL2, and each run found a defect that had
 shipped: a fix that was on `main` and in no build, and a refusal that
 rested on an upstream fact which had changed. **What the *Done when*
-still lacks is the moderated sessions (§8.4), so the release gate is
-not met.** **S8 is PART-BUILT** — the banned-word test and the one
+still lacks is `EP_DOWNLOAD=1` for the ten-minute target and the moderated
+sessions (§8.4), so the release gate is not met** — **▶ AND SINCE 2026-09-17 ELEVEN HIGH
+FINDINGS SIT IN FRONT OF THAT GATE — six slices before any public link and five
+more before the first hostile review — FOUR OF THEM DEFECTS IN THE GOLDEN PATH
+THIS DOCUMENT DESIGNED AND RECORDED AS BUILT.** The pre-release
+adversarial review (`docs/private/adversarial-review-2026-09-17.md`; order of
+work in [`release-roadmap.md`](release-roadmap.md)) found: **the recommended
+model is scored one way before download and another after, and the second is
+the one one-click Run uses** (§6 #4 — Home says *fits at 16,384*, the profile
+is written at ~4,864); **a taken port dead-ends the wizard at 8083 and produces
+a silently useless install at 8080, with an empty Needs-attention card because
+no `IssueKind` covers a component that is down** (§6 #7); **a Windows AMD or
+Intel owner gets a CPU-only llama.cpp silently and is then offered the SMALLEST
+starter model** (§6 #11); and **the wizard's own reboot promise is false on the
+default Windows install** (§6 #26). Two more land on exactly this audience: a
+slow-but-healthy CPU answer reported as *"Every backend serving this model
+failed"* after 240 s with the prompt computed twice (§6 #13), and an 8 GB
+laptop — the beginner thread's OP — against which **the starter set has never
+been scored** (§4.2 #6). **S8 is PART-BUILT** — the banned-word test and the one
 offender it found have landed; the glossary panel, Config's Show more
 grouping and plain units have not. **S9 is not started.** Every claim marked
 *measured* was checked against a file or a running process on the day of
@@ -287,7 +305,14 @@ tree root reads `control root unreachable` until they do.
 Two people, and the second already has a UI.
 
 **Sam — the weekend hobbyist (the brief).** Windows 11 gaming PC, one
-NVIDIA card of 12–24 GB, 32–64 GB RAM. Has installed Steam, Plex or
+NVIDIA card of 12–24 GB, 32–64 GB RAM. **▶ THE FLOOR IS LOWER AND THE VENDOR
+IS NOT ALWAYS NVIDIA (2026-09-17):** the beginner thread's OP has a **laptop
+4060 with 8 GB of VRAM and 16 GB of RAM**, and *"if hardware limited…"* appears
+three times in 41 comments; a Windows **AMD or Intel** owner is a large slice of
+the burned-by-Ollama audience and today gets a CPU build silently (review §6
+#11). Sam as written excludes both, and every number in this document that was
+chosen against a 24 GB card should be re-checked at 8 GB — which is the one
+concrete check the review names and nothing has ever run. Has installed Steam, Plex or
 Jellyfin, maybe Ollama or LM Studio once. Uses, or wants to use,
 Continue or Cline in VS Code, SillyTavern, Open WebUI, or a coding
 harness. Has heard "Q4_K_M" and does not know what it means. Does not
@@ -424,6 +449,19 @@ with the current state of Eugene's answer.
 | 9  | **`<think>` tags in the answer**                                     | *"raw XML-like markup in the message body"* (open-webui #24839)                                                                   | Built (`ThinkingFilter`); the profile field is `thinkingMode`, not a plain-words control       |
 | 10 | **Which model?**                                                     | *"Stop pretending like HF is in any way beginner friendly."* (HN)                                                                 | **Missing**: Discover opens on the catalogue's raw "most downloaded" list                      |
 | 11 | **Docker as a barrier**                                              | *"for many users 'just run it in docker' is a non-starter"* (r/LocalLLaMA, 38 points)                                             | Answered: the one-liner installs on the gaming PC; the container is the NAS path              |
+
+**▶ TWO ROWS THE TABLE NEEDS AND DOES NOT HAVE (added 2026-09-17 from the
+adversarial review, both landing on exactly this audience).** **12 — a
+slow-but-healthy answer reported as a failure:** the driver's read timeout is
+120 s and the gateway's 180 s, a timeout arrives as an anonymous transport
+error and cascades, so a 30B on CPU at ~3 tok/s is told *"Every backend serving
+this model failed"* after 240 s — **with both engines having computed the
+answer and the words "timed out" appearing nowhere** (review §6 #13; roadmap
+R2.5). An 8 GB laptop runs on CPU spill by default. **13 — a component that
+never came up:** nothing probes a port before seeding it, so 8080 taken means
+the wizard completes, nothing is routable, Try it never appears, and the
+Needs-attention card is empty because no `IssueKind` covers a supervised
+component that is down (review §6 #7; roadmap R1.5).
 
 Five of eleven are built underneath and unsurfaced or half-surfaced.
 Three are missing. That ratio is the argument for a UX slice rather
@@ -976,7 +1014,12 @@ a 409. Decisions **#2, #3**.
 
 ### S3 — One-click run (M) — **BUILT AND LIVE-VERIFIED 2026-09-15; record §11.4**
 
-Launch with no profile creates `default` at `maxContextLength`; a
+Launch with no profile creates `default` at `maxContextLength` — **and review
+§6 #4 (2026-09-17) says that number comes from the wrong fit path: the on-disk
+route's shape builder never sets `layers`, so the 14B starter class is scored
+with the scalar KV reader the 43× fix replaced, and the profile is written at
+~4,864 where Home advertised 16,384. The mechanism in this slice is right and
+the number it writes is wrong** (roadmap R1.3); a
 finished download offers **Run** in place; the Library's "install one
 from the Inference page" sentence goes. **Launch on a node with no
 engine asks first (Troy's amendment to #6):** *"I could not find
@@ -1079,7 +1122,7 @@ ranking call, four of whose assumptions about the hub's listing API were
 wrong, and its "404" for an unresolvable URL, which the hub answers as
 401.
 
-### S7 — Issues, and two honest states on Inference (M) — **STARTED AND PAUSED 2026-09-16; record §11.9**
+### S7 — Issues, and two honest states on Inference (M) — **DONE AND LIVE-VERIFIED 2026-09-16; record §11.9** (this heading, the status block and §11.9's own title all said PAUSED until 2026-09-17; all three corrected)
 
 The **Needs attention** card and header badge: sealed root, folder not
 mounted, node down with `lastError`, clock skew warning, engine release
@@ -1162,7 +1205,12 @@ measured) and **the moderated sessions** (§8.4), which gate the release.
 **What gates the release (decision #13, taken):** S0–S6 and S10, **and
 a starter review under 30 days old with no unresolved verdict (§6.5)**.
 S7–S9 are real and can follow; none of them is on the path from install
-to a first token or a connected tool.
+to a first token or a connected tool. **▶ AND SINCE 2026-09-17 THIS GATE IS
+UNCHANGED BUT NO LONGER FIRST:** the adversarial review's eight fixes sit in
+front of any public link and five more in front of the first hostile review —
+four of the eight are defects in the paths S3, S6 and §6.3 declared built. The
+review is explicit that it *"does not shorten that list; it adds the fixes above
+in front of it"*. Order: [`release-roadmap.md`](release-roadmap.md).
 
 ---
 
@@ -2293,7 +2341,7 @@ another node (`node:<name>`) is unit-tested and has never been executed:
 Home runs models on the machine the browser is served from, and this box
 is one machine.
 
-### 11.9 S7 — measured, one contract field landed, PAUSED mid-slice 2026-09-16.
+### 11.9 S7 — measured, one contract field landed, then built and pinned. DONE 2026-09-16.
 
 **State: DONE — built, shipped and live-verified.** All seven steps taken
 on 2026-09-16, though **6 came after 7**: the pins went out first at the
@@ -2439,7 +2487,7 @@ browser has watched the same model finish loading before. A first load
 has nothing honest to predict from, and says nothing rather than
 guessing.
 
-#### Where to resume
+#### Where it resumed from (spent — the steps below all landed; kept as the handoff that worked)
 
 `ui/src/lib/issues.ts` is written, typechecks, lints, and is committed
 at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
@@ -2634,7 +2682,7 @@ at `055a9a4`. It exports `issuesFrom`, `worstSeverity`, `skewBetween`,
 worker agent holds 8079 on this box. Run on +100 ports, clear every
 ambient `EUGENE_PLEXUS_*` variable first, and tear down by pid.
 
-### 11.10 S10 — the budget, counted. GREEN ON WINDOWS 2026-09-16; the WSL2 half is not written.
+### 11.10 S10 — the budget, counted. GREEN ON WINDOWS 2026-09-16; the WSL2 half is §11.11.
 
 `scripts/hobbyist-acceptance.sh`, **22 checks, zero failures, fourth
 execution**. Record: [`../acceptance/hobbyist-run.md`](../acceptance/hobbyist-run.md).
@@ -2742,8 +2790,10 @@ run:**
 
 **Not done, and each for a stated reason:**
 
-1. **WSL2.** The `install.sh` half is not written, so the *Done when* is
-   not met and **the release gate is not satisfied**.
+1. ~~**WSL2.** The `install.sh` half is not written~~ **— DONE 2026-09-16,
+   green, §11.11 is the record.** The gate is still unsatisfied, for the two
+   items below plus the adversarial review's eight pre-link fixes; leaving this
+   reason standing made the list say the gate was blocked on something done.
 2. **`EP_DOWNLOAD=1`.** §1's ten-minute install-to-first-token target,
    download included, is still unmeasured. The default seeds a small
    GGUF because the subject of the other three targets is the **count**,

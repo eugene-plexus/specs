@@ -16,7 +16,10 @@ tailnet — not just localhost.
 
 **What it is not:** an inference engine. llama.cpp, vLLM and MLX are the
 engines. We supervise upstream, not fork or replace it. llama.cpp and
-user-installed vLLM are integrated; MLX has no adapter yet.
+user-installed vLLM are integrated; **MLX has an adapter on the branch
+`feat/mlx-engine` and none on `main`**, blocked on upstream's server having no
+`--served-model-name` (see `mlx-engine-unverified.md`), while every peer with a
+UI serves Apple silicon today.
 
 **Reading this record (updated 2026-09-10):** the motivation and original work
 list below describe the direction change. M0-M3 and M6 are live-verified; M5's
@@ -39,6 +42,32 @@ Reddit session tokens, and republishing a full thread with usernames isn't ours
 to relicense). Strip out the tribalism and the *unanswered* complaints are all
 operational, not engine-level:
 
+**▶ AND A SECOND THREAD WAS READ IN FULL ON 2026-09-17, IN THE BEGINNER SUB,
+WITH A MATERIALLY DIFFERENT DISTRIBUTION** — r/LocalLLM, *Beginner confused
+about Ollama vs LM Studio vs llama.cpp vs vLLM vs Unsloth*, 135 points, 41
+comments, OP on a laptop 4060 with 8 GB of VRAM and 16 GB of RAM. Counts and
+the side-by-side are in `docs/private/adversarial-review-2026-09-17.md` §4;
+what matters here is that **this is the audience the hobbyist plan was built
+for and it had never been sampled**, and it reorders the table below.
+**Settings, quant and "does it fit my card" is the largest cluster — 6 of 24
+top-levels, and it grew.** *"I can't use the models already on my disk"* went
+from the most-upvoted substantive comment (147 points) to **zero explicit
+mentions**: a refugee complaint, not a beginner's, because a beginner has no
+files yet. *"Can I run this on a server"* went from the thread's most repeated
+question to **zero organic asks**. Docker went from three upvoted rejections to
+**no mentions at all**. Multi-host is 1-in-355 and 0-in-41 — and yet one T2
+commenter describes running llama.cpp, vLLM and a cloud API from one app under
+a 50-point top comment insisting that is impossible, so #7 is unknown rather
+than unwanted. **And the shape of the question changed:** T1 asked *what should I use instead
+of Ollama* and got thirteen different products; T2 asks *what is each thing
+for* and the answers **converge on three** (a GUI to learn with, llama.cpp when
+you know, vLLM never). The piecing-together problem is being solved by
+consensus, so **"we end the confusion" is not a pitch** — our slot is *what you
+install when you outgrow the desktop app but will not hand-edit llama-server
+flags*, **which is llamactl's slot too.**
+**Keep both threads: T1 is the refugee and T2 is the beginner,
+and they want opposite orders of the same seven things.**
+
 | Complaint (recurring, from the thread)                                                                                                               | What's missing                             |
 | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | "Q3_K_S vs 2Q_K_M? No one fucking knows."                                                                                                            | Hardware-aware quant guidance              |
@@ -49,9 +78,23 @@ operational, not engine-level:
 | "Can I run this on a server?" (asked at least six separate times — recounted 2026-09-11; it is the thread's single most repeated question)            | Headless + networked + authenticated       |
 | llama-swap is good but "just run Docker" / "not a drop-in replacement"                                                                               | Model swapping without a container runtime |
 
-Nobody owns this layer. Everyone builds an *engine* (llama.cpp, vLLM, MLX) or a
-*desktop chat app* (LM Studio, Unsloth Studio, llama.app). The boring middle —
-supervise, configure, route, authenticate — is unclaimed.
+~~Nobody owns this layer.~~ **THAT WAS FALSE WHEN IT WAS WRITTEN AND THE
+RE-VERIFICATION ON 2026-09-17 FOUND OUT WHY.** Everyone builds an *engine*
+(llama.cpp, vLLM, MLX) or a *desktop chat app* (LM Studio, Unsloth Desktop,
+llama.app) — **and `lordmathis/llamactl` has been building this exact layer in
+Go since 2025-07, a year before our direction change**: *"unified management
+and routing for llama.cpp, MLX and vLLM models with web dashboard"*, remote
+instances from one dashboard, management keys versus inference keys minted in
+its own UI, Anthropic `/v1/messages`, **v0.21.2 released the day we checked**,
+and a launch post that states our thesis verbatim. `llama-swap` (5,688 stars)
+holds the proxy half. And `llama-server`'s **router mode** now does multi-model
+residency, LRU eviction, idle unload and a `--models-dir` of the user's own
+GGUFs *inside the engine*. **What is still ours alone:** replica balancing with
+tiered failover, cloud and subscription CLIs as peer backends, and multi-host as
+enrolled signed agents. **What every peer with a UI has and we do not:**
+Anthropic `/v1/messages`, a shipped release, and MLX on `main`. The layer is
+not unclaimed; it is *contested*, and the differentiators below are what is
+left when router mode and llamactl are subtracted.
 
 **Honest framing:** Ollama's persistence is a distribution problem, not a
 technical one. llama.cpp already beats it on merit and still loses the
@@ -63,16 +106,74 @@ technically better is table stakes, not a strategy.
 ## 2. The differentiators
 
 Each maps to a row in the table above. Nothing here is aspirational framing —
-these are the product.
+these are the product. **Three carry a defect that makes the sentence false
+today** and say so in place (#3's confinement, #6's second fit path, #7's
+two-node replicas — roadmap R1.2, R1.3, R1.6), and **#8 is new on 2026-09-18
+and half-built**: the OpenAI surface under it has been live since M0, and the
+Anthropic half is roadmap R4. Do not say #8 whole before R4 lands.
 
-1. **It supervises engines it doesn't own.** Engines are upstream projects,
-   tracked and wrapped, never forked or replaced.
-2. **Discovery and download happen in the app.** Search a model catalogue,
+**▶ DECISION #2 IS TAKEN (Troy, 2026-09-18): ADOPT THE REVIEW'S §4.3 WORDING
+AND ORDER; THE NUMBERS STAY WHERE THEY ARE.** The review's §4.3 proposed the
+same ideas re-ordered for the beginner audience and re-worded to lead with what
+router mode, llamactl and Unsloth do *not* do. That is what we say now. The
+numbers below are **not** renumbered, because `#1` through `#7` are cited by
+number in CLAUDE.md, thirteen design documents, the acceptance records, the
+memory files and the website's architecture page — renumbering silently
+re-points a dozen citations that would still read as true.
+
+**So there are two lists and they are not the same list.** What we *say*, in
+order, is seven lines; what we *number* is eight ideas, because one old
+calling became a mechanism and one new calling had never been numbered at all.
+
+| Say it in this order | The line                                                                              | Numbered as     |
+| -------------------- | ------------------------------------------------------------------------------------- | --------------- |
+| 1                    | **Installs, updates and restarts the engine for you**                                 | #1              |
+| 2                    | **Tells you what fits before you download, and starts your settings there**           | #6              |
+| 3                    | **Finds and downloads models in the app, into your own folders, as plain files**      | #2 + #3         |
+| 4                    | **One endpoint for every tool you use**                                               | **#8 (new)**    |
+| 5                    | **Add the backends you already run and the subscriptions you already pay for**        | #7, backends half |
+| 6                    | **Reach it from your other devices, safely**                                          | #5              |
+| 7                    | **Grows into a homelab**                                                              | #7, multi-host half |
+
+**Two departures from §4.3 as proposed, both to keep the citations honest.**
+§4.3 gives the fourth slot to *one endpoint for every tool you use* and demotes
+today's #4 (schema-driven config) to a mechanism. The demotion stands — but
+**#4 keeps its number and its old idea**, marked as a mechanism, so that
+§7 of this document, `m9-networked-polish.md`'s gap list and every other
+citation of "differentiator #4" still resolves to the thing they mean.
+The genuinely new calling is therefore **#8**, which is also the one thing on
+this list that **is not true yet** — R4 (`/v1/messages`) is what makes it true,
+and decision #1 put R4 in front of the release on 2026-09-18. And §4.3's fifth
+and seventh lines are both halves of #7, which is why #7 appears twice in the
+order and once in the numbering: the backends half leads, the multi-host half
+closes.
+
+**Three of these lines must not be published before the fix that makes them
+true** (`release-roadmap.md` R5): the fit claim in line 2 needs R1.3, the
+replica half of line 7 needs R1.6, and the file-ownership clause in line 3
+needs R1.2's download confinement. They are the first three things a reviewer
+tests.
+
+1. **Installs, updates and restarts the engine for you.** llama.cpp today,
+   vLLM if you already have it; it comes back after a crash and gets out of
+   memory when it is idle. (Wording adopted 2026-09-18, decision #2; it is the
+   first thing we say.) Engines are upstream projects, tracked and wrapped,
+   never forked or replaced. **▶ "SUPERVISES" IS NO LONGER
+   THE DIFFERENTIATOR (2026-09-17):** `llama-server` router mode has multi-model
+   residency, LRU eviction at `--models-max`, idle unload at
+   `--sleep-idle-seconds`, one process per model and `/models/load` — in the
+   engine. What it does not do is **install itself, update itself, or bring a
+   crashed model back**, which is what we do and is now what the line says. The
+   beginner thread's own phrasing is *restarts what crashes*.
+2. **Finds and downloads models in the app** — said as one line with #3,
+   *finds and downloads models in the app, into your own folders, as plain
+   files* (2026-09-18). Search a model catalogue,
    read what a model *is*, pick a quant, download it with resume and progress —
    without leaving for HuggingFace's search box and a manual file copy. This is
    the one thing `ollama pull` genuinely got right, and it is *why* people
    tolerate everything else about it. **Necessary, not a convenience.**
-3. **The user's files stay theirs.** Point it at existing GGUF directories, and
+3. **Into your own folders, as plain files** — the user's files stay theirs.
+   Point it at existing GGUF directories, and
    downloads land *in those same directories as plainly-named files*. No
    content-addressed cache, no hash mismatches, no opaque store. **Non-negotiable.**
 
@@ -91,26 +192,83 @@ these are the product.
    managed store.** `ollama pull` was right; the blob cache behind it was wrong.
    A user must be able to delete us and still have their models, correctly
    named, where they chose to put them.
-4. **Schema-driven config UI with per-model profiles.** Every knob is a form
-   field with help text, defaults and conditional visibility, generated from
-   the config schema the component already publishes.
-5. **Networked-first with auth.** The v0.2 security arc (Argon2id master key,
+4. **Schema-driven config UI with per-model profiles — A MECHANISM SINCE
+   2026-09-18, NOT A LINE WE SAY.** Every knob is a form field with help text,
+   defaults and conditional visibility, generated from the config schema the
+   component already publishes. **It keeps its number and its idea** so that
+   every "differentiator #4" citation still resolves; what changed is that it
+   is how #6 prefills a profile rather than something said to someone who has
+   never heard of a schema (review §4.3, decision #2). It is also **not true on
+   the request path** — review §6 #22 finds the gateway substituting its own
+   `defaultMaxTokens`/`defaultTemperature` where `gateway.yaml` promises the
+   model's settings profile (roadmap R3).
+5. **Reach it from your other devices, safely** — networked-first with auth.
+   The v0.2 security arc (Argon2id master key,
    libsodium envelopes, JWT bearer, OS keyring) is already built and is
-   exactly what the "run it on a server" crowd lacks.
-6. **Hardware-aware quant guidance,** on the discovery screen. Detect VRAM/RAM,
+   exactly what the "run it on a server" crowd lacks. **▶ THE SECOND HALF IS
+   FALSE AS WRITTEN (2026-09-17):** llamactl mints inference keys in its own UI,
+   LM Studio 0.4.5-0.4.6 ships end-to-end encrypted remote access over
+   Tailscale, Unsloth serves over Cloudflare, and Spore sells *reach it from
+   any device* at $10/mo. **A real login with sessions and revocable client
+   keys is still ours** — that is the part to say — and review §6 #1 says the
+   login limiter can be driven from a header a caller supplies (roadmap R1.2).
+   And in the beginner thread, remote reach drew **zero organic asks**.
+6. **Tells you what fits before you download, and starts your settings there**
+   — hardware-aware quant guidance, on the discovery screen. **The second thing
+   we say, adopted 2026-09-18.** Detect VRAM/RAM,
    read model metadata, recommend a quant tier, warn *before* a 40GB download
    that won't fit — and show *why*. Guidance and discovery are the same screen:
    the moment a user is choosing between `Q3_K_S` and `2Q_K_M` is the moment
    they need to be told which one their box can actually run.
+   **▶ PROMOTED 2026-09-17 to the second thing we say — and it is the one we
+   keep getting wrong.** Settings, quant and "does it fit my card" is the
+   beginner thread's largest cluster (6 of 24 top-levels) and Unsloth Desktop is
+   the default *because it decides for you*, so the copy has to say the default
+   was chosen for THIS machine rather than that guidance exists. Three wrong
+   answers so far: the 43× KV over-read, the inert context control, and review
+   §6 #4 — **the on-disk fit route still uses the scalar reader, and it is the
+   route one-click Run uses** (roadmap R1.3). PolyServe's lesson, from a product
+   that measures where we predict: **prediction is a filter, never the
+   decision** — its own predictor ranked the true winner 15th of 25.
 
-7. **Many backends at once, load-balanced, with failover.** Several models
+7. **Add the backends you already run and the subscriptions you already pay
+   for — and it grows into a homelab.** Many backends at once, load-balanced,
+   with failover. **This one calling is said as two lines** (2026-09-18): the
+   backends half leads at position 5 because a beginner-thread commenter
+   describes it first-hand under a 50-point comment saying it cannot be done,
+   and the homelab half closes at position 7 because multi-host draws 1 of 355
+   and 0 of 41 and is still the thing no one else has. Several models
    resident simultaneously; two replicas of one model across two GPUs served
   by outstanding requests and capacity; a priority-list cascade when a backend dies. Cloud
    subscriptions are just another backend — the surviving `claude_code_cli` and
    `codex_cli` engines mean **one endpoint over local models and the
    subscriptions the user already pays for.** Nothing in the field does this:
-   llama-swap swaps *one* model at a time and no one load-balances replicas.
-   This is what makes the platform useful past a single desktop.
+   ~~llama-swap swaps *one* model at a time~~ **— it has `groups` for concurrent
+   residency and llamactl has instance groups, so that clause is false as of
+   2026-09-17; what survives, and is still true, is that NO ONE ELSE BALANCES
+   REPLICAS WITH A TIERED CASCADE, and no one else treats a cloud subscription
+   as a peer backend.** This is what makes the platform useful past a single
+   desktop — **and review §6 #8 says the two-node replica case cross-wires
+   today**: the gateway keys runtimes by bare name while the console names a
+   runtime after the model, so one model on two machines is one entry, the last
+   agent read wins, and an idle unload for A is sent to B's agent. It passed at
+   M6 because that run was one node. Roadmap R1.6. **And say it as many
+   *backends*, not many machines** (review §4.2 #4): multi-host draws 1 of 355
+   and 0 of 41, while a beginner-thread commenter describes our #7 first-hand
+   under a 50-point comment saying it cannot be done.
+8. **One endpoint for every tool you use — NEW ON 2026-09-18, AND THE ONLY
+   LINE ON THIS LIST THAT IS NOT TRUE YET.** OpenAI-compatible, tool calling,
+   embeddings, and a key you can hand out and take back. It was never numbered
+   because it was buried in *what Eugene Plexus is* rather than claimed: the
+   gateway has served `/v1/chat/completions` since M0, tool calling since step
+   6, `/v1/embeddings` since 2026-09-12 and revocable client keys since S4 —
+   seven documented recipes, and a **test asserting Claude Code is not among
+   them**, because Claude Code speaks Anthropic `/v1/messages` and we serve the
+   OpenAI shape. Every peer with a UI serves both. **Decision #1 (Troy,
+   2026-09-18) puts `/v1/messages` in FRONT of the release** as roadmap R4,
+   which is what makes this line true; do not say it before R4 lands. It takes
+   the fourth position that review §4.3 gave it, and takes a new number rather
+   than #4's because #4's number is cited elsewhere for a different idea.
 
 ---
 
@@ -160,8 +318,14 @@ Collapsing both into a single process was the first sketch and it was wrong
   and that something is the driver — so the driver must be able to sit in the
   request path regardless.
 
-The extra local hop is sub-millisecond against a multi-second generation. It is
-not a cost worth optimising away.
+The extra local hop is sub-millisecond against a multi-second generation.
+~~It is not a cost worth optimising away.~~ **THE FIRST SENTENCE SURVIVES AND
+THE SECOND DOES NOT (M8 measured, 2026-09-17 explained).** M8's phase
+decomposition found **114-120 ms** on the HTTP driver path, and the adversarial
+review located all of it: **`httpx.AsyncClient()` constructed per request**,
+parsing certifi's PEM bundle on the event loop at ~105 ms. The loopback hop
+really is sub-millisecond — the two-layer split is vindicated, not indicted —
+but the cost was ours and it was worth optimising away. Roadmap R1.1.
 
 ### Where engine knowledge lives
 
@@ -472,8 +636,19 @@ keeps that number. Only the unbuilt milestone moved.
   declares none, so every admission on the GPU node of the first
   two-machine install had been measured by file size, and nothing said
   so.
-- **Then:** MLX adapter, cloud providers back in the routing table, Discord
-  revival.
+- **Then, as of 2026-09-17: not more milestones — a release-readiness order.**
+  Everything built after M11 happened outside this list (the tree, Library
+  folders, the hobbyist plan S0-S10, Issues, the node-local copy), and the
+  pre-release adversarial review put eleven High findings in front of the
+  release: **six slices before any public link (the review's eight fixes), five
+  slices before the first hostile review, the Anthropic `/v1/messages` gap
+  alongside, then the release gate — `hobbyist-ux.md` decision #13 plus #14,
+  unchanged and not shortened.** The order is
+  [`release-roadmap.md`](release-roadmap.md); the evidence is
+  `docs/private/adversarial-review-2026-09-17.md`. Still unscheduled and still
+  wanted: the MLX adapter (built on a branch, blocked on upstream having no
+  `--served-model-name`), cloud providers beyond the two CLI engines, and the
+  Discord connector.
 
 ---
 
@@ -500,20 +675,59 @@ is genuinely tractable and would have made the one accelerator on the one
 OS behave differently from every other target.
 
 
-- **llama.cpp is moving into this space.** `llama.app` is, in the thread
-  author's own words, "a first baby step in that direction." If upstream ships
-  good multi-model management, the core shrinks to routing + library + auth +
-  guidance. Still a product — but plan for it rather than being surprised.
+- ~~**llama.cpp is moving into this space.**~~ **IT ARRIVED (re-verified
+  2026-09-17).** `llama-server` **router mode** loads on demand from a
+  `--models-dir` of the user's own GGUFs, evicts LRU at `--models-max`, unloads
+  at `--sleep-idle-seconds`, isolates a crash per model process, serves
+  `/models/load` and `/models/unload`, takes `--api-key a,b,c` and has a model
+  dropdown in its own web UI. So the conditional in this bullet resolved in the
+  direction it predicted, and what it leaves us is now a list rather than a
+  guess: **no hardware fit or quant guidance anywhere; per-model settings are an
+  `.ini`; auth is a static key list with no users, no sessions and no
+  revocation; nothing spans hosts; nothing fronts a cloud API or a subscription
+  CLI; no engine but llama.cpp; and nothing installs or updates the engine for
+  you.** Plan against that list, not against the possibility.
+- **The thesis is claimed, and the competitive clock is visible (new
+  2026-09-17).** `llamactl` has been in this slot since 2025-07 and released
+  v0.21.2 the day we checked; `llama-swap` has 5,688 stars; PolyServe reached
+  pip a week after its first commit. We have zero releases.
+- **The beginner default is Unsloth Desktop, on *automatic* settings (new
+  2026-09-17).** Open source, launched 2026-08-10, and the beginner thread's
+  second most-upvoted product opinion is *"the auto optimization can save hours
+  for a beginner"*. It is the product Sam will be told to install instead of
+  ours, with NVIDIA-acquired-Hugging-Face-scale distribution behind its quants.
+- **A vendor owns the AMD hobbyist we currently hand a CPU build (new
+  2026-09-17).** Lemonade is AMD-backed with 5,737 stars, and review §6 #11
+  says a Windows AMD or Intel owner gets a CPU-only llama.cpp from us silently
+  and is then scored as a machine with no GPU. Roadmap R2.3.
+- **We predict where PolyServe measures (new 2026-09-17).** Its wins are
+  throughput at concurrency 4-8 and are not comparable to anything a hobbyist
+  does — borrow the method, not the benchmark — but its honest ablation is the
+  uncomfortable part: **its own predictor ranked the true winner 15th of 25**,
+  and our prediction has now been wrong three times.
 - **The recommendation slot is the whole game,** and it's won by SEO and
-  mindshare, not merit. See §1.
+  mindshare, not merit. See §1. **Sharpened 2026-09-17: the slot is now an LLM
+  slot** — Google's AI overview, LLM output and YouTube all still say Ollama,
+  which is the beginner thread's own complaint, so *being recommended by a
+  model* is a distribution channel we do not have and cannot buy.
 - **The name doesn't help.** "Eugene Plexus" was chosen to signal consciousness
   research; keeping it (decided 2026-09-08) means the tagline, README and
   domain copy have to carry all of the "what it does" load that a descriptive
   name would have carried for free.
 - **Curated flag surfaces need maintenance** as upstream engines churn.
+  **Sharpened 2026-09-17: they rot at their RELATIONSHIP to the rest of the
+  product, not at their names.** Review §6 #36: `parallelSlots` is exposed,
+  divides the per-request context, and the two field descriptions the profile
+  form renders verbatim say the opposite of what `fit.py` computes — a
+  maintained flag with an unmaintained explanation.
 - **Dev/prod platform mismatch.** Development is Windows; the audience is
   overwhelmingly Linux and macOS. The existing CI-vs-devenv lesson applies with
-  more force now that we're spawning third-party binaries.
+  more force now that we're spawning third-party binaries. **Sharpened
+  2026-09-17, and it bit hardest on the platform we DO develop on:** the Python
+  both installers provision (3.12) has a 15.6 ms `monotonic()` on Windows while
+  the developer's own agent venv is 3.14 and does not — so every shipped
+  install's timings sat on a grid that was invisible here, which is why a 104 ms
+  per-request cost read as unexplained for a week.
 
 ---
 

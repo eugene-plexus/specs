@@ -12,38 +12,45 @@ This is the **single source of truth** for how Eugene Plexus components talk to 
 
 **A self-hosted control plane for local LLM inference.**
 
-It supervises engine processes it does not own, manages a model library on your own disk, holds per-model settings profiles, exposes one OpenAI-compatible endpoint that routes across local runtimes and cloud providers with failover, and serves a web UI with real auth so it works over a tailnet — not just localhost.
+It installs, updates and supervises the engine processes it does not own, manages a model library on your own disk, holds per-model settings profiles, exposes one OpenAI-compatible endpoint that routes across local runtimes and cloud providers with failover, and serves a web UI with real auth so it works over a tailnet — not just localhost.
 
 **It is not an inference engine.** We supervise upstream llama.cpp and user-installed vLLM; MLX integration is planned. We do not fork or replace the engines.
 
-Everyone else builds an *engine* (llama.cpp, vLLM, MLX) or a *desktop chat app* (LM Studio, llama.app). The operations layer — supervise, configure, route, authenticate — is unclaimed. That layer is the product:
+Everyone else builds an *engine* (llama.cpp, vLLM, MLX) or a *desktop chat app* (LM Studio, Unsloth Desktop, llama.app). The operations layer — supervise, configure, route, authenticate — is **contested rather than unclaimed**: `llamactl` has been managing llama.cpp, MLX and vLLM from a browser since 2025, `llama-swap` holds the proxy half, and `llama-server`'s own router mode now keeps several models resident and unloads idle ones. What is left, and what this project is for, is the part none of them do:
 
-1. **It supervises engines it doesn't own,** and manages their binaries so you don't install llama.cpp by hand first.
-2. **Discovery and download happen in the app.** Search a catalogue, read what a model is, pick a quant, download with resume and progress.
-3. **Your model files stay yours.** Point it at your existing GGUF directories; downloads land *there*, as plainly-named files. No content-addressed cache, no hash mismatches. Delete us and you still have your models, correctly named, where you put them.
-4. **Schema-driven config UI with per-model profiles.** Every knob is a form field with help text and defaults, generated from the config schema the component already publishes.
-5. **Networked-first, with auth.** Headless server, browser UI, tokens.
-6. **Hardware-aware quant guidance, on the discovery screen.** `Q3_K_S` or `Q4_K_M` is a question you should be answered at the moment you are asking it, not in a separate tool.
-7. **Many backends at once, load-balanced, with failover.** Several models resident simultaneously; replicas balanced by outstanding requests and capacity; a priority-list cascade when a backend dies. Drivers can front local engines, hosted APIs, and subscription CLIs.
+1. **It installs, updates and restarts the engine for you.** llama.cpp today, your own vLLM if you have one; it comes back after a crash and gets out of memory when idle.
+2. **It tells you what fits before you download, and starts your settings there.** Quant and context picked for *this* card, with the reason shown — not a table of `Q3_K_S` and `Q4_K_M` you are left to interpret. *(Built, and not yet trustworthy — see Current status.)*
+3. **It finds and downloads models in the app, into your own folders, as plain files.** Search a catalogue, read what a model is, pick a quant, download with resume and progress — landing in your existing GGUF directories, plainly named. No content-addressed cache, no hash mismatches. Delete us and you still have your models, correctly named, where you put them.
+4. **One endpoint for every tool you use.** OpenAI-compatible chat, tool calling, embeddings and streaming, with a key you can hand out and take back. *(Anthropic `/v1/messages` — what Claude Code speaks — is not served yet, and it is the next feature in front of the release.)*
+5. **Add the backends you already run and the subscriptions you already pay for.** The Ollama or LM Studio you already have, llama.cpp beside it, the subscription you already pay for — one endpoint over all of them, with a priority-list cascade when one dies. Several models resident at once; replicas balanced by outstanding requests and capacity. Nothing else in the field balances replicas or treats a cloud subscription as a peer backend.
+6. **Reach it from your other devices, safely.** One switch, a real login with sessions, and client keys you can revoke — over a tailnet or your own LAN, not just localhost.
+7. **It grows into a homelab.** More machines from one console, a model library on the NAS, replicas across GPUs, one trust root that holds the install together.
 
-Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md).
+This order and this wording were adopted on 2026-09-18 ([`docs/design/release-roadmap.md`](docs/design/release-roadmap.md) decision #2). The design documents number the same ideas differently and deliberately — they keep the numbers older documents cite, so `#4` there is still the schema-driven config UI, which has not gone anywhere: it is now how line 2 prefills a profile rather than something worth leading with. [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md) §2 holds both lists side by side.
+
+Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Order of work: [`docs/design/release-roadmap.md`](docs/design/release-roadmap.md).
 
 ## Current status
 
-As of **2026-09-11**, this is a pre-1.0 control plane under active development. Milestones M0 through M11 are built, and each has a re-runnable acceptance script rather than a claim. Installers, a developer bootstrap and a control-plane container image exist; nothing is published to a registry yet.
+As of **2026-09-17**, this is a pre-1.0 control plane under active development, and **not yet releasable — deliberately**. Milestones M0 through M11 are built, each with a re-runnable acceptance script rather than a claim, and so are ten further slices since (the resource-tree UI, Library folders, the hobbyist onboarding plan, Issues, a node-local model copy). Installers, a developer bootstrap and a control-plane container image exist; the container image is published to GHCR as `:edge`, and nothing else is published — no GitHub Release, nothing on PyPI or npm.
 
-- **Live-verified on real hardware:** llama.cpp *and* vLLM supervision, model scanning and profiles, catalogue search and resumable downloads, quant guidance, replica balancing, priority-tier failover, idle unload, wake on demand, memory admission, and retained per-request metrics.
-- **Multi-host is proven on two real machines** (Windows + WSL2 Ubuntu, across NAT and a host firewall): non-loopback binds, derived advertise addresses, a cross-host completion, an idle unload decided on one host and executed on the other, and a full signing-key rotation. Enrollment, un-enrollment and address re-advertisement all run from a terminal on the machine being added.
-- **The browser path is verified too**, as of M9: Playwright drives first run, login, restart-on-login and the topology-resolved proxy against a live install.
-- **Still unverified:** a rotation with a genuinely offline node, clock skew between hosts, a partitioned-but-alive old control root, two-GPU placement, and AMD/Intel/Apple memory detection. **MLX has no adapter** — it is the last engine named above that is not implemented.
-- **The gateway cannot carry a tool call.** `ChatCompletionRequest` has no `tools`, no `tool_choice`, no `response_format` and there is no `/v1/embeddings`, so agent harnesses cannot work against it yet. That is the next piece of work.
-- **Known gaps:** a short post-unload routing window found by M7 and never diagnosed; ~116 ms of HTTP-driver-path overhead, measured but not explained; rolling engine upgrades; and, in the UI, no structured model-slot editor and only one control-root screen (`/nodes`).
+**An adversarial code review on 2026-09-17 found 38 anchored defects plus an architectural note, 11 of them rated High for a public first release.** Eight are being fixed before any public link and five more before the first hostile review; the order is [`docs/design/release-roadmap.md`](docs/design/release-roadmap.md). Until they land, **do not expose this to a network you do not control** — the login rate limiter can be driven from a request header when the browser reaches it through our own proxy, which is a pre-authentication defect. (A second one needs an operator token first: a crafted single-file download spec can write outside your model folders.)
 
-Records: [M9](docs/acceptance/m9-onboarding-run.md) ·
+- **Live-verified on real hardware:** llama.cpp *and* vLLM supervision, model scanning and profiles, catalogue search and resumable downloads, replica balancing, priority-tier failover, idle unload, wake on demand, memory admission, retained per-request metrics, tool calling end to end, embeddings, real token streaming, and a node keeping its own copy of the models it runs (21 s to serving against 266 s over SMB).
+- **Multi-host is proven on two real machines** (Windows + WSL2 Ubuntu, across NAT and a host firewall): non-loopback binds, derived advertise addresses, a cross-host completion, an idle unload decided on one host and executed on the other, and a full signing-key rotation. A NAS-hosted library serving a 27B to a GPU node is the live install. **Not proven: two replicas of one model on two machines** — the gateway keys runtimes by bare name, so that case cross-wires today (roadmap R1.6).
+- **Hardware-aware quant guidance is built and is not yet trustworthy.** Two code paths compute a fit and only one carries the per-layer KV arithmetic, so the number the one-click Run path writes into a profile can be far smaller than the one the recommendation card showed (roadmap R1.3). A Windows machine with an AMD or Intel GPU is currently detected as having no GPU at all and is given a CPU-only engine build (roadmap R2.3).
+- **The browser path is verified**, as of M9: Playwright drives first run, login, restart-on-login and the topology-resolved proxy against a live install; `scripts/hobbyist-acceptance.sh` counts real clicks from a clean guest to a first token on Windows and WSL2.
+- **Still unverified:** a signing-key rotation with a genuinely offline node, a partitioned-but-alive old control root, two-GPU placement, macOS on real hardware, and concurrent users against one runtime. **MLX is implemented on a branch and blocked** on upstream having no `--served-model-name`. Clock skew is no longer unverified — it took a worker out of the live install on 2026-09-15, and every component now tolerates five minutes of it.
+- **No Anthropic `/v1/messages` yet**, so Claude Code cannot be pointed at this gateway; the OpenAI-compatible surface (chat, tools, embeddings, streaming) works with the clients that speak it. A shim is scoped in [`docs/design/agent-clients-and-tool-calling.md`](docs/design/agent-clients-and-tool-calling.md) §5.2 and, as of 2026-09-18, is **scheduled in front of the release** (roadmap R4, decision #1).
+- **Known gaps:** rolling engine upgrades; a mixed-version engine fleet is possible and nothing detects it; no structured model-slot editor; one control-root screen (`/nodes`). The ~116 ms of control-plane overhead measured at M8 **is explained** — a fresh HTTPS client per request, parsing a CA bundle on the event loop — and is the first fix on the roadmap.
+
+Records: [the node-local copy](docs/acceptance/model-copy-run.md) ·
+[Library folders](docs/acceptance/library-folders-run.md) ·
+[the hobbyist click budget](docs/acceptance/hobbyist-run.md) ·
+[Issues](docs/acceptance/issues-run.md) ·
 [M7 on two hosts](docs/acceptance/m7-two-host-run.md) ·
 [M4 vLLM](docs/acceptance/m4-vllm-run.md) ·
-[M8 metrics](docs/acceptance/m8-metrics-run.md) ·
-[M6](docs/acceptance/m6-six-process-run.md).
+[M8 metrics](docs/acceptance/m8-metrics-run.md).
 Deploying over a tailnet: [`docs/deployment/tailnet.md`](docs/deployment/tailnet.md) ·
 in a container: [`docs/deployment/container.md`](docs/deployment/container.md).
 
@@ -141,6 +148,15 @@ user unit, launchd agent, or a Windows logon task — a real Windows service if
 you run it elevated), start it, and print the URL. `--uninstall` / `-Uninstall`
 undoes it, keeping your config and logs. A worker node for an existing install
 joins in the same command: `--join <control-root-url> --token <jwt>`.
+
+**Three caveats known as of 2026-09-17, all being fixed (see the roadmap).**
+On Windows, **pick one install and stay with it**: running the installer
+elevated after a per-user install creates a second, separate install and
+silently disables the first one's autostart. The default Windows autostart is
+a logon task, so the agent starts when you sign in and **stops when you sign
+out** — a reboot to the lock screen leaves nothing running, whatever the setup
+wizard's wording implies. And `--uninstall` leaves downloaded engine builds
+under `~/.eugene-plexus/engines` and up to two entries in your OS credential store (`eugene-plexus-agent` and, on a control host, `eugene-plexus-control`).
 
 Nothing is published to PyPI or npm yet; the installers fetch GitHub archives at
 pinned commits. See

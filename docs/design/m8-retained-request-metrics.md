@@ -662,6 +662,18 @@ away" — **an architectural justification nobody had measured.** The
 subtraction is free, both numbers already existed, and it makes that
 claim checkable on any install.
 
+**▶ AND IT WAS ANSWERED 2026-09-17, THOUGH NOT BY THIS INSTRUMENT.** The
+adversarial review measured **`httpx.AsyncClient()` constructed per request**
+in the driver — `ssl.create_default_context(cafile=certifi.where())` parsing
+the PEM bundle at ~105 ms of synchronous CPU on the event loop, ~9 ms with a
+shared client. So the hop really is sub-millisecond and the cost was ours.
+**Two corrections to this section's own method:** the driver's non-streaming
+`latencyMs` is `response.elapsed`, which starts *after* the client is built, so
+the subtraction attributed the driver's largest cost to "the hop"; and on the
+Python both installers ship, Windows `time.monotonic()` is `GetTickCount64` — a
+**15.6 ms grid** — so `elapsed_ms - backend_ms` could not have resolved the fix
+even once it lands. `perf_counter` and one client per instance are roadmap R1.1.
+
 Rows two and four of "still absent" are stated rather than worked
 around. Half a decomposition that says which half is missing is honest;
 one that silently attributes a backend's cold start to decode is not.
