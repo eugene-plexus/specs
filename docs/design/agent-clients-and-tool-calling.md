@@ -574,7 +574,7 @@ makes the bisection actionable for someone filing a bug.
   serves no harness. ~~Canonical order is
   [`install-paths-and-distribution.md`](install-paths-and-distribution.md)
   §9.~~ **§9 IS NO LONGER THE CANONICAL ORDER (2026-09-17):** its steps 1-8 are
-  done and its step 9 is a gate. The order is
+  done and its step 9 was deleted on 2026-09-18. The order is
   [`release-roadmap.md`](release-roadmap.md).
 
   **Corrected 2026-09-11, after the first draft of this document said

@@ -1,7 +1,8 @@
 # The weekend hobbyist: UX research and a plan (design)
 
 **Status:** researched and designed 2026-09-15, on Troy's brief, ahead of
-the release (`install-paths-and-distribution.md` §9 step 9, which stays
+the release (`install-paths-and-distribution.md` §9, whose step 9 was deleted on
+2026-09-18 — it stays
 last). **All fourteen decisions were taken by Troy the same day**, in
 two rounds; #4 on one condition, which §6.5 turns into a process, #6
 amended to ask first, #12 on the condition that the jargon stays

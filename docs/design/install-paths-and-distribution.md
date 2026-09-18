@@ -8,7 +8,8 @@ week*, with eleven High findings of which **six are this document's own
 subject** (the elevated re-install, the Windows GPU probe, the installers'
 swallowed errors, the autostart promise, the deployment docs, uninstall
 residue). **The order of work is [`release-roadmap.md`](release-roadmap.md);
-step 9 is its last item.** Written before any implementation so a later session
+step 8 is its last item, and step 9 — *the release* — was deleted on
+2026-09-18 (roadmap decision #3).** Written before any implementation so a later session
 could pick it up cold. Every claim marked *verified* was checked against
 a repo, a registry or upstream on the day of writing; everything else is
 reasoning and is marked as such. **Every decision in the table below is taken,
@@ -574,35 +575,36 @@ into, rather than the unclaimed one. See
    Original note: tools, attachments, and the `x_eugene_plexus`
    envelope surfaced, reached over **the same public surface a harness
    uses** (§7.1's trap).
-9. **Then** the release — **and since 2026-09-17 it is two halves.**
+**▶ THAT IS THE WHOLE BUILD ORDER. THERE IS NO STEP 9, AND THERE IS NO
+RELEASE DUE (decision #3, taken 2026-09-18 by Troy).**
 
-   **9a — the pre-release hardening, which is not in this document.** The
-   adversarial review's eight fixes before any public link and five before the
-   first hostile review, ordered as slices in
-   [`release-roadmap.md`](release-roadmap.md) §2-§3, plus the Anthropic
-   `/v1/messages` gap alongside if decision #1 there says in front. Six of the
-   eleven High findings are this document's subject and land in R2.2 and R2.3.
-   **This is a gate inside step 9 rather than a new numbered step** (roadmap
-   decision #3, open), because *"step 9 is the release"* is cited in CLAUDE.md,
-   the memory files and §12 of this document.
+This list used to end with *"9. **Then** the release"*, and from 2026-09-17
+with a 9a/9b split inside it. Both are deleted. The open question was whether
+the pre-release work should be a gate inside step 9 or a numbered step 10; the
+answer taken was **neither** — *“we should remove and delete any notion that a
+release is due”*. **The eight steps above are done and this document's build
+order is complete.**
 
-   **9b — the release itself. Two checks gate it, and both are failing checks
-   rather than notes somebody is supposed to read.** The `dist` branch in `ui` must have
-   been rebuilt from the `main` commit being pinned, or the installers
-   ship an API with a stale browser half. And **the latest starter
-   review must be under thirty days old and carry no unresolved
-   `REPLACE` or `REVIEW`** — `eugene-plexus-library starter-review`
-   exits non-zero when any class is either, and
-   `GET /v1/catalogue/starter` puts the `reviewed` date on the wire so
-   an install past the window says so on the screen itself. A default
-   recommendation in a field that moves monthly fails by going quietly
-   out of date, not by erroring, which is why it is a gate and not a
-   habit. See `hobbyist-ux.md` §6.5.
+**Step 9 held no work of its own.** 9a was a pointer to
+[`release-roadmap.md`](release-roadmap.md), which owns that work and is the
+order from here. 9b's two failing checks — the `dist` branch rebuilt from the
+`main` commit being pinned, and a starter review under thirty days old with no
+unresolved `REPLACE` or `REVIEW` — are **restated in the roadmap's release-gate
+paragraph (§9)**, which is where they now live; `hobbyist-ux.md` §6.5 remains
+their reasoning. Keeping a second copy here was how *"step 9 is the release"*
+came to be cited in three documents as though it were a schedule.
 
-§7 of this document (Vulkan, decided) is independent of all of it and
-slots in anywhere; it touches only the agent's llama.cpp adapter and a
-UI badge. The diagnosed-but-unfixed ~2 s post-unload routing window is
-likewise independent.
+**And the roadmap does not schedule a release either** (its decision #7): it
+says what the work is and what order it goes in, and the release is decided
+after that work is done, on a fresh read of where the project and the
+competition are.
+
+**The two items this paragraph used to call independent are both gone.** §7's
+Vulkan decision was **never built and is moot** since 2026-09-16, because
+upstream publishes `ubuntu-cuda-*` and the refusal's premise expired; and the
+~2 s post-unload routing window was **diagnosed in 2026-09-11 and fixed on
+2026-09-18** as roadmap R2.1, where its widest trigger turned out to be a
+failed agent read rather than the window itself.
 
 ## 10. What this does not solve
 
@@ -730,7 +732,7 @@ is not a reason.
 ## 12. Implementation record
 
 Record what was built, what departed from this design, and why, as each
-step of §9 lands. **Steps 1-8 are built; step 9 is the release and
+step of §9 lands. **Steps 1-8 are built, which is all of them, and
 since 2026-09-17 it is a GATE rather than the next action — its 9a hardening is
 [`release-roadmap.md`](release-roadmap.md) §2-§3, which is the order of work.** Steps 6 and 7 are recorded in
 [`agent-clients-and-tool-calling.md`](agent-clients-and-tool-calling.md)
