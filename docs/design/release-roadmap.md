@@ -39,7 +39,10 @@ Writing that check is the work. Re-confirming that the work is worth doing is
 not.
 
 **Three things are marked *unverified* rather than *verified*, and those are
-first verifications, not repeats** — they were never established, so a session
+first verifications, not repeats** — **and #36's is DONE: measured 2026-09-18
+against llama-server b11001 and b10991, `-c` is the total budget that slots
+divide, so the arithmetic was right and both config descriptions were wrong
+(R1.3, `../acceptance/one-fit-path-run.md` §0). Two remain.** Originally: — they were never established, so a session
 that skips them is guessing rather than saving time: R4's `x-api-key` premise
 (upstream Claude Code behaviour, reasoned about and never captured), R2.3's
 `win-sycl-x64` variant (nothing in-tree supports it), and #36's parallel-slot
@@ -360,6 +363,49 @@ and an absolute `filename` both come back `PathTraversal`; `GET /` carries the
 frame headers.
 
 ### 2.3 R1.3 — One fit path
+
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18.** `scripts/r13-acceptance.sh`, **17
+PASS, zero failures, third execution**; record
+[`../acceptance/one-fit-path-run.md`](../acceptance/one-fit-path-run.md).
+Findings §6.1 #4 and §6.3 #36 are closed. 23 unit checks across two repos, **13
+scripted sabotages, 13 caught**
+([`../../scripts/r13-sabotage.py`](../../scripts/r13-sabotage.py)). No contract
+change and no UI change — the config descriptions render from the schema, so
+the corrected copy reaches the browser with no `dist` rebuild.
+
+**▶ AND #36'S PREMISE WAS MEASURED BEFORE A WORD WAS CHANGED, WHICH IS WHAT
+THIS ITEM ASKED FOR.** `llama-server` **b11001** on a Qwen3-0.6B and
+independently **b10991** on a Qwen3-1.7B: `-c 32768 --parallel 4` logs
+`llama_context: n_ctx = 32768` — the same allocated cache as `--parallel 1` —
+with `n_ctx_slot = 8192`, `kv_unified = 'false'`. **So `-c` is the TOTAL budget
+that slots divide: the arithmetic was right and both descriptions were wrong**,
+in the expensive direction (they told an operator that more slots cost memory,
+making "lower the context" the apparently-sensible response, which shrinks each
+request's window for nothing saved). It also explains the readback: `/props`
+exposes only the per-slot `n_ctx`, so a 32768/4 runtime reports
+`contextLength: 8192` against a contract whose word for that is *clamped*. The
+field keeps its meaning; the admission reason states the division, and only
+when it happens.
+
+**The fit half came out as delegation.** `_shape_for` rebuilds a `GgufMetadata`
+from the stored KV dict and hands it to `preflight.shape_from_gguf` — **a
+second shape builder is the defect, and there is one now.**
+`attention.layer_indices` comes free with it, and `_INLINE_ARRAY_LIMIT` went
+from **64** to 512 because the shipped starter block counts are 32, 42, 48 and
+**65**: it missed by one on a model in the product's own starter file. A shape
+whose per-layer terms were dropped now stops claiming `basis: metadata`, which
+is what a library scanned before this fix still looks like.
+
+**Three sabotages escaped the first pass and every one named a missing check
+rather than a needless guard** — the honest-basis test built its `ModelShape`
+by hand and so never called the detection; the entry's own `contextLength`
+could stop being reconciled invisibly; and the fixture could write the bool
+array as int32, meaning the suite was asserting about a type the reader never
+meets. **And the harness inverted the measurement twice**: `-v` is required or
+the engine never prints `llama_context: n_ctx`, and `sort | tail -1` over paths
+picks the wrong build.
+
+**The original scope follows.**
 
 *Findings: §6.1 #4, §6.3 #36. Size: S + S. Touches: `library`, `agent`
 (copy only), `ui` (copy only).*
@@ -1058,7 +1104,7 @@ failing check. Nothing here needs confirming again.
 | 6.1 #1 | Login limiter driven by a supplied forwarded header `[S]`     | **R1.2 — done 2026-09-18** |
 | 6.1 #2 | Per-call `httpx.AsyncClient` = 104 ms on the loop `[D]`       | R1.1  |
 | 6.1 #3 | Disconnect mid-stream leaks the in-flight counters `[D]`      | R1.4  |
-| 6.1 #4 | Two fit paths; the golden path uses the scalar one `[F]`      | R1.3  |
+| 6.1 #4 | Two fit paths; the golden path uses the scalar one `[F]`      | **R1.3 — done 2026-09-18** |
 | 6.1 #5 | `/v1/engines` blocks the loop on `nvidia-smi` + GitHub `[F]`  | R1.5  |
 | 6.1 #6 | `agent.yaml` non-atomic write + unguarded load `[F]`          | R1.5  |
 | 6.1 #7 | A taken port; no `component-down` issue kind `[F]`            | R1.5  |
@@ -1090,7 +1136,7 @@ failing check. Nothing here needs confirming again.
 | 6.3 #33| Operator-gated SSRF; probe spends a service token `[S]`        | R2.4  |
 | 6.3 #34| A non-ASCII prefix defeats self-restart detection `[F]`        | R2.2  |
 | 6.3 #35| Banned vocabulary through the wizard's error path `[F]`        | R1.5  |
-| 6.3 #36| Parallel slots divide the context; the copy says otherwise `[me]` | R1.3 |
+| 6.3 #36| Parallel slots divide the context; the copy says otherwise `[me]` | **R1.3 — done 2026-09-18, premise MEASURED** |
 | 6.3 #37| Five respawns of an engine that dies during load `[D]`         | R3    |
 | 6.3 #38| A stream with no `done` frame is recorded served `[D]`         | R1.4  |
 | §6.4   | One HS256 key mints sessions and signs service tokens `[S]`    | §8, decision #5 |
