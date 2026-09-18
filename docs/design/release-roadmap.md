@@ -80,7 +80,7 @@ Each has a recommendation and the counter-argument that would overturn it.
 | **1** | Does Anthropic `/v1/messages` go in front of the release, or after it?                    | §5   | **In front, as R4, after R1 and alongside R2.** It is the one matrix row that decides the first review            | **TAKEN 2026-09-18 (Troy): IN FRONT.** R4 is scheduled, not optional. Its first step is capturing a real Claude Code request, because the `x-api-key` half is upstream behaviour this review did not verify |
 | **2** | Adopt the review's §4.3 re-ordering and re-wording of the seven callings?                 | §6   | **Adopt the wording everywhere; keep the numbers attached to the old ideas** — a dozen documents cite `#N`        | **TAKEN 2026-09-18 (Troy): ADOPT.** Applied as recommended — seven lines said in §4.3's order, eight numbered ideas, nothing renumbered. #4 keeps its number as a *mechanism*; the new *one endpoint for every tool you use* is **#8** and is the one line that is not true until R4 |
 | **3** | Are the eight pre-link fixes a new numbered step in install-paths §9, or a gate inside step 9? | §9   | **A gate inside step 9 (9a/9b)**, because "step 9 is the release" is cited in CLAUDE.md, the memory files and §12. **Written that way provisionally on 2026-09-17** — the call is whether to keep it or promote it to a numbered step | **OPEN (provisionally taken in the doc)** |
-| **4** | Windows autostart: fix the copy, or change the mechanism?                                 | §3.2 | **Fix the copy now (R2.2); treat a boot-time task or the service as its own slice** — S4U costs the mapped drive  | **OPEN** |
+| **4** | Windows autostart: fix the copy, or change the mechanism?                                 | §3.2, §3.6 | **Fix the copy now (R2.2); treat a boot-time task or the service as its own slice** — S4U costs the mapped drive  | **TAKEN 2026-09-18 (Troy): THE REAL SERVICE, as its own slice (R2.6). The copy fix is REJECTED, and the reason generalises — *"we're not releasing until the copy as it stands is TRUE, so fixing the copy only satisfies a checklist, not a real user pain point."* The recommendation had the dependency right and the goal wrong: the promise is the requirement, not the thing to negotiate down** |
 | **5** | The shared HS256 key (review §6.4): split it, withhold it from drivers, or accept it?     | §8   | **Withhold it from processes that unseal nothing, and constrain `binary`/`extraArgs`; do not split the key yet**  | **OPEN** |
 | **6** | A benchmark button on a profile — "measure, don't predict" (review §1.9/§5 #4)?           | §8   | **Yes, but after the release gate**, and not under the name "Measure it" (that is hobbyist S10)                   | **OPEN** |
 | **7** | Release timing, against a clock that is now visible on both sides of the thesis           | §9   | **Keep decision #14 as taken** ("2-3 friends for sure", no hurry) and let R1-R2 be the reason, not the delay      | **OPEN** |
@@ -673,9 +673,9 @@ not a theoretical one**.
 
 ### 3.2 R2.2 — The installer's own advice, and the promise the wizard makes
 
-*Findings: §6.1 #10, §6.2 #24, §6.2 #26, §6.2 #30, §6.3 #31, §6.3 #34. Size:
-M + S + M + S + S + S. Touches: `specs/scripts`, `specs/docs/deployment`,
-`agent`, `ui`.*
+*Findings: §6.1 #10, §6.2 #24, §6.2 #30, §6.3 #31, §6.3 #34. Size:
+M + S + S + S + S. Touches: `specs/scripts`, `specs/docs/deployment`,
+`agent`, `ui`. **§6.2 #26 moved to R2.6 on 2026-09-18** — see below.*
 
 **Re-running `install.ps1` elevated — which `install.ps1:427` tells you to do —
 builds a second install and strands the first (§6.1 #10).** Detection is not
@@ -688,20 +688,25 @@ keyring entry. Refuse or migrate, with a switch; and set the engine root and
 the library's default model roots under the prefix so a LocalSystem service
 does not propose `C:\Windows\System32\config\systemprofile\Eugene Models`.
 
-**The wizard promises what only the elevated service delivers (§6.2 #26).** The
-default Windows install is `-AtLogOn` with no `-Principal`: it dies at
-sign-out and does not start at a lock-screen reboot, while the copy says the
-install *"comes back working without you"*. **Decision #4 is here.** The three
-options and what each costs: an S4U boot task loses the interactive session —
-which is the live install's mapped drive letter *and* its UNC Library mount —
-and whether it keeps a console, and therefore the graceful stop, is
-**unmeasured**; the real service costs Administrator, the accepted hard kill,
-and #10's SYSTEM-profile home, so it cannot land before #10; correcting the
-copy and **rendering `NodeReach.restart.detail`, which the agent already puts
-on the wire and no screen prints**, costs nothing but words and is the only
-option that also answers the phone getting "connection refused" at 7 am. The
-fixture for that unrendered detail is already sitting unasserted in a page
-test — the wiring lesson again.
+**The wizard promises what only the elevated service delivers (§6.2 #26) —
+▶ AND DECISION #4 IS TAKEN: THE PROMISE STANDS AND THE MECHANISM CHANGES
+(Troy, 2026-09-18).** The default Windows install is `-AtLogOn` with no
+`-Principal`: it dies at sign-out and does not start at a lock-screen reboot,
+while the copy says the install *"comes back working without you"*. This
+section used to recommend correcting the copy here and deferring the mechanism,
+and **that recommendation had the dependency right and the goal wrong**. Troy:
+*"fixing the copy is a waste of time because we're not releasing until the copy
+as it stands is TRUE. So fixing the copy only satisfies a checklist, not a real
+user pain point."* **The general rule, worth more than this slice:** when the
+release gate is *the thing we say is true*, editing what we say to match a
+weaker mechanism moves the gate instead of reaching it.
+
+**So #26 leaves R2.2 entirely and becomes §3.6 R2.6**, which builds the real
+Windows service. It still cannot land before #10 below — the service runs as
+LocalSystem, which is exactly the SYSTEM-profile home #10 is about — so the
+order within R2 is unchanged. What R2.2 keeps of this is nothing: no copy edit,
+no interim wording. **`NodeReach.restart.detail` moves with it**, because what
+that field should say is decided by the mechanism.
 
 **Both installers discard the stderr of every network step (§6.2 #24)**, so a
 TLS-intercepting proxy reads as "could not create a virtualenv"; and
@@ -839,6 +844,64 @@ with three identical generations queued for a client that left. Four sites, not
 two: the review named the gateway's completion and the driver's stream route;
 the verification adds the gateway's embeddings call and the driver's own
 non-streaming path. `is_disconnected` occurs zero times in either repo.
+
+### 3.6 R2.6 — Windows comes back by itself
+
+*Finding: §6.2 #26. Size: L. Touches: `specs/scripts`, `agent`, `ui`,
+`specs/docs/deployment`. **Depends on R2.2's #10** — the service runs as
+LocalSystem and #10 is where the SYSTEM-profile home and the
+strands-the-first-install trap are fixed. Nothing here starts before that.*
+
+**Decision #4, taken 2026-09-18 (Troy): the real Windows service, and it is the
+default.** The promise is the requirement. A self-hosted server that only
+survives a reboot if somebody logs in is not one, and the wizard already says so
+in as many words.
+
+**This is not new ground.** `install-paths-and-distribution.md` decision #4
+(2026-09-11) already committed to a service as a *supported surface* and
+accepted its cost: no console, so `GenerateConsoleCtrlEvent` fails with
+WinError 6 and engines are hard-killed rather than asked to stop. What changes
+here is that it becomes what an ordinary Windows install **gets**, rather than
+what an elevated one gets.
+
+**What the slice has to answer, in order, and the first is a measurement.**
+
+1. **Can a LocalSystem service open this install's models?** The live worker
+   reads `\\192.168.16.252\downloads\models` through the inherited Library
+   folder mount. A service authenticates to SMB as the **machine account**, not
+   as Troy, so an authenticated share is a different question from a drive
+   letter — and the drive letter is gone either way, which `container.md`'s
+   Windows row already states. **Measure it against the real share before
+   writing anything**, because if the answer is no, the slice is about
+   credentials rather than about a service. Mirrors R4's rule: the premise gets
+   captured, not reasoned about.
+2. **What happens to installs that already exist.** Every per-user install on
+   this box and on anyone else's is a logon task under `%LOCALAPPDATA%`, with a
+   keyring entry scoped to that install's salt and, on the live one, an
+   enrolled node identity. R2.2's #10 gives the discriminators; this slice
+   gives the **migration**, and "the elevated run silently unregisters the
+   per-user task" is the behaviour #10 is removing, not a migration.
+3. **The graceful stop, which is really about engines.** A service has no
+   console. Measured at step 2 of install-paths: a real `llama-server` holding
+   a 1.8 GB GGUF exits **0.21 s** after `CTRL_BREAK_EVENT`, and a hard kill
+   skips its ASGI lifespan shutdown. The agent supervises the engines, so the
+   question is whether the *agent* can keep a console the engines inherit while
+   itself running as a service — unmeasured, and worth one experiment before
+   accepting the loss a second time.
+4. **`NodeReach.restart.detail` gets rendered.** The agent already puts the
+   supervising mechanism on the wire and **no screen prints it**; the fixture
+   for it is sitting unasserted in a page test, which is the wiring lesson
+   again. With a service the Reach card can offer a restart that actually
+   works, and say what is starting this agent when it cannot.
+5. **`reach.py`'s detection follows the mechanism.** §6.3 #34's COM fix (read
+   `Schedule.Service` rather than decoding `schtasks` output as UTF-8) stays in
+   R2.2; the service adds a second thing to detect, and `sys.prefix` stays the
+   discriminator that stops a throwaway agent claiming the live install's
+   supervisor — the S5 run's most dangerous note.
+
+**Done when:** a Windows box with nobody logged in reboots and serves a
+completion; an existing per-user install is migrated rather than stranded; and
+the wizard's sentence is true without having been edited.
 
 ---
 
@@ -1121,8 +1184,8 @@ Each with the reason, so silence is not read as an oversight.
 ```
 R1.1 → R1.2 → R1.3 → R1.4 → R1.5 → R1.6      before any public link
   ^^^^^^^^^^^^^^^^^^^^^^^^^ DONE 2026-09-18
-R2.1 → R2.2 → R2.3 → R2.4 → R2.5             before the first hostile review
-  ^^^^ DONE 2026-09-18
+R2.1 → R2.2 → R2.3 → R2.4 → R2.5 → R2.6     before the first hostile review
+  ^^^^ DONE 2026-09-18              ^^^^ R2.6 needs R2.2's #10 first
 R4  (alongside R2)                            decision #1, TAKEN: in front
 R3                                            the correctness pass
 R5  (no code; can land any time)
@@ -1132,8 +1195,10 @@ R6 → the release                              decision #13's gate, unchanged
 **R1.1 first** because every other measurement is taken through its
 instrument. **R1.4 before R2.1** because a leaked counter currently masks the
 race — and it no longer does, so R2.1's idle-unload race is reachable now
-rather than hypothetical. **R2.2's #10 before any behaviour change to the Windows autostart.**
-Everything else is independent.
+rather than hypothetical. **R2.2's #10 before R2.6**, which is the behaviour change to the Windows
+autostart: the service runs as LocalSystem, and #10 is where that home
+directory and the strands-the-first-install trap are fixed. Everything else is
+independent.
 
 **The release gate is unchanged and this roadmap does not shorten it:** it is
 `hobbyist-ux.md` **decision #13** (what gates it — S0-S6 and S10) plus
@@ -1146,7 +1211,10 @@ four documents cite one or the other and disagree.)*
 **The estimate is the review's, at this project's observed pace of one slice a
 day with an acceptance run: two to three days for R1, about a week for R1 and
 R2 together** — before the sessions, not instead of them. Nobody has held a
-stopwatch to it.
+stopwatch to it. **R2.6 is outside that estimate and is the one slice in R2
+that is not a day**: it changes what an ordinary Windows install *is*, it has
+to migrate the installs that already exist, and its first step is a
+measurement against a real SMB share rather than code.
 
 ---
 
@@ -1185,7 +1253,7 @@ failing check. Nothing here needs confirming again.
 | 6.2 #23| `latencyMs` semantics + the 15.6 ms Windows grid `[D]`         | R1.1  |
 | 6.2 #24| Installers swallow network errors; port override ignored `[F]` | R2.2  |
 | 6.2 #25| `HTTP_PROXY` applied to loopback traffic `[F]`                 | R1.1  |
-| 6.2 #26| The wizard promises an autostart the default lacks `[F]`       | R2.2  |
+| 6.2 #26| The wizard promises an autostart the default lacks `[F]`       | **R2.6** (decision #4 taken 2026-09-18: the real service, not a copy edit) |
 | 6.2 #27| Symlinks dropped unreported; `followSymlinks` inert `[F]`      | R3    |
 | 6.2 #28| Intel reports zero VRAM; Rosetta hides Apple silicon `[F]`     | R2.3 / R3 |
 | 6.2 #29| An `nvidia-smi` that fails reads as "not on PATH" `[F]`        | R2.3  |
