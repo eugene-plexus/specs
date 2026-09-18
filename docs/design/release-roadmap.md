@@ -81,7 +81,7 @@ Each has a recommendation and the counter-argument that would overturn it.
 | **2** | Adopt the review's §4.3 re-ordering and re-wording of the seven callings?                 | §6   | **Adopt the wording everywhere; keep the numbers attached to the old ideas** — a dozen documents cite `#N`        | **TAKEN 2026-09-18 (Troy): ADOPT.** Applied as recommended — seven lines said in §4.3's order, eight numbered ideas, nothing renumbered. #4 keeps its number as a *mechanism*; the new *one endpoint for every tool you use* is **#8** and is the one line that is not true until R4 |
 | **3** | Are the eight pre-link fixes a new numbered step in install-paths §9, or a gate inside step 9? | §9   | **A gate inside step 9 (9a/9b)**, because "step 9 is the release" is cited in CLAUDE.md, the memory files and §12. **Written that way provisionally on 2026-09-17** — the call is whether to keep it or promote it to a numbered step | **OPEN (provisionally taken in the doc)** |
 | **4** | Windows autostart: fix the copy, or change the mechanism?                                 | §3.2, §3.6 | **Fix the copy now (R2.2); treat a boot-time task or the service as its own slice** — S4U costs the mapped drive  | **TAKEN 2026-09-18 (Troy): THE REAL SERVICE, as its own slice (R2.6). The copy fix is REJECTED, and the reason generalises — *"we're not releasing until the copy as it stands is TRUE, so fixing the copy only satisfies a checklist, not a real user pain point."* The recommendation had the dependency right and the goal wrong: the promise is the requirement, not the thing to negotiate down** |
-| **5** | The shared HS256 key (review §6.4): split it, withhold it from drivers, or accept it?     | §8   | **Withhold it from processes that unseal nothing, and constrain `binary`/`extraArgs`; do not split the key yet**  | **OPEN** |
+| **5** | The shared HS256 key (review §6.4): split it, withhold it from drivers, or accept it?     | §8, §10 | **Withhold it from processes that unseal nothing, and constrain `binary`/`extraArgs`; do not split the key yet**  | **TAKEN 2026-09-18 (Troy): SPLIT IT, AND BEFORE THE RELEASE.** *“I would rather release with things correct than release too early and lose trust.”* Scheduled as §10 **R7**; the recommendation’s two halves become its first step rather than the whole answer |
 | **6** | A benchmark button on a profile — "measure, don't predict" (review §1.9/§5 #4)?           | §8   | **Yes, but after the release gate**, and not under the name "Measure it" (that is hobbyist S10)                   | **OPEN** |
 | **7** | Release timing, against a clock that is now visible on both sides of the thesis           | §9   | **Keep decision #14 as taken** ("2-3 friends for sure", no hurry) and let R1-R2 be the reason, not the delay      | **OPEN** |
 
@@ -1127,17 +1127,13 @@ never came up (§6.1 #7).
 
 Each with the reason, so silence is not read as an oversight.
 
-- **The shared HS256 key (review §6.4).** Decision #5. Established both ways in
-  code: the key mints operator sessions with no state, and an operator token can
-  declare a runtime with an arbitrary `binary` and `extraArgs` on any node. **Do
-  not relitigate the recorded decision** that the install key lives in the clear
-  on each node — it needs no change. What needs writing down is that the
-  decision's blast radius exceeds its own reasoning: it was argued for *nodes*
-  and the code extends it to *every child process*, including a companion driver
-  whose whole job is to talk to a third-party backend. Recommended now:
-  constrain `binary`/`extraArgs` to the engine store plus the configured path
-  with an explicit override, and stop handing the master key to components that
-  unseal nothing. The asymmetric split is a contract question, not an edit.
+- ~~**The shared HS256 key (review §6.4).**~~ **SCHEDULED 2026-09-18 as §10
+  R7** — decision #5 taken the other way. It stays listed here only so the
+  reasoning that moved it is not lost: the recommendation was to withhold the
+  key and constrain `binary`/`extraArgs` *without* splitting, and Troy took the
+  split, before the release, on the grounds that releasing early and losing
+  trust costs more than the slice does. The two recommended halves survive as
+  R7's first step.
 - **A benchmark button on a profile.** Decision #6, and it is better than the
   review framed it. The expensive half needs no building: `llama-bench` is
   already in the engine store in both retained builds, is already a sweep
@@ -1188,6 +1184,7 @@ R2.1 → R2.2 → R2.3 → R2.4 → R2.5 → R2.6     before the first hostile r
   ^^^^ DONE 2026-09-18              ^^^^ R2.6 needs R2.2's #10 first
 R4  (alongside R2)                            decision #1, TAKEN: in front
 R3                                            the correctness pass
+R7  (before R2.6 if the order is free)        decision #5, TAKEN: split the key
 R5  (no code; can land any time)
 R6 → the release                              decision #13's gate, unchanged
 ```
@@ -1215,6 +1212,87 @@ stopwatch to it. **R2.6 is outside that estimate and is the one slice in R2
 that is not a day**: it changes what an ordinary Windows install *is*, it has
 to migrate the installs that already exist, and its first step is a
 measurement against a real SMB share rather than code.
+
+---
+
+## 10. R7 — the trust boundary
+
+*Finding: review §6.4, the architectural note. Size: L, and it is a contract
+change. Touches: all five components' `security.py`, `agent.yaml`,
+`control.yaml`, `common.yaml`, enrollment and rotation.*
+
+**Decision #5, taken 2026-09-18 (Troy): split the key, and before the release.**
+*“I would rather release with things correct than release too early and lose
+trust.”* The recommendation was the smaller answer — withhold the key from
+processes that unseal nothing and constrain what a runtime may execute — and it
+is now this slice's **first step** rather than its whole content.
+
+**Do not relitigate the recorded decision that the install key lives in the
+clear on each node** (`m7-second-host-readiness`). That is about *nodes* and it
+needs no change. What this slice fixes is that the code extended it to **every
+child process**: the agent spawns with `os.environ.copy()`, so the gateway, the
+library, the control root and **every companion driver** hold the key that mints
+operator sessions — and an operator token can declare a runtime with an
+arbitrary `binary` and `extraArgs` on any node. The driver is the process whose
+whole job is talking to a third-party backend, and it is the one holding an
+admin credential it never uses.
+
+**▶ THE CRUX, AND IT IS WHY THIS IS A DESIGN RATHER THAN AN EDIT: HS256 IS
+SYMMETRIC, SO *CAN VERIFY* AND *CAN MINT* ARE THE SAME PERMISSION.** Every
+component must verify the tokens it is handed; today that is spelled as every
+component holding the secret that signs them. Withholding the key from a driver
+is therefore not a matter of passing one less environment variable — the driver
+verifies operator tokens for its own config trio. Two routes out, and the first
+is recommended:
+
+1. **Asymmetric signing (EdDSA / Ed25519).** The minters hold a private key and
+   everyone else verifies with a public one, so *verify* stops implying *mint*.
+   **The machinery is already in this install**: every node has an Ed25519
+   keypair (M7's signed re-key, M9's signed address announcements), `cryptography`
+   is already a dependency, and PyJWT speaks `EdDSA`. The split then falls out as
+   **minters = agent + control** (an agent mints operator sessions at login,
+   service tokens for its children and `aud: client` keys; the control root
+   mints its own) and **verifiers = gateway, library, inference-driver**, which
+   mint nothing at all. That is exactly “stop handing the master key to
+   components that unseal nothing”, enforced by arithmetic rather than by
+   convention.
+2. **Per-audience symmetric keys.** Smaller crypto change, larger product
+   change: a driver that cannot verify an operator token cannot serve its own
+   config trio, so operator config would have to reach it through the agent's
+   proxy. It also leaves every agent able to mint everything, which is most of
+   the blast radius.
+
+**The migration is the machinery this project already built.** An install
+changing signing keys is a re-key: signed by the control identity, fenced by
+epoch, with the node adopting the new material and restarting its children —
+M7's path, exercised live at the two-host run. What is new is that the thing
+distributed is a **public** key rather than a secret, which is strictly easier
+to move. A build that must accept both algorithms during the change is the part
+to design deliberately rather than discover.
+
+**Steps, in order.**
+
+1. **The two recommended halves first, because they are independent and
+   valuable on their own**: stop passing the master key to processes that unseal
+   nothing, and constrain `binary`/`extraArgs` to the engine store plus the
+   operator's configured paths, with an explicit override
+   (`easy-default-expert-override`). Neither is a contract change. Do them even
+   if step 2 is deferred by circumstance.
+2. **The contract**: what `alg` the install signs with, what enrollment hands a
+   node, what rotation moves, and the token descriptions in all four documents.
+   Radius measured by regenerating all six consumers, as always.
+3. **The five `security.py` copies**, which are five copies on purpose —
+   components share schemas, not code.
+4. **Rotation across the change**, and the acceptance run that proves an
+   existing install survives it.
+
+**Done when:** an inference-driver holding only what it needs cannot mint an
+operator session, and a live install re-keys from the old scheme to the new one
+without an operator re-enrolling a node.
+
+**Where it sits:** no hard dependency on R2 or R3, and it should land **before
+R2.6** if the order is free, so the Windows service's migration is written once
+against the final credential shape rather than twice.
 
 ---
 
@@ -1266,5 +1344,5 @@ failing check. Nothing here needs confirming again.
 | 6.3 #36| Parallel slots divide the context; the copy says otherwise `[me]` | **R1.3 — done 2026-09-18, premise MEASURED** |
 | 6.3 #37| Five respawns of an engine that dies during load `[D]`         | R3    |
 | 6.3 #38| A stream with no `done` frame is recorded served `[D]`         | **R1.4 — done 2026-09-18** |
-| §6.4   | One HS256 key mints sessions and signs service tokens `[S]`    | §8, decision #5 |
+| §6.4   | One HS256 key mints sessions and signs service tokens `[S]`    | **R7** — decision #5 **TAKEN 2026-09-18: split it, before the release** |
 | §5 #1  | No Anthropic `/v1/messages` — **a market threat, not a defect** | R4 — decision #1 **TAKEN 2026-09-18: in front of the release** |
