@@ -589,6 +589,19 @@ paths:
         lists are `modelSlots` entries naming model ids, not URLs, so
         there is nothing here to probe for a slot as a whole — read
         `GET /v1/admin/routing` for how a slot currently resolves.
+
+        **Probed anonymously** (2026-09-18). Operator-gated, as every
+        admin path here is, and it dials whatever the operator typed —
+        that is the feature. What it no longer carries is this install's
+        `service:gateway` token, which every component in the install
+        accepts, so a URL in a form was enough to collect one. An
+        operator typing an address is not an operator deciding to hand
+        out a credential.
+
+        Consequently a backend that wants a key answers **401, and that
+        is reported as `reachable: true`** with the reason in `error`. It
+        is the more diagnostic answer: the address answered, so the
+        operator's next step is the key rather than the network.
       requestBody:
         required: true
         content:
@@ -600,7 +613,10 @@ paths:
           description: |
             Probe outcome. Returned for both reachable and unreachable
             cases — `reachable` distinguishes them, `error` carries the
-            failure detail when set.
+            failure detail when set. **A URL that answered at all is
+            `reachable: true`**, including one that answered 401 or 403
+            to the unauthenticated probe; only a transport failure is
+            `reachable: false`.
           content:
             application/json:
               schema:
