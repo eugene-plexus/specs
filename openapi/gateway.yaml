@@ -1601,7 +1601,23 @@ components:
           description: |
             The slot's tiers in priority order, each the driver names
             in it. One tier for an unconfigured model; more when a
-            `modelSlots` entry adds targets. Empty tiers are omitted.
+            `modelSlots` entry adds targets.
+
+            **An empty tier is kept.** Its index is the `tier` a
+            completion reports, so dropping one renumbers every tier
+            after it and a fallback comes back claiming to be the
+            primary. A configured target with nothing serving it reads
+            as `[]` here, which is also the diagnosis an operator
+            wants: *you asked for `local-8b` and nothing serves it*.
+            (This said "empty tiers are omitted" until 2026-09-19; it
+            had been untrue since the 2026-09-10 fix that made it so.)
+
+            The one tier that can be **absent** is the slot's own name,
+            which is implicit rather than something the operator listed.
+            It is there whenever any node in the install declares a
+            runtime under that name — a primary that is merely down is
+            still a primary — and gone for a purely virtual alias, where
+            keeping it would renumber the operator's own targets.
         ready_backends:
           type: integer
           minimum: 0
@@ -2134,6 +2150,14 @@ components:
             Which tier of the slot answered, 1-based. Greater than 1
             means every backend in an earlier tier was ineligible or
             failed — a cloud target answering for a local model, say.
+
+            **Positional, counted over the slot's tiers rather than over
+            the ones that had anything in them**, which is the only
+            reading that answers the question this field exists for:
+            *did the primary serve this?* A primary whose companion
+            driver is down is a tier with no backends, and it still
+            occupies its number. See `ModelRoutingInfo.tiers` for which
+            tier can be absent and why.
         swapped_in:
           type: boolean
           description: |
