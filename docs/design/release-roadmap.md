@@ -1198,7 +1198,18 @@ the wizard's sentence is true without having been edited.
 One slice per seam, in this order. Everything here is real and none of it is
 reachable on a golden path in the first hour.
 
-1. **§6.2 #21 — the thinking filter swallows the whole answer.** Reproduced by
+1. **§6.2 #21 — the thinking filter swallows the whole answer. ▶ DONE
+   2026-09-19** (`inference-driver` `fd373e8`, both installers re-pinned;
+   `scripts/r31-sabotage.py` 12 of 12). **The two halves disagreed about what
+   a thinking tag is**: batch matched `<think…` so `<thinking>` was ordinary
+   text, while streaming matched a bare `<think` and then waited for a literal
+   `</think>` that `</thinking>` never provides. Both know both spellings now,
+   the close must match the name that opened it, and the name is read to its
+   end before anything is decided. **One decision rather than a detail: an
+   unterminated opening tag is stripped on both paths** — what follows it is
+   reasoning, and it is also the only way the two paths can agree at all.
+   **Three sabotages escaped first and all three named a MISSING CASE**, not a
+   weak fix. 208 cases at seven chunkings. Originally: Reproduced by
    execution: `<thinking>secret plan</thinking>The answer is 4.` streams as `''`
    at every chunking while the batch stripper keeps everything, because the
    streaming open match has no word boundary and the close match is a literal
