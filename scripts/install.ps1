@@ -542,21 +542,56 @@ function Remove-StartMenuShortcut {
     }
 }
 
+# The install that is about to become a service, or $null.
+#
+# **The discriminator is the SERVICE, not the target directory**, and
+# getting that wrong is what made this function silent on the path an
+# operator is most likely to take (found 2026-09-19, before the elevated
+# run that would have met it). The old test was "does $Prefix already
+# hold an agent.yaml" -- meant to stop the warning firing on every
+# routine upgrade of a service install, and true of a far wider set than
+# that. Point a service at an install that is already there --
+# `-Prefix <the per-user one>`, which is the obvious way to convert one
+# in place -- and the target holds an agent.yaml, so the function
+# returned and the operator met the sealed install with no warning at
+# all. That is the confusion this product shipped once already and the
+# whole reason the text exists.
+#
+# A registered service means the consequences have been paid. Nothing
+# else does.
+function Get-ServiceConversionSource {
+    if (-not $WantsService) { return $null }
+    if (Get-AgentService) { return $null }
+    $other = Get-OtherInstall
+    if ($other -and $other.Prefix -and (Test-Path (Join-Path $other.Prefix "agent.yaml"))) {
+        return $other.Prefix
+    }
+    if (Test-Path (Join-Path $Prefix "agent.yaml")) { return $Prefix }
+    return $null
+}
+
 function Show-MigrationConsequences {
-    if (-not $WantsService) { return }
-    $existing = Join-Path $env:LOCALAPPDATA "EugenePlexus\agent.yaml"
-    if (-not (Test-Path $existing)) { return }
-    if ([IO.Path]::GetFullPath((Join-Path $Prefix "agent.yaml")) -eq `
-        [IO.Path]::GetFullPath($existing)) { return }
-    # **An upgrade of a service install is not a migration**, even with
-    # a per-user directory still lying around from before one. The
-    # consequences below have already been paid; printing them again
-    # would demand `-Migrate` on every routine upgrade forever.
-    if (Test-Path (Join-Path $Prefix "agent.yaml")) { return }
+    # `-ReportOnly` is for `-Detect`, which must print and never throw:
+    # `Die` throws, and a `-Detect` that throws takes the operator's
+    # terminal with it -- the exact defect the `$global:LASTEXITCODE`
+    # comment below this function was written about.
+    param([switch]$ReportOnly)
+    $source = Get-ServiceConversionSource
+    if (-not $source) { return }
+    $moving = [IO.Path]::GetFullPath($source).TrimEnd('\') -ne
+              [IO.Path]::GetFullPath($Prefix).TrimEnd('\')
 
     Write-Host ""
-    Warn "this machine already has a per-user install at $(Split-Path -Parent $existing)"
-    Write-Host "  A service runs as the system rather than as you, so two things move:"
+    if ($moving) {
+        Warn "this machine already has a per-user install at $source"
+        Write-Host "  Its config, enrollment and driver settings are copied to $Prefix,"
+        Write-Host "  and $source is left where it is. Two things do NOT come across,"
+        Write-Host "  because a service runs as the system rather than as you:"
+    } else {
+        Warn "this turns the install at $source into a Windows service"
+        Write-Host "  Everything stays where it is. Two things change, because a service"
+        Write-Host "  runs as the system rather than as you:"
+    }
     Write-Host ""
     Write-Host "  1. IT WILL ASK FOR YOUR PASSPHRASE ONCE, on the first sign-in after this."
     Write-Host "     Eugene's key is in YOUR Windows Credential Manager and the service"
@@ -570,12 +605,60 @@ function Show-MigrationConsequences {
     Write-Host "     when the folder has no password of its own. Add the server under"
     Write-Host "     Config -> Agent -> Storage -> Logins for file servers."
     Write-Host ""
-    if (-not $Migrate) {
+    if (-not $Migrate -and -not $ReportOnly) {
         Die @"
-refusing to migrate without being asked to. Re-run with -Migrate once you
-    have read the two points above, or keep the per-user install with:
+refusing to make this install a service without being asked to. Re-run with
+    -Migrate once you have read the two points above, or keep it starting when
+    you log in with:
         ... -NoService
 "@
+    }
+}
+
+# **What a migration actually has to carry, and did not (found
+# 2026-09-19).** `-Migrate` migrated the AUTOSTART and nothing else.
+# `$Prefix` defaults to %ProgramData% as soon as a service is wanted, so
+# the documented upgrade path for every Windows install made before
+# 2026-09-18 pointed a service at an empty directory: first-run wizard, a
+# fresh signing key, an enrolled worker silently unenrolled, and the real
+# install intact but orphaned one directory over. That is review 6.1 #10
+# -- the finding R2.2 exists to fix -- coming back through R2.6's own
+# upgrade path.
+#
+# **A denylist, deliberately.** The four names below are the ones the
+# installer itself created and can recreate; everything else in a prefix
+# is state, and that set is open-ended -- `agent.yaml`, `node.yaml`,
+# `client_keys.json`, `library_folders.json`, one `<name>.yaml` per
+# companion driver, and whatever the next milestone adds. An allowlist
+# would silently drop the file nobody remembered to add to it, which is
+# the failure being fixed here.
+#
+# `logs` is excluded for a different reason: the source directory is left
+# in place, so nothing is lost by not copying it, and a service writing
+# into a copy of a per-user log is just confusing.
+#
+# Never overwrites, so a re-run after a failure resumes rather than
+# reverting; never deletes, so an upgrade cannot be the thing that loses
+# an enrollment -- the same rule the uninstall follows.
+function Copy-InstallState {
+    param([string]$Source)
+    if (-not $Source) { return }
+    if ([IO.Path]::GetFullPath($Source).TrimEnd('\') -eq
+        [IO.Path]::GetFullPath($Prefix).TrimEnd('\')) { return }
+    if (-not (Test-Path (Join-Path $Source "agent.yaml"))) { return }
+
+    $installerOwned = @("venv", "bin", "pythons", "logs")
+    $copied = @()
+    foreach ($item in Get-ChildItem -LiteralPath $Source -Force) {
+        if ($installerOwned -contains $item.Name) { continue }
+        $target = Join-Path $Prefix $item.Name
+        if (Test-Path -LiteralPath $target) { continue }
+        Copy-Item -LiteralPath $item.FullName -Destination $target -Recurse -Force
+        $copied += $item.Name
+    }
+    if ($copied.Count -gt 0) {
+        Say "carried over from $Source : $($copied -join ', ')"
+        Say "  $Source is left where it is -- delete it once this install is proven."
     }
 }
 
@@ -633,6 +716,13 @@ function Remove-Autostart {
 # available without running one.
 if ($Detect) {
     $clean = Show-InstallVerdict
+    # **"What would happen" has to include what it costs.** `-Detect` is
+    # the switch for asking before doing, and until 2026-09-19 the one
+    # consequence an operator cannot undo -- being asked for a passphrase
+    # they may not have written down -- was printed only by the install
+    # itself, seconds before charging it. Same text, same predicate, one
+    # step earlier.
+    Show-MigrationConsequences -ReportOnly
     # **`$global:LASTEXITCODE`, never `exit`** -- found while R2.6 was
     # reading this file. The rule is stated forty lines above and this
     # line broke it: `-Detect` is only reachable as
@@ -877,6 +967,16 @@ Show-MigrationConsequences
 # --- 1. uv ------------------------------------------------------------
 Say "installing into $Prefix$(if ($WantsService) { ' (a Windows service: starts at boot)' } else { ' (per-user: starts when you log in)' })"
 New-Item -ItemType Directory -Force -Path (Join-Path $Prefix "bin"), (Join-Path $Prefix "logs") | Out-Null
+
+# Before uv, before the venv, before anything can read a config: if this
+# run is taking over an install that lives somewhere else, its identity
+# comes with it. A half-built prefix that already holds the right
+# `node.yaml` is recoverable by re-running; one that gets a venv first
+# and an identity never is a second install.
+if ($Migrate) {
+    $migrateFrom = Get-OtherInstall
+    if ($migrateFrom) { Copy-InstallState -Source $migrateFrom.Prefix }
+}
 
 if (Test-Path $UvExe) {
     Say "uv already present ($(& $UvExe --version))"
