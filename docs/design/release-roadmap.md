@@ -1286,7 +1286,35 @@ reachable on a golden path in the first hour.
    and can land first. **Estimated too large for a short session — its own
    slice, with its own sabotage pass.** (Both halves landed in one session; the
    estimate was right about the shape and wrong about the size.)
-3. **§6.2 #20 — `tier` is still renumbered for the natural slot shape.** A
+3. **§6.2 #20 — `tier` is still renumbered for the natural slot shape. ▶ DONE
+   2026-09-19** (specs `53428fa`, contract prose only; `gateway` `1fb5fa2`;
+   **both installers re-pinned**; `ui` regenerated, JSDoc-only, reverted rather
+   than re-pinned; `scripts/r33-sabotage.py` 8 of 8; record
+   [`../acceptance/primary-still-a-primary-run.md`](../acceptance/primary-still-a-primary-run.md)).
+   **The discriminator was already on the snapshot and nothing was reading
+   it**: `_Snapshot.runtimes` is what every node DECLARES, independent of what
+   is advertising anything this instant, so `_declares_runtime` asks that and
+   not `by_model` — whose being empty is the condition under test. By alias OR
+   by name, because `modelAlias` is optional, and **over-matching is the safe
+   direction because this decides a label and never an order.**
+
+   **The two sabotage entries that carry it are the finding and the
+   OVER-correction**, since this defect has already been fixed once in the
+   wrong direction: a check set that cannot fail *always keep* would pass the
+   same bug facing the other way. One escape, and it named a missing check —
+   narrowing the question to this node escaped everything, because no test put
+   the primary on another machine, which is the install R1.6 exists for.
+
+   **▶ AND THE FIXTURE WAS BUILDING A SNAPSHOT NO INSTALL CAN PRODUCE.**
+   `install_snapshot` still keyed `runtimes` by bare name three weeks after
+   R1.6 moved production to `(node, name)`, so it married a driver on one node
+   to a runtime on another — the exact cross-node join R1.6 removed — and
+   `test_the_routing_view_opens_the_table_up` was asserting that marriage.
+   R1.6's own lesson, one fixture over. **And the contract said the opposite of
+   the code:** `ModelRoutingInfo.tiers` had read *"Empty tiers are omitted"*
+   since nine days after the 2026-09-10 fix made that untrue.
+
+   Originally: A
    surviving second case rather than a regression: the 2026-09-10 fix's own
    recorded carve-out is correct for a virtual alias and wrong for
    `{model: <a real local model>, targets: [cloud]}`, and the two are
@@ -1833,7 +1861,7 @@ failing check. Nothing here needs confirming again.
 | 6.2 #17| Idle unload races an arriving request `[D]`                    | **R2.1 — done 2026-09-18** |
 | 6.2 #18| `runtime is None` = always eligible `[D]`                      | **R2.1 — done 2026-09-18** |
 | 6.2 #19| Admission reserves nothing; fallback context-blind `[D]`       | R3    |
-| 6.2 #20| `tier` renumbered for the natural slot shape `[D]`             | R3    |
+| 6.2 #20| `tier` renumbered for the natural slot shape `[D]`             | **R3 item 3 — done 2026-09-19** |
 | 6.2 #21| Thinking filter swallows the answer when streaming `[D]`       | R3    |
 | 6.2 #22| Contract drift: `top_p`/`seed`/profile/`content_filter`/401 `[D]` | R3 |
 | 6.2 #23| `latencyMs` semantics + the 15.6 ms Windows grid `[D]`         | R1.1  |
