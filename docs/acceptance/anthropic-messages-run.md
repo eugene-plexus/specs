@@ -71,7 +71,7 @@ could never show:
    `cache_control`, `metadata` and `context_management` demonstrably never
    reached a backend, rather than being refused or forwarded.
 2. The three system blocks were concatenated, billing header included.
-3. The in-message `system` block kept its position after the user turn (§3).
+3. The in-message `system` block kept its position after the user turn (§2).
 4. 23 tool definitions were translated into the OpenAI function shape.
 5. The assistant turn came back as `content=None` with `toolCalls` set — the
    single most common assistant turn in an agent loop, and the one whose schema
@@ -124,7 +124,7 @@ as a unit test that now carries the real shape.
 
 ---
 
-## 4. The sabotage pass — 30 of 30
+## 3. The sabotage pass — 30 of 30
 
 `scripts/r4-sabotage.py`, second execution. Two groups. **The first puts back
 R4 as designed before the measurement corrected it** — refuse `thinking`,
@@ -166,7 +166,7 @@ for the wrong reason.
 
 ---
 
-## 5. What R4 still owes
+## 4. What R4 still owes
 
 There is **no numbered acceptance script** for this slice. §1's results came
 from a hand-driven live run against `scripts/r4-stubs.py`, which is reproducible
@@ -176,7 +176,7 @@ says "the loop completes" rather than "20 PASS".
 
 ---
 
-## 6. Not done, named
+## 5. Not done, named
 
 - **No real engine.** Every answer came from the stub, so nothing here measures
   the translation of a real local model's output — a model that emits a
