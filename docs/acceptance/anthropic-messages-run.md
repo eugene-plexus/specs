@@ -124,7 +124,59 @@ as a unit test that now carries the real shape.
 
 ---
 
-## 3. Not done, named
+## 4. The sabotage pass — 30 of 30
+
+`scripts/r4-sabotage.py`, second execution. Two groups. **The first puts back
+R4 as designed before the measurement corrected it** — refuse `thinking`,
+refuse it by presence, 401 for a bad key, 404 for an unknown model, read only
+one auth header — so the measurement lives somewhere a regression trips over it
+rather than only in prose. The second takes the translation apart one property
+at a time.
+
+**Three escaped on the first pass and each named something different.**
+
+**(a) A missing check, not a weak fix.** A text block left open when a tool
+block opens escaped *both* streaming tests: one streams only text and the other
+only tool calls, so the nesting assertion never met a second block and the index
+assertion never met an open text one. Each was correct about its own case and
+neither covered the seam. A third test drives the translator across it directly,
+because the fake answers with tool calls *or* text and cannot produce the shape.
+
+**(b) A sabotage that sabotaged nothing.** `headers={} or envelope_headers(…)`
+returns the right-hand side, because `{}` is falsy. It escaped because the code
+was unchanged.
+
+**(c) A claim in this slice's own contract, disproved.** The contract and the
+code comment beside it said a default allow-list without `x-api-key` would
+"answer the preflight and then fail the request". It would not: the middleware
+**echoes** `access-control-request-headers` whenever a preflight sends one, and
+a real browser always does. Removing `x-api-key` from the default changed no
+browser outcome at all — which is exactly why nothing caught it. Both now say
+the list is a fallback that agrees with the surface rather than the mechanism,
+and a test covers the preflight that names no headers.
+
+**The harness needed fixing twice before it could be believed, and the baseline
+assertion caught both.** Vitest started from `cmd` — as `shell=True`, as
+`cmd /c npx …`, as `cmd /c npm run test` — fails inside its own setup file with
+*"Vitest failed to find the current suite"*, while the identical command from
+bash passes 22 tests; three invocations reported a healthy gate as broken. And
+printing a failing gate's output crashed on this box's cp1252 stdout, on the one
+path that matters. Without the baseline, every sabotage would have read *caught*
+for the wrong reason.
+
+---
+
+## 5. What R4 still owes
+
+There is **no numbered acceptance script** for this slice. §1's results came
+from a hand-driven live run against `scripts/r4-stubs.py`, which is reproducible
+but is not `scripts/r4-acceptance.sh` with counted checks in the shape every
+other slice here has. That is the honest gap, and it is the reason this document
+says "the loop completes" rather than "20 PASS".
+
+---
+
+## 6. Not done, named
 
 - **No real engine.** Every answer came from the stub, so nothing here measures
   the translation of a real local model's output — a model that emits a
