@@ -1231,11 +1231,25 @@ reachable on a golden path in the first hour.
    after `tool_calls` → `stop` was fixed at step 6**; and a driver 401 is
    reported to the caller as `invalid_request_error`, which is the shape a
    rotated service token takes on one node and is unfixable by the caller.
-   **Recommendation: correct the contract for the first two** (no per-model
-   output store exists to point at, so the promise cannot be met by editing
-   code) and **fix the code for the last two**. The 401 half is locked in by a
-   passing test that uses 401 specifically, so that test is amended, not added
-   to.
+   **▶ THE RECOMMENDATION'S PREMISE WAS FALSE, AND THE CALL CHANGED
+   (2026-09-19, Troy).** It said *"no per-model output store exists to point
+   at, so the promise cannot be met by editing code"*. There is one:
+   `ModelProfile` carries `temperature` and `topP` and the library serves
+   `GET /v1/models/{id}/profiles`. The promise **is** meetable in code; what it
+   costs is a gateway→library dependency edge that does not exist today, with a
+   cache and its own failure modes, inside what was scoped as a correctness
+   pass.
+
+   **TAKEN: SPLIT IT, KEEP THE TARGET.** Fix `top_p`/`seed` here — they are
+   accepted and silently dropped, which is pure code and needs no new edge.
+   **Leave the profile sentence standing as an unmet promise** rather than
+   softening it, and schedule the gateway→library profile read as its own slice
+   before the release. Editing the contract to match the weaker mechanism would
+   move the gate instead of reaching it (Troy, 2026-09-18), and *a correct
+   sequencing argument is not an argument for a smaller outcome*.
+
+   **Fix the code for the last two.** The 401 half is locked in by a passing
+   test that uses 401 specifically, so that test is amended, not added to.
 5. **§6.2 #27 — symlinks, and a shipped config field nothing reads.** The
    review understated it: `followSymlinks` has exactly one occurrence in the
    library's whole source tree, its own declaration, and the scan-timeout
