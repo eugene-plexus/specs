@@ -43,7 +43,12 @@ not.
 first verifications, not repeats** — **and #36's is DONE: measured 2026-09-18
 against llama-server b11001 and b10991, `-c` is the total budget that slots
 divide, so the arithmetic was right and both config descriptions were wrong
-(R1.3, `../acceptance/one-fit-path-run.md` §0). Two remain.** Originally: — they were never established, so a session
+(R1.3, `../acceptance/one-fit-path-run.md` §0). **And R4's is DONE: measured
+2026-09-19 against Claude Code 2.1.207 — `x-api-key` confirmed, and there is no
+`Authorization` header on that path at all, so the premise was if anything
+understated; four sub-claims beside it were wrong, `thinking` loudest
+(`../acceptance/anthropic-messages-measurement.md`). ONE REMAINS —
+`win-sycl-x64`.** Originally: — they were never established, so a session
 that skips them is guessing rather than saving time: R4's `x-api-key` premise
 (upstream Claude Code behaviour, reasoned about and never captured), R2.3's
 `win-sycl-x64` variant (nothing in-tree supports it), and #36's parallel-slot
@@ -1269,22 +1274,42 @@ lands** — see `local-inference-control-plane.md` §2.
 *Scoped against the code, not reasoned: two slices of about a day, one contract
 change, radius `gateway` + `ui`.*
 
-**Step one is a measurement, not a line of code.** Point a real Claude Code at
-a throwaway listener with `ANTHROPIC_BASE_URL` and capture the request: the
-`x-api-key` claim below is upstream client behaviour that was reasoned about
-and **not verified here**, and it is the premise the whole auth half rests on.
-If it is wrong, the shim is simpler; if it is right, a shim wired to the
-existing dependency 401s the one client it exists for.
+**▶ STEP ONE IS DONE, 2026-09-19, AND IT MOVED A FIELD FROM THE REFUSAL LIST TO
+THE DROP LIST.** Record:
+[`../acceptance/anthropic-messages-measurement.md`](../acceptance/anthropic-messages-measurement.md);
+instrument `scripts/r4-capture.py`, kept, because this wire will change under
+us. Nine runs against Claude Code `2.1.207` — three credential paths, a tool
+loop, seven HTTP statuses. **The premise held and four things beside it did
+not**, two of which would have failed the shim on its first real request. What
+follows is corrected in place; §5 of the record is the list.
 
-**The blocker nobody had named.** Claude Code with `ANTHROPIC_BASE_URL` +
-`ANTHROPIC_API_KEY` sends **`x-api-key`**, not `Authorization: Bearer` — **that
-half is upstream client behaviour and was NOT verified here; capture a real
-request before building the shim** — while the half that is about our code was
-checked: the gateway's bearer scheme reads only `Authorization`, and the CORS
-front-door set is an exact-match frozenset — so a shim wired to the existing
-dependency would 401 the one client it exists for, and the 401 would read as
-*my key is wrong*. Support both headers; write the recipe with
-`ANTHROPIC_API_KEY`.
+**The blocker, now measured rather than reasoned.** Claude Code with
+`ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` sends **`x-api-key`** — and sends
+**no `Authorization` header at all**, which is stronger than "prefers the wrong
+one": the gateway's `HTTPBearer` sees no credential whatsoever and refuses.
+`ANTHROPIC_AUTH_TOKEN` sends `Authorization: Bearer` and **no `x-api-key`**, so
+the two are disjoint alternatives rather than a fallback order. **The recipe
+names `ANTHROPIC_AUTH_TOKEN` first**, for two reasons the measurement found:
+`ANTHROPIC_API_KEY` alone answers *"Not logged in · Please run /login"* in a
+fresh profile until the key is approved (its last 20 characters land in
+`customApiKeyResponses.approved`), and **an ambient subscription login silently
+beats it** — the first capture recorded the operator's real
+`sk-ant-oat01-…` OAuth token arriving at a loopback listener while the client
+key went unused. A user who follows a recipe written the other way round sends
+their Anthropic token to their own gateway and is told their key is wrong.
+
+**And the status table is not the obvious one.** Measured by answering each
+status and counting what the client did next: **400 is surfaced verbatim and
+never retried; 403 is surfaced verbatim and never retried; 401 is retried
+without bound** (nine attempts in 79 s, still climbing when the run timed out)
+**and shows the user nothing**; 404 is retried twice and **our message is
+discarded** for a generic one blaming the model; 429/500/503 are retried and
+silent. `X-Stainless-Retry-Count` stayed `0` on every retry, so it cannot be
+used to detect a storm. Therefore **a bad or revoked client key on this door is
+403, not 401** — a deliberate divergence from every other route in this
+project, which must be said in the contract or it will be "fixed" back — and
+**a model nothing serves is 400, not 404**, or the sealed-control-root
+explanation is thrown away by the client.
 
 **Translate at the edge into the existing `ChatCompletionRequest`, never
 directly to the driver.** The chat route carries six behaviours a second front
@@ -1302,14 +1327,46 @@ Hard: **Anthropic numbers content blocks statefully and we do not** — text
 carries no index and our tool fragments carry a per-call index — so the
 translator holds `text_open` and a map from tool index to block index, and
 getting it wrong means a strict SDK rejects a stream *inside* a 200. Refused
-with a 400 naming the field: `thinking`, image and document blocks, server-side
-tools, `mcp_servers`, more than four `stop_sequences`, and a missing
-`max_tokens`. **Dropped silently, and this one is load-bearing:**
-`cache_control`, which Claude Code sets on every system block — so a blanket
-unknown-field refusal would pass every refusal test and then fail the
+with a 400 naming the field: image and document blocks, server-side tools,
+`mcp_servers`, more than four `stop_sequences`, and a missing `max_tokens`.
+**Dropped silently, and this one is load-bearing:** `cache_control` — which the
+measurement found on **three** blocks and not only the system ones: system
+blocks 1 and 2, the last user content block, **and `tool_result`** — so a
+blanket unknown-field refusal would pass every refusal test and then fail the
 acceptance run on its first request. `top_k` is dropped and documented as a
 real loss (both engines take it and neither contract has it), which is the same
 omission `top_p` and `seed` already have.
+
+**▶ AND `thinking` MOVED FROM THE FIRST LIST TO THE SECOND, WHICH IS THE
+MEASUREMENT'S HEADLINE.** It is sent on **every** request, and its shape depends
+on the model id: a known Claude id gives
+`{"budget_tokens": 31999, "type": "enabled"}`, **an arbitrary local id — which
+is the whole point of this door — gives `{"type": "adaptive"}`**, and
+`MAX_THINKING_TOKENS=0` gives **`thinking: null`, the key still present**. So
+refusing the field 400s everybody on request one, and a bare presence check
+refuses the one configuration genuinely asking for no thinking. It is dropped,
+and dropping it is honest rather than lossy: `ThinkingFilter` and the profile's
+`thinkingMode` already own a local model's thinking behaviour, so this is ours
+to decide and not the caller's. Document it beside `top_k`.
+
+**Three more shape facts the scope did not carry.** The path is
+`POST /v1/messages?beta=true` — **a query parameter on every request**, which
+must not break routing, and the `anthropic-beta` list must be tolerated rather
+than validated. **`stream` is `true` on every request Claude Code makes**, so
+the non-streaming path is real, is not covered by this client, and the
+acceptance run must not assume otherwise. And **an assistant turn comes back to
+us carrying `tool_use` blocks**, so the translator needs an inbound
+assistant→`tool_calls` mapping as well as the outbound one; a `tool_result` is a
+block inside a **`user`** message, several to a message, not a role of its own.
+A `HEAD /` probe from `Bun/1.4.0` precedes the first POST and **is not
+load-bearing** — a run that answered it 404 completed normally.
+
+**One piece of the hard half is already answered by a real client.** The
+measurement's tool-loop run had the listener emit a streamed, fragmented
+`tool_use` — text at block index 0, the tool at index 1, `input_json_delta` in
+two pieces, `stop_reason: "tool_use"` — and Claude Code parsed it, ran the tool
+and completed the loop. That is a worked reference for the stateful block
+indexing above, taken from the strict SDK rather than from the docs.
 
 **Two rules survive and one must not be forced.** The failover commit point is
 below both translators, structurally, so the rule that failover ends at the
