@@ -1224,6 +1224,32 @@ reachable on a golden path in the first hour.
    that window from seconds to minutes by adding a `copying` state before any
    process exists. And the file-size fallback is context-blind: an 8B Q4 at
    128k needs ~17 GB of KV and is admitted at 5.5 GB.
+
+   **▶ SCOPED 2026-09-19, NOT STARTED — read this before opening it.** The
+   mechanism is narrower and the fix is wider than the sentence above reads.
+   `check_admission` already takes `running`, which looks like it accounts for
+   other runtimes and **does not**: `_blockers` (`admission.py:411`) uses it
+   only to build an advisory *list of what else is on the device*, and nothing
+   subtracts it from anything. The fit arithmetic reads **live free memory off
+   the `DeviceSnapshot`**, so a runtime that is declared, admitted and
+   `starting` — or `copying`, which the node-local copy made minutes long —
+   holds no memory yet, free memory still reads high, and the second admission
+   says `fits` for memory the first one has already spent.
+
+   So the fix is a **reservation ledger on the agent**, not a change to the
+   arithmetic: an intended allocation recorded at admission, subtracted from
+   available memory by the next caller, released when the process is observed
+   holding the memory, when the launch fails, or on a TTL. Three rules that
+   ledger needs and none of them are in the finding: **a dry run must not
+   reserve** (`POST /v1/runtimes/admission` and `?force=true` share the path
+   with a real launch, and `routes/runtimes.py:284` is the only call site, so
+   the two are told apart there or not at all); **`copying` needs a reservation
+   before any process exists**; and an abandoned launch must not strand memory
+   forever, which is what the TTL is for and what makes it testable.
+
+   The context-blind fallback is the small half, is independent of the ledger,
+   and can land first. **Estimated too large for a short session — its own
+   slice, with its own sabotage pass.**
 3. **§6.2 #20 — `tier` is still renumbered for the natural slot shape.** A
    surviving second case rather than a regression: the 2026-09-10 fix's own
    recorded carve-out is correct for a virtual alias and wrong for
