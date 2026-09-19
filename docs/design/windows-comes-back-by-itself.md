@@ -423,6 +423,11 @@ The session that wrote this was **unelevated**, which is the same sentence
 
 * **The six checks in §7.** They are the *Done when*, and they need
   Administrator and a reboot.
+* **The Start menu entry has never been created or clicked.** Added
+  2026-09-19 after Troy asked whether stopping Eugene left any way back
+  (it did not — see the record's §7a). `Add-StartMenuShortcut` uses
+  `WScript.Shell`, which needs a desktop session to write a `.lnk`, and
+  the elevated path writes to All Users. Check 6 of §7 covers it.
 * **The tray icon has never been drawn.** Everything decidable about it
   is tested — the menu, the tooltip, the SCM read, the refusals;
   `_tray_window.run_message_loop` needs a desktop and a registered

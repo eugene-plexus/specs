@@ -93,7 +93,7 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "51d1c8a55d024472b72dc458c0be9aaa378a9250"
+    "agent"            = "f14ec87919e113ca2f20abb401f162fe9f45e95a"
     "control"          = "5cbf5361fe4562fc8ac81969c94f306fbd6702a3"
     "gateway"          = "25128f106761188189f48871c079f792f012f9e0"
     "inference-driver" = "9001722d67800b02fd9fe6a01485a34ded7b72c5"
@@ -472,6 +472,76 @@ function Grant-ServiceControl {
     return $true
 }
 
+# **A way back in, because stopping Eugene takes the web UI with it.**
+#
+# Asked 2026-09-19 (Troy): *"does it register as a Program the user can
+# run again from the Start menu, since the UI goes with it?"* It did
+# not, and that made the tray's own "Hide this icon" a ONE-WAY DOOR:
+# stop Eugene, hide the icon, and the only ways back were services.msc,
+# an elevated Start-Service, or signing out and in. Nothing in Start,
+# nothing on the desktop, and a URL that answers connection refused.
+#
+# The shortcut runs the tray with `--open`, which starts the service if
+# it is stopped, waits for `/healthz`, opens the browser, and leaves an
+# icon behind -- so the one entry covers "I want Eugene" and "give me
+# my icon back" without the person having to know they are different
+# questions.
+#
+# **All Users, for a service install.** The service serves everybody on
+# the box, so the entry belongs where everybody can see it. A per-user
+# install puts it in that user's own Start menu, which is the only place
+# it could be true.
+function Get-StartMenuShortcutPath {
+    $programs = if ($WantsService) {
+        Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"
+    } else {
+        Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+    }
+    return (Join-Path $programs "Eugene Plexus.lnk")
+}
+
+function Add-StartMenuShortcut {
+    $trayExe = Join-Path $Venv "Scripts\eugene-plexus-tray.exe"
+    if (-not (Test-Path $trayExe)) {
+        Warn "no Start menu entry: $trayExe is missing (the [tray] extra did not install)"
+        return
+    }
+    $link = Get-StartMenuShortcutPath
+    try {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $link) | Out-Null
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($link)
+        $shortcut.TargetPath = $trayExe
+        # `--no-icon` where the operator asked for no tray icon: the
+        # entry still starts Eugene and opens it, which is the half that
+        # is useful either way.
+        $shortcut.Arguments = if ($NoTray) { "--open --no-icon --port $Port" }
+                              else         { "--open --port $Port" }
+        $shortcut.WorkingDirectory = $Prefix
+        $shortcut.Description = "Open Eugene Plexus, starting it first if it is stopped"
+        $shortcut.Save()
+        Say "added 'Eugene Plexus' to the Start menu"
+    } catch {
+        # Never fatal: the install works, it is just less findable.
+        Warn "could not add a Start menu entry ($($_.Exception.Message))"
+    }
+}
+
+function Remove-StartMenuShortcut {
+    # Both scopes, because an install may have changed shape since the
+    # shortcut was written -- a per-user install migrated to a service
+    # leaves one behind in the user's own Start menu otherwise.
+    foreach ($programs in @(
+        (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"),
+        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs")
+    )) {
+        $link = Join-Path $programs "Eugene Plexus.lnk"
+        if (Test-Path $link) {
+            Remove-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Show-MigrationConsequences {
     if (-not $WantsService) { return }
     $existing = Join-Path $env:LOCALAPPDATA "EugenePlexus\agent.yaml"
@@ -543,6 +613,7 @@ function Remove-Autostart {
         Stop-ScheduledTask -TaskName $TrayTaskName -ErrorAction SilentlyContinue
         Unregister-ScheduledTask -TaskName $TrayTaskName -Confirm:$false
     }
+    Remove-StartMenuShortcut
     Get-CimInstance Win32_Process -Filter "Name='eugene-plexus-tray.exe'" |
         Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
@@ -1070,6 +1141,13 @@ if (-not $NoService) {
 # elevates the same account rather than switching to another. On a box
 # with several users it is per-user by design; the others run the
 # installer's `-NoService -NoStart` themselves or go without an icon.
+# The Start menu entry goes in for every install that has an autostart,
+# tray icon or not: it is the only discoverable way back to a Eugene
+# that has been stopped, and the URL is not one.
+if ($autostart -ne "none") {
+    Add-StartMenuShortcut
+}
+
 if ($autostart -eq "service" -and -not $NoTray) {
     $trayExe = Join-Path $Venv "Scripts\eugene-plexus-tray.exe"
     if (Test-Path $trayExe) {
@@ -1170,4 +1248,8 @@ if ($autostart -eq "service") {
         Write-Host "    There is an icon by the clock: use it to stop Eugene before a game"
         Write-Host "    and start it again after."
     }
+    Write-Host "    'Eugene Plexus' is in your Start menu. It starts Eugene if it is"
+    Write-Host "    stopped and then opens it, so it is the way back once you have"
+    Write-Host "    stopped it -- the web page is not, because stopping Eugene takes"
+    Write-Host "    the web page with it."
 }

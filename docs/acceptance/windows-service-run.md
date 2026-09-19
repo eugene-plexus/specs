@@ -242,6 +242,46 @@ handler and does not care.
 
 ---
 
+## 7a. The gap the question found, 2026-09-19
+
+Troy, reading §8's *"stopping the service frees the card and takes the
+UI with it"*: **"does it register as a Program the user can run again
+from the Start menu, since the UI goes with it?"**
+
+**It did not**, and that made the tray's own *Hide this icon* a
+**one-way door**. The tray process survives a service stop — it is in
+the user's session, which is what session 0 isolation forces — so the
+common path was fine. Every path where the icon was gone was not: hide
+it, or `-NoTray`, or a second Windows user, and the routes back were
+`services.msc`, an elevated `Start-Service`, or signing out and in. The
+URL the installer prints answers *connection refused*, **because
+stopping Eugene is what took the page away**.
+
+Fixed (`agent` `f14ec87`, `specs`):
+
+* **A Start menu entry, "Eugene Plexus"**, All Users for a service
+  install. It passes `--open`: start the service if stopped, wait for
+  `/healthz`, then open the browser. One entry covers *I want Eugene*
+  and *give me my icon back* without the person having to know those are
+  different questions.
+* **`sc start` returning success is not the thing to wait for.** It
+  means the SCM accepted the request while the agent still has to load
+  its config, recover its key and bring up four children. Opening then
+  shows connection refused, which reads as *broken* rather than
+  *starting* — and it is the first impression after clicking a Start
+  menu entry.
+* **A session-local single-instance mutex.** Without it the entry whose
+  job is to bring the icon *back* adds a second one beside it every
+  click. The open action deliberately runs **before** the instance
+  check, because an icon already in the tray is exactly the state
+  somebody clicks the entry in.
+* **The label names its own undo:** *"Hide this icon (it is in your
+  Start menu)"*.
+
+Five sabotages, five caught; four acceptance checks added (32 PASS).
+**Still unverified:** no shortcut has been created or clicked — that is
+elevated, and joins the six in §0.
+
 ## 8. What is not done, named
 
 * Everything in §0 — six checks, Administrator and a reboot.

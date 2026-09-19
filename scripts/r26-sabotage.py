@@ -296,6 +296,72 @@ SABOTAGES: list[Sabotage] = [
         gate=[*PYTEST, "tests/test_tray.py"],
         cwd=AGENT,
     ),
+    # --- the way back in (2026-09-19) -------------------------------------
+    Sabotage(
+        name="tray-second-icon",
+        why=(
+            "the single-instance guard goes, so the Start menu entry -- whose "
+            "whole job is to bring the icon back -- puts a SECOND icon beside "
+            "an existing one every time it is clicked."
+        ),
+        path=AGENT / "src" / "eugene_plexus_agent" / "tray.py",
+        old="        return ctypes.get_last_error() != 183  # ERROR_ALREADY_EXISTS",
+        new="        return True  # SABOTAGE",
+        gate=[*PYTEST, "tests/test_tray.py"],
+        cwd=AGENT,
+    ),
+    Sabotage(
+        name="tray-open-skipped-when-showing",
+        why=(
+            "the open action is skipped when an icon is already there -- which "
+            "is exactly when somebody clicks the Start menu entry, because "
+            "Eugene is stopped and the icon is still sitting in the tray."
+        ),
+        path=AGENT / "src" / "eugene_plexus_agent" / "tray.py",
+        old="    if wants_open:\n        opened, why = open_and_wait(port)",
+        new="    if wants_open and claim_single_instance():  # SABOTAGE\n        opened, why = open_and_wait(port)",
+        gate=[*PYTEST, "tests/test_tray.py"],
+        cwd=AGENT,
+    ),
+    Sabotage(
+        name="tray-opens-a-dead-port",
+        why=(
+            "the entry opens the browser without starting the service, so a "
+            "person who stopped Eugene for a game clicks Eugene Plexus and "
+            "gets connection refused -- which reads as broken, not stopped."
+        ),
+        path=AGENT / "src" / "eugene_plexus_agent" / "tray.py",
+        old="    state = query_state()\n    if state == ServiceState.stopped:\n        started, why = start_service()",
+        new="    state = query_state()\n    if False:  # SABOTAGE\n        started, why = start_service()",
+        gate=[*PYTEST, "tests/test_tray.py"],
+        cwd=AGENT,
+    ),
+    Sabotage(
+        name="tray-hide-is-a-one-way-door",
+        why=(
+            "'Hide this icon' stops naming where it comes back from. Before "
+            "the Start menu entry existed this was literally a one-way door; "
+            "the label is the fix's visible half."
+        ),
+        path=AGENT / "src" / "eugene_plexus_agent" / "tray.py",
+        old='(_ID_QUIT, "Hide this icon (it is in your Start menu)", True),',
+        new='(_ID_QUIT, "Hide this icon", True),  # SABOTAGE',
+        gate=[*PYTEST, "tests/test_tray.py"],
+        cwd=AGENT,
+    ),
+    Sabotage(
+        name="installer-no-start-menu",
+        why=(
+            "no Start menu entry, so a stopped Eugene has no discoverable way "
+            "back: the URL answers connection refused and the icon may have "
+            "been hidden."
+        ),
+        path=SPECS / "scripts" / "install.ps1",
+        old="    Add-StartMenuShortcut",
+        new="    # SABOTAGE: no Start menu entry",
+        gate=["bash", "scripts/r26-acceptance.sh"],
+        cwd=SPECS,
+    ),
     # --- the UI -----------------------------------------------------------
     Sabotage(
         name="ui-starts-when-silent",

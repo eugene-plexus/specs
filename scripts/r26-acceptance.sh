@@ -354,6 +354,32 @@ case "$TRAY" in
   *) bad "$TRAY" ;;
 esac
 
+WAYBACK=$("$PY" - <<'PYEOF'
+from eugene_plexus_agent import tray
+
+problems = []
+hide = [label for _, label, _ in tray.menu_for("running") if "Hide" in label]
+if not hide:
+    problems.append("there is no way to dismiss the icon")
+elif "Start menu" not in hide[0]:
+    problems.append("dismissing the icon does not say where it comes back from")
+
+# Two claims on one name: the second must lose, or the Start menu entry
+# puts a second icon beside the first every time it is clicked.
+name = "EugenePlexusTrayAcceptanceGuard"
+if not tray.claim_single_instance(name):
+    problems.append("the first claim on a fresh name was refused")
+elif tray.claim_single_instance(name):
+    problems.append("a second instance claimed the icon too")
+print("OK" if not problems else "; ".join(problems))
+PYEOF
+)
+if [ "$WAYBACK" = "OK" ]; then
+  ok "hiding the icon names the Start menu, and a second icon cannot appear beside the first"
+else
+  bad "$WAYBACK"
+fi
+
 # --- 7. the installer's decisions -------------------------------------
 say "7. install.ps1 parses, is ASCII, and defaults to a service"
 
@@ -407,6 +433,27 @@ if grep -q 'TrayTaskName = "EugenePlexusTray"' "$PS1"; then
   ok "the logon task changed job rather than disappearing"
 else
   bad "no tray task"
+fi
+
+# **A way back in.** Stopping Eugene takes the web UI with it, so the
+# obvious route back -- open the page -- is the one that cannot work.
+# Without a Start menu entry the tray's own "Hide this icon" was a
+# one-way door: the routes back were services.msc, an elevated
+# Start-Service, or signing out and in.
+if grep -qE '^\s+Add-StartMenuShortcut\s*$' "$PS1"; then
+  ok "a Start menu entry is created, so a stopped Eugene is reachable"
+else
+  bad "nothing adds a Start menu entry: stopping Eugene leaves no way back"
+fi
+if grep -qE '^\s+Remove-StartMenuShortcut\s*$' "$PS1"; then
+  ok "...and removed with the install"
+else
+  bad "the Start menu entry is never removed"
+fi
+if grep -q '"--open --port \$Port"' "$PS1"; then
+  ok "the entry starts Eugene before opening it, rather than opening a dead port"
+else
+  bad "the Start menu entry does not pass --open"
 fi
 
 # --- 8. -Detect does not end the session that ran it ------------------
