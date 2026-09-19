@@ -244,6 +244,15 @@ them in an ELEVATED PowerShell, on a machine you are willing to reboot.
 6. The icon: stop and start Eugene from it with no Administrator
    prompt. If it says access is denied, `sc sdset` did not take -- see
    Grant-ServiceControl in this script.
+
+ALL OF THE ABOVE EXCEPT 5 ARE SCRIPTED. From an elevated PowerShell:
+
+    .\scripts\r26-service-checks.ps1 -Migrate
+
+It runs 1, 2, 3, 4 and 6, prints PASS or FAIL for each, and prints the
+agent.log lines that decided each one so you are not grepping. Afterwards
+`-AfterReboot` reads check 5's evidence out of the log, so the reboot and
+a phone are the only manual parts left.
 "@
     return
 }

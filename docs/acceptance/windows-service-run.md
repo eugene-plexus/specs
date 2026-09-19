@@ -36,6 +36,37 @@ so they cannot be lost in a document:
 5. **The reboot with nobody signed in.**
 6. A tray click that stops and starts the service with no UAC prompt.
 
+**▶ FIVE OF THE SIX ARE SCRIPTED SINCE 2026-09-19:**
+[`../../scripts/r26-service-checks.ps1`](../../scripts/r26-service-checks.ps1),
+elevated, `-Migrate` to convert the install first. It runs 1, 2, 3, 4 and 6,
+prints PASS/FAIL per check, and prints the agent.log lines that decided each
+one. `-AfterReboot` reads check 5's evidence afterwards — the control root
+polls this node every ~15 s, so the log holds off-host requests timestamped
+between boot and login, and ordering alone is the proof. **So the manual part
+is the reboot and a phone, not the forensics.**
+
+Three things found while writing it, none of them one of the six:
+
+- **Check 5's evidence has a source that can be switched off silently.** A
+  control root in a container comes back from a restart **sealed** and stops
+  polling while `/healthz` answers `ok, initialized: true, nodes: 2` — every
+  word true. Measured on the live install the same day: the NAS root was
+  sealed, `/v1/nodes` answered 503, and the worker's log had no off-host
+  request since 14:29. The script asks before the reboot rather than
+  concluding afterwards, because without that `-AfterReboot` reports *nothing
+  reached this node* and the reader blames the service.
+- **`allocated a console` can never reach agent.log in a service.**
+  `SvcDoRun` calls `ensure_console()` before `build_server`, and
+  `build_server` is what installs the stdout tee and calls `basicConfig`, so
+  that INFO record is emitted with no handler and dropped. The `child
+  shutdown:` line from the lifespan is the only tell, and it is enough.
+- **A share a service may not log in to is reported as *does not exist*.**
+  `list_directory` asks `Path.exists()` first and `Path.exists()` swallows
+  every `OSError`, so error 1272 — the one error this whole slice is about —
+  never reaches the picker. The script tells the two apart by opening the
+  same path from the signed-in session: opens here, not there, means a
+  credential.
+
 Everything below is what could be decided without a service.
 
 ---
