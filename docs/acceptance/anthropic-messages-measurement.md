@@ -313,3 +313,40 @@ changes the refusal list, the status table, and the recipe.
 - **The 401 loop was never allowed to terminate.** It was still retrying when
   the run's 100 s timeout fired, so "unbounded" is a lower bound of nine
   attempts, not a proof that it never gives up.
+
+---
+
+## 7. A sixth finding, and it arrived from the live run rather than the capture
+
+**Measured 2026-09-19, later the same day, against the built gateway.**
+
+A real Claude Code pointed at the real gateway with `--allowedTools Glob` was
+refused on its very first request:
+
+```
+API Error: 400 messages.1.role: Input should be 'user' or 'assistant'
+```
+
+Anthropic documents `user` and `assistant` as the only message roles, and the
+R4 contract said so. What the client actually sends is **both** the documented
+top-level `system` (three blocks, §2.2) **and a separate `system`-role message
+inside `messages`** — 8,356 characters in the observed run, positioned *after*
+the first user turn.
+
+| run | `messages` |
+| --- | --- |
+| `claude -p "ok"` (§2) | 1 × `user` |
+| `claude -p "…" --allowedTools Glob`, turn 1 | `user`, **`system`** |
+| the same, turn 2 | `user`, **`system`**, `assistant` (text + `tool_use`), `user` (`tool_result`) |
+
+**It appears only once tools are in play**, which is exactly why 43 green unit
+tests did not see it: every fixture in them was built from §1–§3's capture of a
+*simple* request. The live run is not a formality, and this is the evidence.
+
+Carried **in place** rather than hoisted into the leading system prompt: the
+client put it after a user turn deliberately, and moving it would change what
+the model sees for the sake of tidiness on a wire we do not own.
+
+Fixed in the contract (`specs` `eb05ec7`) rather than with a hand-written
+guard, and the translation then needed no change at all — which is the argument
+for putting a measured shape in the schema.

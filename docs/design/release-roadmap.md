@@ -1379,6 +1379,34 @@ the *recording* rides the shared path. Map our 400 to `invalid_request_error`
 and not to anything Claude Code retries, or step 7's looping symptom comes back
 one layer up in the client we are courting.
 
+**▶ THE DOOR IS BUILT AND THE LOOP COMPLETES (2026-09-19).** `specs`
+`eb05ec7`, `gateway` `26109b3`; 44 new tests, 347 green, mypy and ruff clean.
+Record: [`../acceptance/anthropic-messages-run.md`](../acceptance/anthropic-messages-run.md).
+A real Claude Code with `--model local-qwen --allowedTools Glob` called a tool
+through the real gateway and read the result back, asserted from the driver's
+own record: the backend received exactly `maxTokens`, `messages`, `temperature`
+and `tools`, so the dropped fields demonstrably never arrived, and
+`GET /v1/metrics` carries three rows for that model — the shared-path claim
+proved rather than stated.
+
+**And the live run found a sixth shape the capture could not have.** Claude
+Code sends a **`system`-role message inside `messages`**, 8 KB of it, after the
+first user turn, *in addition to* the documented top-level `system` — and
+Anthropic documents two message roles. The first execution was refused on its
+own first request with `messages.1.role: Input should be 'user' or
+'assistant'`. **43 green unit tests did not see it**, for an exact reason: every
+fixture was built from step one's capture of a *simple* request, and this shape
+appears only once tools are in play. Fixed in the contract, after which the
+translation needed no change — the argument for putting a measured shape in the
+schema rather than in a guard.
+
+**What R4 still owes is its second half:** the eighth recipe in the UI, the
+comment and the test that assert Claude Code's absence inverted, `dist` rebuilt
+and both installers re-pinned. Until that lands the door exists and nothing
+tells anybody how to use it. Plus what §3 of the record names: no real engine
+behind it, no second client, the refusals unit-tested only, and no browser
+preflight.
+
 **Acceptance: twenty checks, and the last one is the point** — Claude Code,
 pointed at this gateway with a local model id, completing a tool loop, asserted
 from a file on disk rather than from Claude Code's own account of itself. Plus
