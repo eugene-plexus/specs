@@ -945,8 +945,93 @@ the more diagnostic answer anyway. That is where a hostile reviewer will point.
 
 ### 3.5 R2.5 — A backend that is still computing has not failed
 
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18.**
+`scripts/still-computing-acceptance.sh`, **29 PASS, zero failures, fifth
+execution**; `scripts/r25-sabotage.py`, whose **first pass escaped eight and
+found that three of the run's checks could not fail** (see below); record
+[`../acceptance/still-computing-run.md`](../acceptance/still-computing-run.md).
+Findings §6.2 #13 and §6.2 #16 are closed. **A contract change after all, and
+finding it was part of the work**: `gateway.yaml` said in two places that
+*timeouts cascade*, which is exactly what this slice stops, and neither document
+had a 504 or a 499 on any path. Prose plus five response entries — **no schema
+moved**, so `datamodel-code-generator` produces byte-identical models for the
+Python five and only `ui` sees a generated diff.
+
+**The four wrongs, and the fourth is the one that made the others pointless.**
+The **order**: gateway `requestTimeoutSeconds` is **600 s** (the OpenAI Python
+SDK's own default, so the commonest caller stops waiting when we do) and the
+driver's is **660 s**, a backstop rather than a decision; both maxima are 3600 s
+now. The **anonymity**: `BackendTimeout(CliError)` carries `limit_seconds`, and
+the message names the seconds and the setting where `str(httpx.ReadTimeout(""))`
+had left it ending in a colon. The **recomputation**: a fired deadline is
+**504**, and neither `_is_cascade_eligible` nor either gateway route retries it.
+The **durability**: `companions.py` merges the three fields it manages into the
+companion's config instead of rendering the file, so the knob survives the boot
+reconcile that had been eating it.
+
+**The split inside `TimeoutException` is what makes this more than one line.**
+`httpx.ConnectTimeout` IS a `TimeoutException` and is a *dead host* — nothing
+was handed to an engine, the next backend is a real rescue, and it keeps
+cascading. `ReadTimeout`/`WriteTimeout`/`PoolTimeout` mean the work started, and
+they do not. Both repos split it the same way.
+
+**The number now exists once per repo, and it had been written in seven
+places** — the gateway's schema default, `app.py`'s `or 180` and
+`RoutingTable`'s signature default; the driver's schema default and each of
+three engines' `or 120`. That is how the order got inverted with nobody deciding
+it. Neither repo can test the comparison, so it is pinned by a unit check in
+each plus check 3 of the run, which reads both numbers out of the two **running
+processes**.
+
+**§6.2 #16 is five sites, not four**, and the fifth is the one reading gets
+wrong: `StreamingResponse` already races the body against `http.disconnect`, but
+`/v1/generate/stream` awaits its FIRST chunk before handing the generator over —
+deliberately, so an early failure can still be a status code — and on a cold
+engine that await is the whole model load plus the prefill.
+
+**▶ AND `Request.is_disconnected()` CANNOT BE CALLED FROM A RAW
+`asyncio.Task`.** It peeks inside an already-cancelled `anyio.CancelScope`,
+which only behaves inside anyio's own task tree, so the first version **wedged**
+the driver's entire suite under `TestClient` — whose receive blocks until the
+response completes. One blocking `receive()`, the way Starlette's own
+`listen_for_disconnect` does it, is the answer; it is also 250× faster because
+nothing polls. Both repos now assert *an ordinary request still returns*, which
+nothing had.
+
+**▶ AND THE FIRST SABOTAGE PASS FOUND THREE CHECKS THAT COULD NOT FAIL — the
+most useful hour in the slice.** (a) `r25-stalled` had **one** backend, so *the
+second replica was never asked to recompute* was an assertion about a model with
+nowhere to cascade to; it is two `modelSlots` now, and check 6 turned from *some
+error code* into *the dead backend cascades and the backup serves it*, which is
+the pair that tells the fix from the over-correction. (b) **A socket also closes
+when a deadline fires**, so *did the engine's socket close* was satisfied by the
+driver's own 12 s timeout; the stub records `cut@<elapsed>` now and the check
+requires it inside 5 s — measured at **2.3 s**. (c) A unit helper's own
+`wait_for(..., 5)` hid the *abandon rather than cancel* sabotage, because the
+deadline's cancellation did the cancelling for it and the route returned a
+perfectly good 499 five seconds late. Two more escapes named **missing checks**
+(no test fed the agent an unreadable companion config; the driver gate omitted
+the file the wedge actually hangs on), and **one escapes on measurement**: never
+*awaiting* the cancelled task is belt-and-braces, since `task.cancel()` alone
+closes the socket fast enough for the live check.
+
+**And the premise under all of §6.2 #16 was measured rather than reasoned:** a
+FastAPI endpoint on **uvicorn 0.52.4 is NOT cancelled when the client
+disconnects** — a 30 s sleep against a killed `curl` reported `cancelled: false,
+finished: false`. Without that, the live escapes could as easily have meant the
+server already did this for us.
+
+**Two instrument defects beyond those, both reporting a working product
+as broken.** The driver's env prefix is `EUGENE_PLEXUS_DRIVER_`, not
+`EUGENE_PLEXUS_INFERENCE_DRIVER_`, so the first execution drove a driver on its
+own default port with a config it wrote itself. And a zero-length `send()`
+**returns 0 without raising** on a closed Windows socket, so the stub engine
+recorded every cancelled call as `finished`; a readable socket that peeks empty
+is the portable probe.
+
 *Findings: §6.2 #13, §6.2 #16. Size: M + M. Touches: `inference-driver`,
-`gateway`, `agent`.*
+`gateway`, `agent`. The plan as written follows, kept because the corrections
+above are only legible against it:*
 
 **The timeouts are not fixed** — both are config-trio fields — so the defect is
 four things: the **order** of the defaults (the driver's 120 s fires before the
@@ -1342,7 +1427,7 @@ Each with the reason, so silence is not read as an oversight.
 R1.1 → R1.2 → R1.3 → R1.4 → R1.5 → R1.6      before any public link
   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ALL SIX DONE 2026-09-18
 R2.1 → R2.2 → R2.3 → R2.4 → R2.5 → R2.6     before the first hostile review
-  ^^^^^^^^^^^^^^^^^^ DONE 2026-09-18 ^^^^ R2.6 needs R2.2's #10 — now met
+  ^^^^^^^^^^^^ FIVE DONE 2026-09-18 ^^^^^^   R2.6 needs R2.2's #10 — now met
 R4  (alongside R2)                            decision #1, TAKEN: in front
 R3                                            the correctness pass
 R7  (before R2.6 if the order is free)        decision #5, TAKEN: split the key
@@ -1497,10 +1582,10 @@ failing check. Nothing here needs confirming again.
 | 6.1 #10| Elevated re-install strands the first install `[F]`           | **R2.2 — done 2026-09-18** |
 | 6.1 #11| Non-NVIDIA Windows GPU gets a CPU build silently `[F]`        | **R2.3 — done 2026-09-18** |
 | 6.2 #12| Control snapshot readable by any service token `[S]`          | **R2.4 — done 2026-09-18** |
-| 6.2 #13| GPU-sized timeouts cascade healthy CPU inference `[D]`        | R2.5  |
+| 6.2 #13| GPU-sized timeouts cascade healthy CPU inference `[D]`        | **R2.5 — done 2026-09-18** |
 | 6.2 #14| Download `filename` escapes every model root `[S]`            | **R1.2 — done 2026-09-18** |
 | 6.2 #15| A worker names the URL the root will dial `[S]`                | **R2.4 — done 2026-09-18** |
-| 6.2 #16| No cancel on client disconnect; SDKs retry `[D]`               | R2.5  |
+| 6.2 #16| No cancel on client disconnect; SDKs retry `[D]`               | **R2.5 — done 2026-09-18** |
 | 6.2 #17| Idle unload races an arriving request `[D]`                    | **R2.1 — done 2026-09-18** |
 | 6.2 #18| `runtime is None` = always eligible `[D]`                      | **R2.1 — done 2026-09-18** |
 | 6.2 #19| Admission reserves nothing; fallback context-blind `[D]`       | R3    |
