@@ -1219,13 +1219,48 @@ reachable on a golden path in the first hour.
    claims the invariant is tested and **there is no test file at all**: the
    reverse of this project's usual failure, a prose claim of coverage standing
    in for the test.
-2. **§6.2 #19 — admission reserves nothing.** Two launches in quick succession
+2. **§6.2 #19 — admission reserves nothing. ▶ DONE 2026-09-19** (specs
+   `b4a0a1d` — `Admission.reservedBytes`, a contract change after all; `agent`
+   `01f6aad`, `control` `67f18e9` regen-only, `ui` `56ff7ea` / dist `afc1b2f`;
+   **both installers re-pinned**; `scripts/r32-sabotage.py` 22 of 22; 864 agent
+   tests). `reservations.py` is the ledger: an intended allocation recorded when
+   a launch is scheduled, subtracted from free memory by the next caller, and
+   released by one sweep at every read. The device pick is by free-minus-reserved
+   too, or a second launch lands on the card that only looks empty. The
+   context-blind fallback became the library's own estimate, duplicated rather
+   than shared, so the two cannot disagree silently.
+
+   **The three rules the finding did not carry all held, and one grew a
+   qualifier.** A dry run reserves nothing; `copying` reserves before any
+   process exists, and it was not even on the blocker list because `_RUNNING`
+   had no member for a runtime with nothing to observe; the TTL is the backstop.
+   The qualifier is **`force`**: it overrides the verdict, not the arithmetic, so
+   create and start now measure under `force` as well and simply do not raise —
+   without which a forced launch was invisible to the next admission.
+
+   **The sabotage pass deleted three second mechanisms**, each of which escaped
+   because something else already covered it: explicit releases on stop and
+   delete (the sweep runs at every read and both routes change the status it
+   reads) and a default context inside `file_size_requirement` (its one caller
+   settles on a number first). **And two checks written in the first pass could
+   not fail** — a dry run asked twice about the same spec cannot see a reserving
+   dry run, since a runtime's own promise is never counted against it, and a
+   20 GiB model on a 24 GiB card is refused whatever the ledger says.
+
+   **Recorded, not fixed:** the reservation is counted in full for the whole of
+   a load, so the total is high by up to the model's own size while the weights
+   are being read — the refusing direction, and the alternative needs a
+   per-engine load-progress number S7 established does not exist. **And boot
+   reserves nothing**: `app.py` starts every declared runtime without consulting
+   admission, which predates this and is unchanged by it.
+
+   Originally: Two launches in quick succession
    both read the same free memory and both `fits`; the node-local copy widened
    that window from seconds to minutes by adding a `copying` state before any
    process exists. And the file-size fallback is context-blind: an 8B Q4 at
    128k needs ~17 GB of KV and is admitted at 5.5 GB.
 
-   **▶ SCOPED 2026-09-19, NOT STARTED — read this before opening it.** The
+   **▶ SCOPED 2026-09-19 — read this before opening it.** The
    mechanism is narrower and the fix is wider than the sentence above reads.
    `check_admission` already takes `running`, which looks like it accounts for
    other runtimes and **does not**: `_blockers` (`admission.py:411`) uses it
@@ -1249,7 +1284,8 @@ reachable on a golden path in the first hour.
 
    The context-blind fallback is the small half, is independent of the ledger,
    and can land first. **Estimated too large for a short session — its own
-   slice, with its own sabotage pass.**
+   slice, with its own sabotage pass.** (Both halves landed in one session; the
+   estimate was right about the shape and wrong about the size.)
 3. **§6.2 #20 — `tier` is still renumbered for the natural slot shape.** A
    surviving second case rather than a regression: the 2026-09-10 fix's own
    recorded carve-out is correct for a virtual alias and wrong for
