@@ -947,15 +947,19 @@ the more diagnostic answer anyway. That is where a hostile reviewer will point.
 
 **▶ BUILT AND LIVE-VERIFIED 2026-09-18.**
 `scripts/still-computing-acceptance.sh`, **29 PASS, zero failures, fifth
-execution**; `scripts/r25-sabotage.py`, whose **first pass escaped eight and
-found that three of the run's checks could not fail** (see below); record
+execution**; `scripts/r25-sabotage.py`, **29 sabotages over four gates, 28
+caught and 1 escaped by measurement** — after a first pass that escaped eight
+and **found that three of the run's checks could not fail** (see below); record
 [`../acceptance/still-computing-run.md`](../acceptance/still-computing-run.md).
 Findings §6.2 #13 and §6.2 #16 are closed. **A contract change after all, and
 finding it was part of the work**: `gateway.yaml` said in two places that
 *timeouts cascade*, which is exactly what this slice stops, and neither document
 had a 504 or a 499 on any path. Prose plus five response entries — **no schema
-moved**, so `datamodel-code-generator` produces byte-identical models for the
-Python five and only `ui` sees a generated diff.
+moved**. Radius measured by regenerating: `gateway` and `inference-driver` came
+back byte-identical apart from the header SHA and re-pinned anyway because they
+IMPLEMENT the rule; `agent`, `control` and `library` codegen neither document;
+`ui` gains only JSDoc no screen consumes and is deliberately left back, which
+also avoids a `dist` rebuild for a comment.
 
 **The four wrongs, and the fourth is the one that made the others pointless.**
 The **order**: gateway `requestTimeoutSeconds` is **600 s** (the OpenAI Python
@@ -1011,9 +1015,12 @@ requires it inside 5 s — measured at **2.3 s**. (c) A unit helper's own
 deadline's cancellation did the cancelling for it and the route returned a
 perfectly good 499 five seconds late. Two more escapes named **missing checks**
 (no test fed the agent an unreadable companion config; the driver gate omitted
-the file the wedge actually hangs on), and **one escapes on measurement**: never
-*awaiting* the cancelled task is belt-and-braces, since `task.cancel()` alone
-closes the socket fast enough for the live check.
+the file the wedge actually hangs on), and **one escapes on measurement and
+still does**: never *awaiting* the cancelled task is belt-and-braces, since
+`task.cancel()` alone closes the socket inside the live check's window. The
+`await` stays — "fast enough on this box today" is not a guarantee and the cost
+is one line — but nothing here can prove it load-bearing, which is better said
+than covered by a check that would pass either way.
 
 **And the premise under all of §6.2 #16 was measured rather than reasoned:** a
 FastAPI endpoint on **uvicorn 0.52.4 is NOT cancelled when the client

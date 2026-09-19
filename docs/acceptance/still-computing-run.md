@@ -1,9 +1,10 @@
 # R2.5 — a backend that is still computing has not failed: the run
 
 **2026-09-18. `scripts/still-computing-acceptance.sh`, 29 PASS live, zero
-failures, fifth execution. `scripts/r25-sabotage.py` — see §5, and read it
-before believing the run: the first sabotage pass found that three of its checks
-could not fail.** Roadmap:
+failures, fifth execution. `scripts/r25-sabotage.py`, 29 sabotages over four
+gates, 28 caught and 1 escaped by measurement — after a FIRST pass that escaped
+eight and found that three of the run's checks could not fail. Read §5 before
+believing the run.** Roadmap:
 [`../design/release-roadmap.md`](../design/release-roadmap.md) §3.5. Findings
 closed: review §6.2 #13, §6.2 #16.
 
@@ -12,8 +13,16 @@ contract change after all, and finding it was part of the work.**
 `gateway.yaml` stated in two places that *timeouts cascade*, which is precisely
 what this slice stops, and neither document carried a 504 or a 499 on any path.
 That is the "stale claim inside a contract" pattern this repo already names as
-its worst kind. Prose plus five response entries; **no schema moved**, so the
-Python five regenerate byte-identically and only `ui` sees a diff.
+its worst kind. Prose plus five response entries; **no schema moved**.
+
+**Radius measured by regenerating, not by reading the diff.** `gateway` and
+`inference-driver` came back byte-identical apart from the SHA in a generated
+header and **re-pinned anyway, because they implement the rule the prose now
+states** (the `a83df4b` precedent). `agent`, `control` and `library` codegen
+neither changed document and stay where they are. `ui` does see a diff —
+`openapi-typescript` emits operation descriptions and the new response entries —
+and is **deliberately not re-pinned**: it is JSDoc no screen consumes, and
+re-pinning would force a `dist` rebuild for a comment.
 
 ---
 
@@ -263,9 +272,17 @@ the way the repo had them and driven against the live processes.
 slice: three escapes were the check defects above, two named a missing check
 (no test fed the agent an unreadable companion config; the driver gate did not
 include the file the `is_disconnected()` wedge actually hangs on), one was a
-stale anchor, and one escapes on measurement — *never awaiting* the cancelled
-task is belt-and-braces, because `task.cancel()` alone closes the socket
-promptly enough for the live check to see it.
+stale anchor, and one escapes on measurement. **The final pass, run against the
+committed state, is 28 caught and 1 escaped**, with all four gates green before
+and after.
+
+**The one escape is deliberate and is a measurement, not a gap.** *Never
+awaiting* the cancelled task is belt-and-braces: `task.cancel()` alone closes
+the socket to the backend fast enough that the live check's 5 s window still
+sees the cut. The `await` stays, because "fast enough on this box today" is not
+a guarantee and the cost is one line — but nothing here can prove it is load
+bearing, and saying so is better than inventing a check that would pass either
+way.
 
 **A gate that HANGS counts as caught**, and one sabotage exists for exactly
 that: putting `Request.is_disconnected()` back has no symptom except that the
