@@ -155,8 +155,24 @@ paths:
           still fires. A rate-limited cloud provider falling through to
           a local engine is the case failover was built for and must not
           regress.
+        * **A deadline that fired is 504**, `type` ending
+          `#backend-timeout`, and does not cascade. The backend has not
+          *failed*; it has not *finished* — almost certainly still
+          computing this prompt — and the next replica would take the
+          same time to compute the same thing. The message names the
+          seconds and `requestTimeoutSeconds`, because a read timeout
+          carries no message of its own. A **connect** timeout is a dead
+          host that took no work and stays **502**, so failover still
+          fires.
         * Everything else — a backend 5xx, a transport failure, a
           malformed body — stays **502**.
+
+        **A caller that disconnects cancels the backend call.** The
+        driver answers **499** and the engine is released, rather than
+        computing an answer into a closed socket. The same is true of
+        the stream's *prefill*: the first chunk is awaited before the
+        200 is committed, and on a cold engine that await is the whole
+        model load.
 
         **This is the honest half of context-window handling.**
         `llama-server` answers an over-long prompt with a 400 naming
@@ -192,11 +208,32 @@ paths:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
         '500':
           $ref: 'components/common.yaml#/components/responses/Problem'
+        '499':
+          description: |
+            The caller disconnected while this was running. The backend
+            call was cancelled rather than left to finish into a closed
+            socket. Nothing reads this status -- the socket is gone --
+            but it is what the access log records, and "the caller left"
+            must not look like "we failed".
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
         '502':
           description: |
             Upstream model backend error, or a backend refusal worth
             retrying elsewhere (`408`, `409`, `425`, `429`). Cascades to
             the next backend in the slot.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: |
+            `requestTimeoutSeconds` passed with no answer. **Does not
+            cascade**: the backend is still computing this prompt and
+            the next replica would take the same time on the same
+            input. `detail` names the deadline and the setting.
           content:
             application/problem+json:
               schema:
@@ -254,10 +291,30 @@ paths:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
         '500':
           $ref: 'components/common.yaml#/components/responses/Problem'
+        '499':
+          description: |
+            The caller went away during the PREFILL -- the first chunk
+            is awaited before the 200 is committed, and on a cold
+            engine that is the whole model load. The engine call was
+            cancelled.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
         '502':
           description: |
             Backend failure before the stream opened, or a refusal worth
             retrying elsewhere (`408`, `409`, `425`, `429`). Cascades.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: |
+            `requestTimeoutSeconds` passed before the stream opened.
+            Does not cascade — the backend is still computing this
+            prompt. A timeout *after* the first frame can only be an
+            `event: error`, since the 200 is already committed.
           content:
             application/problem+json:
               schema:
@@ -317,11 +374,27 @@ paths:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
         '500':
           $ref: 'components/common.yaml#/components/responses/Problem'
+        '499':
+          description: |
+            The caller went away; the backend call was cancelled.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
         '502':
           description: |
             Upstream backend error, or a refusal worth retrying
             elsewhere (`408`, `409`, `425`, `429`). Cascades — but only
             across replicas of the SAME model; see `gateway.yaml`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: |
+            `requestTimeoutSeconds` passed with no answer. Does not
+            cascade: a replica would take the same time on the same
+            input.
           content:
             application/problem+json:
               schema:

@@ -107,9 +107,15 @@ info:
       vLLM's `/load` is real and llama.cpp has nothing like it, so the
       balancer uses neither.
     * **Cascade within the tier, then to the next tier.** Transport
-      errors, 5xx and timeouts cascade; a 4xx does not. `attempts`
-      counts every backend tried and `tier` says where the answer came
-      from.
+      errors and 5xx cascade; a 4xx does not, and **a deadline that
+      fired does not either**. A backend that has not answered in time
+      is still computing this prompt, and the next replica would take
+      the same time to compute the same thing — so a read timeout, and
+      a 504 from the driver's own deadline, come back as a 504 naming
+      `requestTimeoutSeconds` rather than as "every backend failed". A
+      *connect* timeout is a dead host, took no work, and still
+      cascades. `attempts` counts every backend tried and `tier` says
+      where the answer came from.
     * **Idle unload.** A runtime that declared `idleUnloadSeconds` is
       stopped, through its node's agent, once that long has passed
       with no request for its model and nothing in flight.
@@ -306,11 +312,28 @@ paths:
         it, then the drivers serving each configured target in order
         (see `modelSlots`). Within a tier the least-busy eligible driver
         is chosen and the request is translated to its `/v1/generate`.
-        If the attempt fails in a cascade-eligible way — transport
-        error, 5xx, timeout — the gateway tries the rest of the tier,
-        then the next tier. A **4xx does not cascade**: it means the
-        request itself is wrong, the next backend would reject it
-        identically, and retrying would only bury the real error.
+        If the attempt fails in a cascade-eligible way — a transport
+        error or a 5xx — the gateway tries the rest of the tier, then
+        the next tier. A **4xx does not cascade**: it means the request
+        itself is wrong, the next backend would reject it identically,
+        and retrying would only bury the real error.
+
+        **A deadline that fired does not cascade either**, and answers
+        **504**. A backend that has not replied inside
+        `requestTimeoutSeconds` is almost certainly still computing this
+        prompt; the next replica would take the same time to compute the
+        same thing, so cascading multiplies the cost of one slow answer
+        and then reports a total failure. The 504's message names the
+        setting to raise. A *connect* timeout is different in kind — the
+        host never took the work — and cascades like any other transport
+        error.
+
+        **A client that disconnects cancels the backend call.** The
+        request is dropped with a 499 and the attempt is still recorded,
+        because a generation nobody read is a real cost. Clients that
+        retry on their own deadline (the OpenAI SDKs retry twice by
+        default) would otherwise leave one generation running per
+        attempt.
 
         A model whose runtimes are all `stopped` is not a 404. If one of
         them declared `startOnDemand`, the gateway starts it, waits up
@@ -434,11 +457,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
+        '499':
+          description: |
+            The client disconnected before the answer was ready, and
+            the backend call was cancelled with it. Nothing reads this
+            -- the socket is gone -- but the attempt IS recorded in
+            `/v1/metrics`, because a generation nobody read is a real
+            cost and is the one signal that says callers are giving up.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
         '502':
           description: |
             Every eligible backend failed. Returned after the priority
             list is exhausted, so this means the cascade ran and lost,
             not that one backend hiccuped.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '504':
+          description: |
+            No backend answered within `requestTimeoutSeconds`.
+            **Deliberately not a 502**, and deliberately not cascaded:
+            the backend is almost certainly still computing this
+            prompt, and the next replica would take the same time on
+            the same input. The message names the setting to raise.
           content:
             application/json:
               schema:
@@ -529,10 +574,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
+        '499':
+          description: |
+            The client disconnected; the backend call was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
         '502':
           description: |
             Every eligible backend for this model failed. Note "for this
             model": the cascade never reached a different one.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '504':
+          description: |
+            No backend answered within `requestTimeoutSeconds`. Not
+            retried on a replica: a replica would take the same time on
+            the same input.
           content:
             application/json:
               schema:
