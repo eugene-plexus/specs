@@ -215,9 +215,13 @@ info:
     sends it too, so a browser client of this door is a shape its
     authors expect. The default allowed request headers therefore
     include `x-api-key`, `anthropic-version` and `anthropic-beta`
-    alongside `authorization` and `content-type` -- a preflight that
-    omits one of those is a door that answers preflight and then fails
-    the request, which is the least diagnosable CORS failure there is.
+    alongside `authorization` and `content-type` -- **as a fallback
+    that agrees with the surface, not as the mechanism.** The reply
+    ECHOES `access-control-request-headers` whenever a preflight sends
+    one, and a real browser always does, so those three are already
+    allowed by the echo. R4's first draft claimed the opposite and its
+    own sabotage pass disproved it: removing `x-api-key` from the
+    default changed no browser outcome at all.
     A preflight is
     answered before auth (it carries no bearer by definition), every
     response on those paths carries `Access-Control-Allow-Origin`, and
