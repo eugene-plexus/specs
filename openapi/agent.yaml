@@ -4099,6 +4099,12 @@ components:
         declared path resolves on this node and whether anything is
         there, and a `refuse` with `fit: unknown` is that answer being
         no.
+
+        Since 2026-09-19 it also answers against memory that is spoken
+        for but not yet taken: `reservedBytes`. Free memory is a live
+        reading, and a launch spends it over the minutes it takes to
+        copy and load a file, so two launches in quick succession were
+        both admitted against the same free card.
       required:
         - decision
         - fit
@@ -4118,8 +4124,17 @@ components:
           description: |
             What the launch is estimated to need on the device — weights
             plus KV cache at the requested context plus an overhead
-            allowance when the library computed it; file size plus a
-            fixed allowance when it did not.
+            allowance when the library computed it; file size plus an
+            estimated KV cache at that same context, plus an overhead
+            allowance, when it did not.
+
+            The fallback estimate scales with the context asked for, and
+            said so from 2026-09-19. A flat fraction of the file was the
+            same defect the library had already fixed in its own
+            estimate: the context control changes the number echoed back
+            on the screen and cannot change a verdict, so an 8B Q4 asked
+            for at 128k was admitted against 5.5 GB when the cache alone
+            is about three times the weights.
         freeBytes:
           type: integer
           format: int64
@@ -4128,6 +4143,36 @@ components:
             Free memory on the largest single target device at the
             moment of measurement. Free, not total: M3 measured 2.9 GiB
             of a 32 GiB card held on an idle desktop.
+
+            **The verdict is computed against this minus
+            `reservedBytes`**, not against this. Reporting the reduced
+            number here instead would be a claim about the card that is
+            not true.
+        reservedBytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Memory this node has already promised to launches that have
+            not taken it yet, on that same device, and which was
+            therefore subtracted from `freeBytes` before the verdict.
+            Absent or `0` when nothing is in flight.
+
+            It exists because free memory is a live reading and a launch
+            spends it slowly. A runtime that was admitted three seconds
+            ago has read no weights; one that is `copying` has no
+            process at all, for as long as the file takes to cross the
+            wire. Without this, two launches in quick succession both
+            measured the same free memory and both were told `fits`, the
+            second one for memory the first had already spent.
+
+            Released when the runtime is next observed past its start,
+            when it is stopped or deleted, or on a timeout, so an
+            abandoned launch cannot hold a card for the life of the
+            process. A dry run never adds to it; declaring a runtime
+            that starts does, `force` included, because `force` is the
+            operator overriding the verdict and not the launch becoming
+            free.
         totalBytes:
           type: integer
           format: int64
@@ -4141,7 +4186,9 @@ components:
           description: |
             The context the KV cache was sized for — the spec's
             `contextSize`, or the model's own context when the spec
-            leaves it to the engine.
+            leaves it to the engine, and the default this agent
+            assumed when neither was known and the estimate came from
+            the file's size.
         maxContextLength:
           type:
             - integer
@@ -4169,8 +4216,10 @@ components:
           items:
             $ref: '#/components/schemas/AdmissionBlocker'
           description: |
-            Runtimes currently holding memory on that device, most idle
-            first. What an operator would stop to make room, and the
+            Runtimes holding memory on that device, or on their way to
+            holding it, most idle first. `copying` counts: no process
+            exists yet, and it is the longest part of a first launch on
+            a remote mount. What an operator would stop to make room, and the
             list the gateway's opt-in eviction walks — restricted there
             to runtimes that declared `idleUnloadSeconds`.
         location:
