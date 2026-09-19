@@ -79,3 +79,9 @@ logs/
 
 # --- Private working notes (competitive/adversarial reviews, not for the repo) ---
 docs/private/
+
+# Stray runtime artifacts. A gateway started with this repo as its cwd
+# writes its metrics database here, and `git add -A` committed three of
+# them once -- which is `ci-hygiene-and-devenv-mismatch` in the repo
+# that documents it.
+metrics.sqlite3*
