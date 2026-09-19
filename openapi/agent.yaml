@@ -7,8 +7,18 @@ info:
     The agent is the per-host supervisor: **one runs on every node** in
     an install, and it is the only Eugene Plexus process an operator
     starts by hand. Its lifecycle belongs to the platform — a systemd
-    unit, a container entrypoint — which is why it is not itself a
-    `ComponentKind`.
+    unit, a **Windows service**, a container entrypoint — which is why
+    it is not itself a `ComponentKind`.
+
+    **What starts it is not a detail, and R2.6 made it a promise.** A
+    self-hosted server that only survives a reboot if somebody signs in
+    is not one. On Windows that means a real service running as
+    LocalSystem, which has two consequences this document carries rather
+    than hides: `NodeReach.restart` reports the mechanism and says in
+    `detail` whether it comes back before anyone logs in, and
+    `shareCredentials` exists at all — a service holds none of the
+    per-user credentials the person who installed it collected by hand,
+    so an authenticated file share has to be told to it once.
 
     **M5 splits this component.** Jobs 1-3 below are the agent's and
     stay; jobs 4-5 — the install's trust root and its install-wide
@@ -204,6 +214,23 @@ tags:
       in it by choosing: the set is exactly the distinct `modelPath`s of
       this node's runtimes, so a runtime deleted takes its copy with it
       and there is no policy to configure.
+
+      And `shareCredentials` (R2.6, 2026-09-18): the file servers this
+      host has to log in to before it can open a Library folder at all,
+      one entry per server. Per node for the same reason `pathMappings`
+      is — a mount is a property of the share, a login is a property of
+      *this machine's relationship to* it — and it exists because **an
+      agent running as a Windows service holds none of the credentials
+      the person who installed it once typed into Explorer**. Measured
+      on the live install: the same share opens from a logon session
+      that has a stored credential and answers `WinError 1272` from one
+      that does not, because Windows 11 refuses an unauthenticated guest
+      connection by default — so *"the share needs no password"* is not
+      the same as *"anything can open it"*. Empty is the right value
+      wherever the OS already has access; the agent asks the OS to
+      establish the session rather than opening files with a credential
+      of its own, so every child it spawns inherits the access without
+      knowing the credential exists.
 
       Topology lives under `/v1/components`, not here, so editing UI
       prefs can never accidentally restructure the install.
@@ -2346,6 +2373,21 @@ components:
             case above and for a card to print either way.
         detail:
           type: string
+          description: |
+            One plain sentence about what this mechanism means for the
+            person reading it — *"This agent starts at boot, before
+            anyone signs in."* for a service, *"This agent starts when
+            you log in."* for a logon task, and for `none` the fact that
+            stopping it ends the install until somebody types the
+            command again.
+
+            **It is the difference between the two Windows mechanisms,
+            stated where a person can see it**, which is the whole of
+            why R2.6 changed one into the other. A card that renders
+            `command` and not this can tell somebody *how* to restart
+            their install and never that it will not come back on its
+            own after a reboot — which is the question they came to the
+            page with.
 
     HostFirewall:
       type: object
