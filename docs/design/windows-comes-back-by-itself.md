@@ -355,7 +355,49 @@ harness:
 
 ## 6. Implementation record
 
-*Filled in as it lands.*
+**Built 2026-09-18.** `scripts/r26-acceptance.sh` **25 PASS, zero
+failures, fifth execution**; `scripts/r26-sabotage.py` **26 sabotages,
+25 caught**; record
+[`../acceptance/windows-service-run.md`](../acceptance/windows-service-run.md).
+
+| repo | commit | what |
+| --- | --- | --- |
+| `specs` | `dfe6b67` | `ShareCredential` + `ConfigValueType.share_credentials` in `common.yaml`; `shareCredentials` and the Windows-service prose in `agent.yaml`; `AgentRestart.detail` finally has a description — it was the one property of that schema with none |
+| `agent` | `51d1c8a` | `process_signals.ensure_console`, `winservice` calling it before the first child plus `_chdir_to_prefix`, `share_credentials.py`, `reach.py`'s install-scoped service check and its real wait, `tray.py` + `_tray_window.py` |
+| `ui` | `e98ed30` / dist `14f9073` | `startsWhen` on the Reach card, the `share_credentials` editor, the wizard's verb |
+| `control`, `gateway`, `library`, `inference-driver` | `5cbf536`, `25128f1`, `a43a7f4`, `9001722` | regen-only; the `ConfigValueType` member reaches every consumer through `ConfigField`, the M11 rule |
+
+All six pinned level at `dfe6b67`; both installers re-pinned and every
+archive verified to resolve, with the UI one unpacked and grepped so the
+`dist` trap cannot have happened silently.
+
+**Build order as it actually went**, and it differs from §5 in one
+place: the contract was committed and pushed **before** the agent
+implementation, because `ShareCredential` is a generated model and
+`codegen.py` fetches a GitHub archive at a SHA. Publish → bump → regen →
+implement, not implement → contract.
+
+### Where the slice departed from this design
+
+* **§3.2 said the agent's config validator would check shape only, and
+  it does — but the validator also has to accept the SEALED form.** It
+  sees the value on the way in (a typed string) *and* on the way out of
+  the file (an envelope). Refusing the envelope would have made the
+  agent write a config it could not load, which is the worst of the
+  three failures available because it appears only on the next start.
+* **§3.5 said the tray would hold an `aud: client` key.** It holds
+  nothing. A client key is accepted only on the gateway's three OpenAI
+  paths, so using one here would mean widening what that audience may
+  do — three slices after R2.4 spent itself narrowing exactly that. The
+  tray drives the SCM instead, which needs no Eugene credential at all,
+  and the cost is that *"unload the models but keep serving"* is not on
+  the menu. §8.
+* **The migration refuses rather than proceeding.** §3.4 said
+  `-Migrate` would carry state; what it does is **print the two
+  consequences and refuse without `-Migrate`**. A first-time upgrade on
+  any existing Windows box now reads as *a DIFFERENT install* —
+  correctly, because the prefix moved — and the verdict's advice leads
+  with `-Migrate` for exactly that case.
 
 ---
 
@@ -377,6 +419,36 @@ The session that wrote this was **unelevated**, which is the same sentence
 
 ---
 
-## 8. Departures, and what is open
+## 8. What is open
 
-*Filled in as it lands.*
+* **The six checks in §7.** They are the *Done when*, and they need
+  Administrator and a reboot.
+* **The tray icon has never been drawn.** Everything decidable about it
+  is tested — the menu, the tooltip, the SCM read, the refusals;
+  `_tray_window.run_message_loop` needs a desktop and a registered
+  service.
+* **The tray cannot free the GPU without stopping the control plane.**
+  Stopping the service frees the card, which is what was asked for, and
+  it also takes the UI and this node's place in the install. A finer
+  *"unload the models, keep serving"* is one `POST
+  /v1/runtimes/{name}/stop` per runtime and needs a credential a
+  long-lived unattended process in a user session should not hold. The
+  honest options are a narrow new audience or a route that accepts
+  `aud: client`; both are a slice, and neither should be decided as a
+  side effect of a tray icon.
+* **`Show-MigrationConsequences` has never run against a real
+  migration.** Its refusal is sabotage-checked; the path where somebody
+  passes `-Migrate` and the install actually moves is Troy's.
+* **Linux and macOS.** `install.sh` writes a `--user` systemd unit and a
+  `~/Library/LaunchAgents` plist. Both die at logout exactly as the
+  Windows logon task did, and `install.sh` already *warns* about
+  `loginctl enable-linger` rather than doing it. **If the premise is
+  *the promise is the requirement*, the wizard's sentence is untrue on
+  all three platforms and only one has been fixed.** Named here so it is
+  a decision rather than an oversight.
+* **`_RESTART_PACES` sums to ~37 s against a `SvcStop` that allows 90.**
+  A stop that takes longer than the last pacer leaves the service
+  stopped, and the helper's output goes nowhere. Bounded on purpose —
+  supervised children escalate concurrently at 5 s each — but it is a
+  number chosen rather than measured against a real service stop, which
+  is check 1 of §7.

@@ -16,21 +16,44 @@
   It touches nothing outside the prefix except the one autostart entry,
   and `-Uninstall` removes both.
 
-  ELEVATION DECIDES THE SHAPE OF THE INSTALL, and this is the one place
-  the two platforms genuinely differ. Windows has no per-user service,
-  so:
+  A WINDOWS INSTALL IS A SERVICE (R2.6, 2026-09-18). It asks for
+  Administrator once, installs into %ProgramData%\EugenePlexus, and
+  registers a real service that starts at boot with nobody logged in.
 
-    not elevated -> %LOCALAPPDATA%\EugenePlexus + a logon scheduled task.
-                    Needs no Administrator. A task has a console, so
-                    supervised children keep the graceful stop.
-    elevated     -> %ProgramData%\EugenePlexus + a real Windows service.
-                    Starts at boot with no one logged in; `sc stop` and
-                    a recovery policy work. A service has NO console, so
-                    supervised children get a hard kill -- decided,
-                    accepted, and announced by the agent at every boot
-                    (install-paths section 12, step 2).
+  That is a change, and the reason is that the old default could not
+  keep the promise the product makes. A logon scheduled task dies at
+  sign-out, dies at a user switch, and never starts after a reboot that
+  lands on the lock screen -- so an install that says it "comes back
+  working without you" answered a phone at 7 am with connection refused
+  and had no screen that could explain why. Decision 4 of the release
+  roadmap: the promise is the requirement, so the mechanism changes
+  rather than the sentence.
 
-  Both are supported. Run it however you want the machine to behave.
+  `-NoService` keeps the whole unelevated path: %LOCALAPPDATA% and a
+  logon task, exactly as before, for anyone who wants it.
+
+  WHAT THE SERVICE COSTS, AND WHAT IT NO LONGER COSTS. It runs as
+  LocalSystem, which holds none of the credentials the person installing
+  it collected by hand -- so an authenticated file share needs a row in
+  `shareCredentials` (Config -> Agent -> Storage), and a migrated
+  install comes back sealed exactly once because its master key is in
+  the installing user's Credential Manager and not in SYSTEM's. Both are
+  reported below before they happen.
+
+  It no longer costs the graceful stop. `install-paths` section 7 ruled
+  out a service with `AllocConsole()` on the grounds that it would make
+  the agent's logs vanish; that cost was asserted and never measured,
+  and measuring it (R2.6, section 0.3 of the design) found a real
+  `llama-server` exiting in 0.036 s on `CTRL_BREAK_EVENT` with the log
+  file still being written. The agent allocates a console at service
+  start and children are asked to stop, not killed.
+
+  THE LOGON TASK DOES NOT DISAPPEAR, IT CHANGES JOB. It now starts the
+  notification-area icon, which is the one part of this that belongs in
+  a person's own session -- session 0 isolation means a service cannot
+  draw anything on a desktop. Stop Eugene from the icon to free the
+  graphics card for a game, start it again afterwards. `-NoTray` skips
+  it.
 
   WHERE THE PACKAGES COME FROM. GitHub source archives at pinned
   commits -- the same mechanism `SPECS_REF` has used in every consumer
@@ -50,6 +73,8 @@
 param(
     [string]$Prefix,
     [switch]$NoService,
+    [switch]$NoTray,
+    [switch]$NoElevate,
     [switch]$NoStart,
     [switch]$Uninstall,
     [switch]$Verify,
@@ -68,12 +93,12 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "438edbe2e10eb29f2dfec40781356da11760be35"
-    "control"          = "59649429d8965be62f31436306b13573a8775629"
-    "gateway"          = "076aa5dbb4e0bdd9421d00e3d77ce2c4f2e1cd21"
-    "inference-driver" = "3bb4464388bd17c795efac3de8d36db14b17fecd"
-    "library"          = "beb7ddc930d86ea9442169e6fa6546e08c34d6af"
-    "ui"               = "640e3de913b3bdbfb7d02177120b49ba6a5630f5"  # branch `dist`, not `main`
+    "agent"            = "51d1c8a55d024472b72dc458c0be9aaa378a9250"
+    "control"          = "5cbf5361fe4562fc8ac81969c94f306fbd6702a3"
+    "gateway"          = "25128f106761188189f48871c079f792f012f9e0"
+    "inference-driver" = "9001722d67800b02fd9fe6a01485a34ded7b72c5"
+    "library"          = "a43a7f4876406946eede83d2cac5b3d4587ff921"
+    "ui"               = "14f9073b38f41408554619b38d13f250c2c55e88"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -87,6 +112,13 @@ $DIST = @{
 $PyVersion    = "3.12"
 $ServiceName  = "EugenePlexusAgent"
 $TaskName     = "EugenePlexusAgent"
+# **A different name, because it is a different thing** (R2.6). Before
+# this, `$TaskName -eq $ServiceName` and the task WAS the agent. It now
+# starts the tray icon, which has no business being unregistered by
+# something cleaning up an agent -- and `Get-AutostartExecutable` reads
+# the task as evidence of where the install is, which a tray icon in a
+# user's session is not.
+$TrayTaskName = "EugenePlexusTray"
 
 function Say  { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
@@ -123,9 +155,35 @@ $IsElevated = ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
+# **What kind of install this is, decided before anything is written.**
+# R2.6 inverted the default: a Windows install is a service unless the
+# operator asks otherwise, because a logon task cannot keep the promise
+# the product makes. `-NoService` is the whole of the old unelevated
+# path and is the only way to get it.
+#
+# `-Uninstall` is the exception, and only it. It must work at whatever
+# elevation it was started with, or removing a per-user install would
+# demand Administrator it does not need -- so it keeps the old rule and
+# picks its prefix by elevation.
+#
+# `-Verify` and `-Detect` are deliberately NOT exceptions, although both
+# are read-only and neither elevates. They REPORT on the install, and an
+# install report that describes a shape an ordinary run would not
+# produce is worse than no report: `-Detect` exists to answer "is this a
+# second install?", and it can only answer that about the prefix the
+# next run will actually use.
+$WantsService = -not ($NoService -or $Uninstall)
+
 if (-not $Prefix) {
-    $Prefix = if ($IsElevated) { Join-Path $env:ProgramData "EugenePlexus" }
-              else             { Join-Path $env:LOCALAPPDATA "EugenePlexus" }
+    $Prefix =
+        if ($Uninstall) {
+            if ($IsElevated) { Join-Path $env:ProgramData "EugenePlexus" }
+            else             { Join-Path $env:LOCALAPPDATA "EugenePlexus" }
+        } elseif ($WantsService) {
+            Join-Path $env:ProgramData "EugenePlexus"
+        } else {
+            Join-Path $env:LOCALAPPDATA "EugenePlexus"
+        }
 }
 
 $Venv    = Join-Path $Prefix "venv"
@@ -141,21 +199,51 @@ $Port    = if ($env:EUGENE_PLEXUS_AGENT_BIND_PORT) { $env:EUGENE_PLEXUS_AGENT_BI
 # elevation that is the whole point.
 if ($Verify) {
     Write-Host @"
-The scheduled-task path is verified by scripts/install-acceptance.sh.
-The SERVICE path is not: registering one needs Administrator, which the
-session that wrote this did not have. To close it, in an ELEVATED
-PowerShell:
+R2.6 INVERTED WHICH PATH IS THE UNVERIFIED ONE, and this text says so
+rather than being quietly updated. The scheduled-task path is covered by
+scripts/install-acceptance.sh and has been since step 3. The SERVICE
+path -- which is now what an ordinary Windows install GETS -- needs
+Administrator and a reboot, and neither is reachable from a
+non-interactive harness. These are the six checks that close it. Run
+them in an ELEVATED PowerShell, on a machine you are willing to reboot.
+
+1. It registers, answers, and stops.
 
     & "$PyBin" -m eugene_plexus_agent.winservice install
     Start-Service $ServiceName
     Invoke-RestMethod http://127.0.0.1:$Port/healthz
     Stop-Service $ServiceName
-    & "$PyBin" -m eugene_plexus_agent.winservice remove
 
-Expected: /healthz answers, and the agent's log carries the line
-'child shutdown: ... no console ...' as a WARNING -- a service has no
-console, so supervised children are hard-killed. That warning is the
-badge, not a bug.
+2. THE CONSOLE, WHICH IS THE ONE MEASUREMENT SESSION 1 COULD NOT MAKE.
+   `process_signals.ensure_console()` was measured in an interactive
+   session: a console-less parent that allocates one gets its child out
+   in 0.036 s on CTRL_BREAK_EVENT. A service runs in SESSION 0 and that
+   has not been measured anywhere. With the service running and a model
+   loaded, stop the runtime and read $Prefix\logs\agent.log:
+
+     want: 'child shutdown: children are stopped with CTRL_BREAK_EVENT'
+     not:  'child shutdown: ... no console ...'
+
+   The second line means AllocConsole did not work in session 0 and the
+   graceful stop is gone -- which is survivable, and is the thing to
+   find out here rather than from somebody's truncated answer.
+
+3. The master key, in the service's own store. Sign in once after
+   installing; restart the service; confirm it comes back unlocked
+   without asking again.
+
+4. A share, if this machine reads models over one. Add the server under
+   Config -> Agent -> Storage -> Logins for file servers, press Test,
+   then restart the service and confirm a model still loads. A service
+   has none of your Credential Manager entries -- Windows answers
+   error 1272 even for a folder with no password on it.
+
+5. THE ONE THAT IS THE POINT. Reboot. Do not sign in. From another
+   machine: Invoke-RestMethod http://<this host>:$Port/healthz
+
+6. The icon: stop and start Eugene from it with no Administrator
+   prompt. If it says access is denied, `sc sdset` did not take -- see
+   Grant-ServiceControl in this script.
 "@
     return
 }
@@ -280,10 +368,27 @@ function Show-InstallVerdict {
     Write-Host "  passphrase, models folder, keyring entry and enrolled workers behind,"
     Write-Host "  with a second trust root asking for a new passphrase. So it refuses."
     Write-Host ""
-    Write-Host "  To upgrade the install that is already here:"
-    Write-Host "      ... -Prefix '$($other.Prefix)'"
-    Write-Host "  To move this machine to $Prefix on purpose, taking the autostart with it:"
-    Write-Host "      ... -Prefix '$Prefix' -Migrate"
+    # **After R2.6, the commonest reason to be standing here is not a
+    # mistake.** Every install made before 2026-09-18 is a per-user one,
+    # and the default moved to a service -- so the first upgrade on any
+    # existing Windows box reads as "a DIFFERENT install", correctly,
+    # and the answer is usually to migrate rather than to refuse. The
+    # order below says so; `-Migrate` prints what it costs before it
+    # does anything (see Show-MigrationConsequences).
+    if ($WantsService -and
+        $other.Prefix -and
+        [IO.Path]::GetFullPath($other.Prefix) -ne [IO.Path]::GetFullPath($Prefix)) {
+        Write-Host "  To move this install to a Windows service, so it starts at boot"
+        Write-Host "  before anyone signs in (this is the upgrade path):"
+        Write-Host "      ... -Migrate"
+        Write-Host "  To keep it exactly as it is -- starting when you log in:"
+        Write-Host "      ... -Prefix '$($other.Prefix)' -NoService"
+    } else {
+        Write-Host "  To upgrade the install that is already here:"
+        Write-Host "      ... -Prefix '$($other.Prefix)'"
+        Write-Host "  To move this machine to $Prefix on purpose, taking the autostart with it:"
+        Write-Host "      ... -Prefix '$Prefix' -Migrate"
+    }
     Write-Host "  To remove the old one first:"
     Write-Host "      ... -Prefix '$($other.Prefix)' -Uninstall"
     return $false
@@ -300,6 +405,108 @@ function Assert-OwnInstall {
     }
     Show-InstallVerdict | Out-Null
     Die "refusing to build a second install on this machine (see above; -Migrate overrides)"
+}
+
+# **Say what a service install costs BEFORE it costs it** (R2.6).
+#
+# A LocalSystem service holds none of the per-user things this install
+# keeps in the installing person's profile, and there are three of them.
+# Two are handled by the installer and one cannot be:
+#
+#   * the config-file variable moves from User scope to Machine scope,
+#     below -- without it the service resolves its own default path,
+#     finds no agent.yaml and RAISES A SECOND INSTALL;
+#   * a share credential becomes a row in `shareCredentials`, because
+#     the entry the person typed into Explorer is in their profile;
+#   * the MASTER KEY is in their Credential Manager and cannot be
+#     written into SYSTEM's from here. The install comes back sealed
+#     exactly once. Signing in re-seals it into the service's own store
+#     and every boot after that is unattended.
+#
+# The third is why this function exists. An install that comes back
+# sealed with no warning is indistinguishable from an install that
+# broke, and this product has already shipped that exact confusion once
+# (the container restart of 2026-09-12: initialized but locked, with
+# every health check green).
+# **Let the person who installed it stop it, without a UAC prompt.**
+#
+# Stopping a service needs SERVICE_STOP, which by default is granted to
+# Administrators and nobody else -- so a tray icon in an ordinary
+# session gets `Access is denied` on every click, and "turn Eugene off
+# to play a game" becomes "acknowledge a UAC prompt to play a game".
+#
+# The grant is deliberately the narrow one: rights on THIS ONE SERVICE
+# for THIS ONE ACCOUNT. It is not `SeServiceLogonRight`, it is not a
+# group, and it changes nothing about any other service on the machine.
+#
+# `sc sdset` REPLACES the descriptor rather than adding to it, so the
+# string below has to carry the default ACEs too or the SCM itself
+# loses access to its own service. Read it as: system and admins get
+# everything they had, and the installing user additionally gets
+# RP (start), WP (stop) and DT (pause) on top of the read rights
+# every authenticated user already has.
+function Grant-ServiceControl {
+    $sid = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+    # The Windows default descriptor for a service, verbatim, plus one
+    # ACE. Taken from `sc sdshow` on a stock service rather than written
+    # from memory -- a hand-built descriptor that merely looks right is
+    # how a service becomes unmanageable by anything including the SCM.
+    $default = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)" +
+               "(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
+    $mine    = "(A;;CCLCSWRPWPDTLOCRRC;;;$sid)"
+    $sacl    = "S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)"
+    $sddl    = "$default$mine$sacl"
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & sc.exe sdset $ServiceName $sddl 2>&1 | Out-Null }
+    finally { $ErrorActionPreference = $prev }
+    if ($LASTEXITCODE -ne 0) {
+        # Not fatal: the install works, the icon does not. Saying which
+        # beats failing the whole install over a convenience.
+        Warn ("could not grant $env:USERNAME permission to start and stop the service " +
+              "(sc sdset exited $LASTEXITCODE). The tray icon will ask for Administrator; " +
+              "everything else is unaffected.")
+        return $false
+    }
+    Say "$env:USERNAME may start and stop Eugene without a prompt"
+    return $true
+}
+
+function Show-MigrationConsequences {
+    if (-not $WantsService) { return }
+    $existing = Join-Path $env:LOCALAPPDATA "EugenePlexus\agent.yaml"
+    if (-not (Test-Path $existing)) { return }
+    if ([IO.Path]::GetFullPath((Join-Path $Prefix "agent.yaml")) -eq `
+        [IO.Path]::GetFullPath($existing)) { return }
+    # **An upgrade of a service install is not a migration**, even with
+    # a per-user directory still lying around from before one. The
+    # consequences below have already been paid; printing them again
+    # would demand `-Migrate` on every routine upgrade forever.
+    if (Test-Path (Join-Path $Prefix "agent.yaml")) { return }
+
+    Write-Host ""
+    Warn "this machine already has a per-user install at $(Split-Path -Parent $existing)"
+    Write-Host "  A service runs as the system rather than as you, so two things move:"
+    Write-Host ""
+    Write-Host "  1. IT WILL ASK FOR YOUR PASSPHRASE ONCE, on the first sign-in after this."
+    Write-Host "     Eugene's key is in YOUR Windows Credential Manager and the service"
+    Write-Host "     cannot read it. Signing in once puts a copy where the service can, and"
+    Write-Host "     every start after that is unattended again. Nothing is lost -- but if"
+    Write-Host "     you have forgotten the passphrase, stop here: there is no recovery."
+    Write-Host ""
+    Write-Host "  2. A MODEL FOLDER ON A NETWORK DRIVE WILL NEED A LOGIN. The service is not"
+    Write-Host "     signed in as you, so the password you once typed into File Explorer is"
+    Write-Host "     not available to it -- and Windows refuses an anonymous visitor even"
+    Write-Host "     when the folder has no password of its own. Add the server under"
+    Write-Host "     Config -> Agent -> Storage -> Logins for file servers."
+    Write-Host ""
+    if (-not $Migrate) {
+        Die @"
+refusing to migrate without being asked to. Re-run with -Migrate once you
+    have read the two points above, or keep the per-user install with:
+        ... -NoService
+"@
+    }
 }
 
 function Remove-Autostart {
@@ -326,6 +533,20 @@ function Remove-Autostart {
         Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
         Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
     }
+    # The tray icon, which is a task of this install's too (R2.6) and
+    # would otherwise sit in the notification area of every future
+    # sign-in, pointing at a service that is gone. Removed unelevated
+    # as well: it is the invoking user's own task, and its whole point
+    # is that it needs no Administrator.
+    if (Get-ScheduledTask -TaskName $TrayTaskName -ErrorAction SilentlyContinue) {
+        Say "removing the tray icon's logon task"
+        Stop-ScheduledTask -TaskName $TrayTaskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $TrayTaskName -Confirm:$false
+    }
+    Get-CimInstance Win32_Process -Filter "Name='eugene-plexus-tray.exe'" |
+        Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
     # A task's process keeps running after the task is unregistered.
     Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='eugene-plexus-agent.exe'" |
         Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
@@ -341,7 +562,16 @@ function Remove-Autostart {
 # available without running one.
 if ($Detect) {
     $clean = Show-InstallVerdict
-    if (-not $clean -and -not $Migrate) { exit 3 }
+    # **`$global:LASTEXITCODE`, never `exit`** -- found while R2.6 was
+    # reading this file. The rule is stated forty lines above and this
+    # line broke it: `-Detect` is only reachable as
+    # `& ([scriptblock]::Create((irm ...))) -Detect`, which runs in the
+    # CALLER'S process, so `exit 3` closed the operator's terminal in
+    # exactly the case the switch exists to report. Under
+    # `powershell -File` the variable is the process exit code, which is
+    # what a script checking this wants; in a live shell it is a
+    # variable, which is what a person wants.
+    if (-not $clean -and -not $Migrate) { $global:LASTEXITCODE = 3 }
     return
 }
 
@@ -509,14 +739,72 @@ if removed == 0:
     return
 }
 
-# --- 0. is this machine already somebody's install? -------------------
+# --- 0a. Administrator, once, or say plainly why not ------------------
+# `SC_MANAGER_CREATE_SERVICE` is granted to nobody but Administrators,
+# so "the service is the default" and "no Administrator needed" cannot
+# both be true. Asking is honest; asking TWICE, or silently building a
+# second install because the first ask was declined, is not -- and the
+# second of those is exactly review 6.1 #10, which R2.2 fixed and which
+# this must not reintroduce from the other direction.
+#
+# Re-launching needs the script's own text, and under
+# `irm ... | iex` there is no file on disk to re-run. So the text is
+# written to a temp file and handed to a new elevated PowerShell with
+# every argument this run received. `-NoElevate` refuses the relaunch
+# and explains, for a shell where UAC cannot appear at all.
+if ($WantsService -and -not $IsElevated) {
+    if ($NoElevate) {
+        Die @"
+a Windows service needs Administrator, and -NoElevate was given.
+    Either start an elevated PowerShell and run this again, or install
+    the per-user version, which starts when you log in rather than at
+    boot:
+        ... -NoService
+"@
+    }
+    Say "a Windows service needs Administrator -- asking for it now"
+    $self = Join-Path ([IO.Path]::GetTempPath()) "eugene-plexus-install-$PID.ps1"
+    # WriteAllText, never Set-Content -Encoding utf8: the BOM is what
+    # breaks a SPECS_REF archive URL, and a BOM in front of `<#` here
+    # would break the help block just as reliably.
+    [IO.File]::WriteAllText($self, $MyInvocation.MyCommand.ScriptBlock.ToString())
+    $forwarded = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $self)
+    foreach ($entry in $PSBoundParameters.GetEnumerator()) {
+        if ($entry.Value -is [switch]) {
+            if ($entry.Value.IsPresent) { $forwarded += "-$($entry.Key)" }
+        } elseif ($null -ne $entry.Value -and "$($entry.Value)" -ne "") {
+            $forwarded += @("-$($entry.Key)", "$($entry.Value)")
+        }
+    }
+    try {
+        $elevated = Start-Process -FilePath "powershell.exe" -ArgumentList $forwarded `
+            -Verb RunAs -Wait -PassThru
+    } catch {
+        Remove-Item $self -ErrorAction SilentlyContinue
+        Die @"
+Windows would not start an elevated PowerShell ($($_.Exception.Message)).
+    Start one yourself and run this again, or install the per-user
+    version, which starts when you log in rather than at boot:
+        ... -NoService
+"@
+    }
+    Remove-Item $self -ErrorAction SilentlyContinue
+    if ($elevated.ExitCode -ne 0) {
+        Die "the elevated install exited with code $($elevated.ExitCode); see its window for why"
+    }
+    Say "done (installed by the elevated run above)"
+    return
+}
+
+# --- 0b. is this machine already somebody's install? ------------------
 # Before the first byte is written, and before step 3 stops a running
 # agent -- which is where an unguarded run took the other install's
 # task away (review 6.1 #10).
 Assert-OwnInstall
+Show-MigrationConsequences
 
 # --- 1. uv ------------------------------------------------------------
-Say "installing into $Prefix$(if ($IsElevated) { ' (elevated: a Windows service)' } else { ' (per-user: a logon task)' })"
+Say "installing into $Prefix$(if ($WantsService) { ' (a Windows service: starts at boot)' } else { ' (per-user: starts when you log in)' })"
 New-Item -ItemType Directory -Force -Path (Join-Path $Prefix "bin"), (Join-Path $Prefix "logs") | Out-Null
 
 if (Test-Path $UvExe) {
@@ -577,7 +865,12 @@ if ((Get-AgentTask) -or (Get-AgentService)) {
 }
 Say "installing Eugene Plexus"
 $specs = foreach ($repo in $DIST.Keys) {
-    $extra = if ($repo -eq "agent") { "[service]" } else { "" }
+    # Both extras resolve to the same `pywin32`, so naming both costs
+    # nothing and the names stay meaningful: `service` is how the
+    # install comes back after a reboot, `tray` is how a person turns it
+    # off to play a game. `-NoTray` skips the task, not the dependency --
+    # a person who changes their mind should not need a reinstall.
+    $extra = if ($repo -eq "agent") { "[service,tray]" } else { "" }
     "$($DIST[$repo])$extra @ https://github.com/eugene-plexus/$repo/archive/$($PIN[$repo]).tar.gz"
 }
 Invoke-Native $UvExe (@("pip", "install", "-q", "--python", $PyBin) + $specs) "package install failed"
@@ -711,7 +1004,7 @@ if ($Join) {
 $autostart = "none"
 if (-not $NoService) {
     Remove-Autostart
-    if ($IsElevated) {
+    if ($WantsService) {
         Say "registering the $ServiceName service"
         # pywin32 ships the DLLs the service host needs under
         # site-packages; its postinstall is what makes them findable
@@ -740,8 +1033,9 @@ if (-not $NoService) {
         [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS", $modelRoot, "Machine")
         $env:EUGENE_PLEXUS_AGENT_ENGINE_ROOT = $engineRoot
         $env:EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS = $modelRoot
+        Grant-ServiceControl
         $autostart = "service"
-        Warn "a Windows service has no console, so supervised children are stopped with a hard kill. The agent says so at every boot. Run with '-Verify' for how to confirm the service end to end."
+        Say "Eugene will start at boot, before anyone signs in."
     } else {
         Say "registering the $TaskName logon task (no Administrator needed)"
         # **`--unattended`, and this is the line that needed it.** A
@@ -760,7 +1054,47 @@ if (-not $NoService) {
         Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
             -Settings $settings -Description "Eugene Plexus node agent" | Out-Null
         $autostart = "task"
-        Warn "this agent starts when you log in, not at boot. Re-run this installer from an elevated PowerShell to install it as a service instead."
+        Warn "this agent starts when you log in, not at boot: a reboot that lands on the lock screen leaves it off until somebody signs in at this keyboard. Re-run without -NoService to make it a service instead."
+    }
+}
+
+# --- 5b. the tray icon ------------------------------------------------
+# **The logon task did not disappear, it changed job.** A service runs in
+# session 0 and nothing it draws reaches a desktop, so the icon is a
+# separate process in the signed-in person's own session -- and a
+# per-user logon task is exactly the right mechanism for something that
+# should exist only while somebody is there to look at it.
+#
+# Registered for the account that ran the installer, which under
+# self-elevation is still that person: `Start-Process -Verb RunAs`
+# elevates the same account rather than switching to another. On a box
+# with several users it is per-user by design; the others run the
+# installer's `-NoService -NoStart` themselves or go without an icon.
+if ($autostart -eq "service" -and -not $NoTray) {
+    $trayExe = Join-Path $Venv "Scripts\eugene-plexus-tray.exe"
+    if (Test-Path $trayExe) {
+        Say "registering the $TrayTaskName logon task (the notification-area icon)"
+        if (Get-ScheduledTask -TaskName $TrayTaskName -ErrorAction SilentlyContinue) {
+            Unregister-ScheduledTask -TaskName $TrayTaskName -Confirm:$false
+        }
+        $trayAction = New-ScheduledTaskAction -Execute $trayExe `
+            -Argument "--port $Port" -WorkingDirectory $Prefix
+        $trayTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        # **No RestartCount, unlike the agent's task.** An icon a person
+        # dismissed with "Hide this icon" must stay dismissed until the
+        # next sign-in; a restart policy would put it back within the
+        # minute and there would be no way to be rid of it.
+        $traySettings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+            -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
+        Register-ScheduledTask -TaskName $TrayTaskName -Action $trayAction `
+            -Trigger $trayTrigger -Settings $traySettings `
+            -Description "Eugene Plexus notification-area icon" | Out-Null
+        # Start it now rather than at the next sign-in: the person is
+        # sitting here, and an icon that appears tomorrow is an icon
+        # they will not connect to what they just did.
+        Start-ScheduledTask -TaskName $TrayTaskName -ErrorAction SilentlyContinue
+    } else {
+        Warn "no tray icon: $trayExe is missing (the [tray] extra did not install)"
     }
 }
 
@@ -830,3 +1164,10 @@ elseif ($autostart -eq "task")  { Write-Host "    Start-ScheduledTask -TaskName 
 else { Write-Host "    `$env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = '$Config'; & '$AgentEx'" }
 Write-Host "    then open http://127.0.0.1:$Port/"
 Write-Host "    logs:  $Prefix\logs\    config: $Config"
+if ($autostart -eq "service") {
+    Write-Host "    Eugene starts at boot, before anyone signs in."
+    if (-not $NoTray) {
+        Write-Host "    There is an icon by the clock: use it to stop Eugene before a game"
+        Write-Host "    and start it again after."
+    }
+}

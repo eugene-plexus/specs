@@ -551,19 +551,29 @@ GPU box however you already mount things:
   *Private* and a user that can read it (write too, if you want to be
   able to delete models from that machine), or *Public*. Linux GPU boxes
   can use NFS instead: **NFS Security Settings → Export: Yes**.
-- **Windows GPU box — and which install you have decides the answer**
-  (corrected 2026-09-17; this bullet used to say the agent runs "not in your
-  desktop session", which is false for the default install — and is why a
-  mapped `Y:` worked on the live worker).
-  - **Default, unelevated install (a logon task):** the agent runs **in your
-    own session**, so a mapped drive letter and your own saved share
-    credentials both work. The cost is that it starts at sign-in and stops at
-    sign-out.
-  - **Elevated install (the real service):** it runs as LocalSystem, where a
-    drive letter does not exist and `cmdkey` in your account buys nothing —
-    the credential would have to belong to the machine account. Use the UNC
-    path and prefer a share the machine account can read (Public, or an ACL
-    granting the computer object) over saved credentials.
+- **Windows GPU box — a service since R2.6 (2026-09-18), which changes
+  the answer.** This bullet has now been wrong twice, in opposite
+  directions, and the corrections are kept because the shape of the
+  mistake is the useful part: it first said the agent runs "not in your
+  desktop session" (false for the old default, and why a mapped `Y:`
+  worked on the live worker), then described two installs of which the
+  service was the rare one. It is now the ordinary one.
+  - **A Windows install is a service.** It runs as LocalSystem: **a
+    mapped drive letter does not exist**, and the share credential you
+    once typed into File Explorer is in *your* profile and invisible to
+    it. **Use the UNC path**, and put the login in **Config → Agent →
+    Storage → Logins for file servers** — one row per server, which is
+    all Windows allows.
+  - **A share with no password is not a share anything can open.**
+    Measured on the live install: Windows 11 refuses an unauthenticated
+    guest connection by default (`EnableInsecureGuestLogons` is 0), so a
+    Public UnRAID share answers `WinError 1272` to a service that has no
+    credential. A row under Logins for file servers is the fix; turning
+    guest logons back on machine-wide is not, and Eugene will not do it
+    for you.
+  - **`install.ps1 -NoService`** keeps the old per-user install — your
+    own session, your drive letters, your saved credentials — at the
+    cost that it starts at sign-in and stops at sign-out.
   - Either way the UNC path is the portable answer, and it is what the
     folder's Windows mount should carry.
 - **Linux GPU box:** mount it where you like (`/mnt/models` via `fstab`,

@@ -1067,6 +1067,69 @@ non-streaming path. `is_disconnected` occurs zero times in either repo.
 
 ### 3.6 R2.6 — Windows comes back by itself
 
+**▶ BUILT 2026-09-18, AND ITS FIRST STEP CHANGED THE SLICE.**
+`scripts/r26-acceptance.sh`, **25 PASS, zero failures, fifth execution**;
+`scripts/r26-sabotage.py`, **26 sabotages, 25 caught** (one escape
+expected, one unexpected that named a check which could not fail);
+design [`windows-comes-back-by-itself.md`](windows-comes-back-by-itself.md);
+record [`../acceptance/windows-service-run.md`](../acceptance/windows-service-run.md).
+Contract `dfe6b67`, `agent` `51d1c8a`, `ui` `e98ed30` / dist `14f9073`,
+the other three regen-only; **all six level and both installers
+re-pinned**. Closes §6.2 #26. **R2 IS COMPLETE, ALL SIX SLICES.**
+
+**Step one came back NO, and not for the reason step one gave.** A
+LocalSystem service cannot open the live install's models — but the
+share is **guest-open**, it is **Windows 11 that refuses the guest
+fallback** (`EnableInsecureGuestLogons` is 0), the box is a **workgroup**
+member with no machine account, and the only thing bridging the gap is a
+Credential Manager entry in one person's profile. `WinError 1272`, and
+`WNetAddConnection2W` answers 1272 with no credentials and with bad ones
+alike. So the conditional below fired and the slice became a credential
+slice: `shareCredentials`, per node beside `pathMappings`, sealed with
+the install's master key, one row per **server** because Windows refuses
+a second credential to a server it already has a session with (1219).
+
+**And the service loses FOUR per-user things, of which the roadmap named
+one.** Name the pattern: *a LocalSystem service has none of the user's
+secrets, and this install keeps three of them in the user's profile* —
+the config-file variable (User scope; without it the service **raises a
+second install**), the master key (sealed once after a migration,
+re-sealed by the next sign-in), and the SMB credential. Drive letters
+are the fourth and were already handled.
+
+**▶ STEP THREE CAME BACK YES, AND REFUNDS A COST ACCEPTED ON 2026-09-11.**
+`install-paths` §7 ruled out a service with `AllocConsole()` because
+*"logs vanish"*. **Asserted, never measured, and false**: after
+`FreeConsole()` + `AllocConsole()` a child is signalled in 0.036 s
+against 0.034 s with an inherited console, and the file handler keeps
+writing. That table row is corrected in place. The one thing session 1
+cannot answer is `AllocConsole()` in **session 0**, which is check 2 of
+six owed to an elevated run.
+
+**Two live defects found by reading, neither on the roadmap.** The
+three-second wait in both restart branches **does not exist** —
+`timeout /t 3` exits rc 125 in 0.18 s under `stdin=DEVNULL`, which is
+what `spawn_restart` passes, and this is live on `logon_task` today. The
+tempting fix is worse: `powershell.exe` under `DETACHED_PROCESS` exits
+in 0.05 s having run nothing, **successfully**, so `Restart-Service`
+would have been a silent no-op that still reported success. And
+`-Detect` closed the operator's terminal, against the rule stated forty
+lines above the line that broke it.
+
+**On Troy's ask, a notification-area icon** — turn Eugene off to play a
+game, back on afterwards. Session 0 isolation forbids a service drawing
+on a desktop, so the per-user logon task this slice takes away from the
+agent **does not disappear, it changes job**. It drives the SCM and
+holds no Eugene credential at all.
+
+**NOT DONE, and it is the *Done when*:** a service registered, a reboot
+with nobody signed in, session-0 `AllocConsole`, the master key in
+SYSTEM's store, a real share opened by LocalSystem, and a tray click
+with no UAC prompt. Six checks, printed by `install.ps1 -Verify`, all
+needing Administrator. **Linux and macOS have the identical defect**
+(a `--user` systemd unit and a launchd agent, both dead until login) and
+are named rather than fixed.
+
 *Finding: §6.2 #26. Size: L. Touches: `specs/scripts`, `agent`, `ui`,
 `specs/docs/deployment`. **Depends on R2.2's #10** — the service runs as
 LocalSystem and #10 is where the SYSTEM-profile home and the
@@ -1434,10 +1497,12 @@ Each with the reason, so silence is not read as an oversight.
 R1.1 → R1.2 → R1.3 → R1.4 → R1.5 → R1.6      before any public link
   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ALL SIX DONE 2026-09-18
 R2.1 → R2.2 → R2.3 → R2.4 → R2.5 → R2.6     before the first hostile review
-  ^^^^^^^^^^^^ FIVE DONE 2026-09-18 ^^^^^^   R2.6 needs R2.2's #10 — now met
+  ^^^^^^^^^^^^^ ALL SIX DONE 2026-09-18 ^^^^^^^^^^^^
 R4  (alongside R2)                            decision #1, TAKEN: in front
 R3                                            the correctness pass
-R7  (before R2.6 if the order is free)        decision #5, TAKEN: split the key
+R7  (R2.6 landed first, so its migration is
+     written once more when R7 moves the
+     credential shape)                        decision #5, TAKEN: split the key
 R5  (no code; can land any time)
 R6 → the release                              decision #13's gate, unchanged
 ```
@@ -1602,7 +1667,7 @@ failing check. Nothing here needs confirming again.
 | 6.2 #23| `latencyMs` semantics + the 15.6 ms Windows grid `[D]`         | R1.1  |
 | 6.2 #24| Installers swallow network errors; port override ignored `[F]` | **R2.2 — done 2026-09-18** |
 | 6.2 #25| `HTTP_PROXY` applied to loopback traffic `[F]`                 | R1.1  |
-| 6.2 #26| The wizard promises an autostart the default lacks `[F]`       | **R2.6** (decision #4 taken 2026-09-18: the real service, not a copy edit) |
+| 6.2 #26| The wizard promises an autostart the default lacks `[F]`       | **R2.6 — DONE 2026-09-18.** The mechanism changed, not the copy: a Windows install is a service. Step one's measurement turned the slice into a credential slice; step three refunded the graceful stop |
 | 6.2 #27| Symlinks dropped unreported; `followSymlinks` inert `[F]`      | R3    |
 | 6.2 #28| Intel reports zero VRAM; Rosetta hides Apple silicon `[F]`     | **Intel half R2.3 — done 2026-09-18**; Apple half R3 |
 | 6.2 #29| An `nvidia-smi` that fails reads as "not on PATH" `[F]`        | **R2.3 — done 2026-09-18** |

@@ -941,18 +941,46 @@ graceful shutdown survives into a real install**:
 | Scheduled Task at boot         | yes      | **works**     | not a service: no `sc stop`, no recovery policy   |
 | Real service via `pywin32`     | no       | lost          | a heavyweight dependency in the one venv          |
 | Real service via NSSM          | no       | lost          | a third-party binary in the install path          |
-| Real service + `AllocConsole()` | yes     | works         | can reassign the agent's std handles — logs vanish |
+| Real service + `AllocConsole()` | yes     | works         | ~~can reassign the agent's std handles — logs vanish~~ **NOTHING. MEASURED 2026-09-18 AND THE COST IS NOT REAL — see below** |
 
-We do not conjure a console: an agent whose logs disappear is a worse
-outcome than a hard kill.
+~~We do not conjure a console: an agent whose logs disappear is a worse
+outcome than a hard kill.~~
+
+**▶ THAT LAST ROW'S COST WAS ASSERTED AND NEVER MEASURED, AND IT IS
+FALSE (R2.6, 2026-09-18).** It decided a shipped product limitation for
+seven days. Three arms, each in its own process, child spawned with
+`CREATE_NEW_PROCESS_GROUP` and a SIGBREAK handler:
+
+    ARM A  inherited console            signalled, child out in 0.034 s
+    ARM B  after FreeConsole()          WinError 6, never signalled
+    ARM C  after FreeConsole()+Alloc    signalled, child out in 0.036 s
+
+Arm B is the negative control and reproduces the documented `WinError 6`
+exactly. **Arm C works at arm A's latency**, and the logs do not vanish:
+the `RotatingFileHandler` keeps writing and neither `print` nor
+`sys.stderr.write` raises. It was never going to — the agent's durable
+sink is a file handler, children are `stdout=PIPE, stderr=STDOUT`, and
+under pywin32's service host `sys.__stdout__` is already `None`, a case
+`console_logging` already handles. A session-0 console is invisible and
+valid, which is all `GenerateConsoleCtrlEvent` needs.
+
+`process_signals.ensure_console()` is the call, made in `SvcDoRun`
+**before the first child is spawned** — a child inherits the console its
+parent held at spawn time, so a console allocated later is one that
+child is not attached to.
+
+**Still open, and it is the one thing session 1 cannot answer:**
+`AllocConsole()` in **session 0**, from inside a registered service.
+`install.ps1 -Verify` check 2.
 
 **DECIDED 2026-09-11 (Troy): a real service, and the hard kill is
 accepted.** Row 2 or 3 of that table — call #4 committed to a service
 integration as a supported surface, and a Scheduled Task is not a
-service. The graceful path still covers the case that dominates
-audience 1: a home user running the agent from a terminal, restarting a
-component from the UI. What it does not cover is unattended service
-operation, and that is a known limitation rather than a fault.
+service. **The decision stands and its cost is refunded (R2.6):** the
+service is now what an ordinary Windows install *gets* rather than what
+an elevated one gets, and children are asked to stop rather than killed.
+What was a known limitation is no longer one, subject to the session-0
+check above.
 
 **So it is badged, the way §7's Vulkan degradation is.** The agent
 announces at boot how it stops children, as a warning when it cannot do
