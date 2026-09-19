@@ -623,9 +623,11 @@ None of these block a release. **▶ BUT SOMETHING ELSE DOES, AS OF 2026-09-17:*
 this was the document's only sentence about what blocks a release, and the
 adversarial review's eleven High findings are each reachable by a hobbyist on
 day one or a reviewer in an hour — eight of them before any public link (§9a).
-The second half is dented too: *audience 2's topology already proven* holds for
-M7's two-host run and not for the replica case, which cross-wires whenever one
-model is launched on two nodes (review §6 #8, roadmap R1.6). What survives is
+The second half was dented too: *audience 2's topology already proven* held for
+M7's two-host run and not for the replica case, which cross-wired whenever one
+model was launched on two nodes (review §6 #8) — **fixed 2026-09-18 as R1.6**,
+and the replica case now has a live run of its own with two agents in front of
+one gateway. What survives is
 the framing: the honest first release is *"audience 1, with audience 2's
 topology already proven"* — a good story, not a weak one, once §9a is done.
 

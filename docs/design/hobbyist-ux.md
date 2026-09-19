@@ -459,10 +459,12 @@ error and cascades, so a 30B on CPU at ~3 tok/s is told *"Every backend serving
 this model failed"* after 240 s — **with both engines having computed the
 answer and the words "timed out" appearing nowhere** (review §6 #13; roadmap
 R2.5). An 8 GB laptop runs on CPU spill by default. **13 — a component that
-never came up:** nothing probes a port before seeding it, so 8080 taken means
-the wizard completes, nothing is routable, Try it never appears, and the
-Needs-attention card is empty because no `IssueKind` covers a supervised
-component that is down (review §6 #7; roadmap R1.5).
+never came up: FIXED 2026-09-18 (R1.5).** Nothing probed a port before seeding
+it, so 8080 taken meant the wizard completed, nothing was routable, Try it
+never appeared, and the Needs-attention card was empty because no `IssueKind`
+covered a supervised component that is down (review §6 #7). Seeding walks past
+a held port now and `component-down` is the issue kind, rendering
+`Component.lastError` — which names the port and the holding process.
 
 Five of eleven are built underneath and unsurfaced or half-surfaced.
 Three are missing. That ratio is the argument for a UX slice rather

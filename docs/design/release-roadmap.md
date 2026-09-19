@@ -527,6 +527,40 @@ terminal frame with a `finish_reason` before `[DONE]`.
 
 ### 2.5 R1.5 — The first hour survives a hostile box
 
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18.** `scripts/r15-acceptance.sh`,
+**35 PASS, zero failures, fourth execution**; record
+[`../acceptance/a-hostile-box-run.md`](../acceptance/a-hostile-box-run.md).
+Findings §6.1 #5, §6.1 #6, §6.1 #7 and §6.3 #35 are closed. `agent`
+`a5f482e`, `ui` `5cbcdfb` (dist `640e3de`); **no contract change** —
+`Health.details` is free-form and `Component.lastError` has existed since M0.
+Both installers re-pinned and `dist` rebuilt in the same session.
+
+**Measured:** `/healthz` answers in **0.06 s** while `/v1/engines` resolves a
+real 2-second `nvidia-smi`, and the probe runs **once** where it ran three
+times. 8080 held before first boot → the gateway declared on **8084** and
+`running`, library and control on their documented ports. A cut `agent.yaml` →
+the agent **up**, `degraded`, the reason on the wire, `/v1/config` reachable, a
+copy of the broken file beside it, and first-run setup **refused** with restore
+as the remedy.
+
+**Three things the build found that the plan did not have.** (a) `#35`'s
+mechanism was wrong and running the extractor proved it — `start.ts` was always
+scanned and the hole is that a **backtick literal** matched neither pattern; one
+offender in the whole golden path, and it is the wizard's worst sentence.
+(b) **`firstRunComplete` cannot be the signal that an install held a
+passphrase**: it is also how every acceptance script says *skip onboarding* and
+how an enrolled node reads, and a first version keyed on it and broke both. Only
+the auth keys are evidence, and `yaml.safe_dump` sorts keys, so a half-written
+file **keeps** its `auth` block and loses the tail. (c) The degraded load must
+**reset** the in-memory state, not just report: `load()` mutates as it parses,
+so the next `PATCH /v1/config` would persist a topology nobody declared.
+
+**Two harness traps in the concurrency check, both of which passed against the
+defect.** Its clock started *after* waiting for the first request to get going —
+a blocked loop cannot resume the waiting coroutine either, so the mark was taken
+after the half second had elapsed. And it was unauthenticated, so a 401 was
+refused before the probe ran and nothing blocked.
+
 *Findings: §6.1 #5, §6.1 #6, §6.1 #7, §6.3 #35. Size: S + M + L + S. Touches:
 `agent`, `ui`.*
 
@@ -576,6 +610,29 @@ Needs-attention card names the gateway; the vocabulary test finds a banned term
 inside a backtick literal.
 
 ### 2.6 R1.6 — A model on two machines is two runtimes
+
+**▶ BUILT AND LIVE-VERIFIED 2026-09-18**, in the same pass as R1.5 and with the
+same acceptance script and record. Finding §6.1 #8 is closed. `gateway`
+`1162bdc`; no contract change. **And it is the first time two nodes have been in
+front of a LIVE gateway with one name between them** — a real gateway process
+finding its agents through a control root's `/v1/nodes`, over two agents each
+declaring `qwen` and `qwen-driver`: two backends one per node, node A `stopped`
+→ only node B routable, a completion served, and an idle unload arriving at
+**node B's** agent.
+
+**The rename WAS the reproduction, exactly as this section predicted**, and it
+cost eleven assertions: a list of distinct driver names cannot express a
+two-node install once both are called `qwen-driver`, so they read node names
+now.
+
+**The driver maps needed it too, which this section says and is worth
+repeating**, because it reaches further than the runtime half: `DriverClient`
+gains a `node`, `RoutingHooks` a `node` keyword, and the `runtime` handle the
+hooks pass back is a `(node, name)` pair. `served_by_node` sits beside
+`served_by` for the same reason.
+
+**And "routable on faith" is a WARNING now**, which M7's record asked for: it is
+the eligibility rule saying yes to an engine whose state it does not know.
 
 *Finding: §6.1 #8. Size: M. Touches: `gateway`.*
 
@@ -1283,7 +1340,7 @@ Each with the reason, so silence is not read as an oversight.
 
 ```
 R1.1 → R1.2 → R1.3 → R1.4 → R1.5 → R1.6      before any public link
-  ^^^^^^^^^^^^^^^^^^^^^^^^^ DONE 2026-09-18
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ALL SIX DONE 2026-09-18
 R2.1 → R2.2 → R2.3 → R2.4 → R2.5 → R2.6     before the first hostile review
   ^^^^^^^^^^^^^^^^^^ DONE 2026-09-18 ^^^^ R2.6 needs R2.2's #10 — now met
 R4  (alongside R2)                            decision #1, TAKEN: in front
@@ -1296,7 +1353,9 @@ R6 → the release                              decision #13's gate, unchanged
 **R1.1 first** because every other measurement is taken through its
 instrument. **R1.4 before R2.1** because a leaked counter currently masks the
 race — and it no longer does, so R2.1's idle-unload race is reachable now
-rather than hypothetical. **R2.2's #10 before R2.6**, which is the behaviour change to the Windows
+rather than hypothetical. **R1.5 and R1.6 were taken last and out of R2's
+way**, which cost nothing: neither touches a seam R2.1 through R2.4 had
+already moved, and R1.6's live half reuses R2.1's stub-agent shape. **R2.2's #10 before R2.6**, which is the behaviour change to the Windows
 autostart: the service runs as LocalSystem, and #10 is where that home
 directory and the strands-the-first-install trap are fixed. Everything else is
 independent.
@@ -1430,10 +1489,10 @@ failing check. Nothing here needs confirming again.
 | 6.1 #2 | Per-call `httpx.AsyncClient` = 104 ms on the loop `[D]`       | R1.1  |
 | 6.1 #3 | Disconnect mid-stream leaks the in-flight counters `[D]`      | **R1.4 — done 2026-09-18** |
 | 6.1 #4 | Two fit paths; the golden path uses the scalar one `[F]`      | **R1.3 — done 2026-09-18** |
-| 6.1 #5 | `/v1/engines` blocks the loop on `nvidia-smi` + GitHub `[F]`  | R1.5  |
-| 6.1 #6 | `agent.yaml` non-atomic write + unguarded load `[F]`          | R1.5  |
-| 6.1 #7 | A taken port; no `component-down` issue kind `[F]`            | R1.5  |
-| 6.1 #8 | Runtimes merged by bare name across nodes `[D]`               | R1.6  |
+| 6.1 #5 | `/v1/engines` blocks the loop on `nvidia-smi` + GitHub `[F]`  | **R1.5 — done 2026-09-18** |
+| 6.1 #6 | `agent.yaml` non-atomic write + unguarded load `[F]`          | **R1.5 — done 2026-09-18** |
+| 6.1 #7 | A taken port; no `component-down` issue kind `[F]`            | **R1.5 — done 2026-09-18** |
+| 6.1 #8 | Runtimes merged by bare name across nodes `[D]`               | **R1.6 — done 2026-09-18** |
 | 6.1 #9 | A failed agent read closes that node's clients `[D]`          | **R2.1 — done 2026-09-18** |
 | 6.1 #10| Elevated re-install strands the first install `[F]`           | **R2.2 — done 2026-09-18** |
 | 6.1 #11| Non-NVIDIA Windows GPU gets a CPU build silently `[F]`        | **R2.3 — done 2026-09-18** |
@@ -1460,7 +1519,7 @@ failing check. Nothing here needs confirming again.
 | 6.3 #32| No frame-ancestors on the agent-served UI `[S]`                | **R1.2 — done 2026-09-18** |
 | 6.3 #33| Operator-gated SSRF; probe spends a service token `[S]`        | **R2.4 — done 2026-09-18** (probe only; the SSRF reachability stays, by the slice's own call) |
 | 6.3 #34| A non-ASCII prefix defeats self-restart detection `[F]`        | **R2.2 — done 2026-09-18** |
-| 6.3 #35| Banned vocabulary through the wizard's error path `[F]`        | R1.5  |
+| 6.3 #35| Banned vocabulary through the wizard's error path `[F]`        | **R1.5 — done 2026-09-18, the review's mechanism corrected** |
 | 6.3 #36| Parallel slots divide the context; the copy says otherwise `[me]` | **R1.3 — done 2026-09-18, premise MEASURED** |
 | 6.3 #37| Five respawns of an engine that dies during load `[D]`         | R3    |
 | 6.3 #38| A stream with no `done` frame is recorded served `[D]`         | **R1.4 — done 2026-09-18** |
