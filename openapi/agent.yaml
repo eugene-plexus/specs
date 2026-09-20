@@ -844,6 +844,75 @@ paths:
 
   # -------- runtimes: engine processes we supervise --------
 
+  /v1/benchmarks:
+    get:
+      tags: [runtimes]
+      operationId: listBenchmarks
+      summary: Recent profile benchmarks on this node.
+      description: Operator-only. Retains the latest 20 jobs across agent restarts.
+      responses:
+        "200":
+          description: Newest first, including the active job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkList"
+    post:
+      tags: [runtimes]
+      operationId: startBenchmark
+      summary: Measure single-sequence decode speed at increasing context depth.
+      description: |
+        Operator-only. Uses the installed llama-bench beside the selected
+        llama.cpp server, with the saved profile copied into the request.
+        Requires every runtime on the node to be stopped. Does not stop models,
+        install engines, download files, change profiles or change fit estimates.
+        While active, runtime create/update/start/restart requests return 409.
+        Depths are zero, half of the available context, and context minus
+        generated tokens. Results exclude tokenization and sampling. Unsupported
+        settings are refused rather than silently ignored. One job per node;
+        fifteen-minute time limit. Agent restart marks unfinished jobs failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BenchmarkRequest"
+      responses:
+        "202":
+          description: Accepted; poll the node's benchmark list for progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Benchmark"
+        "400":
+          description: Unsupported profile, engine, context or benchmark binary.
+        "409":
+          description: A benchmark or runtime is active on this node.
+        "422":
+          description: Model unavailable or memory admission refused.
+
+  /v1/benchmarks/{id}/cancel:
+    post:
+      tags: [runtimes]
+      operationId: cancelBenchmark
+      summary: Stop an active benchmark and retain its partial results.
+      description: Operator-only. Idempotent for a finished job. Releases the node only after its child exits.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stopped or already finished.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Benchmark"
+        "404":
+          description: Job not found on this node.
+
   /v1/runtimes:
     get:
       tags: [runtimes]
@@ -1920,6 +1989,120 @@ components:
         present service tokens threaded via env var at spawn time.
 
   schemas:
+    BenchmarkRequest:
+      type: object
+      additionalProperties: false
+      required: [modelId, profileId, profileName, runtime]
+      properties:
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        profileId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        profileName:
+          type: string
+          minLength: 1
+          maxLength: 256
+        runtime:
+          $ref: "#/components/schemas/RuntimeSpec"
+        repetitions:
+          type: integer
+          minimum: 1
+          maximum: 5
+          default: 3
+        tokens:
+          type: integer
+          minimum: 16
+          maximum: 256
+          default: 128
+
+    BenchmarkPoint:
+      type: object
+      required: [depth, tokensPerSecond, standardDeviation, samples]
+      properties:
+        depth:
+          type: integer
+          minimum: 0
+        tokensPerSecond:
+          type: number
+          exclusiveMinimum: 0
+        standardDeviation:
+          type: number
+          minimum: 0
+        samples:
+          type: array
+          items:
+            type: number
+            exclusiveMinimum: 0
+
+    Benchmark:
+      type: object
+      required: [id, request, node, state, startedAt, progress, detail, depths, points]
+      properties:
+        id:
+          type: string
+        request:
+          $ref: "#/components/schemas/BenchmarkRequest"
+        node:
+          type: string
+        state:
+          type: string
+          enum: [running, completed, failed, cancelled]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        detail:
+          type: string
+        depths:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/BenchmarkPoint"
+        binary:
+          type: [string, "null"]
+        engineVersion:
+          type: [string, "null"]
+        localPath:
+          type: [string, "null"]
+        modelSizeBytes:
+          type: [integer, "null"]
+          minimum: 0
+        modelModifiedAt:
+          type: [string, "null"]
+          format: date-time
+        command:
+          type: array
+          items:
+            type: string
+        hardware:
+          type: object
+          additionalProperties:
+            type: string
+          description: CPU/GPU/backend identity reported by the benchmark executable.
+
+    BenchmarkList:
+      type: object
+      required: [benchmarks]
+      properties:
+        benchmarks:
+          type: array
+          items:
+            $ref: "#/components/schemas/Benchmark"
+
     ComponentList:
       type: object
       required:
