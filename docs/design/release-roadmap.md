@@ -12,8 +12,9 @@ decisions it leaves to Troy.
 [`install-paths-and-distribution.md`](install-paths-and-distribution.md) §9 —
 whose steps 1-8 are built and whose step 9, *the release*, was **deleted on
 2026-09-18** (decision #3), so that document’s build order is complete —
-and the hobbyist plan's S0-S10, where S8 is part-built, S9 is not started and
-S10 is green on both targets with two items of its own *Done when* outstanding.
+and the hobbyist plan's S0-S10. As of 2026-09-20, S8 and S9 are complete;
+S10's automated download runs pass on both targets and its moderated sessions
+remain outstanding.
 Both documents keep their reasoning; neither is the order any more.
 
 **Every finding in it was re-verified against the working trees on 2026-09-17,
@@ -1502,7 +1503,7 @@ reachable on a golden path in the first hour.
    suites pass: **862/17 skipped agent, 407/3 skipped driver**.
    Specs CI `35523277582` passed. Record:
    [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
-   **Pickup: R6, section 7 — outstanding S10 download timing and moderated-session evidence.** S9 shipped on 2026-09-20 (UI `94d0ce3`, dist `5306208`): 430px real reply, 390px layouts, focus and motion checks; see [`../acceptance/s9-phone-run.md`](../acceptance/s9-phone-run.md). S8 shipped the same day (UI `48488ad`, dist `ad6836f`). The profile benchmark button landed on 2026-09-20, as did R5, R7 and R8; R3's implementation work is complete; the
+   **Pickup: R6, section 7 — outstanding S10 moderated-session evidence.** On 2026-09-20, full 8B-class download runs passed under a 100 Mbit/s cap: Windows 485.525 s and WSL 480.546 s; [conditions and evidence](../acceptance/s10-download-run.md). The [session guide](../acceptance/hobbyist-sessions.md) is ready; actual sessions remain a release gate. S9 shipped on 2026-09-20 (UI `94d0ce3`, dist `5306208`): 430px real reply, 390px layouts, focus and motion checks; see [`../acceptance/s9-phone-run.md`](../acceptance/s9-phone-run.md). S8 shipped the same day (UI `48488ad`, dist `ad6836f`). The profile benchmark button landed on 2026-09-20, as did R5, R7 and R8; R3's implementation work is complete; the
    outstanding physical Mac check remains under item 7.
 
 ---
@@ -1803,17 +1804,17 @@ dist `ad6836f`, both installers pinned. [Acceptance](../acceptance/s8-vocabulary
 The operator also completed the 70,000-context RTX 5090 profile benchmark after
 the projector-fit correction: 58.7 / 54.6 / 50.4 tokens/s at the three depths.
 
-**The rest of R6.** S9's phone/focus/motion
-pass, and the two items S10 still owes its own *Done when*: `EP_DOWNLOAD=1` for
-the ten-minute target, and the moderated sessions, which are decision #14 and
-gate the release.
+**The rest of R6.** S9 shipped on 2026-09-20. S10's full download timing now
+passes on Windows and WSL under a 100 Mbit/s cap; the [record](../acceptance/s10-download-run.md)
+states the CPU workload and isolated-install conditions. The remaining item is
+the moderated sessions, decision #14, which still gate the release.
 
-**One concrete check the review names and nothing has ever run:** score the
-starter set against **8 GB of VRAM with 16 GB of RAM**, the beginner thread's
-OP. The existing context checks use a 24 GiB card and a 12 GiB one. Two rows
-also belong in that plan's stuck-points table and have no home today — a
-slow-but-healthy answer reported as a failure (§6.2 #13) and a component that
-never came up (§6.1 #7).
+**The starter set has now been scored against 8 GB of VRAM with 16 GB of RAM.**
+At 8,192 context, both decimal and binary capacity fixtures recommend the
+8B-class Gemma model at 6,680,614,944 required bytes. This is a capacity check,
+not a physical-card result; CI repeats it. The slow-but-healthy answer and
+component-never-started findings also have entries in the hobbyist plan's
+stuck-points discussion (§3, rows 12 and 13).
 
 ---
 

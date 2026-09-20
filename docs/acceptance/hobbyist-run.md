@@ -1,5 +1,10 @@
 # The hobbyist budget, counted
 
+Historical seeded-run record, 2026-09-16. The [2026-09-20 S10 download run](s10-download-run.md)
+adds actual keystroke and first-visible-token measurements with downloads under
+a 100 Mbit/s cap. Its conditions and remaining moderated-session gate supersede
+the outstanding timing status below; this earlier record is preserved.
+
 `scripts/hobbyist-acceptance.sh` — **22 checks, zero failures, on both
 targets**, 2026-09-16. Windows (RTX 5090, CUDA driver 13.3) on the fourth
 execution; **WSL2 Ubuntu 26.04 on the third**, with `EP_TARGET=wsl`.

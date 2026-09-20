@@ -73,6 +73,11 @@
 .EXAMPLE
   # With options (iex cannot pass arguments):
   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.ps1))) -NoService
+
+.EXAMPLE
+  # Disposable acceptance/development install beside an existing service.
+  # Requires a new directory. Does not register startup or persist environment.
+  .\install.ps1 -Prefix "$env:TEMP\EugeneAcceptance-new" -NoService -NoStart -Isolated
 #>
 [CmdletBinding()]
 param(
@@ -81,6 +86,7 @@ param(
     [switch]$NoTray,
     [switch]$NoElevate,
     [switch]$NoStart,
+    [switch]$Isolated,
     [switch]$Uninstall,
     [switch]$Verify,
     [switch]$Detect,
@@ -137,6 +143,18 @@ function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
 # that vanished on every failure. A throw is catchable, prints, and
 # still yields exit code 1 under `powershell -File`.
 function Die { param($m) Write-Host "error: $m" -ForegroundColor Red; throw $m }
+
+# Acceptance/development installs must never take over the live service or
+# account environment. Require a fresh, explicitly named prefix and no startup.
+if ($Isolated) {
+    if (-not $Prefix -or -not $NoService -or -not $NoStart -or
+        $Migrate -or $Uninstall -or $Join -or $Verify -or $Detect) {
+        Die "-Isolated requires -Prefix, -NoService and -NoStart; migration, joining and maintenance actions cannot be combined with it"
+    }
+    if (Test-Path -LiteralPath $Prefix) {
+        Die "-Isolated requires a new prefix; the target already exists"
+    }
+}
 
 # And every early return below is `return`, never `exit` -- measured,
 # not assumed: `exit 0` inside a scriptblock ends the host session too,
@@ -1028,8 +1046,22 @@ if removed == 0:
 # Explain ownership and migration in the calling terminal before UAC. An
 # elevated -File window closes on failure, taking its useful refusal with it.
 # The elevated run repeats these read-only checks against its own context.
-Assert-OwnInstall
-Show-MigrationConsequences
+if ($Isolated) {
+    # A fresh child directory inside the real install is not isolated either.
+    $other = Get-OtherInstall
+    if ($other) {
+        $candidateRoot = [IO.Path]::GetFullPath($Prefix).TrimEnd('\') + '\'
+        $installedRoot = [IO.Path]::GetFullPath($other.Prefix).TrimEnd('\') + '\'
+        if ($candidateRoot.StartsWith($installedRoot, [StringComparison]::OrdinalIgnoreCase) -or
+            $installedRoot.StartsWith($candidateRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            Die "the isolated prefix must be outside the existing install"
+        }
+    }
+}
+else {
+    Assert-OwnInstall
+    Show-MigrationConsequences
+}
 
 # Capture the invoking user's legacy engine store before elevation. A retry
 # after migration must still recover it even when the service already belongs
@@ -1138,7 +1170,7 @@ else {
 # again in step 5 and the agent restarted in step 6, so a running
 # install pauses across the upgrade rather than surviving it -- which is
 # also what an upgrade of a supervised install means.
-if ((Get-AgentTask) -or (Get-AgentService)) {
+if (-not $Isolated -and ((Get-AgentTask) -or (Get-AgentService))) {
     Say "stopping the running agent so its files can be replaced"
     Remove-Autostart
 }
@@ -1391,7 +1423,9 @@ if ($autostart -eq "service" -and -not $NoTray) {
 # inherits the user environment; a service reads the machine one, set
 # above. The bind host is deliberately not set beside it -- see the join
 # block for why the agent derives that one itself.
-[Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $Config, "User")
+if (-not $Isolated) {
+    [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $Config, "User")
+}
 $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
 
 # **The one lever when 8079 is taken, and it reached nothing** (review
@@ -1409,7 +1443,10 @@ $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
 # security property; this says which port this account's one install
 # uses, and a second install on the account is now refused outright
 # (#10 above). -Uninstall clears it.
-if ($Port -ne 8079) {
+if ($Isolated) {
+    Say "isolated install: no service, task, tray or persistent environment was changed"
+}
+elseif ($Port -ne 8079) {
     [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_PORT", "$Port", "User")
     if ($IsElevated) {
         [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_PORT", "$Port", "Machine")

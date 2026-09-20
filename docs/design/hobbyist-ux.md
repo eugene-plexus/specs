@@ -14,31 +14,19 @@ issue kinds, the one contract field it needed is landed and served, and the
 whole UI half shipped and was pinned; §11.9 is the record. **(This header said
 PAUSED until 2026-09-17, in three places, while §11.9's own body said DONE —
 the status line is what nobody updates.)**
-**S10 is BUILT and GREEN ON BOTH TARGETS** (§11.10 Windows, §11.11 WSL2) — the budget is
-measured on Windows and on WSL2, and each run found a defect that had
-shipped: a fix that was on `main` and in no build, and a refusal that
-rested on an upstream fact which had changed. **What the *Done when*
-still lacks is `EP_DOWNLOAD=1` for the ten-minute target and the moderated
-sessions (§8.4), so the release gate is not met** — **▶ AND SINCE 2026-09-17 ELEVEN HIGH
-FINDINGS SIT IN FRONT OF THAT GATE — six slices before any public link and five
-more before the first hostile review — FOUR OF THEM DEFECTS IN THE GOLDEN PATH
-THIS DOCUMENT DESIGNED AND RECORDED AS BUILT.** The pre-release
-adversarial review (`docs/private/adversarial-review-2026-09-17.md`; order of
-work in [`release-roadmap.md`](release-roadmap.md)) found: **the recommended
-model is scored one way before download and another after, and the second is
-the one one-click Run uses** (§6 #4 — Home says *fits at 16,384*, the profile
-is written at ~4,864); **a taken port dead-ends the wizard at 8083 and produces
-a silently useless install at 8080, with an empty Needs-attention card because
-no `IssueKind` covers a component that is down** (§6 #7); **a Windows AMD or
-Intel owner gets a CPU-only llama.cpp silently and is then offered the SMALLEST
-starter model** (§6 #11); and **the wizard's own reboot promise is false on the
-default Windows install** (§6 #26). Two more land on exactly this audience: a
-slow-but-healthy CPU answer reported as *"Every backend serving this model
-failed"* after 240 s with the prompt computed twice (§6 #13), and an 8 GB
-laptop — the beginner thread's OP — against which **the starter set has never
-been scored** (§4.2 #6). **S8 completed 2026-09-20** — glossary, Config's Show more,
-expanded copy checks, and a Hemingway Grade 6 pass; UI `48488ad`, dist `ad6836f`.
-[Acceptance record](../acceptance/s8-vocabulary-run.md). **S9 is not started.** Every claim marked
+**S10's automated download runs passed on both targets, 2026-09-20:**
+485.525 s on Windows and 480.546 s on WSL, installer start to first visible
+assistant text, including the 8B-class download under a 100 Mbit/s cap.
+Both took five clicks, one configuration value and no typed path. These were
+fresh isolated CPU application installs on the existing host, not clean OS
+guests. [Conditions and evidence](../acceptance/s10-download-run.md).
+**The moderated sessions (§8.4) remain outstanding, so S10's release gate is
+not met.** [Session guide](../acceptance/hobbyist-sessions.md).
+The 8 GB GPU / 16 GB RAM starter capacity check now passes too; it is a fixture,
+not a physical-card test. The adversarial review's findings and subsequent
+fixes are tracked in the authoritative [release roadmap](release-roadmap.md).
+**S8 and S9 completed 2026-09-20:** [vocabulary and Grade 6 copy](../acceptance/s8-vocabulary-run.md),
+[phone, focus and motion](../acceptance/s9-phone-run.md). Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -336,6 +324,9 @@ is the shape to copy: **a Home for Sam, the tree for Dana, one app.**
 
 **Success targets** — these are targets, not measurements; §8 says how
 they get measured.
+
+The “Today (§0.2)” column is the original baseline. The 2026-09-20
+[download run](../acceptance/s10-download-run.md) now measures the timing target.
 
 | Job                              | Target after the plan                                          | Today (§0.2)                       |
 | -------------------------------- | -------------------------------------------------------------- | ---------------------------------- |
@@ -1211,9 +1202,19 @@ tool where §0.2 measured 19, a key good for a year, one Reach switch,
 zero banned words. `install.sh` from nothing in 4 s, `install.ps1` in
 7 s. The WSL2 half drives the guest install from a Windows browser,
 because the guest has no Node and no browser and the UI is one static
-export — what WSL2 is there to test is `install.sh`. Still owed by the
-*Done when* above: **`EP_DOWNLOAD=1`** for §1's ten-minute target (not
-measured) and **the moderated sessions** (§8.4), which gate the release.
+export — what WSL2 is there to test is `install.sh`.
+
+**DOWNLOAD RUNS PASSED 2026-09-20.** The repaired instrument counts real
+keydown events and observes the first visible assistant text. Windows:
+**485.525 s**; WSL: **480.546 s**, including the full 8B-class download under
+an aggregate 100 Mbit/s cap. Both: five clicks, 91 keydowns, one configuration
+value, no typed path, and a separate curl answer using Home's three strings.
+These are fresh application prefixes with CPU/workload fixtures on an existing
+machine, not clean OS installs; service/UAC and physical phone checks are
+separate. [Full conditions and checks](../acceptance/s10-download-run.md).
+Still owed by the *Done when*: **the moderated sessions** (§8.4), which gate
+the release. The [guide and blank sheet](../acceptance/hobbyist-sessions.md)
+are prepared; they are not participant evidence.
 
 **What gates the release (decision #13, taken):** S0–S6 and S10, **and
 a starter review under 30 days old with no unresolved verdict (§6.5)**.
@@ -1237,9 +1238,9 @@ in front of it"*. Order: [`release-roadmap.md`](release-roadmap.md).
 | Typed values before first reply             | 3 (incl. a path)   | 1              | **1**, no path — §11.10           |
 | Route changes before first reply            | 6                  | ≤ 1            | same                              |
 | Clicks, Home → tool connected               | 19 from landing    | ≤ 3            | **1** — §11.10                    |
-| Time, install → first token, 8B, 100 Mbit   | not measured       | < 10 min       | not measured (`EP_DOWNLOAD=1`)    |
+| Time, install → first token, 8B, 100 Mbit   | not measured       | < 10 min       | **485.525 s Windows / 480.546 s WSL**, [conditions](../acceptance/s10-download-run.md) |
 | Jargon terms on golden-path screens         | (not isolated)     | 0 banned words | **0**, four screens — §11.10      |
-| Reading grade of golden-path copy           | not measured       | ≤ 9            | Hemingway over extracted strings  |
+| Reading grade of golden-path copy           | not measured       | ≤ 9            | **Grade 6**, [S8 evidence](../acceptance/s8-vocabulary-run.md) |
 | Docs links from the UI                      | 0                  | ≥ 1 per screen | grep                              |
 | e2e coverage of the golden path             | wizard + login     | every stage    | Playwright                        |
 

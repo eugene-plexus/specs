@@ -11,6 +11,20 @@ permissions:
   contents: read
 
 jobs:
+  s10-instruments:
+    name: S10 acceptance instruments (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Check shared bandwidth cap and installer isolation guards
+        run: python scripts/s10-checks.py
+
   r7-signing:
     name: R7 signing, rotation and R8 profiles (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -65,6 +79,8 @@ jobs:
           path: inference-driver
       - name: Install the five consumers and their test dependencies
         run: python -m pip install -e "./agent[dev]" -e "./control[dev]" -e "./gateway[dev]" -e "./library[dev]" -e "./inference-driver[dev]"
+      - name: Score the shipped starter set for 8 GB GPU and 16 GB RAM
+        run: python specs/scripts/s10-starter-check.py
       - name: Verify algorithm separation and detect broken guards
         run: python specs/scripts/r7-signing-checks.py
       - name: Rotate an isolated live legacy install without re-enrollment
