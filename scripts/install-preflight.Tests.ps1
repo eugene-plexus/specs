@@ -109,6 +109,26 @@ Describe 'Managed engine migration' {
         Copy-EngineBuilds -Source $legacy
         Test-Path (Join-Path $Prefix 'engines\llama_cpp\b2') | Should Be $false
     }
+
+    It 'keeps a failed copy outside every discoverable version directory' {
+        $Prefix = Join-Path $TestDrive 'interrupted service'
+        $legacy = Join-Path $TestDrive 'complete source'
+        $build = Join-Path $legacy 'llama_cpp\b3'
+        New-Item -ItemType Directory -Force -Path $build | Out-Null
+        [IO.File]::WriteAllText((Join-Path $build 'install.json'), '{}')
+        Mock Copy-Item {
+            param($LiteralPath, $Destination)
+            # A directory with metadata and a binary but missing DLLs would
+            # already look installed if staged among the engine's versions.
+            New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+            [IO.File]::WriteAllText((Join-Path $Destination 'install.json'), '{}')
+            [IO.File]::WriteAllText((Join-Path $Destination 'llama-server.exe'), 'partial')
+            throw 'simulated interrupted copy'
+        }
+        { Copy-EngineBuilds -Source $legacy } | Should Throw 'simulated interrupted copy'
+        @(Get-ChildItem -LiteralPath (Join-Path $Prefix 'engines\llama_cpp') -Directory).Count | Should Be 0
+        Test-Path (Join-Path $build 'install.json') | Should Be $true
+    }
 }
 
 Describe 'Windows installer migration preflight' {

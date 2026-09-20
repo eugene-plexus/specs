@@ -42,8 +42,9 @@ Validation:
 - Deliberately reverting the launcher selection and five-second discovery
   deadline failed their respective new tests. The latter uses a real HTTP
   socket; mock transports would not enforce the read deadline.
-- Ten PowerShell installer tests passed, including engine copy, repeat-run
-  preservation, and incomplete-build rejection. Omitting the copy in an
+- Eleven PowerShell installer tests passed, including engine copy, repeat-run
+  preservation, and interrupted-copy isolation. Staging is outside the engine's
+  version directory because its discovery scans all children. Omitting the copy in an
   isolated installer made the engine-recovery test fail.
 - The disposable LocalSystem CI smoke now also requires an actual companion
   driver to answer health checks. It launches no engine and does not use live

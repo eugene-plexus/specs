@@ -767,7 +767,9 @@ function Copy-EngineBuilds {
             $engineDir = Join-Path $destination $engine.Name
             $target = [IO.Path]::GetFullPath((Join-Path $engineDir $build.Name))
             if (Test-Path -LiteralPath $target) { continue }
-            $stage = [IO.Path]::GetFullPath((Join-Path $engineDir ('.migrate-' + [guid]::NewGuid().ToString('N'))))
+            # Outside the engine's version directory: ManagedStore examines
+            # every child there, including one with a dot-prefixed name.
+            $stage = [IO.Path]::GetFullPath((Join-Path $destination ('.migrate-' + [guid]::NewGuid().ToString('N'))))
             if (-not $target.StartsWith($destination + '\', 'OrdinalIgnoreCase') -or
                 -not $stage.StartsWith($destination + '\', 'OrdinalIgnoreCase')) {
                 Die 'engine migration target is outside this install'
