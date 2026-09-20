@@ -136,6 +136,22 @@ case "$ARCH" in
     *) die "unsupported architecture: $ARCH (uv publishes x86_64 and arm64 builds)" ;;
 esac
 
+# uname describes the calling process under Rosetta. Ask the hardware too,
+# then qualify uv's request so an Intel uv (or cached Python) cannot choose
+# an Intel interpreter for an Apple Silicon install.
+PY_REQUEST=$PY_VERSION
+NATIVE_APPLE=0
+if [ "$PLATFORM" = macos ]; then
+    case "$ARCH" in
+        arm64|aarch64) NATIVE_APPLE=1 ;;
+        *) [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" != 1 ] || NATIVE_APPLE=1 ;;
+    esac
+    if [ "$NATIVE_APPLE" = 1 ]; then
+        PY_REQUEST=cpython-$PY_VERSION-macos-aarch64-none
+        say "Apple Silicon detected; selecting native arm64 Python (also from a Rosetta terminal)"
+    fi
+fi
+
 # --- service plumbing -------------------------------------------------
 # Both are *user* services. The agent reads the user's own model
 # directories and writes to the user's own keyring; running it as a
@@ -337,8 +353,17 @@ else
     # install to a Python the user can upgrade or remove out from under
     # it, which contradicts "removing the prefix is complete".
     run_step "creating a Python $PY_VERSION virtualenv at $VENV" \
-        "$UV" venv --python "$PY_VERSION" --python-preference only-managed "$VENV"
+        "$UV" venv --python "$PY_REQUEST" --python-preference only-managed "$VENV"
     [ -x "$PYBIN" ] || die "uv reported success but there is no interpreter at $PYBIN"
+fi
+
+if [ "$NATIVE_APPLE" = 1 ]; then
+    PY_ARCH=$("$PYBIN" -c 'import platform; print(platform.machine())') \
+        || die "could not inspect the Python interpreter at $PYBIN; nothing was installed into it"
+    case "$PY_ARCH" in
+        arm64|aarch64) : ;;
+        *) die "Python at $VENV reports '$PY_ARCH' on Apple Silicon. Native arm64 Python is required for Metal. Stop this install, rename only '$VENV' to a backup, then re-run this installer. Your config and model files are unchanged." ;;
+    esac
 fi
 
 # --- 3. packages ------------------------------------------------------

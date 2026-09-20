@@ -80,6 +80,26 @@ die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 command -v git >/dev/null 2>&1 || die "git is required"
 
+# Rosetta's uname describes the process, not the hardware. Qualify ordinary
+# version requests, but preserve a developer's explicit interpreter choice.
+PY_REQUEST=$PY_VERSION
+NATIVE_APPLE=0
+if [ "$(uname -s)" = Darwin ]; then
+    case "$(uname -m)" in
+        arm64|aarch64) NATIVE_APPLE=1 ;;
+        *) [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" != 1 ] || NATIVE_APPLE=1 ;;
+    esac
+    if [ "$NATIVE_APPLE" = 1 ]; then
+        case "$PY_VERSION" in
+            *[!0-9.]*|'') NATIVE_APPLE=0 ;;
+            *)
+                PY_REQUEST=cpython-$PY_VERSION-macos-aarch64-none
+                say "Apple Silicon detected; selecting native arm64 Python (also from a Rosetta terminal)"
+                ;;
+        esac
+    fi
+fi
+
 say "polyrepo root: $ROOT"
 say "target Python: $PY_VERSION"
 mkdir -p "$BOOT/bin"
@@ -110,6 +130,17 @@ fi
 # preference does exactly that — using a matching one if it exists and
 # downloading if it does not.
 
+require_native_python() {
+    [ "$NATIVE_APPLE" = 1 ] || return 0
+    _venv=$1
+    _arch=$("$_venv/bin/python" -c 'import platform; print(platform.machine())') \
+        || die "could not inspect $_venv/bin/python; nothing was installed into it"
+    case "$_arch" in
+        arm64|aarch64) : ;;
+        *) die "Python at $_venv reports '$_arch' on Apple Silicon. Native arm64 Python is required for Metal. Stop processes using it, rename only '$_venv' to a backup, then re-run bootstrap. Or choose an explicit interpreter with --python for an intentional architecture override. Checkouts, config and models are unchanged." ;;
+    esac
+}
+
 # --- clone ------------------------------------------------------------
 say "cloning"
 for r in $ALL_REPOS; do
@@ -129,10 +160,13 @@ done
 PRECOMMIT=$BOOT/venv/bin/pre-commit
 if [ ! -x "$PRECOMMIT" ]; then
     say "installing pre-commit"
-    "$UV" venv --python "$PY_VERSION" "$BOOT/venv" >/dev/null 2>&1 \
+    "$UV" venv --python "$PY_REQUEST" "$BOOT/venv" >/dev/null 2>&1 \
         || die "could not create the tooling virtualenv"
+    require_native_python "$BOOT/venv"
     "$UV" pip install -q --python "$BOOT/venv/bin/python" pre-commit \
         || die "could not install pre-commit"
+else
+    require_native_python "$BOOT/venv"
 fi
 
 hooks() {
@@ -146,9 +180,10 @@ for r in $PYTHON_REPOS; do
     say "[$r]"
     venv=$ROOT/$r/.venv
     if [ ! -x "$venv/bin/python" ]; then
-        "$UV" venv --python "$PY_VERSION" "$venv" >/dev/null 2>&1 \
+        "$UV" venv --python "$PY_REQUEST" "$venv" >/dev/null 2>&1 \
             || die "[$r] could not create $venv"
     fi
+    require_native_python "$venv"
     "$UV" pip install -q --python "$venv/bin/python" -e "$ROOT/$r[dev]" \
         || die "[$r] editable install failed"
     hooks "$r"

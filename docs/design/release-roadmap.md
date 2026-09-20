@@ -1448,7 +1448,7 @@ reachable on a golden path in the first hour.
    an untouched archive of agent HEAD (two missing-sibling-package seeding
    tests, three Windows-assuming tests). They were not changed here.
 
-   **Pickup: R3 item 7 below.** Contract prose only, no wire fields or enum
+   Contract prose only, no wire fields or enum
    members. Agent CI `35521633539` is tracked against the already failing Linux
    baseline; see the record for the five reproduced failures and harness limits.
 7. **§6.2 #28's Apple half** — a Rosetta terminal produces an x86_64
@@ -1456,6 +1456,18 @@ reachable on a golden path in the first hour.
    Confirmed in code, unverifiable without a Mac, and the review's citation for
    *where* the x86_64 Python comes from is wrong (it is uv's own bootstrap plus
    `--python-preference only-managed`, not the installer's arch validation).
+
+   **IMPLEMENTED 2026-09-20; physical Mac verification remains owed.** Both
+   POSIX setup scripts request native ARM Python on Apple Silicon, including
+   from Rosetta, and verify existing and newly created interpreters before
+   package installation. Incompatible environments are preserved with recovery
+   instructions; bootstrap keeps explicit interpreter overrides. **88 simulated
+   checks and 13/13 sabotages pass**, with the original revision failing the
+   behavior gate and R2.2's POSIX suite still green. CI runs the new gate.
+   Record and remaining hardware steps:
+   [`../acceptance/native-apple-python-run.md`](../acceptance/native-apple-python-run.md).
+   **Pickup: R3 item 8 below.** Mac verification is still pending, not a reason
+   to hold the independent contract sweep.
 8. **The `perf_counter` and contract-prose sweep** left over from R1.1: the
    remaining `monotonic()` call sites that feed a reported `*_ms`, the 116 ms
    prose in `gateway.yaml`'s overview and `AttemptView.backendMs` (the two

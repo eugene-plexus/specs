@@ -11,6 +11,17 @@ permissions:
   contents: read
 
 jobs:
+  posix-installers:
+    name: POSIX installer architecture regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - name: Exercise native, translated, and existing Python environments
+        run: bash scripts/r37-install-sh-checks.sh
+      - name: Verify the regressions detect broken architecture selection
+        run: python3 scripts/r37-sabotage.py
+
   dev-tasks:
     name: Windows development tasks
     runs-on: windows-latest

@@ -143,6 +143,13 @@ curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/in
 irm https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.ps1 | iex
 ```
 
+On Apple Silicon, the POSIX installer and developer bootstrap request native
+arm64 Python, including from a Rosetta terminal. An existing Intel environment
+is preserved and rejected with recovery instructions. The bootstrap's
+`--python` option still accepts an explicit interpreter override. Architecture
+selection has simulated regression coverage; installation and Metal inference
+on a physical Mac remain unverified.
+
 Both install into a single prefix they own, write an autostart unit (systemd
 user unit, launchd agent, or a Windows logon task — a real Windows service if
 you run it elevated), start it, and print the URL. `--uninstall` / `-Uninstall`
