@@ -1321,9 +1321,50 @@ reachable on a golden path in the first hour.
    distinguishable. Until it is fixed, `GET /v1/metrics` cannot tell *primary
    served* from *primary was dead at refresh*, which is the one question tiered
    failover exists to answer.
-4. **§6.2 #22 — contract drift on the request path, in four parts whose fixes
-   split between contract and code.** `top_p` and `seed` are accepted and never
-   forwarded (the contract promises pass-through or a warning and there is
+4. **§6.2 #22 — contract drift on the request path. ▶ THE CODE HALF IS DONE
+   2026-09-19; THE PROFILE SENTENCE STANDS** (specs `031d90a`, a contract change
+   — `GenerateRequest.topP`/`.seed` and `FinishReason.content_filter`, plus the
+   two doors' enums; `gateway` `bb67692`, `inference-driver` `499836c`; **both
+   installers re-pinned**; `ui` regenerated and **deliberately not re-pinned**;
+   `scripts/r34-sabotage.py` **24 of 24 across two repos**; record
+   [`../acceptance/contract-drift-run.md`](../acceptance/contract-drift-run.md)).
+
+   **Three sentences made true and the fourth left standing on purpose.**
+   `top_p` and `seed` had no field to land in, so the gateway accepted both,
+   range-validated both and dropped both with nothing logged; `content_filter`
+   was folded into the driver's `error` and flattened to `stop`, so a refusal
+   arrived as a natural end; and a driver 401 — the gateway's OWN credential
+   refused, which is what clock skew produced live on 2026-09-15 — was reported
+   as `invalid_request_error`, sending a harness to re-read a prompt that never
+   had a problem. It is 502 `upstream_auth_error` now, naming the driver and its
+   URL, **and the non-cascade rule is asserted rather than assumed**: changing
+   what we say about a 401 must not change what we do with it.
+
+   **Each door renders the refusal in its own vendor's vocabulary** —
+   `content_filter` for OpenAI, `refusal` for Anthropic — so neither is
+   invented; the Anthropic half is marked unverified against a live SDK, which
+   R4's own capture instrument could settle. `error` still reports `stop` and
+   `end_turn`, and **that pair is what tells the fix from the over-correction**.
+
+   **Two guards carry more than they look:** `seed=0` is a real seed and is
+   falsy, so a truthiness check would have preserved the bug inside its own fix;
+   and `top_p` is dropped by the same flag as `temperature` and only that flag,
+   because OpenAI's reasoning models reject the sampler and accept the seed.
+
+   **Two sabotages escaped.** One was a no-op — R2.4's mistake again, an
+   assignment inside a branch that had already returned. The other named a
+   hole the obvious diagnosis missed: after the test's one-character driver name
+   was fixed it STILL escaped, because `str(DriverError)` carries the name and
+   URL, so the belt-and-braces path was doing the work. Naming the driver is
+   load-bearing only when the driver sent a real `problem+json` body, and that
+   is a test now.
+
+   **The profile sentence is UNMET and stays that way** (Troy, 2026-09-19).
+   `ModelProfile` does carry `temperature` and `topP`, so it is meetable in
+   code; what it costs is a gateway→library edge with a cache and its own
+   failure modes, which is its own slice before the release. Originally, and
+   left here because the split is the decision: `top_p` and `seed` are accepted
+   and never forwarded (the contract promises pass-through or a warning and there is
    neither field nor warning); `max_tokens`/`temperature` come from
    gateway-wide defaults while the contract says *the model's settings profile*
    and the word "profile" occurs in gateway source only inside docstrings
@@ -1703,6 +1744,8 @@ R3                                            the correctness pass
 R7  (R2.6 landed first, so its migration is
      written once more when R7 moves the
      credential shape)                        decision #5, TAKEN: split the key
+R8  the gateway reads the model's settings
+     profile                                  split out of R3 item 4, 2026-09-19
 R5  (no code; can land any time)
 R6 → the release                              decision #13's gate, unchanged
 ```
@@ -1716,6 +1759,19 @@ already moved, and R1.6's live half reuses R2.1's stub-agent shape. **R2.2's #10
 autostart: the service runs as LocalSystem, and #10 is where that home
 directory and the strands-the-first-install trap are fixed. Everything else is
 independent.
+
+**R8 is R3 item 4's other half and is new on 2026-09-19.** `gateway.yaml` says
+`max_tokens` and `temperature` are resolved from *the model's settings profile*
+and the gateway substitutes its own install-wide defaults. The recommendation
+carried into R3 said the promise could not be met in code because no per-model
+output store exists; the premise was false — `ModelProfile` carries
+`temperature` and `topP` and the library serves
+`GET /v1/models/{id}/profiles`. What it costs is a **gateway→library dependency
+edge that does not exist today**, with a cache, a staleness policy and its own
+failure modes, which is more than a correctness pass should carry. Troy's call:
+**split it, keep the target** — the sentence stands as an unmet promise rather
+than being softened to match the weaker mechanism, and the work is scheduled in
+front of the release.
 
 **The release gate is unchanged and this roadmap does not shorten it:** it is
 `hobbyist-ux.md` **decision #13** (what gates it — S0-S6 and S10) plus
@@ -1863,7 +1919,7 @@ failing check. Nothing here needs confirming again.
 | 6.2 #19| Admission reserves nothing; fallback context-blind `[D]`       | R3    |
 | 6.2 #20| `tier` renumbered for the natural slot shape `[D]`             | **R3 item 3 — done 2026-09-19** |
 | 6.2 #21| Thinking filter swallows the answer when streaming `[D]`       | R3    |
-| 6.2 #22| Contract drift: `top_p`/`seed`/profile/`content_filter`/401 `[D]` | R3 |
+| 6.2 #22| Contract drift: `top_p`/`seed`/profile/`content_filter`/401 `[D]` | **R3 item 4 — code half done 2026-09-19; the profile sentence is a scheduled slice** |
 | 6.2 #23| `latencyMs` semantics + the 15.6 ms Windows grid `[D]`         | R1.1  |
 | 6.2 #24| Installers swallow network errors; port override ignored `[F]` | **R2.2 — done 2026-09-18** |
 | 6.2 #25| `HTTP_PROXY` applied to loopback traffic `[F]`                 | R1.1  |
