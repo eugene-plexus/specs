@@ -461,6 +461,17 @@ paths:
             it arrives as a 400 rather than the retryable 502 it used to
             be — a difference that decides whether a harness fixes the
             prompt or retries the same one forever.
+
+            **A driver's own 401 or 403 is NOT one of these, since
+            2026-09-19.** It was, and it was the one 4xx the caller
+            could do nothing about: it means the gateway's credential
+            to that driver was refused — a rotated service token on one
+            node is the shape it takes — so the request was fine and
+            the install is not. Reporting it as
+            `invalid_request_error` sent a harness to re-read its own
+            prompt for a fault that was never there. It is a 502 with
+            `upstream_auth_error` now, and the message names the
+            driver.
           content:
             application/json:
               schema:
@@ -490,6 +501,14 @@ paths:
             Every eligible backend failed. Returned after the priority
             list is exhausted, so this means the cascade ran and lost,
             not that one backend hiccuped.
+
+            **One 502 does mean a single backend, and is named as
+            such:** a driver that answered 401 or 403 refused the
+            gateway's own credential. That is an install fault rather
+            than a request fault, and reporting it in the caller's 4xx
+            range told a harness to fix a prompt that was correct.
+            `error.type` is `upstream_auth_error` and the message names
+            the driver whose credential was refused.
           content:
             application/json:
               schema:
@@ -608,9 +627,10 @@ paths:
         owns the model rather than to the caller.
 
         `top_k` is a real loss and is documented as one: both local
-        engines accept it and neither of our contracts carries it, which
-        is the same omission `top_p` and `seed` already have on the
-        internal request.
+        engines accept it and neither of our contracts carries it. It
+        was the same omission `top_p` and `seed` had on the internal
+        request until 2026-09-19; those two are carried now and `top_k`
+        is the last one left.
 
         ### What is refused, with a 400 naming the field
 
@@ -767,7 +787,15 @@ paths:
                 $ref: '#/components/schemas/AnthropicErrorResponse'
         '502':
           description: |
-            Every eligible backend failed, after the cascade ran.
+            Every eligible backend failed, after the cascade ran — or a
+            driver refused the gateway's own credential (401/403 from
+            the driver), which is one backend rather than all of them
+            and is an install fault rather than a request fault. Both
+            render as `api_error` on this door, where the OpenAI door
+            distinguishes them by `error.type`: Anthropic's error
+            vocabulary has no member for *our upstream refused us*, and
+            `permission_error` here would read as the caller's
+            credential being wrong when it is ours.
           content:
             application/json:
               schema:
@@ -872,7 +900,10 @@ paths:
         '502':
           description: |
             Every eligible backend for this model failed. Note "for this
-            model": the cascade never reached a different one.
+            model": the cascade never reached a different one. A driver
+            that refused the gateway's own credential also lands here,
+            with `error.type` `upstream_auth_error`, for the reason
+            given on `POST /v1/chat/completions`.
           content:
             application/json:
               schema:
@@ -1667,6 +1698,13 @@ components:
           format: float
           minimum: 0
           maximum: 1
+          description: |
+            Nucleus sampling cutoff, carried to the backend.
+
+            **This field was accepted, validated and discarded until
+            2026-09-19**: `GenerateRequest` had no `topP` to put it in,
+            so the value went no further than this schema and nothing
+            was logged. It has one now.
         stop:
           type: array
           items:
@@ -1678,6 +1716,14 @@ components:
           description: |
             Passed through to backends that support deterministic
             sampling; dropped with a warning where they do not.
+
+            **True since 2026-09-19 and unfulfillable before it** —
+            there was no `seed` on `GenerateRequest`, so the value was
+            dropped by every backend and the warning this sentence
+            promises was logged by none of them. A caller asking for a
+            seed is asking for a reproducible answer and was getting a
+            different one each time, with nothing in the response to
+            say so.
         stream:
           type: boolean
           default: false
@@ -1822,10 +1868,21 @@ components:
             - stop
             - length
             - tool_calls
+            - content_filter
           description: |
             `stop` for a natural end or a matched stop sequence,
             `length` for hitting the token cap, `tool_calls` when the
-            model stopped because it wants one or more tools run.
+            model stopped because it wants one or more tools run,
+            `content_filter` when a safety classifier stopped it.
+
+            **`content_filter` is OpenAI's own value and is carried
+            since 2026-09-19.** Before that the chain was
+            `content_filter` → the driver's `error` → `stop`, so a
+            filtered answer arrived as a natural end and a caller had
+            no way to tell a refusal from a reply. The same mistake as
+            `tool_calls` → `stop` before 2026-09-11, one value along:
+            a state with no row of its own reported as its nearest
+            neighbour.
 
             Until 2026-09-11 this enum was `stop` and `length` only, and
             its description said so in as many words — "OpenAI's two
@@ -1918,6 +1975,7 @@ components:
             - stop
             - length
             - tool_calls
+            - content_filter
             - null
           description: Null until the terminal chunk.
 
@@ -2592,9 +2650,12 @@ components:
           description: |
             **Read and dropped**, and this is a real loss rather than a
             no-op: both local engines accept a top-k and neither of this
-            project's internal contracts carries one, which is the same
-            gap `top_p` and `seed` have on `GenerateRequest`. Documented
-            here so the omission is visible to whoever adds it.
+            project's internal contracts carries one. It is now the
+            only such gap — `top_p` and `seed` had the same one until
+            2026-09-19, when `GenerateRequest` grew `topP` and `seed`.
+            Documented here so the omission is visible to whoever adds
+            it, and the shape of that fix is now written down one
+            document over.
         stop_sequences:
           type: array
           items:
@@ -2878,11 +2939,22 @@ components:
             - max_tokens
             - stop_sequence
             - tool_use
+            - refusal
             - null
           description: |
             Mapped from the backend's finish reason: `stop` becomes
             `end_turn`, `length` becomes `max_tokens`, `tool_calls`
-            becomes `tool_use`.
+            becomes `tool_use`, and **since 2026-09-19 a backend's
+            `content_filter` becomes `refusal`** — Anthropic's own name
+            for a classifier stopping the answer, so a client switching
+            on this field gets a value from the vocabulary it already
+            parses rather than one we invented. Not verified against a
+            live Anthropic SDK; the OpenAI door's `content_filter` was.
+
+            A backend error still reports `end_turn`, because there is
+            no Anthropic stop reason for *the backend broke* and the
+            truncation is reported where it can be acted on — the log
+            line and the metrics row.
         stop_sequence:
           type:
             - string
@@ -3040,7 +3112,13 @@ components:
                 thing.
             type:
               type: string
-              description: 'OpenAI-style class, e.g. `invalid_request_error`.'
+              description: |
+                OpenAI-style class, e.g. `invalid_request_error`. The
+                gateway also emits `upstream_error`, `timeout`,
+                `service_unavailable`, `client_disconnected` and —
+                since 2026-09-19 — **`upstream_auth_error`**, which is
+                the one that says the fault is ours rather than the
+                caller's: a driver refused the gateway's credential.
             param:
               type:
                 - string
