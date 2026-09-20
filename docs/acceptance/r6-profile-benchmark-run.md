@@ -4,6 +4,10 @@ Implemented and published the profile benchmark button, not the remainder of
 R6. The roadmap remains the pickup point. Agent `c0b7f67`, control codegen
 `612c56b`, UI source `ba235fd`, UI dist `1669119`; contract `f82c0d6`.
 
+Operator follow-up: a previously working 70,000-context profile was refused by
+the existing Library fit calculation, which counted an unloaded vision projector.
+Corrected in Library `766ecb8`; [evidence and verification](gguf-projector-fit-run.md).
+
 Open Library, choose the machine and model, then **Benchmark** beside a saved
 llama.cpp profile. Stop that machine's managed models in Inference first.
 The benchmark does not stop them. Choose generated tokens (16–256) and
