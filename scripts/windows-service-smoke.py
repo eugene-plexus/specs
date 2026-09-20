@@ -18,6 +18,7 @@ import winreg
 import httpx
 import win32service
 import win32serviceutil
+import win32evtlog
 
 
 def main():
@@ -103,6 +104,30 @@ def main():
             )
             print("PASS: service stops cleanly through SCM")
         except BaseException:
+            print("SCM status:", win32serviceutil.QueryServiceStatus(name), flush=True)
+            for channel in ("Application", "System"):
+                handle = win32evtlog.OpenEventLog(None, channel)
+                try:
+                    events = win32evtlog.ReadEventLog(
+                        handle,
+                        win32evtlog.EVENTLOG_BACKWARDS_READ
+                        | win32evtlog.EVENTLOG_SEQUENTIAL_READ,
+                        0,
+                    )
+                    for event in events[:60]:
+                        if event.SourceName in (
+                            "Python Service",
+                            "Service Control Manager",
+                        ):
+                            print(
+                                channel,
+                                event.TimeGenerated,
+                                event.EventID,
+                                event.StringInserts,
+                                flush=True,
+                            )
+                finally:
+                    win32evtlog.CloseEventLog(handle)
             for log in root.rglob("*.log"):
                 print(
                     log.name,
