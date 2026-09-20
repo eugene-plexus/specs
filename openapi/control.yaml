@@ -1477,11 +1477,16 @@ components:
         signingKey:
           type: string
           description: |
-            The current service-token signing key, so this node's
-            components can verify tokens minted anywhere in the install.
-            **This is what a single-watchdog install could not do**: a
-            driver spawned on one host used to reject a gateway's token
-            from another because the keys were unrelated.
+            Base64 of the install's unencrypted Ed25519 private key in
+            PKCS8 PEM format. This trusted agent is a token minter, so
+            enrollment transfers private material to it. It derives
+            SubjectPublicKeyInfo public PEM for gateway, library and
+            inference-driver children; those receive `AUTH_VERIFY_KEY`
+            and their own service token, never this private key.
+            New installs and rotations sign JWTs with `alg: EdDSA`.
+            An upgraded install retains its existing base64 32-byte
+            HS256 key until explicit rotation; no re-enrollment is needed.
+            The format selects the algorithm, independently of JWT headers.
         signingKeyId:
           type: string
           description: |

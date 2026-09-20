@@ -4,6 +4,13 @@ info:
   version: 0.3.0-draft
   summary: The uniform surface every heterogeneous backend is wrapped in.
   description: |
+    **Token verification (R7):** new installs and rotations use Ed25519
+    JWTs with `alg: EdDSA`. The agent supplies base64 SubjectPublicKeyInfo
+    public PEM via `AUTH_VERIFY_KEY`, never the private signing key.
+    Existing HS256 installs retain legacy `AUTH_SIGNING_KEY` until explicit
+    rotation. Only one algorithm is accepted, selected from trusted key
+    material, never the JWT header. Supplying both bootstrap keys is invalid.
+
     One `inference-driver` instance wraps exactly **one** model backend
     and presents a uniform surface over it. An install runs N instances,
     one per backend, with the gateway routing above them.

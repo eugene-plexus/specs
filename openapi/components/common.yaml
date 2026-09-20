@@ -828,7 +828,14 @@ components:
           description: |
             Opaque bearer token. Signed and validated server-side; the
             UI should never inspect its contents. Lifetime is bounded
-            by `expiresAt`.
+            by `expiresAt`. New installs and key rotations use JWT
+            `alg: EdDSA` with Ed25519. Existing HS256 installs retain
+            their 32-byte key until explicit rotation. Agent and control
+            hold private signing keys; gateway, library and driver hold
+            public verification keys after migration. Verifiers select
+            exactly one algorithm from trusted key material, not from
+            token headers. Rotation invalidates all prior tokens;
+            there is no simultaneous HS256/EdDSA acceptance window.
         expiresAt:
           type: string
           format: date-time

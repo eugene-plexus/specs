@@ -4,6 +4,13 @@ info:
   version: 0.3.0-draft
   summary: The one OpenAI-compatible front door over every configured backend.
   description: |
+    **Token verification (R7):** new installs and rotations use Ed25519
+    JWTs with `alg: EdDSA`. The agent supplies base64 SubjectPublicKeyInfo
+    public PEM via `AUTH_VERIFY_KEY`, never the private signing key.
+    Existing HS256 installs retain legacy `AUTH_SIGNING_KEY` until explicit
+    rotation. Only one algorithm is accepted, selected from trusted key
+    material, never the JWT header. Supplying both bootstrap keys is invalid.
+
     The gateway is the single endpoint a client talks to. It resolves a
     requested model to a backend, load-balances across the drivers
     serving that model, and cascades down a priority list when one
