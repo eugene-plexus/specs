@@ -1502,7 +1502,7 @@ reachable on a golden path in the first hour.
    suites pass: **862/17 skipped agent, 407/3 skipped driver**.
    Specs CI `35523277582` passed. Record:
    [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
-   **Pickup: R7, section 10.** R3's implementation work is complete; the
+   **Pickup: R7 step 2, section 10.** Step 1 landed on 2026-09-20; R3's implementation work is complete; the
    outstanding physical Mac check remains under item 7.
 
 ---
@@ -1945,10 +1945,13 @@ is recommended:
 **The migration is the machinery this project already built.** An install
 changing signing keys is a re-key: signed by the control identity, fenced by
 epoch, with the node adopting the new material and restarting its children —
-M7's path, exercised live at the two-host run. What is new is that the thing
-distributed is a **public** key rather than a secret, which is strictly easier
-to move. A build that must accept both algorithms during the change is the part
-to design deliberately rather than discover.
+M7's path, exercised live at the two-host run. Trusted agents remain minters and
+therefore still need private signing material; the **public-only** distribution
+is from those agents to gateway, library and inference-driver children. A build
+that must accept both algorithms during the change is the part to design
+deliberately rather than discover. Do not confuse the master encryption key
+(still needed by library and driver for stored credentials) with the private
+token-signing key (needed only by minters).
 
 **Steps, in order.**
 
@@ -1958,6 +1961,20 @@ to design deliberately rather than discover.
    operator's configured paths, with an explicit override
    (`easy-default-expert-override`). Neither is a contract change. Do them even
    if step 2 is deferred by circumstance.
+   **Done 2026-09-20:** agent `64ea8b2`, inference-driver `e10896d`; both
+   installers pin those commits. Component environments discard ambient
+   credentials and reject reserved overrides; gateway receives no master key.
+   Engines, discovery probes, and backend CLIs receive no Plexus namespace.
+   Canonical binary containment and the explicit raw-argument override run at
+   API validation and again before any launch-time probe. Config exposes
+   `engineBinaryRoots` and `allowUnrestrictedEngineLaunch` through the existing
+   UI. Existing custom binaries/raw arguments require those approvals at their
+   next launch; default managed/PATH/configured engines keep working.
+   Windows and Linux checks, real harmless children, and **15/15 sabotage
+   catches on each platform** are recorded in
+   [`../acceptance/r7-launch-boundary-run.md`](../acceptance/r7-launch-boundary-run.md).
+   **R7 remains open: pickup is step 2.** HS256 still lets a verifier mint;
+   environment filtering alone does not satisfy the final acceptance below.
 2. **The contract**: what `alg` the install signs with, what enrollment hands a
    node, what rotation moves, and the token descriptions in all four documents.
    Radius measured by regenerating all six consumers, as always.

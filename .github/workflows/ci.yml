@@ -11,6 +11,48 @@ permissions:
   contents: read
 
 jobs:
+  r7-launch-boundary:
+    name: R7 launch boundary (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: specs
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Read the installer consumer pins
+        id: pins
+        shell: python {0}
+        run: |
+          import os, re
+          from pathlib import Path
+          text = Path("specs/scripts/install.sh").read_text(encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              for name in ("AGENT", "DRIVER"):
+                  pin = re.search(rf"^PIN_{name}=([0-9a-f]{{40}})$", text, re.M)
+                  assert pin, name
+                  out.write(f"{name.lower()}={pin.group(1)}\n")
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/agent
+          ref: ${{ steps.pins.outputs.agent }}
+          path: agent
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/inference-driver
+          ref: ${{ steps.pins.outputs.driver }}
+          path: inference-driver
+      - name: Install test dependencies
+        run: python -m pip install -e "./agent[dev]" -e "./inference-driver[dev]"
+      - name: Check real children and detect deliberately broken guards
+        run: python specs/scripts/r7-launch-boundary-checks.py --current-python
+
   posix-installers:
     name: POSIX installer architecture regression
     runs-on: ubuntu-latest
