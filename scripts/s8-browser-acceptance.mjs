@@ -1,0 +1,62 @@
+/** Drive the packaged UI and an isolated real agent. Args: session JSON, output folder. */
+import { createRequire } from "node:module";
+import { readFile, mkdir } from "node:fs/promises";
+import { join } from "node:path";
+import assert from "node:assert/strict";
+
+const require = createRequire(new URL("../../ui/package.json", import.meta.url));
+const { chromium, expect } = require("@playwright/test");
+const [session, output] = process.argv.slice(2);
+const { url, token } = JSON.parse(await readFile(session, "utf8"));
+await mkdir(output, { recursive: true });
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+try {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const errors = [];
+  page.on("pageerror", error => errors.push(String(error)));
+  await page.addInitScript(value => sessionStorage.setItem("eugene-session-token", value), token);
+  await page.goto(`${url}/config/?sel=agent`);
+  const more = page.getByRole("button", { name: /Show more/ });
+  await expect(more).toHaveText("Show more · 4 settings");
+  await expect(page.getByText("Security mode", { exact: true })).toBeVisible();
+  await expect(page.getByText("vLLM binary", { exact: true })).not.toBeVisible();
+  await page.screenshot({ path: join(output, "config-common.png"), fullPage: true });
+  await more.focus();
+  await page.keyboard.press("Enter");
+  const field = page.getByText("vLLM binary", { exact: true }).locator("..").locator("..").getByRole("textbox");
+  await expect(field).toBeVisible();
+  await field.fill("s8-disposable-vllm");
+  await page.getByRole("button", { name: /Show less/ }).click();
+  await expect(field).not.toBeVisible();
+  await expect(page.getByRole("button", { name: /Show more/ })).toContainText("1 unsaved");
+  const saved = page.waitForResponse(r => r.request().method() === "PATCH" && r.url().endsWith("/v1/config"));
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const result = await (await saved).json();
+  assert.deepEqual(result.rejected, []);
+  assert(result.applied.includes("vllmBinary"));
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await page.reload();
+  await page.getByRole("button", { name: /Show more/ }).click();
+  await expect(field).toHaveValue("s8-disposable-vllm");
+  await page.screenshot({ path: join(output, "config-more.png"), fullPage: true });
+
+  const system = page.getByRole("button", { name: "The system", exact: true });
+  await system.click();
+  const panel = page.getByTestId("layer-map");
+  const glossary = panel.locator("summary");
+  await glossary.focus();
+  await page.keyboard.press("Enter");
+  await expect(panel.locator("dt")).toHaveCount(12);
+  await expect(panel.getByText("Client key", { exact: true })).toBeVisible();
+  await panel.getByText("Client key", { exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: join(output, "glossary-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await panel.getByText("Client key", { exact: true }).scrollIntoViewIfNeeded();
+  assert(await panel.evaluate(el => el.scrollWidth <= el.clientWidth));
+  await page.screenshot({ path: join(output, "glossary-phone.png"), fullPage: true });
+  await page.keyboard.press("Escape");
+  await expect(panel).not.toBeVisible();
+  await expect(system).toBeFocused();
+  assert.deepEqual(errors, []);
+  console.log("PASS wheel-served glossary, keyboard disclosure, scrolling, hidden edit, real PATCH and reload persistence");
+} finally { await browser.close(); }

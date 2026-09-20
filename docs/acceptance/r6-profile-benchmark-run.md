@@ -8,6 +8,13 @@ Operator follow-up: a previously working 70,000-context profile was refused by
 the existing Library fit calculation, which counted an unloaded vision projector.
 Corrected in Library `766ecb8`; [evidence and verification](gguf-projector-fit-run.md).
 
+Operator acceptance completed after that update on 2026-09-20: unchanged 70,000
+profile, RTX 5090, default 128 generated tokens and 3 repetitions. At depths
+0 / 34,936 / 69,872, means were 58.7 / 54.6 / 50.4 tokens/s, standard deviations
+0.4 / 0.3 / 0.2. The operator supplied the completed chart and accepted the result.
+This closes the requested GPU benchmark acceptance; three connected samples do
+not establish linear performance at all intervening depths.
+
 Open Library, choose the machine and model, then **Benchmark** beside a saved
 llama.cpp profile. Stop that machine's managed models in Inference first.
 The benchmark does not stop them. Choose generated tokens (16–256) and

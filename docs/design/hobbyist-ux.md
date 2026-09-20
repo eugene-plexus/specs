@@ -36,9 +36,9 @@ default Windows install** (§6 #26). Two more land on exactly this audience: a
 slow-but-healthy CPU answer reported as *"Every backend serving this model
 failed"* after 240 s with the prompt computed twice (§6 #13), and an 8 GB
 laptop — the beginner thread's OP — against which **the starter set has never
-been scored** (§4.2 #6). **S8 is PART-BUILT** — the banned-word test and the one
-offender it found have landed; the glossary panel, Config's Show more
-grouping and plain units have not. **S9 is not started.** Every claim marked
+been scored** (§4.2 #6). **S8 completed 2026-09-20** — glossary, Config's Show more,
+expanded copy checks, and a Hemingway Grade 6 pass; UI `48488ad`, dist `ad6836f`.
+[Acceptance record](../acceptance/s8-vocabulary-run.md). **S9 is not started.** Every claim marked
 *measured* was checked against a file or a running process on the day of
 writing. Research claims cite a URL in Appendix A; **(F)** means the page
 was opened and read, **(S)** means a search snippet only. §0 is the
@@ -1157,7 +1157,10 @@ elapsed, plus the share the bytes are crossing — which is what actually
 explains the four-minute load on the live install — plus an estimate
 only once this browser has watched the same model load before.
 
-### S8 — Vocabulary (M)
+### S8 — Vocabulary (M) — **COMPLETED 2026-09-20**
+
+UI `48488ad`, dist `ad6836f`, pinned in both installers.
+[Verification and scope](../acceptance/s8-vocabulary-run.md).
 
 A banned-word test over the golden-path screens (Home, wizard, Discover,
 Library, Playground): `companion driver`, `declaration`, `admission`,

@@ -1502,7 +1502,7 @@ reachable on a golden path in the first hour.
    suites pass: **862/17 skipped agent, 407/3 skipped driver**.
    Specs CI `35523277582` passed. Record:
    [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
-   **Pickup: R6, section 7 — the hobbyist remainder (S8 glossary/Config grouping, then S9 phone/focus/motion and the outstanding S10 evidence).** The profile benchmark button landed on 2026-09-20, as did R5, R7 and R8; R3's implementation work is complete; the
+   **Pickup: R6, section 7 — S9 phone/focus/motion, then the outstanding S10 evidence.** S8 shipped on 2026-09-20 (UI `48488ad`, dist `ad6836f`). The profile benchmark button landed on 2026-09-20, as did R5, R7 and R8; R3's implementation work is complete; the
    outstanding physical Mac check remains under item 7.
 
 ---
@@ -1795,7 +1795,15 @@ question.
 
 ---
 
-**The rest of R6.** S8's glossary and Config grouping, S9's phone/focus/motion
+**S8 completed 2026-09-20.** Twelve local definitions under The system; per-component
+Show more for three or more infrequently changed settings; unknown fields stay
+visible. Wrapped JSX and shared golden-path components join the copy gate;
+technical hints remain. Extracted copy scored Hemingway Grade 6. UI `48488ad`,
+dist `ad6836f`, both installers pinned. [Acceptance](../acceptance/s8-vocabulary-run.md).
+The operator also completed the 70,000-context RTX 5090 profile benchmark after
+the projector-fit correction: 58.7 / 54.6 / 50.4 tokens/s at the three depths.
+
+**The rest of R6.** S9's phone/focus/motion
 pass, and the two items S10 still owes its own *Done when*: `EP_DOWNLOAD=1` for
 the ten-minute target, and the moderated sessions, which are decision #14 and
 gate the release.
