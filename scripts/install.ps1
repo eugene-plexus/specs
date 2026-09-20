@@ -97,7 +97,7 @@ $PIN = @{
     "control"          = "67f18e9c2f31b68f76d0fb5c6f66097c8cec2358"
     "gateway"          = "bb67692ebf179298314340305816289bc00c9136"
     "inference-driver" = "499836c13c8e1f553de23a0f451bb56062df951e"
-    "library"          = "a43a7f4876406946eede83d2cac5b3d4587ff921"
+    "library"          = "127c70c0f02d393f8530f2e7b9e8a8890d3b952f"
     "ui"               = "afc1b2f6279fca6bc5e99270f6d22a80dd3f042f"  # branch `dist`, not `main`
 }
 $DIST = @{
@@ -109,9 +109,9 @@ $DIST = @{
     "ui"               = "eugene-plexus-ui"
 }
 
-$PyVersion    = "3.12"
-$ServiceName  = "EugenePlexusAgent"
-$TaskName     = "EugenePlexusAgent"
+$PyVersion = "3.12"
+$ServiceName = "EugenePlexusAgent"
+$TaskName = "EugenePlexusAgent"
 # **A different name, because it is a different thing** (R2.6). Before
 # this, `$TaskName -eq $ServiceName` and the task WAS the agent. It now
 # starts the tray icon, which has no business being unregistered by
@@ -120,7 +120,7 @@ $TaskName     = "EugenePlexusAgent"
 # user's session is not.
 $TrayTaskName = "EugenePlexusTray"
 
-function Say  { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
+function Say { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
 # **`Die` throws; it does NOT call `exit`.** The documented way to run
 # this script with options is
@@ -130,7 +130,7 @@ function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
 # no way to find out what went wrong. Reported from a VS Code terminal
 # that vanished on every failure. A throw is catchable, prints, and
 # still yields exit code 1 under `powershell -File`.
-function Die  { param($m) Write-Host "error: $m" -ForegroundColor Red; throw $m }
+function Die { param($m) Write-Host "error: $m" -ForegroundColor Red; throw $m }
 
 # And every early return below is `return`, never `exit` -- measured,
 # not assumed: `exit 0` inside a scriptblock ends the host session too,
@@ -152,7 +152,7 @@ function Invoke-Native {
 }
 
 $IsElevated = ([Security.Principal.WindowsPrincipal] `
-    [Security.Principal.WindowsIdentity]::GetCurrent()
+        [Security.Principal.WindowsIdentity]::GetCurrent()
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # **What kind of install this is, decided before anything is written.**
@@ -176,22 +176,24 @@ $WantsService = -not ($NoService -or $Uninstall)
 
 if (-not $Prefix) {
     $Prefix =
-        if ($Uninstall) {
-            if ($IsElevated) { Join-Path $env:ProgramData "EugenePlexus" }
-            else             { Join-Path $env:LOCALAPPDATA "EugenePlexus" }
-        } elseif ($WantsService) {
-            Join-Path $env:ProgramData "EugenePlexus"
-        } else {
-            Join-Path $env:LOCALAPPDATA "EugenePlexus"
-        }
+    if ($Uninstall) {
+        if ($IsElevated) { Join-Path $env:ProgramData "EugenePlexus" }
+        else { Join-Path $env:LOCALAPPDATA "EugenePlexus" }
+    }
+    elseif ($WantsService) {
+        Join-Path $env:ProgramData "EugenePlexus"
+    }
+    else {
+        Join-Path $env:LOCALAPPDATA "EugenePlexus"
+    }
 }
 
-$Venv    = Join-Path $Prefix "venv"
-$PyBin   = Join-Path $Venv "Scripts\python.exe"
+$Venv = Join-Path $Prefix "venv"
+$PyBin = Join-Path $Venv "Scripts\python.exe"
 $AgentEx = Join-Path $Venv "Scripts\eugene-plexus-agent.exe"
-$UvExe   = Join-Path $Prefix "bin\uv.exe"
-$Config  = Join-Path $Prefix "agent.yaml"
-$Port    = if ($env:EUGENE_PLEXUS_AGENT_BIND_PORT) { $env:EUGENE_PLEXUS_AGENT_BIND_PORT } else { 8079 }
+$UvExe = Join-Path $Prefix "bin\uv.exe"
+$Config = Join-Path $Prefix "agent.yaml"
+$Port = if ($env:EUGENE_PLEXUS_AGENT_BIND_PORT) { $env:EUGENE_PLEXUS_AGENT_BIND_PORT } else { 8079 }
 
 # --- -Verify ----------------------------------------------------------
 # The two commands that close the one gap this installer cannot close
@@ -307,7 +309,8 @@ function Test-RunsFromThisInstall {
     try {
         $a = [IO.Path]::GetFullPath($Executable)
         $b = [IO.Path]::GetFullPath($Venv)
-    } catch { return $false }
+    }
+    catch { return $false }
     return $a.StartsWith($b.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)
 }
 
@@ -338,7 +341,7 @@ function Get-OtherInstall {
         }
     }
     foreach ($candidate in @((Join-Path $env:LOCALAPPDATA "EugenePlexus"),
-                             (Join-Path $env:ProgramData "EugenePlexus"))) {
+            (Join-Path $env:ProgramData "EugenePlexus"))) {
         if (-not $candidate) { continue }
         if ([IO.Path]::GetFullPath($candidate).TrimEnd('\') -eq
             [IO.Path]::GetFullPath($Prefix).TrimEnd('\')) { continue }
@@ -358,14 +361,16 @@ function Show-InstallVerdict {
     Write-Host "elevated:             $IsElevated"
     if ($exe) {
         Write-Host "autostart runs:       $exe"
-    } else {
+    }
+    else {
         Write-Host "autostart runs:       (nothing registered under $TaskName / $ServiceName)"
     }
     $other = Get-OtherInstall
     if ($null -eq $other) {
         if ($exe) {
             Say "this install: an ordinary run is an upgrade of the install already here"
-        } else {
+        }
+        else {
             Say "no install found on this machine: an ordinary run is a first install"
         }
         return $true
@@ -392,7 +397,8 @@ function Show-InstallVerdict {
         Write-Host "      ... -Migrate"
         Write-Host "  To keep it exactly as it is -- starting when you log in:"
         Write-Host "      ... -Prefix '$($other.Prefix)' -NoService"
-    } else {
+    }
+    else {
         Write-Host "  To upgrade the install that is already here:"
         Write-Host "      ... -Prefix '$($other.Prefix)'"
         Write-Host "  To move this machine to $Prefix on purpose, taking the autostart with it:"
@@ -461,10 +467,10 @@ function Grant-ServiceControl {
     # from memory -- a hand-built descriptor that merely looks right is
     # how a service becomes unmanageable by anything including the SCM.
     $default = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)" +
-               "(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
-    $mine    = "(A;;CCLCSWRPWPDTLOCRRC;;;$sid)"
-    $sacl    = "S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)"
-    $sddl    = "$default$mine$sacl"
+    "(A;;CCLCSWLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)"
+    $mine = "(A;;CCLCSWRPWPDTLOCRRC;;;$sid)"
+    $sacl = "S:(AU;FA;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;WD)"
+    $sddl = "$default$mine$sacl"
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try { & sc.exe sdset $ServiceName $sddl 2>&1 | Out-Null }
@@ -473,8 +479,8 @@ function Grant-ServiceControl {
         # Not fatal: the install works, the icon does not. Saying which
         # beats failing the whole install over a convenience.
         Warn ("could not grant $env:USERNAME permission to start and stop the service " +
-              "(sc sdset exited $LASTEXITCODE). The tray icon will ask for Administrator; " +
-              "everything else is unaffected.")
+            "(sc sdset exited $LASTEXITCODE). The tray icon will ask for Administrator; " +
+            "everything else is unaffected.")
         return $false
     }
     Say "$env:USERNAME may start and stop Eugene without a prompt"
@@ -503,7 +509,8 @@ function Grant-ServiceControl {
 function Get-StartMenuShortcutPath {
     $programs = if ($WantsService) {
         Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"
-    } else {
+    }
+    else {
         Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
     }
     return (Join-Path $programs "Eugene Plexus.lnk")
@@ -525,12 +532,13 @@ function Add-StartMenuShortcut {
         # entry still starts Eugene and opens it, which is the half that
         # is useful either way.
         $shortcut.Arguments = if ($NoTray) { "--open --no-icon --port $Port" }
-                              else         { "--open --port $Port" }
+        else { "--open --port $Port" }
         $shortcut.WorkingDirectory = $Prefix
         $shortcut.Description = "Open Eugene Plexus, starting it first if it is stopped"
         $shortcut.Save()
         Say "added 'Eugene Plexus' to the Start menu"
-    } catch {
+    }
+    catch {
         # Never fatal: the install works, it is just less findable.
         Warn "could not add a Start menu entry ($($_.Exception.Message))"
     }
@@ -541,9 +549,9 @@ function Remove-StartMenuShortcut {
     # shortcut was written -- a per-user install migrated to a service
     # leaves one behind in the user's own Start menu otherwise.
     foreach ($programs in @(
-        (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"),
-        (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs")
-    )) {
+            (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"),
+            (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs")
+        )) {
         $link = Join-Path $programs "Eugene Plexus.lnk"
         if (Test-Path $link) {
             Remove-Item -LiteralPath $link -Force -ErrorAction SilentlyContinue
@@ -588,7 +596,7 @@ function Show-MigrationConsequences {
     $source = Get-ServiceConversionSource
     if (-not $source) { return }
     $moving = [IO.Path]::GetFullPath($source).TrimEnd('\') -ne
-              [IO.Path]::GetFullPath($Prefix).TrimEnd('\')
+    [IO.Path]::GetFullPath($Prefix).TrimEnd('\')
 
     Write-Host ""
     if ($moving) {
@@ -596,7 +604,8 @@ function Show-MigrationConsequences {
         Write-Host "  Its config, enrollment and driver settings are copied to $Prefix,"
         Write-Host "  and $source is left where it is. Two things do NOT come across,"
         Write-Host "  because a service runs as the system rather than as you:"
-    } else {
+    }
+    else {
         Warn "this turns the install at $source into a Windows service"
         Write-Host "  Everything stays where it is. Two things change, because a service"
         Write-Host "  runs as the system rather than as you:"
@@ -686,7 +695,8 @@ function Remove-Autostart {
         Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
         if (Test-Path $PyBin) {
             & $PyBin -m eugene_plexus_agent.winservice remove 2>&1 | Out-Null
-        } else {
+        }
+        else {
             & sc.exe delete $ServiceName | Out-Null
         }
     }
@@ -707,16 +717,16 @@ function Remove-Autostart {
     }
     Remove-StartMenuShortcut
     Get-CimInstance Win32_Process -Filter "Name='eugene-plexus-tray.exe'" |
-        Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
-        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
     # A task's process keeps running after the task is unregistered.
     Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='eugene-plexus-agent.exe'" |
-        Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
-        ForEach-Object {
-            Say "stopping pid $($_.ProcessId)"
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        }
+    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
+    ForEach-Object {
+        Say "stopping pid $($_.ProcessId)"
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # --- -Detect ----------------------------------------------------------
@@ -769,8 +779,8 @@ if ($Uninstall) {
     # prefix would unpoint a live install -- which is the same mistake
     # as #10, one scope over.
     $names = @("EUGENE_PLEXUS_AGENT_CONFIG_FILE", "EUGENE_PLEXUS_AGENT_BIND_HOST",
-               "EUGENE_PLEXUS_AGENT_BIND_PORT", "EUGENE_PLEXUS_AGENT_ENGINE_ROOT",
-               "EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS")
+        "EUGENE_PLEXUS_AGENT_BIND_PORT", "EUGENE_PLEXUS_AGENT_ENGINE_ROOT",
+        "EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS")
     foreach ($scope in @("User", "Machine")) {
         if ($scope -eq "Machine" -and -not $IsElevated) { continue }
         $cfg = [Environment]::GetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $scope)
@@ -848,7 +858,7 @@ if removed == 0:
     $copyDir = $null
     if (Test-Path $Config) {
         $line = Select-String -LiteralPath $Config -Pattern '^modelCopyDir:\s*(.+)$' |
-            Select-Object -First 1
+        Select-Object -First 1
         if ($line) {
             $raw = $line.Matches[0].Groups[1].Value.Trim()
             # `yaml.safe_dump` writes a Windows path as a plain scalar,
@@ -865,11 +875,13 @@ if removed == 0:
         if ($purge) {
             Say "removing this node's model copies at $copyDir ($gib GiB)"
             Remove-Item -LiteralPath $copyDir -Recurse -Force -ErrorAction SilentlyContinue
-        } else {
+        }
+        else {
             Say "this node's model copies are at $copyDir ($gib GiB) -- they are copies, so"
             Say "  deleting them loses nothing. Re-run with -PurgeDownloads, or remove it yourself."
         }
-    } elseif ($copyDir) {
+    }
+    elseif ($copyDir) {
         Say "no model copies on disk (modelCopyDir was $copyDir)"
     }
 
@@ -890,7 +902,8 @@ if removed == 0:
         if ($purge) {
             Say "removing the engine store at $engineRootPath ($egib GiB)"
             Remove-Item -LiteralPath $engineRootPath -Recurse -Force -ErrorAction SilentlyContinue
-        } else {
+        }
+        else {
             Say "the engine builds this install downloaded are at $engineRootPath ($egib GiB) --"
             Say "  re-run with -PurgeDownloads, or remove it yourself."
         }
@@ -903,7 +916,8 @@ if removed == 0:
         $keep = "$Prefix.removed-$(Get-Date -Format yyyyMMddHHmmss)"
         Move-Item -LiteralPath $Prefix -Destination $keep
         Say "removed. Your config and logs are at $keep -- delete it when you are sure."
-    } else {
+    }
+    else {
         Say "nothing installed at $Prefix"
     }
     return
@@ -942,14 +956,16 @@ a Windows service needs Administrator, and -NoElevate was given.
     foreach ($entry in $PSBoundParameters.GetEnumerator()) {
         if ($entry.Value -is [switch]) {
             if ($entry.Value.IsPresent) { $forwarded += "-$($entry.Key)" }
-        } elseif ($null -ne $entry.Value -and "$($entry.Value)" -ne "") {
+        }
+        elseif ($null -ne $entry.Value -and "$($entry.Value)" -ne "") {
             $forwarded += @("-$($entry.Key)", "$($entry.Value)")
         }
     }
     try {
         $elevated = Start-Process -FilePath "powershell.exe" -ArgumentList $forwarded `
             -Verb RunAs -Wait -PassThru
-    } catch {
+    }
+    catch {
         Remove-Item $self -ErrorAction SilentlyContinue
         Die @"
 Windows would not start an elevated PowerShell ($($_.Exception.Message)).
@@ -989,7 +1005,8 @@ if ($Migrate) {
 
 if (Test-Path $UvExe) {
     Say "uv already present ($(& $UvExe --version))"
-} else {
+}
+else {
     Say "fetching uv"
     # UV_UNMANAGED_INSTALL puts uv exactly here and edits no PATH and no
     # profile. The installer owns its own copy, so nothing the user
@@ -997,7 +1014,8 @@ if (Test-Path $UvExe) {
     $env:UV_UNMANAGED_INSTALL = Join-Path $Prefix "bin"
     try {
         & ([scriptblock]::Create((Invoke-RestMethod https://astral.sh/uv/install.ps1))) *>&1 | Out-Null
-    } catch {
+    }
+    catch {
         Die "could not install uv from https://astral.sh/uv/install.ps1 -- $($_.Exception.Message)"
     }
     if (-not (Test-Path $UvExe)) { Die "uv did not land at $UvExe" }
@@ -1011,7 +1029,8 @@ $env:UV_PYTHON_INSTALL_DIR = Join-Path $Prefix "pythons"
 # --- 2. venv ----------------------------------------------------------
 if (Test-Path $PyBin) {
     Say "virtualenv already present"
-} else {
+}
+else {
     Say "creating a Python $PyVersion virtualenv (uv downloads the interpreter; none is required on this machine)"
     # `only-managed` rather than uv's default, which prefers a matching
     # interpreter already on the machine -- as this box has, which made
@@ -1119,7 +1138,7 @@ if ($Join) {
     if (-not $Token) { Die "-Join needs -Token (mint one at the control root: Nodes -> Add a node)" }
     Say "joining $Join as a worker node"
     $joinArgs = @("join", "--control", $Join, "--token", $Token)
-    if ($NodeName)  { $joinArgs += @("--name", $NodeName) }
+    if ($NodeName) { $joinArgs += @("--name", $NodeName) }
     if ($Advertise) { $joinArgs += @("--advertise", $Advertise) }
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @joinArgs
@@ -1148,9 +1167,11 @@ if ($Join) {
     # outlived an unenrollment. A single-machine install still gets
     # loopback, which is the conservative default and the reason the rule
     # exists at all.
-} elseif ($Token) {
+}
+elseif ($Token) {
     Die "-Token needs -Join <control-root-url>"
-} elseif ($Advertise) {
+}
+elseif ($Advertise) {
     # **`-Advertise` was accepted on any invocation and honoured only in
     # the join branch** (review 6.2 #30), so the standalone case -- one
     # machine, no control root to join, an operator who already knows
@@ -1174,7 +1195,8 @@ if ($Join) {
     New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
     $lines = if (Test-Path $Config) {
         @(Get-Content -LiteralPath $Config | Where-Object { $_ -notmatch '^advertiseUrl:' })
-    } else { @() }
+    }
+    else { @() }
     $lines += "advertiseUrl: $Advertise"
     [IO.File]::WriteAllText($Config, ($lines -join "`n") + "`n",
         (New-Object Text.UTF8Encoding $false))
@@ -1207,7 +1229,7 @@ if (-not $NoService) {
         # which is where everything else this install owns already
         # lives, and both are cleared by -Uninstall.
         $engineRoot = Join-Path $Prefix "engines"
-        $modelRoot  = Join-Path $Prefix "models"
+        $modelRoot = Join-Path $Prefix "models"
         New-Item -ItemType Directory -Force -Path $engineRoot, $modelRoot | Out-Null
         [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_ENGINE_ROOT", $engineRoot, "Machine")
         [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS", $modelRoot, "Machine")
@@ -1216,7 +1238,8 @@ if (-not $NoService) {
         Grant-ServiceControl
         $autostart = "service"
         Say "Eugene will start at boot, before anyone signs in."
-    } else {
+    }
+    else {
         Say "registering the $TaskName logon task (no Administrator needed)"
         # **`--unattended`, and this is the line that needed it.** A
         # scheduled task runs its process WITH a console attached --
@@ -1225,8 +1248,8 @@ if (-not $NoService) {
         # into a console nobody can see and blocked on input() forever:
         # nothing listening, no log written, and the task cheerfully
         # reporting Running. The installer asks instead (see -Join).
-        $action  = New-ScheduledTaskAction -Execute $AgentEx -Argument "--unattended" `
-                       -WorkingDirectory $Prefix
+        $action = New-ScheduledTaskAction -Execute $AgentEx -Argument "--unattended" `
+            -WorkingDirectory $Prefix
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
         $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
             -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) `
@@ -1280,7 +1303,8 @@ if ($autostart -eq "service" -and -not $NoTray) {
         # sitting here, and an icon that appears tomorrow is an icon
         # they will not connect to what they just did.
         Start-ScheduledTask -TaskName $TrayTaskName -ErrorAction SilentlyContinue
-    } else {
+    }
+    else {
         Warn "no tray icon: $trayExe is missing (the [tray] extra did not install)"
     }
 }
@@ -1312,7 +1336,8 @@ if ($Port -ne 8079) {
     if ($IsElevated) {
         [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_PORT", "$Port", "Machine")
     }
-} else {
+}
+else {
     # A run that goes back to the default must not leave the old
     # override behind, or the port is sticky per account forever.
     [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_PORT", $null, "User")
@@ -1326,7 +1351,8 @@ if (-not $NoStart -and $autostart -ne "none") {
     Say "starting the agent"
     if ($autostart -eq "service") {
         Start-Service -Name $ServiceName
-    } else {
+    }
+    else {
         Start-ScheduledTask -TaskName $TaskName
     }
 
@@ -1338,7 +1364,8 @@ if (-not $NoStart -and $autostart -ne "none") {
             Say "Eugene Plexus is running -- open http://127.0.0.1:$Port/"
             Say "logs:  $Prefix\logs\    config: $Config"
             return
-        } catch {
+        }
+        catch {
             Start-Sleep -Seconds 1
         }
     }
@@ -1346,8 +1373,8 @@ if (-not $NoStart -and $autostart -ne "none") {
 }
 
 Say "installed. Start it with:"
-if ($autostart -eq "service")   { Write-Host "    Start-Service $ServiceName" }
-elseif ($autostart -eq "task")  { Write-Host "    Start-ScheduledTask -TaskName $TaskName" }
+if ($autostart -eq "service") { Write-Host "    Start-Service $ServiceName" }
+elseif ($autostart -eq "task") { Write-Host "    Start-ScheduledTask -TaskName $TaskName" }
 else { Write-Host "    `$env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = '$Config'; & '$AgentEx'" }
 Write-Host "    then open http://127.0.0.1:$Port/"
 Write-Host "    logs:  $Prefix\logs\    config: $Config"
