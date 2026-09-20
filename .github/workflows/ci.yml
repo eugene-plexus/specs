@@ -137,6 +137,11 @@ jobs:
         run: |
           Import-Module Pester -RequiredVersion 3.4.0
           Invoke-Pester -Script ./scripts/dev-tasks.Tests.ps1 -EnableExit
+      - name: Check installer migration diagnostics before elevation
+        shell: powershell
+        run: |
+          Import-Module Pester -RequiredVersion 3.4.0
+          Invoke-Pester -Script ./scripts/install-preflight.Tests.ps1 -EnableExit
 
   secret-scan:
     name: Secret scan (gitleaks)

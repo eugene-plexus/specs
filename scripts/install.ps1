@@ -923,6 +923,12 @@ if removed == 0:
     return
 }
 
+# Explain ownership and migration in the calling terminal before UAC. An
+# elevated -File window closes on failure, taking its useful refusal with it.
+# The elevated run repeats these read-only checks against its own context.
+Assert-OwnInstall
+Show-MigrationConsequences
+
 # --- 0a. Administrator, once, or say plainly why not ------------------
 # `SC_MANAGER_CREATE_SERVICE` is granted to nobody but Administrators,
 # so "the service is the default" and "no Administrator needed" cannot
@@ -981,13 +987,6 @@ Windows would not start an elevated PowerShell ($($_.Exception.Message)).
     Say "done (installed by the elevated run above)"
     return
 }
-
-# --- 0b. is this machine already somebody's install? ------------------
-# Before the first byte is written, and before step 3 stops a running
-# agent -- which is where an unguarded run took the other install's
-# task away (review 6.1 #10).
-Assert-OwnInstall
-Show-MigrationConsequences
 
 # --- 1. uv ------------------------------------------------------------
 Say "installing into $Prefix$(if ($WantsService) { ' (a Windows service: starts at boot)' } else { ' (per-user: starts when you log in)' })"
