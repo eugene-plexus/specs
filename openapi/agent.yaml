@@ -139,7 +139,7 @@ servers:
       host:
         default: localhost
       port:
-        default: '8079'
+        default: "8079"
 
 security:
   - bearerAuth: []
@@ -245,7 +245,6 @@ tags:
     description: Health and version.
 
 paths:
-
   # -------- v0.2: auth --------
 
   /v1/auth/status:
@@ -265,12 +264,12 @@ paths:
         Nothing here is worth protecting: an unconfigured install
         announces itself by refusing every other endpoint anyway.
       responses:
-        '200':
+        "200":
           description: Initialization state.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuthStatus'
+                $ref: "#/components/schemas/AuthStatus"
 
   /v1/auth/initialize:
     post:
@@ -299,20 +298,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AuthInitializeRequest'
+              $ref: "#/components/schemas/AuthInitializeRequest"
       responses:
-        '200':
+        "200":
           description: Initialized; an operator session comes back with it.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/AuthLoginResponse'
-        '409':
+                $ref: "components/common.yaml#/components/schemas/AuthLoginResponse"
+        "409":
           description: Already initialized — log in instead.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/auth/login:
     post:
@@ -334,26 +333,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: 'components/common.yaml#/components/schemas/AuthLoginRequest'
+              $ref: "components/common.yaml#/components/schemas/AuthLoginRequest"
       responses:
-        '200':
+        "200":
           description: Logged in.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/AuthLoginResponse'
-        '401':
+                $ref: "components/common.yaml#/components/schemas/AuthLoginResponse"
+        "401":
           description: Wrong passphrase.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '429':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "429":
           description: Rate-limited.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/auth/sessions/current:
     delete:
@@ -366,10 +365,10 @@ paths:
         logout; expired sessions are cleaned up server-side
         without an explicit call.
       responses:
-        '204':
+        "204":
           description: Logged out.
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   # -------- client keys (hobbyist UX S4, 2026-09-15) --------
 
@@ -390,14 +389,14 @@ paths:
         thing a component needs from it is the revoked set, which has
         its own endpoint.
       responses:
-        '200':
+        "200":
           description: The key records.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ClientKeyList'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "#/components/schemas/ClientKeyList"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
     post:
       tags: [auth]
       operationId: createClientKey
@@ -444,22 +443,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ClientKeyCreateRequest'
+              $ref: "#/components/schemas/ClientKeyCreateRequest"
       responses:
-        '201':
+        "201":
           description: Minted. `token` will not be shown again.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ClientKeyCreated'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '422':
+                $ref: "#/components/schemas/ClientKeyCreated"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
           description: The name is empty, or the lifetime is out of range.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/auth/client-keys/revoked:
     get:
@@ -494,14 +493,14 @@ paths:
         is rotating the install's signing key, which invalidates
         everything at once.
       responses:
-        '200':
+        "200":
           description: The revoked ids.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ClientKeyRevocations'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "#/components/schemas/ClientKeyRevocations"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/auth/client-keys/{id}:
     delete:
@@ -528,16 +527,16 @@ paths:
           schema:
             type: string
       responses:
-        '204':
+        "204":
           description: Revoked, or already revoked — both are 204.
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '404':
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
           description: No key with that id on this agent.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/components:
     get:
@@ -550,12 +549,12 @@ paths:
         for) with operational state (what the agent observes
         right now).
       responses:
-        '200':
+        "200":
           description: Component list.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ComponentList'
+                $ref: "#/components/schemas/ComponentList"
     post:
       tags: [components]
       operationId: createComponent
@@ -571,22 +570,22 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ComponentEntry'
+              $ref: "#/components/schemas/ComponentEntry"
       responses:
-        '201':
+        "201":
           description: Component added; supervision started.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Component'
-        '400':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '409':
+                $ref: "#/components/schemas/Component"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
           description: A component with this name already exists.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/components/{name}:
     parameters:
@@ -601,14 +600,14 @@ paths:
       operationId: getComponent
       summary: Read one component's topology entry plus current status.
       responses:
-        '200':
+        "200":
           description: Component details.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Component'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "#/components/schemas/Component"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
     patch:
       tags: [components]
       operationId: updateComponent
@@ -623,18 +622,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ComponentEntry'
+              $ref: "#/components/schemas/ComponentEntry"
       responses:
-        '200':
+        "200":
           description: Updated component.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Component'
-        '400':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "#/components/schemas/Component"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
     delete:
       tags: [components]
       operationId: deleteComponent
@@ -645,10 +644,10 @@ paths:
         on disk so re-adding by the same name picks up where it left
         off.
       responses:
-        '204':
+        "204":
           description: Component removed.
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/components/{name}/restart:
     parameters:
@@ -671,20 +670,20 @@ paths:
         For a `remote` component this returns `409 Conflict`: the
         agent cannot restart something it does not own.
       responses:
-        '202':
+        "202":
           description: Restart scheduled.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/RestartResult'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '409':
+                $ref: "components/common.yaml#/components/schemas/RestartResult"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
           description: Component is remote and cannot be restarted by the agent.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   # -------- engines: what we know how to start --------
 
@@ -722,12 +721,12 @@ paths:
         explicit `binary` bypasses discovery entirely and will run
         happily against an engine reported here as unavailable.
       responses:
-        '200':
+        "200":
           description: Known engine adapters.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EngineList'
+                $ref: "#/components/schemas/EngineList"
 
   /v1/engines/{engine}/install:
     parameters:
@@ -735,7 +734,7 @@ paths:
         name: engine
         required: true
         schema:
-          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
     post:
       tags: [engines]
       operationId: installEngine
@@ -773,28 +772,28 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EngineInstallRequest'
+              $ref: "#/components/schemas/EngineInstallRequest"
       responses:
-        '202':
+        "202":
           description: Install accepted and running.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EngineInstall'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '409':
+                $ref: "#/components/schemas/EngineInstall"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
           description: An install is already in flight for this engine.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '422':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "422":
           description: Nothing installable for this host.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
     get:
       tags: [engines]
       operationId: getEngineInstall
@@ -805,20 +804,20 @@ paths:
         still learns how it ended rather than finding an empty slot and
         assuming success.
       responses:
-        '200':
+        "200":
           description: Install state.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EngineInstall'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '404':
+                $ref: "#/components/schemas/EngineInstall"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
           description: No install has ever been started for this engine.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
     delete:
       tags: [engines]
       operationId: cancelEngineInstall
@@ -828,20 +827,20 @@ paths:
         that already finished is untouched — this cancels an install,
         it does not uninstall an engine.
       responses:
-        '200':
+        "200":
           description: Cancelled; the state reflects it.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EngineInstall'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '409':
+                $ref: "#/components/schemas/EngineInstall"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
           description: Nothing in flight to cancel.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   # -------- runtimes: engine processes we supervise --------
 
@@ -861,12 +860,12 @@ paths:
         `crashed` runtime is still declared, and hiding it would make
         the dashboard lie.
       responses:
-        '200':
+        "200":
           description: Every declared runtime.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RuntimeList'
+                $ref: "#/components/schemas/RuntimeList"
     post:
       tags: [runtimes]
       operationId: createRuntime
@@ -950,15 +949,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RuntimeSpec'
+              $ref: "#/components/schemas/RuntimeSpec"
       responses:
-        '201':
+        "201":
           description: Runtime declared.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Runtime'
-        '400':
+                $ref: "#/components/schemas/Runtime"
+        "400":
           description: |
             Invalid spec — unknown engine, no adapter, a flag that
             isn't in the adapter's schema, or a port already claimed by
@@ -973,8 +972,8 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '409':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
           description: |
             A runtime with that name already exists — or a component
             already holds the companion driver's name `<name>-driver`
@@ -982,8 +981,8 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '422':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "422":
           description: |
             Admission refused: the model will not fit on the device(s)
             this spec targets — **or is not on this host at all** (M11:
@@ -995,7 +994,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/runtimes/admission:
     post:
@@ -1045,16 +1044,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RuntimeSpec'
+              $ref: "#/components/schemas/RuntimeSpec"
       responses:
-        '200':
+        "200":
           description: The decision and what it was computed from. Returned for admit and refuse alike.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Admission'
-        '400':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "#/components/schemas/Admission"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/runtimes/{name}:
     parameters:
@@ -1068,14 +1067,14 @@ paths:
       operationId: getRuntime
       summary: Read one runtime.
       responses:
-        '200':
+        "200":
           description: The runtime.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Runtime'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "#/components/schemas/Runtime"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
     patch:
       tags: [runtimes]
       operationId: updateRuntime
@@ -1093,18 +1092,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RuntimeSpec'
+              $ref: "#/components/schemas/RuntimeSpec"
       responses:
-        '200':
+        "200":
           description: Updated runtime.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Runtime'
-        '400':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "#/components/schemas/Runtime"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
     delete:
       tags: [runtimes]
       operationId: deleteRuntime
@@ -1114,10 +1113,10 @@ paths:
         file is never touched.** Removing a runtime un-declares a way of
         serving a model; it does not delete anything the user owns.
       responses:
-        '204':
+        "204":
           description: Runtime removed.
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/runtimes/{name}/restart:
     parameters:
@@ -1136,14 +1135,14 @@ paths:
         this is how an operator retries a `crashed` runtime after fixing
         whatever was wrong. Expect the model load to be paid again.
       responses:
-        '202':
+        "202":
           description: Restart scheduled.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/RestartResult'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "components/common.yaml#/components/schemas/RestartResult"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/runtimes/{name}/stop:
     parameters:
@@ -1180,16 +1179,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/StopRequest'
+              $ref: "#/components/schemas/StopRequest"
       responses:
-        '202':
+        "202":
           description: Stop scheduled.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/RestartResult'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "components/common.yaml#/components/schemas/RestartResult"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/runtimes/{name}/start:
     parameters:
@@ -1224,22 +1223,22 @@ paths:
             default: false
           description: Start even when admission says the model will not fit.
       responses:
-        '202':
+        "202":
           description: Start scheduled.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/RestartResult'
-        '404':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '422':
+                $ref: "components/common.yaml#/components/schemas/RestartResult"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
           description: |
             Admission refused and `force` was not set. `detail` carries
             the arithmetic.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   # -------- this node --------
 
@@ -1280,12 +1279,12 @@ paths:
         one it is bound to. It is evidence rather than a setting; the
         setting is `POST /v1/node/reach`.
       responses:
-        '200':
+        "200":
           description: This node.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NodeIdentity'
+                $ref: "#/components/schemas/NodeIdentity"
 
   /v1/node/enroll:
     post:
@@ -1313,30 +1312,30 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/EnrollRequest'
+              $ref: "#/components/schemas/EnrollRequest"
       responses:
-        '200':
+        "200":
           description: Enrolled; the resulting identity.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NodeIdentity'
-        '400':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '409':
+                $ref: "#/components/schemas/NodeIdentity"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
           description: Already enrolled with a control root.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '502':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "502":
           description: The control root refused or was unreachable.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/node/unenroll:
     post:
@@ -1379,24 +1378,24 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UnenrollRequest'
+              $ref: "#/components/schemas/UnenrollRequest"
       responses:
-        '200':
+        "200":
           description: |
             Un-enrolled. Read `controlNotified` before assuming the
             install is clean.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UnenrollResult'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '409':
+                $ref: "#/components/schemas/UnenrollResult"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
           description: This agent is not enrolled, so there is nothing to leave.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/node/reach:
     post:
@@ -1457,9 +1456,9 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NodeReachRequest'
+              $ref: "#/components/schemas/NodeReachRequest"
       responses:
-        '200':
+        "200":
           description: |
             What was done, and the reach as it now stands. A step that
             could not be taken is named in `steps`, not raised as an
@@ -1468,23 +1467,23 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NodeReachResult'
-        '400':
+                $ref: "#/components/schemas/NodeReachResult"
+        "400":
           description: |
             `enabled` is true, `url` was not given, and this host has no
             non-loopback address to propose.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '422':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
           description: The supplied `url` is not a URL, or is a loopback address.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/node/rekey:
     post:
@@ -1527,15 +1526,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RekeyRequest'
+              $ref: "#/components/schemas/RekeyRequest"
       responses:
-        '200':
+        "200":
           description: Accepted; the identity as it now stands.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/NodeIdentity'
-        '401':
+                $ref: "#/components/schemas/NodeIdentity"
+        "401":
           description: |
             The signature does not verify against the recorded
             `controlPublicKey`, or this agent has not enrolled and so has
@@ -1543,8 +1542,8 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '409':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
           description: |
             Fenced. The `epoch` is lower than the highest this agent has
             recorded, or equal with a lower `signingKeyId`. `detail`
@@ -1552,7 +1551,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/directories:
     get:
@@ -1603,30 +1602,30 @@ paths:
             default: false
           description: Also list dot-prefixed and hidden entries.
       responses:
-        '200':
+        "200":
           description: The listing.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/DirectoryListing'
-        '400':
-          description: '`path` exists and is not a directory.'
+                $ref: "components/common.yaml#/components/schemas/DirectoryListing"
+        "400":
+          description: "`path` exists and is not a directory."
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '403':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "403":
           description: This agent may not read `path`.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
-        '404':
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "404":
           description: No such directory on this host.
           content:
             application/problem+json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Problem'
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   /v1/library/folders/check:
     post:
@@ -1662,14 +1661,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LibraryFolderCheckRequest'
+              $ref: "#/components/schemas/LibraryFolderCheckRequest"
       responses:
-        '200':
+        "200":
           description: The effective reach of every Library folder from this host.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LibraryFolderReach'
+                $ref: "#/components/schemas/LibraryFolderReach"
 
   /v1/model-copies/clear:
     post:
@@ -1698,12 +1697,12 @@ paths:
       security:
         - bearerAuth: []
       responses:
-        '200':
+        "200":
           description: What was deleted, and what survived.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ModelCopyClearResult'
+                $ref: "#/components/schemas/ModelCopyClearResult"
 
   /v1/config:
     get:
@@ -1746,12 +1745,12 @@ paths:
         because a component that must be reached from another host
         cannot bind only to this one; engines are never widened.
       responses:
-        '200':
+        "200":
           description: Current config.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+                $ref: "components/common.yaml#/components/schemas/ConfigDocument"
     patch:
       tags: [config]
       operationId: updateConfig
@@ -1761,16 +1760,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+              $ref: "components/common.yaml#/components/schemas/ConfigUpdateRequest"
       responses:
-        '200':
+        "200":
           description: Update outcome.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
-        '400':
-          $ref: 'components/common.yaml#/components/responses/Problem'
+                $ref: "components/common.yaml#/components/schemas/ConfigUpdateResult"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/config/schema:
     get:
@@ -1778,12 +1777,12 @@ paths:
       operationId: getConfigSchema
       summary: UI-renderable description of every editable agent config field.
       responses:
-        '200':
+        "200":
           description: Config schema.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+                $ref: "components/common.yaml#/components/schemas/ConfigSchema"
 
   /healthz:
     get:
@@ -1797,18 +1796,18 @@ paths:
         cannot reach any of its children stays up (so config endpoints
         remain editable) but reports `degraded`.
       responses:
-        '200':
+        "200":
           description: Healthy.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Health'
-        '503':
+                $ref: "components/common.yaml#/components/schemas/Health"
+        "503":
           description: All supervised components unreachable.
           content:
             application/json:
               schema:
-                $ref: 'components/common.yaml#/components/schemas/Health'
+                $ref: "components/common.yaml#/components/schemas/Health"
 
   # ---------------------------------------------------------------------
   # The browser surface. Two paths, neither of them a typed API, both of
@@ -1910,7 +1909,6 @@ paths:
           tail, and OpenAPI has no better way to say so.
 
 components:
-
   securitySchemes:
     bearerAuth:
       type: http
@@ -1922,7 +1920,6 @@ components:
         present service tokens threaded via env var at spawn time.
 
   schemas:
-
     ComponentList:
       type: object
       required:
@@ -1935,7 +1932,7 @@ components:
             wizard fills this in; later editing happens via the
             Components tab.
           items:
-            $ref: '#/components/schemas/Component'
+            $ref: "#/components/schemas/Component"
 
     Component:
       type: object
@@ -1955,7 +1952,7 @@ components:
           type: string
           description: Operator-supplied label, also used in the gateway's `drivers` list.
         kind:
-          $ref: 'components/common.yaml#/components/schemas/ComponentKind'
+          $ref: "components/common.yaml#/components/schemas/ComponentKind"
         url:
           type: string
           format: uri
@@ -1980,7 +1977,7 @@ components:
             another. Absent on a single-host install, where the two would
             say the same thing.
         spawn:
-          $ref: '#/components/schemas/SpawnConfig'
+          $ref: "#/components/schemas/SpawnConfig"
           description: |
             Present iff this component runs locally under agent
             supervision. Absence means it's remote (the agent only
@@ -1995,7 +1992,7 @@ components:
             from a config that breaks startup. Ignored for remote
             components.
         status:
-          $ref: '#/components/schemas/ComponentStatus'
+          $ref: "#/components/schemas/ComponentStatus"
         pid:
           type: integer
           description: Operating-system process id. Set only for spawned, currently-running components.
@@ -2023,12 +2020,12 @@ components:
         name:
           type: string
         kind:
-          $ref: 'components/common.yaml#/components/schemas/ComponentKind'
+          $ref: "components/common.yaml#/components/schemas/ComponentKind"
         url:
           type: string
           format: uri
         spawn:
-          $ref: '#/components/schemas/SpawnConfig'
+          $ref: "#/components/schemas/SpawnConfig"
         safeMode:
           type: boolean
           default: false
@@ -2175,7 +2172,7 @@ components:
         devices:
           type: array
           items:
-            $ref: 'components/common.yaml#/components/schemas/ComputeDevice'
+            $ref: "components/common.yaml#/components/schemas/ComputeDevice"
           description: |
             What this host can compute on, detected locally. The control
             root aggregates these into the cross-host inventory M3
@@ -2215,9 +2212,9 @@ components:
             host's own identity rather than under `reach`: a clock is a
             property of a machine, not of who can get to it.
           examples:
-            - '2026-09-16T14:03:21.482Z'
+            - "2026-09-16T14:03:21.482Z"
         reach:
-          $ref: '#/components/schemas/NodeReach'
+          $ref: "#/components/schemas/NodeReach"
 
     # -------- Reach: can anything else on the network get here --------
 
@@ -2279,7 +2276,7 @@ components:
         boundAddresses:
           type: array
           items:
-            $ref: '#/components/schemas/BoundAddress'
+            $ref: "#/components/schemas/BoundAddress"
           description: |
             What each process of this install is actually listening on,
             this agent included — read from the process, not from its
@@ -2295,9 +2292,9 @@ components:
             changed afterwards. Supervised components do not have this
             problem — they are restarted when the setting changes.
         restart:
-          $ref: '#/components/schemas/AgentRestart'
+          $ref: "#/components/schemas/AgentRestart"
         firewall:
-          $ref: '#/components/schemas/HostFirewall'
+          $ref: "#/components/schemas/HostFirewall"
         lastReachedFrom:
           type: string
           description: |
@@ -2443,7 +2440,7 @@ components:
         ports:
           type: array
           items:
-            $ref: '#/components/schemas/FirewallPort'
+            $ref: "#/components/schemas/FirewallPort"
         detail:
           type: string
           description: |
@@ -2539,11 +2536,11 @@ components:
       required: [reach, steps]
       properties:
         reach:
-          $ref: '#/components/schemas/NodeReach'
+          $ref: "#/components/schemas/NodeReach"
         steps:
           type: array
           items:
-            $ref: '#/components/schemas/ReachStep'
+            $ref: "#/components/schemas/ReachStep"
           description: |
             One entry per thing that was attempted, in the order it was
             attempted. A step that failed does not roll back the ones
@@ -2562,7 +2559,8 @@ components:
       properties:
         step:
           type: string
-          enum: [advertise, announce, restart_components, firewall, restart_agent]
+          enum:
+            [advertise, announce, restart_components, firewall, restart_agent]
         ok:
           type: boolean
         detail:
@@ -2653,7 +2651,7 @@ components:
         - controlNotified
       properties:
         identity:
-          $ref: '#/components/schemas/NodeIdentity'
+          $ref: "#/components/schemas/NodeIdentity"
         controlNotified:
           type: boolean
           description: |
@@ -2796,7 +2794,7 @@ components:
         keys:
           type: array
           items:
-            $ref: '#/components/schemas/ClientKey'
+            $ref: "#/components/schemas/ClientKey"
 
     ClientKeyCreateRequest:
       type: object
@@ -2832,7 +2830,7 @@ components:
         - token
       properties:
         key:
-          $ref: '#/components/schemas/ClientKey'
+          $ref: "#/components/schemas/ClientKey"
         token:
           type: string
           description: |
@@ -2989,13 +2987,13 @@ components:
             operator performs, and `manualInstall` carries the command
             itself.
         manualInstall:
-          $ref: '#/components/schemas/ManualInstall'
+          $ref: "#/components/schemas/ManualInstall"
           description: |
             How the operator installs this engine themselves. Present
             for `policy: manual`, and the reason driving an engine is a
             supported path rather than a shrug.
         detected:
-          $ref: '#/components/schemas/HostAccelerator'
+          $ref: "#/components/schemas/HostAccelerator"
         latestVersion:
           type: string
           description: Newest upstream build we know of.
@@ -3134,7 +3132,7 @@ components:
         - state
       properties:
         engine:
-          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
         state:
           type: string
           enum:
@@ -3176,7 +3174,7 @@ components:
           description: What is happening now, for a status line.
         error:
           type: string
-          description: 'Populated when `state: failed`.'
+          description: "Populated when `state: failed`."
         startedAt:
           type: string
           format: date-time
@@ -3192,7 +3190,7 @@ components:
         engines:
           type: array
           items:
-            $ref: '#/components/schemas/EngineDescriptor'
+            $ref: "#/components/schemas/EngineDescriptor"
 
     EngineDescriptor:
       type: object
@@ -3204,7 +3202,7 @@ components:
         - modelFormats
       properties:
         engine:
-          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
         available:
           type: boolean
           description: |
@@ -3214,7 +3212,7 @@ components:
         modelFormats:
           type: array
           items:
-            $ref: 'components/common.yaml#/components/schemas/ModelFormat'
+            $ref: "components/common.yaml#/components/schemas/ModelFormat"
           description: |
             On-disk model formats this adapter's engine can load. A
             property of the engine, not of this host — it does not
@@ -3289,7 +3287,7 @@ components:
               runtime.
             * `path` — found on `PATH`.
         flagSchema:
-          $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+          $ref: "components/common.yaml#/components/schemas/ConfigSchema"
           description: |
             The **curated** flag surface for this engine, as a standard
             `ConfigSchema` so the generic config editor renders it with
@@ -3303,13 +3301,13 @@ components:
             `RuntimeSpec.extraArgs`.
         error:
           type: string
-          description: 'Populated when `available: false`.'
+          description: "Populated when `available: false`."
         managed:
-          $ref: '#/components/schemas/ManagedEngine'
+          $ref: "#/components/schemas/ManagedEngine"
         acquisition:
-          $ref: '#/components/schemas/EngineAcquisition'
+          $ref: "#/components/schemas/EngineAcquisition"
         python:
-          $ref: '#/components/schemas/PythonEngine'
+          $ref: "#/components/schemas/PythonEngine"
           description: |
             Present when this engine is a Python package rather than a
             self-contained binary, describing the environment it lives
@@ -3362,7 +3360,7 @@ components:
             is the single most useful fact about an environment that is
             serving slowly.
         accelerator:
-          $ref: '#/components/schemas/FrameworkAccelerator'
+          $ref: "#/components/schemas/FrameworkAccelerator"
 
     FrameworkAccelerator:
       type: string
@@ -3391,7 +3389,7 @@ components:
         runtimes:
           type: array
           items:
-            $ref: '#/components/schemas/Runtime'
+            $ref: "#/components/schemas/Runtime"
 
     RuntimeSpec:
       type: object
@@ -3420,7 +3418,7 @@ components:
             Operator-supplied label, unique per install. Referenced by
             an inference-driver's config to say which runtime it fronts.
         engine:
-          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
         modelPath:
           type: string
           description: |
@@ -3602,7 +3600,7 @@ components:
         name:
           type: string
         engine:
-          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
         modelPath:
           type: string
         localPath:
@@ -3627,7 +3625,7 @@ components:
             this by itself, because nothing is stored — the answer is
             recomputed on every read.
         localPathSource:
-          $ref: '#/components/schemas/RuntimeLocalPathSource'
+          $ref: "#/components/schemas/RuntimeLocalPathSource"
         localPathNote:
           type: string
           readOnly: true
@@ -3644,7 +3642,7 @@ components:
             launch still succeeds, and the only visible symptom is that
             it is four minutes slower than the operator expected.
         copyProgress:
-          $ref: '#/components/schemas/CopyProgress'
+          $ref: "#/components/schemas/CopyProgress"
         modelAlias:
           type: string
           description: Resolved alias — the declared value, or the derived filename.
@@ -3685,9 +3683,9 @@ components:
             entry to read in `GET /v1/components` for its health. Absent
             when the operator fronts the runtime by hand.
         status:
-          $ref: '#/components/schemas/RuntimeStatus'
+          $ref: "#/components/schemas/RuntimeStatus"
         stopReason:
-          $ref: '#/components/schemas/StopReason'
+          $ref: "#/components/schemas/StopReason"
           description: |
             Why a `stopped` runtime is stopped. Present only in that
             state; cleared on start. An observation, not a declaration
@@ -3731,7 +3729,7 @@ components:
           type: string
           description: Version reported by the binary that is actually running.
         capabilities:
-          $ref: '#/components/schemas/RuntimeCapabilities'
+          $ref: "#/components/schemas/RuntimeCapabilities"
         lastRestart:
           type: string
           format: date-time
@@ -3742,7 +3740,7 @@ components:
             non-zero exit, or a readiness probe that never passed.
             Cleared on a successful start.
         loadProgress:
-          $ref: '#/components/schemas/LoadProgress'
+          $ref: "#/components/schemas/LoadProgress"
 
     LoadProgress:
       type: object
@@ -3901,7 +3899,7 @@ components:
         skipped:
           type: array
           items:
-            $ref: '#/components/schemas/ModelCopySkipped'
+            $ref: "#/components/schemas/ModelCopySkipped"
           description: One entry per copy that survived, with the reason.
 
     ModelCopySkipped:
@@ -4015,9 +4013,14 @@ components:
           `autoStart: false`. Not an error; the respawn loop is
           suppressed.
         * `exited` — exited cleanly and is being respawned (transient).
-        * `crashed` — exited non-zero repeatedly and the agent has
-          given up. `lastError` and the captured engine output say why;
-          `POST .../restart` retries.
+        * `crashed` — could not be launched, or exited non-zero. If this
+          process never became ready, automatic retries stop immediately
+          rather than repeating a failed model load. After readiness,
+          unexpected non-zero exits retry with back-off up to five
+          consecutive crashes; 60 seconds of continuously observed ready
+          time resets that history. Loading time does not count as useful
+          uptime. `lastError` and the captured engine output say why;
+          `POST .../restart` retries after settings have been corrected.
 
     RuntimeCapabilities:
       type: object
@@ -4058,7 +4061,7 @@ components:
         stopped model. Absent means `operator`.
       properties:
         reason:
-          $ref: '#/components/schemas/StopReason'
+          $ref: "#/components/schemas/StopReason"
 
     StopReason:
       type: string
@@ -4112,11 +4115,11 @@ components:
         - reason
       properties:
         decision:
-          $ref: '#/components/schemas/AdmissionDecision'
+          $ref: "#/components/schemas/AdmissionDecision"
         fit:
-          $ref: '#/components/schemas/AdmissionFit'
+          $ref: "#/components/schemas/AdmissionFit"
         basis:
-          $ref: '#/components/schemas/AdmissionBasis'
+          $ref: "#/components/schemas/AdmissionBasis"
         requiredBytes:
           type: integer
           format: int64
@@ -4178,7 +4181,7 @@ components:
           format: int64
           minimum: 0
         device:
-          $ref: 'components/common.yaml#/components/schemas/ComputeDevice'
+          $ref: "components/common.yaml#/components/schemas/ComputeDevice"
           description: The device the verdict is about.
         contextLength:
           type: integer
@@ -4214,7 +4217,7 @@ components:
         blockers:
           type: array
           items:
-            $ref: '#/components/schemas/AdmissionBlocker'
+            $ref: "#/components/schemas/AdmissionBlocker"
           description: |
             Runtimes holding memory on that device, or on their way to
             holding it, most idle first. `copying` counts: no process
@@ -4223,7 +4226,7 @@ components:
             list the gateway's opt-in eviction walks — restricted there
             to runtimes that declared `idleUnloadSeconds`.
         location:
-          $ref: '#/components/schemas/ModelLocation'
+          $ref: "#/components/schemas/ModelLocation"
           description: |
             Where the declared model is on this host, and whether it is
             (M11). Present on every answer from an agent that computes
@@ -4294,7 +4297,7 @@ components:
           type: string
           description: A runtime holding memory on the device.
         status:
-          $ref: '#/components/schemas/RuntimeStatus'
+          $ref: "#/components/schemas/RuntimeStatus"
         idleUnloadSeconds:
           type: integer
           description: |
@@ -4339,7 +4342,7 @@ components:
             at the moment of measurement. False is what turns the
             decision to `refuse`.
         mapping:
-          $ref: 'components/common.yaml#/components/schemas/PathMapping'
+          $ref: "components/common.yaml#/components/schemas/PathMapping"
           description: The rule that applied, when one did.
         sizeBytes:
           type: integer
@@ -4377,7 +4380,7 @@ components:
         pathMappings:
           type: array
           items:
-            $ref: 'components/common.yaml#/components/schemas/PathMapping'
+            $ref: "components/common.yaml#/components/schemas/PathMapping"
           description: |
             This node's overrides as they would be after an unsaved
             edit. Absent means the saved ones.
@@ -4412,7 +4415,7 @@ components:
         folders:
           type: array
           items:
-            $ref: '#/components/schemas/LibraryFolderStatus'
+            $ref: "#/components/schemas/LibraryFolderStatus"
 
     LibraryFolderStatus:
       type: object
@@ -4430,14 +4433,14 @@ components:
           type: string
           description: The path this host would open for it.
         source:
-          $ref: '#/components/schemas/FolderReachSource'
+          $ref: "#/components/schemas/FolderReachSource"
         mount:
           type: string
           description: |
             The folder's mount this host's OS shape selected, when the
             source is `inherited`. Absent otherwise.
         override:
-          $ref: 'components/common.yaml#/components/schemas/PathMapping'
+          $ref: "components/common.yaml#/components/schemas/PathMapping"
           description: The `pathMappings` rule that applied, when one did.
         exists:
           type: boolean
