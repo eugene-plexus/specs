@@ -1411,7 +1411,8 @@ reachable on a golden path in the first hour.
    A file-link inspection error no longer discards healthy sibling files.
    The runtime config description and timeout advice now match that behavior.
 
-   **Pickup: R3 item 6 below.** No service or live-install change was made.
+   Specs `93838cd`; CI `35519608405` and container workflow `35519608389`
+   both passed. No service or live-install change was made.
    Native Windows symlinks require privileges this session lacks;
    junctions ran without elevation, and real symlinks ran in WSL Python 3.12.
 
@@ -1423,6 +1424,33 @@ reachable on a golden path in the first hour.
 6. **§6.3 #37 — five respawns of an engine that dies during load**, which on a
    remote mount is up to five full 23.8 GB reads. Make the back-off aware of
    observed uptime rather than only of the crash count.
+
+   **COMMITTED AND PUBLISHED 2026-09-20.** Contract `f545c2c`, agent `159ec39`,
+   both installers re-pinned; the agent archive resolves. Only the agent's
+   specs pin moved: the other consumers' R3.6 differences are docstrings only
+   or byte-identical, measured by regeneration in temporary output directories.
+   Record: [`../acceptance/engine-load-recovery-run.md`](../acceptance/engine-load-recovery-run.md).
+   The reproduction counted **five actual spawn calls** for one failed load.
+   A non-zero exit before this process has been observed ready now stops
+   automatic retries, retaining the failure and naming Restart as the remedy.
+   After readiness the existing bounded back-off remains; **60 seconds of
+   continuously observed readiness resets crash history**, never time loading.
+   Manual Restart now restarts an ended supervision task. Components retain
+   their existing safe-mode recovery. Late readiness probes cannot credit a
+   replacement process with the old process's success.
+
+   `scripts/r36-acceptance.py`: **6 PASS each on Windows and Linux**, real
+   agent API and child processes, no GPU or live install. Copied-checkout
+   sabotage: **15/15 each platform**, restored baselines green. Windows full
+   suite: **876 passed, 3 skipped**, after final regeneration (the
+   final runtime file passes **14 tests**). Linux Python 3.12 full suite:
+   **857 passed, 17 skipped, 5 failed**; those exact five also fail against
+   an untouched archive of agent HEAD (two missing-sibling-package seeding
+   tests, three Windows-assuming tests). They were not changed here.
+
+   **Pickup: R3 item 7 below.** Contract prose only, no wire fields or enum
+   members. Agent CI `35521633539` is tracked against the already failing Linux
+   baseline; see the record for the five reproduced failures and harness limits.
 7. **§6.2 #28's Apple half** — a Rosetta terminal produces an x86_64
    interpreter, after which Metal is never chosen and a Mac is scored CPU-only.
    Confirmed in code, unverifiable without a Mac, and the review's citation for
