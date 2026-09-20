@@ -41,7 +41,7 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=5c051553ad9b80366a5300dbed67b74b2cb00a65
+PIN_AGENT=dba78df2095e8e4fac441f8d426038f0ddd42cf9
 PIN_CONTROL=5cd8733d5e91c003f03097db517057f809006846
 PIN_GATEWAY=e232fce030eb851d9d55f832956b9e8a260d345a
 PIN_DRIVER=4dc12fe2f0b1bd49a37870848731f6945ab6ff61

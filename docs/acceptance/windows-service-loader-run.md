@@ -13,7 +13,8 @@ Moving the host to `venv/Scripts`, where Python finds the parent `pyvenv.cfg`,
 resolved both. The probe named a nonexistent service and reached its expected
 missing PythonClass registry-entry error; it never launched the real agent.
 
-Agent `5c05155` stages the host, the loaded Python DLL, pywintypes and private
+Agent `dba78df` stages the host, the loaded Python DLL, the stable-ABI
+`python3.dll`, pywintypes and private
 CRT dependencies in Scripts, and passes the host's explicit path to pywin32.
 It supports an earlier install that moved the wheel's executable to the venv
 root, and propagates pywin32's nonzero registration result. Both installers
@@ -38,6 +39,12 @@ found one unrelated runtime-supervision timeout, reproduced on untouched
 `test_late_ready_probe_cannot_belong_to_a_replacement`; it is not weakened here.
 
 Windows CI runs the service tests and `scripts/windows-service-smoke.py`.
+The first live CI run exposed the stable-ABI DLL dependency missing from the
+initial loader repair: `_sodium` failed to import before the agent could open
+its log. Windows service event capture identified it; the loader regression
+was extended to import both PyNaCl and cryptography, reproduced that failure
+locally, and passes after staging `python3.dll`. The complete Python 3.14
+agent suite passed (919 tests, four platform skips).
 The smoke check requires explicit `EP_SERVICE_SMOKE=1` and an already elevated
 CI process, creates a uniquely named LocalSystem service and disposable venv,
 checks HTTP health with only System32 on PATH, stops it through SCM, and removes
