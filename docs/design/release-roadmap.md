@@ -1466,8 +1466,9 @@ reachable on a golden path in the first hour.
    behavior gate and R2.2's POSIX suite still green. CI runs the new gate.
    Record and remaining hardware steps:
    [`../acceptance/native-apple-python-run.md`](../acceptance/native-apple-python-run.md).
-   **Pickup: R3 item 8 below.** Mac verification is still pending, not a reason
-   to hold the independent contract sweep.
+   Specs `a2b1a27`; CI `35523142047` and container workflow `35523142053`
+   passed. Mac verification is still pending; the independent contract sweep
+   is recorded below.
 8. **The `perf_counter` and contract-prose sweep** left over from R1.1: the
    remaining `monotonic()` call sites that feed a reported `*_ms`, the 116 ms
    prose in `gateway.yaml`'s overview and `AttemptView.backendMs` (the two
@@ -1479,7 +1480,11 @@ reachable on a golden path in the first hour.
    `agent.yaml` and `common.yaml` say "bcrypt" for a passphrase that is
    Argon2id everywhere else, and `SecurityMode` is missing `passphrase_file`.**
 
-   **CONTRACT SWEEP IMPLEMENTED 2026-09-20; consumer regeneration pending.**
+   **COMMITTED AND PUBLISHED 2026-09-20.** Contract `239fb04`; regenerated
+   agent `99501e4`, control `b192481`, gateway `dfdf5df`, library `b3ad977`,
+   inference-driver `cf5307c`. Both installers re-pinned. Regeneration from
+   both revisions matched the old committed output before comparing the new;
+   the UI's R3.8 difference is comments only, so its pin and dist stay put.
    Eight stale claims reproduced by `scripts/r38-contract-checks.py`, now
    corrected. The shared enum includes the control root's `passphrase_file`
    mode while explicitly retaining the agent's supported subset. Runtime
@@ -1489,8 +1494,16 @@ reachable on a golden path in the first hour.
    five consumers pass the duration-clock sweep; no remaining call needed
    replacement. **11/11 in-memory sabotages caught**. Both OpenAPI validators
    pass (one existing unused `StreamToken` warning).
-   **Pickup: regenerate affected R3.8 consumers, validate, and ship their pins;
-   then R7.** The outstanding physical Mac check remains under item 7.
+   **231 focused consumer tests pass**, and all five mypy checks pass.
+   Post-push CI exposed six environment-dependent tests: the agent's five
+   recorded Linux failures and a driver check that required the real Claude
+   CLI. Fixtures now supply their required facts without weakening assertions
+   (agent `52c1109`, driver `5c9e3c6`, the final installer pins). Full Linux
+   suites pass: **862/17 skipped agent, 407/3 skipped driver**.
+   Specs CI `35523277582` passed. Record:
+   [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
+   **Pickup: R7, section 10.** R3's implementation work is complete; the
+   outstanding physical Mac check remains under item 7.
 
 ---
 

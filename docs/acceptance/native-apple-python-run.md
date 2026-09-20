@@ -1,6 +1,7 @@
 # R3.7 - native Python from a Rosetta terminal
 
-2026-09-20. Roadmap section 4 item 7. Changes are in `install.sh` and
+2026-09-20. Published as specs `a2b1a27`; CI `35523142047` and container
+workflow `35523142053` passed. Roadmap section 4 item 7. Changes are in `install.sh` and
 `bootstrap.sh`; no component, contract, or installer package pin changes.
 
 Both scripts check Apple hardware when `uname` reports Intel on macOS and

@@ -93,11 +93,11 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "159ec397e1c6415619764f835d9e8378ad1ae059"
-    "control"          = "67f18e9c2f31b68f76d0fb5c6f66097c8cec2358"
-    "gateway"          = "bb67692ebf179298314340305816289bc00c9136"
-    "inference-driver" = "499836c13c8e1f553de23a0f451bb56062df951e"
-    "library"          = "127c70c0f02d393f8530f2e7b9e8a8890d3b952f"
+    "agent"            = "52c11095ae9e8bac99ebfbbca2446fd3e3366a88"
+    "control"          = "b19248178febf9f319281c3d67fb4dd58a71a1e8"
+    "gateway"          = "dfdf5df1fdca0c17e024e56641ee1adc8de0d99c"
+    "inference-driver" = "5c9e3c63ad0ae1a903544850aa3c63f24b7a3224"
+    "library"          = "b3ad97708a0fc66b8924368d101b7866a89e4ebe"
     "ui"               = "afc1b2f6279fca6bc5e99270f6d22a80dd3f042f"  # branch `dist`, not `main`
 }
 $DIST = @{
