@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   r7-signing:
-    name: R7 signing and live rotation (${{ matrix.os }})
+    name: R7 signing, rotation and R8 profiles (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     strategy:
@@ -69,6 +69,10 @@ jobs:
         run: python specs/scripts/r7-signing-checks.py
       - name: Rotate an isolated live legacy install without re-enrollment
         run: python specs/scripts/r7-rotation-acceptance.py
+      - name: Verify R8 model defaults through live gateway and Library processes
+        run: python specs/scripts/r8-profile-acceptance.py
+      - name: Detect deliberately broken R8 profile defaults
+        run: python specs/scripts/r8-profile-checks.py
 
   r7-launch-boundary:
     name: R7 launch boundary (${{ matrix.os }})

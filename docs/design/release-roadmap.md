@@ -1502,7 +1502,7 @@ reachable on a golden path in the first hour.
    suites pass: **862/17 skipped agent, 407/3 skipped driver**.
    Specs CI `35523277582` passed. Record:
    [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
-   **Pickup: R8, section 9 — resolve gateway defaults from model profiles.** R7 landed on 2026-09-20; R3's implementation work is complete; the
+   **Pickup: R5, section 6 — positioning.** R7 and R8 landed on 2026-09-20; R3's implementation work is complete; the
    outstanding physical Mac check remains under item 7.
 
 ---
@@ -1848,18 +1848,33 @@ autostart: the service runs as LocalSystem, and #10 is where that home
 directory and the strands-the-first-install trap are fixed. Everything else is
 independent.
 
-**R8 is R3 item 4's other half and is new on 2026-09-19.** `gateway.yaml` says
-`max_tokens` and `temperature` are resolved from *the model's settings profile*
-and the gateway substitutes its own install-wide defaults. The recommendation
-carried into R3 said the promise could not be met in code because no per-model
-output store exists; the premise was false — `ModelProfile` carries
-`temperature` and `topP` and the library serves
-`GET /v1/models/{id}/profiles`. What it costs is a **gateway→library dependency
-edge that does not exist today**, with a cache, a staleness policy and its own
-failure modes, which is more than a correctness pass should carry. Troy's call:
-**split it, keep the target** — the sentence stands as an unmet promise rather
-than being softened to match the weaker mechanism, and the work is scheduled in
-front of the release.
+**R8 is R3 item 4's other half, split out on 2026-09-19 and completed
+2026-09-20.** The gateway promised profile defaults but substituted its own
+install-wide settings. The earlier roadmap also confused `RecommendedSampling`
+metadata with persisted profiles: `ModelProfile` did not yet contain those
+generation fields. R8 adds optional `maxTokens`, `temperature`, and `topP` to
+Library profiles, persistence, and the profile editor, then fulfills the
+gateway promise. Troy's call, **split it, keep the target**, stands.
+
+For every backend attempt, caller values take precedence over the model's
+**default profile**, then gateway settings. Lookup follows the selected
+node/driver's runtime `modelPath`, including cross-model fallback; aliases and
+local-copy paths never identify Library models. Both API doors and streaming
+use the resolver. Reads use the agent's authenticated Library proxy, a bounded
+cache, configurable fresh/stale lifetimes, and bounded retry after failures.
+Saved edits, default changes, and deletion take effect after cache refresh
+without restarting a runtime. Launch templates retain copy-at-launch behavior.
+Design: [model-generation-defaults.md](model-generation-defaults.md).
+
+Contract `88a6f63`; gateway `aa24529`, Library `db66715`, UI source `d384ba2`,
+packaged UI `11c0a72`. Both installers pin the published consumers; their CI
+passes. Full suites: gateway **399** on each platform, Library **487/24 skipped
+Windows and 490/21 skipped Linux**, UI **731**. Isolated real gateway/Library
+process acceptance passes on Windows and Linux; **10/10 deliberate regressions
+caught on each platform**, with restored baselines passing. CI retains both
+gates. The isolated UI export, dist payload, and wheel match across all 184
+assets. No running install or model configuration was changed for R8.
+Record: [R8 profile defaults acceptance](../acceptance/r8-profile-defaults-run.md).
 
 **The release gate is unchanged and this roadmap does not shorten it:** it is
 `hobbyist-ux.md` **decision #13** (what gates it — S0-S6 and S10) plus
