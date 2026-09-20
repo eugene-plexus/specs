@@ -1,7 +1,8 @@
 """Opt-in Windows CI service smoke test; never run against an installed node.
 
 Creates a uniquely named service and disposable venv/config. Requires an
-already elevated process; never requests UAC. Starts no components or engines.
+already elevated process; never requests UAC. Starts one isolated companion
+driver in safe mode, without an engine or access to an installed node's state.
 """
 
 import ctypes
@@ -52,8 +53,15 @@ def main():
             check=True,
         )
         config = root / "agent.yaml"
-        config.write_text("{}\n", encoding="utf-8")
         port = 18779
+        driver_port = 18781
+        driver_config = root / "driver.yaml"
+        driver_config.write_text("{}\n", encoding="utf-8")
+        config.write_text(json.dumps({"components": [{
+            "name": "service-smoke-driver", "kind": "inference-driver",
+            "url": f"http://127.0.0.1:{driver_port}", "safeMode": True,
+            "spawn": {"configFile": str(driver_config)},
+        }]}), encoding="utf-8")
         installed = False
         try:
             win32serviceutil.InstallService(
@@ -98,6 +106,19 @@ def main():
                     time.sleep(0.3)
                 else:
                     raise AssertionError("service did not answer health check")
+                deadline = time.perf_counter() + 45
+                while time.perf_counter() < deadline:
+                    try:
+                        response = client.get(f"http://127.0.0.1:{driver_port}/healthz")
+                        if response.status_code == 200:
+                            assert response.json()["component"] == "inference-driver"
+                            print("PASS: LocalSystem service launches a real companion driver")
+                            break
+                    except httpx.HTTPError:
+                        pass
+                    time.sleep(0.3)
+                else:
+                    raise AssertionError("service's companion driver did not start")
             win32serviceutil.StopService(name)
             win32serviceutil.WaitForServiceStatus(
                 name, win32service.SERVICE_STOPPED, 45

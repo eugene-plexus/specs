@@ -32,6 +32,11 @@
   `-NoService` keeps the whole unelevated path: %LOCALAPPDATA% and a
   logon task, exactly as before, for anyone who wants it.
 
+  `-Migrate` also copies completed engine builds from the invoking user's
+  legacy engine store, including on a retry after the service is installed.
+  `-MigrateEngineRoot <path>` selects a custom source. Existing destination
+  builds and the original files are preserved.
+
   WHAT THE SERVICE COSTS, AND WHAT IT NO LONGER COSTS. It runs as
   LocalSystem, which holds none of the credentials the person installing
   it collected by hand -- so an authenticated file share needs a row in
@@ -80,6 +85,7 @@ param(
     [switch]$Verify,
     [switch]$Detect,
     [switch]$Migrate,
+    [string]$MigrateEngineRoot,
     [switch]$PurgeDownloads,
     [switch]$PurgeModelCopies,
     [string]$Join,
@@ -93,7 +99,7 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "dba78df2095e8e4fac441f8d426038f0ddd42cf9"
+    "agent"            = "61a90c127e963a27bae9ad0770352adeb4f35a4c"
     "control"          = "5cd8733d5e91c003f03097db517057f809006846"
     "gateway"          = "e232fce030eb851d9d55f832956b9e8a260d345a"
     "inference-driver" = "4dc12fe2f0b1bd49a37870848731f6945ab6ff61"
@@ -749,6 +755,31 @@ function Copy-InstallState {
     }
 }
 
+function Copy-EngineBuilds {
+    param([string]$Source)
+    if (-not $Source -or -not (Test-Path -LiteralPath $Source)) { return }
+    $destination = [IO.Path]::GetFullPath((Join-Path $Prefix 'engines')).TrimEnd('\')
+    if ([IO.Path]::GetFullPath($Source).TrimEnd('\') -eq $destination) { return }
+    foreach ($engine in Get-ChildItem -LiteralPath $Source -Directory) {
+        foreach ($build in Get-ChildItem -LiteralPath $engine.FullName -Directory) {
+            # Only complete managed builds; their metadata uses relative paths.
+            if (-not (Test-Path -LiteralPath (Join-Path $build.FullName 'install.json'))) { continue }
+            $engineDir = Join-Path $destination $engine.Name
+            $target = [IO.Path]::GetFullPath((Join-Path $engineDir $build.Name))
+            if (Test-Path -LiteralPath $target) { continue }
+            $stage = [IO.Path]::GetFullPath((Join-Path $engineDir ('.migrate-' + [guid]::NewGuid().ToString('N'))))
+            if (-not $target.StartsWith($destination + '\', 'OrdinalIgnoreCase') -or
+                -not $stage.StartsWith($destination + '\', 'OrdinalIgnoreCase')) {
+                Die 'engine migration target is outside this install'
+            }
+            New-Item -ItemType Directory -Force -Path $engineDir | Out-Null
+            Copy-Item -LiteralPath $build.FullName -Destination $stage -Recurse -Force
+            Move-Item -LiteralPath $stage -Destination $target
+            Say "carried over engine $($engine.Name) $($build.Name) from $Source"
+        }
+    }
+}
+
 function Remove-Autostart {
     # **Only an autostart that belongs to this prefix.** The name is
     # fixed, so removing by name alone is how #10 stranded the first
@@ -998,6 +1029,15 @@ if removed == 0:
 Assert-OwnInstall
 Show-MigrationConsequences
 
+# Capture the invoking user's legacy engine store before elevation. A retry
+# after migration must still recover it even when the service already belongs
+# to the new prefix. User installs historically kept builds outside the prefix.
+if ($Migrate -and $WantsService -and -not $MigrateEngineRoot) {
+    $MigrateEngineRoot = [Environment]::GetEnvironmentVariable('EUGENE_PLEXUS_AGENT_ENGINE_ROOT', 'User')
+    if (-not $MigrateEngineRoot) { $MigrateEngineRoot = Join-Path $env:USERPROFILE '.eugene-plexus\engines' }
+    $PSBoundParameters['MigrateEngineRoot'] = $MigrateEngineRoot
+}
+
 # --- 0a. Administrator, once, or say plainly why not ------------------
 # `SC_MANAGER_CREATE_SERVICE` is granted to nobody but Administrators,
 # so "the service is the default" and "no Administrator needed" cannot
@@ -1038,6 +1078,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Prefix "bin"), (Join-Path 
 if ($Migrate) {
     $migrateFrom = Get-OtherInstall
     if ($migrateFrom) { Copy-InstallState -Source $migrateFrom.Prefix }
+    if ($WantsService) { Copy-EngineBuilds -Source $MigrateEngineRoot }
 }
 
 if (Test-Path $UvExe) {

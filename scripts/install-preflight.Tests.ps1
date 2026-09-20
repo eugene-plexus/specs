@@ -5,7 +5,7 @@ $preflight = [scriptblock]::Create($source.Substring(0, $source.IndexOf('# --- 1
 # Import only helper definitions for tests that launch harmless child scripts.
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$null)
 $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    $node.Name -in @('Say', 'Die', 'Invoke-Native', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap') }, $false) |
+    $node.Name -in @('Say', 'Die', 'Invoke-Native', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds') }, $false) |
     ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
 
 Describe 'Installer failure reporting' {
@@ -81,6 +81,33 @@ param([switch]$Migrate, [switch]$NoTray, [string]$Prefix, [string]$Token, [strin
         Get-ChildItem $TestDrive -Filter '*.log' | ForEach-Object {
             [IO.File]::ReadAllText($_.FullName) | Should Not Match ([regex]::Escape($token))
         }
+    }
+}
+
+Describe 'Managed engine migration' {
+    It 'recovers external builds on retry without replacing existing builds or the source' {
+        $Prefix = Join-Path $TestDrive 'service'
+        $legacy = Join-Path $TestDrive 'legacy engines'
+        $old = Join-Path $legacy 'llama_cpp\b1'
+        New-Item -ItemType Directory -Force -Path $old | Out-Null
+        [IO.File]::WriteAllText((Join-Path $old 'install.json'), '{"binary":"llama-server.exe"}')
+        [IO.File]::WriteAllText((Join-Path $old 'llama-server.exe'), 'original')
+        Copy-EngineBuilds -Source $legacy
+        $copied = Join-Path $Prefix 'engines\llama_cpp\b1\llama-server.exe'
+        [IO.File]::ReadAllText($copied) | Should Be 'original'
+        [IO.File]::WriteAllText($copied, 'keep destination')
+        Copy-EngineBuilds -Source $legacy
+        [IO.File]::ReadAllText($copied) | Should Be 'keep destination'
+        [IO.File]::ReadAllText((Join-Path $old 'llama-server.exe')) | Should Be 'original'
+        @(Get-ChildItem (Join-Path $Prefix 'engines\llama_cpp') -Directory).Count | Should Be 1
+    }
+
+    It 'does not publish incomplete legacy builds' {
+        $Prefix = Join-Path $TestDrive 'empty service'
+        $legacy = Join-Path $TestDrive 'incomplete engines'
+        New-Item -ItemType Directory -Force -Path (Join-Path $legacy 'llama_cpp\b2') | Out-Null
+        Copy-EngineBuilds -Source $legacy
+        Test-Path (Join-Path $Prefix 'engines\llama_cpp\b2') | Should Be $false
     }
 }
 
