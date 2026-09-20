@@ -1502,7 +1502,7 @@ reachable on a golden path in the first hour.
    suites pass: **862/17 skipped agent, 407/3 skipped driver**.
    Specs CI `35523277582` passed. Record:
    [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
-   **Pickup: R5, section 6 — positioning.** R7 and R8 landed on 2026-09-20; R3's implementation work is complete; the
+   **Pickup: R6, section 7 — the profile benchmark button, then the hobbyist remainder.** R5, R7 and R8 landed on 2026-09-20; R3's implementation work is complete; the
    outstanding physical Mac check remains under item 7.
 
 ---
@@ -1665,10 +1665,30 @@ absence inverted, and `dist` rebuilt with both installers re-pinned.
 KEEP THE NUMBERS.** Applied the same day to
 [`local-inference-control-plane.md`](local-inference-control-plane.md) §2
 (which now carries the order table and is the source of truth for the words),
-to CLAUDE.md and to the README's hybrid. **What remains in R5 is the two
-surfaces this repo does not own:** Home's copy in `ui`, and the website — a
-separate commit in a separate repo, whose two outright-false live claims are
-named below.
+to CLAUDE.md and to the README's hybrid. **R5 completed the two remaining
+surfaces on 2026-09-20:** Home's copy in `ui`, and the website, in separate
+commits and with a rebuilt installable UI.
+
+**COMPLETED 2026-09-20.** Website `0fd2e83` had already adopted most of the
+positioning and removed the false no-copy claim. R5 finishes that work in
+website `4ebd94a`: engine setup leads, model settings reflect R8, trust copy
+reflects R7's completed verification split and explicit legacy rotation, and
+Windows service verification is described at its actual boundary. UI
+`fa69ae6` explains machine-specific starting settings and downloads into the
+operator's own folders, names existing subscriptions, and includes Claude Code
+alongside OpenAI-compatible apps. Its rebuilt dist is `a04a5eb`, pinned by
+both installers. Home retains its task order and one primary action per state;
+the seven positioning lines are not an extra marketing panel in the console.
+
+The website's newer 2026-09-20 editorial decision removed the standalone
+numbers showcase. R5 preserves that decision and publishes the observations
+as a linked [technical measurement record](../acceptance/control-plane-measurements.md),
+with setups and limitations. **172 ms was a completion after the dead replica
+had already been excluded, not measured cascade latency; 21 s was a warm-cache
+local start, and copying cost time on the first start.** The streaming figures
+test non-buffering, not proxy speedup. No new performance measurement or
+competitor comparison is claimed. The context-depth instrument remains R6.
+Record: [R5 positioning acceptance](../acceptance/r5-positioning-run.md).
 
 **The shape that was adopted: seven lines said, eight ideas numbered.** #4
 keeps its number and becomes a mechanism; the new *one endpoint for every tool
@@ -1684,10 +1704,9 @@ engines it doesn't own* as the lead, *llama-swap swaps one model at a time and
 no one load-balances replicas*, and *exactly what the "run it on a server"
 crowd lacks*. **And the README's hybrid is closed (2026-09-18)** — #2, #4, #5 and #6 had
 kept the old wording while #1 and #7 had the new, in the one document a
-stranger reads first. **Still to do in R5:** the same four claims in Home's
-copy and on the website.
+stranger reads first. **Completed in R5:** the remaining Home and website copy.
 
-**And one thing R5 should publish rather than re-word.** The review's §3 notes
+**The original measurement-publication scope, corrected by the record above.** The review's §3 notes
 that **nobody in this field publishes the numbers that describe THIS layer**,
 and we already have them measured: **failover around a killed replica in
 172 ms**, **wake on demand in 2.5 s**, **time-to-first-token through two
@@ -1713,10 +1732,10 @@ grows into a homelab. **The numbers stayed attached to the old ideas**, because
 and the memory files — so the fourth line is the new **#8**, the sixth is #5,
 the second is #6, and the fifth and seventh are the two halves of #7.
 
-**Three sentences must not be published before the fix that makes them true:**
+**Original publication prerequisites (R1.2, R1.3, R1.6 and R4 have now landed):**
 the fit claim (R1.3), the replica claim (R1.6), and the file-ownership card
 (R1.2's download confinement). They are the first three things a reviewer
-tests. And two live site claims are outright false rather than dated — *"gives
+tests. Two site claims were outright false when this scope was written — *"gives
 every tool you use one address to talk to"* with a `Coding agents` chip, which
 R4 is what makes true, and *"never copied, never renamed"*, which our own
 node-local copy falsified the same day it shipped (the replacement line exists:
