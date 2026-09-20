@@ -2,6 +2,18 @@
 
 Cross-component release notes. Each repo has its own commit history; this file consolidates what shipped together.
 
+### R6.1 — profile context-depth benchmarks (2026-09-20)
+
+- Saved llama.cpp profiles can benchmark the selected node at three context
+  depths. Results show speed, variation, individual samples and retained settings;
+  they remain separate from memory-fit estimates.
+- Agent-owned jobs report progress, support cancellation, survive navigation,
+  and retain the latest 20 results. Runtime starts are excluded during a run;
+  existing models are never stopped automatically.
+- Real CPU-only engine, HTTP lifecycle, packaged-browser and regression checks
+  passed. Both installers include the agent and rebuilt UI. Remaining R6
+  usability work, including the Library phone layout, is still outstanding.
+
 ### R3.7/R3.8 - native Apple Python and contract cleanup (2026-09-20)
 
 - POSIX setup selects and verifies native ARM Python on Apple Silicon even

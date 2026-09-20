@@ -20,6 +20,10 @@ are refused with an explanation. Transfer GPU layers, threads, batch sizes,
 GPU selection, tensor split, flash attention and supported loading options.
 Do not turn profile temperature or top-p into benchmark flags: llama-bench
 measures token evaluation, excluding tokenization and sampling.
+Unset fields retain the selected benchmark build's defaults. In particular,
+llama-server's automatic GPU placement is not an equivalent of llama-bench's
+default offload: the UI says to set GPU layers explicitly when comparing
+placement. The saved command and engine version identify these defaults.
 
 Default sweep: 128 generated tokens, three repetitions, depths zero, half of
 context-minus-generated-tokens, and context-minus-generated-tokens. The reserved

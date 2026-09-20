@@ -1502,7 +1502,7 @@ reachable on a golden path in the first hour.
    suites pass: **862/17 skipped agent, 407/3 skipped driver**.
    Specs CI `35523277582` passed. Record:
    [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
-   **Pickup: R6, section 7 — the profile benchmark button, then the hobbyist remainder.** R5, R7 and R8 landed on 2026-09-20; R3's implementation work is complete; the
+   **Pickup: R6, section 7 — the hobbyist remainder (S8 glossary/Config grouping, then S9 phone/focus/motion and the outstanding S10 evidence).** The profile benchmark button landed on 2026-09-20, as did R5, R7 and R8; R3's implementation work is complete; the
    outstanding physical Mac check remains under item 7.
 
 ---
@@ -1744,6 +1744,19 @@ node-local copy falsified the same day it shipped (the replacement line exists:
 ---
 
 ## 7. R6 — the hobbyist remainder
+
+**Item 1 completed 2026-09-20.** Saved llama.cpp profiles have **Benchmark** on
+the selected node: three context depths, sample controls, progress, cancellation,
+curve/table, recorded settings and history. Agent-owned work survives navigation;
+the task tray discovers it across nodes. Managed models must be stopped first;
+benchmark admission and model starts are serialized, including gateway wake.
+Agent `c0b7f67`, UI source `ba235fd`, UI dist `1669119`, control codegen `612c56b`;
+both installers pinned. Design: [`profile-benchmark.md`](profile-benchmark.md).
+Evidence: [`../acceptance/r6-profile-benchmark-run.md`](../acceptance/r6-profile-benchmark-run.md).
+Real CPU-only llama-bench and packaged-browser checks passed without changing
+the installed service or running GPU model. The phone screenshot exposes the
+existing Library split-pane clipping at 390 px; that remains in the S9 pass
+below, not a claim of mobile acceptance for this item.
 
 **1. The benchmark button (decision #6, taken 2026-09-18).** It is here rather
 than after the gate because the number it produces is **positioning**, not a

@@ -123,6 +123,8 @@ jobs:
         run: python specs/scripts/windows-service-smoke.py
       - name: Check real children and detect deliberately broken guards
         run: python specs/scripts/r7-launch-boundary-checks.py --current-python
+      - name: Check benchmark children and detect deliberately broken guards
+        run: python specs/scripts/r6-benchmark-checks.py
 
   posix-installers:
     name: POSIX installer architecture regression
