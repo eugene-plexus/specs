@@ -2038,6 +2038,10 @@ components:
             type: number
             exclusiveMinimum: 0
 
+    BenchmarkState:
+      type: string
+      enum: [running, completed, failed, cancelled]
+
     Benchmark:
       type: object
       required: [id, request, node, state, startedAt, progress, detail, depths, points]
@@ -2049,8 +2053,7 @@ components:
         node:
           type: string
         state:
-          type: string
-          enum: [running, completed, failed, cancelled]
+          $ref: "#/components/schemas/BenchmarkState"
         startedAt:
           type: string
           format: date-time
