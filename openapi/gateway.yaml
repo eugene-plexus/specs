@@ -377,6 +377,25 @@ paths:
         routes to whatever the operator owns, and refusing a model
         because it dislikes `temperature` is not our call to make.
 
+        For max_tokens, temperature and top_p, precedence is explicit
+        request value, then the Library model's default profile, then
+        gateway defaults (top_p remains absent without a profile value).
+        The model is identified by the selected runtime's modelPath,
+        including on each fallback attempt; aliases and replicas do not
+        share defaults merely because they share a display name. Hosted
+        backends without a Library runtime use gateway defaults.
+
+        Profile reads go through the gateway's own agent's Library proxy
+        using its service credential. They are cached for profileCacheSeconds
+        (30 by default). During an unavailable or invalid Library response,
+        last-known values are usable for profileMaxStaleSeconds (300 by
+        default) after expiry, then gateway defaults apply. Failures are
+        retried no more often than every five seconds and logged with the
+        fallback decision. A successful empty result clears old defaults.
+        Setting either cache duration to zero takes effect on the next
+        request. Profile edits take effect on subsequent requests after
+        cache expiry and do not restart engines.
+
         Set `stream: true` for Server-Sent Events. The stream emits
         `data:` lines carrying `ChatCompletionChunk` objects and
         terminates with `data: [DONE]`, matching OpenAI's framing

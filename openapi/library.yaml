@@ -1998,10 +1998,10 @@ components:
     ModelProfileSpec:
       type: object
       description: |
-        Declarative half of a profile — the launch settings that worked
-        for one model. Used for create and replace bodies.
+        Declarative half of a profile — launch settings and generation
+        defaults for one model. Used for create and replace bodies.
 
-        Every field name here is a `RuntimeSpec` field name, on purpose:
+        Launch field names match `RuntimeSpec`, on purpose:
         composing a profile into a runtime declaration is a copy, not a
         translation, which is what lets the launch flow live in the
         caller and keep this component free of engine knowledge.
@@ -2022,9 +2022,26 @@ components:
           default: false
           description: |
             The profile offered first when launching this model.
+            Its maxTokens, temperature and topP also supply omitted
+            generation parameters at the gateway, without restarting
+            an existing runtime. Explicit request values always win.
             Setting it clears the flag on whichever profile held it; the
             first profile saved for a model gets it whether it asks or
             not.
+        maxTokens:
+          type: integer
+          minimum: 1
+          description: Maximum output tokens when the request omits a limit. Absent uses the gateway default.
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+          description: Sampling temperature when omitted by the caller. Zero is an explicit value.
+        topP:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Nucleus sampling cutoff when omitted by the caller. Absent leaves it unspecified.
         engine:
           $ref: 'components/common.yaml#/components/schemas/EngineKind'
           description: |
@@ -2092,6 +2109,17 @@ components:
           type: string
         default:
           type: boolean
+        maxTokens:
+          type: integer
+          minimum: 1
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+        topP:
+          type: number
+          minimum: 0
+          maximum: 1
         engine:
           $ref: 'components/common.yaml#/components/schemas/EngineKind'
         flags:
