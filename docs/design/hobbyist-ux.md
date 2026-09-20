@@ -1185,6 +1185,13 @@ fixed-pixel sizes on hints and badges move to rem so the font-size
 preference reaches them. *Touches:* ui. *Done when* the 430 px e2e case
 walks Home → Try it → a reply.
 
+**BUILT 2026-09-20** — UI `94d0ce3`, dist `5306208`. Library and
+Playground stack below 640px; Config and Preferences do too. Shared focus
+rings, reduced motion and rem-based hints/badges are in place. The packaged
+430px Home → Try it → real CPU-model reply passed, plus 390px layouts,
+font preference and keyboard checks. **743 UI tests pass.** Record:
+[`../acceptance/s9-phone-run.md`](../acceptance/s9-phone-run.md).
+
 ### S10 — Measure it (M; runs alongside everything above)
 
 `scripts/hobbyist-acceptance.sh`: from `install.sh` on a clean guest to

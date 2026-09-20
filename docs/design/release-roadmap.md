@@ -1502,7 +1502,7 @@ reachable on a golden path in the first hour.
    suites pass: **862/17 skipped agent, 407/3 skipped driver**.
    Specs CI `35523277582` passed. Record:
    [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
-   **Pickup: R6, section 7 — S9 phone/focus/motion, then the outstanding S10 evidence.** S8 shipped on 2026-09-20 (UI `48488ad`, dist `ad6836f`). The profile benchmark button landed on 2026-09-20, as did R5, R7 and R8; R3's implementation work is complete; the
+   **Pickup: R6, section 7 — outstanding S10 download timing and moderated-session evidence.** S9 shipped on 2026-09-20 (UI `94d0ce3`, dist `5306208`): 430px real reply, 390px layouts, focus and motion checks; see [`../acceptance/s9-phone-run.md`](../acceptance/s9-phone-run.md). S8 shipped the same day (UI `48488ad`, dist `ad6836f`). The profile benchmark button landed on 2026-09-20, as did R5, R7 and R8; R3's implementation work is complete; the
    outstanding physical Mac check remains under item 7.
 
 ---
