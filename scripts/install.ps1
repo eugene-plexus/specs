@@ -93,7 +93,7 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "c5ad280d45ba9730189f816c97e56595ea6e2a9d"
+    "agent"            = "5c051553ad9b80366a5300dbed67b74b2cb00a65"
     "control"          = "5cd8733d5e91c003f03097db517057f809006846"
     "gateway"          = "e232fce030eb851d9d55f832956b9e8a260d345a"
     "inference-driver" = "4dc12fe2f0b1bd49a37870848731f6945ab6ff61"
@@ -146,9 +146,78 @@ function Invoke-Native {
     param([Parameter(Mandatory)][string]$Exe, [string[]]$Arguments, [string]$FailMessage)
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try { & $Exe @Arguments 2>&1 | Out-Null }
+    try { $output = @(& $Exe @Arguments 2>&1 | ForEach-Object { "$_" }) }
     finally { $ErrorActionPreference = $prev }
-    if ($LASTEXITCODE -ne 0 -and $FailMessage) { Die $FailMessage }
+    if ($LASTEXITCODE -ne 0) {
+        $output | ForEach-Object { Write-Host $_ }
+        if ($FailMessage) { Die "$FailMessage (exit code $LASTEXITCODE)" }
+    }
+}
+
+function Set-ServiceBootstrap {
+    # Service-local values apply immediately; SCM can retain the machine
+    # environment from boot even after SetEnvironmentVariable updates it.
+    $values = @(
+        "EUGENE_PLEXUS_AGENT_CONFIG_FILE=$Config",
+        "EUGENE_PLEXUS_AGENT_BIND_PORT=$Port",
+        "EUGENE_PLEXUS_AGENT_ENGINE_ROOT=$(Join-Path $Prefix 'engines')",
+        "EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS=$(Join-Path $Prefix 'models')"
+    )
+    New-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" `
+        -Name Environment -PropertyType MultiString -Value $values -Force | Out-Null
+}
+
+function Invoke-ElevatedInstaller {
+    param([string]$ScriptText, [System.Collections.IDictionary]$Parameters,
+        [string]$WorkDirectory = ([IO.Path]::GetTempPath()))
+    $stem = Join-Path $WorkDirectory ("eugene-plexus-install-" + [guid]::NewGuid().ToString('N'))
+    $self = "$stem.ps1"
+    $parameterFile = "$stem.clixml"
+    $logFile = "$stem.log"
+    # Windows PowerShell needs a BOM to read non-ASCII script text correctly.
+    [IO.File]::WriteAllText($self, $ScriptText, (New-Object Text.UTF8Encoding $true))
+    $arguments = @{}
+    foreach ($entry in $Parameters.GetEnumerator()) {
+        $arguments[$entry.Key] = if ($entry.Value -is [switch]) { $entry.Value.IsPresent } else { $entry.Value }
+    }
+    $arguments | Export-Clixml -LiteralPath $parameterFile
+    # Paths only in the process command line/transcript header. Parameter values
+    # (including a join token) live in the temporary file, deleted in finally.
+    $runner = @'
+$ErrorActionPreference = 'Stop'
+$result = 0
+try {
+    Start-Transcript -LiteralPath '__LOG__' -Force | Out-Null
+    $parameters = Import-Clixml -LiteralPath '__PARAMETERS__'
+    & '__SCRIPT__' @parameters
+}
+catch {
+    Write-Host ($_ | Out-String) -ForegroundColor Red
+    $result = 1
+}
+finally {
+    Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
+}
+exit $result
+'@
+    $runner = $runner.Replace('__LOG__', $logFile.Replace("'", "''")).Replace('__PARAMETERS__', $parameterFile.Replace("'", "''")).Replace('__SCRIPT__', $self.Replace("'", "''"))
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($runner))
+    Say "installer log: $logFile"
+    try {
+        $elevated = Start-Process -FilePath 'powershell.exe' `
+            -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) `
+            -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+        if ($elevated.ExitCode -ne 0) {
+            if (Test-Path -LiteralPath $logFile) {
+                Get-Content -LiteralPath $logFile -Tail 80 | ForEach-Object { Write-Host $_ }
+            }
+            Die "the elevated install exited with code $($elevated.ExitCode). Log: $logFile"
+        }
+        Say "done. Installer log: $logFile"
+    }
+    finally {
+        Remove-Item -LiteralPath $self, $parameterFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $IsElevated = ([Security.Principal.WindowsPrincipal] `
@@ -953,38 +1022,7 @@ a Windows service needs Administrator, and -NoElevate was given.
 "@
     }
     Say "a Windows service needs Administrator -- asking for it now"
-    $self = Join-Path ([IO.Path]::GetTempPath()) "eugene-plexus-install-$PID.ps1"
-    # WriteAllText, never Set-Content -Encoding utf8: the BOM is what
-    # breaks a SPECS_REF archive URL, and a BOM in front of `<#` here
-    # would break the help block just as reliably.
-    [IO.File]::WriteAllText($self, $MyInvocation.MyCommand.ScriptBlock.ToString())
-    $forwarded = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $self)
-    foreach ($entry in $PSBoundParameters.GetEnumerator()) {
-        if ($entry.Value -is [switch]) {
-            if ($entry.Value.IsPresent) { $forwarded += "-$($entry.Key)" }
-        }
-        elseif ($null -ne $entry.Value -and "$($entry.Value)" -ne "") {
-            $forwarded += @("-$($entry.Key)", "$($entry.Value)")
-        }
-    }
-    try {
-        $elevated = Start-Process -FilePath "powershell.exe" -ArgumentList $forwarded `
-            -Verb RunAs -Wait -PassThru
-    }
-    catch {
-        Remove-Item $self -ErrorAction SilentlyContinue
-        Die @"
-Windows would not start an elevated PowerShell ($($_.Exception.Message)).
-    Start one yourself and run this again, or install the per-user
-    version, which starts when you log in rather than at boot:
-        ... -NoService
-"@
-    }
-    Remove-Item $self -ErrorAction SilentlyContinue
-    if ($elevated.ExitCode -ne 0) {
-        Die "the elevated install exited with code $($elevated.ExitCode); see its window for why"
-    }
-    Say "done (installed by the elevated run above)"
+    Invoke-ElevatedInstaller -ScriptText $MyInvocation.MyCommand.ScriptBlock.ToString() -Parameters $PSBoundParameters
     return
 }
 
@@ -1207,11 +1245,8 @@ if (-not $NoService) {
     Remove-Autostart
     if ($WantsService) {
         Say "registering the $ServiceName service"
-        # pywin32 ships the DLLs the service host needs under
-        # site-packages; its postinstall is what makes them findable
-        # from a service context. Harmless when already done.
-        $post = Join-Path $Venv "Scripts\pywin32_postinstall.py"
-        if (Test-Path $post) { & $PyBin $post -install -silent *>&1 | Out-Null }
+        # The agent stages its service host and DLLs inside this venv.
+        # pywin32_postinstall is for global Python installs, not venvs.
         & $PyBin -m eugene_plexus_agent.winservice install
         if ($LASTEXITCODE -ne 0) { Die "could not register the service" }
         # The agent reads and writes under the prefix, so give it a
@@ -1234,6 +1269,7 @@ if (-not $NoService) {
         [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS", $modelRoot, "Machine")
         $env:EUGENE_PLEXUS_AGENT_ENGINE_ROOT = $engineRoot
         $env:EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS = $modelRoot
+        Set-ServiceBootstrap
         Grant-ServiceControl
         $autostart = "service"
         Say "Eugene will start at boot, before anyone signs in."
