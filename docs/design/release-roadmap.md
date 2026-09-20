@@ -1502,7 +1502,7 @@ reachable on a golden path in the first hour.
    suites pass: **862/17 skipped agent, 407/3 skipped driver**.
    Specs CI `35523277582` passed. Record:
    [`../acceptance/contract-sweep-run.md`](../acceptance/contract-sweep-run.md).
-   **Pickup: R7 step 2, section 10.** Step 1 landed on 2026-09-20; R3's implementation work is complete; the
+   **Pickup: R8, section 9 — resolve gateway defaults from model profiles.** R7 landed on 2026-09-20; R3's implementation work is complete; the
    outstanding physical Mac check remains under item 7.
 
 ---
@@ -1973,8 +1973,8 @@ token-signing key (needed only by minters).
    Windows and Linux checks, real harmless children, and **15/15 sabotage
    catches on each platform** are recorded in
    [`../acceptance/r7-launch-boundary-run.md`](../acceptance/r7-launch-boundary-run.md).
-   **R7 remains open: pickup is step 2.** HS256 still lets a verifier mint;
-   environment filtering alone does not satisfy the final acceptance below.
+   Steps 2–4 below complete the asymmetric boundary; environment filtering
+   alone did not satisfy the final acceptance.
 2. **The contract**: what `alg` the install signs with, what enrollment hands a
    node, what rotation moves, and the token descriptions in all four documents.
    Radius measured by regenerating all six consumers, as always.
@@ -1982,6 +1982,24 @@ token-signing key (needed only by minters).
    components share schemas, not code.
 4. **Rotation across the change**, and the acceptance run that proves an
    existing install survives it.
+
+   **Steps 2–4 done 2026-09-20:** contract `4b5d80a`; agent `c5ad280`,
+   control `5cd8733`, gateway `e232fce`, library `337c987`, driver `4dc12fe`.
+   New installs and explicit rotations use Ed25519; existing HS256 installs
+   remain usable until rotation. Agent/control retain private signing material;
+   the three verifier children receive public PEM only. Algorithms are selected
+   from trusted key format, with no mixed allowlist or fallback. Migrated nodes
+   reject an HS256 downgrade even at a newer generation/epoch.
+   All six consumers were regenerated. UI source `bec0a4f` also refreshes stale
+   sampling/finish-reason types; packaged dist `bd0b456` was rebuilt and checked.
+   Both installers pin these versions. The
+   [migration contract](r7-asymmetric-signing.md) documents upgrade-before-rotate
+   ordering and session/client-key replacement. Isolated live five-process
+   installs on Windows and Linux retained enrollment and stored secrets across
+   legacy-to-Ed25519 rotation and restart; forged sessions were rejected.
+   **23/23 mutation catches on each platform**, full consumer suites, and the
+   repeatable CI gates are recorded in
+   [`../acceptance/r7-signing-run.md`](../acceptance/r7-signing-run.md).
 
 **Done when:** an inference-driver holding only what it needs cannot mint an
 operator session, and a live install re-keys from the old scheme to the new one
