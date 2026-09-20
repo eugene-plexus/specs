@@ -117,6 +117,7 @@ def main():
                     for event in events[:60]:
                         if event.SourceName in (
                             "Python Service",
+                            "EugenePlexusAgent",
                             "Service Control Manager",
                         ):
                             print(
