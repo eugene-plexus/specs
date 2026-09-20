@@ -320,7 +320,7 @@ paths:
       summary: Exchange the operator's passphrase for a session token.
       security: []
       description: |
-        Bcrypt-compares the supplied passphrase against the hash set
+        Verifies the supplied passphrase against the Argon2id hash set
         during the first-run wizard. On success, returns a
         `SessionToken` the UI presents on every subsequent request.
 
@@ -3415,8 +3415,10 @@ components:
           type: string
           minLength: 1
           description: |
-            Operator-supplied label, unique per install. Referenced by
-            an inference-driver's config to say which runtime it fronts.
+            Operator-supplied label, unique per node. Referenced by
+            an inference-driver on that node to say which runtime it
+            fronts. Different nodes may use the same label; install-wide
+            runtime identity is the pair (node, name).
         engine:
           $ref: "components/common.yaml#/components/schemas/EngineKind"
         modelPath:

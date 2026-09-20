@@ -61,6 +61,9 @@ jobs:
       - name: Install openapi-spec-validator
         run: pip install 'openapi-spec-validator==0.8.5'
 
+      - name: Check corrected contract semantics
+        run: python scripts/r38-contract-checks.py --sabotage
+
       - name: Validate every OpenAPI document
         shell: bash
         run: |

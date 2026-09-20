@@ -442,9 +442,12 @@ paths:
       summary: Will this model I already own run here, and at what context?
       description: |
         The same computation the catalogue applies to a download
-        candidate, pointed at a model already on the disk — where it can
-        use the metadata the scan already read instead of estimating,
-        so `basis` is `metadata` rather than `estimate`.
+        candidate, pointed at a model already on the disk. It uses the
+        metadata the scan already read where that supplies the KV shape.
+        `basis` is `estimate` when the shape is incomplete, including a
+        scalar fallback for per-layer attention data an older scan did
+        not retain. Being on disk does not guarantee a metadata basis;
+        `notes` names assumptions and when a rescan can improve them.
 
         Two things it answers that the library browser cannot: whether a
         model that fits at 8k still fits at 128k, and what the actual
@@ -3387,9 +3390,11 @@ components:
           enum: [metadata, estimate]
           description: |
             `metadata` when the model's own declared shape produced the
-            KV term — a local model, or a remote one after a preflight.
-            `estimate` when only the file size was available, which is
-            every catalogue candidate until someone preflights it.
+            KV term, whether read locally or by remote preflight.
+            `estimate` when only file size was available or when a
+            scalar fallback replaces declared per-layer attention terms
+            that were not retained. Local models and preflighted files
+            can therefore still report `estimate`; `notes` explains why.
 
             The honest distinction between "this is arithmetic" and
             "this is a guess with a number on it", and the field a UI

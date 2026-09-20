@@ -1479,6 +1479,19 @@ reachable on a golden path in the first hour.
    `agent.yaml` and `common.yaml` say "bcrypt" for a passphrase that is
    Argon2id everywhere else, and `SecurityMode` is missing `passphrase_file`.**
 
+   **CONTRACT SWEEP IMPLEMENTED 2026-09-20; consumer regeneration pending.**
+   Eight stale claims reproduced by `scripts/r38-contract-checks.py`, now
+   corrected. The shared enum includes the control root's `passphrase_file`
+   mode while explicitly retaining the agent's supported subset. Runtime
+   identity is (node, name); local fits can still be estimates; historical
+   overhead is identified as fixed by R1.1. Tier semantics were already
+   corrected by R3.3. All **175 non-generated Python source files** across
+   five consumers pass the duration-clock sweep; no remaining call needed
+   replacement. **11/11 in-memory sabotages caught**. Both OpenAPI validators
+   pass (one existing unused `StreamToken` warning).
+   **Pickup: regenerate affected R3.8 consumers, validate, and ship their pins;
+   then R7.** The outstanding physical Mac check remains under item 7.
+
 ---
 
 ## 5. R4 — Anthropic `/v1/messages`

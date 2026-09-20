@@ -2,6 +2,18 @@
 
 Cross-component release notes. Each repo has its own commit history; this file consolidates what shipped together.
 
+### R3.7/R3.8 - native Apple Python and contract cleanup (2026-09-20)
+
+- POSIX setup selects and verifies native ARM Python on Apple Silicon even
+  from Rosetta. Existing Intel environments receive recovery instructions;
+  bootstrap preserves explicit interpreter overrides. Simulated checks run
+  in CI; physical Mac installation and inference remain unverified.
+- Shared `SecurityMode` now includes the control root's existing
+  `passphrase_file` mode. The agent still offers its two supported modes.
+- Corrected Argon2id login documentation, per-node runtime names, estimated
+  fit results for incomplete metadata, and the historical latency diagnosis.
+  The duration-clock sweep found no remaining old calls in active services.
+
 ---
 
 ## Unreleased — local-inference control plane (direction change, 2026-09-08)
