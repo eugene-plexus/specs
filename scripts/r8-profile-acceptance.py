@@ -119,7 +119,7 @@ def main() -> None:
                 elif self.path.endswith("/v1/info"):
                     self.reply({"backend": "openai_compat_http", "modelId":
                                 "fallback-alias" if self.path.startswith("/fallback/") else "friendly-alias",
-                                "runtime": "fixture-runtime"})
+                                "runtime": "fixture-runtime", "capabilities": {"supportedSettings": ["maxTokens", "temperature", "topP", "seed", "stop", "tools", "toolChoice", "responseFormat"]}})
                 elif self.path == "/v1/node":
                     self.reply({"enrolled": False})
                 else:
@@ -129,7 +129,7 @@ def main() -> None:
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 calls.append(body)
                 if state["fail_first"] and self.path.startswith("/driver/"):
-                    self.reply({"error": "fixture unavailable"}, 503)
+                    self.reply({"type": "about:blank", "title": "Fixture refused before work", "status": 503, "retryDisposition": "safe"}, 503)
                     return
                 result = {"content": "profile-ok", "modelId": "friendly-alias",
                           "backend": "openai_compat_http", "finishReason": "stop"}
@@ -199,6 +199,15 @@ def main() -> None:
                             assert all(call["callerSettings"] == ["maxTokens"] for call in forwarded), forwarded
                             evidence.append({"field": field, "stream": stream, "fallback": fallback,
                                              "driverLimits": [call["maxTokens"] for call in forwarded]})
+                            if fallback:
+                                # A6b keeps a failed primary cooling across requests.
+                                # Restore it through both controlled probes before
+                                # the next independent wire-shaping scenario.
+                                state["fail_first"] = False
+                                for _ in range(2):
+                                    time.sleep(1.1)
+                                    generate()
+
                 state["fail_first"] = False
                 print("PASS A2 persisted profile=2048; HTTP driver captures " + json.dumps(evidence), flush=True)
                 schema = {"type": "json_schema", "json_schema": {"name": "answer", "strict": True,

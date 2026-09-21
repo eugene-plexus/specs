@@ -62,7 +62,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
             return {
                 "backend": "openai_compat_http",
                 "modelId": model,
-                "capabilities": {"embeddings": model == "embedding", "streaming": True},
+                "capabilities": {"embeddings": model == "embedding", "streaming": True, "supportedSettings": ["maxTokens", "temperature", "topP", "seed", "stop", "tools", "toolChoice", "responseFormat"]},
             }
 
         @app.post("/{model}/v1/{operation:path}")
@@ -71,7 +71,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
             counts[model] += 1
             if modes[model]["fail"]:
                 return JSONResponse(
-                    {"title": "Fixture failure", "status": 503}, status_code=503
+                    {"type": "about:blank", "title": "Fixture refusal before work", "status": 503, "retryDisposition": "safe"}, status_code=503
                 )
             usage = {"promptTokens": 7, "completionTokens": 3, "totalTokens": 10}
             result = {

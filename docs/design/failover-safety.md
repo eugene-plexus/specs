@@ -38,3 +38,23 @@ Retained attempts record failure disposition and whether usage is known. Missing
 usage remains unknown, including work cancelled or lost before a final response.
 Unknown tokens are never reported as proof of zero spend. Billing reconciliation
 and tool-effect idempotency remain the provider/tool executor's responsibility.
+
+## Operator behavior
+
+An "outcome unknown" error means Eugene stopped automatic failover. If this
+request could execute tools, inspect the tool/provider state before manually
+resubmitting it. A cooling backend is skipped for new requests; another eligible
+backend can serve them. A key's local-only or model restriction still applies.
+When none is eligible, the request is refused instead of queued.
+
+Config -> Gateway -> Routing -> Total request deadline controls the entire
+request budget. Metrics shows the request ID, elapsed time and each attempt's
+outcome/usage. Missing usage is not evidence of zero cost. HTTP Retry-After is
+retained as a delay hint, with in-process cooldown capped at five minutes.
+
+The retry distinction follows HTTP's caution about replaying non-idempotent
+requests ([RFC 9110 section 9.2.2](https://www.rfc-editor.org/rfc/rfc9110.html#section-9.2.2));
+429 and its optional delay are defined by
+[RFC 6585 section 4](https://www.rfc-editor.org/rfc/rfc6585.html#section-4).
+This implementation trusts the upstream's declared refusal and makes no promise
+about a provider that accepts work while returning a refusal status.

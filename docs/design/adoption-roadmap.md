@@ -6,7 +6,7 @@ The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: A6b.** A1 and A2 completed 2026-09-20; A3-A6 completed 2026-09-21.
+**Pickup: A7.** A1 and A2 completed 2026-09-20; A3-A6 and A6b completed 2026-09-21.
 A4's final user-supplied image passed through the actual Open WebUI frontend,
 authenticated gateway, driver and local vision model. See
 [A4 acceptance](../acceptance/a4-application-workflows.md).
@@ -78,7 +78,7 @@ The previous roadmap's contemporaneous phrases such as "still owed" and
 | A7 | A failed update or lost installation has a tested recovery path | Final state from A3/A5/A6/A6b included in backups |
 | A8 | Capacity and hardware support claims have measured limits | A4-A7, including A6b |
 
-A1-A6 are complete; A6b is **in progress**; A7-A8 are not started.
+A1-A6 and A6b are complete; A7-A8 are not started.
 Completion entries must name the
 implementation revisions, acceptance record, observed limitations and any
 remaining physical checks. Do not mark a slice complete solely because unit
@@ -308,6 +308,12 @@ A separate permitted key can still use the intended cloud route. No secret
 or content appears in rejection diagnostics.
 
 ## A6b — Failover safety
+
+**Completed 2026-09-21.** Gateway `4ead7e8`, driver `352993a`, UI `eea85b9`,
+packaged UI `0e3a202`; both development installers pinned. Windows and Linux
+process fixtures prove safe rescue, no ambiguous replay, deadline/disconnect
+cancellation, cooldown/recovery and retained uncertainty. Signed A5/A6 acceptance
+still passes. [Evidence and limits](../acceptance/a6b-failover-safety-run.md).
 
 **Problem:** no response does not prove no work occurred. Existing protection
 against switching after streamed output and retrying a timed-out generation

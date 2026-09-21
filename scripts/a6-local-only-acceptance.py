@@ -67,7 +67,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 counts[model] += 1
             if model in failures:
                 return JSONResponse(
-                    {"error": {"message": "fixture unavailable"}}, status_code=503
+                    {"error": {"message": "fixture refused before execution"}}, status_code=429
                 )
             usage = {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}
             if operation == "embeddings":
