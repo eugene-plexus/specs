@@ -7,6 +7,9 @@ implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
 **Pickup: reassess the measured scope and incoming tester evidence with Troy.**
+Troy authorized publishing the completed work as `v0.1.0-alpha.2` on 2026-09-21;
+see the [release notes](../releases/v0.1.0-alpha.2.md). This supersedes the earlier
+release deferral below without closing the remaining physical or moderated checks.
 A1 and A2 completed 2026-09-20; A3-A8 and A6b completed 2026-09-21.
 A8 passed its declared CPU application workload and published a
 [support matrix](../support-matrix.md), with physical checks below still open.

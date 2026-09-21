@@ -47,16 +47,17 @@ Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-
 
 ## Current status
 
-**2026-09-21:** `v0.1.0-alpha.1` and its [installation instructions](https://eugeneplexus.com/install)
-remain the published early-tester build. The [adoption roadmap](docs/design/adoption-roadmap.md)
-has completed A1-A8 and A6b in development, including application workflows,
+**2026-09-21:** [v0.1.0-alpha.2](docs/releases/v0.1.0-alpha.2.md) is the current
+early-tester distribution; see the [installation instructions](https://eugeneplexus.com/install).
+The [adoption roadmap](docs/design/adoption-roadmap.md)
+has completed A1-A8 and A6b, including application workflows,
 scoped access, local-only routing, conservative failover and tested recovery.
 [A8 shared-load evidence](docs/acceptance/a8-shared-load-run.md) establishes limits
 for one specific CPU workload; the [support matrix](docs/support-matrix.md)
 distinguishes measured, simulated, pending and unsupported configurations.
-Friend sessions and remaining physical platform checks are still open. Reassess
-those findings before deciding on another release; no new release is authorized
-by slice completion. See [alpha acceptance and its limits](docs/acceptance/alpha1-release-run.md).
+Friend sessions and remaining physical platform checks are still open. This is
+an alpha, not stable-release approval. Alpha.1 remains available unchanged for
+earlier testers; see its [acceptance limits](docs/acceptance/alpha1-release-run.md).
 
 ### Historical snapshot — 2026-09-17
 

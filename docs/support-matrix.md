@@ -1,6 +1,6 @@
 # Tested configurations and support boundaries
 
-This matrix describes development evidence as of 2026-09-21. The published
+This matrix describes the evidence included in `v0.1.0-alpha.2` as of 2026-09-21.
 `v0.1.0-alpha.1` remains a frozen earlier build; use its
 [release notes](releases/v0.1.0-alpha.1.md) for that build's limits. A passing
 fixture or one owner's machine is not platform certification.

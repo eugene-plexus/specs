@@ -9,8 +9,8 @@ Checkpoints require an A7-capable agent (the quarantine guard introduced in
 older build, keep a protected, complete cold copy of the stopped installation and
 its state, including Python and the virtual environment. Restoring that old copy
 requires its original absolute paths. After upgrading, create and rehearse the
-portable checkpoint described below. The frozen alpha does not gain this tooling
-or guard until it is deliberately upgraded.
+portable checkpoint described below. Alpha.1 does not have this tooling or guard;
+alpha.2 and A7-capable development builds do.
 
 This is a manual recovery procedure. It never updates or starts another enrolled
 node. Coordinate a maintenance window for the root and workers; a checkpoint
@@ -70,7 +70,7 @@ the tool refuses that layout instead of omitting it.
 
 ## Windows worker
 
-Download [scripts/recovery.py](../scripts/recovery.py) from the development revision
+Download [scripts/recovery.py](../scripts/recovery.py) from the release or development revision
 you are using. Keep a trusted copy outside the installation. The saved `recover.py`
 is a convenience copy, not a signed executable: if backup storage was tampered
 with, fetch the helper from trusted source control before entering its password.
