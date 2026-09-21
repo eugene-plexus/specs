@@ -34,9 +34,24 @@ Everyone else builds an *engine* (llama.cpp, vLLM, MLX) or a *desktop chat app* 
 
 This order and this wording were adopted on 2026-09-18 ([`docs/design/release-roadmap.md`](docs/design/release-roadmap.md) decision #2). The design documents number the same ideas differently and deliberately — they keep the numbers older documents cite, so `#4` there is still the schema-driven config UI, which has not gone anywhere: it is now how line 2 prefills a profile rather than something worth leading with. [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md) §2 holds both lists side by side.
 
-Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Order of work: [`docs/design/release-roadmap.md`](docs/design/release-roadmap.md).
+Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Current order of work: [adoption roadmap](docs/design/adoption-roadmap.md).
 
 ## Current status
+
+**2026-09-20:** `v0.1.0-alpha.1` and its [installation instructions](https://eugeneplexus.com/install)
+are published for early testers. The previous roadmap's scheduled implementation
+is complete; friend sessions and remaining physical Windows/Mac verification
+are not all complete. The [adoption roadmap](docs/design/adoption-roadmap.md)
+now owns the work order: first-use readiness, request compatibility, key
+revocation, real application workflows, shared-access controls, local-only
+routing, recovery and measured capacity. Further release work is deferred.
+See [alpha acceptance and its limits](docs/acceptance/alpha1-release-run.md).
+
+### Historical snapshot — 2026-09-17
+
+The following snapshot predates R1-R8 and the alpha; its defect and publication
+statuses are historical, not the current pickup list. Their implementation
+records are in the [previous roadmap](docs/design/release-roadmap.md).
 
 As of **2026-09-17**, this is a pre-1.0 control plane under active development, and **not yet releasable — deliberately**. Milestones M0 through M11 are built, each with a re-runnable acceptance script rather than a claim, and so are ten further slices since (the resource-tree UI, Library folders, the hobbyist onboarding plan, Issues, a node-local model copy). Installers, a developer bootstrap and a control-plane container image exist; the container image is published to GHCR as `:edge`, and nothing else is published — no GitHub Release, nothing on PyPI or npm.
 

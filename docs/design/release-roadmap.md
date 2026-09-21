@@ -1,6 +1,17 @@
-# Release roadmap (design)
+# Release roadmap (historical)
 
-**Status: written 2026-09-17, and it is the order of work from here.** It comes
+**Superseded 2026-09-20 by the [adoption roadmap](adoption-roadmap.md).**
+R1-R8's scheduled implementation is complete. Acceptance is not entirely closed:
+the S10 friend sessions, remaining physical Windows service checks and physical
+Mac verification carry forward explicitly in the new roadmap. The alpha and
+installation instructions are already published; Troy has deferred further
+release work. The new roadmap is the only current work order; follow its pickup.
+
+The sections below preserve the decisions and evidence as written during the
+work. Their historical pickup points, unresolved-at-the-time statements and
+release ordering do not override the new roadmap's status and carried checks.
+
+**Original status: written 2026-09-17.** It comes
 out of the pre-release adversarial review — three code passes over the six live
 repos plus a re-verified field read — whose record is
 `docs/private/adversarial-review-2026-09-17.md` (**gitignored**; `docs/private/`

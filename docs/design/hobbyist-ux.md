@@ -1,5 +1,10 @@
 # The weekend hobbyist: UX research and a plan (design)
 
+**Current work order, 2026-09-20:** the [adoption roadmap](adoption-roadmap.md)
+supersedes the previous release work order. S0-S9 and S10's automation are built;
+the moderated sessions below remain open and may continue against the published
+alpha. Their evidence feeds the new roadmap. Further publication is deferred.
+
 **Status:** researched and designed 2026-09-15, on Troy's brief, ahead of
 the release (`install-paths-and-distribution.md` §9, whose step 9 was deleted on
 2026-09-18 — it stays
@@ -24,7 +29,7 @@ guests. [Conditions and evidence](../acceptance/s10-download-run.md).
 not met.** [Session guide](../acceptance/hobbyist-sessions.md).
 The 8 GB GPU / 16 GB RAM starter capacity check now passes too; it is a fixture,
 not a physical-card test. The adversarial review's findings and subsequent
-fixes are tracked in the authoritative [release roadmap](release-roadmap.md).
+fixes are recorded in the historical [release roadmap](release-roadmap.md).
 **S8 and S9 completed 2026-09-20:** [vocabulary and Grade 6 copy](../acceptance/s8-vocabulary-run.md),
 [phone, focus and motion](../acceptance/s9-phone-run.md). Every claim marked
 *measured* was checked against a file or a running process on the day of

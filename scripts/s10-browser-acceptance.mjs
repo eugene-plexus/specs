@@ -88,7 +88,11 @@ try {
     observer.observe(card, { childList: true, subtree: true, characterData: true });
   });
   const request = page.waitForResponse(r => r.url().includes("chat/completions") && r.request().method() === "POST", { timeout: 180000 });
-  await page.getByRole("button", { name: "Send", exact: true }).click();
+  // A1: availability follows readiness. The prompt can be written while the
+  // model loads; this first request must succeed without a manual retry.
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  await expect(send).toBeEnabled({ timeout: 180000 });
+  await send.click();
   const response = await request;
   assert.equal(response.status(), 200);
   const wire = await response.text();
