@@ -2,6 +2,20 @@
 
 Cross-component release notes. Each repo has its own commit history; this file consolidates what shipped together.
 
+### A3 ? install-wide client-key revocation (2026-09-21, development builds)
+
+- Enrolled agents manage a durable client-key registry at the active control root;
+  all gateways enforce it. Existing active/revoked records migrate using signed
+  node identities, preserving tokens and displaying migration status and origin.
+- Gateway policy survives restart and has a bounded age: 15-second refresh,
+  60-second maximum age plus five seconds clock tolerance. Stale/missing policy
+  refuses client access with 503 while operator management remains available.
+  Concurrent requests share refresh work and bounded retries.
+- Standalone record writes are atomic and storage failures are explicit. The UI,
+  both development installers and normal container build include A3. The published
+  alpha is unchanged. See [acceptance](docs/acceptance/a3-client-keys-run.md) and
+  [migration/recovery instructions](docs/client-keys.md).
+
 ### R6.1 — profile context-depth benchmarks (2026-09-20)
 
 - Saved llama.cpp profiles can benchmark the selected node at three context

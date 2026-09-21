@@ -1,6 +1,6 @@
 # API compatibility
 
-This describes development builds after A2, not the frozen `v0.1.0-alpha.1`.
+This describes development builds after A2/A3, not the frozen `v0.1.0-alpha.1`.
 Compatibility means the features below, not every feature of a provider API.
 
 | Surface or feature | Status | Boundary |
@@ -14,6 +14,15 @@ Compatibility means the features below, not every feature of a provider API.
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning effort, penalties, logit bias, parallel-tool control, log probabilities | Rejected on chat | Unsupported consequential settings return 400, including unknown nested message/tool/format fields. |
 | All clients, providers and reasoning-token accounting | Unverified | Captured requests test transport semantics; they do not demonstrate every model's behavior. |
+
+## Client authentication
+
+Use a client key from Home's **Use it from your apps** card. Enrolled agents
+manage one install-wide registry; all accepting gateways enforce its revocations.
+Policy refresh is 15 seconds by default, with a 60-second maximum cache age
+(plus up to five seconds clock tolerance). Stale or unavailable policy returns
+client-only 503; operator repair access remains available. See
+[client keys](client-keys.md) for migration and outage behavior.
 
 ## Chat settings
 

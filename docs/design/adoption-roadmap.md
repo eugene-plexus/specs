@@ -6,10 +6,11 @@ The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: A3.** A1 and A2 completed 2026-09-20;
+**Pickup: A4.** A1 and A2 completed 2026-09-20; A3 completed 2026-09-21.
 [A1 acceptance](../acceptance/a1-home-readiness-run.md),
-[A2 acceptance](../acceptance/a2-request-settings-run.md).
-Work through A3-A8 in order. There is no release slice, deadline, or duration estimate.
+[A2 acceptance](../acceptance/a2-request-settings-run.md),
+[A3 acceptance](../acceptance/a3-client-keys-run.md).
+Work through A4-A8 in order. There is no release slice, deadline, or duration estimate.
 `v0.1.0-alpha.1` is already published and remains the available tester build;
 do not retract it, move its tag, or silently replace its assets. A future
 publication is a separate decision after reassessment.

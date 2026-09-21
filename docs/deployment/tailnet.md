@@ -353,18 +353,18 @@ gives.
 **Home** and look for *Use it from your apps*: it shows the address with
 the `/v1` already on it, the model id, and a **Make a key** button. A
 client key is named ("Continue on the laptop"), lives a year, and is
-accepted by the gateway's three OpenAI-compatible paths and **nothing
-else** — not this gateway's own config or metrics, not the agent, not
-the library, not the control root. It is shown once; copy it then.
-Turning one off is a button beside it, and the gateway stops accepting
-it within one routing refresh (15 s by default). The card also carries
-ready-made snippets for Continue, Cline, Open WebUI, SillyTavern,
-OpenCode, `OPENAI_BASE_URL`/`OPENAI_API_KEY`, and `curl`.
+accepted by the gateway's OpenAI-compatible inference paths and Anthropic
+Messages. It opens no operator surface. It is shown once; copy it then.
+Turning one off is a button beside it. Development builds after A3 enforce
+revocation across every gateway, normally within 20 seconds; cached permission
+expires after 60 seconds during an outage, plus up to five seconds clock tolerance.
+The published alpha retains its earlier node-local behavior. See
+[client-key management](../client-keys.md) for migration and recovery.
 
-Two things a client key is not. It is **not** an operator credential —
-anything you do in the UI still needs the passphrase. And revoking one
-is **not** the same as the install-wide revocation: that is still a
-signing-key rotation, which invalidates every token everywhere at once.
+The card carries snippets for Claude Code, Continue, Cline, Open WebUI,
+SillyTavern, OpenCode, `OPENAI_BASE_URL`/`OPENAI_API_KEY`, and `curl`.
+Revoking one client key affects that key throughout the install. Rotating the
+install signing key remains the way to invalidate all credentials together.
 
 The **operator session token** still works as a bearer, and the
 playground's **Diagnostic** panel still shows it — but it can do
@@ -374,11 +374,10 @@ can mint a client key too, and can send a turn **direct to the gateway**
 over exactly the path a harness takes, so you can tell a harness problem
 from a control-plane one before configuring anything.
 
-**Which machine mints the key matters on a multi-machine install.** The
-record lives on the agent that made it, and the gateway asks its own
-node's agent about revocations — so Home mints against the node the
-gateway runs on, and says which machine that is, whichever console you
-are sitting at. Nothing needs a browser opened over there.
+**Any enrolled node can manage the install's keys in A3 development builds.**
+The local agent forwards key management to the active control root. The console
+shows registry scope, migration status and the origin of imported records.
+An unenrolled agent manages a standalone registry until it joins an install.
 
 **Browsers are a client too, since 2026-09-13.** The gateway's three
 OpenAI-compatible paths (`/v1/models`, `/v1/chat/completions`,
