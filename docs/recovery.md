@@ -180,10 +180,13 @@ and engine assets read-only at their original container paths. Supply protected
 passphrase files or an interactive terminal. uid 10001 must be able to read the
 source and write the backup parent.
 
-For a restore rehearsal, use a separate data volume and **`--network none`**, with
-no published ports. Restore using the saved helper and uv; the command reconstructs
-the recorded Python environment in the new location. Activate only while the
-original is stopped, or inside this disconnected container. Run the agent with its
+For a restore rehearsal, first reconstruct into a separate data volume using the
+saved helper and uv. This step needs network access to download the recorded Python
+and packages; publish no ports and leave the replacement quarantined. Do not start
+the recovered agent during reconstruction. Then mount that replacement into a
+container using **`--network none`**, with no published ports, for activation and
+startup checks. Activate only while the original is stopped, or inside this
+disconnected container. Run the agent with its
 new `state/agent.yaml`, set the managed engine root to its restored `state/engines`,
 and perform checks inside the container over loopback. A loopback listener alone
 is **not** network isolation: an enrolled identity can make outbound announcements.
