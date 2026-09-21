@@ -231,6 +231,7 @@ paths:
     parameters:
       - {name: name, in: path, required: true, schema: {type: string}}
     post:
+      security: []
       operationId: importLegacyClientKeys
       summary: Import existing node-local client-key records
       description: Authenticated by the enrolled node signature, not a service bearer. Active root only. Idempotent and revocation-preserving; a node cannot overwrite another node's record.
@@ -241,13 +242,18 @@ paths:
             schema: {$ref: '#/components/schemas/ClientKeyImport'}
       responses:
         '200':
-          description: Import committed; registry includes origin and migration status.
+          description: Import committed; metadata confirms migration. Keys are empty to avoid disclosing the operator registry to a node.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ClientKeyList'}
-        '403':
+        '401':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
+
+        '409':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          $ref: 'components/common.yaml#/components/responses/Problem'
 
   # -------- nodes: the hosts this install spans --------
 
