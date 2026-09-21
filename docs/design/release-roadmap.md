@@ -17,6 +17,11 @@ S10's automated download runs pass on both targets and its moderated sessions
 remain outstanding.
 Both documents keep their reasoning; neither is the order any more.
 
+**2026-09-20: Troy authorized `v0.1.0-alpha.1` and website installation
+instructions for early testers.** This prerelease distribution enables the
+moderated sessions; it does not complete them or declare stable-release readiness.
+[Release scope](../releases/v0.1.0-alpha.1.md).
+
 **Every finding in it was re-verified against the working trees on 2026-09-17,
 after the review was written and after that day's commits landed.** All are
 still present. Nothing was already fixed; nothing was misdiagnosed.
@@ -1919,10 +1924,14 @@ Record: [R8 profile defaults acceptance](../acceptance/r8-profile-defaults-run.m
 
 **The release gate is unchanged and this roadmap does not shorten it:** it is
 `hobbyist-ux.md` **decision #13** (what gates it — S0-S6 and S10) plus
-**decision #14** (three to five moderated sessions), with `EP_DOWNLOAD=1` and
-the ten-minute target still unmeasured, a starter review under thirty days old
-with no unresolved verdict, and the `dist` branch rebuilt from the pinned
-commit. R1 and R2 sit in front of it. *(Both numbers are cited here because
+**decision #14** (Troy accepted two or three friends for the moderated sessions),
+a starter review under thirty days old with no unresolved verdict, and the
+`dist` branch rebuilt from the pinned commit. The `EP_DOWNLOAD=1` ten-minute
+target passed on Windows and WSL on 2026-09-20 under the
+[recorded conditions](../acceptance/s10-download-run.md); participant sessions
+remain outstanding. Written pre-release installation instructions must be
+prepared for those sessions; a public platform release is not a prerequisite.
+R1 and R2 sit in front of the gate. *(Both numbers are cited here because
 four documents cite one or the other and disagree.)*
 
 **▶ THERE IS NO ESTIMATE HERE, AND THAT IS DECISION #7 (Troy, 2026-09-18).**

@@ -24,6 +24,8 @@ jobs:
           python-version: "3.12"
       - name: Check shared bandwidth cap and installer isolation guards
         run: python scripts/s10-checks.py
+      - name: Check release artifact bytes and component pin agreement
+        run: python scripts/release-artifacts-checks.py
 
   r7-signing:
     name: R7 signing, rotation and R8 profiles (${{ matrix.os }})

@@ -53,7 +53,9 @@ def snapshot_windows() -> dict:
     return json.loads(subprocess.check_output(["powershell.exe", "-NoProfile", "-Command", command], text=True))
 
 
-def run(root: Path, download: bool, seed: Path | None) -> None:
+def run(root: Path, download: bool, seed: Path | None, installer_source: Path | None = None) -> None:
+    installer_source = installer_source or HERE / ("install.ps1" if WINDOWS else "install.sh")
+    assert installer_source.is_file(), "installer source does not exist"
     root.mkdir(parents=True, exist_ok=False)
     prefix = root / "install"
     before = snapshot_windows()
@@ -99,13 +101,13 @@ def run(root: Path, download: bool, seed: Path | None) -> None:
             # WinPS 5.1's web cmdlets use .NET's proxy, while uv/httpx use env.
             wrapper = root / "install-wrapper.ps1"
             wrapper.write_text("[Net.WebRequest]::DefaultWebProxy = New-Object Net.WebProxy(" +
-                               ps(env["HTTPS_PROXY"]) + ")\n& " + ps(HERE / "install.ps1") +
+                               ps(env["HTTPS_PROXY"]) + ")\n& " + ps(installer_source) +
                                " -Prefix " + ps(prefix) + " -NoService -NoStart -Isolated\n", encoding="utf-8")
             command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(wrapper)]
         else:
             # A Windows checkout can have CRLF; GitHub's raw installer is LF.
             installer = root / "install-source.sh"
-            installer.write_text((HERE / "install.sh").read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
+            installer.write_text(installer_source.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
             command = ["sh", str(installer), "--prefix", str(prefix), "--no-service", "--no-start"]
         started = time.monotonic()
         result["startedEpochMs"] = time.time_ns() // 1_000_000
@@ -212,5 +214,6 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--download", action="store_true")
     parser.add_argument("--model", type=Path)
+    parser.add_argument("--installer", type=Path, help="Downloaded release installer to exercise instead of the checkout")
     args = parser.parse_args()
-    run(args.output.resolve(), args.download, args.model)
+    run(args.output.resolve(), args.download, args.model, args.installer)

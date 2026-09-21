@@ -36,6 +36,11 @@ on:
       - "unraid/eugene-plexus.xml"
       - ".github/workflows/container.yml"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing version tag to build and publish (empty publishes edge)"
+        required: false
+        type: string
 
 concurrency:
   group: container-image
@@ -58,6 +63,17 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.sha }}
+
+      - name: Validate release tag
+        if: inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+\.[0-9]+)?$ ]] || exit 1
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
 
       # Check 5 reads the agent's own `_COMPONENT_SPECS` to derive which
       # `<KIND>_BIND_HOST` variables the image must set, rather than
@@ -90,22 +106,27 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag and push the image that passed
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           short=$(git rev-parse --short HEAD)
-          docker tag "$BUILT" "$IMAGE:edge"
           docker tag "$BUILT" "$IMAGE:sha-$short"
-          docker push "$IMAGE:edge"
           docker push "$IMAGE:sha-$short"
-          echo "published $IMAGE:edge and $IMAGE:sha-$short"
+          channel=${RELEASE_TAG:-edge}
+          docker tag "$BUILT" "$IMAGE:$channel"
+          docker push "$IMAGE:$channel"
+          echo "published $IMAGE:$channel and $IMAGE:sha-$short"
 
       - name: Summary
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           {
             echo "### Container image published"
             echo
             echo '```'
-            echo "$IMAGE:edge"
+            echo "$IMAGE:${RELEASE_TAG:-edge}"
             echo "$IMAGE:sha-$(git rev-parse --short HEAD)"
             echo '```'
             echo

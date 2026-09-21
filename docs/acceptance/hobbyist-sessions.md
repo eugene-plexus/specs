@@ -21,8 +21,12 @@ private prompts or personal paths. Note that a secret was typed, not its value.
 what you are looking for, and what seems confusing. Work as you normally would.
 I will mostly watch. You can stop at any time.”
 
-Give them the public installation page and the one-liner appropriate for their
-OS. Do not first explain the tree, the component names or where the buttons live.
+Use the [installation page](https://eugeneplexus.com/install) for
+**v0.1.0-alpha.1**, the prerelease prepared for these sessions. Confirm the page
+and linked release are live before inviting participants. Give participants
+those instructions and the one-liner appropriate for their OS, recording the
+version being tested. A stable release is not required. Do not first explain the tree,
+the component names or where the buttons live.
 Explain the practical download/time cost before beginning; download waiting
 time should be recorded separately from active interaction time.
 
