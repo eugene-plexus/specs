@@ -91,6 +91,13 @@ Both development installers pin these consumers. No versioned release or alpha
 asset is replaced. Update gateway and driver together when adopting these slices;
 older drivers do not understand caller-setting provenance.
 
+Delivery verification runs: [gateway CI](https://github.com/eugene-plexus/gateway/actions/runs/35554449329),
+[driver CI](https://github.com/eugene-plexus/inference-driver/actions/runs/35554451684),
+[UI CI](https://github.com/eugene-plexus/ui/actions/runs/35554472703),
+[pinned integration CI](https://github.com/eugene-plexus/specs/actions/runs/35554616645),
+and [container acceptance/build](https://github.com/eugene-plexus/specs/actions/runs/35554616764).
+The last two use installer commit `1f654f4fffbb463d3851d27a698a169acbf074be`.
+
 This establishes forwarding and refusal behavior, not backend enforcement of a
 universal visible/reasoning-token budget. Live provider/CLI behavior, newer client
 versions, images (A4), friend sessions and physical platform obligations remain
