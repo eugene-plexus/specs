@@ -168,7 +168,9 @@ def environment():
 
 def validate_state(root):
     if not (root / "agent.yaml").is_file():
-        raise ValueError("agent.yaml is missing; source state will not be initialized by recovery")
+        raise ValueError(
+            "agent.yaml is missing; source state will not be initialized by recovery"
+        )
     from eugene_plexus_agent.state import AgentState
     from eugene_plexus_agent.node_identity import NodeIdentityStore
 
@@ -482,6 +484,10 @@ def restore(checkpoint, destination, password, uv, *, reconstruct=True):
             encoding="utf-8",
         )
         if reconstruct:
+            reconstruction_env = {
+                **os.environ,
+                "UV_PYTHON_INSTALL_DIR": str(destination / "pythons"),
+            }
             subprocess.run(
                 [
                     str(uv),
@@ -493,6 +499,7 @@ def restore(checkpoint, destination, password, uv, *, reconstruct=True):
                     str(destination / "venv"),
                 ],
                 check=True,
+                env=reconstruction_env,
             )
             python = (
                 destination
@@ -581,6 +588,14 @@ def validate_restore(destination):
     if manifest["format"] != FORMAT or environment() != manifest["environment"]:
         raise ValueError(
             "installed Python/packages differ from checkpoint; do not pair older code with migrated state"
+        )
+    if (
+        not Path(sys.base_prefix)
+        .resolve()
+        .is_relative_to((destination / "pythons").resolve())
+    ):
+        raise ValueError(
+            "restored Python must live under the replacement's pythons directory"
         )
     validate_state(destination / "state")
     verify_unlock(destination / "state", manifest["unlock"])

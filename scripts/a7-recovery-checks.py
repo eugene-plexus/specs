@@ -195,6 +195,12 @@ def run():
                 "incompatible installed Python version",
                 "installed Python/packages differ from checkpoint",
             )
+        with patch.object(recovery, "environment", return_value=environment):
+            refused(
+                lambda: recovery.validate_restore(replacement),
+                "Python outside replacement directory",
+                "restored Python must live under the replacement",
+            )
         assert {
             str(p.relative_to(root)): recovery.digest(p)
             for p in root.rglob("*")

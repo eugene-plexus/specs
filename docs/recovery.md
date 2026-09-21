@@ -31,6 +31,13 @@ Argon2id. Keep that password separately; it is not recoverable from the backup.
 | OS Credential Manager/Keychain, service registration, firewall rules, mounts | Re-create on the replacement; not portable backup files |
 | Active requests, in-memory cooldowns and operator logout sessions | Not restored; clients reconnect and operators sign in again |
 
+This procedure supports the standard installer/container state layout: component
+configurations, `control-state`, Library state and gateway databases live under the
+agent configuration directory. Custom store paths supplied only through service
+environment overrides must be consolidated there first; the backup cannot discover
+another process's arbitrary environment. Record the service/container bootstrap
+settings before stopping it.
+
 The source must use the normal installed packages, not editable development
 checkouts. Source revisions alone are insufficient because all current component
 package versions are `0.1.0`. The tool requires immutable source URLs and locks
@@ -101,9 +108,11 @@ unsupported formats and different OS/architecture. An interrupted reconstruction
 leaves only the new destination quarantined; keep it for diagnosis and retry into
 another empty location. Neither source state nor checkpoint is modified.
 
-The replacement has `state\`, `venv\`, `requirements.lock`, `recover.py` and private
+The replacement has `state\`, `venv\`, `pythons\`, `requirements.lock`, `recover.py` and private
 `recovery.json`. **The latter contains recovered unlock material**; protect the
-whole directory. The quarantine prevents startup of the copied identity. Fence
+whole directory. Python's base interpreter is also inside the replacement, so
+the service does not depend on the restoring operator's Python cache. The quarantine
+prevents startup of the copied identity. Fence
 the original from restarting, then activate:
 
 ```powershell

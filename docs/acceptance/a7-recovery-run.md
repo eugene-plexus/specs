@@ -1,8 +1,8 @@
 # A7 recovery acceptance
 
-In progress, 2026-09-21. Windows recovery has passed; container acceptance is
-being run through the container workflow. Do not mark A7 complete until that
-required result is recorded here.
+Windows and container recovery passed, 2026-09-21. Final delivery checks are in
+progress. Implementation: specs `7c51a0f`, hardened in `2d298fb`; the procedure is
+[backup and recovery](../recovery.md).
 
 Agent `253f6127e8586d3333c536efb8737ad0d69f5575` refuses startup and enrollment
 of quarantined copies, including safe mode. Its full Windows suite passed:
@@ -34,13 +34,17 @@ state was not reused. Originals remained stopped throughout recovery.
 
 | Operation | Observed time |
 | --- | ---: |
-| Root checkpoint | 5.219 s |
-| Worker checkpoint | 2.656 s |
-| Root reconstruction, validation, activation and login | 14.578 s |
-| Worker reconstruction, validation, activation and login | 8.328 s |
+| Root checkpoint | 3.250 s |
+| Worker checkpoint | 2.203 s |
+| Root reconstruction, validation, activation and login | 12.562 s |
+| Worker reconstruction, validation, activation and login | 11.750 s |
 
 These are warm-cache local timings, not download or recovery-time guarantees.
-Artifacts: `%TEMP%/ep-a7-windows-run3`, log `%TEMP%/ep-a7-windows-run3.log`.
+Final artifacts: `%TEMP%/ep-a7-contained`, log `%TEMP%/ep-a7-contained.log`.
+Earlier successful runs remain at `%TEMP%/ep-a7-windows-run3` and
+`%TEMP%/ep-a7-windows-final`. The final run also verifies that the managed base
+Python lives inside each replacement's `pythons` directory, avoiding a dependency
+on the restoring user's Python cache when registering a Windows service.
 The checkpoint directories and recovered metadata contain test credentials and
 must not be uploaded as public CI artifacts.
 
@@ -51,17 +55,43 @@ that `driverPort` is not a runtime field: the automatic driver chose the default
 companion on an allocated ephemeral port. No occupant was stopped or reconfigured.
 Both failed runs cleaned up their own processes.
 
-## Refusal checks and remaining work
+## Container recovery
+
+[Container run 35625827807](https://github.com/eugene-plexus/specs/actions/runs/35625827807)
+passed the existing image checks and the new recovery exercise before publishing
+development `edge`. `scripts/a7-container-acceptance.sh` uses that built image in
+a disposable derivative with `libgomp1` for its CPU inference fixture. The production
+control-plane image still carries no inference engine. No host ports are published;
+all fixture nodes and their original/restored identities use container loopback,
+and originals stop before replacements activate.
+
+The same failed-package/incompatible-state scenario recovered profiles, scoped
+local-only policy and revocation, authenticated both nodes, and served the real
+Qwen3-0.6B completion through the recovered gateway and worker. This reconstructs
+both environments; it is not a restart of the pre-update virtual environment.
+Initial timings: root/worker backup 2.892/1.852 s; root/worker recovery through
+login 12.219/5.008 s. All owned processes and the disposable container were removed.
+The test's deliberately removed package existed only in that container's writable
+layer, not the image subsequently published.
+
+Model SHA256: `ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a`.
+Linux llama.cpp b11065 archive SHA256:
+`f00971c1b044fae179230bfc6f8d9f8461b778fef9ffac2b450088081a8ecd43`.
+Both downloads are checked against these hashes in the instrument. Engine build
+metadata/version output and companion file checksums are captured by the helper.
+
+## Refusal checks and limits
 
 `scripts/a7-recovery-checks.py` passes on Windows and Linux/WSL: missing/wrong
 unlock material, wrong backup password, future archive format, changed external
-model, truncated encrypted state, overwriting an existing target, activating
-without fencing the original, and mismatched installed software all refuse.
+model, truncated encrypted state, path traversal, overwriting an existing target,
+activating without fencing the original, and incompatible installed Python all
+refuse. Nested engine `bin` support files are retained.
 Source file digests remain unchanged; private directory permissions, retained
 revocations, SQLite integrity and exclusion of expendable logs are checked.
 The Windows run found and fixed an unclosed SQLite handle during staging cleanup.
 
-Container restore and final published instrument checks are pending. This slice
+Final published instrument checks are pending. This slice
 does not demonstrate Windows reboot before sign-in, physical Mac support,
 cross-platform restoration or external vLLM environment reconstruction. Those
 limits are preserved in [the procedure](../recovery.md) and the roadmap.
