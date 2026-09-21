@@ -28,7 +28,7 @@ jobs:
         run: python scripts/release-artifacts-checks.py
 
   r7-signing:
-    name: R7 signing, R8 profiles and A2 requests (${{ matrix.os }})
+    name: R7 signing, R8 profiles and A2/A3 acceptance (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     strategy:
@@ -89,6 +89,8 @@ jobs:
         run: python specs/scripts/r7-rotation-acceptance.py
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         run: python specs/scripts/r8-profile-acceptance.py
+      - name: Verify A3 client-key migration, revocation and outage bounds across five processes
+        run: python specs/scripts/a3-client-keys-acceptance.py
       - name: Detect deliberately broken R8 profile defaults
         run: python specs/scripts/r8-profile-checks.py
 
