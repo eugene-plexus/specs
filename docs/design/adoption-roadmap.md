@@ -6,7 +6,7 @@ The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: A6.** A1 and A2 completed 2026-09-20; A3, A4 and A5 completed 2026-09-21.
+**Pickup: A6b.** A1 and A2 completed 2026-09-20; A3-A6 completed 2026-09-21.
 A4's final user-supplied image passed through the actual Open WebUI frontend,
 authenticated gateway, driver and local vision model. See
 [A4 acceptance](../acceptance/a4-application-workflows.md).
@@ -15,6 +15,8 @@ authenticated gateway, driver and local vision model. See
 [A3 acceptance](../acceptance/a3-client-keys-run.md).
 A5 passed scoped admission across two real gateways, durable recovery and usage
 attribution on Windows and Linux; see [A5 acceptance](../acceptance/a5-scoped-keys-run.md).
+A6 passed signed local-only routing through real drivers on Windows and Linux;
+see [A6 acceptance](../acceptance/a6-local-only-run.md).
 Work through A6, A6b, A7 and A8 in order. Troy approved adding A6b on
 2026-09-21 and completing these slices before the next release. There is no
 release slice, deadline, or duration estimate.
@@ -76,7 +78,7 @@ The previous roadmap's contemporaneous phrases such as "still owed" and
 | A7 | A failed update or lost installation has a tested recovery path | Final state from A3/A5/A6/A6b included in backups |
 | A8 | Capacity and hardware support claims have measured limits | A4-A7, including A6b |
 
-A1-A5 are complete; A6 and A6b are **in progress**; A7-A8 are not started.
+A1-A6 are complete; A6b is **in progress**; A7-A8 are not started.
 Completion entries must name the
 implementation revisions, acceptance record, observed limitations and any
 remaining physical checks. Do not mark a slice complete solely because unit
@@ -274,6 +276,10 @@ management still works. Usage totals identify each key through retries,
 streaming and failures without recording credentials, prompts or images.
 
 ## A6 — Enforced local-only routing
+
+**Completed 2026-09-21.** Per-key local-only policy, explicit active-engine
+classification, checks before wake/fallback and driver-side refusal against
+stale metadata. [Implementation and acceptance](../acceptance/a6-local-only-run.md).
 
 **Problem:** an installation may intentionally mix local and cloud providers,
 but sensitive workloads need a constraint stronger than operator convention.

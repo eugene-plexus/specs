@@ -1,6 +1,6 @@
 # Client keys
 
-This describes development builds through A5. The published `v0.1.0-alpha.1`
+This describes development builds through A6. The published `v0.1.0-alpha.1`
 has its earlier, node-local revocation behavior.
 
 Use **Home → Use it from your apps** to make a named key for each application.
@@ -23,7 +23,16 @@ Uncheck **Allow all models** to enter exact model IDs, one per line. An empty
 list denies every model. For a routing alias, allow both its name and each target
 it may use. Excluded targets are removed before selection, wake and fallback;
 model discovery reveals only allowed models and their permitted backends.
-?All models? includes future additions; a selected list does not.
+“All models” includes future additions; a selected list does not.
+
+Enable **Local-only inference** to exclude cloud and unconfirmed endpoints from
+every alias, fallback and wake decision. Models Eugene runs locally qualify
+automatically. For another local server, confirm **Endpoint trust** in that
+driver's Provider settings and restart the driver. Cloud subscription CLIs
+remain external. Update all components before enabling this restriction;
+older drivers cannot serve protected requests. See the
+[local-only routing guide](design/local-only-routing.md) for the trust boundary
+and how stale routing/configuration is handled.
 
 Concurrency includes waiting for a model to wake and the whole response stream.
 Accepted requests count toward the rolling-minute limit even when they fail or

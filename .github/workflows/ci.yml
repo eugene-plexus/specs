@@ -93,6 +93,8 @@ jobs:
         run: python specs/scripts/a3-client-keys-acceptance.py
       - name: Verify A5 scoped keys, shared limits, cancellation and usage across gateways
         run: python specs/scripts/a5-scoped-keys-acceptance.py
+      - name: Verify A6 local-only routing through signed components and real drivers
+        run: python specs/scripts/a6-local-only-acceptance.py
       - name: Detect deliberately broken R8 profile defaults
         run: python specs/scripts/r8-profile-checks.py
 
