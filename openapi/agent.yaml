@@ -4129,6 +4129,9 @@ components:
         embeddings:
           type: boolean
           description: Whether this runtime was started in embedding mode.
+        vision:
+          type: boolean
+          description: Whether the loaded runtime explicitly reports image input.
         multimodal:
           type: boolean
           description: Whether a projector was loaded alongside the model.

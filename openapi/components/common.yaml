@@ -39,15 +39,7 @@ components:
         role:
           $ref: '#/components/schemas/Role'
         content:
-          type:
-            - string
-            - 'null'
-          description: |
-            Message text. Text-only for now; multimodal extensions
-            deferred. **Nullable, and no longer required:** an assistant
-            turn that only calls a tool has no text to carry, and the
-            alternative — an empty string — would assert the model said
-            nothing when in fact it said something that was not text.
+          $ref: '#/components/schemas/MessageContent'
         toolCalls:
           type: array
           items:
@@ -72,6 +64,55 @@ components:
           type: string
           format: date-time
           description: When the message was produced. Server-assigned if omitted.
+    MessageContent:
+      description: |
+        Text, null for an assistant tool-call turn, or ordered user content parts.
+        Images are inline PNG/JPEG only: four per request, 5 MiB decoded each,
+        10 MiB decoded total, 16 million pixels each, maximum dimension 8192.
+        JSON bodies are limited to 16 MiB. Remote URLs are never fetched.
+      anyOf:
+        - type: string
+        - type: 'null'
+        - type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/MessageContentPart'
+    MessageContentPart:
+      oneOf:
+        - $ref: '#/components/schemas/TextContentPart'
+        - $ref: '#/components/schemas/ImageContentPart'
+    TextContentPart:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type:
+          type: string
+          const: text
+        text:
+          type: string
+    ImageContentPart:
+      type: object
+      additionalProperties: false
+      required: [type, image_url]
+      properties:
+        type:
+          type: string
+          const: image_url
+        image_url:
+          type: object
+          additionalProperties: false
+          required: [url]
+          properties:
+            url:
+              type: string
+              maxLength: 6990531
+              description: Inline base64 PNG or JPEG data URL. No remote references.
+            detail:
+              type: string
+              enum: [auto]
+              description: Explicit high/low processing modes are not supported.
+
     # -------- Backend + component identity --------
 
     BackendKind:

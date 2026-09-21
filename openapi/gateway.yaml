@@ -1635,6 +1635,12 @@ components:
             Empty means nothing serving this model would admit to either
             surface, which is a backend that could not be reached rather
             than a model that does nothing.
+        image_input:
+          type: boolean
+          description: |
+            At least one backend confirms image input for its loaded model.
+            Image requests route only to those backends, including fallback.
+            Inline PNG/JPEG only; see MessageContent for request limits.
         tool_calling:
           type: boolean
           description: |
@@ -1858,15 +1864,7 @@ components:
             - assistant
             - tool
         content:
-          type:
-            - string
-            - 'null'
-          description: |
-            The message text. **Nullable, and that is not laxity:** an
-            assistant message that only calls a tool has no text, and
-            OpenAI sends `content: null` alongside `tool_calls` for it.
-            A schema that required a string here would reject the
-            single most common assistant turn in an agent loop.
+          $ref: './components/common.yaml#/components/schemas/MessageContent'
         name:
           type: string
           description: Optional participant name, per OpenAI.

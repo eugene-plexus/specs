@@ -1043,6 +1043,12 @@ components:
             streaming:
               type: boolean
               description: Whether `/v1/generate/stream` emits true incremental tokens.
+            imageInput:
+              type: boolean
+              description: |
+                Whether the loaded model is confirmed to accept inline PNG/JPEG
+                images. Unknown or unverified backends report false. Rechecked
+                before image generation; never inferred from the provider name.
             toolCalling:
               type: boolean
               description: |
