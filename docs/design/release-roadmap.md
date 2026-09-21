@@ -22,6 +22,13 @@ instructions for early testers.** This prerelease distribution enables the
 moderated sessions; it does not complete them or declare stable-release readiness.
 [Release scope](../releases/v0.1.0-alpha.1.md).
 
+The alpha is published at specs tag `501e23c`, with website instructions and a
+matching tested container. [Distribution acceptance](../acceptance/alpha1-release-run.md)
+records a remaining UI limitation: Home can enable Send before the first runtime
+is ready; a fast request gets a truthful loading refusal. Waiting for readiness
+then sending succeeds. Correct the premature composer enablement in follow-up
+work; do not count the failed WSL first request as an acceptance pass.
+
 **Every finding in it was re-verified against the working trees on 2026-09-17,
 after the review was written and after that day's commits landed.** All are
 still present. Nothing was already fixed; nothing was misdiagnosed.
