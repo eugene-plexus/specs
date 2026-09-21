@@ -1,5 +1,9 @@
 # A3: install-wide client keys
 
+A5 extends this registry with [shared admission](scoped-client-access.md). Its
+current-authority check supersedes A3's cached-policy allowance for discovery
+and inference; the authentication cache and persistent revocations remain.
+
 Design before contract changes, 2026-09-20. Implements the
 [adoption roadmap](adoption-roadmap.md#a3--install-wide-key-revocation).
 

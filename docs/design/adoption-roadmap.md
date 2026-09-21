@@ -6,14 +6,16 @@ The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: A5.** A1 and A2 completed 2026-09-20; A3 and A4 completed 2026-09-21.
+**Pickup: A6.** A1 and A2 completed 2026-09-20; A3, A4 and A5 completed 2026-09-21.
 A4's final user-supplied image passed through the actual Open WebUI frontend,
 authenticated gateway, driver and local vision model. See
 [A4 acceptance](../acceptance/a4-application-workflows.md).
 [A1 acceptance](../acceptance/a1-home-readiness-run.md),
 [A2 acceptance](../acceptance/a2-request-settings-run.md),
 [A3 acceptance](../acceptance/a3-client-keys-run.md).
-Work through A5-A8 in order. There is no release slice, deadline, or duration estimate.
+A5 passed scoped admission across two real gateways, durable recovery and usage
+attribution on Windows and Linux; see [A5 acceptance](../acceptance/a5-scoped-keys-run.md).
+Work through A6-A8 in order. There is no release slice, deadline, or duration estimate.
 `v0.1.0-alpha.1` is already published and remains the available tester build;
 do not retract it, move its tag, or silently replace its assets. A future
 publication is a separate decision after reassessment.
@@ -228,6 +230,12 @@ where necessary, connection recipes and acceptance scripts.
 - A compact task/versions/results matrix says exactly what was demonstrated.
 
 ## A5 — Scoped keys, consumption limits and attributable usage
+
+**Completed 2026-09-21.** Model scopes, shared concurrency/rate admission, renewable
+reservations and attributable per-key metrics are implemented. The UI manages new
+and existing key limits, with explicit unrestricted legacy records. See
+[A5 acceptance](../acceptance/a5-scoped-keys-run.md) and
+[operator instructions](../client-keys.md).
 
 **Problem:** named keys distinguish credentials from operator sessions, but do
 not define which models an application may use or how much shared capacity it

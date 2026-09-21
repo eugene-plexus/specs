@@ -306,6 +306,26 @@ def exercise(directory: Path) -> None:
             flush=True,
         )
 
+        # A5's current admission check can refuse a revoked key before A3's
+        # periodic policy refresh has persisted it. Establish the cache state
+        # explicitly before testing that it survives an offline restart.
+        def cached_revocation(gateway):
+            if status(gateway, key["token"]) != 401:
+                return False
+            saved = json.loads(
+                (directory / gateway / "gateway.client-keys.json").read_text(encoding="utf-8")
+            )
+            return any(
+                record["id"] == key["key"]["id"] and record.get("revokedAt")
+                for record in saved["policy"]["keys"]
+            )
+
+        wait(
+            lambda: all(cached_revocation(g) for g in ("gateway-a", "gateway-b")),
+            "revocation persisted in both authentication caches",
+            2,
+        )
+
         stop("agent-a")
         stop("gateway-a")
         start("gateway-a")

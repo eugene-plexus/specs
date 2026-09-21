@@ -1,7 +1,8 @@
 # A5: scoped client access and shared admission
 
-Status: implementation in progress. Acceptance requires two independent keys
-and two real gateways, including cancellation, wake, fallback and authority loss.
+Status: implemented and accepted 2026-09-21. Two independent keys and two real
+gateways pass on Windows and Linux, with focused cancellation/wake tests. See
+[acceptance evidence](../acceptance/a5-scoped-keys-run.md).
 
 The existing key registry is also the admission authority: the active control
 root for an enrolled install, the local agent for a standalone install. Enrolled
