@@ -177,6 +177,77 @@ tags:
     description: Health and version.
 
 paths:
+  /v1/auth/client-keys:
+    get:
+      operationId: listClientKeys
+      summary: List install-wide client-key records
+      description: Operator only; active root only. Contains records, never bearer tokens.
+      responses:
+        '200':
+          description: Authoritative registry.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientKeyList'}
+    post:
+      operationId: createClientKey
+      summary: Create an install-wide client key
+      description: Operator only; active, unlocked root. Persist the record before returning the token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientKeyCreateRequest'}
+      responses:
+        '201':
+          description: Key and one-time bearer token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientKeyCreated'}
+  /v1/auth/client-keys/policy:
+    get:
+      operationId: getClientKeyPolicy
+      summary: Issue current client-key authorization policy
+      description: Operator or agent/gateway service token only. Only the active root issues fresh policy. No signing secret is returned.
+      responses:
+        '200':
+          description: Current policy.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientKeyPolicy'}
+        '503':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+  /v1/auth/client-keys/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    delete:
+      operationId: revokeClientKey
+      summary: Revoke a key throughout the install
+      description: Operator only; active root. Durable and idempotent. Healthy gateways observe the change within 20 seconds by default; stale policy expires after 60 seconds plus five seconds clock tolerance.
+      responses:
+        '204': {description: Revocation durably recorded.}
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+  /v1/nodes/{name}/client-keys/import:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: importLegacyClientKeys
+      summary: Import existing node-local client-key records
+      description: Authenticated by the enrolled node signature, not a service bearer. Active root only. Idempotent and revocation-preserving; a node cannot overwrite another node's record.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientKeyImport'}
+      responses:
+        '200':
+          description: Import committed; registry includes origin and migration status.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientKeyList'}
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
 
   # -------- nodes: the hosts this install spans --------
 
@@ -1083,6 +1154,24 @@ components:
         Mutations are operator-only; reads accept either.
 
   schemas:
+    ClientKey:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKey'
+
+    ClientKeyList:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyList'
+
+    ClientKeyCreateRequest:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyCreateRequest'
+
+    ClientKeyCreated:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyCreated'
+
+    ClientKeyPolicy:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyPolicy'
+
+    ClientKeyImport:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyImport'
+
 
     # -------- nodes --------
 
@@ -1656,6 +1745,9 @@ components:
         - putRuntime
         - deleteRuntime
         - patchConfig
+        - putClientKey
+        - importClientKeys
+        - revokeClientKey
         - rotateSigningKey
         - promote
       description: |
@@ -1704,6 +1796,13 @@ components:
         - index
         - epoch
       properties:
+        clientKeys:
+          type: array
+          items: {$ref: '#/components/schemas/ClientKey'}
+        clientKeyImports:
+          type: object
+          additionalProperties: {type: string}
+          description: Node-to-digest map of committed legacy imports, replicated with the registry.
         index:
           type: integer
           format: int64
