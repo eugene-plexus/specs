@@ -1,0 +1,198 @@
+{
+  "percentileMethod": "nearest-rank",
+  "phases": {
+    "cold": {
+      "wallSeconds": 14.41025489999447,
+      "requests": 1,
+      "completed": 1,
+      "peakObservedRequests": 1,
+      "rejected": 0,
+      "streamErrors": 0,
+      "cancelled": 0,
+      "knownCompletionTokens": 55,
+      "completedWithKnownUsage": 1,
+      "knownTokensPerPhaseSecond": 3.816726378658375,
+      "ttftP50": 13.563067800016142,
+      "ttftP95": 13.563067800016142,
+      "completionP50": 14.229861999978311,
+      "completionP95": 14.229861999978311,
+      "chatClients": {
+        "samples": 1,
+        "correct": 1,
+        "ttftP50": 13.741576300002635,
+        "ttftP95": 13.741576300002635,
+        "completionP50": 14.409749899990857,
+        "completionP95": 14.409749899990857
+      }
+    },
+    "single-chat": {
+      "wallSeconds": 33.7726202000631,
+      "requests": 12,
+      "completed": 12,
+      "peakObservedRequests": 1,
+      "rejected": 0,
+      "streamErrors": 0,
+      "cancelled": 0,
+      "knownCompletionTokens": 487,
+      "completedWithKnownUsage": 12,
+      "knownTokensPerPhaseSecond": 14.41996496318903,
+      "ttftP50": 2.8598292999668047,
+      "ttftP95": 2.8832311000442132,
+      "completionP50": 3.527642300003208,
+      "completionP95": 3.5866442000260577,
+      "chatClients": {
+        "samples": 12,
+        "correct": 12,
+        "ttftP50": 3.0015726999845356,
+        "ttftP95": 3.0279555999441072,
+        "completionP50": 3.6713523999787867,
+        "completionP95": 3.7334058000706136
+      }
+    },
+    "single-code": {
+      "wallSeconds": 72.60328809998464,
+      "requests": 4,
+      "completed": 4,
+      "peakObservedRequests": 1,
+      "rejected": 0,
+      "streamErrors": 0,
+      "cancelled": 0,
+      "knownCompletionTokens": 1041,
+      "completedWithKnownUsage": 4,
+      "knownTokensPerPhaseSecond": 14.338193589337179,
+      "ttftP50": 12.27103049994912,
+      "ttftP95": 16.449953800067306,
+      "completionP50": 12.977062299964018,
+      "completionP95": 24.77540340006817
+    },
+    "mixed": {
+      "wallSeconds": 141.0140540000284,
+      "requests": 21,
+      "completed": 21,
+      "peakObservedRequests": 5,
+      "rejected": 0,
+      "streamErrors": 0,
+      "cancelled": 0,
+      "knownCompletionTokens": 3430,
+      "completedWithKnownUsage": 21,
+      "knownTokensPerPhaseSecond": 24.32381668850758,
+      "ttftP50": 7.93630459997803,
+      "ttftP95": 26.914683899958618,
+      "completionP50": 8.803763299947605,
+      "completionP95": 31.187857499928214,
+      "chatClients": {
+        "samples": 12,
+        "correct": 12,
+        "ttftP50": 5.4385727000189945,
+        "ttftP95": 8.376215600059368,
+        "completionP50": 7.002685499959625,
+        "completionP95": 9.254303599940613
+      }
+    },
+    "saturation": {
+      "wallSeconds": 5.606909800088033,
+      "requests": 5,
+      "completed": 1,
+      "peakObservedRequests": 4,
+      "rejected": 1,
+      "streamErrors": 0,
+      "cancelled": 3,
+      "knownCompletionTokens": 55,
+      "completedWithKnownUsage": 1,
+      "knownTokensPerPhaseSecond": 9.80932491532795,
+      "ttftP50": 2.7806694000028074,
+      "ttftP95": 2.7806694000028074,
+      "completionP50": 3.4613740000640973,
+      "completionP95": 3.4613740000640973
+    }
+  },
+  "targets": {
+    "cold": true,
+    "single-chat": true,
+    "mixed": true,
+    "coding": true,
+    "boundedRefusal": true,
+    "cancellation": true
+  },
+  "coding": [
+    {
+      "phase": "single-code",
+      "client": "claude-1",
+      "started": 562137.6881206,
+      "elapsed": 72.56979239999782,
+      "exitCode": 0,
+      "isError": false,
+      "turns": 4,
+      "tools": [
+        "Read",
+        "Edit",
+        "Bash"
+      ],
+      "checkPassed": true,
+      "checkUnchanged": true,
+      "permissionDenials": 0
+    },
+    {
+      "phase": "mixed",
+      "client": "claude-1",
+      "started": 562210.6827804,
+      "elapsed": 97.03588159999344,
+      "exitCode": 0,
+      "isError": false,
+      "turns": 4,
+      "tools": [
+        "Read",
+        "Edit",
+        "Bash"
+      ],
+      "checkPassed": true,
+      "checkUnchanged": true,
+      "permissionDenials": 0
+    },
+    {
+      "phase": "mixed",
+      "client": "claude-2",
+      "started": 562210.6826584,
+      "elapsed": 140.58961599995382,
+      "exitCode": 0,
+      "isError": false,
+      "turns": 5,
+      "tools": [
+        "Read",
+        "Read",
+        "Edit",
+        "Bash"
+      ],
+      "checkPassed": true,
+      "checkUnchanged": true,
+      "permissionDenials": 0
+    }
+  ],
+  "saturation": {
+    "refusal": {
+      "status": 429,
+      "elapsed": 0.018198000034317374,
+      "retryAfter": "29",
+      "errorType": "rate_limit_error"
+    },
+    "cancelToIdleSeconds": 0.20705610001459718,
+    "activeSlotsBeforeCancel": 3,
+    "cancelToFreshFirstContentSeconds": 3.1311347000300884,
+    "freshRequest": {
+      "phase": "saturation",
+      "client": "webui-after-cancel",
+      "index": 0,
+      "started": 562353.2732148,
+      "ttft": 2.9240757999941707,
+      "status": 200,
+      "cancelled": false,
+      "outputChars": 21,
+      "correct": true,
+      "elapsed": 3.6060117000015453
+    }
+  },
+  "retainedMetrics": {
+    "attempts": 43,
+    "cancelledUsageUnknown": 3
+  }
+}

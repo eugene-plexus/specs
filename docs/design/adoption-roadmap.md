@@ -1,12 +1,15 @@
 # Adoption roadmap
 
-**Status: current work order, 2026-09-20.** Troy accepted the new adversarial
+**Status: implementation slices complete, reassessment next, 2026-09-21.** Troy accepted the new adversarial
 review and asked to defer further release work in favor of this roadmap.
 The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: A8.** A1 and A2 completed 2026-09-20; A3-A7 and A6b completed 2026-09-21.
+**Pickup: reassess the measured scope and incoming tester evidence with Troy.**
+A1 and A2 completed 2026-09-20; A3-A8 and A6b completed 2026-09-21.
+A8 passed its declared CPU application workload and published a
+[support matrix](../support-matrix.md), with physical checks below still open.
 A4's final user-supplied image passed through the actual Open WebUI frontend,
 authenticated gateway, driver and local vision model. See
 [A4 acceptance](../acceptance/a4-application-workflows.md).
@@ -17,7 +20,7 @@ A5 passed scoped admission across two real gateways, durable recovery and usage
 attribution on Windows and Linux; see [A5 acceptance](../acceptance/a5-scoped-keys-run.md).
 A6 passed signed local-only routing through real drivers on Windows and Linux;
 see [A6 acceptance](../acceptance/a6-local-only-run.md).
-Work through A6, A6b, A7 and A8 in order. Troy approved adding A6b on
+Troy approved adding A6b on
 2026-09-21 and completing these slices before the next release. There is no
 release slice, deadline, or duration estimate.
 `v0.1.0-alpha.1` is already published and remains the available tester build;
@@ -78,7 +81,9 @@ The previous roadmap's contemporaneous phrases such as "still owed" and
 | A7 | A failed update or lost installation has a tested recovery path | Final state from A3/A5/A6/A6b included in backups |
 | A8 | Capacity and hardware support claims have measured limits | A4-A7, including A6b |
 
-A1-A7 and A6b are complete; A8 is not started.
+A1-A8 and A6b are complete within their recorded acceptance scope. Moderated
+sessions and pending physical platform checks remain open; this is not stable
+release or broad production-readiness approval.
 Completion entries must name the
 implementation revisions, acceptance record, observed limitations and any
 remaining physical checks. Do not mark a slice complete solely because unit
@@ -403,6 +408,20 @@ the source. Record what survives, what must be re-created, and observed recovery
 steps/time; leave the live installation untouched.
 
 ## A8 — Shared-load evidence and a truthful support matrix
+
+**Completed 2026-09-21.** [Declared workload](../acceptance/a8-workload-plan.md),
+[results and raw measurements](../acceptance/a8-shared-load-run.md),
+[support matrix](../support-matrix.md). Real Open WebUI and Claude Code paths
+passed one-client and five-client CPU scenarios with Gemma 4 E4B. Mixed-chat
+p95 completion was 9.25 s (12 samples); both concurrent coding tasks passed;
+overload refused in 18 ms and three cancellations freed engine slots in 0.207 s.
+The run found and fixed slow optional capability probes blocking cold local-only
+wake (driver `9d2b0b4`) and caller cancellations triggering backend cooldowns
+(gateway `899ae99`). Both development installers pin the corrections. No API/UI
+change. Windows/Linux component CI and Windows full suites passed. The finite
+burst is not a five-user capacity guarantee; physical Mac, modest GPU, native
+Linux boot and the remaining owner Windows service checks remain explicitly
+pending. Live installations and frozen alpha artifacts were not changed.
 
 **Problem:** context-depth decode speed does not answer how several people
 experience a shared service. Hardware fixtures are not physical acceptance.

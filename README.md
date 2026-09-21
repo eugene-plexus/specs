@@ -23,17 +23,17 @@ This is the **single source of truth** for how Eugene Plexus components talk to 
 
 **A self-hosted control plane for local LLM inference.**
 
-It installs, updates and supervises the engine processes it does not own, manages a model library on your own disk, holds per-model settings profiles, exposes one OpenAI-compatible endpoint that routes across local runtimes and cloud providers with failover, and serves a web UI with real auth so it works over a tailnet — not just localhost.
+It installs, updates and supervises inference engines, manages a model library on your own disk, holds per-model settings profiles, and exposes OpenAI-compatible and Anthropic Messages endpoints over eligible local and cloud backends. Its browser console manages authentication, routing and the machines in an installation. See the [tested configurations and support boundaries](docs/support-matrix.md) before planning a shared deployment.
 
 **It is not an inference engine.** We supervise upstream llama.cpp and user-installed vLLM; MLX integration is planned. We do not fork or replace the engines.
 
-Everyone else builds an *engine* (llama.cpp, vLLM, MLX) or a *desktop chat app* (LM Studio, Unsloth Desktop, llama.app). The operations layer — supervise, configure, route, authenticate — is **contested rather than unclaimed**: `llamactl` has been managing llama.cpp, MLX and vLLM from a browser since 2025, `llama-swap` holds the proxy half, and `llama-server`'s own router mode now keeps several models resident and unloads idle ones. What is left, and what this project is for, is the part none of them do:
+Eugene brings engine lifecycle, model files, application access and routing into one console. The intended workflow is:
 
 1. **It installs, updates and restarts the engine for you.** llama.cpp today, your own vLLM if you have one; it comes back after a crash and gets out of memory when idle.
-2. **It tells you what fits before you download, and starts your settings there.** Quant and context picked for *this* card, with the reason shown — not a table of `Q3_K_S` and `Q4_K_M` you are left to interpret. *(Built, and not yet trustworthy — see Current status.)*
+2. **It tells you what fits before you download, and starts your settings there.** Quant and context picked for *this* card, with the reason shown. Fit estimates guide a launch; they do not establish shared-service latency or replace testing on the target hardware.
 3. **It finds and downloads models in the app, into your own folders, as plain files.** Search a catalogue, read what a model is, pick a quant, download with resume and progress — landing in your existing GGUF directories, plainly named. No content-addressed cache, no hash mismatches. Delete us and you still have your models, correctly named, where you put them.
 4. **One endpoint for your applications.** OpenAI-compatible chat, tool calling, embeddings and streaming, plus an Anthropic Messages subset for Claude Code. See the [supported features and limitations](docs/api-compatibility.md).
-5. **Add the backends you already run and the subscriptions you already pay for.** The Ollama or LM Studio you already have, llama.cpp beside it, the subscription you already pay for — one endpoint over all of them, with a priority-list cascade when one dies. Several models resident at once; replicas balanced by outstanding requests and capacity. Nothing else in the field balances replicas or treats a cloud subscription as a peer backend.
+5. **Add the backends you already run and the subscriptions you already pay for.** Connect local HTTP servers, supervised engines and supported CLI backends to one endpoint. Replicas are balanced by outstanding requests and capacity. Failover uses eligible targets only when retry is safe; ambiguous work is not automatically replayed. See the [failover rules](docs/design/failover-safety.md) and the [API feature limits](docs/api-compatibility.md).
 6. **Reach it from your other devices, safely.** One switch, a real login with sessions, and client keys you can revoke — over a tailnet or your own LAN, not just localhost.
 7. **It grows into a homelab.** More machines from one console, a model library on the NAS, replicas across GPUs, one trust root that holds the install together.
 
@@ -47,14 +47,16 @@ Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-
 
 ## Current status
 
-**2026-09-20:** `v0.1.0-alpha.1` and its [installation instructions](https://eugeneplexus.com/install)
-are published for early testers. The previous roadmap's scheduled implementation
-is complete; friend sessions and remaining physical Windows/Mac verification
-are not all complete. The [adoption roadmap](docs/design/adoption-roadmap.md)
-now owns the work order: first-use readiness, request compatibility, key
-revocation, real application workflows, shared-access controls, local-only
-routing, recovery and measured capacity. Further release work is deferred.
-See [alpha acceptance and its limits](docs/acceptance/alpha1-release-run.md).
+**2026-09-21:** `v0.1.0-alpha.1` and its [installation instructions](https://eugeneplexus.com/install)
+remain the published early-tester build. The [adoption roadmap](docs/design/adoption-roadmap.md)
+has completed A1-A8 and A6b in development, including application workflows,
+scoped access, local-only routing, conservative failover and tested recovery.
+[A8 shared-load evidence](docs/acceptance/a8-shared-load-run.md) establishes limits
+for one specific CPU workload; the [support matrix](docs/support-matrix.md)
+distinguishes measured, simulated, pending and unsupported configurations.
+Friend sessions and remaining physical platform checks are still open. Reassess
+those findings before deciding on another release; no new release is authorized
+by slice completion. See [alpha acceptance and its limits](docs/acceptance/alpha1-release-run.md).
 
 ### Historical snapshot — 2026-09-17
 

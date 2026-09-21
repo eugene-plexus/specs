@@ -1,0 +1,23 @@
+{
+  "refusal": {
+    "status": 429,
+    "elapsed": 0.018198000034317374,
+    "retryAfter": "29",
+    "errorType": "rate_limit_error"
+  },
+  "cancelToIdleSeconds": 0.20705610001459718,
+  "activeSlotsBeforeCancel": 3,
+  "cancelToFreshFirstContentSeconds": 3.1311347000300884,
+  "freshRequest": {
+    "phase": "saturation",
+    "client": "webui-after-cancel",
+    "index": 0,
+    "started": 562353.2732148,
+    "ttft": 2.9240757999941707,
+    "status": 200,
+    "cancelled": false,
+    "outputChars": 21,
+    "correct": true,
+    "elapsed": 3.6060117000015453
+  }
+}

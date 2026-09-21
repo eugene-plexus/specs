@@ -1,0 +1,432 @@
+[
+  {
+    "requestId": "6ed55054-6a1b-4a12-b23e-256f40306cca",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 14227,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "04e5c473-6854-4d8e-adc9-8bb622ca6bc3",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3447,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "db46f63b-04f6-4ddb-ae5a-c51523a46cf4",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3584,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "b7b27021-4641-42e6-bcee-401ccd17bff4",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3549,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "30f0931d-3590-4970-b813-186d92096085",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 858,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 11
+  },
+  {
+    "requestId": "7d9ba091-fe4e-42f9-b50d-0bfb04d5b0ca",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3562,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "fadc1cc5-b2a5-4eb1-9d73-c1af2f9b72e6",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3546,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "27d14122-aa12-42ed-8867-8b388edf94b8",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3548,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "628998de-b7db-46bc-83be-6f3c46f8c490",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 919,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 12
+  },
+  {
+    "requestId": "a79929d7-e3e6-4f2c-bc00-33e6d7ae0e75",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 909,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 12
+  },
+  {
+    "requestId": "d25d92b5-5f77-446a-ae2e-dce26dc00bd7",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 934,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 12
+  },
+  {
+    "requestId": "08d909a0-eb4c-4915-9c21-39462f291a97",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3557,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "7d064b97-27cd-40d7-be6a-d3633914f810",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3524,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "08906967-b20f-4cf7-877f-5d9cfbbc51f3",
+    "application": "A8 claude-1",
+    "outcome": "served",
+    "elapsedMs": 10192,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 883,
+    "completionTokens": 100
+  },
+  {
+    "requestId": "d42d74c9-e9ec-44eb-afd4-7379d9e0c397",
+    "application": "A8 claude-1",
+    "outcome": "served",
+    "elapsedMs": 23568,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 938,
+    "completionTokens": 367
+  },
+  {
+    "requestId": "639ed076-131c-422b-82f0-7f080722ea31",
+    "application": "A8 claude-1",
+    "outcome": "served",
+    "elapsedMs": 12974,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 1159,
+    "completionTokens": 188
+  },
+  {
+    "requestId": "bba1dda8-e2bd-4030-a551-07c40fbc34b8",
+    "application": "A8 claude-1",
+    "outcome": "served",
+    "elapsedMs": 24773,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 1188,
+    "completionTokens": 386
+  },
+  {
+    "requestId": "6298f19d-5617-4a99-914c-97201718dc37",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 8798,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "1e33cab3-bca4-4b3f-8a54-8559062f1e88",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 8946,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "3b57fd5b-c83b-4e0d-be46-4411ebd9e883",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 9022,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 56
+  },
+  {
+    "requestId": "38e6a719-60be-41d2-bb1c-ea34748945c2",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 1889,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 13
+  },
+  {
+    "requestId": "ad1b30e6-4c1b-4947-a3c0-2df8117d9420",
+    "application": "A8 claude-1",
+    "outcome": "served",
+    "elapsedMs": 14988,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 883,
+    "completionTokens": 117
+  },
+  {
+    "requestId": "ecc21fdb-8fb5-4bb4-aa7c-3226262da5fb",
+    "application": "A8 claude-2",
+    "outcome": "served",
+    "elapsedMs": 15759,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 883,
+    "completionTokens": 117
+  },
+  {
+    "requestId": "b0fff01e-b129-4314-8258-06982ca76663",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 6871,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "26824382-ed16-4725-8cf1-dc44bcd347d4",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 7195,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "ff9d58fd-969c-4dd3-bbb3-f49d31359a90",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 6380,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 56
+  },
+  {
+    "requestId": "2f06573e-55f4-4f80-824c-e6284d14e3db",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 1465,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 11
+  },
+  {
+    "requestId": "496573d5-7610-4874-b56d-40ecb4160d5f",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 6828,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "d4ba2418-15bd-4ad6-a154-f69e4c8e75b7",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 7003,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  },
+  {
+    "requestId": "6c633976-bdfb-4d9c-a1df-b57572c80f89",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 2028,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 11
+  },
+  {
+    "requestId": "6508e344-e2b7-4894-a3eb-edf93bff8dfe",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 1688,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 11
+  },
+  {
+    "requestId": "d6609473-4d93-423c-b584-51e69c0695cb",
+    "application": "A8 claude-2",
+    "outcome": "served",
+    "elapsedMs": 27642,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 938,
+    "completionTokens": 319
+  },
+  {
+    "requestId": "2967e768-4f26-42e2-9cb9-b64cd0ef6963",
+    "application": "A8 claude-1",
+    "outcome": "served",
+    "elapsedMs": 31184,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 938,
+    "completionTokens": 353
+  },
+  {
+    "requestId": "2f4e51d8-1832-420f-a5b8-322b96f475b0",
+    "application": "A8 claude-1",
+    "outcome": "served",
+    "elapsedMs": 21085,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 1036,
+    "completionTokens": 288
+  },
+  {
+    "requestId": "5b381bb4-4e6d-48e6-af9e-5f236b322724",
+    "application": "A8 claude-1",
+    "outcome": "served",
+    "elapsedMs": 28151,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 1163,
+    "completionTokens": 381
+  },
+  {
+    "requestId": "2410ecb5-9e69-494d-a804-3e3f7d13bc09",
+    "application": "A8 claude-2",
+    "outcome": "served",
+    "elapsedMs": 57407,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 1040,
+    "completionTokens": 784
+  },
+  {
+    "requestId": "cdc7d0c9-b3ef-482b-991e-c46fb2c260e4",
+    "application": "A8 claude-2",
+    "outcome": "served",
+    "elapsedMs": 8071,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 1264,
+    "completionTokens": 108
+  },
+  {
+    "requestId": "be02898f-a80c-4c89-aabf-3461fd00ac3b",
+    "application": "A8 claude-2",
+    "outcome": "served",
+    "elapsedMs": 30408,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 1293,
+    "completionTokens": 475
+  },
+  {
+    "requestId": "b8ffa687-2f37-4bdf-b993-772cc0146462",
+    "application": "A8 webui",
+    "outcome": "error",
+    "elapsedMs": 7,
+    "retryDisposition": null,
+    "usageKnown": null,
+    "promptTokens": null,
+    "completionTokens": null
+  },
+  {
+    "requestId": "1c5111c1-70c9-4611-8211-0789d3e8f4c1",
+    "application": "A8 webui",
+    "outcome": "error",
+    "elapsedMs": 1363,
+    "retryDisposition": "indeterminate",
+    "usageKnown": 0,
+    "promptTokens": null,
+    "completionTokens": null
+  },
+  {
+    "requestId": "52585303-35cf-4406-a063-063bbb5d5cf5",
+    "application": "A8 webui",
+    "outcome": "error",
+    "elapsedMs": 1367,
+    "retryDisposition": "indeterminate",
+    "usageKnown": 0,
+    "promptTokens": null,
+    "completionTokens": null
+  },
+  {
+    "requestId": "c9601009-58e8-46ee-a06c-b2dbc0626ee3",
+    "application": "A8 webui",
+    "outcome": "error",
+    "elapsedMs": 1362,
+    "retryDisposition": "indeterminate",
+    "usageKnown": 0,
+    "promptTokens": null,
+    "completionTokens": null
+  },
+  {
+    "requestId": "bc77f157-38ff-46a0-afac-18ba634cf3cf",
+    "application": "A8 webui",
+    "outcome": "served",
+    "elapsedMs": 3459,
+    "retryDisposition": null,
+    "usageKnown": 1,
+    "promptTokens": 32,
+    "completionTokens": 55
+  }
+]

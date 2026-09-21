@@ -26,6 +26,8 @@ jobs:
         run: python scripts/s10-checks.py
       - name: Check release artifact bytes and component pin agreement
         run: python scripts/release-artifacts-checks.py
+      - name: Verify retained A8 measurement integrity and declared targets
+        run: python scripts/a8-summarize.py docs/acceptance/a8-data
 
   r7-signing:
     name: R7 signing, R8 profiles and A2/A3/A5 acceptance (${{ matrix.os }})

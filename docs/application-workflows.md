@@ -89,3 +89,9 @@ compatibility claim.
 
 See [the A4 acceptance record](acceptance/a4-application-workflows.md) for exact
 tasks, artifacts, results and the completed user-image check.
+
+For shared use, consult the [tested configurations and support boundaries](support-matrix.md).
+An Open WebUI connection normally uses one Eugene application key for its users;
+Eugene's limits and usage attribution apply to that key, not to each WebUI login.
+Budget concurrent application keys against the runtime's slots and test your own
+model/context/workload before increasing limits.
