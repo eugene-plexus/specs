@@ -15,7 +15,9 @@ authenticated gateway, driver and local vision model. See
 [A3 acceptance](../acceptance/a3-client-keys-run.md).
 A5 passed scoped admission across two real gateways, durable recovery and usage
 attribution on Windows and Linux; see [A5 acceptance](../acceptance/a5-scoped-keys-run.md).
-Work through A6-A8 in order. There is no release slice, deadline, or duration estimate.
+Work through A6, A6b, A7 and A8 in order. Troy approved adding A6b on
+2026-09-21 and completing these slices before the next release. There is no
+release slice, deadline, or duration estimate.
 `v0.1.0-alpha.1` is already published and remains the available tester build;
 do not retract it, move its tag, or silently replace its assets. A future
 publication is a separate decision after reassessment.
@@ -70,10 +72,12 @@ The previous roadmap's contemporaneous phrases such as "still owed" and
 | A4 | Supported real applications complete useful local tasks | A1/A2; uses A3 credentials |
 | A5 | Keys constrain model access and consumption, with attributable usage | A3 |
 | A6 | A local-only workload cannot fall through to a cloud backend | A5 policy, driver capability contract |
-| A7 | A failed update or lost installation has a tested recovery path | Final state from A3/A5/A6 included in backups |
-| A8 | Capacity and hardware support claims have measured limits | A4-A7 |
+| A6b | Failover preserves request policy, deadlines and uncertain outcomes | A6, existing stream commit boundary |
+| A7 | A failed update or lost installation has a tested recovery path | Final state from A3/A5/A6/A6b included in backups |
+| A8 | Capacity and hardware support claims have measured limits | A4-A7, including A6b |
 
-A1 is complete; A2-A8 are **not started**. Completion entries must name the
+A1-A5 are complete; A6 and A6b are **in progress**; A7-A8 are not started.
+Completion entries must name the
 implementation revisions, acceptance record, observed limitations and any
 remaining physical checks. Do not mark a slice complete solely because unit
 tests pass or its code has been written.
@@ -296,6 +300,44 @@ counting external stub receives zero prompt/image requests in those cases,
 including outage, fallback, alias, stale-cache and configuration-change paths.
 A separate permitted key can still use the intended cloud route. No secret
 or content appears in rejection diagnostics.
+
+## A6b — Failover safety
+
+**Problem:** no response does not prove no work occurred. Existing protection
+against switching after streamed output and retrying a timed-out generation
+does not establish safe retries for every transport/server failure, a total
+request deadline, or controlled recovery of an overloaded backend.
+
+**Scope:** classify attempts as safe to retry, terminal, or indeterminate.
+Do not automatically replay ambiguous work, including CLI-internal actions.
+Keep the first text/tool fragment as the stream commit boundary. Carry one
+request identifier across gateway/driver attempts and enforce a single elapsed
+time budget over preparation, wake, generation and fallback. Cancel owned work
+on disconnect or expiry; do not claim cancellation proves the remote provider
+stopped computing.
+
+Preserve provider retry hints, impose bounded cooldowns and controlled recovery
+rather than immediately returning every new request to a failing primary.
+Every fallback must preserve the request's required capabilities and A5/A6
+permissions. Record attempt outcomes and total elapsed time, distinguish known
+usage from unknown usage on failed attempts, and never equate unknown usage
+with zero cost. Billing integration is outside this slice.
+
+The gateway does not promise exactly-once external tool effects: execution,
+idempotency and reconciliation remain responsibilities of the tool executor.
+Refuse an unsafe automatic retry with an intelligible reason.
+
+**Touches:** shared driver failure/policy contract, gateway request lifetime,
+routing, metrics/diagnostics, operator documentation and isolated acceptance.
+
+**Done when:** counting HTTP/CLI fixtures prove safe connection failure and
+overload recovery, no automatic replay of ambiguous work, no mixed output after
+partial text/tool fragments, no attempt after the total deadline, cancellation
+and admission cleanup, cooldown/recovery without repeated primary hammering,
+and zero requests to policy- or capability-ineligible fallbacks. A shared request
+ID links attempts, and incomplete usage remains visibly incomplete. Include
+streaming, non-streaming, embeddings, aliases and configuration changes where
+applicable. Keep live installs and frozen release artifacts unchanged.
 
 ## A7 — Restore and failed-update recovery
 

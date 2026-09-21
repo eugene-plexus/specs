@@ -603,6 +603,14 @@ components:
       required:
         - messages
       properties:
+        localOnly:
+          type: boolean
+          default: false
+          description: |
+            Internal routing policy. When true the driver must refuse before
+            forwarding any prompt/image unless its active engine is classified
+            local. Never forward this field upstream. Checked on the active
+            engine at execution, so stale gateway metadata cannot relax policy.
         callerSettings:
           type: array
           items:
@@ -944,6 +952,10 @@ components:
       required:
         - input
       properties:
+        localOnly:
+          type: boolean
+          default: false
+          description: Internal policy; require a local active engine before forwarding any input.
         input:
           type: array
           minItems: 1
@@ -1000,6 +1012,23 @@ components:
       required:
         - backend
       properties:
+        locality:
+          type: string
+          enum: [local, external, unknown]
+          default: unknown
+          description: |
+            Active engine's configured trust classification. Managed local
+            runtimes are local; cloud APIs and subscription CLIs are external.
+            Custom HTTP endpoints require an explicit operator assertion;
+            URLs, hostnames and loopback addresses never prove locality.
+            Unknown and absent are ineligible for local-only routing.
+        localOnlyEnforced:
+          type: boolean
+          default: false
+          description: |
+            True only when this driver enforces GenerateRequest/EmbedRequest
+            localOnly against the active engine before invoking it. A local
+            classification alone is insufficient for a protected request.
         backend:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
         provider:
