@@ -1710,7 +1710,7 @@ components:
           items:
             $ref: '#/components/schemas/ChatCompletionMessage'
         max_tokens:
-          type: integer
+          type: [integer, 'null']
           minimum: 1
           description: |
             Positive JSON integer generation limit; booleans, strings and floats
@@ -1718,7 +1718,7 @@ components:
             Normalized before defaults and preserved on every fallback attempt.
             Engine token accounting is not guaranteed to match OpenAI's.
         max_completion_tokens:
-          type: integer
+          type: [integer, 'null']
           minimum: 1
           description: |
             Alias of max_tokens. If both are non-null they must be equal, otherwise
