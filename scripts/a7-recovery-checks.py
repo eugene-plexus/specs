@@ -22,10 +22,12 @@ recovery = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(recovery)
 
 
-def refused(action, label):
+def refused(action, label, detail=None):
     try:
         action()
-    except Exception:
+    except Exception as exc:
+        if detail is not None:
+            assert detail in str(exc), (label, str(exc))
         print("PASS refusal:", label)
     else:
         raise AssertionError("did not refuse " + label)
@@ -65,6 +67,9 @@ def run():
             db.commit()
         (root / "logs").mkdir()
         (root / "logs" / "discard.log").write_text("not retained")
+        engine = root / "engines" / "example" / "bin"
+        engine.mkdir(parents=True)
+        (engine / "required-library.dat").write_bytes(b"retained engine support file")
         model = root / "model.gguf"
         model.write_bytes(b"external-model")
         baseline = {
@@ -118,6 +123,7 @@ def run():
         )
         assert not replacement.exists()
         original_manifest = (destination / "manifest.sealed").read_bytes()
+        original_format = manifest["format"]
         manifest["format"] = 999
         (destination / "manifest.sealed").write_bytes(
             box.encrypt(json.dumps(manifest).encode())
@@ -129,6 +135,19 @@ def run():
             "future backup format",
         )
         assert not replacement.exists()
+        manifest["format"] = original_format
+        manifest["files"][0]["path"] = "../escape"
+        (destination / "manifest.sealed").write_bytes(
+            box.encrypt(json.dumps(manifest).encode())
+        )
+        refused(
+            lambda: recovery.restore(
+                destination, replacement, "password", None, reconstruct=False
+            ),
+            "path traversal",
+            "invalid inventory path",
+        )
+        assert not replacement.exists() and not (Path(temporary) / "escape").exists()
         (destination / "manifest.sealed").write_bytes(original_manifest)
         model.write_bytes(b"changed")
         refused(
@@ -155,6 +174,9 @@ def run():
             root / "client_keys.json"
         ).read_bytes()
         assert not (replacement / "state/logs").exists()
+        assert (
+            replacement / "state/engines/example/bin/required-library.dat"
+        ).read_bytes() == b"retained engine support file"
         refused(
             lambda: recovery.activate(replacement, original_stopped=False),
             "identity activated beside original",
@@ -165,10 +187,14 @@ def run():
             ),
             "overwrite existing destination",
         )
-        refused(
-            lambda: recovery.validate_restore(replacement),
-            "wrong installed environment",
-        )
+        with patch.object(
+            recovery, "environment", return_value={**environment, "python": "0.0.0"}
+        ):
+            refused(
+                lambda: recovery.validate_restore(replacement),
+                "incompatible installed Python version",
+                "installed Python/packages differ from checkpoint",
+            )
         assert {
             str(p.relative_to(root)): recovery.digest(p)
             for p in root.rglob("*")

@@ -49,7 +49,7 @@ instrument now configures the exact test engine directory. A second run revealed
 that `driverPort` is not a runtime field: the automatic driver chose the default
 8090, found it occupied, and refused to bind. The instrument now predeclares its
 companion on an allocated ephemeral port. No occupant was stopped or reconfigured.
-Both failed runs cleaned up their own processes before the successful run.
+Both failed runs cleaned up their own processes.
 
 ## Refusal checks and remaining work
 

@@ -167,6 +167,8 @@ def environment():
 
 
 def validate_state(root):
+    if not (root / "agent.yaml").is_file():
+        raise ValueError("agent.yaml is missing; source state will not be initialized by recovery")
     from eugene_plexus_agent.state import AgentState
     from eugene_plexus_agent.node_identity import NodeIdentityStore
 
@@ -274,7 +276,9 @@ def inventory(root, external):
                 raise ValueError(
                     f"linked directory must be inventoried separately: {path}"
                 )
-            if directory in EXCLUDED:
+            if directory in {".cache", "__pycache__", "logs"} or (
+                base == root and directory in EXCLUDED
+            ):
                 dirs.remove(directory)
                 omitted.append(str(path.relative_to(root)))
         for name in files:
@@ -370,6 +374,22 @@ def backup(root, destination, password, phrases, external, *, stopped):
                 {
                     "path": str(path),
                     "build": json.loads(path.read_text(encoding="utf-8")),
+                }
+            )
+        if path.name in ("llama-server", "llama-server.exe"):
+            version = subprocess.run(
+                [str(path), "--version"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                check=True,
+            )
+            engine_metadata.append(
+                {
+                    "path": str(path),
+                    "versionOutput": (version.stdout + version.stderr)[:4096],
                 }
             )
     manifest = {

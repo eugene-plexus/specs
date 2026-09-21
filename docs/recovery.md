@@ -55,8 +55,11 @@ the tool refuses that layout instead of omitting it.
 
 ## Windows worker
 
-Download `scripts/recovery.py` from the development revision you are using. Keep a
-copy outside the installation. Use an Administrator PowerShell for service stop
+Download [scripts/recovery.py](../scripts/recovery.py) from the development revision
+you are using. Keep a trusted copy outside the installation. The saved `recover.py`
+is a convenience copy, not a signed executable: if backup storage was tampered
+with, fetch the helper from trusted source control before entering its password.
+Use an Administrator PowerShell for service stop
 and later registration. Example paths below assume the service installation.
 
 ```powershell
@@ -117,10 +120,30 @@ identities, URLs or external model paths. Sign in with the original passphrase;
 check profiles, a previously revoked key, and an actual inference request. Close
 the foreground process before registering the replacement as a service.
 
-In an elevated shell, set the two bootstrap paths above in Machine environment,
+In an elevated shell, set the two bootstrap paths above in Machine environment
+using `[Environment]::SetEnvironmentVariable(name, value, 'Machine')`,
 then run the replacement Python's `-m eugene_plexus_agent.winservice update`
-(or `install` if the failed update removed registration). Set automatic startup
-and start the service. Recreate tray/desktop shortcuts and any required service
+(or `install` if the failed update removed registration). Also update the service's
+own bootstrap environment; Windows' service manager may retain old Machine values
+until reboot. Keep the original bind port (8079 below is the default):
+
+```powershell
+$serviceKey = 'HKLM:\SYSTEM\CurrentControlSet\Services\EugenePlexusAgent'
+$bootstrap = @(
+  "EUGENE_PLEXUS_AGENT_CONFIG_FILE=$replacement\state\agent.yaml",
+  "EUGENE_PLEXUS_AGENT_ENGINE_ROOT=$replacement\state\engines",
+  'EUGENE_PLEXUS_AGENT_BIND_PORT=8079'
+)
+New-ItemProperty -LiteralPath $serviceKey -Name Environment -PropertyType MultiString `
+  -Value $bootstrap -Force | Out-Null
+Set-Service EugenePlexusAgent -StartupType Automatic
+Start-Service EugenePlexusAgent
+```
+
+Preserve any other deliberate bootstrap overrides, including the original Library
+default model folder when it was supplied through the service environment rather
+than saved in configuration. Record those before updating. Recreate tray/desktop
+shortcuts and any required service
 permissions separately. Sign in once under the restored service so LocalSystem
 can save its own unlock credential. Network share logins in configuration survive,
 but share availability and Windows permissions still need checking.
