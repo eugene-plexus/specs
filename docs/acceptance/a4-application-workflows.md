@@ -97,6 +97,8 @@ Local artifacts: `%TEMP%/ep-a4-acceptance-6jthrx_c`: `protocol.jsonl`,
 Open WebUI's isolated state is under WSL
 `/home/tcorbin/.cache/ep-a4-webui-data-6jthrx_c`. These are local evidence paths,
 not public downloadable artifacts.
+The isolated runtime, components, empty agent, observer and Open WebUI process
+were stopped after the run; the evidence and downloaded projector were retained.
 
 ## Regression checks
 
@@ -140,3 +142,9 @@ All six exact-revision component workflows passed:
 [UI](https://github.com/eugene-plexus/ui/actions/runs/35600992840).
 The 184 static assets are byte-identical in the source export, distribution
 checkout and wheel. Installer isolation and frozen-release artifact checks pass.
+
+Development installer delivery: `9432a672d0500734720bc5d3cc2d0ebe972a9139`.
+Its [combined acceptance workflow](https://github.com/eugene-plexus/specs/actions/runs/35601301698)
+tests the pinned components on Windows and Linux; the
+[container workflow](https://github.com/eugene-plexus/specs/actions/runs/35601301685)
+builds, verifies and publishes the development `edge` image.
