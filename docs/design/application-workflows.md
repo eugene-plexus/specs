@@ -1,7 +1,7 @@
 # A4: application workflows and bounded images
 
-Status: implementation delivered 2026-09-21. Real coding, chat and image
-preflight tasks passed; a user-supplied image remains pending. The
+Status: implementation and acceptance completed 2026-09-21. Real coding, chat,
+image preflight and user-supplied image tasks passed. The
 [acceptance record](../acceptance/a4-application-workflows.md) owns those results.
 
 OpenAI chat accepts ordered `text` and `image_url` content parts on user

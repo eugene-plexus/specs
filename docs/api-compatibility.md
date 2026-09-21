@@ -10,7 +10,7 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/messages` | Supported subset | Anthropic text/tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
 | `/v1/responses`, audio, files, batches, provider storage | Not implemented | No Responses API or general provider endpoint parity. |
-| OpenAI image/content-part input | Implemented; application acceptance in progress | Ordered text plus inline PNG/JPEG on user messages, confirmed vision backends only. See limits below. Anthropic images remain refused. |
+| OpenAI image/content-part input | Supported subset | Ordered text plus inline PNG/JPEG on user messages, confirmed vision backends only. See limits below. Anthropic images remain refused. |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning effort, penalties, logit bias, parallel-tool control, log probabilities | Rejected on chat | Unsupported consequential settings return 400, including unknown nested message/tool/format fields. |
 | All clients, providers and reasoning-token accounting | Unverified | Captured requests test transport semantics; they do not demonstrate every model's behavior. |

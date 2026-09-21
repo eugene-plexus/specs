@@ -66,6 +66,9 @@ on CPU** is optional. Projector paths are local to that node; Eugene does not
 automatically copy or map them from a NAS. Start the runtime and check
 `x_eugene_plexus.image_input: true` in the gateway's `/v1/models` response.
 
+Eugene's built-in Playground attachment control still accepts text files only.
+Use **Open WebUI** for this image workflow.
+
 Attach a PNG or JPEG using Open WebUI's attachment control and ask a question
 whose answer is visible in it. If Open WebUI's model settings have Vision
 disabled, enable it for this confirmed vision model. The initial implementation
@@ -85,4 +88,4 @@ document parsing, RAG and all built-in Open WebUI tools are outside this recipe'
 compatibility claim.
 
 See [the A4 acceptance record](acceptance/a4-application-workflows.md) for exact
-tasks, artifacts, results and the remaining user-image check.
+tasks, artifacts, results and the completed user-image check.

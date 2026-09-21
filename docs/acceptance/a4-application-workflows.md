@@ -1,8 +1,8 @@
 # A4 application workflow acceptance
 
-Run date: 2026-09-21, Windows plus WSL2 Ubuntu. **Implementation is delivered;
-the roadmap gate remains open for a user-supplied image.** The image below is a
-synthetic preflight, not a substitute for that check. The live NAS and Windows
+Run date: 2026-09-21, Windows plus WSL2 Ubuntu. **Implementation and acceptance
+are complete, including a user-supplied image through Open WebUI.** The synthetic
+preflight and final user-image check are recorded separately. The live NAS and Windows
 service were not updated, stopped or reconfigured.
 
 ## Versions and isolation
@@ -34,7 +34,7 @@ device context. This run is not a GPU capacity or performance benchmark.
 | Normal Claude Code token recipe | **Pass.** Separate non-bare invocation with `ANTHROPIC_AUTH_TOKEN`, local model and isolated config answered `2+2` with `4`; 1,331 ms. |
 | Open WebUI chat | **Pass.** Actual browser UI sent `What is 17 plus 25? Answer briefly.`; the model answered `42`, retained in the saved conversation. |
 | Open WebUI image preflight | **Pass.** Uploaded a 224×224 red PNG through the attachment control, asked its color, received `Red`; the application saved the image-bearing conversation. |
-| User-supplied image | **Pending.** Need a chosen PNG/JPEG and a question with a visibly verifiable answer. No user image was chosen by this run. |
+| User-supplied image | **Pass.** Uploaded the user's 828×1278 PNG through Open WebUI. With a neutral description prompt, the local model correctly described the sepia tone, dark hair and face pointing toward the image's left. Original PNG bytes matched the image reaching the gateway. Completed response saved after 45,876 ms. |
 | Cold loading and streaming | **Pass.** Authenticated image request woke the stopped runtime; `swapped_in=true`, reported wake wait 5,338 ms. First response headers at 13.76 s, complete at 15.02 s; streamed `Red`. Both real applications also streamed successfully. |
 | Cancellation | **Pass.** In Open WebUI, requested a long list, observed an actively decoding backend slot with eight tokens decoded, pressed the actual Stop button, and observed the slot idle after 187 ms. Timed with a monotonic clock. |
 | Text-only target | **Pass.** Removed the isolated runtime's projector, restarted it, observed `image_input=false`, and received HTTP 400 naming the missing vision capability. Restoring the projector restored `image_input=true`. |
@@ -45,6 +45,45 @@ The coding repository allowed only `Read(./clamp.py)`, `Read(./check.py)`,
 ambient settings were disabled. No stub driver or canned response supplied any
 task result. This is one small coding success, not a claim about arbitrary
 repositories or the quality of every tool-capable model.
+
+## Final user-image check
+
+The user selected a 407,010-byte PNG and supplied the expected visible features:
+an old sepia portrait, dark hair and a woman looking toward the image's left.
+The original image was inspected before testing. A new isolated workbench used
+the same application, engine, model and runtime settings above, with a new
+registered client key and ephemeral component ports. The actual Open WebUI
+attachment control uploaded the file; the prompt did not include the expected
+answer:
+
+> Describe this photograph in 2–3 sentences, including its color tone, the
+> subject's hair and clothing, and which way the subject is facing (toward
+> the image's left or right).
+
+The local model answered:
+
+> This is a vintage, sepia-toned portrait of a young woman. She has dark,
+> bobbed hair and is wearing a dark jacket with light embroidery and a white
+> top, complemented by a pearl necklace. The subject is facing toward the
+> image's left, smiling gently at the camera.
+
+The three user-specified features are correct and grounded in the image.
+The extra claim that the necklace is pearl is not established by the photo;
+"at the camera" is imprecise for the sideways gaze. Those are model-description
+limitations, not additional accepted facts. No identity was requested or inferred.
+
+The observed authenticated request used ordered `text`, `text`, `image_url`
+parts and received HTTP 200. The inline PNG's hash matched a data URL made from
+the original file byte for byte. The saved Open WebUI conversation selected
+`a4-vision`, recorded a completed answer without an error, and reported 6,034
+prompt tokens and 266 completion tokens. Token accounting is the backend's
+report, not a claim that all completion tokens were visible text.
+
+Private local evidence is retained in `%TEMP%/ep-a4-acceptance-6mp1v735`:
+`input-evidence.json`, `protocol.jsonl`, `user-image-result.json`,
+`user-image-chat-record.json` and `user-image-result.png`. The user's photograph,
+full local path, account credentials and image-bearing chat record are not
+published in this repository. The isolated processes were stopped after the check.
 
 ## Measured client requests
 

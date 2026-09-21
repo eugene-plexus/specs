@@ -6,15 +6,14 @@ The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: A4.** A1 and A2 completed 2026-09-20; A3 completed 2026-09-21.
-A4 implementation and isolated real-client checks landed 2026-09-21. Its
-remaining acceptance gate is a user-supplied image through Open WebUI; the
-synthetic image preflight does not close that gate. See
-[A4 results and remaining check](../acceptance/a4-application-workflows.md).
+**Pickup: A5.** A1 and A2 completed 2026-09-20; A3 and A4 completed 2026-09-21.
+A4's final user-supplied image passed through the actual Open WebUI frontend,
+authenticated gateway, driver and local vision model. See
+[A4 acceptance](../acceptance/a4-application-workflows.md).
 [A1 acceptance](../acceptance/a1-home-readiness-run.md),
 [A2 acceptance](../acceptance/a2-request-settings-run.md),
 [A3 acceptance](../acceptance/a3-client-keys-run.md).
-Work through A4-A8 in order. There is no release slice, deadline, or duration estimate.
+Work through A5-A8 in order. There is no release slice, deadline, or duration estimate.
 `v0.1.0-alpha.1` is already published and remains the available tester build;
 do not retract it, move its tag, or silently replace its assets. A future
 publication is a separate decision after reassessment.
