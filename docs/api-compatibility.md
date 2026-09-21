@@ -1,6 +1,6 @@
 # API compatibility
 
-This describes development builds after A2/A3, not the frozen `v0.1.0-alpha.1`.
+This describes development builds after A4 implementation, not the frozen `v0.1.0-alpha.1`.
 Compatibility means the features below, not every feature of a provider API.
 
 | Surface or feature | Status | Boundary |
@@ -10,7 +10,7 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/messages` | Supported subset | Anthropic text/tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
 | `/v1/responses`, audio, files, batches, provider storage | Not implemented | No Responses API or general provider endpoint parity. |
-| Images/content-part arrays | Rejected | Image support and acceptance are A4. Do not send an image expecting a text-only approximation. |
+| OpenAI image/content-part input | Implemented; application acceptance in progress | Ordered text plus inline PNG/JPEG on user messages, confirmed vision backends only. See limits below. Anthropic images remain refused. |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning effort, penalties, logit bias, parallel-tool control, log probabilities | Rejected on chat | Unsupported consequential settings return 400, including unknown nested message/tool/format fields. |
 | All clients, providers and reasoning-token accounting | Unverified | Captured requests test transport semantics; they do not demonstrate every model's behavior. |
@@ -84,3 +84,34 @@ Update gateway and inference-driver together when adopting A2. Older drivers do
 not understand caller-setting provenance. Contract/unit checks and isolated HTTP
 acceptance establish forwarding and refusals; live provider enforcement and newer
 client versions remain unverified.
+
+
+## Image input (A4)
+
+Use OpenAI chat user content parts of type `text` and `image_url`, with an
+inline `data:image/png;base64,...` or `data:image/jpeg;base64,...` URL. The gateway
+never fetches remote URLs, local paths or file IDs. Images on system, assistant
+or tool messages, animation, other formats, and explicit `detail: high/low` are
+refused. Omitted detail and `auto` are accepted. Text-only arrays are joined in
+order; arrays containing images remain structured through every routing attempt.
+
+Limits cover the entire conversation, including images in earlier turns:
+
+- Four images per request, each at most 5 MiB decoded; 10 MiB decoded total.
+- At most 16 million pixels per image and 8192 pixels along either dimension.
+- At most 16 MiB for the JSON body, including text and base64 overhead.
+
+The gateway and direct driver validate the file type and image bounds. Invalid
+images return a field-specific refusal; oversized HTTP bodies return 413 before
+JSON parsing. Image payloads are excluded from driver debug logs and upstream
+error excerpts.
+
+`x_eugene_plexus.image_input` on `GET /v1/models` means at least one candidate
+confirms vision support. Image requests use only those candidates; text-only
+fallbacks are skipped. The driver rechecks the loaded model before forwarding.
+Initially verified capability discovery is the single-model llama.cpp server's
+`/props` vision modality plus matching `/v1/models` identity. Other engines and
+multi-model endpoints do not yet advertise image input, even if they could
+support it outside Eugene. Unknown capability is not a promise.
+
+See [application setup](application-workflows.md) for the named client paths.

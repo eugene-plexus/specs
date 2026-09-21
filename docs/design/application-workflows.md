@@ -1,7 +1,8 @@
 # A4: application workflows and bounded images
 
-Status: implementation in progress. The acceptance gate remains the two real
-application tasks in the adoption roadmap, not these design decisions.
+Status: implementation delivered 2026-09-21. Real coding, chat and image
+preflight tasks passed; a user-supplied image remains pending. The
+[acceptance record](../acceptance/a4-application-workflows.md) owns those results.
 
 OpenAI chat accepts ordered `text` and `image_url` content parts on user
 messages. Text-only part arrays are normalized to text for every other engine.

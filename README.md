@@ -35,6 +35,8 @@ Everyone else builds an *engine* (llama.cpp, vLLM, MLX) or a *desktop chat app* 
 This order and this wording were adopted on 2026-09-18 ([`docs/design/release-roadmap.md`](docs/design/release-roadmap.md) decision #2). The design documents number the same ideas differently and deliberately — they keep the numbers older documents cite, so `#4` there is still the schema-driven config UI, which has not gone anywhere: it is now how line 2 prefills a profile rather than something worth leading with. [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md) §2 holds both lists side by side.
 
 Client credentials and revocation: [client-key management](docs/client-keys.md) (development builds after A3).
+Real local-model setup: [Claude Code and Open WebUI](docs/application-workflows.md)
+(A4 development builds, including bounded PNG/JPEG input through OpenAI chat).
 
 Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Current order of work: [adoption roadmap](docs/design/adoption-roadmap.md).
 
