@@ -1,7 +1,8 @@
 # A7 recovery acceptance
 
 Completed 2026-09-21. Windows and container recovery passed. Implementation:
-specs `7c51a0f`, hardened in `2d298fb`, `d2cdf4a` and `b7bf2ea`; the procedure is
+specs `7c51a0f`, hardened in `2d298fb`, `d2cdf4a` and `b7bf2ea`, delivered at
+`38aae19d42de678cc598d24ecb2676d82dadd31f`; the procedure is
 [backup and recovery](../recovery.md).
 
 Agent `253f6127e8586d3333c536efb8737ad0d69f5575` refuses startup and enrollment
@@ -59,7 +60,7 @@ Both failed runs cleaned up their own processes.
 
 ## Container recovery
 
-[Container run 35627102605](https://github.com/eugene-plexus/specs/actions/runs/35627102605)
+[Container run 35628054576](https://github.com/eugene-plexus/specs/actions/runs/35628054576)
 passed the existing image checks and the new recovery exercise before publishing
 development `edge`. `scripts/a7-container-acceptance.sh` uses that built image in
 a disposable derivative with `libgomp1` for its CPU inference fixture. The production
@@ -71,8 +72,8 @@ The same failed-package/incompatible-state scenario recovered profiles, scoped
 local-only policy and revocation, authenticated both nodes, and served the real
 Qwen3-0.6B completion through the recovered gateway and worker. This reconstructs
 both environments; it is not a restart of the pre-update virtual environment.
-Final timings: root/worker backup 2.984/2.499 s; root/worker recovery through
-login 12.343/9.389 s. All owned processes and the disposable container were removed.
+Final timings: root/worker backup 2.116/1.428 s; root/worker recovery through
+login 10.471/7.018 s. All owned processes and the disposable container were removed.
 The test's deliberately removed package existed only in that container's writable
 layer, not the image subsequently published.
 
@@ -94,10 +95,12 @@ Source file digests remain unchanged; private directory permissions, retained
 revocations, SQLite integrity and exclusion of expendable logs are checked.
 The Windows run found and fixed an unclosed SQLite handle during staging cleanup.
 
-Full specs CI passed at `2d298fb`
-([35626260508](https://github.com/eugene-plexus/specs/actions/runs/35626260508));
-final recovery refusal checks also passed locally on Windows and Linux, and the
-final container workflow verified actual inference against `b7bf2ea`. This slice
+Final specs CI passed at `38aae19`
+([35628054497](https://github.com/eugene-plexus/specs/actions/runs/35628054497)),
+including the Windows LocalSystem service smoke test and Windows/Linux recovery
+refusals. Final agent CI
+[35627944063](https://github.com/eugene-plexus/agent/actions/runs/35627944063) passed.
+The final container workflow verified actual inference with the delivered pins. This slice
 does not demonstrate Windows reboot before sign-in, physical Mac support,
 cross-platform restoration or external vLLM environment reconstruction. Those
 limits are preserved in [the procedure](../recovery.md) and the roadmap.
