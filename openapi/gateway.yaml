@@ -621,13 +621,13 @@ paths:
         this project removed from the driver at step 7, one layer up, in
         the client it most wants to keep.
 
-        ### What is dropped, and why dropping is honest
+        ### Compatibility hints and explicit refusals (A2)
 
-        `cache_control`, `thinking`, `top_k`, `metadata`,
-        `context_management` and any unknown field are **dropped
-        silently**. A blanket unknown-field refusal passes every refusal
-        test and then fails on the first real request, because this wire
-        carries a great deal we have no equivalent for.
+        `cache_control`, `thinking` and `context_management` remain accepted for
+        measured Claude Code compatibility, but are not enforced. Non-null ignored
+        hints are named in `x-eugene-plexus-ignored-settings` on both response modes.
+        `metadata` is discarded as an opaque annotation. Unknown top-level fields
+        and non-null `top_k` are rejected with 400 naming the field.
 
         `cache_control` appears on system blocks, on the last user
         content block **and on `tool_result` blocks**; prompt caching is
@@ -1689,6 +1689,12 @@ components:
 
     ChatCompletionRequest:
       type: object
+      additionalProperties: false
+      description: |
+        Supported chat settings only. Unknown properties, including nested message,
+        tool and response-format properties, return 400 with a field name. Arbitrary
+        JSON Schemas inside function parameters and response schemas are preserved.
+        Validation errors do not echo request values. See docs/api-compatibility.md.
       required:
         - model
         - messages
@@ -1707,9 +1713,17 @@ components:
           type: integer
           minimum: 1
           description: |
-            Maximum output tokens. Filled from the model's settings
-            profile when omitted, then always sent downstream
-            explicitly.
+            Positive JSON integer generation limit; booleans, strings and floats
+            are rejected. Null or absent uses the profile then gateway default.
+            Normalized before defaults and preserved on every fallback attempt.
+            Engine token accounting is not guaranteed to match OpenAI's.
+        max_completion_tokens:
+          type: integer
+          minimum: 1
+          description: |
+            Alias of max_tokens. If both are non-null they must be equal, otherwise
+            400 names max_completion_tokens. Neither spelling takes precedence over
+            a conflicting value. This does not add reasoning-token support to engines.
         temperature:
           type: number
           format: float
@@ -1728,11 +1742,13 @@ components:
             so the value went no further than this schema and nothing
             was logged. It has one now.
         stop:
-          type: array
-          items:
-            type: string
-          maxItems: 4
-          description: Stop sequences.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+              maxItems: 4
+          description: One stop sequence or up to four sequences; forwarded as an array.
         seed:
           type: integer
           description: |
@@ -1754,7 +1770,37 @@ components:
             `ChatCompletionChunk` objects terminated by `data: [DONE]`.
         user:
           type: string
-          description: Opaque client-supplied identifier, echoed into logs only.
+          description: Ignored client annotation; not stored, forwarded or used as identity.
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Ignored annotations; not provider storage or queryable metadata.
+        safety_identifier:
+          type: string
+          description: Ignored annotation; not an authenticated user identity.
+        n:
+          type: integer
+          const: 1
+          description: Only one completion is supported; any other non-null value returns 400.
+        logprobs:
+          type: boolean
+          const: false
+          description: Only false is supported; log probabilities are not implemented.
+        store:
+          type: boolean
+          const: false
+          description: Only false is supported; provider completion storage is not implemented.
+        stream_options:
+          type: object
+          additionalProperties: false
+          properties:
+            include_usage:
+              type: boolean
+          description: |
+            With streaming, true adds a usage-only chunk before DONE when the driver
+            reports usage. False omits usage. If absent, retains Eugene's historical
+            final choice chunk containing usage. Does not affect retained metrics.
         tools:
           type: array
           items:
@@ -2584,13 +2630,10 @@ components:
       description: |
         Request body for `POST /v1/messages`, in Anthropic's shape.
 
-        **Deliberately permissive, and the reason is a measurement.**
-        Every field this gateway does not honour is *ignored* rather
-        than rejected, because a real Claude Code request carries
-        `thinking`, `cache_control`, `metadata` and
-        `context_management` on the very first call, and a schema that
-        refused an unknown field would refuse every request from the
-        client this endpoint exists for.
+        Measured Claude Code hints (`thinking`, `cache_control`,
+        `context_management`) are accepted with a response header naming ignored
+        settings. Metadata is discarded. Unknown top-level settings and top_k
+        are explicitly rejected. This is a text/tool translation, not full parity.
 
         Consequently **this schema does not decide what is refused**.
         The refusals — image and document blocks, server-side tools,
@@ -2670,14 +2713,8 @@ components:
           type: integer
           minimum: 0
           description: |
-            **Read and dropped**, and this is a real loss rather than a
-            no-op: both local engines accept a top-k and neither of this
-            project's internal contracts carries one. It is now the
-            only such gap — `top_p` and `seed` had the same one until
-            2026-09-19, when `GenerateRequest` grew `topP` and `seed`.
-            Documented here so the omission is visible to whoever adds
-            it, and the shape of that fix is now written down one
-            document over.
+            Unsupported. A non-null value returns 400 naming top_k. Before A2
+            this was silently discarded despite controlling generation.
         stop_sequences:
           type: array
           items:
@@ -2723,10 +2760,9 @@ components:
             true for the one configuration asking for no thinking at
             all.
 
-            Dropping it is not a loss of control. A local model's
-            reasoning output is governed by `thinkingMode` on its
-            settings profile and by the driver's thinking filter, which
-            is the operator's decision rather than the caller's.
+            This is a compatibility concession, not enforcement of the caller's
+            reasoning budget. Non-null values are disclosed on the ignored-settings
+            response header. The operator's profile governs local thinking behavior.
         cache_control:
           type: object
           additionalProperties: true
