@@ -3404,6 +3404,15 @@ components:
         - elapsedMs
         - served
       properties:
+        retryDisposition:
+          type: string
+          enum: [safe, terminal, indeterminate]
+          description: Failure classification; absent for success or historical rows.
+        usageKnown:
+          type: boolean
+          description: Whether token usage is known for this attempt; false is not zero cost.
+        promptTokens: {type: integer, minimum: 0}
+        completionTokens: {type: integer, minimum: 0}
         driver:
           type: string
         runtime:
@@ -3462,6 +3471,13 @@ components:
         - outcome
         - tries
       properties:
+        requestId:
+          type: string
+          description: Gateway-generated correlation ID shared by every driver attempt.
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: Entire request lifetime, including preparation, wake and every attempt.
         clientKeyId: {type: string, description: Verified key identifier; absent for operator/service requests and pre-A5 rows.}
         clientKeyName: {type: string, description: Registry name captured for this request.}
         startedAt:

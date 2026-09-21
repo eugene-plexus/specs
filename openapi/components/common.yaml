@@ -336,6 +336,19 @@ components:
           description: |
             Eugene Plexus component name that originated the error
             (e.g. `"gateway"`, `"inference-driver:left"`).
+        retryDisposition:
+          type: string
+          enum: [safe, terminal, indeterminate]
+          description: |
+            Safe means this attempt did not accept application work and may
+            be replayed before any output. Terminal means the request must
+            be corrected. Indeterminate means work may have occurred; do not
+            replay automatically. Missing classification on a server failure
+            is indeterminate, never implicit permission to retry.
+        retryAfterSeconds:
+          type: number
+          minimum: 0
+          description: Parsed provider Retry-After delay; a scheduling hint, not permission to replay.
 
     # -------- Health --------
 

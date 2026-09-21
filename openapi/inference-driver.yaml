@@ -1069,6 +1069,16 @@ components:
           type: object
           description: Backend capabilities the gateway keys off when routing.
           properties:
+            supportedSettings:
+              type: array
+              items:
+                type: string
+              description: |
+                Explicit callerSettings this active adapter can carry without
+                dropping them. This does not promise the provider accepts every
+                possible value. Absent means unknown; ineligible for requests
+                requiring explicit settings. The driver still validates before
+                execution, including after a configuration change.
             streaming:
               type: boolean
               description: Whether `/v1/generate/stream` emits true incremental tokens.
