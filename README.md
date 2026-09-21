@@ -56,7 +56,8 @@ scoped access, local-only routing, conservative failover and tested recovery.
 for one specific CPU workload; the [support matrix](docs/support-matrix.md)
 distinguishes measured, simulated, pending and unsupported configurations.
 Friend sessions and remaining physical platform checks are still open. This is
-an alpha, not stable-release approval. Alpha.1 remains available unchanged for
+an alpha, not stable-release approval. See the [alpha.2 distribution checks](docs/acceptance/alpha2-release-run.md).
+Alpha.1 remains available unchanged for
 earlier testers; see its [acceptance limits](docs/acceptance/alpha1-release-run.md).
 
 ### Historical snapshot — 2026-09-17
