@@ -1,4 +1,4 @@
-"""Real gateway + Library processes; fixture agent/driver at the HTTP seam.
+"""R8/A2: real gateway + Library processes; fixture agent/drivers at the HTTP seam.
 
 Uses disposable state and dynamically allocated loopback ports. No engines,
 external providers, installed node state, or operator profiles are touched.
@@ -73,7 +73,8 @@ def main() -> None:
             format="gguf", status="present", sizeBytes=0, files=[])], scanned_at=datetime.now(UTC))
         (root / "library.yaml").write_text("modelRoots: []\nscanOnStartup: false\n")
         (root / "gateway.yaml").write_text(yaml.safe_dump({"profileCacheSeconds": 0,
-            "routingRefreshSeconds": 3600, "defaultMaxTokens": 2048, "defaultTemperature": 0.7}))
+            "routingRefreshSeconds": 3600, "defaultMaxTokens": 2048, "defaultTemperature": 0.7,
+            "modelSlots": [{"model": "fallback-test", "targets": ["friendly-alias", "fallback-alias"]}]}))
         sockets = [socket.socket() for _ in range(2)]
         for sock in sockets:
             sock.bind(("127.0.0.1", 0))
@@ -82,7 +83,7 @@ def main() -> None:
         gateway_url = f"http://127.0.0.1:{gateway_port}"
         calls: list[dict] = []
         reads: list[str] = []
-        state = {"outage": False}
+        state = {"outage": False, "fail_first": False}
 
         class Fixture(BaseHTTPRequestHandler):
             def log_message(self, *args: object) -> None:
@@ -108,13 +109,16 @@ def main() -> None:
                     self.reply(response.json(), response.status_code)
                 elif self.path == "/v1/components":
                     self.reply({"components": [{"name": "fixture-driver", "kind": "inference-driver",
-                                                "url": agent_url + "/driver"}]})
+                                                "url": agent_url + "/driver"},
+                        {"name": "fallback-driver", "kind": "inference-driver",
+                         "url": agent_url + "/fallback"}]})
                 elif self.path == "/v1/runtimes":
                     self.reply({"runtimes": [{"name": "fixture-runtime", "modelAlias": "friendly-alias",
                         "modelPath": model_path, "localPath": "/wrong/local-copy.gguf", "status": "ready",
                         "engine": "llama_cpp", "host": "127.0.0.1", "port": 1}]})
                 elif self.path.endswith("/v1/info"):
-                    self.reply({"backend": "openai_compat_http", "modelId": "friendly-alias",
+                    self.reply({"backend": "openai_compat_http", "modelId":
+                                "fallback-alias" if self.path.startswith("/fallback/") else "friendly-alias",
                                 "runtime": "fixture-runtime"})
                 elif self.path == "/v1/node":
                     self.reply({"enrolled": False})
@@ -124,6 +128,9 @@ def main() -> None:
             def do_POST(self) -> None:
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 calls.append(body)
+                if state["fail_first"] and self.path.startswith("/driver/"):
+                    self.reply({"error": "fixture unavailable"}, 503)
+                    return
                 result = {"content": "profile-ok", "modelId": "friendly-alias",
                           "backend": "openai_compat_http", "finishReason": "stop"}
                 if self.path.endswith("/stream"):
@@ -175,6 +182,42 @@ def main() -> None:
                     assert response.status_code == 200, response.text
                     assert "profile-ok" in response.text, response.text
                     return calls[-1]
+
+                # A2 regression: actual HTTP and persisted profile, not a helper.
+                client.put(url + "/" + profile_id, json={**spec, "maxTokens": 2048}).raise_for_status()
+                evidence = []
+                for field in ("max_completion_tokens", "max_tokens"):
+                    for stream in (False, True):
+                        for fallback in (False, True):
+                            state["fail_first"] = fallback
+                            before = len(calls)
+                            generate(stream=stream, model="fallback-test" if fallback else "friendly-alias",
+                                     **{field: 25})
+                            forwarded = calls[before:]
+                            assert len(forwarded) == (2 if fallback else 1), forwarded
+                            assert all(call["maxTokens"] == 25 for call in forwarded), forwarded
+                            assert all(call["callerSettings"] == ["maxTokens"] for call in forwarded), forwarded
+                            evidence.append({"field": field, "stream": stream, "fallback": fallback,
+                                             "driverLimits": [call["maxTokens"] for call in forwarded]})
+                state["fail_first"] = False
+                print("PASS A2 persisted profile=2048; HTTP driver captures " + json.dumps(evidence), flush=True)
+                schema = {"type": "json_schema", "json_schema": {"name": "answer", "strict": True,
+                          "schema": {"type": "object", "properties": {"x": {"type": "integer"}},
+                                     "required": ["x"], "additionalProperties": False}}}
+                for stream in (False, True):
+                    got = generate(stream=stream, response_format=schema, max_completion_tokens=25)
+                    assert got["responseFormat"] == schema, got
+                before = len(calls)
+                for extra in ({"max_tokens": 25, "max_completion_tokens": 26},
+                              {"max_completion_tokens": True}, {"reasoning_effort": "high"}):
+                    refused = client.post(gateway_url + "/v1/chat/completions", json={
+                        "model": "friendly-alias", "messages": [{"role": "user", "content": "SECRET"}], **extra})
+                    assert refused.status_code == 400, refused.text
+                    assert refused.json()["error"]["param"] in extra, refused.text
+                    assert "SECRET" not in refused.text
+                assert len(calls) == before
+                print("PASS A2 structured-output wire and safe refusals before generation", flush=True)
+                client.put(url + "/" + profile_id, json=spec).raise_for_status()
 
                 for endpoint in ("/v1/chat/completions", "/v1/messages"):
                     for stream in (False, True):

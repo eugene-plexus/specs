@@ -6,8 +6,10 @@ The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: A2.** A1 completed 2026-09-20; [acceptance](../acceptance/a1-home-readiness-run.md).
-Work through A2-A8 in order. There is no release slice, deadline, or duration estimate.
+**Pickup: A3.** A1 and A2 completed 2026-09-20;
+[A1 acceptance](../acceptance/a1-home-readiness-run.md),
+[A2 acceptance](../acceptance/a2-request-settings-run.md).
+Work through A3-A8 in order. There is no release slice, deadline, or duration estimate.
 `v0.1.0-alpha.1` is already published and remains the available tester build;
 do not retract it, move its tag, or silently replace its assets. A future
 publication is a separate decision after reassessment.
@@ -106,6 +108,10 @@ correction; the installed first-use acceptance instrument.
 - Preserve the original alpha failure record and add new evidence alongside it.
 
 ## A2 — Request settings and explicit compatibility
+
+**Completed 2026-09-20.** [Acceptance and captured wire](../acceptance/a2-request-settings-run.md);
+[supported feature matrix](../api-compatibility.md). Live updates may wait while
+Troy accumulates slices; A2 acceptance used isolated processes.
 
 **Problem:** the chat request model silently drops `max_completion_tokens`.
 The real translation then substitutes a profile default. Image content parts
