@@ -41,7 +41,7 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=bdd684c09d25757f957977e992e5756dbbd07c3e
+PIN_AGENT=253f6127e8586d3333c536efb8737ad0d69f5575
 PIN_CONTROL=7fe2d17c213b27860cd6bbf9db406b4f0973ae39
 PIN_GATEWAY=3ca10a11e690c3d7ec3f89ced16de42b896e9bfb
 PIN_DRIVER=352993a351ce2925fb7a0532fb7028175a15d364
@@ -370,6 +370,10 @@ if [ "$NATIVE_APPLE" = 1 ]; then
 fi
 
 # --- 3. packages ------------------------------------------------------
+if [ -f "$PREFIX/agent.yaml" ]; then
+    warn "Before updating an initialized install, keep a stopped-install checkpoint: https://github.com/eugene-plexus/specs/blob/main/docs/recovery.md"
+    warn "Rollback restores matching software AND state; installing an older release does not undo data migrations."
+fi
 gh_archive() { printf 'https://github.com/eugene-plexus/%s/archive/%s.tar.gz' "$1" "$2"; }
 
 say "installing Eugene Plexus"

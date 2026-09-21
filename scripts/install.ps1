@@ -105,7 +105,7 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "bdd684c09d25757f957977e992e5756dbbd07c3e"
+    "agent"            = "253f6127e8586d3333c536efb8737ad0d69f5575"
     "control"          = "7fe2d17c213b27860cd6bbf9db406b4f0973ae39"
     "gateway"          = "3ca10a11e690c3d7ec3f89ced16de42b896e9bfb"
     "inference-driver" = "352993a351ce2925fb7a0532fb7028175a15d364"
@@ -1159,6 +1159,10 @@ else {
 }
 
 # --- 3. packages ------------------------------------------------------
+if (Test-Path $Config) {
+    Warn "Before updating an initialized install, keep a stopped-install checkpoint: https://github.com/eugene-plexus/specs/blob/main/docs/recovery.md"
+    Warn "Rollback restores matching software AND state; installing an older release does not undo data migrations."
+}
 # **Stop a running install before replacing its files.** The logon task
 # and the service both execute `Scripts\eugene-plexus-agent.exe`, and a
 # Windows process holds its own executable open, so `uv pip install`

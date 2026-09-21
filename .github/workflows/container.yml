@@ -33,6 +33,8 @@ on:
       - "docker/**"
       - "scripts/install.sh"
       - "scripts/compose-acceptance.sh"
+      - "scripts/recovery.py"
+      - "scripts/a7-*"
       - "unraid/eugene-plexus.xml"
       - ".github/workflows/container.yml"
   workflow_dispatch:
@@ -95,6 +97,10 @@ jobs:
 
       - name: Build and verify the image (23 checks)
         run: bash scripts/compose-acceptance.sh
+
+      - name: Restore isolated control plane and worker after a failed update
+        if: inputs.release_tag == ''
+        run: bash scripts/a7-container-acceptance.sh
 
       # Only reached when the script exited 0, which it does only with
       # zero failures.
