@@ -110,7 +110,7 @@ $PIN = @{
     "gateway"          = "899ae992f6752439924a9ffbd050f2d4fa9cd63b"
     "inference-driver" = "ed26e6c5435b30ac8e9e4cbaeb55952e4448bdd2"
     "library"          = "8502ac33cb6ac5bf66e07ac1a0afe39967ef98e1"
-    "ui"               = "0e3a2028f8c7dffae55f6507818e964c47e6c0cd"  # branch `dist`, not `main`
+    "ui"               = "3a457153f2f22e3025dd44f96512b6ea60e97be4"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
