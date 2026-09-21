@@ -40,8 +40,8 @@ subprocess fixture. Its HTTP fixture counts accepted application requests and
 correlation headers. The CLI fixture writes an action marker and exits with an
 error; the marker occurs once and the fallback receives no request.
 
-- Windows evidence: `%TEMP%/ep-a6b-acceptance-w7ixi_za`.
-- Linux/WSL evidence: `/tmp/ep-a6b-acceptance-iri_w18n`.
+- Windows evidence: `%TEMP%/ep-a6b-acceptance-cylozaev`.
+- Linux/WSL evidence: `/tmp/ep-a6b-acceptance-3n7d9fko`.
 - Both prove overload cooldown and two-probe recovery, shared IDs, no replay of
   accepted-but-failed/malformed results, no mixed partial text/tool streams,
   deadline/disconnect cancellation, safe rescue after connection refusal, and
@@ -51,9 +51,11 @@ error; the marker occurs once and the fallback receives no request.
   to disallowed/external fallbacks. A2/R8's eight wire-shaping cases passed with
   the primary restored through cooldown between independent failure scenarios.
 
-Windows gateway suite: 535 passed before the final eight parametrized safety
-cases; all 43 affected safety/lifetime/stream bookkeeping checks passed after
-the final edits. Driver: 506 passed, three opt-in live-provider tests skipped.
+Gateway CI: 543 passed before the final overlapping-request regressions; all
+45 affected safety/lifetime/stream bookkeeping checks passed after those edits.
+An older in-flight success cannot clear a newer cooldown, another failure cannot
+shorten its Retry-After delay, and an invalidated probe retains exclusive ownership
+until it finishes. Driver: 506 passed, three opt-in live-provider tests skipped.
 UI: 764 passed. Python lint/types and UI lint/types/production export passed.
 All six consumers regenerated from published specs `25534e6`.
 
@@ -63,7 +65,7 @@ All six consumers regenerated from published specs `25534e6`.
 | --- | --- |
 | agent | `bdd684c09d25757f957977e992e5756dbbd07c3e` |
 | control | `7fe2d17c213b27860cd6bbf9db406b4f0973ae39` |
-| gateway | `4ead7e830693e8dba13bc7386dcaf76ef7a83175` |
+| gateway | `3ca10a11e690c3d7ec3f89ced16de42b896e9bfb` |
 | inference-driver | `352993a351ce2925fb7a0532fb7028175a15d364` |
 | library | `8502ac33cb6ac5bf66e07ac1a0afe39967ef98e1` |
 | UI source | `eea85b9fcacec198a9559dcf898be22fe34c7d0e` |

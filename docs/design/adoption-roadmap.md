@@ -309,7 +309,7 @@ or content appears in rejection diagnostics.
 
 ## A6b — Failover safety
 
-**Completed 2026-09-21.** Gateway `4ead7e8`, driver `352993a`, UI `eea85b9`,
+**Completed 2026-09-21.** Gateway `3ca10a1`, driver `352993a`, UI `eea85b9`,
 packaged UI `0e3a202`; both development installers pinned. Windows and Linux
 process fixtures prove safe rescue, no ambiguous replay, deadline/disconnect
 cancellation, cooldown/recovery and retained uncertainty. Signed A5/A6 acceptance
