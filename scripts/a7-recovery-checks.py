@@ -85,6 +85,19 @@ def run():
         }
         destination = Path(temporary) / "backup"
         with patch.object(recovery, "environment", return_value=environment):
+            with patch.object(recovery.importlib.util, "find_spec", return_value=None):
+                refused(
+                    lambda: recovery.backup(
+                        root,
+                        destination,
+                        "password",
+                        {"agent": phrase},
+                        [],
+                        stopped=True,
+                    ),
+                    "older agent without quarantine support",
+                    "requires an A7-capable agent",
+                )
             refused(
                 lambda: recovery.backup(
                     root, destination, "password", {}, [], stopped=True

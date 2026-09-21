@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import getpass
 import hashlib
 import importlib.metadata
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -340,6 +341,10 @@ def backup(root, destination, password, phrases, external, *, stopped):
     if (root / MARKER).exists():
         raise ValueError("cannot checkpoint an unactivated restore")
     installed = environment()
+    if importlib.util.find_spec("eugene_plexus_agent.recovery_guard") is None:
+        raise ValueError(
+            "checkpoint creation requires an A7-capable agent with the recovery quarantine guard"
+        )
     validate_state(root)
     verified = verify_unlock(root, phrases)
     files, assets, omitted = inventory(root, external)

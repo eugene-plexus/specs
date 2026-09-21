@@ -4,6 +4,14 @@ Use a **stopped-install checkpoint before updating**. The checkpoint pairs state
 with the Python version, resolved packages and exact Eugene source revisions that
 read it. Installing an older release over newer state is not rollback.
 
+Checkpoints require an A7-capable agent (the quarantine guard introduced in
+`253f612`); the helper refuses older installations. For the first upgrade from an
+older build, keep a protected, complete cold copy of the stopped installation and
+its state, including Python and the virtual environment. Restoring that old copy
+requires its original absolute paths. After upgrading, create and rehearse the
+portable checkpoint described below. The frozen alpha does not gain this tooling
+or guard until it is deliberately upgraded.
+
 This is a manual recovery procedure. It never updates or starts another enrolled
 node. Coordinate a maintenance window for the root and workers; a checkpoint
 cannot include a key revocation or policy change made after it was taken.
