@@ -1108,6 +1108,22 @@ paths:
   # every streaming client. The hooks fire around every attempt on both
   # paths.
 
+  /v1/metrics/clients:
+    get:
+      tags: [metrics]
+      operationId: getClientUsage
+      summary: Per-key reported usage on this gateway (operator only; retained raw rows).
+      parameters:
+        - {name: since, in: query, schema: {type: string, format: date-time}}
+        - {name: until, in: query, schema: {type: string, format: date-time}}
+      responses:
+        '200':
+          description: Totals by authenticated key; no prompts or credentials. Unknown token usage is not invented.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientUsageSummary'}
+        '503': {description: Metrics disabled or unavailable.}
+
   /v1/metrics:
     get:
       tags: [metrics]
@@ -3446,6 +3462,8 @@ components:
         - outcome
         - tries
       properties:
+        clientKeyId: {type: string, description: Verified key identifier; absent for operator/service requests and pre-A5 rows.}
+        clientKeyName: {type: string, description: Registry name captured for this request.}
         startedAt:
           type: string
           format: date-time
@@ -3611,3 +3629,28 @@ components:
             - string
             - 'null'
           description: Absent or null on the last page.
+
+    ClientUsageGroup:
+      type: object
+      required: [clientKeyId, clientKeyName, requests, served, failed, attempts, promptTokens, completionTokens, incompleteUsageRequests]
+      properties:
+        clientKeyId: {type: string}
+        clientKeyName: {type: string}
+        requests: {type: integer}
+        served: {type: integer}
+        failed: {type: integer}
+        attempts: {type: integer}
+        promptTokens: {type: integer}
+        completionTokens: {type: integer}
+        incompleteUsageRequests: {type: integer}
+    ClientUsageSummary:
+      type: object
+      required: [windowStart, windowEnd, truncated, rowsDropped, clients]
+      properties:
+        windowStart: {type: string, format: date-time}
+        windowEnd: {type: string, format: date-time}
+        truncated: {type: boolean}
+        rowsDropped: {type: integer}
+        clients:
+          type: array
+          items: {$ref: '#/components/schemas/ClientUsageGroup'}

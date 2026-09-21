@@ -20,6 +20,9 @@ components:
           format: date-time
           description: Reserved; not currently measured.
         originNode: {type: string}
+        limits:
+          $ref: '#/components/schemas/ClientKeyLimits'
+          description: Absent on legacy keys (all models, no per-key limits); new keys receive bounded defaults.
         migrated:
           type: boolean
           description: True for a record imported from a pre-A3 node-local registry.
@@ -37,10 +40,48 @@ components:
         detail: {type: string}
     ClientKeyCreateRequest:
       type: object
+      additionalProperties: false
       required: [name]
       properties:
         name: {type: string, minLength: 1, maxLength: 64}
         ttlDays: {type: integer, minimum: 1, maximum: 3650, default: 365}
+        limits: {$ref: '#/components/schemas/ClientKeyLimits'}
+    ClientKeyLimits:
+      type: object
+      additionalProperties: false
+      properties:
+        allowedModels:
+          type: [array, 'null']
+          maxItems: 100
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 256}
+          description: Null permits all. Empty permits none. Exact alias and actual target IDs must both be allowed.
+        maxConcurrentRequests: {type: integer, minimum: 1, maximum: 64, default: 2}
+        requestsPerMinute: {type: integer, minimum: 1, maximum: 10000, default: 60}
+    ClientKeyUpdateRequest:
+      type: object
+      additionalProperties: false
+      required: [limits]
+      properties:
+        limits: {$ref: '#/components/schemas/ClientKeyLimits'}
+    ClientAdmissionRequest:
+      type: object
+      additionalProperties: false
+      required: [action, keyId, requestId]
+      properties:
+        action: {type: string, enum: [check, acquire, renew, release]}
+        keyId: {type: string, minLength: 1, maxLength: 128}
+        requestId: {type: string, minLength: 1, maxLength: 128}
+        model: {type: string, minLength: 1, maxLength: 256}
+    ClientAdmissionResult:
+      type: object
+      additionalProperties: false
+      required: [keyId, keyName]
+      properties:
+        keyId: {type: string}
+        keyName: {type: string}
+        limits: {$ref: '#/components/schemas/ClientKeyLimits'}
+        leaseSeconds: {type: number, exclusiveMinimum: 0, maximum: 30}
     ClientKeyCreated:
       type: object
       required: [key, token]

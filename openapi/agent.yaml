@@ -245,6 +245,53 @@ tags:
     description: Health and version.
 
 paths:
+  /v1/auth/client-keys/admission:
+    post:
+      tags: [auth]
+      operationId: clientAdmission
+      summary: Check or reserve shared client-key allowance (operator or gateway/agent service only).
+      description: Durable per-install admission; 30-second renewable leases, rolling 60-second request window. Client bearers cannot call this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientAdmissionRequest'}
+      responses:
+        '200':
+          description: Current key access or reservation result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientAdmissionResult'}
+        '401': {description: Invalid service credential or inactive client key.}
+        '403': {description: Model excluded by the key.}
+        '409': {description: Reservation expired or policy changed.}
+        '429':
+          description: Shared concurrency/rate allowance exhausted.
+          headers:
+            Retry-After: {schema: {type: integer, minimum: 1}}
+        '503': {description: Authority unavailable; no local fallback allowance.}
+
+  /v1/auth/client-keys/{keyId}/limits:
+    put:
+      tags: [auth]
+      operationId: setClientKeyLimits
+      summary: Set model permissions and shared limits without replacing a key (operator only).
+      parameters:
+        - {name: keyId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientKeyUpdateRequest'}
+      responses:
+        '200':
+          description: Updated metadata. Revocation and token remain unchanged.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientKey'}
+        '404': {description: No such key.}
+        '503': {description: Registry unavailable.}
+
   # -------- v0.2: auth --------
 
   /v1/auth/status:
@@ -2900,6 +2947,18 @@ components:
             `securityMode` to `os_keyring` on true and explains the
             passphrase prompt on false. Absent when the probe was not run
             or did not finish within its budget.
+
+    ClientKeyLimits:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyLimits'
+
+    ClientKeyUpdateRequest:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyUpdateRequest'
+
+    ClientAdmissionRequest:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientAdmissionRequest'
+
+    ClientAdmissionResult:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientAdmissionResult'
 
     ClientKey:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKey'
