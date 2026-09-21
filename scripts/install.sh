@@ -114,13 +114,16 @@ run_step() {
     printf '\n### %s\n' "$_what" >> "$STEP_LOG"
     if "$@" >> "$STEP_LOG" 2>&1; then
         return 0
+    else
+        # An if with no branch taken returns zero. Capture the command's
+        # failure here, before fi can turn an incomplete install into success.
+        _rc=$?
     fi
-    _rc=$?
     printf '\033[31merror:\033[0m %s\n' "$_what" >&2
     printf 'The command that failed:\n  %s\n' "$*" >&2
     printf 'What it said (full log: %s):\n' "$STEP_LOG" >&2
     tail -n 20 "$STEP_LOG" | sed 's/^/  /' >&2
-    exit $_rc
+    exit "$_rc"
 }
 
 # --- platform ---------------------------------------------------------

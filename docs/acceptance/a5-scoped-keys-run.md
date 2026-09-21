@@ -90,3 +90,12 @@ See [operator instructions](../client-keys.md) and the
 
 The UI wheel matches all 184 production export files byte-for-byte. The frozen
 `v0.1.0-alpha.1` tag and assets are unchanged. Live installs were not updated.
+
+Delivery caught a pre-existing POSIX installer defect when GitHub returned 504
+for a package archive: `run_step` printed the error but returned zero, allowing
+Docker to build an incomplete image. The helper now preserves the failing
+command's status, and failed container builds print their captured output.
+The installer regression injects bootstrap, virtualenv and package failures;
+all three preserve status 37 and prevent a Docker-style command chain from
+continuing. These checks fail against the old helper; all 97 installer checks
+pass with the fix.

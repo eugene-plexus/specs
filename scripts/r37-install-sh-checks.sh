@@ -42,6 +42,10 @@ esac
 STUB
     cat > "$ROOT/bin/uv-template" <<'STUB'
 #!/bin/sh
+if [ "${R37_FAIL_STEP:-}" = "$1" ]; then
+    echo "injected $1 download failure" >&2
+    exit 37
+fi
 case "$1" in
     --version) echo 'uv test stand-in' ;;
     venv)
@@ -88,6 +92,7 @@ for argument in "$@"; do
     previous=$argument
 done
 emit() {
+    echo 'if [ "${R37_FAIL_STEP:-}" = bootstrap ]; then echo "injected bootstrap download failure" >&2; exit 37; fi'
     echo 'mkdir -p "$UV_UNMANAGED_INSTALL"'
     echo 'cp "$R37_BIN/uv-template" "$UV_UNMANAGED_INSTALL/uv"'
     echo 'chmod +x "$UV_UNMANAGED_INSTALL/uv"'
@@ -197,6 +202,25 @@ bad_environment() {
     check grep -qx 'operator settings' "$ROOT/settings-to-preserve"
 }
 
+failed_install_step() {
+    local step=$1
+    ROOT=$WORK/failed-install-$step
+    make_stubs
+    RC=0
+    env -i HOME="$ROOT/home" PATH="$ROOT/bin:/usr/bin:/bin" \
+        R37_OS=Linux R37_ARCH=x86_64 R37_ARM=0 R37_FAIL_STEP="$step" \
+        R37_TRACE="$ROOT/trace" R37_BIN="$ROOT/bin" \
+        sh -c 'sh "$1" --prefix "$2" --no-service --no-start && touch "$3"' \
+        sh "$HERE/install.sh" "$ROOT/prefix" "$ROOT/build-continued" \
+        > "$ROOT/output" 2>&1 || RC=$?
+    LABEL="install preserves the $step command's failure status"
+    check test "$RC" = 37
+    LABEL="failed $step prevents a Docker-style command chain from continuing"
+    check test ! -e "$ROOT/build-continued"
+    LABEL="failed $step includes the original diagnosis"
+    check grep -q "injected $step download failure" "$ROOT/output"
+}
+
 rerun_native() {
     local script=$1 options
     run_case "$script" Darwin x86_64 1 cpython-3.12-macos-aarch64-none 3.12 existing
@@ -217,6 +241,10 @@ rerun_native() {
     LABEL="$script rerun creates no replacement environments"
     check test "$(grep -c '^venv:' "$ROOT/trace")" = "$created"
 }
+
+for step in bootstrap venv pip; do
+    failed_install_step "$step"
+done
 
 for script in install bootstrap; do
     run_case "$script" Linux x86_64 0 3.12

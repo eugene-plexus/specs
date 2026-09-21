@@ -278,11 +278,14 @@ DCP="$DC -p $PROJECT -f $COMPOSE"
 $DCP down -v >/dev/null 2>&1 || true
 
 say "runtime: build"
-if $DCP build >/dev/null 2>&1; then
+BUILD_LOG=$(mktemp)
+if $DCP build >"$BUILD_LOG" 2>&1; then
+  rm -f "$BUILD_LOG"
   ok "11. the image builds"
 else
-  bad "11. the image did not build -- re-run without the output suppressed:"
-  printf '        %s build\n' "$DCP"
+  bad "11. the image did not build:"
+  cat "$BUILD_LOG"
+  rm -f "$BUILD_LOG"
   $DCP down -v >/dev/null 2>&1 || true
   say "result"; printf '  %d checks, %d failures\n' "$CHECKS" "$FAILURES"; exit 1
 fi
