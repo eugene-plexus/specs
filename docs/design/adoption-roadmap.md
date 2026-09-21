@@ -6,7 +6,7 @@ The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: A7.** A1 and A2 completed 2026-09-20; A3-A6 and A6b completed 2026-09-21.
+**Pickup: A8.** A1 and A2 completed 2026-09-20; A3-A7 and A6b completed 2026-09-21.
 A4's final user-supplied image passed through the actual Open WebUI frontend,
 authenticated gateway, driver and local vision model. See
 [A4 acceptance](../acceptance/a4-application-workflows.md).
@@ -78,7 +78,7 @@ The previous roadmap's contemporaneous phrases such as "still owed" and
 | A7 | A failed update or lost installation has a tested recovery path | Final state from A3/A5/A6/A6b included in backups |
 | A8 | Capacity and hardware support claims have measured limits | A4-A7, including A6b |
 
-A1-A6 and A6b are complete; A7-A8 are not started.
+A1-A7 and A6b are complete; A8 is not started.
 Completion entries must name the
 implementation revisions, acceptance record, observed limitations and any
 remaining physical checks. Do not mark a slice complete solely because unit
@@ -352,6 +352,20 @@ streaming, non-streaming, embeddings, aliases and configuration changes where
 applicable. Keep live installs and frozen release artifacts unchanged.
 
 ## A7 — Restore and failed-update recovery
+
+**Completed 2026-09-21.** Encrypted, versioned checkpoints and exact Python/package
+reconstruction are delivered with a manual recovery procedure. Agent `253f612`
+refuses startup/enrollment of quarantined copies; final `d1cfe73` also makes Windows
+service startup independent of Event Log access. Both development installers pin
+it. Specs tooling is delivered through `b7bf2ea`. Windows worker and container
+control-plane restores authenticated, recovered profiles/policies, retained
+revocations and served real CPU-model completions after injected package/state
+update failures. Missing/wrong unlock material, incompatible versions, damaged
+archives and unsafe activation refuse without overwriting the source.
+[Acceptance, timings and limits](../acceptance/a7-recovery-run.md),
+[operator procedure](../recovery.md). Re-registration remains manual; physical
+reboot-before-sign-in and Mac checks remain open. Public alpha and live installs
+were not changed.
 
 **Problem:** installing packages into the active environment and advising a
 configuration backup does not establish a usable recovery procedure. Source

@@ -12,6 +12,11 @@ Start with the [installation guide](https://eugeneplexus.com/install).
 [Release contents and limits](docs/releases/v0.1.0-alpha.1.md). A stable release
 remains gated on usability sessions and the outstanding verification work.
 
+Before updating a development installation, follow the
+[backup and failed-update recovery procedure](docs/recovery.md). Its A7 tooling
+and quarantine guard are newer than the frozen alpha; the guide covers that first
+upgrade separately.
+
 This is the **single source of truth** for how Eugene Plexus components talk to each other. The six active consumers (`agent`, `control`, `gateway`, `inference-driver`, `library`, and `ui`) depend on a pinned revision via codegen, never via direct import. Retired repos retain historical pins; they do not consume today's contracts. Components share *schemas, not code*.
 
 ## What is Eugene Plexus?

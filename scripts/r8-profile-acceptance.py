@@ -242,17 +242,20 @@ def main() -> None:
                 spec.update(maxTokens=222, temperature=0.5)
                 client.put(url + "/" + profile_id, json=spec).raise_for_status()
                 assert generate()["maxTokens"] == 222
-                # Warm for one second, then make the Library edge unavailable.
-                client.patch(gateway_url + "/v1/config", json={"profileCacheSeconds": 1, "profileMaxStaleSeconds": 1}).raise_for_status()
+                # Leave enough time to observe stale reuse on a loaded Windows
+                # runner. A one-second stale window could expire during the HTTP
+                # request itself, correctly returning defaults and failing this
+                # timing fixture. Still explicitly test expiry after the bound.
+                client.patch(gateway_url + "/v1/config", json={"profileCacheSeconds": 1, "profileMaxStaleSeconds": 5}).raise_for_status()
                 generate()
                 state["outage"] = True
                 time.sleep(1.1)
                 assert generate()["maxTokens"] == 222
-                time.sleep(1.1)
+                time.sleep(5.1)
                 assert generate()["maxTokens"] == 2048
                 print("PASS edits, bounded stale reuse, and outage fallback", flush=True)
                 state["outage"] = False
-                time.sleep(4.1)  # finish the failed-read retry backoff
+                time.sleep(5.1)  # finish the full backoff after the most recent failed read
                 assert generate()["maxTokens"] == 222
                 client.patch(gateway_url + "/v1/config", json={"profileCacheSeconds": 0}).raise_for_status()
                 second = client.post(url, json={"name": "second", "engine": "llama_cpp",

@@ -1,14 +1,16 @@
 # A7 recovery acceptance
 
-Windows and container recovery passed, 2026-09-21. Final delivery checks are in
-progress. Implementation: specs `7c51a0f`, hardened in `2d298fb`; the procedure is
+Completed 2026-09-21. Windows and container recovery passed. Implementation:
+specs `7c51a0f`, hardened in `2d298fb`, `d2cdf4a` and `b7bf2ea`; the procedure is
 [backup and recovery](../recovery.md).
 
 Agent `253f6127e8586d3333c536efb8737ad0d69f5575` refuses startup and enrollment
 of quarantined copies, including safe mode. Its full Windows suite passed:
 962 tests, four platform-dependent skips. Agent CI
 [35625192234](https://github.com/eugene-plexus/agent/actions/runs/35625192234)
-passed. Development installers pin this revision; no other component changed.
+passed. Final agent revision `d1cfe73140f464c8772f45f57441c6c0fbcf7fc1` also fixes
+the Event Log startup failure found by the final Windows CI run (below).
+Development installers pin that revision; no other component changed.
 
 ## Windows failed-update exercise
 
@@ -57,7 +59,7 @@ Both failed runs cleaned up their own processes.
 
 ## Container recovery
 
-[Container run 35625827807](https://github.com/eugene-plexus/specs/actions/runs/35625827807)
+[Container run 35627102605](https://github.com/eugene-plexus/specs/actions/runs/35627102605)
 passed the existing image checks and the new recovery exercise before publishing
 development `edge`. `scripts/a7-container-acceptance.sh` uses that built image in
 a disposable derivative with `libgomp1` for its CPU inference fixture. The production
@@ -69,8 +71,8 @@ The same failed-package/incompatible-state scenario recovered profiles, scoped
 local-only policy and revocation, authenticated both nodes, and served the real
 Qwen3-0.6B completion through the recovered gateway and worker. This reconstructs
 both environments; it is not a restart of the pre-update virtual environment.
-Initial timings: root/worker backup 2.892/1.852 s; root/worker recovery through
-login 12.219/5.008 s. All owned processes and the disposable container were removed.
+Final timings: root/worker backup 2.984/2.499 s; root/worker recovery through
+login 12.343/9.389 s. All owned processes and the disposable container were removed.
 The test's deliberately removed package existed only in that container's writable
 layer, not the image subsequently published.
 
@@ -86,12 +88,26 @@ metadata/version output and companion file checksums are captured by the helper.
 unlock material, wrong backup password, future archive format, changed external
 model, truncated encrypted state, path traversal, overwriting an existing target,
 activating without fencing the original, and incompatible installed Python all
-refuse. Nested engine `bin` support files are retained.
+refuse. Older agents lacking quarantine support and base Python installations
+outside the replacement are also refused. Nested engine `bin` support files are retained.
 Source file digests remain unchanged; private directory permissions, retained
 revocations, SQLite integrity and exclusion of expendable logs are checked.
 The Windows run found and fixed an unclosed SQLite handle during staging cleanup.
 
-Final published instrument checks are pending. This slice
+Full specs CI passed at `2d298fb`
+([35626260508](https://github.com/eugene-plexus/specs/actions/runs/35626260508));
+final recovery refusal checks also passed locally on Windows and Linux, and the
+final container workflow verified actual inference against `b7bf2ea`. This slice
 does not demonstrate Windows reboot before sign-in, physical Mac support,
 cross-platform restoration or external vLLM environment reconstruction. Those
 limits are preserved in [the procedure](../recovery.md) and the roadmap.
+
+The first `b7bf2ea` Windows CI attempt exposed two older failures. The service
+smoke test received Windows error 5 from `RegisterEventSource/ReportEvent`, which
+aborted startup before the agent could run. A failing regression reproduced the
+failure; `d1cfe73` moves optional Event Log notification after console capture and
+retains a warning instead of aborting. Nine focused Windows service/quarantine
+tests pass (two platform-specific skips). The profile-cache instrument also had
+a one-second stale observation window that could expire during a slow HTTP call.
+It now uses a five-second window, still verifies expiry, and waits the full retry
+backoff before asserting recovery. No cache behavior or production deadline changed.
