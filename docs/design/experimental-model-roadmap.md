@@ -1,14 +1,21 @@
 # Experimental model roadmap: MLX and typed decisions
 
-**Status: planned, 2026-09-22.** Troy requested these two slices after the
-adoption roadmap and Dependabot maintenance. This document is the next work
-order; A1-A8 and A6b retain their recorded completion and outstanding physical
-checks. This planning change implements neither slice and publishes no release.
+**Status: B1 built 2026-09-22; pickup is B2.** Troy requested these two slices
+after the adoption roadmap and Dependabot maintenance. A1-A8 and A6b retain
+their recorded completion and outstanding physical checks. No release has been
+published from this work; alpha.2 stands.
 
-**Pickup: B1, then B2.** Prepare MLX for an experimental alpha, then deliver a
-real local decision-model workflow and optional hosted Jev access. B2 does not
-depend on having a Mac or on finishing physical Mac acceptance. If that evidence
-is unavailable, continue B2 and keep the Mac checks explicitly pending.
+**B1 is integrated on main and packaged in the development installers**
+(specs `7da4944`, driver `2ce5412`, agent `5787dbb`, gateway `4464bbb`,
+library `ec9ab0f`, control `6a21348`, ui `4f31556` / dist `92421cf`; both
+installers re-pinned). The blocker closed as the branch document recommended —
+`upstreamModelId` on the driver, routed/authorized/reported on the public
+`modelId` — and the two-node identity acceptance ran green with a sabotage
+pass: [`docs/acceptance/mlx-identity-run.md`](../acceptance/mlx-identity-run.md).
+Design and the pending physical Apple silicon checklist:
+[`docs/design/mlx-engine.md`](mlx-engine.md). **The physical Mac results are
+still owed and separately recorded** — the feature stays experimental and the
+support matrix says exactly what that means. B2 does not depend on them.
 
 ## Outcome and release approach
 

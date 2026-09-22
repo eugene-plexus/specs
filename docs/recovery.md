@@ -62,9 +62,14 @@ consistent snapshot. Do not allow another root or standby to keep writing.
 Pass `--external PATH` for model/projector folders and custom engine bundles outside
 the state directory. Runtime model paths and explicit binaries are discovered
 automatically. Keep those assets separately at their recorded paths; restore
-verifies their hashes. For an externally managed Python engine such as vLLM,
-preserve its environment and system dependencies separately. A backup of Eugene
-does not reconstruct an arbitrary external engine environment. Consolidate any
+verifies their hashes. For an externally managed Python engine such as vLLM or
+mlx-lm, preserve its environment and system dependencies separately. A backup of
+Eugene does not reconstruct an arbitrary external engine environment. For MLX
+that means the `~/eugene-mlx` virtual environment (or wherever `mlxBinary`
+points) and any MLX model directories are rebuilt by you, not restored: recreate
+the environment with the pinned install command from the engine's own install
+notes, and re-download or re-copy the model directories to their recorded paths
+before restarting the runtimes that declare them. Consolidate any
 component configuration stored outside the state directory before checkpointing;
 the tool refuses that layout instead of omitting it.
 
