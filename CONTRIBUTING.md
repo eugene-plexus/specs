@@ -150,6 +150,28 @@ Windows development-task changes also run the focused Pester suite described in
 [README.md](README.md#vs-code-tasks-windows). CI runs it on Windows with Node.js,
 without sibling repositories, model files, credentials or a live control plane.
 
+### Cross-component acceptance dependencies
+
+Keep consumer `[dev]` extras in their own virtual environments: their exact lint,
+type-checker and code-generator pins can differ. The shared acceptance environment
+installs runtime packages plus a separate test runner. From the parent directory
+containing the sibling repositories, inside a disposable virtual environment:
+
+```sh
+python -m pip install -r specs/scripts/requirements-acceptance.txt -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver
+python -m pip check
+```
+
+For Windows service checks, additionally install `./agent[service]`. The CI workflow
+lists the acceptance commands and runs them on Windows and Linux. These checks
+launch isolated processes and do not require a running installation or GPU.
+
+CI normally checks out the installer-pinned consumer revisions. To review control
+or library dependency proposals before merging or changing release pins, dispatch
+the **CI** workflow with `control_ref` and/or `library_ref` set to the candidate's
+full commit SHA. Omitted inputs retain the installer pins. These inputs only change
+that acceptance run's checkouts; they do not modify the installers or a release.
+
 ## Reporting issues
 
 File issues at [github.com/eugene-plexus/specs/issues](https://github.com/eugene-plexus/specs/issues). Useful issues include:

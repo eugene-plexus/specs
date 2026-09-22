@@ -6,6 +6,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      control_ref:
+        description: "Optional control commit/ref for dependency review; defaults to installer pin"
+        required: false
+        type: string
+      library_ref:
+        description: "Optional library commit/ref for dependency review; defaults to installer pin"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -64,7 +73,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/control
-          ref: ${{ steps.pins.outputs.control }}
+          ref: ${{ inputs.control_ref || steps.pins.outputs.control }}
           path: control
       - uses: actions/checkout@v6
         with:
@@ -74,15 +83,19 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/library
-          ref: ${{ steps.pins.outputs.library }}
+          ref: ${{ inputs.library_ref || steps.pins.outputs.library }}
           path: library
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
           ref: ${{ steps.pins.outputs.driver }}
           path: inference-driver
-      - name: Install the five consumers and their test dependencies
-        run: python -m pip install -e "./agent[dev]" -e "./control[dev]" -e "./gateway[dev]" -e "./library[dev]" -e "./inference-driver[dev]"
+      # Component dev extras pin independent lint/codegen toolchains. Only the
+      # shared test runner belongs in this cross-component environment.
+      - name: Install runtime consumers and the acceptance test runner
+        run: python -m pip install -r specs/scripts/requirements-acceptance.txt -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver
+      - name: Check installed dependency consistency
+        run: python -m pip check
       - name: Score the shipped starter set for 8 GB GPU and 16 GB RAM
         run: python specs/scripts/s10-starter-check.py
       - name: Verify algorithm separation and detect broken guards
@@ -142,7 +155,9 @@ jobs:
           ref: ${{ steps.pins.outputs.driver }}
           path: inference-driver
       - name: Install test dependencies
-        run: python -m pip install -e "./agent[dev,service]" -e "./inference-driver[dev]"
+        run: python -m pip install -r specs/scripts/requirements-acceptance.txt -e "./agent[service]" -e ./inference-driver
+      - name: Check installed dependency consistency
+        run: python -m pip check
       - name: Check the real Windows service loader
         if: runner.os == 'Windows'
         run: python -m pytest agent/tests/test_winservice.py -q

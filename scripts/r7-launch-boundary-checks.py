@@ -1,7 +1,8 @@
 """R7 step 1: run regressions, then sabotage disposable source copies.
 
-Requires each consumer's dev dependencies. Never edits a checkout, reads an
-installed config, starts a server, or uses a real inference backend.
+Requires consumer runtime packages and scripts/requirements-acceptance.txt.
+Never edits a checkout, reads an installed config, starts a server, or uses a
+real inference backend.
 """
 
 from __future__ import annotations

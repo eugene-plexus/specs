@@ -1,0 +1,6 @@
+# Cross-component acceptance runner only. Install consumer runtime packages
+# alongside this file; keep each repository's [dev] toolchain in its own venv.
+# These match the existing acceptance runner; component tooling can now update
+# independently without changing the integration test environment.
+pytest==8.4.2
+pytest-asyncio==0.26.0

@@ -1,6 +1,7 @@
 """R7 signing regressions and isolated mutation gate for all five components.
 
-Run in a disposable Python environment with all five consumer dev dependencies.
+Run in a disposable Python environment with all five consumer runtime packages
+and scripts/requirements-acceptance.txt.
 Every mutation happens in a copied source tree and restores saved bytes.
 """
 
