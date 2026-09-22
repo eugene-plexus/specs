@@ -43,9 +43,13 @@ Client credentials and revocation: [client-key management](docs/client-keys.md) 
 Real local-model setup: [Claude Code and Open WebUI](docs/application-workflows.md)
 (A4 development builds, including bounded PNG/JPEG input through OpenAI chat).
 
-Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Current order of work: [adoption roadmap](docs/design/adoption-roadmap.md).
+Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Current order of work: [experimental model roadmap](docs/design/experimental-model-roadmap.md) — B1 MLX, then B2 local decision models and hosted Jev access.
 
 ## Current status
+
+**Next work, 2026-09-22:** [B1 and B2](docs/design/experimental-model-roadmap.md)
+are planned for experimental MLX and typed decision serving. These are not
+features of the published alpha.2 build.
 
 **2026-09-21:** [v0.1.0-alpha.2](docs/releases/v0.1.0-alpha.2.md) is the current
 early-tester distribution; see the [installation instructions](https://eugeneplexus.com/install).

@@ -1,12 +1,16 @@
 # Adoption roadmap
 
-**Status: implementation slices complete, reassessment next, 2026-09-21.** Troy accepted the new adversarial
+**Status: implementation slices complete; next roadmap planned, 2026-09-22.** Troy accepted the new adversarial
 review and asked to defer further release work in favor of this roadmap.
 The previous [release roadmap](release-roadmap.md) is historical: its scheduled
 implementation is complete, while the verification obligations below remain
 open. Completing implementation is not the same as completing acceptance.
 
-**Pickup: reassess the measured scope and incoming tester evidence with Troy.**
+**Pickup, 2026-09-22: [B1 MLX, then B2 typed decisions](experimental-model-roadmap.md).**
+Troy requested the next two slices after reassessment and dependency maintenance.
+They are planned; this document retains the completed adoption work and its open
+physical/moderated verification. The new roadmap supersedes the MLX deferral below.
+
 Troy authorized publishing the completed work as `v0.1.0-alpha.2` on 2026-09-21;
 see the [release notes](../releases/v0.1.0-alpha.2.md). This supersedes the earlier
 release deferral below without closing the remaining physical or moderated checks.
@@ -488,7 +492,8 @@ or an unavailable tester device wait for that person's participation.
 - Run relevant checks and record meaningful failures and limitations. Do not
   rerun unrelated full acceptance merely because a documentation status changed.
 - Update this document's pickup and the slice record when work is complete.
-  This is the only current work order; older roadmaps retain design/history.
+  The [experimental model roadmap](experimental-model-roadmap.md) is the next
+  work order; this roadmap retains adoption acceptance and history.
 - After A8 and incoming user evidence, reassess usefulness, remaining blockers
   and supported audience with Troy. That conversation does not automatically
   create a release task or imply production readiness.
