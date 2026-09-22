@@ -1,6 +1,6 @@
 # Typed decisions: `/v1/systemone`, a supervised Kev, an optional hosted Jev
 
-**Status: in build, 2026-09-22 (roadmap B2).** The experimental-model
+**Status: built and live-verified on WSL2 CPU, 2026-09-22 (roadmap B2);** evidence in [`../acceptance/decision-run.md`](../acceptance/decision-run.md), user recipe in [`../application-workflows.md`](../application-workflows.md#typed-decisions-with-kev-experimental-b2). The experimental-model
 roadmap's second slice: one Eugene endpoint that takes a state and named
 typed questions and returns structured decisions from a locally hosted
 model, with hosted Jev as an optional, explicitly cloud-classified
@@ -86,8 +86,8 @@ test.
 the gateway takes `model` (a public Eugene alias), `state`, `questions`
 and answers in TypeSafe's response vocabulary, because the point is
 that a TypeSafe client changes its base URL and nothing else.
-Non-streaming, initial scope. Client keys are accepted (the fourth
-public path), and every existing control applies unchanged: scopes and
+Non-streaming, initial scope. Client keys are accepted (the fifth
+client-admission path, beside `/v1/models`), and every existing control applies unchanged: scopes and
 discovery filter on the public model id, local-only refuses anything
 not local-and-enforced, concurrency and rate limits count decisions
 like completions, and bounds (question count, option count, level

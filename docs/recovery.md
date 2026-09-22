@@ -69,7 +69,13 @@ that means the `~/eugene-mlx` virtual environment (or wherever `mlxBinary`
 points) and any MLX model directories are rebuilt by you, not restored: recreate
 the environment with the pinned install command from the engine's own install
 notes, and re-download or re-copy the model directories to their recorded paths
-before restarting the runtimes that declare them. Consolidate any
+before restarting the runtimes that declare them. Kev is the same: its checkout
+and `.venv` (`~/eugene-kev`, or wherever `kevPython` points) are rebuilt from the
+pinned commit, and a restored runtime also needs its checkpoint directory and the
+base model Kev downloaded into the node's Hugging Face cache on first launch.
+Restore the checkpoint to its recorded path; without the cached base model the
+first start needs network access again, and a launch with `HF_HUB_OFFLINE=1`
+fails. Consolidate any
 component configuration stored outside the state directory before checkpointing;
 the tool refuses that layout instead of omitting it.
 

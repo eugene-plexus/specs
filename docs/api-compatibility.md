@@ -9,6 +9,7 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/chat/completions` | Supported | Text messages, tools, structured-output forwarding, batch responses and SSE. |
 | `POST /v1/messages` | Supported subset | Anthropic text/tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
+| `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
 | `/v1/responses`, audio, files, batches, provider storage | Not implemented | No Responses API or general provider endpoint parity. |
 | OpenAI image/content-part input | Supported subset | Ordered text plus inline PNG/JPEG on user messages, confirmed vision backends only. See limits below. Anthropic images remain refused. |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
@@ -115,3 +116,44 @@ multi-model endpoints do not yet advertise image input, even if they could
 support it outside Eugene. Unknown capability is not a promise.
 
 See [application setup](application-workflows.md) for the named client paths.
+
+## Typed decisions (B2)
+
+`POST /v1/systemone` accepts the TypeSafe System One request as pinned on
+2026-09-22: `model` (an Eugene alias), `state` (string, object or array) and
+`questions`, a map of names to `noul`, `choice` or `score` questions. Answers use
+TypeSafe's field names, keyed by your question names; `usage` reports
+`input_tokens`/`output_tokens` only when the backend reports them. A TypeSafe
+client changes its base URL and nothing else. Client keys, revocation, model
+scopes, local-only policy and per-key limits apply as on the other doors.
+[Design and pins](design/decision-models.md)
+
+Refused before any backend work: more than `decisionMaxQuestions` questions
+(gateway config, default 32), a `choice` with other than 1-255 options, a
+`score` with other than 2-10 levels, a question field the protocol does not
+define, and the shared body-size limit. Malformed questions return 422, as
+TypeSafe does.
+
+A backend answer is checked before it is returned: every question answered once
+with its own type, choices drawn from the request's options, distributions of
+finite numbers in [0, 1] summing to 1, scores inside the scale. Anything else is a
+502 naming the defect. Eugene never repairs a decision or substitutes a chat
+model prompted for JSON. Probabilities and `confidence` are the provider's own
+calibration, not comparable across models.
+
+Non-streaming only. Decision models refuse chat and embeddings with a 400 naming
+`/v1/systemone`; chat models refuse decisions with a 400 naming
+`/v1/chat/completions`. A deadline that fires is a 504 with an uncertain outcome:
+the same decision is **not** re-sent to another backend. A backend that holds one
+request at a time answers 503 while busy rather than queueing, and a client that
+disconnects does not free it until its work finishes. Disable automatic retries
+in any SDK you use; a retried decision is a second decision.
+
+| Backend | Status |
+| --- | --- |
+| Kev (`jaredpalmer/kev-0.8b`), supervised by the agent | **Measured** on WSL2 CPU ([run](acceptance/decision-run.md)); CUDA, ROCm, Metal unverified |
+| Another System One server (`systemone_custom`) | Supported when it passes the answer checks above; see [the recipe](application-workflows.md#register-another-system-one-server) |
+| Hosted Jev (`typesafe`) | **Unverified** — fixture tests only; always external, refused to local-only keys, never a fallback for a local model |
+| Vercel `/v1/evaluate`, AI SDK evaluation | Not implemented — a different dialect |
+
+Decision requests are not yet rows in `GET /v1/metrics`.

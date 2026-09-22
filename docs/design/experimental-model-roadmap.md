@@ -1,6 +1,6 @@
 # Experimental model roadmap: MLX and typed decisions
 
-**Status: B1 built 2026-09-22; pickup is B2.** Troy requested these two slices
+**Status: B1 and B2 built 2026-09-22; the slices' pending physical and credentialed checks are listed in their records.** Troy requested these two slices
 after the adoption roadmap and Dependabot maintenance. A1-A8 and A6b retain
 their recorded completion and outstanding physical checks. No release has been
 published from this work; alpha.2 stands.
@@ -15,7 +15,30 @@ pass: [`docs/acceptance/mlx-identity-run.md`](../acceptance/mlx-identity-run.md)
 Design and the pending physical Apple silicon checklist:
 [`docs/design/mlx-engine.md`](mlx-engine.md). **The physical Mac results are
 still owed and separately recorded** — the feature stays experimental and the
-support matrix says exactly what that means. B2 does not depend on them.
+support matrix says exactly what that means. B2 did not depend on them.
+
+**B2 is built and live-verified on WSL CPU** (specs `1526ff2`+`5641822`,
+driver `847a282`..`1525f45`, gateway `024004b`+`5b0db63`, agent `3453198`+
+`5ccfe2e`, library `40393b6`, control `6dbb4b9`, ui `bda9605`+`4b2e281` /
+dist `633abbf`): `POST /v1/systemone` in the pinned TypeSafe shape as the
+fifth client-key door, the `systemone_http` driver protocol with hosted
+(`typesafe`) and BYO (`systemone_custom`) providers, `EngineKind.kev`
+supervising the pinned `jaredpalmer/kev-0.8b` for real, the library's
+`head.pt` checkpoint recognition, and the playground's decision panel.
+Design and upstream pin ledger:
+[`docs/design/decision-models.md`](decision-models.md); evidence:
+[`docs/acceptance/decision-run.md`](../acceptance/decision-run.md),
+whose product finding — a door missing from the gateway's client
+admission path set has NO client admission — is fixed and pinned by
+test. User docs: the Kev and BYO-server recipe with its contract checks
+in [`application-workflows.md`](../application-workflows.md#typed-decisions-with-kev-experimental-b2),
+the boundaries in [`api-compatibility.md`](../api-compatibility.md#typed-decisions-b2),
+and the Kev environment in the [recovery inventory](../recovery.md). **Owed:** hosted Jev needs one real credentialed request (Troy's;
+fixture-covered and labeled unverified until then); the TypeSafe SDK
+half is blocked on distribution (PyPI's `typesafe` is an unrelated
+package, measured); Kev on CUDA/ROCm/Metal each need their own
+evidence. No release is published from this work; alpha.2 stands and
+`v0.1.0-alpha.3` remains the target once release authorization exists.
 
 ## Outcome and release approach
 
