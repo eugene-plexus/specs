@@ -129,7 +129,34 @@ refresh-only; the window selector stays; a model filter drives the `model`
 param. Null renders "unreported"; sample counts stay visible beside every
 throughput number; the 503 "metrics off" screen is untouched.
 
-## §5 Record
+## §5 Record (2026-09-21)
 
-Filled in at the end of the build: see the git history of this file's
-commit and `docs/acceptance/` for the checks.
+Contracts `7d45438` (this commit's parent); gateway **`27d5b17`** —
+schema v5 with an in-place migration from 2/3/4, the `first_ms` stamp in
+`TieredClient.stream` on all three end paths, `ttftMs` /
+`decodeTokensPerSecond` / `group_by` in `summary()`, `firstMs` on the
+request rows; 11 new tests (`tests/test_metrics_dashboard.py`), 560
+green, mypy and ruff clean. **6 sabotages, 6 caught** — including the
+falsy-zero guard (`s_first_ms is not None` → truthiness), caught by the
+e2e streamed test only because the instant fake produces `first_ms=0`;
+the sabotage pass restored from copies with a baseline assertion, per
+the standing rule. UI **`1339c3e`** / dist **`2df7751`**, both
+installers re-pinned: tiles, four hourly charts, the two new comparison
+columns, `firstMs` on recent attempts, 15 s polling, a model filter.
+880 tests, typecheck, lint and build green.
+
+**The visual pass earned its place:** the decode chart's y-axis labels
+clipped against the 44 px gutter, and the right-edge x label clipped
+against the viewBox — both found by screenshotting the page in the
+system Chrome against mocked proxy responses in all three themes, and
+invisible to every unit test. The palette validator's CVD check is what
+moved errors into their own panel: editorial's status-red against its
+green accent measures deutan ΔE 5.2 inside one chart, below even the
+secondary-encoding floor.
+
+**Not done, named:** no live install has served the new fields (every
+TTFT in the record is a fixture's or the instant fake's); the alpha.2
+assets predate all of this, so nothing reaches an install until the next
+release tag; `waitedMs`/wake cost has no chart (the tile-less table
+column stands); and the hourly charts stop at retention — serving the
+rollup era is still open, for M8's original reason.
