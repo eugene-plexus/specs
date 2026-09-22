@@ -1794,9 +1794,12 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings]
+            enum: [chat, embeddings, decisions]
           description: |
-            Which OpenAI surfaces this model can be sent to.
+            Which surfaces this model can be sent to. `decisions` means
+            `POST /v1/systemone`; a decision-only model lists nothing
+            else, and a chat request naming it is refused with the
+            door's name.
 
             OpenAI's own `/v1/models` does not say, which is why every
             RAG front-end makes you pick an embedding model from a
