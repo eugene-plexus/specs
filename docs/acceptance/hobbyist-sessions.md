@@ -1,7 +1,8 @@
 # S10 moderated sessions
 
-Status: **not yet conducted or reported**. This document is the session guide
-and blank recording sheet, not evidence of successful sessions. Decision #14
+Status: **one outside installation reported successful, 2026-09-22; full
+moderated sessions still pending**. The report below is distinct from the
+session guide and blank recording sheet. Decision #14
 accepts Troy's two or three friends; the release gate remains open until their
 observations have been recorded and any release-blocking problems addressed.
 
@@ -22,7 +23,7 @@ what you are looking for, and what seems confusing. Work as you normally would.
 I will mostly watch. You can stop at any time.”
 
 Use the [installation page](https://eugeneplexus.com/install) for
-**v0.1.0-alpha.1**, the prerelease prepared for these sessions. Confirm the page
+the current public alpha, recording its exact version. Confirm the page
 and linked release are live before inviting participants. Give participants
 those instructions and the one-liner appropriate for their OS, recording the
 version being tested. A stable release is not required. Do not first explain the tree,
@@ -68,7 +69,25 @@ If twenty minutes expires, mark unfinished tasks as not attempted or incomplete.
 
 ## Findings and follow-up
 
-No findings recorded yet.
+### P01 — Outside Windows installation, reported 2026-09-22
+
+Troy relayed the first installation report from someone other than the project
+owner. The tester said installation worked well and the interface was working
+smoothly so far. The feedback identifies the Windows elevated-install output;
+the exact build, hardware, model and tasks completed were not supplied. This is
+a positive self-reported installation/usability observation, not a measured
+five-task moderated session or proof of inference/platform coverage.
+
+Two non-blocking wording improvements were requested:
+
+| Observation | Change | Verification |
+| --- | --- | --- |
+| The Windows guide said to wait for "Eugene is running", but the visible installer says "done." | Match the website instruction to `done.`. | Website type/build checks and all 55 browser checks passed; tester follow-up pending. |
+| During elevation, the original terminal displayed only a log path, leaving progress unclear. | Prefix the log message with `Installing now...` (or `Uninstalling now...` for removal). | PowerShell syntax and all 11 existing preflight checks passed; tester follow-up pending. |
+
+The website correction can ship immediately. The installer wording is a source
+change for the next release; immutable alpha.2 installer assets are preserved.
+No personal paths or participant identity are retained in this record.
 
 For each observed problem, record participant/task, expected and observed
 behavior, whether it blocked completion, reproduction steps, fix/issue link,

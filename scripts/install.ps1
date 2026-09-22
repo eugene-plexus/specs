@@ -226,7 +226,7 @@ exit $result
 '@
     $runner = $runner.Replace('__LOG__', $logFile.Replace("'", "''")).Replace('__PARAMETERS__', $parameterFile.Replace("'", "''")).Replace('__SCRIPT__', $self.Replace("'", "''"))
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($runner))
-    Say "installer log: $logFile"
+    Say "$(if ($Parameters['Uninstall']) { 'Uninstalling' } else { 'Installing' }) now... Installer log: $logFile"
     try {
         $elevated = Start-Process -FilePath 'powershell.exe' `
             -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) `
