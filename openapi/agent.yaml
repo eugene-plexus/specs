@@ -3381,6 +3381,19 @@ components:
             It lives here because engine knowledge lives here. Putting
             format support on the library would give the library a copy
             of it, and the copy would be the one that went stale.
+        experimental:
+          type: boolean
+          default: false
+          description: |
+            True while this engine's integration has never been proved
+            on the hardware it targets — `mlx` until a physical Apple
+            silicon run is recorded. A property of the *integration*,
+            not of this host, and reported so the UI can badge the
+            option instead of hardcoding a list that goes stale the day
+            the evidence lands. Experimental does not mean hidden: on
+            appropriate hardware the engine is offered, badged; on the
+            wrong hardware `acquisition.manualInstall.notes` explains
+            why there is no install command.
         binaryPath:
           type: string
           description: Absolute path to the binary the adapter would spawn.

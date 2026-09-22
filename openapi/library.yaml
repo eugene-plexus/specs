@@ -1932,9 +1932,14 @@ components:
       type: object
       description: |
         Safetensors-specific metadata. Present iff `format` is
-        `safetensors`. **No quant fields** — a safetensors model is
-        sized, not tiered.
+        `safetensors`. **No quant tier** — a safetensors model is
+        sized, not tiered. The one exception to "no quant fields" is
+        `mlxQuantization` below, which is a conversion marker rather
+        than a tier: it says which loader the directory was prepared
+        for, not how good the weights are.
       properties:
+        mlxQuantization:
+          $ref: '#/components/schemas/MlxQuantization'
         dtype:
           type: string
           description: |
@@ -1967,6 +1972,35 @@ components:
         configPath:
           type: string
           description: Absolute path to `config.json`, the file that made this a model.
+
+    MlxQuantization:
+      type: object
+      description: |
+        Present when the directory's `config.json` carries an MLX-style
+        top-level `quantization` block — the marker `mlx_lm.convert`
+        writes and the one signal that distinguishes an MLX-converted
+        directory from a vanilla HF safetensors export (which spells
+        its quantization `quantization_config`, a different key).
+        Load-bearing for engine choice, because **safetensors alone
+        does not prove MLX compatibility** and an MLX-quantized
+        directory packs its weights as integer tensors that no other
+        engine here can load.
+
+        Two honest caveats, recorded rather than papered over: an
+        *unquantized* MLX conversion carries no such block and reads as
+        a plain safetensors directory — absence means unknown, not
+        incompatible — and `parameters` for an MLX-quantized directory
+        counts packed storage elements rather than model parameters, so
+        per-parameter arithmetic must not be built on it.
+      properties:
+        bits:
+          type: integer
+          minimum: 1
+          description: Bits per weight, as the block declares it (e.g. 4).
+        groupSize:
+          type: integer
+          minimum: 1
+          description: Quantization group size (`group_size`), when declared.
 
     RecommendedSampling:
       type: object

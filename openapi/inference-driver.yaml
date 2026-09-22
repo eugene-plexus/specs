@@ -779,7 +779,14 @@ components:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
         modelId:
           type: string
-          description: Backend-specific model identifier (e.g. `"claude-opus-4-7"`).
+          description: |
+            The public model identifier this driver serves (e.g.
+            `"claude-opus-4-7"`) — the same value `/v1/info` advertises,
+            **normalized**: when the driver translates to an
+            `upstreamModelId` at the backend boundary, the backend's own
+            name for itself is not echoed here. A caller that asked the
+            public alias gets the public alias back, on this field and
+            on the terminal frame of a stream alike.
         latencyMs:
           type: integer
           description: End-to-end driver-side latency in milliseconds.
@@ -988,10 +995,13 @@ components:
         modelId:
           type: string
           description: |
-            The model that produced these vectors, as the backend named
-            it. **Load-bearing beyond attribution:** vectors from two
-            models are not comparable, so a caller storing them needs to
-            know which model's space they belong to.
+            The model that produced these vectors, as the **public**
+            identifier — normalized the same way `GenerateResponse`'s
+            is when `upstreamModelId` is in play. **Load-bearing beyond
+            attribution:** vectors from two models are not comparable,
+            so a caller storing them needs to know which model's space
+            they belong to — and the public id is the only name that
+            stays stable across replicas of one model on several nodes.
         backend:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
         usage:
@@ -1046,9 +1056,34 @@ components:
         modelId:
           type: string
           description: |
-            Backend-specific model identifier (e.g. `"claude-opus-4-7"`).
+            The **public** model identifier — what the gateway routes
+            on and what callers name (e.g. `"claude-opus-4-7"`).
             Optional — omitted when the driver is configured to use the
-            adapter's built-in default rather than pinning a specific model.
+            adapter's built-in default rather than pinning a specific
+            model. When `upstreamModelId` is unset this is also what
+            the backend is asked for, which is every install that
+            predates the split.
+        upstreamModelId:
+          type: string
+          description: |
+            What this driver actually sends to its backend, when that
+            differs from the public `modelId`. Exists because some
+            backends' served name is not ours to choose:
+            `mlx_lm.server` answers only to upstream's `default_model`
+            sentinel or to the model's absolute path — the first
+            collides across every MLX runtime in an install and the
+            second publishes the operator's directory layout — so the
+            supervised runtime's companion driver advertises the public
+            alias here as `modelId` and translates to the sentinel at
+            the backend boundary, nowhere else.
+
+            Diagnostic, never a routing key: the gateway routes and
+            authorizes on `modelId` alone, and this value must not
+            appear in any public model list. Defaults to `modelId` when
+            unset. Responses report the public id (`GenerateResponse`
+            and `EmbedResponse` `modelId`), so two runtimes serving
+            different models behind one upstream sentinel stay
+            distinguishable everywhere a caller looks.
         runtime:
           type: string
           description: |
