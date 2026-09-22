@@ -1735,6 +1735,8 @@ components:
           $ref: '#/components/schemas/GgufDetail'
         safetensors:
           $ref: '#/components/schemas/SafetensorsDetail'
+        kev:
+          $ref: '#/components/schemas/KevCheckpointDetail'
         profileCount:
           type: integer
           minimum: 0
@@ -1817,6 +1819,14 @@ components:
             The file embeds its own chat template. When false, something
             has to supply one at launch, and a model answering strangely
             with no template is a common and confusing failure.
+        decision:
+          type: boolean
+          description: |
+            A decision model: it answers typed questions with structured
+            probabilities through `POST /v1/systemone`, and it does not
+            chat — `chat` is false whenever this is true, and offering
+            it a conversation fails clearly instead of producing prose.
+            True for a `kev_checkpoint`.
 
     ModelFile:
       type: object
@@ -2001,6 +2011,33 @@ components:
           type: integer
           minimum: 1
           description: Quantization group size (`group_size`), when declared.
+
+    KevCheckpointDetail:
+      type: object
+      description: |
+        Kev-checkpoint-specific metadata. Present iff `format` is
+        `kev_checkpoint`. The point of recording it is
+        reproducibility: a checkpoint is only half a runnable model —
+        the loader downloads the named base separately — so an operator
+        restoring a node offline needs to know exactly which base
+        weights, at which revision, the launch will ask for. The
+        adapter, decision head, tokenizer and calibration/provenance
+        files are all in `files` with their roles; the license rides the
+        checkpoint's own metadata on disk.
+      properties:
+        baseModel:
+          type: string
+          description: |
+            The base weights the adapter applies to, as
+            `adapter_config.json` names them (e.g.
+            `Qwen/Qwen3.5-0.8B-Base`). The half of the model this
+            directory does NOT contain.
+        repoId:
+          type: string
+          description: HuggingFace repo this came from, when the layout says so.
+        revision:
+          type: string
+          description: Snapshot revision, when the checkpoint sits in a HF cache.
 
     RecommendedSampling:
       type: object

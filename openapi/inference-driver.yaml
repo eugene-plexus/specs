@@ -407,6 +407,100 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/decide:
+    post:
+      tags: [inference]
+      operationId: decide
+      summary: Answer typed decision questions against one state.
+      description: |
+        The decisions counterpart to `POST /v1/generate`: one state and
+        a map of named typed questions in, structured answers out —
+        never free text. Internal and signed like every driver
+        operation; the public TypeSafe-shaped door is the gateway's
+        `POST /v1/systemone`, and this operation carries its substance
+        after admission, bounds and routing have already been applied.
+
+        The question and answer vocabulary is the **pinned TypeSafe
+        System One protocol** (docs.typesafe.ai/api, read 2026-09-22;
+        `docs/design/decision-models.md` holds the pin): `noul` answers
+        a probability of yes, `choice` answers a selection with a
+        distribution over at most 255 named options, `score` answers a
+        probability-weighted value over 2-10 ordered levels. Fields the
+        protocol does not define are refused, not forwarded — an
+        unsupported knob silently dropped would be a different question
+        answered confidently.
+
+        **Malformed backend output is a backend error, never an
+        invented decision.** The driver validates before returning
+        success: every question answered with the matching type, choices
+        legal, distributions well-formed, numbers finite and in range.
+        Provider probabilities and any reported model revision are
+        preserved as provenance (`reportedModel`) without claiming they
+        are comparable across models. Non-streaming, deliberately.
+
+        Raw `state` is not logged by default: it is the caller's
+        record, often someone else's ticket.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+      responses:
+        '200':
+          description: Every question answered and validated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionResponse'
+        '400':
+          description: |
+            This backend does not decide (`capabilities.decision`
+            absent — the reason names `/v1/generate` for a chat model),
+            or the request violates the pinned protocol in a way every
+            replica would refuse identically (an unknown question kind,
+            an unsupported field, criteria of the wrong shape, option
+            or level counts outside the protocol's bounds). Does not
+            cascade.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '499':
+          description: |
+            The caller went away. **Capacity stays occupied while known
+            local work continues**: a single-slot backend that is still
+            computing has not become free because nobody is listening,
+            and admitting the next request on top of it would be the
+            over-admission a non-cancellable engine cannot absorb.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '500':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '502':
+          description: |
+            Upstream backend error, malformed backend output (a missing
+            answer, an illegal choice, a distribution that is not one),
+            or a refusal-before-work worth retrying elsewhere. Cascades
+            across replicas of the same model per the gateway's rules.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: |
+            `requestTimeoutSeconds` passed with no answer. Does not
+            cascade — **a timeout after possible execution never
+            justifies silently sending the same decision to a different
+            model** — and per A6b the outcome is reported uncertain
+            rather than failed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/info:
     get:
       tags: [meta]
@@ -1012,6 +1106,195 @@ components:
         requestId:
           type: string
 
+    DecisionRequest:
+      type: object
+      description: |
+        One state, several named typed questions, answered together.
+        Question names are the caller's own keys and come back verbatim
+        on the response's `answers`. Question independence is the
+        protocol's promise: each question is answered against the state
+        alone, not against the other questions' answers.
+      required:
+        - state
+        - questions
+      properties:
+        state:
+          description: |
+            What is being judged — plain text, or structured data (an
+            object or array such as a ticket record or a chat log)
+            passed through without re-serialization by the caller.
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+            - type: array
+              items: {}
+        questions:
+          type: object
+          minProperties: 1
+          additionalProperties:
+            $ref: '#/components/schemas/DecisionQuestion'
+          description: Caller-named questions; at least one.
+        localOnly:
+          type: boolean
+          default: false
+          description: |
+            Internal policy; require a local active engine before
+            forwarding any state, exactly as on `GenerateRequest`.
+        requestId:
+          type: string
+          description: Correlation id, echoed back.
+
+    DecisionQuestion:
+      type: object
+      description: |
+        One typed question, in the pinned System One vocabulary. The
+        shape of `criteria` depends on `type` and is validated in code
+        against the pinned protocol: for `noul` an optional object
+        mapping `"true"` and `"false"` to outcome descriptions; for
+        `choice` a required map of 1-255 option names to rubric text or
+        null; for `score` a required array of 2-10 ordered level
+        descriptions, lowest first. **Fields beyond these are refused,
+        never dropped** — a knob the protocol does not define, silently
+        removed, would answer a different question than the caller
+        asked.
+      required:
+        - type
+        - instructions
+      properties:
+        type:
+          type: string
+          enum: [noul, choice, score]
+        instructions:
+          description: |
+            What to decide — a string, or structured content the
+            provider accepts.
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+            - type: array
+              items: {}
+        criteria:
+          description: Shape depends on `type`; see above.
+
+    DecisionAnswer:
+      type: object
+      description: |
+        One validated answer. `type` echoes the question's kind and
+        exactly the matching fields are present — the driver has already
+        refused a backend that answered otherwise, so a caller can
+        switch on `type` without defending against a half-shaped answer.
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [noul, choice, score]
+        noul:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: '`noul` only: the probability the answer is yes.'
+        choice:
+          type: string
+          description: '`choice` only: the highest-probability option name.'
+        score:
+          type: number
+          description: |
+            `score` only: the probability-weighted value across the
+            ordered levels, 0-indexed against `legend`.
+        legend:
+          type: object
+          additionalProperties:
+            type: string
+          description: '`score` only: level indices to their descriptions.'
+        probabilities:
+          type: object
+          additionalProperties:
+            type: number
+          description: |
+            `choice` and `score`: the full distribution, validated to be
+            over the legal options/levels with finite values.
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            `choice` and `score`: the provider's certainty, preserved as
+            reported. Provider-specific calibration — never comparable
+            across models, and never manufactured by the driver when the
+            provider omits it.
+
+    DecisionResponse:
+      type: object
+      required:
+        - answers
+      properties:
+        answers:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DecisionAnswer'
+          description: One validated answer per request question, same keys.
+        modelId:
+          type: string
+          description: |
+            The public model identifier, normalized exactly as
+            `GenerateResponse.modelId` is — a backend's own name for
+            itself is never echoed by a translating driver.
+        reportedModel:
+          type: string
+          description: |
+            What the backend said served this request, verbatim —
+            provenance for calibration (`jev-1.13.0`, a Kev checkpoint
+            id), preserved without becoming anyone's routing key.
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        usage:
+          $ref: '#/components/schemas/Usage'
+        latencyMs:
+          type: integer
+          minimum: 0
+        requestId:
+          type: string
+
+    DecisionCapability:
+      type: object
+      description: |
+        Present on `/v1/info` iff this driver serves `POST /v1/decide`.
+        Its absence is how the gateway knows not to route decisions
+        here; `chatCapable: false` beside it is how a decision-only
+        backend refuses chat with a reason.
+      required:
+        - kinds
+      properties:
+        kinds:
+          type: array
+          items:
+            type: string
+            enum: [noul, choice, score]
+          description: Question kinds the backend supports.
+        maxQuestions:
+          type: integer
+          minimum: 1
+          description: Per-request question ceiling. Absent means unknown.
+        maxOptions:
+          type: integer
+          minimum: 1
+          description: |
+            Choice option ceiling. The protocol's own ceiling is 255;
+            a backend may be lower.
+        maxConcurrent:
+          type: integer
+          minimum: 1
+          description: |
+            How many requests the backend can hold at once. **Kev's
+            server handles exactly one** (a lock, no cross-caller
+            batching — read off `kev/serve.py` at the pinned commit), so
+            its driver reports 1 and the layers above must not
+            over-admit: a non-cancellable engine that is over-admitted
+            holds capacity nobody can free.
+
     DriverInfo:
       type: object
       description: |
@@ -1185,6 +1468,21 @@ components:
                 silently instead of refusing is caught after the fact —
                 see `x_eugene_plexus.prompt_truncated` in
                 `gateway.yaml`.
+            chatCapable:
+              type: boolean
+              default: true
+              description: |
+                Whether this driver serves `POST /v1/generate` at all.
+                True for every backend that existed before decisions —
+                absent means chat-capable, so no existing driver changes
+                meaning — and **false for a System One backend**, whose
+                only surface is `POST /v1/decide`. The gateway reads it
+                to refuse a chat request against a decision-only model
+                with a sentence naming `/v1/systemone`, instead of
+                letting the request die as a protocol error inside a
+                backend that never spoke chat.
+            decision:
+              $ref: '#/components/schemas/DecisionCapability'
         version:
           type: string
           description: inference-driver semver.
