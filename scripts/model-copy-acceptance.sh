@@ -51,7 +51,7 @@ AGENT_PORT="${EP_AGENT_PORT:-8179}"
 LIB_PORT="${EP_LIB_PORT:-8182}"
 AGENT="http://127.0.0.1:$AGENT_PORT"
 LIB="http://127.0.0.1:$LIB_PORT"
-PASS="copy-$$"
+PASS="copy-acceptance-$$"
 OWNED_PORTS="$AGENT_PORT $LIB_PORT"
 
 # Read, never written: the models this box already has and the engine

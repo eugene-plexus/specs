@@ -41,7 +41,7 @@ SLOW_ENGINE_PORT="${EP_SLOW_ENGINE_PORT:-8196}"
 AGENT="http://127.0.0.1:$AGENT_PORT"
 GW="http://127.0.0.1:$GW_PORT"
 OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT $FAST_DRIVER_PORT $SLOW_DRIVER_PORT $DEAD_DRIVER_PORT $FAST_ENGINE_PORT $SLOW_ENGINE_PORT"
-PASS="m8-live-$$"
+PASS="m8-live-accept-$$"
 # The backend: a real llama.cpp, not ollama. lib/llama-backend.sh has the
 # reasoning, the provider-key trap and the /v1 trap.
 #

@@ -26,7 +26,7 @@ PY="${EP_AGENT_PY:-$EP_ROOT/agent/.venv/Scripts/python.exe}"
 WORK="${EP_WORKDIR:-${TMPDIR:-/tmp}/ep-cli-backends}"
 AGENT=http://127.0.0.1:8079
 GW=http://127.0.0.1:8080
-PASS="cli-check-$$"
+PASS="cli-check-accept-$$"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }

@@ -67,7 +67,7 @@ AGENT="http://127.0.0.1:$AGENT_PORT"
 GW="${EP_GW:-http://127.0.0.1:8080}"
 LLAMA_DRIVER_PORT="${EP_LLAMA_DRIVER_PORT:-8193}"
 OLLAMA_DRIVER_PORT="${EP_OLLAMA_DRIVER_PORT:-8194}"
-PASS="ctx-live-$$"
+PASS="ctx-live-accept-$$"
 
 OLLAMA="${EP_OLLAMA:-http://127.0.0.1:11434}"
 # A deliberately small window, so a prompt this script can build in

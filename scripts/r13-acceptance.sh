@@ -61,7 +61,7 @@ ENGINE_PORT="${EP_ENGINE_PORT:-8199}"
 AGENT="http://127.0.0.1:$AGENT_PORT"
 LIB="http://127.0.0.1:$LIB_PORT"
 OWNED_PORTS="$AGENT_PORT $LIB_PORT $ENGINE_PORT"
-PASSPHRASE="r13-$$"
+PASSPHRASE="r13-acceptance-$$"
 
 # The engine and model the measurement uses. Any llama-server this box
 # has installed and any small GGUF will do -- the subject is what `-c`

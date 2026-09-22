@@ -35,7 +35,7 @@ AGENT_PORT="${EP_AGENT_PORT:-8179}"; CTL_PORT="${EP_CTL_PORT:-8183}"
 GW_PORT="${EP_GW_PORT:-8180}"; LIB_PORT="${EP_LIB_PORT:-8182}"
 AGENT="http://127.0.0.1:$AGENT_PORT"; CTL="http://127.0.0.1:$CTL_PORT"
 GW="http://127.0.0.1:$GW_PORT"; LIB="http://127.0.0.1:$LIB_PORT"
-PASS="run-accept-$$"
+PASS="run-acceptance-$$"
 OWNED_PORTS="$AGENT_PORT $CTL_PORT $GW_PORT $LIB_PORT"
 SKIP_BUILD="${EP_SKIP_BUILD:-0}"
 # The model: a small real chat GGUF from the hub, or a local file copied in.

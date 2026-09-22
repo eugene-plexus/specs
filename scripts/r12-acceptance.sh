@@ -63,7 +63,7 @@ AGENT_PORT="${EP_AGENT_PORT:-8179}"
 LIB_PORT="${EP_LIB_PORT:-8182}"
 AGENT="http://127.0.0.1:$AGENT_PORT"
 OWNED_PORTS="$AGENT_PORT $LIB_PORT"
-PASSPHRASE="r12-$$"
+PASSPHRASE="r12-acceptance-$$"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }

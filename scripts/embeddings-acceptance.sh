@@ -60,7 +60,7 @@ EMB_PORT="${EP_EMB_PORT:-8195}"
 CHAT_PORT="${EP_CHAT_PORT:-8196}"
 DEAD_PORT="${EP_DEAD_PORT:-8197}"
 REPLICA_PORT="${EP_REPLICA_PORT:-8198}"
-PASS="embed-live-$$"
+PASS="embed-live-accept-$$"
 
 EMB_MODEL="${EP_EMB_MODEL:-emb-acceptance-model}"
 CHAT_MODEL="${EP_CHAT_MODEL:-chat-acceptance-model}"

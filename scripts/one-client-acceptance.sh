@@ -71,7 +71,7 @@ THINK_MS="${EP_THINK_MS:-5}"
 # replaces, tight enough that a regression cannot hide: ~2 ms is what
 # this box measures.
 BUDGET_MS="${EP_BUDGET_MS:-25}"
-PASSPHRASE="one-client-$$"
+PASSPHRASE="one-client-accept-$$"
 
 FAILURES=0
 say() { printf '\n== %s\n' "$*"; }

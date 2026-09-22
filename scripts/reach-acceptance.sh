@@ -58,7 +58,7 @@ AGENT="http://127.0.0.1:$AGENT_PORT"
 GW="http://127.0.0.1:$GW_PORT"
 LIB="http://127.0.0.1:$LIB_PORT"
 CTL="http://127.0.0.1:$CTL_PORT"
-PASS="reach-$$"
+PASS="reach-acceptance-$$"
 OWNED_PORTS="$AGENT_PORT $GW_PORT $LIB_PORT $CTL_PORT"
 SKIP_BUILD="${EP_SKIP_BUILD:-0}"
 # Changing the host firewall needs administrator rights and outlives the

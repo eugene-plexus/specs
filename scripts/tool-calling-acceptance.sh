@@ -52,7 +52,7 @@ AGENT="http://127.0.0.1:$AGENT_PORT"
 GW="${EP_GW:-http://127.0.0.1:8080}"
 DRIVER_PORT="${EP_DRIVER_PORT:-8191}"
 CLI_PORT="${EP_CLI_PORT:-8192}"
-PASS="tools-live-$$"
+PASS="tools-live-accept-$$"
 ENGINE_PORT="${EP_ENGINE_PORT:-8193}"
 # The backend: a real llama.cpp, not ollama. lib/llama-backend.sh has the
 # reasoning, the provider-key trap and the /v1 trap.
