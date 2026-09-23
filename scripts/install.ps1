@@ -107,8 +107,8 @@ $ErrorActionPreference = "Stop"
 $PIN = @{
     "agent"            = "442af423d2ef7dd512de9029f75e09fdb1c70c5a"
     "control"          = "acb224dba466fd236cf088ae206ab81530d11bfc"
-    "gateway"          = "004704ddc247dc5eaf7c27d7508d2877e7e04f55"
-    "inference-driver" = "0a1fc8c7237f9a4effe6f9c733483c54341e97fc"
+    "gateway"          = "6e90a6b735936888fcb69334970769ef801e7e87"
+    "inference-driver" = "dfaac8e650868b07b6b6689c937844cb60c2d3fd"
     "library"          = "ea19464bb86f7ac3da942f3562dab8e2761a234f"
     "ui"               = "14514f1133f6f16aa6d2c3802b5424235e094ffe"  # branch `dist`, not `main`
 }

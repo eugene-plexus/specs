@@ -51,13 +51,16 @@ class AgentHandler(BaseHTTPRequestHandler):
             _json(
                 self,
                 {
+                    # One per --driver-port, so a run can put a text engine
+                    # and a vision engine behind one gateway.
                     "components": [
                         {
-                            "name": "stub-driver",
+                            "name": "stub-driver" if i == 0 else f"stub-driver-{i + 1}",
                             "kind": "inference-driver",
-                            "url": f"http://127.0.0.1:{STATE['driver_port']}",
+                            "url": f"http://127.0.0.1:{port}",
                             "status": "running",
                         }
+                        for i, port in enumerate(STATE["driver_ports"])  # type: ignore[arg-type]
                     ]
                 },
             )
@@ -251,7 +254,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("role", choices=["agent", "driver"])
     ap.add_argument("--port", type=int, required=True)
-    ap.add_argument("--driver-port", type=int, default=0)
+    ap.add_argument("--driver-port", type=int, nargs="+", default=[0])
     ap.add_argument("--model", default="local-qwen")
     ap.add_argument("--answer", default="ok")
     ap.add_argument("--tool", action="store_true")
@@ -259,7 +262,7 @@ def main() -> None:
     args = ap.parse_args()
 
     STATE.update(
-        driver_port=args.driver_port,
+        driver_ports=args.driver_port,
         model=args.model,
         answer=args.answer,
         tool=args.tool,
