@@ -207,9 +207,9 @@ info:
 
     ## Browsers, and CORS
 
-    The four front-door paths -- `GET /v1/models`,
-    `POST /v1/chat/completions`, `POST /v1/embeddings` and
-    `POST /v1/messages` -- answer CORS,
+    The front-door paths -- `GET /v1/models`,
+    `POST /v1/chat/completions`, `POST /v1/embeddings`,
+    `POST /v1/messages` and `POST /v1/responses` -- answer CORS,
     so a web page on another origin can use the front door the way a
     non-browser client always could: the UI playground's direct mode,
     Open WebUI in a tab, a web app on the OpenAI SDK. **`/v1/messages`
@@ -700,8 +700,9 @@ paths:
 
         Since 2026-09-23 an `image` block with a `base64` source is
         carried to the backend as an inline image part, and from there it
-        is the shared path's: the limits `MessageContent` states (four
-        per request, 5 MiB decoded each, 10 MiB total, 8192 px a side),
+        is the shared path's: the limits `MessageContent` states
+        (`maxImagesPerRequest`, 12 by default, 5 MiB decoded each, 10 MiB
+        total, 8192 px a side),
         a check that the bytes are the picture they claim to be, and
         routing **only to a backend that confirms image input**. A model
         that cannot see the picture is never asked -- the request is a
@@ -739,11 +740,14 @@ paths:
         block in the caller's own coordinates
         (`messages.2.content.0.content.0.source`).
 
-        **The four-image limit counts the whole conversation**, because
-        a client sends its history on every request. A Claude Code
-        session that has read five screenshots is refused on every turn
-        after the fifth until it compacts or clears; the message says
-        which block tipped it.
+        **The image limit counts the whole conversation**, because a
+        client sends its history on every request and the model receives
+        every picture in it each time. It was a fixed four until
+        2026-09-23, when a Claude Code session that had read five
+        screenshots was refused on every turn after the fifth; it is the
+        gateway's `maxImagesPerRequest` now, twelve by default and at most
+        64, and a refusal names both the setting and the block that tipped
+        it.
 
         ### What is refused, with a 400 naming the field
 
@@ -1020,6 +1024,268 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AnthropicErrorResponse'
+
+  /v1/responses:
+    post:
+      tags: [inference]
+      operationId: createResponse
+      summary: OpenAI's Responses API, so Codex CLI and other Responses clients can use local models.
+      description: |
+        **The fourth front door, and the only one Codex CLI can use.**
+        Codex 0.130 refuses `wire_api = "chat"` at startup, so without
+        this path it cannot be pointed at this install at all.
+
+        It is a **translation at the edge**, exactly as `/v1/messages`
+        is: the body becomes the internal request `/v1/chat/completions`
+        builds, and from there every door shares the surface refusal, the
+        tools refusal, the refresh-and-wake, the settings profile, the
+        image path, client-key admission, the truncation detector, the
+        cascade and the recording. Every shape below was captured from a
+        real Codex CLI rather than read from the documentation
+        (`docs/acceptance/responses-measurement.md`).
+
+        ### Stateless: the conversation lives in the client
+
+        Codex sends `store: false` and **resends the whole conversation
+        on every turn**, with no `previous_response_id`. This gateway
+        keeps no response store either, so `previous_response_id`,
+        `conversation`, `prompt` (a stored prompt template),
+        `background: true` and an `item_reference` input item are each
+        refused with a 400 naming the field: each points at state that
+        exists only on OpenAI's servers. `store: true` is accepted and
+        named on the ignored-settings header, because nothing is kept;
+        every response reports `store: false`.
+
+        ### What the input becomes
+
+        `instructions` becomes the leading system message. A `developer`
+        or `system` message becomes a system message where it stands.
+        `input_text` is text and `input_image` is an image part (below).
+        A `function_call` item is the assistant turn's tool call and a
+        `function_call_output` is the `tool` message answering it, by
+        `call_id`; consecutive assistant-side items (reasoning, a
+        message, calls) form one assistant turn. **Adjacent messages of
+        the same role are joined** with a blank line: Codex sends two
+        user messages in a row on every request, and a chat template
+        that requires alternating roles would refuse them.
+
+        `web_search` is on **every** Codex request as
+        `{"type": "web_search", "external_web_access": false}`. It is
+        accepted, removed, and named on the ignored-settings header:
+        this gateway has no search to run, and refusing it would refuse
+        the first request of every session, as `/v1/messages` once did
+        with `output_config`. Every other server-side tool (file search,
+        code interpreter, computer use, image generation, MCP, a custom
+        or local-shell tool) is refused with a 400 naming its type.
+
+        ### Reasoning goes out as `reasoning_text` and comes back
+
+        A model's reasoning is a `reasoning` output item whose `content`
+        holds one `reasoning_text` part -- the Responses API's slot for a
+        model's own reasoning, which is what a local engine reports.
+        `summary` is empty: there is nothing here to summarize with, so
+        a requested `reasoning.summary` is named on the ignored-settings
+        header, as is `reasoning.effort` (the model's settings profile
+        governs how it thinks).
+
+        When `include` asks for `reasoning.encrypted_content`, the item
+        also carries `encrypted_content`:
+        `eugene-plexus-reasoning-v1:` and the reasoning in base64 -- the
+        same carrier the Anthropic door's omitted thinking uses, readable
+        only here and never a claim to be OpenAI's. Codex sends reasoning
+        items back on later turns with `content` and `encrypted_content`
+        intact (measured), and either one is carried to the backend as
+        that assistant turn's reasoning, so a tool loop reaches the model
+        with its own earlier thinking.
+
+        ### Images
+
+        An `input_image` whose `image_url` is an inline `data:` URL is
+        carried on the image path every door shares: the limits in
+        `MessageContent`, a check that the bytes are the picture they
+        claim to be, and routing only to a backend that confirms image
+        input. A URL is refused and never fetched, and so is a `file_id`.
+        **`detail` is accepted whatever it says** -- Codex sends
+        `"high"` on every image (measured), both on a `-i` attachment and
+        in its `view_image` tool's result -- and a value other than
+        `auto` is named on the ignored-settings header, because a local
+        projector sizes the picture itself. An image inside a
+        `function_call_output` moves to the next user message, labelled
+        with the call id, as on `/v1/messages`: a `tool` message carries
+        text only.
+
+        ### No cap from the install default
+
+        Codex sends **no `max_output_tokens`**, which in this protocol
+        means no cap -- and an answer that ends in `response.incomplete`
+        is **generated six times and then failed** by Codex (measured).
+        So on this door an absent `max_output_tokens` takes the model's
+        settings profile `maxTokens` when it sets one and otherwise sends
+        none, leaving the answer bounded by the context window and
+        `requestTimeoutSeconds`. The gateway's install-wide
+        `defaultMaxTokens` does not apply here. Every other door keeps
+        using it.
+
+        ### Statuses: chosen for what the client does with them
+
+        Measured against Codex 0.130 (the record's §3): a **400** is shown
+        once; a 401, 403 or 404 is retried five times and then shown; a
+        5xx is retried twenty-nine times; a 429's and a 500's message are
+        discarded. Hence **a model nothing serves is a 400 here, not a
+        404** -- the same divergence `/v1/messages` makes, for the same
+        kind of reason -- and a rejected credential stays the OpenAI
+        door's 401, which Codex bounds and shows.
+
+        ### Streaming
+
+        `stream: true` produces the Responses event stream: every frame
+        carries both an `event:` name and a `data:` object whose `type`
+        repeats it, and a `sequence_number` counting from 0. There is no
+        `[DONE]`. `response.created` and `response.in_progress` open it;
+        each output item is `response.output_item.added`, its deltas
+        (`response.reasoning_text.delta`, `response.output_text.delta`
+        inside a `content_part`, or `response.function_call_arguments.delta`),
+        its `.done` events and `response.output_item.done`; the stream ends
+        with `response.completed`, or `response.incomplete` when the answer
+        was cut at the output cap or by a content filter.
+
+        **The stream opens as soon as a backend is chosen, and stays
+        open with `response.in_progress` every ten seconds until output
+        arrives.** Codex drops a stream that is silent for five minutes
+        -- before the first event too -- and retries it from the start,
+        and an SSE comment does not reset that timer (measured). A local
+        engine prefilling Codex's first prompt on a processor can take
+        longer than that. `response.created` therefore names the model
+        that was *asked for*; the terminal event names the one that
+        answered, which after a cascade can differ.
+
+        A failure after that point is `response.failed`, never a bare
+        `error` event, which Codex reports without our message. Its
+        `error.code` is chosen for what the client should do:
+        `context_length_exceeded` when the backend refused an over-long
+        prompt (Codex stops and says the context is full),
+        `invalid_prompt` when another attempt cannot help -- a backend
+        that refused the request, a deadline that fired while the engine
+        was still computing, a credential turned off mid-stream -- and
+        `server_error` for a failure a retry can fix.
+
+        The failover rule is inherited unchanged: possible until the first
+        token, impossible after it.
+
+        ### The envelope does not go in the body
+
+        `x_eugene_plexus` rides on response headers, as on `/v1/messages`
+        (`x-eugene-plexus-driver`, `-runtime`, `-backend`, `-latency-ms`,
+        `-attempts`, `-tier`, `-swapped-in`, `-waited-ms`,
+        `-context-length`, `-prompt-truncated`), and
+        `x-eugene-plexus-ignored-settings` names every accepted setting
+        this gateway does not honour. The recording rides the shared path
+        and lands in `GET /v1/metrics` like any other request.
+
+        ### Accepted and discarded, refused
+
+        Discarded as opaque annotations: `metadata`, `client_metadata`,
+        `user`, `safety_identifier`. Accepted and named on the
+        ignored-settings header when set: `prompt_cache_key` and
+        `prompt_cache_retention` (a local engine keeps its own cache),
+        `service_tier`, `truncation: "auto"` (this gateway never drops
+        input to make it fit; the engine refuses instead),
+        `stream_options.include_obfuscation`, `text.verbosity`, and the
+        `include` values that ask for server-side tool output nothing
+        here produces. `max_tool_calls` bounds built-in tools, of which
+        none run here, and is accepted. Refused with a 400 naming the
+        field: every stateful field above, `top_logprobs` above 0 and the
+        `message.output_text.logprobs` include, an `input_file` or
+        `input_audio` part, `tool_choice` forcing a tool that is not a
+        function, and any top-level field not listed in
+        `ResponsesRequest`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponsesRequest'
+      responses:
+        '200':
+          description: |
+            A response object, or a Responses event stream when `stream`
+            was true.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponsesResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ResponsesStreamEvent'
+        '400':
+          description: |
+            The request names something this door refuses (see above), an
+            image it cannot carry or no ready backend can see, a backend
+            refused it -- **or it names a model nothing serves**, which is
+            a 400 here and not a 404 because Codex retries a 404 five
+            times before showing it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '499':
+          description: The client disconnected; the backend call was cancelled and recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: |
+            Every eligible backend failed after the cascade ran, or a
+            driver refused the gateway's own credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: A backend serves the model but is not ready, or the gateway is starting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '504':
+          description: |
+            No backend answered within `requestTimeoutSeconds`. Not
+            cascaded: the backend is almost certainly still computing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/responses/{responseId}:
+    parameters:
+      - name: responseId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [inference]
+      operationId: retrieveResponse
+      summary: Always 404 -- this gateway keeps no response store.
+      description: |
+        Answered so that a client asking for a stored response is told
+        why there is none, in OpenAI's envelope, rather than receiving a
+        framework's bare 404. `DELETE`, and the `cancel` and
+        `input_items` sub-resources, answer the same way.
+      responses:
+        '404':
+          description: No response is ever stored here.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
 
   /v1/embeddings:
     post:
@@ -1793,7 +2059,7 @@ components:
         tokens threaded to spawned children via env var at startup; and
         an outside app uses a **client key** from
         `POST /v1/auth/client-keys`, which this gateway accepts on the
-        four front-door paths and refuses everywhere else. See
+        front-door paths and refuses everywhere else. See
         "Client keys, on the front door only" above.
 
         On `POST /v1/messages` the same token may arrive as `x-api-key`
@@ -3751,6 +4017,371 @@ components:
                 which is why this door answers 400 for a model nothing
                 serves.
 
+    ResponsesRequest:
+      type: object
+      description: |
+        Request body for `POST /v1/responses`, in OpenAI's shape. Like
+        `AnthropicMessagesRequest`, **this schema is what the gateway
+        reads, not what it refuses**: the refusals are enforced against
+        the raw body by the implementation, with a 400 naming the field,
+        and the endpoint description lists them. A top-level field not
+        named here is refused.
+      additionalProperties: true
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          description: A model id from `GET /v1/models`, resolved against this install's slots.
+        input:
+          description: |
+            A string (one user message), or the conversation as a list of
+            items. Codex resends the whole conversation on every turn.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: '#/components/schemas/ResponsesInputItem'
+        instructions:
+          type:
+            - string
+            - 'null'
+          description: The leading system message.
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResponsesTool'
+        tool_choice:
+          description: |
+            `auto`, `none`, `required`, or `{"type": "function", "name": …}`.
+            Forcing any other tool type is refused.
+          oneOf:
+            - type: string
+              enum: [auto, none, required]
+            - type: object
+              additionalProperties: true
+        parallel_tool_calls:
+          type:
+            - boolean
+            - 'null'
+        stream:
+          type:
+            - boolean
+            - 'null'
+          description: Codex sets this on every request.
+        temperature:
+          type:
+            - number
+            - 'null'
+          minimum: 0
+          maximum: 2
+        top_p:
+          type:
+            - number
+            - 'null'
+          minimum: 0
+          maximum: 1
+        max_output_tokens:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          description: |
+            Absent means no cap here -- see "No cap from the install
+            default" on the endpoint. The model's settings profile still
+            applies.
+        text:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+          description: |
+            `format` (`text`, `json_object`, or `json_schema` with `name`,
+            `schema`, `strict`, `description`) is carried as the backend's
+            response format. `verbosity` is accepted and not honoured.
+        reasoning:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+          description: |
+            `effort` and `summary` are accepted and not honoured, and are
+            named on the ignored-settings header when set. Codex sends
+            null for a model id it does not know.
+        include:
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+          description: |
+            `reasoning.encrypted_content` is honoured. The server-side tool
+            includes are accepted (nothing here produces those items).
+            `message.output_text.logprobs` is refused.
+        store:
+          type:
+            - boolean
+            - 'null'
+          description: Nothing is ever stored; `true` is named on the ignored-settings header.
+        previous_response_id:
+          type:
+            - string
+            - 'null'
+          description: Refused when set. This gateway keeps no response store.
+        truncation:
+          type:
+            - string
+            - 'null'
+          enum: [auto, disabled, null]
+        metadata:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+        client_metadata:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+          description: Sent by Codex (`x-codex-installation-id`). Discarded.
+        prompt_cache_key:
+          type:
+            - string
+            - 'null'
+          description: Sent by Codex (the session id). A local engine keeps its own cache.
+        user:
+          type:
+            - string
+            - 'null'
+        safety_identifier:
+          type:
+            - string
+            - 'null'
+        service_tier:
+          type:
+            - string
+            - 'null'
+        max_tool_calls:
+          type:
+            - integer
+            - 'null'
+        top_logprobs:
+          type:
+            - integer
+            - 'null'
+        background:
+          type:
+            - boolean
+            - 'null'
+        stream_options:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+        prompt_cache_retention:
+          type:
+            - string
+            - 'null'
+        conversation:
+          description: Refused when set. Conversations are stored objects.
+        prompt:
+          description: Refused when set. A stored prompt template exists only at OpenAI.
+
+    ResponsesInputItem:
+      type: object
+      description: |
+        One conversation item. **Modelled loosely on purpose**, as
+        `AnthropicContentBlock` is: the variants differ by `type`, and a
+        strict union would reject the next item type on a wire we do not
+        own.
+
+        Carried: `message` (`role` user, assistant, system or developer;
+        `content` a string or parts; `type` may be omitted), `function_call`
+        (`call_id`, `name`, `arguments` as a JSON string),
+        `function_call_output` (`call_id`, `output` as a string or a list
+        of `input_text` / `input_image` parts), and `reasoning`
+        (`content` of `reasoning_text` parts, `encrypted_content`).
+        Codex drops `id` and `status` when it sends items back
+        (measured), so neither is required. Refused: `item_reference` and
+        any other type.
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+        role:
+          type: string
+        content:
+          description: A string, or a list of parts.
+        call_id:
+          type: string
+        name:
+          type: string
+        arguments:
+          type: string
+        output:
+          description: A string, or a list of `input_text` / `input_image` parts.
+        summary:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        encrypted_content:
+          type:
+            - string
+            - 'null'
+
+    ResponsesTool:
+      type: object
+      description: |
+        A `function` tool (`name`, `description`, `parameters`, `strict`)
+        maps onto an OpenAI chat function. `web_search` is accepted and
+        removed (see the endpoint); any other `type` is refused.
+      additionalProperties: true
+      required:
+        - type
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+        strict:
+          type:
+            - boolean
+            - 'null'
+
+    ResponsesResponse:
+      type: object
+      description: |
+        A response object. `output` holds a `reasoning` item first when
+        the model reasoned, then a `message` with one `output_text` part,
+        then one `function_call` item per tool call. The request's settings
+        are echoed as OpenAI echoes them; `store` is always false.
+      additionalProperties: true
+      required:
+        - id
+        - object
+        - created_at
+        - status
+        - model
+        - output
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          enum: [response]
+        created_at:
+          type: integer
+        status:
+          type: string
+          enum: [completed, incomplete, failed, in_progress]
+          description: |
+            `incomplete` when the answer was cut at the output cap
+            (`incomplete_details.reason: max_output_tokens`) or by a
+            content filter (`content_filter`).
+        incomplete_details:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+        error:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+        model:
+          type: string
+          description: The model that answered, which after a cascade may not be the one asked for.
+        output:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResponsesOutputItem'
+        usage:
+          $ref: '#/components/schemas/ResponsesUsage'
+
+    ResponsesOutputItem:
+      type: object
+      description: |
+        `{"type": "reasoning", "id", "summary": [], "content":
+        [{"type": "reasoning_text", "text"}], "encrypted_content"?}`,
+        `{"type": "message", "id", "role": "assistant", "status",
+        "content": [{"type": "output_text", "text", "annotations": []}]}`,
+        or `{"type": "function_call", "id", "status", "call_id", "name",
+        "arguments"}`.
+      additionalProperties: true
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [reasoning, message, function_call]
+        id:
+          type: string
+
+    ResponsesUsage:
+      type: object
+      description: |
+        Token counts in OpenAI's names. **Unlike Anthropic's,
+        `input_tokens` includes cached input**; `input_tokens_details` and
+        `output_tokens_details` appear only when the backend reported them.
+      required:
+        - input_tokens
+        - output_tokens
+        - total_tokens
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        input_tokens_details:
+          type: object
+          additionalProperties: true
+        output_tokens_details:
+          type: object
+          additionalProperties: true
+
+    ResponsesStreamEvent:
+      type: object
+      description: |
+        One frame of the Responses event stream. The SSE `event:` name
+        and `data.type` always agree, and every frame has a
+        `sequence_number`.
+      additionalProperties: true
+      required:
+        - type
+        - sequence_number
+      properties:
+        type:
+          type: string
+          enum:
+            - response.created
+            - response.in_progress
+            - response.output_item.added
+            - response.output_item.done
+            - response.content_part.added
+            - response.content_part.done
+            - response.output_text.delta
+            - response.output_text.done
+            - response.reasoning_text.delta
+            - response.reasoning_text.done
+            - response.function_call_arguments.delta
+            - response.function_call_arguments.done
+            - response.completed
+            - response.incomplete
+            - response.failed
+        sequence_number:
+          type: integer
+        response:
+          $ref: '#/components/schemas/ResponsesResponse'
+
     SystemOneRequest:
       type: object
       description: |
@@ -3879,9 +4510,9 @@ components:
     OpenAIErrorResponse:
       type: object
       description: |
-        Error envelope for the two OpenAI-compatible operations. The
-        rest of the gateway returns RFC 7807 `problem+json`; these two
-        cannot, because OpenAI SDKs parse this shape to build their
+        Error envelope for the OpenAI-compatible operations, `/v1/responses`
+        included. The rest of the gateway returns RFC 7807 `problem+json`;
+        these cannot, because OpenAI SDKs parse this shape to build their
         exceptions and would report a problem+json body as an unhelpful
         generic failure. One surface, one foreign convention, honoured
         exactly.

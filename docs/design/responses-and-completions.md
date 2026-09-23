@@ -111,7 +111,15 @@ yes, the `suffix`-routing rule above is the part that must not be skipped.
 
 ## 3. The calls
 
-| # | Call | Recommendation |
-| --- | --- | --- |
-| 1 | Build `/v1/responses` (stateless, Codex-first)? | **Yes, next** — Codex 0.130 cannot reach us at all |
-| 2 | Build `/v1/completions` + FIM now? | **No** — capture an IDE client first, then decide whether autocomplete is an audience |
+| # | Call | Recommendation | Troy, 2026-09-23 |
+| --- | --- | --- | --- |
+| 1 | Build `/v1/responses` (stateless, Codex-first)? | **Yes, next** — Codex 0.130 cannot reach us at all | **Build it now.** Built the same day: `docs/acceptance/responses-run.md` |
+| 2 | Build `/v1/completions` + FIM now? | **No** — capture an IDE client first, then decide whether autocomplete is an audience | **Not yet** |
+| 3 | The four-image limit counts the whole conversation, so a session that read five screenshots is refused until it compacts | (was left open) | **Make it configurable, default 12.** The gateway's `maxImagesPerRequest` (1-64); the driver's own cap is now a ceiling of 64 |
+
+Two things the build measured that this document did not know, both in
+`docs/acceptance/responses-measurement.md`: Codex regenerates an answer
+that ends `incomplete` five times, so the install's `defaultMaxTokens` is
+not applied on this door; and Codex's five-minute idle timeout runs before
+the first event, so the stream opens early and sends `response.in_progress`
+every ten seconds.
