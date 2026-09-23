@@ -661,11 +661,28 @@ paths:
         that never enabled thinking reads `content[0].text`, and a
         thinking block in first place would break the commonest line of
         Anthropic SDK code there is. Claude Code sends `adaptive` for a
-        local model id, so it gets them. `signature` is always the empty
-        string -- there is no Anthropic key to sign with -- and a
-        `thinking` block sent back on a later assistant turn is carried
-        to the backend as that turn's reasoning (a `redacted_thinking`
-        block is dropped: there is nothing in it a local model can read).
+        local model id, so it gets them.
+
+        **`display` is honoured the way Anthropic defines it.**
+        `"omitted"` returns the block with `thinking` empty, and
+        `"summarized"` or no `display` returns the text (ours is the
+        whole reasoning, not a summary: there is nothing to condense it
+        with and nothing to hide). **Claude Code sends `"omitted"` on
+        every request** (measured, 2.1.207), so it is shown no reasoning
+        text, by its own choice.
+
+        What an omitted block still carries is continuity, in
+        `signature` -- which is what Anthropic's opaque signature is
+        for. Ours is `eugene-plexus-reasoning-v1:` followed by the
+        reasoning in base64: a value only this gateway reads, never a
+        claim to be Anthropic's. A `thinking` block sent back on a later
+        assistant turn is carried to the backend as that turn's
+        reasoning, from its text or else from that signature, so a tool
+        loop through Claude Code reaches the model with its own earlier
+        thinking -- llama.cpp renders it into the prompt for templates
+        that keep it. A signature this gateway did not write is ignored,
+        and a `redacted_thinking` block is dropped: nothing in it is
+        readable here.
 
         What is still not honoured, and is named on the ignored-settings
         header when sent: a `budget_tokens`, and `disabled` as an
@@ -3078,12 +3095,15 @@ components:
             all.
 
             **What it does decide, since 2026-09-23: whether the
-            response carries `thinking` blocks.** Non-null and not
-            `{"type": "disabled"}` returns the model's reasoning, when
-            the backend reported any, as a `thinking` block ahead of the
-            answer; absent, null or disabled returns none, which is
-            Anthropic's own behaviour and keeps `content[0].text`
-            pointing at the answer for every client that never asked.
+            response carries `thinking` blocks, and whether their text
+            is shown.** Non-null and not `{"type": "disabled"}` returns
+            the model's reasoning, when the backend reported any, as a
+            `thinking` block ahead of the answer -- with the text, or
+            with the text empty and the reasoning carried in `signature`
+            when `display` is `"omitted"`. Absent, null or disabled
+            returns none, which is Anthropic's own behaviour and keeps
+            `content[0].text` pointing at the answer for every client
+            that never asked.
 
             What it does not decide: a `budget_tokens` is not enforced,
             and `disabled` hides the blocks without stopping the model
@@ -3214,11 +3234,14 @@ components:
         signature:
           type: string
           description: |
-            On `thinking`: always the empty string from this gateway.
-            Anthropic signs its own reasoning so it can verify it when a
-            client sends it back; there is no such key here, and a value
-            that looked like a signature would be a forgery of one.
-            Ignored on the way in.
+            On `thinking`: opaque to the client, as Anthropic's is. From
+            this gateway it is empty when the text is shown, and
+            `eugene-plexus-reasoning-v1:<base64 of the reasoning>` when
+            the request asked for `display: "omitted"` -- so a client
+            that echoes the block back unchanged, as Anthropic tells it
+            to, returns the reasoning for the next turn. Not Anthropic's
+            signature and not verifiable by Anthropic; a signature
+            without that prefix is ignored on the way in.
         cache_control:
           type: object
           additionalProperties: true
@@ -3461,7 +3484,10 @@ components:
           additionalProperties: true
           description: |
             `{"type": "text_delta", "text": …}` for prose,
-            `{"type": "thinking_delta", "thinking": …}` for reasoning,
+            `{"type": "thinking_delta", "thinking": …}` for reasoning
+            (none under `display: "omitted"`), a closing
+            `{"type": "signature_delta", "signature": …}` on an omitted
+            thinking block,
             `{"type": "input_json_delta", "partial_json": …}` for a tool
             call's arguments, and on `message_delta` the `stop_reason`
             and `stop_sequence`.
