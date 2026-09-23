@@ -19,8 +19,15 @@ Modes
     capture   record requests, answer with a plain text turn
     toolloop  answer the first turn with a streamed tool_use for a read-only
               tool, so the follow-up request carries a real `tool_result`
+    imageread answer the first turn with a `Read` of `--read-path` (an
+              image), so the follow-up carries the client's own image block
     <status>  answer /v1/messages with that HTTP status and an Anthropic-shaped
               error body, and record how many times the client tries again
+
+`--usage-in start|delta|both` says where a turn's input token count is
+reported (2026-09-23): on `message_start`, only on `message_delta`, or on
+both. It exists to measure which one the client keeps. A request to
+`/v1/messages/count_tokens` is recorded and answered `{"input_tokens": N}`.
 
 Usage
 -----
@@ -93,6 +100,26 @@ def _sse(events: list[tuple[str, dict]]) -> bytes:
     ).encode("utf-8")
 
 
+# The distinctive input token count a turn reports, and where. Chosen so it
+# cannot be mistaken for a count the client computed itself.
+REPORTED_INPUT = 31337
+_COUNTED_INPUT = 4242
+USAGE_IN = "start"
+READ_PATH = ""
+
+
+def _start_usage() -> dict:
+    inp = REPORTED_INPUT if USAGE_IN in ("start", "both") else 0
+    return {"input_tokens": inp, "output_tokens": 1}
+
+
+def _delta_usage(output_tokens: int) -> dict:
+    usage: dict = {"output_tokens": output_tokens}
+    if USAGE_IN in ("delta", "both"):
+        usage["input_tokens"] = REPORTED_INPUT
+    return usage
+
+
 def _message_start(model: str) -> tuple[str, dict]:
     return (
         "message_start",
@@ -106,7 +133,7 @@ def _message_start(model: str) -> tuple[str, dict]:
                 "content": [],
                 "stop_reason": None,
                 "stop_sequence": None,
-                "usage": {"input_tokens": 11, "output_tokens": 1},
+                "usage": _start_usage(),
             },
         },
     )
@@ -138,7 +165,7 @@ def _text_turn(model: str, text: str) -> bytes:
                 {
                     "type": "message_delta",
                     "delta": {"stop_reason": "end_turn", "stop_sequence": None},
-                    "usage": {"output_tokens": 4},
+                    "usage": _delta_usage(4),
                 },
             ),
             ("message_stop", {"type": "message_stop"}),
@@ -146,9 +173,11 @@ def _text_turn(model: str, text: str) -> bytes:
     )
 
 
-def _tool_use_turn(model: str) -> bytes:
+def _tool_use_turn(
+    model: str, tool: str = _READ_ONLY_TOOL, arguments: str = _READ_ONLY_INPUT
+) -> bytes:
     """A tool call, fragmented, because that is what a real backend does."""
-    half = len(_READ_ONLY_INPUT) // 2
+    half = len(arguments) // 2
     return _sse(
         [
             _message_start(model),
@@ -177,7 +206,7 @@ def _tool_use_turn(model: str) -> bytes:
                     "content_block": {
                         "type": "tool_use",
                         "id": "toolu_r4_capture_0001",
-                        "name": _READ_ONLY_TOOL,
+                        "name": tool,
                         "input": {},
                     },
                 },
@@ -189,7 +218,7 @@ def _tool_use_turn(model: str) -> bytes:
                     "index": 1,
                     "delta": {
                         "type": "input_json_delta",
-                        "partial_json": _READ_ONLY_INPUT[:half],
+                        "partial_json": arguments[:half],
                     },
                 },
             ),
@@ -200,7 +229,7 @@ def _tool_use_turn(model: str) -> bytes:
                     "index": 1,
                     "delta": {
                         "type": "input_json_delta",
-                        "partial_json": _READ_ONLY_INPUT[half:],
+                        "partial_json": arguments[half:],
                     },
                 },
             ),
@@ -210,7 +239,7 @@ def _tool_use_turn(model: str) -> bytes:
                 {
                     "type": "message_delta",
                     "delta": {"stop_reason": "tool_use", "stop_sequence": None},
-                    "usage": {"output_tokens": 9},
+                    "usage": _delta_usage(9),
                 },
             ),
             ("message_stop", {"type": "message_stop"}),
@@ -241,6 +270,21 @@ _REASONS = {
 }
 
 
+def _trim_block(block: object) -> object:
+    """An image's base64 as its length and head, never the whole payload."""
+    if not isinstance(block, dict):
+        return block
+    copy = dict(block)
+    source = copy.get("source")
+    if isinstance(source, dict) and isinstance(source.get("data"), str):
+        data = source["data"]
+        copy["source"] = {**source, "data": f"<base64 len {len(data)} head {data[:24]!r}>"}
+    text = copy.get("text")
+    if isinstance(text, str) and len(text) > 200:
+        copy["text"] = text[:200] + f"...<truncated, {len(text)} chars>"
+    return copy
+
+
 def _trim(body: dict) -> list:
     """The message list, with the 120 KB of system prompt cut out of it."""
     out = []
@@ -258,7 +302,9 @@ def _trim(body: dict) -> list:
             inner = copy.get("content")
             if isinstance(inner, str) and len(inner) > 200:
                 copy["content"] = inner[:200] + "..."
-            blocks.append(copy)
+            elif isinstance(inner, list):
+                copy["content"] = [_trim_block(b) for b in inner]
+            blocks.append(_trim_block(copy))
         out.append({"role": m["role"], "content": blocks})
     return out
 
@@ -333,11 +379,22 @@ def build_handler(rec: Recorder, mode: str):
                         )
                 tools = parsed.get("tools") or []
                 parts.append(f"TOOLS: {len(tools)} -> {[t.get('name') for t in tools]}\n")
-                parts.append(f"MESSAGES:\n{json.dumps(_trim(parsed), indent=2, ensure_ascii=False)}\n")
+                parts.append(
+                    f"MESSAGES:\n{json.dumps(_trim(parsed), indent=2, ensure_ascii=False)}\n"
+                )
 
             rec.write("".join(parts))
 
             model = parsed.get("model", "r4-capture-model")
+
+            if "/v1/messages/count_tokens" in path:
+                payload = json.dumps({"input_tokens": _COUNTED_INPUT}).encode()
+                conn.sendall(
+                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                    + f"Content-Length: {len(payload)}\r\n\r\n".encode()
+                    + payload
+                )
+                return
 
             if method == "HEAD" or "/v1/messages" not in path:
                 conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
@@ -364,6 +421,8 @@ def build_handler(rec: Recorder, mode: str):
             turn = rec.next_message()
             if mode == "toolloop" and turn == 1:
                 payload = _tool_use_turn(model)
+            elif mode == "imageread" and turn == 1:
+                payload = _tool_use_turn(model, "Read", json.dumps({"file_path": READ_PATH}))
             else:
                 payload = _text_turn(model, f"{mode}-ok")
 
@@ -391,8 +450,15 @@ def main() -> None:
         default="capture",
         help="capture | toolloop | an HTTP status such as 400, 401, 403, 404, 429, 500, 503",
     )
+    ap.add_argument("--read-path", default="", help="the file imageread asks the client to Read")
+    ap.add_argument("--usage-in", choices=("start", "delta", "both"), default="start")
+    ap.add_argument("--reported-input", type=int, default=31337)
     args = ap.parse_args()
 
+    global READ_PATH, USAGE_IN, REPORTED_INPUT
+    READ_PATH = args.read_path
+    USAGE_IN = args.usage_in
+    REPORTED_INPUT = args.reported_input
     rec = Recorder(args.out)
     with Server(("127.0.0.1", args.port), build_handler(rec, args.mode)) as srv:
         print(f"r4-capture mode={args.mode} on 127.0.0.1:{args.port} -> {args.out}", flush=True)

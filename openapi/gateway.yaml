@@ -696,13 +696,62 @@ paths:
         refused with a 400 before that, being the last sampler neither
         internal contract could carry.
 
+        ### Images are carried, on the OpenAI door's path
+
+        Since 2026-09-23 an `image` block with a `base64` source is
+        carried to the backend as an inline image part, and from there it
+        is the shared path's: the limits `MessageContent` states (four
+        per request, 5 MiB decoded each, 10 MiB total, 8192 px a side),
+        a check that the bytes are the picture they claim to be, and
+        routing **only to a backend that confirms image input**. A model
+        that cannot see the picture is never asked -- the request is a
+        400 saying so, before anything is forwarded or woken, which is
+        why this was refused until a vision backend could be routed to.
+
+        **Claude Code's image arrives inside a `tool_result`**, and that
+        decided the shape (captured with `scripts/r4-capture.py --mode
+        imageread`, Claude Code 2.1.207 / agent-sdk 0.3.280): its `Read`
+        of an image file returns a result whose content is a lone
+        `image` block and no text. An OpenAI `tool` message carries text
+        only and image parts ride on user messages, so the picture
+        **moves**: the tool message keeps its call id and says, in a
+        bracketed line, that the tool returned an image attached to the
+        next user message; and that user message -- directly after the
+        turn's tool messages, ahead of the person's own words -- opens
+        with `The image returned by tool call <id>:` and the picture. A
+        person's own image block stays where they put it among their
+        text.
+
+        PNG and JPEG pass through byte for byte. **GIF and WebP are
+        re-encoded to PNG**, losslessly, because Claude Code sends a small
+        `.gif` or `.webp` exactly as it found it (captured) while local
+        engines and this gateway's internal contract take PNG and JPEG;
+        an animated one is refused. A large image needs nothing: the
+        same capture sent a 36 MB 4000x3000 PNG as a 490 KB JPEG, so the
+        client resizes before our limits could bite.
+
+        A `url` source is refused and never fetched -- the gateway
+        dialling an address a caller names is the request forgery this
+        project closed for node addresses -- and so is a Files API
+        `file` source, which names a store that exists only at Anthropic.
+        An image on an `assistant` or `system` turn is refused: there is
+        nowhere on a backend's wire for it. Every image refusal names the
+        block in the caller's own coordinates
+        (`messages.2.content.0.content.0.source`).
+
+        **The four-image limit counts the whole conversation**, because
+        a client sends its history on every request. A Claude Code
+        session that has read five screenshots is refused on every turn
+        after the fifth until it compacts or clears; the message says
+        which block tipped it.
+
         ### What is refused, with a 400 naming the field
 
-        Image blocks, document blocks, server-side tool types,
-        `mcp_servers`, more than four `stop_sequences`, and a missing
-        `max_tokens`. Each is refused rather than dropped because each
+        Document blocks, server-side tool types, `mcp_servers`, more
+        than four `stop_sequences`, a missing `max_tokens`, and the image
+        cases above. Each is refused rather than dropped because each
         changes what the answer would be: a model that never saw the
-        image is not answering the question that was asked.
+        document is not answering the question that was asked.
 
         **A model nothing serves is also a 400 here, not a 404.**
         Measured: Claude Code discards the body of a 404 and shows a
@@ -824,7 +873,8 @@ paths:
         '400':
           description: |
             The request names something this gateway cannot carry —
-            an image or document block, a server-side tool,
+            a document block, an image it cannot carry or no ready
+            backend can see, a server-side tool,
             `mcp_servers`, more than four `stop_sequences`, a missing
             `max_tokens` — **or names a model nothing serves**, which is
             a 400 here rather than a 404 because Claude Code discards a
@@ -2966,10 +3016,10 @@ components:
         are accepted with a response header naming ignored settings;
         `thinking` chooses whether reasoning is returned. Metadata is
         discarded. Unknown top-level settings are explicitly rejected.
-        This is a text/tool translation, not full parity.
+        This is a text, image and tool translation, not full parity.
 
         Consequently **this schema does not decide what is refused**.
-        The refusals — image and document blocks, server-side tools,
+        The refusals — document blocks, server-side tools,
         `mcp_servers`, more than four `stop_sequences` — are enforced
         against the raw request body by the implementation, with a 400
         naming the field, because a model that ignores extra keys cannot
@@ -3199,7 +3249,8 @@ components:
         union that rejects the next block type Anthropic adds, on a wire
         we do not own.
 
-        The variants this gateway carries: `text` (`text`), `tool_use`
+        The variants this gateway carries: `text` (`text`), `image`
+        (`source`, base64 only -- see the endpoint), `tool_use`
         (`id`, `name`, `input`), `tool_result` (`tool_use_id`,
         `content`, `is_error`), and `thinking` (`thinking`,
         `signature`) -- returned ahead of the answer when the request
@@ -3207,11 +3258,11 @@ components:
         turn's reasoning. `redacted_thinking` is accepted on the way in
         and dropped.
 
-        The variants it refuses with a 400: `image` and `document`. They
-        are refused rather than dropped because a model that never
-        received the image is not answering the question that was
-        asked, and a silently text-only answer to *"what is in this
-        screenshot"* is worse than a refusal that names the reason.
+        The variant it refuses with a 400: `document`. Refused rather
+        than dropped because a model that never received the document
+        is not answering the question that was asked. `image` was
+        refused on the same reasoning until 2026-09-23, when it began
+        to be carried to backends that confirm image input.
       additionalProperties: true
       required:
         - type
@@ -3237,8 +3288,10 @@ components:
         content:
           description: |
             On `tool_result`: the result, as a string or as a list of
-            blocks. Claude Code sends a plain string; a list containing
-            an image block is refused like any other image.
+            blocks. Claude Code sends a plain string for text, and for
+            its `Read` of an image a list holding one `image` block and
+            no text -- whose picture is carried on the next user message,
+            since a `tool` message carries text only.
           oneOf:
             - type: string
             - type: array
@@ -3264,6 +3317,14 @@ components:
             to, returns the reasoning for the next turn. Not Anthropic's
             signature and not verifiable by Anthropic; a signature
             without that prefix is ignored on the way in.
+        source:
+          type: object
+          additionalProperties: true
+          description: |
+            On `image`: `{"type": "base64", "media_type": "image/png",
+            "data": "<base64>"}`. `media_type` is `image/png`,
+            `image/jpeg`, `image/gif` or `image/webp`; the last two are
+            re-encoded to PNG. A `url` or `file` source is refused.
         cache_control:
           type: object
           additionalProperties: true
