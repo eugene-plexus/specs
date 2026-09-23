@@ -350,3 +350,26 @@ the model sees for the sake of tidiness on a wire we do not own.
 Fixed in the contract (`specs` `eb05ec7`) rather than with a hand-written
 guard, and the translation then needed no change at all — which is the argument
 for putting a measured shape in the schema.
+
+---
+
+## Re-captured 2026-09-23: the client moved under us
+
+Same `claude-cli/2.1.207`, now reporting `agent-sdk/0.3.280` (0.3.274 above),
+captured with `scripts/r4-capture.py` from a clean `CLAUDE_CONFIG_DIR`. Two
+changes, both found by [the reasoning acceptance run](reasoning-and-samplers-run.md)
+failing, not by any test:
+
+- **`output_config: {"effort": "high"}` on every request**, with
+  `effort-2025-11-24` added to `anthropic-beta` (which now also lists
+  `thinking-token-count-2026-05-13` and `mid-conversation-system-2026-04-07`).
+  A2's unknown-field refusal answered it with a 400 on the first request of
+  every session. Named in the contract as of `e7eaae7`.
+- **`thinking.display` depends on the output mode.** Default text mode sends
+  `{"type": "adaptive", "display": "omitted"}`, as above. With
+  `--output-format stream-json --verbose` it sends `{"type": "adaptive"}` and
+  no display, so an SDK consumer can read the thinking.
+
+The fixtures in `gateway/tests/test_anthropic_messages.py` carry `output_config`
+now. **This wire is a moving target:** re-capture before trusting any fixture
+drawn from it.

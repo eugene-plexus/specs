@@ -13,7 +13,9 @@ Compatibility means the features below, not every feature of a provider API.
 | `/v1/responses`, audio, files, batches, provider storage | Not implemented | No Responses API or general provider endpoint parity. |
 | OpenAI image/content-part input | Supported subset | Ordered text plus inline PNG/JPEG on user messages, confirmed vision backends only. See limits below. Anthropic images remain refused. |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
-| Reasoning effort, penalties, logit bias, parallel-tool control, log probabilities | Rejected on chat | Unsupported consequential settings return 400, including unknown nested message/tool/format fields. |
+| Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
+| `frequency_penalty`, `presence_penalty`, `top_k`, `min_p`, `parallel_tool_calls`, the `developer` role | Carried | Refused with 400 before 2026-09-23. Backends that cannot take one are routed around; see [chat settings](#chat-settings). |
+| Reasoning effort, logit bias, log probabilities | Rejected on chat | Unsupported consequential settings return 400, including unknown nested message/tool/format fields. |
 | All clients, providers and reasoning-token accounting | Unverified | Captured requests test transport semantics; they do not demonstrate every model's behavior. |
 
 ## Client authentication
@@ -36,10 +38,19 @@ Each fallback attempt retains the explicit limit; omitted limits use that
 candidate's model profile, then the gateway's `defaultMaxTokens` (initially 2,048).
 
 `temperature`, `top_p`, `seed`, up to four `stop` strings (or one string), `tools`,
-`tool_choice` and `response_format` are carried to the driver. Explicit controls
-are identified separately from inherited defaults, allowing an adapter to reject
-a control it knows it cannot honor before starting work. Streaming failures after
-HTTP headers have been sent use an error frame; clients must inspect it.
+`tool_choice`, `response_format`, `frequency_penalty`, `presence_penalty`,
+`parallel_tool_calls` and the local-engine extensions `top_k` and `min_p` are
+carried to the driver. Explicit controls are identified separately from inherited
+defaults, allowing an adapter to reject a control it knows it cannot honor before
+starting work — and a backend that does not advertise one is skipped when choosing
+where to send the request. None of the five newer fields has a profile or install
+default; an absent one stays absent, and `parallel_tool_calls` most of all, since
+llama.cpp assumes false and OpenAI true. Streaming failures after HTTP headers
+have been sent use an error frame; clients must inspect it.
+
+A `developer` message is delivered to the backend as `system`, in place.
+`reasoning_content` is accepted on an `assistant` message and handed back to the
+backend (see [reasoning](#reasoning)); on any other role it is a 400.
 
 `n: 1`, `logprobs: false` and `store: false` are accepted neutral defaults; other
 non-null values are refused. `user`, string-valued `metadata` and
@@ -57,9 +68,9 @@ a backend supplies none.
 
 | Adapter/backend | Limit behavior | Other controls |
 | --- | --- | --- |
-| `openai_compat_http`, local llama.cpp/vLLM or other compatible servers | Sends normalized `maxTokens` as upstream `max_tokens`. | Forwards sampling, stop, tools and response format. The server validates and enforces what it supports. |
-| `openai_compat_http`, configured OpenAI endpoint | Sends upstream `max_completion_tokens`. | The configured fixed-temperature model rule rejects explicit temperature/top-p; inherited defaults are omitted. Other supported fields are forwarded. |
-| `claude_code_cli`, `codex_cli` | An explicit limit is refused; these harnesses do not expose this knob through Eugene's adapter. | Explicit sampling/stop/response-format controls are also refused. Calls without explicit controls retain harness/profile-default behavior; no deterministic sampling or token cap is promised. |
+| `openai_compat_http`, local llama.cpp/vLLM or other compatible servers | Sends normalized `maxTokens` as upstream `max_tokens`. | Forwards sampling (including `top_k`, `min_p`, both penalties), stop, tools, `parallel_tool_calls` and response format, and an assistant turn's reasoning as `reasoning_content`. The server validates and enforces what it supports. Measured on llama.cpp b10948; vLLM from its 0.29 source; Ollama's handling of `top_k`/`min_p` unverified. |
+| `openai_compat_http`, configured OpenAI endpoint | Sends upstream `max_completion_tokens`. | Explicit `top_k`/`min_p` are refused (OpenAI rejects them); the fixed-temperature model rule also refuses explicit temperature/top-p and both penalties; inherited defaults are omitted. History reasoning is not sent. Other supported fields are forwarded. |
+| `claude_code_cli`, `codex_cli` | An explicit limit is refused; these harnesses do not expose this knob through Eugene's adapter. | Explicit sampling (all of it), stop, `parallel_tool_calls` and response-format controls are also refused. Calls without explicit controls retain harness/profile-default behavior; no deterministic sampling or token cap is promised. No reasoning is returned. |
 
 The two public limit spellings express one Eugene generation limit, not two
 different budgets. OpenAI documents its completion limit as including reasoning
@@ -70,16 +81,50 @@ cap has been measured here. [OpenAI Chat Completions reference](https://develope
 ## Anthropic compatibility concessions
 
 `/v1/messages` requires a positive integer `max_tokens`. It carries text, tool
-definitions/results, temperature, top-p and stop sequences into the same routing
-path. Images, documents, hosted tools, `mcp_servers`, `top_k` and unknown top-level
-settings receive explicit refusals. The measured Claude Code request includes
-`thinking`, `context_management` and cache hints even when pointed at local models.
-These remain accepted, but **are not enforced**. Both streaming and ordinary
-responses list non-null ignored controls in `x-eugene-plexus-ignored-settings`.
-Metadata remains an ignored annotation. This is not native Anthropic reasoning,
-caching or context editing; consumers requiring those guarantees should not use
-this compatibility subset. Historical measurements remain in
-[the Claude Code capture](acceptance/anthropic-messages-measurement.md).
+definitions/results, temperature, top-p, `top_k`, stop sequences and
+`tool_choice.disable_parallel_tool_use` into the same routing path. Images,
+documents, hosted tools, `mcp_servers`, any `output_config` key other than
+`effort` (structured output's `format` included) and unknown top-level settings
+receive explicit refusals. The measured Claude Code request includes `thinking`,
+`context_management`, `output_config.effort` and cache hints even when pointed at
+local models. `context_management`, `output_config.effort` and cache hints remain
+accepted, but **are not enforced**;
+`thinking` decides whether reasoning is returned (below), but a `budget_tokens` is
+not enforced and `disabled` hides reasoning without stopping the model thinking.
+Both streaming and ordinary responses list controls that were not honoured in
+`x-eugene-plexus-ignored-settings`. Metadata remains an ignored annotation.
+`stop_sequence` names the matched sequence when the backend reports it (vLLM
+does; llama.cpp does not, so behind llama.cpp `stop_reason` reads `end_turn`).
+When the backend reports cached prompt tokens, they are `cache_read_input_tokens`
+and `input_tokens` is the remainder, so the three input fields sum to the prompt.
+This is not native Anthropic reasoning, caching or context editing; consumers
+requiring those guarantees should not use this compatibility subset. Historical
+measurements remain in [the Claude Code capture](acceptance/anthropic-messages-measurement.md).
+
+## Reasoning
+
+A reasoning model's thinking, when its backend reports it apart from the answer
+(llama.cpp's default `reasoning_content`, vLLM's `reasoning` with a reasoning
+parser), is returned to the caller. Before 2026-09-23 it was discarded, so a model
+that thought until `max_tokens` answered with an empty `content`.
+
+- **OpenAI door:** `message.reasoning_content` on a batch response,
+  `delta.reasoning_content` frames ahead of the answer on a stream. Absent when
+  there was none. Send the assistant message back unchanged and the reasoning goes
+  back to the backend, which llama.cpp renders into the prompt for templates that
+  keep it (Qwen3, gpt-oss).
+- **Anthropic door:** a `thinking` block ahead of the answer, streamed as
+  `thinking_delta`, **only** when the request's `thinking` is non-null and not
+  `disabled`. `display: "omitted"` — which Claude Code sends on every request —
+  returns the block with empty text and the reasoning carried in `signature` as
+  `eugene-plexus-reasoning-v1:<base64>`; echoing the block back returns it to the
+  model. That signature is Eugene's, not Anthropic's. `redacted_thinking` and
+  foreign signatures are ignored.
+- **Either door:** reasoning is output, so its first fragment is the streaming
+  commit point — no failover after the caller has seen the model think. A driver
+  whose `thinkingMode` is `off` returns none. Usage carries
+  `completion_tokens_details.reasoning_tokens` only where the backend counts it
+  (vLLM); llama.cpp does not, and Eugene does not estimate it.
 
 Update gateway and inference-driver together when adopting A2. Older drivers do
 not understand caller-setting provenance. Contract/unit checks and isolated HTTP
