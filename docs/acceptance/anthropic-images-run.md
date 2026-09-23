@@ -122,7 +122,8 @@ which has no such route, every 404 was followed at once by a real
 to **9,050 tokens for one output token each** (17.8 s apiece on this CPU). The
 table `/context` printed was right — the counts are the engine's own — but one
 diagnostic command cost fourteen prefills, would wake an idle-unloaded model, and
-lands fourteen one-token requests in `GET /v1/metrics`.
+lands fourteen one-token requests in `GET /v1/metrics`. **Built the same day:**
+[the count_tokens run](count-tokens-run.md) — 14 counts answered, no fallback.
 
 ## 5. Not done
 
