@@ -60,6 +60,27 @@ components:
           description: |
             On a **tool** message: which call this is the result of.
             `content` is the result, serialized by the caller.
+        reasoning:
+          type:
+            - string
+            - 'null'
+          description: |
+            On an **assistant** message: the reasoning the model produced
+            for that turn, as the backend reported it separately from
+            `content` (`reasoning_content` on llama.cpp, `reasoning` on
+            vLLM). Handed back so the next turn of a tool loop reaches
+            the model with its own earlier thinking.
+
+            **Load-bearing rather than decorative, and measured:**
+            llama.cpp b10948 renders a history turn's reasoning into the
+            prompt for templates that preserve it (Qwen3, gpt-oss) --
+            the same tool-loop request was 172 prompt tokens without it
+            and 184 with a twelve-token canary. Dropped here, a model
+            resuming a tool loop has forgotten why it called the tool.
+
+            Absent on every other role, and an adapter whose backend
+            has no such channel (the agentic CLIs, a hosted OpenAI
+            endpoint) omits it upstream rather than inventing one.
         timestamp:
           type: string
           format: date-time

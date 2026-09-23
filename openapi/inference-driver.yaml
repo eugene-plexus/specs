@@ -256,8 +256,8 @@ paths:
         Server-Sent Events stream. Events:
 
         - `event: token` — `data` is a JSON `StreamToken`: `text` for a
-          text fragment, `toolCalls` for tool-call fragments, never
-          both in one frame
+          text fragment, `reasoning` for a reasoning fragment,
+          `toolCalls` for tool-call fragments, exactly one per frame
         - `event: done`  — `data` is the final `GenerateResponse` JSON
         - `event: error` — `data` is a `Problem` JSON
 
@@ -712,7 +712,8 @@ components:
           description: |
             A2 provenance: names of settings explicitly requested by the caller,
             using this request's field names (maxTokens, temperature, topP, seed,
-            stop, tools, toolChoice, responseFormat). The gateway preserves this
+            stop, tools, toolChoice, responseFormat, topK, minP, frequencyPenalty,
+            presencePenalty, parallelToolCalls). The gateway preserves this
             list on each fallback attempt. An adapter must refuse a known unsupported
             explicit setting with 400, rather than silently dropping it. Settings
             supplied only by profiles/defaults retain the adapter's default behavior.
@@ -785,6 +786,63 @@ components:
           items:
             type: string
           description: Optional stop sequences.
+        topK:
+          type: integer
+          minimum: 0
+          description: |
+            Sample from only the K most likely tokens; 0 disables the cut.
+            Not an OpenAI parameter -- llama.cpp and vLLM both take it as
+            `top_k`, and Anthropic's Messages API has it natively. Caller-
+            owned like every sampler here: carried when the caller set it,
+            never substituted by a driver.
+
+            **Added 2026-09-23.** Until then both front doors refused it
+            with a 400 because this request had nowhere to put it, which
+            made it the last sampling parameter with that gap after
+            `topP` and `seed` closed theirs on 2026-09-19.
+
+            An adapter whose backend is known to reject it (a hosted
+            OpenAI endpoint, the agentic CLIs) refuses it when explicit,
+            and omits it from `capabilities.supportedSettings` so the
+            gateway routes around that backend instead.
+        minP:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: |
+            Discard tokens less likely than this fraction of the most
+            likely one. A llama.cpp and vLLM extension (`min_p`), carried
+            and refused exactly as `topK` is.
+        frequencyPenalty:
+          type: number
+          format: float
+          minimum: -2
+          maximum: 2
+          description: |
+            OpenAI's `frequency_penalty`: penalise a token by how often
+            it has already appeared. Carried to every backend that takes
+            it; refused when explicit by the agentic CLIs and, by the
+            same rule that omits `temperature`, by models whose sampler
+            is fixed.
+        presencePenalty:
+          type: number
+          format: float
+          minimum: -2
+          maximum: 2
+          description: |
+            OpenAI's `presence_penalty`: penalise a token for having
+            appeared at all. Carried and refused exactly as
+            `frequencyPenalty` is.
+        parallelToolCalls:
+          type: boolean
+          description: |
+            Whether the model may request several tools in one turn.
+            OpenAI's `parallel_tool_calls`, which llama.cpp also reads.
+            **The default differs by backend**: llama.cpp assumes false
+            when it is absent and OpenAI assumes true, so an absent
+            field is left absent rather than filled in -- choosing for
+            the caller would change what some backend already does.
         requestId:
           type: string
           format: uuid
@@ -832,6 +890,38 @@ components:
             and an empty string would be a lie about what the model
             said. Was required; a response with `toolCalls` and no
             `content` is the common agent-loop case.
+        reasoning:
+          type:
+            - string
+            - 'null'
+          description: |
+            The model's reasoning for this turn, when the backend
+            reports it separately from `content` -- `reasoning_content`
+            from llama.cpp, `reasoning` from vLLM. Absent when there was
+            none, when the backend puts reasoning inline in `content`
+            (then `thinkingMode` and the thinking filter govern it), and
+            always when this driver's `thinkingMode` is `off`.
+
+            **Added 2026-09-23, and before it every token of it was
+            discarded.** Measured against llama.cpp b10948 launched with
+            the agent's own argv: a reasoning model's thinking arrives
+            in `reasoning_content` by default, this driver read only
+            `content`, and a Qwen3 that spent its whole `max_tokens`
+            budget thinking came back as an **empty answer with
+            `finishReason: length`** and nothing to say why. A stop
+            sequence can match inside the reasoning too, which produced
+            the same empty `stop`.
+        stopSequence:
+          type:
+            - string
+            - 'null'
+          description: |
+            Which of the request's `stop` strings ended the answer, when
+            the backend says. vLLM does (`stop_reason` on the choice);
+            **llama.cpp b10948 does not** -- measured, its choice carries
+            `finish_reason`, `index` and `message` and nothing else -- so
+            for most local installs this stays null and `finishReason`
+            stays `stop`. Set together with `finishReason: stop_sequence`.
         toolCalls:
           type: array
           items:
@@ -888,12 +978,24 @@ components:
     StreamToken:
       type: object
       description: |
-        One `event: token` payload. Exactly one of `text` or `toolCalls`
-        is set.
+        One `event: token` payload. Exactly one of `text`, `reasoning`
+        or `toolCalls` is set.
+
+        A reasoning frame is output like any other: it is the first
+        thing a reasoning model produces, so it is also the commit point
+        one layer up -- once a caller has been shown the model thinking,
+        a failure cannot cascade onto another model's answer.
       properties:
         text:
           type: string
           description: A fragment of the assistant's text.
+        reasoning:
+          type: string
+          description: |
+            A fragment of the model's reasoning, from a backend that
+            streams it separately (`delta.reasoning_content` on
+            llama.cpp, `delta.reasoning` on vLLM). Never sent when this
+            driver's `thinkingMode` is `off`.
         toolCalls:
           type: array
           items:
@@ -1043,6 +1145,23 @@ components:
         totalTokens:
           type: integer
           minimum: 0
+        cachedPromptTokens:
+          type: integer
+          minimum: 0
+          description: |
+            How many of `promptTokens` the backend served from its
+            prompt cache rather than computing. Reported by llama.cpp
+            and vLLM as `usage.prompt_tokens_details.cached_tokens`;
+            absent when the backend says nothing, never guessed.
+        reasoningTokens:
+          type: integer
+          minimum: 0
+          description: |
+            How many of `completionTokens` were reasoning. vLLM reports
+            it (`completion_tokens_details.reasoning_tokens`) when its
+            reasoning parser is on; llama.cpp b10948 does not, and a
+            count this driver made up from characters would be a
+            tokenizer it does not have. Absent means unknown, not zero.
 
     EmbedRequest:
       type: object
