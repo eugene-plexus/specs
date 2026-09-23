@@ -92,7 +92,8 @@ of the body limit (a request claiming a huge body is no longer a 413).
 
 ## Pins
 
-Contract specs `a62ddc9`. Gateway `6e90a6b` and inference-driver `dfaac8e`,
+Contract specs `a62ddc9`. Gateway `431077d` (the source of `6e90a6b`, with a test fixture's session id
+changed after it tripped gitleaks) and inference-driver `dfaac8e`,
 each re-pinned to it, **pinned in both installers**; the UI was not
 re-pinned, since no screen reads the new types, and `maxImagesPerRequest`
 reaches Config through the schema-driven editor without one.
