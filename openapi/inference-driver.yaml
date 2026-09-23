@@ -327,6 +327,76 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/generate/count:
+    post:
+      tags: [inference]
+      operationId: countPromptTokens
+      summary: Count a request's prompt tokens with the backend's own tokenizer, generating nothing.
+      description: |
+        The prompt this request would put in front of the model, counted
+        by the backend that would serve it -- **the same payload
+        `/v1/generate` sends**, thinking directive and all, rendered by
+        the backend's own chat template and counted by its own
+        tokenizer. Nothing is generated and no prefill runs. Added
+        2026-09-23 for the Anthropic door's `count_tokens`.
+
+        **llama.cpp only, and measured.** The payload goes to
+        `/apply-template` and the prompt it returns to `/tokenize` with
+        `add_special: true`; against Gemma 4 E4B on b10948 that gave
+        27, 59 and 95 tokens for a plain, a tool-bearing and a tool-loop
+        request, **exactly** the `prompt_tokens` a one-token generation
+        of each reported. Every other backend answers **501**: vLLM has
+        a `/tokenize` of its own that has not been run here, Ollama and
+        hosted providers have none, and the agentic CLIs have no prompt
+        to count. A backend that does not know is not asked to guess.
+
+        **A request carrying an image is 501 too**: an image's token
+        cost is decided by the projector when it encodes the picture,
+        and the template renders only a marker for it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateRequest'
+      responses:
+        '200':
+          description: The count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenCount'
+        '400':
+          description: |
+            The request cannot be counted as asked: tools against a
+            backend that cannot carry them, or a setting this backend
+            refuses -- the same refusals `/v1/generate` makes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '499':
+          description: The caller disconnected; the count was abandoned.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '501':
+          description: |
+            This backend cannot count exactly without generating (see
+            above), or the request carries an image. The caller should
+            count some other way; nothing was sent to the model.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The backend failed or could not be reached while counting.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/embed:
     post:
       tags: [inference]
@@ -875,6 +945,20 @@ components:
             - $ref: '#/components/schemas/NamedToolChoice'
         responseFormat:
           $ref: '#/components/schemas/ResponseFormat'
+    TokenCount:
+      type: object
+      additionalProperties: false
+      required:
+        - promptTokens
+      properties:
+        promptTokens:
+          type: integer
+          minimum: 0
+          description: |
+            Tokens the backend's own template and tokenizer produce for
+            this request's prompt -- what `usage.promptTokens` on a
+            generation of the same request would report.
+
     GenerateResponse:
       type: object
       required:

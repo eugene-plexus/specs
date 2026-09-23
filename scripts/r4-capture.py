@@ -106,6 +106,7 @@ REPORTED_INPUT = 31337
 _COUNTED_INPUT = 4242
 USAGE_IN = "start"
 READ_PATH = ""
+COUNT_STATUS = 200
 
 
 def _start_usage() -> dict:
@@ -266,6 +267,7 @@ _REASONS = {
     409: "Conflict",
     429: "Too Many Requests",
     500: "Internal Server Error",
+    501: "Not Implemented",
     503: "Service Unavailable",
 }
 
@@ -388,9 +390,22 @@ def build_handler(rec: Recorder, mode: str):
             model = parsed.get("model", "r4-capture-model")
 
             if "/v1/messages/count_tokens" in path:
-                payload = json.dumps({"input_tokens": _COUNTED_INPUT}).encode()
+                status = COUNT_STATUS
+                if status == 200:
+                    payload = json.dumps({"input_tokens": _COUNTED_INPUT}).encode()
+                else:
+                    payload = json.dumps(
+                        {
+                            "type": "error",
+                            "error": {
+                                "type": _ERROR_TYPES.get(status, "api_error"),
+                                "message": f"r4-capture count_tokens refusal {status}",
+                            },
+                        }
+                    ).encode()
                 conn.sendall(
-                    b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                    f"HTTP/1.1 {status} {_REASONS.get(status, 'OK')}\r\n".encode()
+                    + b"Content-Type: application/json\r\n"
                     + f"Content-Length: {len(payload)}\r\n\r\n".encode()
                     + payload
                 )
@@ -453,12 +468,14 @@ def main() -> None:
     ap.add_argument("--read-path", default="", help="the file imageread asks the client to Read")
     ap.add_argument("--usage-in", choices=("start", "delta", "both"), default="start")
     ap.add_argument("--reported-input", type=int, default=31337)
+    ap.add_argument("--count-status", type=int, default=200, help="answer count_tokens with this")
     args = ap.parse_args()
 
-    global READ_PATH, USAGE_IN, REPORTED_INPUT
+    global READ_PATH, USAGE_IN, REPORTED_INPUT, COUNT_STATUS
     READ_PATH = args.read_path
     USAGE_IN = args.usage_in
     REPORTED_INPUT = args.reported_input
+    COUNT_STATUS = args.count_status
     rec = Recorder(args.out)
     with Server(("127.0.0.1", args.port), build_handler(rec, args.mode)) as srv:
         print(f"r4-capture mode={args.mode} on 127.0.0.1:{args.port} -> {args.out}", flush=True)

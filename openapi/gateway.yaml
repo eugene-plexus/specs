@@ -940,6 +940,87 @@ paths:
               schema:
                 $ref: '#/components/schemas/AnthropicErrorResponse'
 
+  /v1/messages/count_tokens:
+    post:
+      tags: [inference]
+      operationId: countAnthropicMessageTokens
+      summary: Count a Messages request's input tokens with the serving backend's own tokenizer.
+      security:
+        - bearerAuth: []
+        - apiKeyAuth: []
+      description: |
+        Anthropic's token-counting endpoint, answered by the backend that
+        would serve the request: the body is translated exactly as
+        `POST /v1/messages` translates it, and the driver counts the
+        resulting prompt with the backend's own template and tokenizer
+        (`POST /v1/generate/count` on the inference-driver). **Nothing is
+        generated and nothing is woken.**
+
+        ### Why it exists: measured, 2026-09-23
+
+        Claude Code's `/context` calls this endpoint 13-14 times, one per
+        category (system prompt pieces, tool groups, skills), beta
+        `token-counting-2024-11-01`, bodies `{model, messages, system?,
+        tools?}` with no `max_tokens`. **Answered with a 404 it does not
+        fail -- it counts by inference instead**: each 404 was followed at
+        once by a real `POST /v1/messages` with `max_tokens: 1`, and the
+        engine evaluated prompts of up to 9,050 tokens for one output
+        token each (17.8 s apiece on a CPU). One diagnostic command cost
+        fourteen prefills, would wake an idle-unloaded model, and put
+        fourteen one-token requests in `GET /v1/metrics`.
+
+        ### When it cannot count, it says so with a 400
+
+        A count is answered only by a **ready** backend that can count
+        exactly -- llama.cpp today. When none can (the model is asleep,
+        its backend is vLLM, Ollama, a hosted provider or an agentic CLI,
+        or the request carries an image, whose cost only the projector
+        knows), this is a **400** naming the reason, and Claude Code falls
+        back to counting by inference as above. **A 400 and not a 5xx,
+        by measurement:** answered 400, 403 or 404, `/context` tried each
+        count once and fell back; answered 501 or 503, it retried every
+        one first. A stopped model is never woken to count: a caller who
+        wants that pays for it knowingly, through the fallback.
+
+        ### What it shares with the Messages door, and what it does not
+
+        The same credentials (`x-api-key` or `Authorization: Bearer`) and
+        the same **403** for a rejected one; the same refusals (documents,
+        server-side tools, unknown settings); the same client-key model
+        scope and `localOnly` rule. **It does not take a concurrency
+        reservation or count against a key's request rate** -- a count is
+        a key *check*, not an admission, since `/context` sends fourteen
+        at once -- and it is **not recorded** in `GET /v1/metrics`,
+        because it is not inference.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnthropicCountTokensRequest'
+      responses:
+        '200':
+          description: The count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicTokenCount'
+        '400':
+          description: |
+            The request names something this door refuses, names a model
+            nothing serves, or cannot be counted exactly right now (see
+            above). Claude Code falls back to counting by inference.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+        '403':
+          description: Missing, malformed, expired or revoked credential, as on `/v1/messages`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnthropicErrorResponse'
+
   /v1/embeddings:
     post:
       tags: [inference]
@@ -3197,6 +3278,51 @@ components:
             on system blocks, on the last user content block, and on
             `tool_result` blocks. A local engine owns its own KV cache
             and there is nothing here to honour.
+
+    AnthropicCountTokensRequest:
+      type: object
+      description: |
+        Request body for `POST /v1/messages/count_tokens`: a Messages
+        request without `max_tokens` (Claude Code sends `model`,
+        `messages` and, per category, `system` or `tools`). Translated
+        exactly as `POST /v1/messages` translates it, with the same
+        refusals enforced against the raw body.
+      additionalProperties: true
+      required:
+        - model
+        - messages
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnthropicInputMessage'
+        system:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: '#/components/schemas/AnthropicSystemBlock'
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnthropicToolDefinition'
+        tool_choice:
+          $ref: '#/components/schemas/AnthropicToolChoice'
+
+    AnthropicTokenCount:
+      type: object
+      required:
+        - input_tokens
+      properties:
+        input_tokens:
+          type: integer
+          minimum: 0
+          description: |
+            The prompt's size as the serving backend's own template and
+            tokenizer count it -- what a generation of the same request
+            would report as its input.
 
     AnthropicInputMessage:
       type: object
