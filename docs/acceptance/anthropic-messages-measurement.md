@@ -373,3 +373,23 @@ failing, not by any test:
 The fixtures in `gateway/tests/test_anthropic_messages.py` carry `output_config`
 now. **This wire is a moving target:** re-capture before trusting any fixture
 drawn from it.
+
+---
+
+## Captured 2026-09-23: images, the usage count, and `count_tokens`
+
+Same client (2.1.207, agent-sdk 0.3.280), `scripts/r4-capture.py` from a clean
+`CLAUDE_CONFIG_DIR`. Recorded in full in
+[the images run](anthropic-images-run.md) §0 and §4:
+
+- **`--mode imageread`**: a `Read` of an image comes back as a `tool_result`
+  holding one `image` block (`source.type: "base64"`) and no text. A 36 MB PNG
+  was sent as a 490 KB JPEG; a small `.webp` and `.gif` were sent as
+  themselves.
+- **`--usage-in start|delta`**: the transcript and the `--output-format json`
+  result keep the input count whether it arrives on `message_start` or only on
+  `message_delta`.
+- **`/context`** (through `--input-format stream-json`; print mode sends it to
+  the model as text) calls `POST /v1/messages/count_tokens?beta=true` 13–14
+  times, beta `token-counting-2024-11-01`, bodies `{model, messages, system?,
+  tools?}`. On a 404 each is followed by a real `/v1/messages` request.
