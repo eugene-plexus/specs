@@ -19,7 +19,14 @@ import httpx
 import yaml
 
 
-def check(root: Path, engine: Path, model: Path) -> None:
+def check(root: Path, engine: Path, model: Path, *, browser: Path | None = None,
+          alias: str = "s9-phone-model", driver: dict | None = None) -> None:
+    """Run the isolated install and hand it to a browser script.
+
+    `browser`, `alias` and `driver` exist so `website-screenshots.py` can
+    photograph the same real install under a friendlier model name; S9
+    itself runs with the defaults.
+    """
     assert engine.is_file() and model.is_file()
     root.mkdir(parents=True, exist_ok=False)
     sockets = [socket.socket() for _ in range(6)]
@@ -36,8 +43,8 @@ def check(root: Path, engine: Path, model: Path) -> None:
         "control": {},
         "gateway": {"routingRefreshSeconds": 1},
         "library": {"modelRoots": [str(model.parent)], "scanOnStartup": True},
-        "driver": {"provider": "openai_compat_custom", "modelId": "s9-phone-model",
-                   "baseUrl": urls["engine"]},
+        "driver": {"provider": "openai_compat_custom", "modelId": alias,
+                   "baseUrl": urls["engine"], **(driver or {})},
     }
     for name, config in configs.items():
         (root / f"{name}.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
@@ -48,7 +55,7 @@ def check(root: Path, engine: Path, model: Path) -> None:
         sock.close()
     try:
         commands = [
-            ("engine", [str(engine), "-m", str(model), "--alias", "s9-phone-model",
+            ("engine", [str(engine), "-m", str(model), "--alias", alias,
                         "--host", "127.0.0.1", "--port", str(ports["engine"]),
                         "--device", "none", "--n-gpu-layers", "0", "--ctx-size", "2048",
                         "--threads", "4", "--jinja"]),
@@ -79,14 +86,15 @@ def check(root: Path, engine: Path, model: Path) -> None:
             token = login.json()["sessionToken"]
             headers = {"Authorization": f"Bearer {token}"}
             wait(urls["gateway"] + "/v1/models", headers,
-                 lambda r: r.status_code == 200 and any(m["id"] == "s9-phone-model"
+                 lambda r: r.status_code == 200 and any(m["id"] == alias
                                                        for m in r.json().get("data", [])))
             wait(urls["library"] + "/healthz")
             scan = client.post(urls["library"] + "/v1/scan", headers=headers, json={"full": False})
             assert scan.status_code in (200, 202, 409), scan.text
             session = root / "session.json"
             session.write_text(json.dumps({"url": urls["agent"], "token": token}), encoding="utf-8")
-        subprocess.run(["node", str(Path(__file__).with_name("s9-browser-acceptance.mjs")),
+        script = browser or Path(__file__).with_name("s9-browser-acceptance.mjs")
+        subprocess.run(["node", str(script),
                         str(session), str(root)], check=True)
     finally:
         (root / "stop").touch()
