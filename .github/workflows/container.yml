@@ -95,7 +95,7 @@ jobs:
           git -C "$RUNNER_TEMP/agent" checkout --quiet "$pin"
           echo "EP_AGENT_SRC=$RUNNER_TEMP/agent/src/eugene_plexus_agent" >> "$GITHUB_ENV"
 
-      - name: Build and verify the image (23 checks)
+      - name: Build and verify the image (27 checks)
         run: bash scripts/compose-acceptance.sh
 
       - name: Restore isolated control plane and worker after a failed update

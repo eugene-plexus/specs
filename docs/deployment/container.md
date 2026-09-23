@@ -11,13 +11,18 @@ other component, every component is handed `<KIND>_AGENT_URL`, and M7's
 `Runtime.node` / `advertiseUrl` work presumes an agent per host. A Compose
 file that ran the four components directly would be fighting the design.
 
-**There is no GPU in here and there never will be.** The agent must run on
-the host that has the GPU, the engine binaries and your own model
-directories — it downloads engine builds, reads your files, and drives a
-vLLM that compiles at first use. Containerising that is the wall Home
-Assistant hit, and the reason their awkward "Supervised" tier exists. So the
-GPU boxes run [`install.sh`](../../scripts/install.sh) on bare metal and
-`join` this control plane.
+**It can run models too.** On the CPU as shipped, and on an NVIDIA card
+when the host shares one with containers — the Nvidia Driver plugin on
+Unraid, or the NVIDIA Container Toolkit anywhere else, the same thing a Plex
+container uses. The agent in here is a full agent: it finds the card, fetches
+the llama.cpp build that fits it, and launches models exactly as it does on
+bare metal. See [Running models in the container](#running-models-in-the-container).
+Other machines with GPUs still run [`install.sh`](../../scripts/install.sh)
+and `join` this control plane; that is unchanged.
+
+Until 2026-09-23 this document said *"there is no GPU in here and there never
+will be"*. That was a packaging decision, not a technical limit, and it is
+corrected in [the section that used to argue it](#when-a-separate-gpu-machine-is-still-the-better-answer).
 
 ---
 
@@ -91,10 +96,10 @@ docker run -d --user 99:100 ... eugene-plexus/control-plane:0.1
 
 with the appdata directory owned by 99:100 instead. The agent does not need a
 writable home directory — **verified**: it comes up healthy and supervises all
-three components with `$HOME` set to a directory it cannot write. What it
-loses is engine acquisition, which writes under `$HOME/.eugene-plexus/engines`
-— and this container has no GPU to run an engine on, so there is nothing to
-lose.
+three components with `$HOME` set to a directory it cannot write. It used to
+lose engine acquisition that way, which wrote under `$HOME/.eugene-plexus/engines`;
+since 2026-09-23 the image puts engine builds in `/data/engines` and the CUDA
+kernel cache in `/data/cuda-cache`, so it loses nothing (CI checks 20 and 27).
 
 ### Ports
 
@@ -629,12 +634,87 @@ per-node copy on takes the second and every later start to 21 s.**
 
 ---
 
+## Running models in the container
+
+The container is a node like any other: it shows up under **Library →
+score & launch on** by its hostname (`eugene-plexus`), and a model launched
+there runs in the container, beside the gateway that serves it.
+
+**On the CPU** nothing needs setting. That suits a small model on a NAS with
+nothing else to run it; the starter set picks the smallest one for a machine
+with no accelerator, for exactly that reason.
+
+**On an NVIDIA card**, the host has to share the card with containers first:
+
+- **Unraid:** install the **Nvidia Driver** plugin from Community
+  Applications (if Plex already uses the card, it is installed). On the
+  container's **Edit** page:
+  1. Set **NVIDIA GPU** to the card's GPU UUID from the plugin's page, or
+     `all`.
+  2. Switch to **Advanced View** and add `--runtime=nvidia` to **Extra
+     Parameters**, after what is already there.
+  3. **Apply.**
+
+  Both steps or neither. The variable alone does nothing, and
+  `--runtime=nvidia` on a server without the plugin stops the container from
+  starting, which is why the template does not ship it. On a container
+  created from an older template the **NVIDIA GPU** field is not there; add
+  it with **Add another Path, Port, Variable, Label or Device** → Variable,
+  key `NVIDIA_VISIBLE_DEVICES`. Unraid never merges new template fields into
+  a container you already have (see [What the GUI still cannot
+  do](#what-the-gui-still-cannot-do)).
+
+- **Compose:** with the NVIDIA driver and the [NVIDIA Container
+  Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+  installed on the host, uncomment the `deploy:` block in `compose.yaml` and
+  `docker compose up -d`.
+
+- **Plain `docker run`:** add `--gpus all` (or `--runtime=nvidia -e
+  NVIDIA_VISIBLE_DEVICES=all`).
+
+**Check it took**, before launching anything:
+
+```sh
+docker exec eugene-plexus nvidia-smi
+```
+
+It should print the card (under Compose the container is
+`eugene-plexus-control-plane`). Then open **Inference** on the
+`eugene-plexus` node, or ask the agent directly: in `GET /v1/engines` on
+port 8079, llama.cpp's `acquisition` names the `variant` it would install
+(`ubuntu-cuda-12.8-x64` for a Pascal card) and `detected` carries
+`accelerator: cuda`, the driver's CUDA version and the card's
+`computeCapability`. Launch a model on that node and the agent installs that
+build.
+
+**Older cards are handled.** From CUDA 13 the toolkit no longer builds for
+Maxwell, Pascal or Volta, and the last driver branch those cards get (580)
+reports CUDA 13.0, so choosing a build by driver alone would install one with
+no code for the card. The agent reads the card's compute capability too and
+takes the CUDA 12 build for anything below 7.5 (agent `442af42`). A Pascal
+card has one more cost: every build upstream ships carries its code as PTX,
+which the driver compiles the first time a model loads. That can take
+minutes. It happens once, because the image keeps the driver's cache in
+`/data/cuda-cache`.
+
+**What lands in `/data`:** engine builds in `/data/engines` (the current and
+previous build, a gigabyte or more each for CUDA) and the kernel cache in
+`/data/cuda-cache` (up to 4 GiB, usually far less). Both survive updates, so
+an update neither re-downloads nor recompiles, and both are safe to delete:
+the agent fetches and the driver recompiles.
+
+**Not yet:** AMD and Intel cards in the container (the agent's detection is
+there; passing `/dev/dri` through and the Vulkan runtime are not), and vLLM,
+which is a Python environment plus a toolchain rather than a download.
+
+---
+
 ## Adding a GPU machine
 
 1. In the UI, **Nodes → Add a node**. It mints a join token, good once, and
    renders the command.
 
-2. On the GPU machine — bare metal, not a container:
+2. On the GPU machine:
 
    ```sh
    curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.sh \
@@ -668,7 +748,7 @@ the agent's and all three children's ASGI lifespan shutdown. Those are the
 claims the image depends on and they were measured on Linux.
 
 **Checked by CI on every image build, and the image is published only when
-they pass:** `.github/workflows/container.yml` runs all twenty-three checks in
+they pass:** `.github/workflows/container.yml` runs all twenty-seven checks in
 `scripts/compose-acceptance.sh` against the artifact it just built, then
 re-tags that same image for GHCR rather than rebuilding — so what ships is
 what was tested. That covers the twelve runtime checks that had never run
@@ -681,26 +761,45 @@ console-only output when `logs/` is unwritable instead of dying on it, and
 the two halves of "Where the models go": a container with nothing mounted at
 `/models` reports it **missing** rather than scanning an empty directory, and
 a GGUF placed in a directory mounted there is catalogued at startup with
-nobody having opened Config.
+nobody having opened Config. Since 2026-09-23 also: `libgomp.so.1` loads in
+the image, the agent's engine root and the CUDA cache are on `/data` and
+writable as 99:100, a GPU is opt-in in all three deployment files, and the
+A7 recovery check serves a real CPU completion from the published image
+itself rather than from a derivative of it.
+
+**Not checked by CI, because its runners have no GPU:** passthrough, the
+agent finding a card from inside the container, and a CUDA build loading
+there. Those are checked on a real host —
+[`docs/acceptance/container-gpu-run.md`](../acceptance/container-gpu-run.md).
 
 There is still no container runtime on the development machine, so running
 that script locally skips the runtime half and says so. CI is where it runs.
 
 ---
 
-## Why not a container on the GPU machine too?
+## When a separate GPU machine is still the better answer
 
-Because of what the agent does there, not because of a preference:
+This section used to be called *"Why not a container on the GPU machine
+too?"* and gave four reasons, each true in general and none true on the host
+that asked (2026-09-23: an Unraid server already sharing a Quadro P4000 with
+Plex):
 
-- it downloads engine binaries and puts them where it can execute them;
-- it reads **your** model directories, wherever you keep them, which in a
-  container means a bind mount per directory and a broken promise that your
-  files stay yours;
-- vLLM compiles at first use, so the unit of operation is a Python
-  environment plus a C toolchain plus the interpreter's dev headers — a
-  container that JIT-compiles on first request is a support problem, not a
-  deployment;
-- and GPU passthrough means `nvidia-container-toolkit` on every host.
+- *it downloads engine binaries and puts them where it can execute them* —
+  into `/data/engines`, a volume, like any other state;
+- *it reads your model directories, which in a container means a bind mount
+  per directory* — the container already mounts `/models`, and every other
+  node reaches the same files through it;
+- *vLLM compiles at first use* — true, and vLLM is still not offered in
+  here; llama.cpp is a download and compiles nothing;
+- *GPU passthrough means `nvidia-container-toolkit` on every host* — on a NAS
+  that already gives its card to Plex, it is installed.
 
-The control plane has none of those properties. That asymmetry is §1 of the
-design and it is the whole reason there are two paths instead of one.
+So the container runs models when the host offers a card, and a separate
+machine is the better answer when:
+
+- **the GPU is in a desktop, not the server** — the common case, and
+  `install.sh` there is simpler than any passthrough;
+- **the engine is vLLM**, or anything else that is an environment rather
+  than a binary;
+- **the card is AMD or Intel**, until passthrough for those is built;
+- **the machine should sleep** — a GPU in the NAS keeps the NAS awake.

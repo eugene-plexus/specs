@@ -33,6 +33,11 @@
 #   10. the image, the Unraid template and the Compose file agree on
 #       where the models volume is mounted -- the directory the image
 #       tells the library to scan
+#   24. engine builds and the CUDA kernel cache live on the data volume,
+#       under the variable name the agent actually reads
+#   25. a GPU is opt-in in all three files: the image sets the driver
+#       capabilities but never the devices, the template does not ship
+#       the NVIDIA runtime flag, and the Compose GPU block is commented
 #
 # Runtime checks (docker or podman):
 #   11. the image builds
@@ -55,6 +60,14 @@
 #       enrol under its own container ID
 #   22. a GGUF in a directory mounted at /models is catalogued at
 #       startup with nobody having opened Config
+#   26. the one shared library upstream's Linux llama.cpp builds need
+#       beyond a slim Debian (libgomp) actually loads in the image
+#   27. as --user 99:100 the agent's own engine root is /data/engines
+#       and writable there, and so is the CUDA cache
+#
+# Not here, and cannot be: a GPU. CI runners have none, so passthrough,
+# detection inside a container and a CUDA build loading are checked on a
+# real host -- docs/acceptance/container-gpu-run.md.
 #
 # Design: docs/design/install-paths-and-distribution.md §9 step 5, §1, §4
 set -uo pipefail
@@ -240,6 +253,76 @@ else
   bad "10. models path disagrees: image '$img_roots', template Models '$tpl_roots', template variable '$tpl_var', compose '$compose_roots'"
 fi
 
+# 24. A model running in here writes two things the agent does not keep
+# beside its config by default: the engine builds (under $HOME) and the
+# driver's compiled-kernel cache (under $HOME/.nv). In this image $HOME
+# is the container's own layer, gone on every recreate -- or, as the
+# Unraid template's 99:100, a home that does not exist. So both must be
+# under the directory the config file lives in, which is the volume.
+# The engine variable's NAME is read from the agent, because a renamed
+# variable here would be silently ignored and every build would go back
+# under $HOME.
+data_dir=$(grep -oE 'EUGENE_PLEXUS_AGENT_CONFIG_FILE=[^ ]+' "$DOCKERFILE" | head -1 | cut -d= -f2)
+data_dir=${data_dir%/*}
+engine_root=$(grep -oE 'EUGENE_PLEXUS_AGENT_ENGINE_ROOT=[^ ]+' "$DOCKERFILE" | head -1 | cut -d= -f2)
+cuda_cache=$(grep -oE 'CUDA_CACHE_PATH=[^ ]+' "$DOCKERFILE" | head -1 | cut -d= -f2)
+if [ -f "$AGENT_SRC/engines/acquisition.py" ]; then
+  if grep -q '"EUGENE_PLEXUS_AGENT_ENGINE_ROOT"' "$AGENT_SRC/engines/acquisition.py"; then
+    agent_reads=yes
+  else
+    agent_reads=""
+  fi
+else
+  agent_reads=unknown
+fi
+case "$engine_root|$cuda_cache" in
+  "$data_dir"/*"|$data_dir"/*)
+    if [ "$agent_reads" = yes ]; then
+      ok "24. engines ($engine_root) and the CUDA cache ($cuda_cache) live on the $data_dir volume, under the variable the agent reads"
+    elif [ "$agent_reads" = unknown ]; then
+      skip "24. both are under $data_dir, but the agent source is not here to confirm the variable name (set EP_AGENT_SRC)"
+    else
+      bad "24. the agent no longer reads EUGENE_PLEXUS_AGENT_ENGINE_ROOT, so the image's value is ignored and engines go under \$HOME"
+    fi ;;
+  *)
+    bad "24. engine root '$engine_root' or CUDA cache '$cuda_cache' is not under the data volume '$data_dir'" ;;
+esac
+
+# 25. Handing over a GPU has to stay the operator's act, in every file.
+# The image may set NVIDIA_DRIVER_CAPABILITIES (it means nothing until
+# the NVIDIA runtime is in use) but never NVIDIA_VISIBLE_DEVICES: baked
+# in, every host whose DEFAULT runtime is NVIDIA would pass its cards to
+# this container unasked. The template must not ship the runtime flag,
+# because Docker refuses to start a container naming a runtime the host
+# lacks. And the Compose file must offer the block, commented, since a
+# `deploy.resources` device request fails the same way.
+gpu_optin=$(py -c "
+import re, pathlib, yaml
+problems = []
+docker = pathlib.Path(r'$(winpath "$DOCKERFILE")').read_text(encoding='utf-8')
+caps = re.search(r'NVIDIA_DRIVER_CAPABILITIES=(\S+)', docker)
+if not caps or not {'compute', 'utility'} <= set(caps.group(1).split(',')):
+    problems.append('image lacks NVIDIA_DRIVER_CAPABILITIES with compute and utility')
+if re.search(r'NVIDIA_VISIBLE_DEVICES=', docker):
+    problems.append('image sets NVIDIA_VISIBLE_DEVICES')
+tpl = pathlib.Path(r'$TEMPLATE_P').read_text(encoding='utf-8')
+extra = re.search(r'<ExtraParams>(.*?)</ExtraParams>', tpl, re.S)
+if extra and 'runtime=nvidia' in extra.group(1):
+    problems.append('template ships the NVIDIA runtime flag')
+if not re.search(r'Target=\"NVIDIA_VISIBLE_DEVICES\"\s+Default=\"\"', tpl):
+    problems.append('template has no empty-by-default NVIDIA_VISIBLE_DEVICES variable')
+src = pathlib.Path(r'$COMPOSE_P').read_text(encoding='utf-8')
+svc = next(iter(yaml.safe_load(src)['services'].values()))
+if any(k in svc for k in ('deploy', 'gpus', 'runtime')):
+    problems.append('compose requests a GPU by default')
+if not re.search(r'^\s*#\s*- driver: nvidia', src, re.M):
+    problems.append('compose does not offer the commented GPU block')
+print('; '.join(problems) or 'ok')
+" 2>&1)
+[ "$gpu_optin" = ok ] \
+  && ok "25. a GPU is opt-in in the image, the template and the Compose file alike" \
+  || bad "25. $gpu_optin"
+
 # ---------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------
@@ -253,7 +336,7 @@ fi
 
 if [ -z "$RT" ]; then
   say "runtime: skipped"
-  skip "11-23. no container runtime on this machine or in WSL."
+  skip "11-23, 26-27. no container runtime on this machine or in WSL."
   printf '        To close them, install one and re-run:\n'
   printf '            wsl -d Ubuntu -- sudo apt-get install -y docker.io\n'
   printf '            wsl -d Ubuntu -- sudo usermod -aG docker $USER   # then restart the distro\n'
@@ -492,6 +575,23 @@ $CT rm -f ep-models-check >/dev/null 2>&1 || true
 rm -rf "$MODELSDIR"
 
 # ---------------------------------------------------------------------
+# 26. Upstream's Linux llama.cpp builds link OpenMP, and a slim Debian
+# does not carry it -- so every engine the agent installed in here had
+# nothing to load, and the A7 recovery check added the library to a
+# derivative image of its own to get a completion at all. Asked by
+# loading it, not by listing packages: the question is whether a
+# llama-server started here would find it.
+# ---------------------------------------------------------------------
+say "runtime: what an engine needs to start in here"
+if $CT run --rm --entrypoint /opt/eugene-plexus/venv/bin/python \
+     eugene-plexus/control-plane:0.1 \
+     -c "import ctypes; ctypes.CDLL('libgomp.so.1')" >/dev/null 2>&1; then
+  ok "26. libgomp.so.1 loads in the image, so an installed llama-server can start"
+else
+  bad "26. libgomp.so.1 does not load in the image; every llama.cpp build dies at spawn"
+fi
+
+# ---------------------------------------------------------------------
 # 20. The UnRAID case: a uid the image has never heard of.
 #
 # `unraid/eugene-plexus.xml` ships `--user 99:100` because that is what a
@@ -536,6 +636,24 @@ if sudo -n chown 99:100 "$UIDDIR" 2>/dev/null; then
       && ok "20. healthy as uid 99:100 against a directory owned by 99:100" \
       || { bad "20. as --user 99:100 the agent never answered /healthz"
            $CT logs ep-uid-check 2>&1 | tail -12 | sed 's/^/      /'; }
+
+    # 27. The same uid, asked where the AGENT would put an engine build
+    # -- its own `engine_root()`, not the variable -- and whether it can
+    # write there and to the CUDA cache. This uid has no home, which is
+    # where both went before the image moved them, and where the first
+    # engine download on an Unraid box would have failed.
+    where=$($CT exec ep-uid-check /opt/eugene-plexus/venv/bin/python -c "
+import os
+from eugene_plexus_agent.engines.acquisition import engine_root
+paths = [str(engine_root()), os.environ['CUDA_CACHE_PATH']]
+for p in paths:
+    os.makedirs(p, exist_ok=True)
+    assert os.access(p, os.W_OK), p
+print(' '.join(paths))
+" 2>&1 | tr -d '\r')
+    [ "$where" = "/data/engines /data/cuda-cache" ] \
+      && ok "27. as 99:100 the agent keeps engines in /data/engines and the CUDA cache in /data/cuda-cache, both writable" \
+      || bad "27. as 99:100: $where"
   else
     bad "20. could not start the image with --user 99:100"
   fi

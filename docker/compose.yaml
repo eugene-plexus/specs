@@ -8,12 +8,17 @@
 # the Dockerfile for why splitting them into four services would be
 # fighting the architecture rather than using it.
 #
-# THE GPU BOXES ARE NOT IN THIS FILE. They cannot be: §1 — the agent
-# must run on the host that has the GPU, the engine binaries and the
-# user's own model directories. Each one runs `install.sh` and joins
-# this control plane over the network. That is the same two-host
-# topology `scripts/m7-acceptance.sh` proved on real hardware; only its
-# packaging was missing. There is a worked example at the bottom.
+# IT CAN RUN MODELS ITSELF. As shipped, on the CPU -- fine for a small
+# model on a NAS with nothing else. With an NVIDIA card and the NVIDIA
+# Container Toolkit on this host, uncomment the `deploy:` block below and
+# the agent in here finds the card and fetches the llama.cpp build that
+# fits it, exactly as on bare metal. Opt-in, because a host without the
+# toolkit refuses to start a container that asks for a GPU.
+#
+# OTHER MACHINES WITH GPUS STILL JOIN THIS. Each one runs `install.sh`
+# and joins over the network -- the same two-host topology
+# `scripts/m7-acceptance.sh` proved on real hardware. There is a worked
+# example at the bottom.
 #
 # ▲ THIS PUBLISHES AN UNAUTHENTICATED FIRST-RUN WIZARD ON EVERY
 #   INTERFACE, and it has to, because a control plane worker nodes
@@ -92,6 +97,23 @@ services:
       # See docs/deployment/container.md, "Where the models go".
       # - /srv/models:/models
 
+    # AN NVIDIA CARD FOR THE MODELS IN HERE. Needs the NVIDIA driver and
+    # the NVIDIA Container Toolkit on this host (`nvidia-smi` works here,
+    # and `docker run --rm --gpus all debian nvidia-smi` prints the card).
+    # `count: all` hands over every card; `device_ids: ["0"]` or a GPU
+    # UUID instead of `count` hands over one. The image already sets
+    # NVIDIA_DRIVER_CAPABILITIES; this block is the only switch. Engine
+    # builds and the CUDA kernel cache land in the data volume, so an
+    # update neither re-downloads nor recompiles.
+    #
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
     # The image sets every variable this needs; nothing is required here.
     # Two an operator may want, both added as an `environment:` block:
     #
@@ -146,9 +168,9 @@ volumes:
 #     file: ./control-passphrase
 
 # ---------------------------------------------------------------------
-# Adding a GPU box
+# Adding another GPU box
 #
-# On the machine with the GPU — bare metal, not a container:
+# On the machine with the GPU — bare metal:
 #
 #   1. In the UI on this host, Nodes -> Add a node. Copy the command.
 #      It mints a join token that is good once.

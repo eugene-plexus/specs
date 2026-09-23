@@ -3,12 +3,16 @@
   Eugene Plexus control plane — Unraid / Community Applications template.
 
   WHAT THIS CONTAINER IS, because the name does not say it: the control
-  plane only. The agent in here supervises the control root, the gateway
-  and the model library, and that is all. It has no GPU, no inference
-  engine, and it is not supposed to — the machines with the GPUs run
-  `install.sh` on bare metal and join this over the network. See
-  docs/deployment/container.md for why containerising the GPU half is the
-  wall Home Assistant hit.
+  plane, and optionally a place to run models. The agent in here
+  supervises the control root, the gateway and the model library; it can
+  also run llama.cpp on the CPU, and on an NVIDIA card when this server
+  shares one with containers (the Nvidia Driver plugin, as for Plex): add
+  the runtime=nvidia flag to Extra Parameters and set the NVIDIA GPU
+  variable. (Spelled without its two leading dashes here only because an
+  XML comment cannot contain them.) Other machines with GPUs still run `install.sh` and join
+  this over the network. Until 2026-09-23 this said the container had no
+  GPU and was not supposed to; that was a packaging decision, not a
+  technical limit (docs/deployment/container.md).
 
   THE IMAGE IS `:edge`, NOT `:latest`, and that is deliberate. Nothing in
   this project is released yet. `edge` is the head of `main`, built and
@@ -32,7 +36,7 @@
   <Overview>
     A self-hosted control plane for local LLM inference. It supervises engine processes it does not own, keeps a model library on your own disk as plainly-named files, holds per-model settings, and exposes one OpenAI-compatible endpoint that load-balances and fails over across local runtimes and cloud subscriptions — with real auth, so it works over a tailnet and not just localhost.
 
-    THIS CONTAINER IS THE CONTROL PLANE ONLY. There is no GPU in here and no inference engine, by design. Point your tools at port 8080; run the installer on each machine that has a GPU and join it to port 8083. One click here does not give you a model — it gives you the thing that manages them.
+    IT CAN RUN MODELS HERE, OR MANAGE THE MACHINES THAT DO. Point your tools at port 8080. As shipped it runs models on this server's CPU, which suits a small model. With an NVIDIA card shared through the Nvidia Driver plugin (the way Plex uses it), set NVIDIA GPU below and add --runtime=nvidia to Extra Parameters, and it fetches the llama.cpp build that fits the card. Other machines with GPUs run the installer and join port 8083.
 
     PRE-RELEASE. The image is tagged `edge`, there is no released version, and the API may change. It is used daily by its author across two machines; it has not been used by anybody else.
 
@@ -102,10 +106,17 @@
 
     `user 99:100`: the image bakes in uid 10001, and Unraid owns
     appdata as nobody:users. Overriding it means the data directory is
-    writable without a chown. What it costs is engine acquisition, which
-    writes under $HOME — and this container has no GPU to run an engine
-    on, so there is nothing to lose. Verified in CI as check 20: the
-    image comes up healthy as a uid it does not contain.
+    writable without a chown. It used to cost engine acquisition, which
+    wrote under $HOME, a directory this uid does not have; since
+    2026-09-23 the image puts engines and the CUDA kernel cache under
+    /data instead, so it costs nothing. Verified in CI as checks 20 and
+    27: healthy as a uid the image does not contain, and able to write
+    where the agent keeps engines.
+
+    The runtime=nvidia flag is deliberately NOT here. It is how a card
+    reaches this container, and on a server without the Nvidia Driver
+    plugin Docker refuses to start any container that names it. So it
+    is the operator's to add, beside the NVIDIA GPU variable below.
 
     `hostname`: the node's name in this install comes from
     `socket.gethostname()` at enrollment (`enrollment.py`), and a
@@ -174,6 +185,16 @@
     Display="always"
     Required="false"
     Mask="false">/mnt/user/models</Config>
+
+  <Config
+    Name="NVIDIA GPU (optional)"
+    Target="NVIDIA_VISIBLE_DEVICES"
+    Default=""
+    Description="To run models on an NVIDIA card in this server: install the Nvidia Driver plugin (the one Plex uses), put the card's GPU UUID from that plugin's page here (or all for every card), and add --runtime=nvidia to Extra Parameters (Advanced View). Both, or neither: this alone does nothing, and --runtime=nvidia on a server without the plugin stops the container from starting. The container then fetches the llama.cpp build that fits the card, including older cards such as Pascal. Leave blank to run models on the CPU, or only on other machines."
+    Type="Variable"
+    Display="always"
+    Required="false"
+    Mask="false"></Config>
 
   <Config
     Name="Passphrase file (optional)"

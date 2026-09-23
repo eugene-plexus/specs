@@ -12,24 +12,17 @@ curl -fL --retry 3 -o "$work/engine.tar.gz" \
   https://github.com/ggml-org/llama.cpp/releases/download/b11065/llama-b11065-bin-ubuntu-x64.tar.gz
 echo "f00971c1b044fae179230bfc6f8d9f8461b778fef9ffac2b450088081a8ecd43  $work/engine.tar.gz" | sha256sum -c -
 tar -xzf "$work/engine.tar.gz" -C "$work/engine"
-# The production control-plane image deliberately carries no inference engine.
-# Add only its CPU runtime dependency to a disposable derivative used for this
-# acceptance; the production image that gets published remains unchanged.
-cat > "$work/Dockerfile" <<'EOF'
-FROM eugene-plexus/control-plane:0.1
-USER root
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
-USER plexus
-EOF
-docker build -t eugene-plexus/a7-recovery-test "$work"
+# Run on the image that gets published, unmodified. Until 2026-09-23 this
+# built a disposable derivative that added libgomp1, because the production
+# image could not start a llama-server at all; the image carries it now, so
+# this check is also the proof that it can serve a real completion.
 chmod -R a+rX "$work/models" "$work/engine"
 docker run --name "$name" --init \
   --mount "type=bind,src=$PWD/scripts,dst=/instruments,readonly" \
   --mount "type=bind,src=$work/models,dst=/fixture-models,readonly" \
   --mount "type=bind,src=$work/engine,dst=/fixture-engine,readonly" \
   --entrypoint /opt/eugene-plexus/venv/bin/python \
-  eugene-plexus/a7-recovery-test /instruments/a7-recovery-acceptance.py \
+  eugene-plexus/control-plane:0.1 /instruments/a7-recovery-acceptance.py \
   --directory /tmp/a7-run --disposable-venv /opt/eugene-plexus/venv \
   --uv /opt/eugene-plexus/bin/uv \
   --model /fixture-models/Qwen3-0.6B-Q4_K_M.gguf \
