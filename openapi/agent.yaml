@@ -3240,10 +3240,44 @@ components:
             application built with any 13.x toolkit runs on any 13.x
             driver, minus PTX JIT for newer PTX and APIs the driver
             lacks; verified live with b10990's 13.4 build on a 13.3
-            driver), and the agent logs the choice. A different major
-            is never chosen, and the refusal says so. The candidate
+            driver), and the agent logs the choice. The candidate
             minors are read from the release's own asset names, not a
             table: the table this replaced went stale in a day.
+
+            **A NEWER major is never chosen** — a 13.x build needs a
+            13.x driver, and the refusal says so and names the fix. **An
+            OLDER major is**, when the driver's own major has nothing
+            this machine's cards can run: NVIDIA's drivers are backward
+            compatible, so a 12.x build loads on a 13.x driver with the
+            CUDA runtime it ships beside it. Until 2026-09-23 this said a
+            different major was never chosen *either way*, which refused
+            a working build on the one kind of host that needs it — see
+            `computeCapability`.
+        computeCapability:
+          type: string
+          description: |
+            For CUDA, the **lowest** compute capability among this
+            machine's NVIDIA cards, as `nvidia-smi --query-gpu=compute_cap`
+            reports it (`6.1` for a Pascal Quadro P4000, `12.0` for an
+            RTX 5090). Absent when the driver would not say, which is
+            only drivers old enough that no published build loads on
+            them anyway.
+
+            **It exists because the driver's CUDA version is not enough
+            to choose a build.** From CUDA 13 the toolkit no longer
+            compiles for Maxwell, Pascal or Volta, and upstream
+            llama.cpp's own build adds `50-virtual 61-virtual 70-virtual`
+            only below 13 — so a card below 7.5 cannot run a 13.x build
+            at all, while the last driver branch that supports it (580)
+            reports CUDA 13.0. Choosing by driver alone installs a build
+            with no kernels for the card, which fails at model load with
+            nothing naming why. So a 13.x build is a candidate only at
+            7.5 or above, a 12.x build at 5.0 or above, and below 5.0
+            nothing published runs and the refusal says so.
+
+            **The lowest card decides**, because one engine may use every
+            visible card and a build must carry code for all of them: a
+            3090 beside a P4000 gets the 12.x build, which carries both.
 
     EngineInstallRequest:
       type: object
