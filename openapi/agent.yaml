@@ -101,7 +101,7 @@ info:
         proxy request thereafter presents it as
         `Authorization: Bearer <token>`.
 
-    Two `securityMode` options the operator picks in the wizard:
+    Three `securityMode` options:
 
       * `prompt_on_startup` — master key in memory only; passphrase
         required at every agent start. After a power cut the install
@@ -109,6 +109,15 @@ info:
       * `os_keyring` — master key in OS Credential Manager / Keychain /
         Secret Service, auto-unlocked while the operator's OS session is
         active. More convenient; weaker boundary.
+      * `passphrase_file` (2026-09-24) — for an agent that runs under
+        its own account, where there is no OS session and so no keyring:
+        the Linux system install. The agent keeps the passphrase in the
+        file `EUGENE_PLEXUS_AGENT_PASSPHRASE_FILE` names, owner-only
+        (0400), writes it itself when the passphrase is set or signed in
+        with, and reads it at startup. Whoever can read that file can
+        unlock the install, which is the keyring's trade moved to a path
+        only that account and root can open. The installer selects it;
+        the wizard does not offer it as a choice.
 
     Component-internal calls (gateway → driver, and so on) use
     per-component service tokens: same `Authorization: Bearer ...`
@@ -3345,6 +3354,18 @@ components:
             `securityMode` to `os_keyring` on true and explains the
             passphrase prompt on false. Absent when the probe was not run
             or did not finish within its budget.
+        passphraseFile:
+          type: boolean
+          description: |
+            True when this agent unlocks itself from a passphrase file:
+            `securityMode` is `passphrase_file` and
+            `EUGENE_PLEXUS_AGENT_PASSPHRASE_FILE` names where the file
+            goes. The Linux system install, where the agent runs under
+            its own account and has no keyring (2026-09-24). The wizard
+            then says the install unlocks itself after a restart, offers
+            no keyring choice, and sets the control root to the same
+            mode. Absent from an agent that predates the field, and false
+            everywhere else.
 
     ClientKeyLimits:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyLimits'
