@@ -1,7 +1,9 @@
 # Apps: the hub and its spokes
 
-**Status: designed 2026-09-23; calls taken the same day; the registry
-(§10 steps 1-2) BUILT, the UI (step 3) next.** Troy took calls #1-#7 and
+**Status: designed 2026-09-23; calls taken the same day; §10 steps 1-3
+(contract, agent, UI) BUILT and live-verified the same day** —
+[`../acceptance/apps-run.md`](../acceptance/apps-run.md), 58 PASS. The
+chat app (step 4) is next and gets its own design. Troy took calls #1-#7 and
 #9 as recommended and **deferred #8: no deposit endpoint until a training
 module exists to deposit something.** §11 records where the build departed
 from what follows, and why. It came out of a
@@ -504,9 +506,33 @@ its author's code).
    one member, `inference`, and its description says what arrives with a
    second.
 
-**Not done, named:** the UI (step 3); rollback to the retained version
+7. **No ninth layer (call #9).** The console files Apps under the
+   existing `tools` layer — *"Your tools: anything that speaks the OpenAI
+   API, pointed at one URL with one key"* — which is already the layer
+   drawn above the front door and describes an app exactly. The call's
+   substance (apps sit above the front door) holds; the website's
+   architecture page needs no change. The Apps page is the install
+   root's, beside Home and Inference, with a machine picker for
+   installing; an Apps **branch** appears in the tree once something is
+   installed, each app a leaf with Overview and Settings.
+8. **`ConfigEditor` takes `endpoints`.** Its defaults are a component's —
+   `/v1/config` and `/v1/admin/restart` on its target — and pointed at an
+   app's machine they would have edited and restarted the agent. The
+   Settings page passes `/v1/apps/{id}/config`, a restart through
+   `/v1/apps/{id}/restart`, and no Test button.
+
+The UI: `ui` `fa81e14` (dist `ec4ced9`), `scripts/apps-ui-sabotage.py`
+**8 of 8**. The run: `scripts/apps-acceptance.sh`, **58 PASS on the
+second execution**; the first failed check 13 whole because a restarted
+control root comes back sealed on a keyring-less install, which made the
+uninstall's revocation 503 — the rule working, kept as check 12b.
+
+**Not done, named:** rollback to the retained version
 has no route (the environment is kept, nothing starts it); an app's own
 secrets are a file in its data directory, weaker than components'
 sealing; the gateway address is resolved per start and not re-read while
 an app runs; nothing has installed an app from an `https://` archive
-(the tests and the fixture use a folder source).
+(the tests and the fixture use a folder source); no browser spec clicks
+Install through to Open; and an app on a machine without a gateway has
+never sent a request between two machines (the owner-proxy path is
+unit-tested only).

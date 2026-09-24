@@ -1,0 +1,13 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "eugene-plexus-app-fixture"
+version = "0.0.1"
+requires-python = ">=3.12"
+description = "The app scripts/apps-acceptance.sh installs: stdlib only, holds a client key and nothing else."
+license = "Apache-2.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["eugene_plexus_app_fixture"]

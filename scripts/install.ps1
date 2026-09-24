@@ -105,12 +105,12 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "442af423d2ef7dd512de9029f75e09fdb1c70c5a"
-    "control"          = "acb224dba466fd236cf088ae206ab81530d11bfc"
+    "agent"            = "6f2e860c998d1ff6b2a465c5f8234523cdb7c125"
+    "control"          = "2a8ce85cc051c63091069739ef0692dee991d7ac"
     "gateway"          = "431077d8877f79502b358aac787cb54971fac68d"
     "inference-driver" = "dfaac8e650868b07b6b6689c937844cb60c2d3fd"
     "library"          = "ea19464bb86f7ac3da942f3562dab8e2761a234f"
-    "ui"               = "1a5b213a31e0ef1022f87ef6e739a129fcc9bb55"  # branch `dist`, not `main`
+    "ui"               = "ec4ced9bd8b3812c155fe98e5491d6659ee4b191"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
