@@ -241,6 +241,18 @@ tags:
       This host's identity, its accelerators, and which control root it
       answers to. One agent per host; the install-wide view of every node
       lives on the control root (`control.yaml`).
+  - name: apps
+    description: |
+      Optional spokes this agent installs and supervises — a chat app,
+      the Discord connector, one day a trainer — each its own package in
+      its own Python environment. **An app is not a component.** A
+      component is part of the hub and holds service credentials; an app
+      sits outside it and holds a client key, the same credential any
+      third-party client of this install could be given. So the hub has
+      no private door our own spokes use and nobody else's can: whatever
+      an app needs, the public contract offers to everyone. Its UI runs
+      on its own port — its own browser origin — and is never embedded
+      in the console. Design: `docs/design/apps-and-spokes.md`.
   - name: meta
     description: Health and version.
 
@@ -876,6 +888,381 @@ paths:
             application/problem+json:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
+
+  # -------- apps: optional spokes this agent installs and supervises --------
+
+  /v1/apps:
+    get:
+      tags: [apps]
+      operationId: listApps
+      summary: The apps installed on this node, with their live status.
+      description: |
+        One entry per installed app. An app is not a component: it holds
+        a client key and nothing else, runs from its own Python
+        environment, and reaches the hub the way any outside client does.
+        See the `apps` tag and `docs/design/apps-and-spokes.md`.
+      responses:
+        "200":
+          description: Installed apps.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppList"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/app-catalogue:
+    get:
+      tags: [apps]
+      operationId: getAppCatalogue
+      summary: The apps this node can install, and whether it can install any.
+      description: |
+        The catalogue shipped with this agent release plus any custom
+        entries the operator added on this node. A new app in a later
+        release is a new row here; the agent needs no new code for it.
+
+        `installable: false` is a real answer with `reason` saying what to
+        do: this agent cannot find `uv`, or has not enrolled (an agent
+        that has not enrolled signs with a key that changes at every
+        start, so an app's key would stop working at the next restart).
+      responses:
+        "200":
+          description: The catalogue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppCatalogue"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/app-catalogue/custom:
+    post:
+      tags: [apps]
+      operationId: addCustomApp
+      summary: Add an app that is not in the shipped catalogue.
+      description: |
+        Operator-only, and **refused with 403 until the agent's
+        `allowCustomApps` setting is on** — the same expert-switch posture
+        as `allowUnrestrictedEngineLaunch`, for the same reason: it runs
+        code this release did not ship. The entry is stored on this node
+        and installed like any other; it is how a spoke somebody else
+        wrote gets the same supervision ours do. **Installing it runs its code as the user
+        this agent runs as, holding the client key minted for it** — a UI
+        must say so before the operator confirms.
+
+        409 when an entry with this `id` already exists, shipped or custom;
+        422 when `source` is neither an archive URL nor an existing folder
+        on this node.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppManifest"
+      responses:
+        "201":
+          description: Added to this node's catalogue.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppCatalogueEntry"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/app-catalogue/custom/{id}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    delete:
+      tags: [apps]
+      operationId: removeCustomApp
+      summary: Remove a custom entry from this node's catalogue.
+      description: |
+        409 while the app is installed — uninstall it first, so an entry
+        is never removed from under something still running from it.
+      responses:
+        "204":
+          description: Removed.
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/apps/{id}:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [apps]
+      operationId: getApp
+      summary: One installed app.
+      responses:
+        "200":
+          description: The app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    delete:
+      tags: [apps]
+      operationId: uninstallApp
+      summary: Stop an app, revoke its key and remove its environments.
+      description: |
+        Revoking the key is part of uninstalling, not a separate step: an
+        app that is gone must not leave a working credential behind. The
+        app's `data` directory is kept unless `purge` is true, so an
+        uninstall followed by a reinstall picks up where it left off.
+
+        The key is revoked at whoever holds the registry — the control
+        root on an enrolled node — with the caller's own credential. If
+        that revocation fails the uninstall stops with the authority's
+        answer and nothing has been removed.
+      parameters:
+        - in: query
+          name: purge
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Also delete the app's `data` directory.
+      responses:
+        "204":
+          description: Uninstalled.
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/apps/{id}/install:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    post:
+      tags: [apps]
+      operationId: installApp
+      summary: Install, or update to, the catalogue's version of an app.
+      description: |
+        Returns immediately; poll the GET on this path. One install runs
+        per app, the same singleton shape as an engine install.
+
+        The version installed is the one the catalogue names — there is
+        no version in the request, because an app's version is pinned by
+        the release that ships it (or by the operator's custom entry).
+        Installing a version beside an installed one is how an update
+        works: the new environment is built, verified and moved into
+        place while the old one keeps running, then the app restarts on
+        the new one. The previous environment is kept for rollback.
+
+        On a first install the agent mints the app's client key with the
+        **caller's** credential, named `app:<id>@<node>`, so it appears in
+        the install's key list like any other and can be narrowed or
+        revoked there.
+
+        403 for a custom entry while `allowCustomApps` is off; 409 when an
+        install is in flight or that version is already installed; 422
+        when this node cannot install apps (`AppCatalogue.reason`).
+      responses:
+        "202":
+          description: Install accepted and running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppInstall"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    get:
+      tags: [apps]
+      operationId: getAppInstall
+      summary: Progress of the current or most recent install of this app.
+      responses:
+        "200":
+          description: Install state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppInstall"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    delete:
+      tags: [apps]
+      operationId: cancelAppInstall
+      summary: Cancel an install in flight.
+      responses:
+        "200":
+          description: Cancelled; the state reflects it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppInstall"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/apps/{id}/start:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    post:
+      tags: [apps]
+      operationId: startApp
+      summary: Start an installed app, and keep it started across restarts.
+      responses:
+        "200":
+          description: The app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/apps/{id}/stop:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    post:
+      tags: [apps]
+      operationId: stopApp
+      summary: Stop an installed app, and keep it stopped across restarts.
+      responses:
+        "200":
+          description: The app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/apps/{id}/restart:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    post:
+      tags: [apps]
+      operationId: restartApp
+      summary: Restart an installed app.
+      description: Clears a `crashed` state, like restarting a component.
+      responses:
+        "200":
+          description: The app.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/apps/{id}/config:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [apps]
+      operationId: getAppConfig
+      summary: Read an app's own settings, through this agent.
+      description: |
+        For an app whose manifest declares `configTrio: true`. The agent
+        checks the operator's session and calls the app's own
+        `GET /v1/config` on loopback with the **admin token** it handed
+        the app at this spawn — a credential that means something to that
+        app and nothing to the hub. So the operator never talks to an app
+        directly with a hub credential, and a console on any node reaches
+        it through `node:<name>`.
+
+        409 when the app declares no config trio; 503 when it is not
+        answering.
+      responses:
+        "200":
+          description: The app's config document.
+          content:
+            application/json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/ConfigDocument"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    patch:
+      tags: [apps]
+      operationId: updateAppConfig
+      summary: Change an app's own settings, through this agent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "components/common.yaml#/components/schemas/ConfigUpdateRequest"
+      responses:
+        "200":
+          description: The app's answer.
+          content:
+            application/json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/ConfigUpdateResult"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/apps/{id}/config/schema:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [apps]
+      operationId: getAppConfigSchema
+      summary: An app's own config schema, through this agent.
+      responses:
+        "200":
+          description: The app's config schema.
+          content:
+            application/json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/ConfigSchema"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   # -------- runtimes: engine processes we supervise --------
 
@@ -2023,6 +2410,16 @@ components:
         after operator passphrase entry. Component-internal calls
         present service tokens threaded via env var at spawn time.
 
+  parameters:
+    AppId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9-]{1,39}$"
+      description: The app's `AppManifest.id`.
+
   schemas:
     BenchmarkRequest:
       type: object
@@ -2549,8 +2946,9 @@ components:
         process:
           type: string
           description: |
-            `agent`, or a `ComponentKind`. Engines are not listed: they
-            are deliberately never widened.
+            `agent`, a `ComponentKind`, or `app:<id>` for an installed
+            app. Engines are not listed: they are deliberately never
+            widened.
         host:
           type: string
           description: The interface bound — `127.0.0.1`, `0.0.0.0`, or one address.
@@ -4673,3 +5071,309 @@ components:
         - same_path
         - inherited
         - override
+
+    # -------- Apps: optional spokes --------
+
+    AppManifest:
+      type: object
+      additionalProperties: false
+      description: |
+        What an app is, how to install it, and what it needs from the hub.
+        The shipped catalogue is a list of these; so is a custom entry.
+
+        **Nothing here grants anything on the hub.** An app receives a
+        client key scoped by `uses` and the addresses it needs, and no
+        service token, signing key or master key — the same things a
+        third-party client could be given, which is the rule the design
+        calls *our spokes get no back doors*.
+
+        **What an app owes the agent** is small: bind the port in
+        `EUGENE_PLEXUS_APP_BIND_PORT` (on `EUGENE_PLEXUS_APP_BIND_HOST`
+        when set, loopback otherwise) and answer `GET /healthz` with a
+        2xx once it is serving — an app that never does reads `starting`
+        for as long as it runs. It finds its key in the file named by
+        `EUGENE_PLEXUS_APP_KEY_FILE`, the gateway at
+        `EUGENE_PLEXUS_APP_GATEWAY_URL` (absent when none could be
+        found), keeps its state under `EUGENE_PLEXUS_APP_DATA_DIR`, and —
+        with `configTrio` — requires `EUGENE_PLEXUS_APP_ADMIN_TOKEN` as
+        the bearer on its config trio.
+      required: [id, name, source, version, package, entry]
+      properties:
+        id:
+          type: string
+          pattern: "^[a-z][a-z0-9-]{1,39}$"
+          description: |
+            Stable identifier: a directory name under the node's `apps`
+            directory, part of the key's name, and the path segment in
+            `/v1/apps/{id}`. Lowercase so two spellings cannot be two apps.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+          description: What a person calls it.
+        summary:
+          type: string
+          maxLength: 400
+          description: One or two sentences for the catalogue card.
+        homepage:
+          type: string
+          format: uri
+          description: Where to read about it. Display only.
+        source:
+          type: string
+          minLength: 1
+          description: |
+            What `uv pip install` is given, as `<package> @ <source>`: an
+            `https://` archive URL — for a GitHub repo,
+            `https://github.com/<owner>/<repo>/archive/<commit>.tar.gz` —
+            or, for a custom entry, a directory on this node holding the
+            package (a developer's own checkout). The shipped catalogue
+            uses archive URLs at pinned commits, the way the installers
+            pin the hub's own packages.
+        version:
+          type: string
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Za-z0-9._+-]+$"
+          description: |
+            The label this install is recorded under and the name of its
+            environment's directory — the commit, for a catalogue entry.
+            Updating an app is installing a different `version`.
+        package:
+          type: string
+          minLength: 1
+          description: The distribution name, e.g. `eugene-plexus-chat`.
+        entry:
+          type: string
+          pattern: "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+          description: |
+            The module run as `python -m <entry>` with the app's own
+            interpreter. The install imports it once before it counts as
+            installed, so a package that installs and cannot start is a
+            failed install rather than a crash loop later.
+        python:
+          type: string
+          default: "3.12"
+          pattern: "^3\\.[0-9]+$"
+          description: The Python the app's environment is built with.
+        ui:
+          type: boolean
+          default: false
+          description: |
+            Whether the app serves a browser UI on its port. A UI is
+            opened on the app's own origin and never embedded in or
+            proxied through the console: the console's origin holds the
+            operator session and an unauthenticated proxy to every
+            component, and anything running there has operator authority.
+        configTrio:
+          type: boolean
+          default: false
+          description: |
+            Whether the app serves `GET /v1/config`, `GET
+            /v1/config/schema` and `PATCH /v1/config`, requiring the admin
+            token this agent hands it at each spawn. Required of apps we
+            ship; optional for a custom entry, whose page then shows
+            status, logs and Open only.
+        uses:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/AppHubSurface"
+          default: [inference]
+          description: The hub surfaces the app's key is scoped to.
+
+    AppHubSurface:
+      type: string
+      enum:
+        - inference
+      description: |
+        A public hub surface an app's client key may be used on.
+
+        * `inference` — the gateway's client doors (`/v1/models`,
+          `/v1/chat/completions` and the rest), under A5's default
+          limits. The operator narrows or widens the key like any other.
+
+        One member today on purpose. A trainer depositing models into the
+        Library would add a second, together with the Library endpoint it
+        names, when a trainer exists to use it — not before.
+
+    AppOrigin:
+      type: string
+      enum:
+        - catalogue
+        - custom
+      description: |
+        * `catalogue` — shipped with this agent release.
+        * `custom` — added by an operator on this node.
+
+    AppCatalogueEntry:
+      type: object
+      required: [manifest, origin]
+      properties:
+        manifest:
+          $ref: "#/components/schemas/AppManifest"
+        origin:
+          $ref: "#/components/schemas/AppOrigin"
+        installedVersion:
+          type: string
+          description: |
+            The version installed on this node, when one is. Differs from
+            `manifest.version` when an update is available.
+
+    AppCatalogue:
+      type: object
+      required: [apps, installable]
+      properties:
+        apps:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppCatalogueEntry"
+        installable:
+          type: boolean
+          description: Whether this node can install apps at all.
+        reason:
+          type: string
+          description: "Why not, and what to do. Present when `installable: false`."
+
+    AppInstall:
+      type: object
+      description: |
+        Progress of one install. Named phases, as for engines, because
+        they fail for different reasons: `creating` is the Python
+        download, `installing` is the package index and the network, and
+        `verifying` failing means the package installed and cannot start.
+      required: [app, state]
+      properties:
+        app:
+          type: string
+        version:
+          type: string
+        state:
+          type: string
+          enum:
+            - resolving
+            - creating
+            - installing
+            - verifying
+            - done
+            - failed
+            - cancelled
+          description: |
+            * `resolving` — reading the catalogue and minting the key.
+            * `creating` — building the environment with the manifest's
+              Python.
+            * `installing` — installing the package into it.
+            * `verifying` — importing `entry` with that interpreter.
+            * `done` / `failed` / `cancelled` — terminal, and retained
+              until the next install of this app starts.
+        message:
+          type: string
+          description: What is happening now, for a status line.
+        error:
+          type: string
+          description: |
+            Populated when `state: failed`: the tail of the tool's own
+            output where there is one, because "install failed" is the
+            one message nobody can act on.
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+
+    AppList:
+      type: object
+      required: [apps]
+      properties:
+        apps:
+          type: array
+          items:
+            $ref: "#/components/schemas/App"
+
+    App:
+      type: object
+      description: |
+        One installed app: what was installed (persisted in `apps.yaml`
+        beside `agent.yaml`) and what the agent observes now.
+
+        `apps.yaml` is a separate file on purpose. An entry this agent
+        cannot read degrades the apps alone — the file is kept as
+        `apps.yaml.unreadable` and `/healthz` says why — and never takes
+        the topology, runtimes or passphrase with it.
+      required: [id, name, version, origin, enabled, status, port, ui, configTrio, uses]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        previousVersion:
+          type: string
+          description: The environment kept for rollback, when there is one.
+        origin:
+          $ref: "#/components/schemas/AppOrigin"
+        node:
+          type: string
+          description: This node's name, when it has one.
+        enabled:
+          type: boolean
+          description: |
+            Whether the operator wants it running. Start and stop set it,
+            and it survives the agent restarting.
+        status:
+          $ref: "#/components/schemas/ComponentStatus"
+        port:
+          type: integer
+          description: |
+            The port it binds, allocated from 8190-8289 and persisted so
+            its address does not change between restarts.
+        uiUrl:
+          type: string
+          format: uri
+          description: |
+            Where a browser opens its UI: this node's advertised host with
+            the app's port, or loopback on a node that advertises none.
+            Present only for an app with `ui: true`.
+        gatewayUrl:
+          type: string
+          format: uri
+          description: |
+            The gateway address handed to the app at its last start — the
+            local gateway when this node runs one, otherwise the owning
+            node's agent proxy (`<agent>/api/proxy/gateway`), which is the
+            same public path a browser uses and survives a port remap that
+            a component address does not. Absent when none could be found;
+            an app we ship then says so and takes an address in its own
+            config.
+        ui:
+          type: boolean
+        configTrio:
+          type: boolean
+        uses:
+          type: array
+          items:
+            $ref: "#/components/schemas/AppHubSurface"
+        keyId:
+          type: string
+          description: |
+            The client key minted for it. Revoking that key cuts the app
+            off from the hub; uninstalling revokes it.
+        keyName:
+          type: string
+        installedAt:
+          type: string
+          format: date-time
+        pid:
+          type: integer
+        lastRestart:
+          type: string
+          format: date-time
+        lastError:
+          type: string
+        detail:
+          type: string
+          description: |
+            Something the operator should know that is not an error — the
+            gateway could not be found, say — in words they can act on.
