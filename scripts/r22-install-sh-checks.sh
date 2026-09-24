@@ -148,7 +148,7 @@ run() {
       EP_STUB_UV_VENV_FAILS="${EP_STUB_UV_VENV_FAILS:-0}" \
       EP_STUB_UV_PIP_FAILS="${EP_STUB_UV_PIP_FAILS:-0}" \
       ${EP_EXTRA_ENV:-} \
-      sh "$INSTALL_SH" --prefix "$PREFIX" --no-start "$@" 2>&1
+      sh "$INSTALL_SH" --user --prefix "$PREFIX" --no-start "$@" 2>&1
   )
   RC=$?
 }
@@ -163,7 +163,7 @@ rerun() {
       PATH="$root/bin:/usr/bin:/bin" \
       EP_STUB_BIN="$root/bin" \
       ${EP_EXTRA_ENV:-} \
-      sh "$INSTALL_SH" --prefix "$root/prefix" --no-start "$@" 2>&1
+      sh "$INSTALL_SH" --user --prefix "$root/prefix" --no-start "$@" 2>&1
   )
   RC=$?
 }
@@ -311,7 +311,7 @@ rm -f "$PREFIX_KEYRING_LOG" "$PREFIX_KEYRING_LOG.script"
 OUT=$(
   env -i HOME="$FAKE_HOME" XDG_RUNTIME_DIR="$WORK/uninst/run" \
     PATH="$WORK/uninst/bin:/usr/bin:/bin" PREFIX_KEYRING_LOG="$PREFIX_KEYRING_LOG" \
-    sh "$INSTALL_SH" --prefix "$PREFIX" --uninstall 2>&1
+    sh "$INSTALL_SH" --user --prefix "$PREFIX" --uninstall 2>&1
 )
 RC=$?
 SCRIPT=$(cat "$PREFIX_KEYRING_LOG.script" 2>/dev/null || true)
@@ -358,7 +358,7 @@ printf 'modelCopyDir: %s\n' "$COPYDIR2" > "$PREFIX/agent.yaml"
 OUT=$(
   env -i HOME="$WORK/purge/home" XDG_RUNTIME_DIR="$WORK/purge/run" \
     PATH="$WORK/purge/bin:/usr/bin:/bin" \
-    sh "$INSTALL_SH" --prefix "$PREFIX" --uninstall --purge-downloads 2>&1
+    sh "$INSTALL_SH" --user --prefix "$PREFIX" --uninstall --purge-downloads 2>&1
 )
 if [ ! -e "$COPYDIR2" ]; then
   ok "the copy directory is gone when the operator asks for it"

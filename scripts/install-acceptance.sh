@@ -110,7 +110,7 @@ run_posix() {
 
   say "posix: the one command a user runs"
   local out
-  out=$(r "sh '$POSIX_SCRIPT' --prefix $prefix 2>&1")
+  out=$(r "sh '$POSIX_SCRIPT' --user --prefix $prefix 2>&1")
   if printf '%s' "$out" | grep -q "Eugene Plexus is running"; then
     ok "3. install.sh completed from nothing"
   else
@@ -219,7 +219,7 @@ run_posix() {
                        || bad "14. ${left:-0} processes on the install's interpreter survived"
 
   say "posix: re-run and uninstall"
-  out=$(r "sh '$POSIX_SCRIPT' --prefix $prefix 2>&1")
+  out=$(r "sh '$POSIX_SCRIPT' --user --prefix $prefix 2>&1")
   if printf '%s' "$out" | grep -q "virtualenv already present" \
      && printf '%s' "$out" | grep -q "Eugene Plexus is running"; then
     ok "15. a re-run is idempotent and brings it back"
@@ -227,7 +227,7 @@ run_posix() {
     bad "15. the re-run did not behave: $(printf '%s' "$out" | tail -2)"
   fi
 
-  out=$(r "sh '$POSIX_SCRIPT' --prefix $prefix --uninstall 2>&1")
+  out=$(r "sh '$POSIX_SCRIPT' --user --prefix $prefix --uninstall 2>&1")
   local kept unit_gone
   kept=$(printf '%s' "$out" | grep -o "$real.removed-[0-9]*" | head -1)
   unit_gone=$(r 'test -f $HOME/.config/systemd/user/eugene-plexus-agent.service && echo no || echo yes')

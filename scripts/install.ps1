@@ -105,12 +105,12 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "7de79f26854e939407eb30ff4e1f1352cf7c0633"
+    "agent"            = "4f0065de8ec5e4c48aa3ca357a9ca6cc701b0ede"
     "control"          = "2a8ce85cc051c63091069739ef0692dee991d7ac"
     "gateway"          = "431077d8877f79502b358aac787cb54971fac68d"
     "inference-driver" = "dfaac8e650868b07b6b6689c937844cb60c2d3fd"
     "library"          = "ea19464bb86f7ac3da942f3562dab8e2761a234f"
-    "ui"               = "ec4ced9bd8b3812c155fe98e5491d6659ee4b191"  # branch `dist`, not `main`
+    "ui"               = "131c206a691e63ee039fe8d5dad4d1137fde580d"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -1472,6 +1472,11 @@ if (-not $NoService) {
             -Settings $settings -Description "Eugene Plexus node agent" | Out-Null
         $autostart = "task"
         Warn "this agent starts when you log in, not at boot: a reboot that lands on the lock screen leaves it off until somebody signs in at this keyboard. Re-run without -NoService to make it a service instead."
+        # **The per-user layout says what it costs** (2026-09-24). A
+        # program running as the agent's account can read its files, its
+        # environment and its memory, and no ACL stops that; the service
+        # runs under its own account, which does.
+        Warn "Eugene runs as you, so any program you run as you -- an AI agent included -- can read its keys and take control of it. The Windows service (re-run without -NoService) runs under its own account instead."
     }
 }
 

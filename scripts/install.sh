@@ -5,22 +5,39 @@
 #
 # With options (sh cannot take arguments from a pipe without -s):
 #
-#   curl -fsSL .../install.sh | sh -s -- --no-service
+#   curl -fsSL .../install.sh | sh -s -- --user
 #   curl -fsSL .../install.sh | sh -s -- --uninstall
+#
+# **On Linux, Eugene runs under its own account by default** (2026-09-24).
+# The install's signing key sits in a file on disk, and anything running
+# as the account the agent runs as -- an AI agent you started, say -- can
+# read that file, the agent's environment and its memory. No file
+# permission stops a program running as the same account; a different
+# account does. So the default is a system service running as
+# `eugene-plexus`, in /var/lib/eugene-plexus, and this script asks for
+# sudo once to set that up. `--user` keeps the old layout: everything
+# under your home, running as you, no sudo -- and anything you run can
+# control Eugene. macOS always gets the per-user layout for now.
 #
 # What it does, in the order it does it, so that reading this comment is
 # a substitute for reading the script (install-paths §11: `curl | sh`
 # has to stay auditable):
 #
+#   0. (Linux, default) creates the `eugene-plexus` account and its
+#      prefix, with sudo; the steps below then run AS that account, so
+#      no package's build step ever runs as root,
 #   1. fetches `uv` into the install prefix and nowhere else,
 #   2. makes a virtualenv there with a Python `uv` downloads itself,
 #   3. installs the six Eugene Plexus packages into it,
 #   4. checks that what landed can actually serve — see VERIFY below,
-#   5. writes a systemd user unit (Linux) or launchd agent (macOS),
+#   5. writes a systemd unit (Linux: a system unit, or a user unit with
+#      --user) or launchd agent (macOS),
 #   6. starts it and waits for the agent to answer.
 #
-# It touches nothing outside `$PREFIX` except the one service file, and
-# `--uninstall` removes both. It never needs root.
+# It touches nothing outside `$PREFIX` except the service file, the
+# account, and (by default) a `Eugene Models` folder in your home, and
+# `--uninstall` removes the first three. Only the default Linux layout
+# needs root.
 #
 # WHERE THE PACKAGES COME FROM. GitHub source archives at pinned
 # commits — the same mechanism `SPECS_REF` has used in every consumer
@@ -41,18 +58,23 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=7de79f26854e939407eb30ff4e1f1352cf7c0633
+PIN_AGENT=4f0065de8ec5e4c48aa3ca357a9ca6cc701b0ede
 PIN_CONTROL=2a8ce85cc051c63091069739ef0692dee991d7ac
 PIN_GATEWAY=431077d8877f79502b358aac787cb54971fac68d
 PIN_DRIVER=dfaac8e650868b07b6b6689c937844cb60c2d3fd
 PIN_LIBRARY=ea19464bb86f7ac3da942f3562dab8e2761a234f
-PIN_UI=ec4ced9bd8b3812c155fe98e5491d6659ee4b191   # branch `dist`, not `main`
+PIN_UI=131c206a691e63ee039fe8d5dad4d1137fde580d   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
 LAUNCHD_LABEL=com.eugeneplexus.agent
 
-PREFIX=${EUGENE_PLEXUS_HOME:-$HOME/.local/share/eugene-plexus}
+SYSTEM_ACCOUNT=eugene-plexus
+SYSTEM_PREFIX=/var/lib/eugene-plexus
+USER_PREFIX=$HOME/.local/share/eugene-plexus
+
+PREFIX=${EUGENE_PLEXUS_HOME:-}
+USER_MODE=0
 DO_SERVICE=1
 DO_UNINSTALL=0
 DO_START=1
@@ -68,6 +90,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --prefix) PREFIX=$2; shift 2 ;;
         --prefix=*) PREFIX=${1#--prefix=}; shift ;;
+        --user) USER_MODE=1; shift ;;
         --no-service) DO_SERVICE=0; shift ;;
         --no-start) DO_START=0; shift ;;
         --uninstall) DO_UNINSTALL=1; shift ;;
@@ -77,8 +100,10 @@ while [ $# -gt 0 ]; do
         --name) JOIN_NAME=$2; shift 2 ;;
         --advertise) JOIN_ADVERTISE=$2; shift 2 ;;
         -h|--help)
-            sed -n '2,40p' "$0" 2>/dev/null || true
-            echo "options: --prefix DIR  --no-service  --no-start  --uninstall"
+            sed -n '2,52p' "$0" 2>/dev/null || true
+            echo "options: --user  --prefix DIR  --no-service  --no-start  --uninstall"
+            echo "           --user  (Linux: install under your own account, no sudo; anything"
+            echo "                   you run can then control Eugene)"
             echo "           --purge-downloads  (with --uninstall: delete this install's model"
             echo "                              copies and engine builds, which live outside the prefix)"
             echo "  worker node: --join URL --token JWT [--name NAME] [--advertise URL]"
@@ -87,10 +112,6 @@ while [ $# -gt 0 ]; do
         *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
     esac
 done
-
-VENV=$PREFIX/venv
-PYBIN=$VENV/bin/python
-UV=$PREFIX/bin/uv
 
 say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -107,9 +128,16 @@ STEP_LOG=
 run_step() {
     _what=$1; shift
     if [ -z "$STEP_LOG" ]; then
-        STEP_LOG=$PREFIX/logs/install.log
-        mkdir -p "$PREFIX/logs"
-        : > "$STEP_LOG"
+        # On a system install the prefix belongs to Eugene's account and
+        # this shell cannot write into it, so the log starts in /tmp and
+        # stays there -- the path is printed on failure either way.
+        if [ "$MODE" = system ]; then
+            STEP_LOG=$(mktemp "${TMPDIR:-/tmp}/eugene-plexus-install.XXXXXX")
+        else
+            STEP_LOG=$PREFIX/logs/install.log
+            mkdir -p "$PREFIX/logs"
+            : > "$STEP_LOG"
+        fi
     fi
     printf '\n### %s\n' "$_what" >> "$STEP_LOG"
     if "$@" >> "$STEP_LOG" 2>&1; then
@@ -155,16 +183,91 @@ if [ "$PLATFORM" = macos ]; then
     fi
 fi
 
+# --- which layout -----------------------------------------------------
+# **system**: Linux with a service, the default. The agent runs as its
+# own account, so a program running as the person cannot read its key,
+# its environment or its memory. It reaches the person's model folders
+# through their group (Troy's call, 2026-09-24): the unit adds the
+# person's primary group, which is what a 0750 home lets in. It has no
+# desktop session and so no keyring, so it unlocks from a passphrase file
+# only it can read (`securityMode: passphrase_file`).
+#
+# **user**: `--user`, `--no-service` (nothing to run under an account --
+# the container build and anyone starting the agent by hand), and macOS,
+# where a LaunchDaemon under its own account needs a Mac this project
+# does not have to test its GPU and file access on.
+if [ "$PLATFORM" = macos ] || [ "$USER_MODE" = 1 ] || [ "$DO_SERVICE" = 0 ]; then
+    MODE=user
+else
+    MODE=system
+fi
+if [ -z "$PREFIX" ]; then
+    if [ "$MODE" = system ]; then PREFIX=$SYSTEM_PREFIX; else PREFIX=$USER_PREFIX; fi
+fi
+VENV=$PREFIX/venv
+PYBIN=$VENV/bin/python
+UV=$PREFIX/bin/uv
+CONFIG=$PREFIX/agent.yaml
+
+# The person this install is for: whoever ran it, or whoever ran sudo.
+# Nobody, when a root shell runs it directly -- then there is no group to
+# join and no home to offer a models folder in.
+if [ "$(id -u)" = 0 ]; then PERSON=${SUDO_USER:-}; else PERSON=$(id -un); fi
+[ "$PERSON" != root ] || PERSON=
+PERSON_HOME=
+PERSON_GROUP=
+if [ -n "$PERSON" ]; then
+    PERSON_HOME=$(getent passwd "$PERSON" 2>/dev/null | cut -d: -f6 || true)
+    [ -n "$PERSON_HOME" ] || PERSON_HOME=$HOME
+    PERSON_GROUP=$(id -gn "$PERSON")
+fi
+
+# Run as root: directly when this is root, through sudo when not.
+as_root() {
+    if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi
+}
+
+# Run as Eugene's account. sudo and runuser both start from a clean
+# environment, so the variables the steps below depend on are handed over
+# by name -- including a proxy, since uv and pip go to the network and a
+# TLS-intercepting proxy is the commonest reason they fail (review §6.2
+# #24). `${VAR:+"VAR=$VAR"}` expands to nothing at all when VAR is unset.
+as_service() {
+    set -- env HOME="$PREFIX" \
+        UV_PYTHON_INSTALL_DIR="$PREFIX/pythons" UV_CACHE_DIR="$PREFIX/.cache/uv" \
+        ${HTTPS_PROXY:+"HTTPS_PROXY=$HTTPS_PROXY"} ${https_proxy:+"https_proxy=$https_proxy"} \
+        ${HTTP_PROXY:+"HTTP_PROXY=$HTTP_PROXY"} ${http_proxy:+"http_proxy=$http_proxy"} \
+        ${NO_PROXY:+"NO_PROXY=$NO_PROXY"} ${no_proxy:+"no_proxy=$no_proxy"} \
+        ${SSL_CERT_FILE:+"SSL_CERT_FILE=$SSL_CERT_FILE"} "$@"
+    if [ "$(id -u)" = 0 ] && command -v runuser >/dev/null 2>&1; then
+        runuser -u "$SYSTEM_ACCOUNT" -- "$@"
+    else
+        sudo -u "$SYSTEM_ACCOUNT" -- "$@"
+    fi
+}
+
+# Anything that reads or writes under the prefix: as Eugene's account on
+# a system install, whose prefix this shell cannot even look into, and
+# as this shell otherwise.
+in_prefix() {
+    if [ "$MODE" = system ]; then as_service "$@"; else "$@"; fi
+}
+
 # --- service plumbing -------------------------------------------------
-# Both are *user* services. The agent reads the user's own model
-# directories and writes to the user's own keyring; running it as a
-# system daemon under another account would put it on the wrong side of
-# both. The cost is stated where it bites, at enable-linger below.
+# A *user* service in the per-user layout: it reads the user's own model
+# directories and writes to the user's own keyring, and the cost is
+# stated where it bites, at enable-linger below. A *system* service in the
+# default Linux layout, for the reasons above.
 SYSTEMD_UNIT=$HOME/.config/systemd/user/$SERVICE_LABEL.service
+SYSTEM_UNIT=/etc/systemd/system/$SERVICE_LABEL.service
 LAUNCHD_PLIST=$HOME/Library/LaunchAgents/$LAUNCHD_LABEL.plist
 
 service_stop() {
-    if [ "$PLATFORM" = linux ]; then
+    if [ "$MODE" = system ]; then
+        [ -f "$SYSTEM_UNIT" ] || return 0
+        as_root systemctl stop "$SERVICE_LABEL" >/dev/null 2>&1 || true
+        as_root systemctl disable "$SERVICE_LABEL" >/dev/null 2>&1 || true
+    elif [ "$PLATFORM" = linux ]; then
         [ -f "$SYSTEMD_UNIT" ] || return 0
         systemctl --user stop "$SERVICE_LABEL" >/dev/null 2>&1 || true
         systemctl --user disable "$SERVICE_LABEL" >/dev/null 2>&1 || true
@@ -258,6 +361,56 @@ model_copy_dir() {
 }
 
 if [ "$DO_UNINSTALL" = 1 ]; then
+    # What is installed decides, not what the default is now: a per-user
+    # install made before 2026-09-24 is uninstalled as one, without sudo.
+    if [ "$MODE" = system ] && [ ! -f "$SYSTEM_UNIT" ] \
+            && ! id "$SYSTEM_ACCOUNT" >/dev/null 2>&1; then
+        MODE=user
+        if [ "$PREFIX" = "$SYSTEM_PREFIX" ] && [ -z "${EUGENE_PLEXUS_HOME:-}" ]; then
+            PREFIX=$USER_PREFIX
+            VENV=$PREFIX/venv
+            PYBIN=$VENV/bin/python
+        fi
+    fi
+fi
+
+if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
+    if [ "$(id -u)" != 0 ]; then
+        sudo -v || die "removing Eugene's own account needs sudo, and sudo was refused"
+    fi
+    say "stopping the service"
+    service_stop
+    as_root rm -f "$SYSTEM_UNIT"
+    as_root systemctl daemon-reload >/dev/null 2>&1 || true
+    if as_root test -d "$PREFIX"; then
+        KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
+        as_root mv "$PREFIX" "$KEEP"
+        if [ "$DO_PURGE_COPIES" = 1 ]; then
+            say "removing the engine builds and model copies this install downloaded"
+            as_root rm -rf "$KEEP/engines" "$KEEP/.eugene-plexus"
+        fi
+        # **Root keeps them, not the account's number.** The account goes
+        # next, and files left owned by its uid belong to whichever system
+        # account is given that number later -- with this install's
+        # signing key and passphrase inside.
+        as_root chown -R root:root "$KEEP"
+        as_root chmod 0700 "$KEEP"
+        say "removed. Its config and logs are at $KEEP (readable by root only) —"
+        say "  delete it when you are sure: sudo rm -rf '$KEEP'"
+    else
+        say "nothing installed at $PREFIX"
+    fi
+    if id "$SYSTEM_ACCOUNT" >/dev/null 2>&1; then
+        as_root userdel "$SYSTEM_ACCOUNT" >/dev/null 2>&1 \
+            || warn "could not remove the $SYSTEM_ACCOUNT account: sudo userdel $SYSTEM_ACCOUNT"
+    fi
+    if [ -n "$PERSON_HOME" ] && [ -d "$PERSON_HOME/Eugene Models" ]; then
+        say "your models in $PERSON_HOME/Eugene Models are yours, and were not touched"
+    fi
+    exit 0
+fi
+
+if [ "$DO_UNINSTALL" = 1 ]; then
     say "stopping the service"
     service_stop
     rm -f "$SYSTEMD_UNIT" "$LAUNCHD_PLIST"
@@ -306,12 +459,85 @@ if [ "$DO_UNINSTALL" = 1 ]; then
     exit 0
 fi
 
+# --- one install per machine --------------------------------------------
+# **Two installs on one machine are two trust roots**, and the second one
+# strands everything the first enrolled (R2.6 found this on Windows, where
+# following our own advice produced one). Both layouts want port 8079 and
+# the same service name, so each refuses to start beside the other and
+# says how to update the one that is there.
+PERSON_USER_PREFIX=${PERSON_HOME:-$HOME}/.local/share/eugene-plexus
+PERSON_USER_UNIT=${PERSON_HOME:-$HOME}/.config/systemd/user/$SERVICE_LABEL.service
+if [ "$MODE" = system ] \
+        && { [ -f "$PERSON_USER_UNIT" ] || [ -f "$PERSON_USER_PREFIX/agent.yaml" ]; }; then
+    die "this machine already has Eugene installed under your own account, at
+    $PERSON_USER_PREFIX
+  Installing it again under its own account would put a second install beside it.
+  To update the one that is there:  re-run with --user
+  To move to the safer layout: uninstall it first (--user --uninstall keeps its files),
+  then re-run without --user. Moving an install across is not built yet, so the
+  machine then starts as a new install and any machines joined to it join again."
+fi
+if [ "$MODE" = user ] && [ "$DO_SERVICE" = 1 ] && [ -f "$SYSTEM_UNIT" ]; then
+    die "this machine already has Eugene installed under its own account (the
+  $SERVICE_LABEL system service, in $SYSTEM_PREFIX). Re-run without --user to update it."
+fi
+
+# --- 0. Eugene's own account (the default on Linux) ----------------------
+if [ "$MODE" = system ]; then
+    [ -d /run/systemd/system ] || die "this machine is not running systemd, so Eugene cannot run as a
+  service under its own account here. Re-run with --user to install it under your own
+  account instead (anything you run can then control Eugene), or with --no-service
+  to start it yourself."
+    if [ "$(id -u)" != 0 ]; then
+        command -v sudo >/dev/null 2>&1 || die "Eugene runs under its own account, and setting that up
+  needs root, but sudo is not installed. Run this as root, or re-run with --user."
+        say "Eugene will run under its own account, $SYSTEM_ACCOUNT, so the programs you run"
+        say "  cannot read its keys. Setting that up needs sudo, once."
+        sudo -v || die "sudo was refused. Re-run with --user to install Eugene under your own
+  account instead, without sudo."
+    fi
+    if ! id "$SYSTEM_ACCOUNT" >/dev/null 2>&1; then
+        say "creating the $SYSTEM_ACCOUNT account"
+        NOLOGIN=/usr/sbin/nologin
+        [ -x "$NOLOGIN" ] || NOLOGIN=/sbin/nologin
+        [ -x "$NOLOGIN" ] || NOLOGIN=/bin/false
+        as_root useradd --system --user-group --home-dir "$PREFIX" --no-create-home \
+            --shell "$NOLOGIN" "$SYSTEM_ACCOUNT" \
+            || die "could not create the $SYSTEM_ACCOUNT account"
+    fi
+    # 0750: Eugene's account, and nobody but root, can look inside -- which
+    # is the whole point. Applied on every run, so a prefix somebody opened
+    # up by hand is closed again.
+    as_root install -d -m 0750 -o "$SYSTEM_ACCOUNT" -g "$SYSTEM_ACCOUNT" \
+        "$PREFIX" "$PREFIX/bin" "$PREFIX/logs"
+fi
+
 # --- 1. uv ------------------------------------------------------------
 say "installing into $PREFIX"
-mkdir -p "$PREFIX/bin" "$PREFIX/logs"
+[ "$MODE" = system ] || mkdir -p "$PREFIX/bin" "$PREFIX/logs"
 
-if [ -x "$UV" ]; then
-    say "uv already present ($("$UV" --version))"
+if in_prefix test -x "$UV"; then
+    say "uv already present ($(in_prefix "$UV" --version))"
+elif [ "$MODE" = system ]; then
+    say "fetching uv"
+    command -v curl >/dev/null 2>&1 || die "curl is required"
+    # Fetched as this shell and run as Eugene's account, which cannot read
+    # a file this shell's umask made private -- hence the chmod.
+    UV_BOOTSTRAP=$(mktemp "${TMPDIR:-/tmp}/uv-install.XXXXXX")
+    UV_FETCH_ERR=$(mktemp "${TMPDIR:-/tmp}/uv-fetch.XXXXXX")
+    if ! curl -fsSL -o "$UV_BOOTSTRAP" https://astral.sh/uv/install.sh 2>"$UV_FETCH_ERR"; then
+        printf '\033[31merror:\033[0m could not fetch https://astral.sh/uv/install.sh\n' >&2
+        sed 's/^/  /' "$UV_FETCH_ERR" >&2
+        printf '  A proxy that intercepts TLS is the usual cause. Set HTTPS_PROXY.\n' >&2
+        rm -f "$UV_BOOTSTRAP" "$UV_FETCH_ERR"
+        exit 1
+    fi
+    chmod 0644 "$UV_BOOTSTRAP"
+    run_step "installing uv from https://astral.sh/uv/install.sh" \
+        as_service env UV_UNMANAGED_INSTALL="$PREFIX/bin" sh "$UV_BOOTSTRAP"
+    rm -f "$UV_BOOTSTRAP" "$UV_FETCH_ERR"
+    as_service test -x "$UV" || die "uv did not land at $UV"
+    say "uv $(as_service "$UV" --version | cut -d' ' -f2)"
 else
     say "fetching uv"
     command -v curl >/dev/null 2>&1 || die "curl is required"
@@ -346,7 +572,7 @@ UV_PYTHON_INSTALL_DIR=$PREFIX/pythons
 export UV_PYTHON_INSTALL_DIR
 
 # --- 2. venv ----------------------------------------------------------
-if [ -x "$PYBIN" ]; then
+if in_prefix test -x "$PYBIN"; then
     say "virtualenv already present"
 else
     say "creating a Python $PY_VERSION virtualenv (uv downloads the interpreter; none is required on this machine)"
@@ -356,8 +582,8 @@ else
     # install to a Python the user can upgrade or remove out from under
     # it, which contradicts "removing the prefix is complete".
     run_step "creating a Python $PY_VERSION virtualenv at $VENV" \
-        "$UV" venv --python "$PY_REQUEST" --python-preference only-managed "$VENV"
-    [ -x "$PYBIN" ] || die "uv reported success but there is no interpreter at $PYBIN"
+        in_prefix "$UV" venv --python "$PY_REQUEST" --python-preference only-managed "$VENV"
+    in_prefix test -x "$PYBIN" || die "uv reported success but there is no interpreter at $PYBIN"
 fi
 
 if [ "$NATIVE_APPLE" = 1 ]; then
@@ -370,7 +596,7 @@ if [ "$NATIVE_APPLE" = 1 ]; then
 fi
 
 # --- 3. packages ------------------------------------------------------
-if [ -f "$PREFIX/agent.yaml" ]; then
+if in_prefix test -f "$PREFIX/agent.yaml"; then
     warn "Before updating an initialized install, keep a stopped-install checkpoint: https://github.com/eugene-plexus/specs/blob/main/docs/recovery.md"
     warn "Rollback restores matching software AND state; installing an older release does not undo data migrations."
 fi
@@ -378,7 +604,7 @@ gh_archive() { printf 'https://github.com/eugene-plexus/%s/archive/%s.tar.gz' "$
 
 say "installing Eugene Plexus"
 run_step "installing the six Eugene Plexus packages" \
-    "$UV" pip install --python "$PYBIN" \
+    in_prefix "$UV" pip install --python "$PYBIN" \
     "eugene-plexus-agent @ $(gh_archive agent "$PIN_AGENT")" \
     "eugene-plexus-control @ $(gh_archive control "$PIN_CONTROL")" \
     "eugene-plexus-gateway @ $(gh_archive gateway "$PIN_GATEWAY")" \
@@ -399,7 +625,7 @@ run_step "installing the six Eugene Plexus packages" \
 #   * the console script is what the service unit executes, so its
 #     absence is a failure that only appears at boot.
 say "checking the install"
-"$PYBIN" - <<'PYEOF' || die "the install is incomplete — see above"
+in_prefix "$PYBIN" - <<'PYEOF' || die "the install is incomplete — see above"
 import importlib.util, sys
 from pathlib import Path
 
@@ -430,7 +656,7 @@ for line in bad:
 raise SystemExit(1 if bad else 0)
 PYEOF
 
-[ -x "$VENV/bin/eugene-plexus-agent" ] || die "the eugene-plexus-agent command did not install"
+in_prefix test -x "$VENV/bin/eugene-plexus-agent" || die "the eugene-plexus-agent command did not install"
 say "all six packages present, with a web UI"
 
 # --- 4b. join, if this machine is a worker ----------------------------
@@ -441,7 +667,22 @@ say "all six packages present, with a web UI"
 # first without the second. So: named on the command line, we enroll
 # now; not named, this machine is the start of a new install, which is
 # what every unit then boots into.
-CONFIG=$PREFIX/agent.yaml
+# Replace one top-level `key: value` line in agent.yaml, keeping every
+# other line. As YAML text rather than through the install's Python: on a
+# fresh install the file does not exist yet, and it is a flat mapping of
+# config keys at the top level, so replacing one line is exact. `|| true`
+# because grep -v selecting nothing -- a file holding only this key -- is
+# exit 1, which `set -e` used to treat as the end of the install.
+set_config_line() {
+    in_prefix sh -c '
+        f=$1 k=$2 v=$3
+        { if [ -f "$f" ]; then grep -v "^$k:" "$f" || true; fi
+          printf "%s: %s\n" "$k" "$v"; } > "$f.tmp" && mv "$f.tmp" "$f"
+    ' sh "$CONFIG" "$1" "$2"
+}
+
+FRESH=1
+if in_prefix test -f "$CONFIG"; then FRESH=0; fi
 
 if [ -n "$JOIN_CONTROL" ]; then
     [ -n "$JOIN_TOKEN" ] || die "--join needs --token (mint one at the control root: Nodes -> Add a node)"
@@ -452,7 +693,8 @@ if [ -n "$JOIN_CONTROL" ]; then
     set -- join --control "$JOIN_CONTROL" --token "$JOIN_TOKEN"
     if [ -n "$JOIN_NAME" ]; then set -- "$@" --name "$JOIN_NAME"; fi
     if [ -n "$JOIN_ADVERTISE" ]; then set -- "$@" --advertise "$JOIN_ADVERTISE"; fi
-    EUGENE_PLEXUS_AGENT_CONFIG_FILE=$CONFIG "$VENV/bin/eugene-plexus-agent" "$@"         || die "enrollment failed; nothing was started"
+    in_prefix env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$CONFIG" "$VENV/bin/eugene-plexus-agent" "$@" \
+        || die "enrollment failed; nothing was started"
     # **A node that advertises an address must be reachable at it.**
     # Found on the first enrollment between two genuinely separate
     # machines: the worker advertised its LAN address, bound 127.0.0.1,
@@ -484,15 +726,19 @@ elif [ -n "$JOIN_ADVERTISE" ]; then
     # which a re-run has to be true of or the installer is the thing
     # that loses an install's state.
     say "advertising this machine at $JOIN_ADVERTISE"
-    mkdir -p "$PREFIX"
-    if [ -f "$CONFIG" ]; then
-        grep -v '^advertiseUrl:' "$CONFIG" > "$CONFIG.tmp"
-        printf 'advertiseUrl: %s\n' "$JOIN_ADVERTISE" >> "$CONFIG.tmp"
-        mv "$CONFIG.tmp" "$CONFIG"
-    else
-        printf 'advertiseUrl: %s\n' "$JOIN_ADVERTISE" > "$CONFIG"
-    fi
+    [ "$MODE" = system ] || mkdir -p "$PREFIX"
+    set_config_line advertiseUrl "$JOIN_ADVERTISE"
     ADVERTISED=1
+fi
+
+# **An agent under its own account has no keyring**, so a fresh system
+# install unlocks from a passphrase file only that account can read
+# (`securityMode: passphrase_file`; the path is in the unit below). Only
+# on a fresh install: a re-run keeps whatever the person has since chosen
+# under Config. The wizard reads `passphraseFile` off the agent and sets
+# the control root to the same mode.
+if [ "$MODE" = system ] && [ "$FRESH" = 1 ]; then
+    set_config_line securityMode passphrase_file
 fi
 
 # --- 5. service -------------------------------------------------------
@@ -553,6 +799,94 @@ WantedBy=default.target
 EOF
 }
 
+# **Where the models go on a system install: your home, read through your
+# group** (Troy's call, 2026-09-24). The unit adds your primary group, a
+# 0750 home lets that group in, and this folder is made group-writable
+# (and setgid, so what Eugene downloads into it stays in your group) so
+# that downloads can land. It is created as you and owned by you: it is
+# your folder, the library's default, and nothing this install removes.
+# With nobody to make it for (a root shell), it goes under the prefix.
+prepare_models_dir() {
+    if [ -z "$PERSON_HOME" ]; then
+        MODELS_DIR=$PREFIX/models
+        as_service mkdir -p "$MODELS_DIR"
+        return 0
+    fi
+    MODELS_DIR="$PERSON_HOME/Eugene Models"
+    if [ ! -d "$MODELS_DIR" ]; then
+        if [ "$(id -u)" = 0 ]; then
+            as_root install -d -m 2775 -o "$PERSON" -g "$PERSON_GROUP" "$MODELS_DIR"
+        else
+            mkdir -p "$MODELS_DIR"
+            chmod 2775 "$MODELS_DIR"
+        fi
+        say "made $MODELS_DIR for your models (Eugene reads and writes it through your group)"
+    else
+        case $(stat -c %A "$MODELS_DIR" 2>/dev/null) in
+            ?????w*) : ;;
+            *) warn "Eugene reads $MODELS_DIR through your group, and downloads into it
+    need that group to be able to write:  chmod g+ws '$MODELS_DIR'" ;;
+        esac
+    fi
+    # Your home has to let the group through at all. 0750 is Ubuntu's
+    # default; 0700 (Fedora's) lets nobody else in, Eugene included --
+    # said, not changed, because your home's permissions are yours.
+    case $(stat -c %A "$PERSON_HOME" 2>/dev/null) in
+        ??????[xs]*) : ;;
+        *) warn "your home folder lets nobody else in (it is not group-searchable), so
+    Eugene cannot reach the models in it. Either let your own group in:
+        chmod g+x '$PERSON_HOME'
+    or keep models outside your home and add that folder under Library -> Folders." ;;
+    esac
+}
+
+write_system_unit() {
+    # Your group, for the models above; video and render where they exist,
+    # because some distributions restrict the GPU device nodes to them.
+    UNIT_GROUPS=${PERSON_GROUP:-}
+    for g in video render; do
+        if getent group "$g" >/dev/null 2>&1; then UNIT_GROUPS="$UNIT_GROUPS $g"; fi
+    done
+    as_root tee "$SYSTEM_UNIT" >/dev/null <<EOF
+[Unit]
+Description=Eugene Plexus node agent
+Documentation=https://github.com/eugene-plexus/agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+# Its own account, so the programs you run cannot read its keys, its
+# environment or its memory. See the top of install.sh.
+User=$SYSTEM_ACCOUNT
+Group=$SYSTEM_ACCOUNT
+SupplementaryGroups=$UNIT_GROUPS
+WorkingDirectory=$PREFIX
+Environment=EUGENE_PLEXUS_AGENT_CONFIG_FILE=$CONFIG
+Environment=EUGENE_PLEXUS_AGENT_ENGINE_ROOT=$PREFIX/engines
+# No keyring for an account with no desktop session: the passphrase is
+# kept here, readable by this account only, and the control root on this
+# machine reads the same file.
+Environment=EUGENE_PLEXUS_AGENT_PASSPHRASE_FILE=$PREFIX/passphrase
+Environment=EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE=$PREFIX/passphrase
+Environment="EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS=$MODELS_DIR"
+$WIDE_BIND_UNIT
+$PORT_UNIT
+ExecStart=$VENV/bin/eugene-plexus-agent --unattended
+Restart=on-failure
+RestartSec=5
+# The agent stops its own children inside its lifespan shutdown. mixed
+# sends SIGTERM to the agent only, so it gets to do that; anything still
+# alive after the timeout is killed with the cgroup.
+KillMode=mixed
+TimeoutStopSec=60
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
 write_launchd_plist() {
     mkdir -p "$(dirname "$LAUNCHD_PLIST")"
     cat > "$LAUNCHD_PLIST" <<EOF
@@ -580,7 +914,13 @@ write_launchd_plist() {
 EOF
 }
 
-if [ "$DO_SERVICE" = 1 ] && [ "$PLATFORM" = linux ]; then
+if [ "$MODE" = system ]; then
+    prepare_models_dir
+    say "writing $SYSTEM_UNIT"
+    write_system_unit
+    as_root systemctl daemon-reload
+    as_root systemctl enable "$SERVICE_LABEL" >/dev/null 2>&1 || true
+elif [ "$DO_SERVICE" = 1 ] && [ "$PLATFORM" = linux ]; then
     if ! command -v systemctl >/dev/null 2>&1 || [ ! -d "${XDG_RUNTIME_DIR:-/nonexistent}" ]; then
         warn "no systemd user session here — skipping the service. Start the agent with:
     EUGENE_PLEXUS_AGENT_CONFIG_FILE=$CONFIG $VENV/bin/eugene-plexus-agent"
@@ -605,9 +945,32 @@ elif [ "$DO_SERVICE" = 1 ]; then
 fi
 
 # --- 6. start ---------------------------------------------------------
+# **The per-user layout says what it costs**, on every path that installs
+# a service there: this is the one fact the default Linux layout exists
+# to change, and a person choosing --user should hear it once, plainly.
+warn_same_account() {
+    if [ "$MODE" != user ] || [ "$DO_SERVICE" != 1 ]; then return 0; fi
+    warn "Eugene runs as you ($(id -un)), so any program you run as you -- an AI agent
+    included -- can read its keys and take control of it."
+    if [ "$PLATFORM" = linux ]; then
+        echo "    For Eugene to run under its own account instead, uninstall this one"
+        echo "    (--user --uninstall) and re-run without --user."
+    else
+        echo "    On macOS, Eugene cannot run under its own account yet."
+    fi
+}
+
+if [ "$MODE" = system ]; then
+    LOGS_HINT="sudo journalctl -u $SERVICE_LABEL   (files: sudo ls $PREFIX/logs)"
+else
+    LOGS_HINT="$PREFIX/logs/    config: $CONFIG"
+fi
+
 if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
     say "starting the agent"
-    if [ "$PLATFORM" = linux ]; then
+    if [ "$MODE" = system ]; then
+        as_root systemctl restart "$SERVICE_LABEL"
+    elif [ "$PLATFORM" = linux ]; then
         systemctl --user restart "$SERVICE_LABEL"
     else
         launchctl bootout "gui/$(id -u)/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
@@ -619,14 +982,18 @@ if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
         if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/healthz" 2>/dev/null; then
             printf '\n'
             say "Eugene Plexus is running — open http://127.0.0.1:$PORT/"
-            say "logs:  $PREFIX/logs/    config: $CONFIG"
+            say "logs:  $LOGS_HINT"
+            warn_same_account
             exit 0
         fi
         i=$((i + 1))
         sleep 1
     done
     warn "the agent did not answer on port $PORT within 60s. Check:"
-    if [ "$PLATFORM" = linux ]; then
+    if [ "$MODE" = system ]; then
+        echo "    sudo systemctl status $SERVICE_LABEL"
+        echo "    sudo journalctl -u $SERVICE_LABEL -n 50"
+    elif [ "$PLATFORM" = linux ]; then
         echo "    systemctl --user status $SERVICE_LABEL"
         echo "    journalctl --user -u $SERVICE_LABEL -n 50"
     else
@@ -636,7 +1003,9 @@ if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
 fi
 
 say "installed. Start it with:"
-if [ "$DO_SERVICE" = 1 ] && [ "$PLATFORM" = linux ]; then
+if [ "$MODE" = system ]; then
+    echo "    sudo systemctl start $SERVICE_LABEL"
+elif [ "$DO_SERVICE" = 1 ] && [ "$PLATFORM" = linux ]; then
     echo "    systemctl --user start $SERVICE_LABEL"
 elif [ "$DO_SERVICE" = 1 ]; then
     echo "    launchctl bootstrap gui/$(id -u) $LAUNCHD_PLIST"
@@ -649,4 +1018,5 @@ fi
 # §5): a Linux install with a service ended in a systemctl line and nothing
 # else.
 echo "    then open http://127.0.0.1:$PORT/"
-echo "    logs:  $PREFIX/logs/    config: $CONFIG"
+echo "    logs:  $LOGS_HINT"
+warn_same_account
