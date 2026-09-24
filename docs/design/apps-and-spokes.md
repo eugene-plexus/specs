@@ -3,14 +3,15 @@
 **Status: designed 2026-09-23; calls taken the same day; §10 steps 1-3
 (contract, agent, UI) BUILT and live-verified the same day** —
 [`../acceptance/apps-run.md`](../acceptance/apps-run.md), 58 PASS. The
-chat app (step 4) is next and gets its own design. Troy took calls #1-#7 and
+first harness (step 4) is next and gets its own design, starting from
+Troy's 2026-09-24 brief below. Troy took calls #1-#7 and
 #9 as recommended and **deferred #8: no deposit endpoint until a training
 module exists to deposit something.** §11 records where the build departed
 from what follows, and why. It came out of a
 question about giving the playground a web-search tool. The answer is
 that the playground stays a bare diagnostic
 ([`playground-diagnostic.md`](playground-diagnostic.md): *"no tool
-execution"*), and tool execution belongs in an optional chat app. That
+execution"*), and tool execution belongs in an optional app. That
 app needs a way to exist, and this document describes it.
 
 ---
@@ -20,6 +21,18 @@ app needs a way to exist, and this document describes it.
 > Eugene's Gateway is the hub, and each module is a potential spoke. The
 > end user decides whether they want to use their own spokes or ours, but
 > Eugene will still be the hub.
+
+And on 2026-09-24, on what the first app should be:
+
+> "Chat app" and "read only file access" are not the future of local
+> LLMs. Users want more and more tool calls, more autonomous action, more
+> automation, etc. But they also want choice. Eugene and its tools and
+> apps for users that want it, easily slide in your own MCP servers or
+> chat app if you don't.
+
+> It can not have access to anything in Eugene that any other harness
+> wouldn't have. It must communicate strictly by the same rules as any
+> other chat app.
 
 The aim is to be open and flexible, the opposite of Ollama: as easy as
 Ollama if that is all you need, and powerful enough to sit at the centre
@@ -44,8 +57,9 @@ Three things were agreed on 2026-09-23 before this document was written:
 
 **An app** is an optional, separately installed program the agent
 supervises and the console shows. It uses the hub only through public
-surfaces. The first three candidates are a chat app with tools, the
-Discord `connector` (rewritten), and one day a trainer.
+surfaces. The first three candidates are a harness (tool calls,
+autonomous action, automation), the Discord `connector` (rewritten), and
+one day a trainer.
 
 ---
 
@@ -219,14 +233,14 @@ the same way `starter_models.yaml` ships in the library. A new app in a
 later release is a new row.
 
 ```yaml
-- id: chat
-  name: Chat
-  summary: A chat app with web search, for people who want one in the box.
-  repo: https://github.com/eugene-plexus/chat
+- id: example
+  name: Example
+  summary: One line on what the app does, shown in the catalogue.
+  repo: https://github.com/eugene-plexus/example
   commit: <sha>
-  package: eugene-plexus-chat
+  package: eugene-plexus-example
   python: "3.12"
-  entry: eugene_plexus_chat          # run as `python -m <entry>`
+  entry: eugene_plexus_example       # run as `python -m <entry>`
   ui: true                           # serves a browser UI on its port
   configTrio: true
   uses: [inference]                  # hub surfaces it needs: §4
@@ -274,6 +288,15 @@ components' prefixes.
 as every other key. **Uninstalling revokes it.** A third-party spoke is
 treated identically, by construction.
 
+**"Nothing else" holds on the wire and not yet on disk** (found
+2026-09-24). An app runs as the agent's OS account, and that account can
+read `node.yaml`, which holds the install's signing key in the clear
+(`node_identity.py`). So can any other program running as that account,
+ours or not. On the Windows service install the file also inherits
+`BUILTIN\Users:(RX)` from `%ProgramData%`, so every local account can
+read it. This is an install problem, not an apps problem, and it is
+tracked on its own.
+
 Call #4's counter-argument has force. A key on disk that lives for a
 year is worse than a token minted per spawn. The recommendation stands
 because a per-spawn token would have to be a `service:*` audience, which
@@ -306,8 +329,8 @@ What it costs elsewhere:
 
 ### 5.2 Signing in (call #6)
 
-The app enforces its own sign-in, since nothing in front of it will. For
-the chat app, a passphrase set on first open is enough for now.
+The app enforces its own sign-in, since nothing in front of it will. What
+that sign-in is belongs to each app's own design.
 
 Single sign-on with the console would mean the console issuing the app a
 token for its own audience. That is a real feature with its own design
@@ -329,7 +352,7 @@ drives an app's UI routes through its own origin.
 Third-party entries may omit the trio; their page then shows status,
 logs and Open only.
 
-**Secrets.** A chat app's search-provider key or a connector's Discord
+**Secrets.** A harness's search-provider key or a connector's Discord
 token is the app's own. It cannot be sealed with the install's master
 key, because the app does not get the master key (§4). For now: a
 private file in `data/`, with the schema marking the field `secret` so
@@ -406,7 +429,7 @@ POST /v1/deposits/{id}/commit
 - **Not a way around the public contract.** If an app needs something,
   the contract grows, and every spoke gets it.
 - **Not a change to the playground.** It stays a bare diagnostic, and
-  the chat app is one of the clients it diagnoses.
+  any harness, ours included, is one of the clients it diagnoses.
 
 ---
 
@@ -443,10 +466,12 @@ it.
      it).
 3. **UI:** the Apps layer and branch, the catalogue page and the app
    pages. Browser acceptance clicks Install through to Open.
-4. **Chat app.** Its own repo and its own design doc: the web search
-   provider (SearXNG with no key, or a keyed provider), `fetch_url`
-   refusing any address that is not `is_global` and pinning the address
-   it resolved, a step cap on the tool loop, and read-only tools only.
+4. **A harness.** Its own repo and its own design doc, starting from
+   Troy's 2026-09-24 brief (see *The idea*): tool calls, autonomous
+   action and automation, reaching the hub by the same rules as any
+   other harness, with the person free to swap in their own MCP servers
+   or chat app. Nothing about it is decided here. Until 2026-09-24 this
+   step described a chat app with read-only tools; that was withdrawn.
 5. **Connector,** rewritten as a client of `/v1/chat/completions`. It is
    headless, which proves the registry is not shaped around apps that
    have a UI.
