@@ -105,7 +105,7 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "6f2e860c998d1ff6b2a465c5f8234523cdb7c125"
+    "agent"            = "7de79f26854e939407eb30ff4e1f1352cf7c0633"
     "control"          = "2a8ce85cc051c63091069739ef0692dee991d7ac"
     "gateway"          = "431077d8877f79502b358aac787cb54971fac68d"
     "inference-driver" = "dfaac8e650868b07b6b6689c937844cb60c2d3fd"
@@ -578,6 +578,101 @@ function Grant-ServiceControl {
     }
     Say "$env:USERNAME may start and stop Eugene without a prompt"
     return $true
+}
+
+# **The prefix is private, and this is the only thing that makes it so
+# on Windows** (2026-09-24). `_private_files` in the agent, control and
+# the library makes a secret owner-only on POSIX from its first byte and
+# calls the Windows half "the installer's business"; until now no
+# installer took it. `%ProgramData%` hands every folder under it
+# `BUILTIN\Users:(OI)(CI)(RX)` and `(CI)(WD,AD)`, so on the service
+# install every local account could read node.yaml -- the install's
+# signing key, which mints operator tokens for every node -- and add
+# files anywhere under the prefix, which for a `.pth` in the venv is
+# code that runs as LocalSystem at the next start. A per-user install
+# inherits whatever the profile hands out; on the machine this was found
+# on, a sandbox group had Modify.
+#
+# So the prefix gets a PROTECTED ACL: nothing inherited, SYSTEM and
+# Administrators in full, and on a per-user install the person, because
+# the agent runs as them. Everything written under it afterwards -- by
+# the agent, control, the library or a driver, through a temp file and a
+# rename -- inherits exactly that. A service install then opens three
+# doors, each the narrowest that works:
+#   * Users may LIST the prefix itself, this folder only, so that a
+#     non-elevated run of this script still finds the install
+#     (`Get-OtherInstall` tests for agent.yaml) rather than starting a
+#     second one beside it. A name is not a secret, and listing a folder
+#     grants no read of the files in it;
+#   * Users may READ venv\ and pythons\, because the tray icon and the
+#     Start menu entry run from them in the person's own session.
+#     Reading Python is not a secret; adding to it is what this closes;
+#   * the person who installed may CHANGE models\, because it is their
+#     model folder (differentiator #3) and a service's defaults put it
+#     here.
+#
+# Out of reach of any ACL, and not attempted: a Windows administrator,
+# and a program running as the same account as the agent. The agent's
+# `install_permissions` check reports what this leaves at every start.
+# Never fatal: a prefix on a volume without ACLs installs and says so.
+function Protect-InstallDirectory {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [switch]$Service,
+        [string]$PersonSid = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+    )
+    $all = [Security.AccessControl.InheritanceFlags]"ContainerInherit, ObjectInherit"
+    $thisFolder = [Security.AccessControl.InheritanceFlags]::None
+    $rule = {
+        param([string]$Sid, [string]$Rights, $Inheritance)
+        New-Object Security.AccessControl.FileSystemAccessRule(
+            (New-Object Security.Principal.SecurityIdentifier $Sid),
+            [Security.AccessControl.FileSystemRights]$Rights,
+            $Inheritance,
+            [Security.AccessControl.PropagationFlags]::None,
+            [Security.AccessControl.AccessControlType]::Allow)
+    }
+    # `Directory.SetAccessControl` is .NET Framework only; PowerShell 7
+    # has the same call as an extension method, which it will not bind
+    # as one. Either persists only the DACL, and propagates the change
+    # to every child that inherits.
+    $persist = {
+        param([string]$Target, $Acl)
+        if ($PSVersionTable.PSEdition -eq "Core") {
+            [IO.FileSystemAclExtensions]::SetAccessControl([IO.DirectoryInfo]::new($Target), $Acl)
+        }
+        else { [IO.Directory]::SetAccessControl($Target, $Acl) }
+    }
+    try {
+        $acl = New-Object Security.AccessControl.DirectorySecurity
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.AddAccessRule((& $rule "S-1-5-18" "FullControl" $all))
+        $acl.AddAccessRule((& $rule "S-1-5-32-544" "FullControl" $all))
+        if ($Service) { $acl.AddAccessRule((& $rule "S-1-5-32-545" "ReadAndExecute" $thisFolder)) }
+        else { $acl.AddAccessRule((& $rule $PersonSid "FullControl" $all)) }
+        & $persist $Path $acl
+        if ($Service) {
+            $doors = @(
+                @{ Name = "venv"; Sid = "S-1-5-32-545"; Rights = "ReadAndExecute" },
+                @{ Name = "pythons"; Sid = "S-1-5-32-545"; Rights = "ReadAndExecute" },
+                @{ Name = "models"; Sid = $PersonSid; Rights = "Modify" }
+            )
+            foreach ($door in $doors) {
+                $sub = Join-Path $Path $door.Name
+                if (-not (Test-Path -LiteralPath $sub -PathType Container)) { continue }
+                $subAcl = Get-Acl -LiteralPath $sub
+                $subAcl.AddAccessRule((& $rule $door.Sid $door.Rights $all))
+                & $persist $sub $subAcl
+            }
+        }
+        return $true
+    }
+    catch {
+        Warn ("could not make $Path private ($($_.Exception.Message)). Other accounts on " +
+            "this machine may be able to read this install's signing key; the agent says so " +
+            "in its log at every start.")
+        return $false
+    }
 }
 
 # **A way back in, because stopping Eugene takes the web UI with it.**
@@ -1103,6 +1198,11 @@ a Windows service needs Administrator, and -NoElevate was given.
 # --- 1. uv ------------------------------------------------------------
 Say "installing into $Prefix$(if ($WantsService) { ' (a Windows service: starts at boot)' } else { ' (per-user: starts when you log in)' })"
 New-Item -ItemType Directory -Force -Path (Join-Path $Prefix "bin"), (Join-Path $Prefix "logs") | Out-Null
+# Before anything else is written, so that nothing -- a venv, a
+# node.yaml from -Join, a copied agent.yaml -- ever exists here with
+# another account able to read or add to it. Run again after step 5,
+# once the folders the service's doors open onto exist.
+Protect-InstallDirectory -Path $Prefix -Service:$WantsService | Out-Null
 
 # Before uv, before the venv, before anything can read a config: if this
 # run is taking over an install that lives somewhere else, its identity
@@ -1373,6 +1473,11 @@ if (-not $NoService) {
         $autostart = "task"
         Warn "this agent starts when you log in, not at boot: a reboot that lands on the lock screen leaves it off until somebody signs in at this keyboard. Re-run without -NoService to make it a service instead."
     }
+}
+
+# venv\ and pythons\ exist now, and a service's models\ was made above.
+if (Protect-InstallDirectory -Path $Prefix -Service:$WantsService) {
+    Say "this install's settings and keys are private to $(if ($WantsService) { 'the service and administrators' } else { 'you' })"
 }
 
 # --- 5b. the tray icon ------------------------------------------------

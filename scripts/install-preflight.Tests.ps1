@@ -5,7 +5,7 @@ $preflight = [scriptblock]::Create($source.Substring(0, $source.IndexOf('# --- 1
 # Import only helper definitions for tests that launch harmless child scripts.
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$null)
 $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    $node.Name -in @('Say', 'Die', 'Invoke-Native', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds') }, $false) |
+    $node.Name -in @('Say', 'Warn', 'Die', 'Invoke-Native', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds', 'Protect-InstallDirectory') }, $false) |
     ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
 
 Describe 'Installer failure reporting' {
@@ -173,5 +173,141 @@ Describe 'Windows installer migration preflight' {
         { & $preflight -Prefix $script:RequestedPrefix -Detect } | Should Not Throw
         Assert-MockCalled Start-Process -Times 0 -Exactly -Scope It
         Test-Path $script:RequestedPrefix | Should Be $false
+    }
+}
+
+# 2026-09-24: `%ProgramData%` hands every folder under it Users read and
+# Users add, so on a service install every local account could read the
+# install's signing key and plant code the service runs. These run on
+# REAL folders under `%ProgramData%`, unelevated, so the inherited grants
+# are the ones a real install gets -- and the first case asserts they
+# are there before anything else asserts they are gone.
+Describe 'The install directory is private' {
+    $SYSTEM = 'S-1-5-18'
+    $ADMINS = 'S-1-5-32-544'
+    $USERS = 'S-1-5-32-545'
+    $Rights = [Security.AccessControl.FileSystemRights]
+    $Me = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+    # Elevated, Administrators can read anything and the "another account
+    # cannot read it" assertions would be about this shell, not the ACL.
+    $Elevated = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+
+    function Get-Grants([string]$Path) {
+        (Get-Acl -LiteralPath $Path).GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]) |
+            Where-Object { $_.AccessControlType -eq 'Allow' } |
+            ForEach-Object {
+                [pscustomobject]@{
+                    Sid         = $_.IdentityReference.Value
+                    Rights      = $_.FileSystemRights
+                    Inheritance = [string]$_.InheritanceFlags
+                    Inherited   = $_.IsInherited
+                }
+            }
+    }
+    # Joined, because Pester 3.4's `Should Be` against an array passes when
+    # every actual item is IN the expected set -- a subset check that
+    # would wave through an ACL missing an account it should have.
+    function Get-Sids([string]$Path) { (Get-Grants $Path | ForEach-Object Sid | Sort-Object -Unique) -join ',' }
+    function Join-Sids { ($args | Sort-Object -Unique) -join ',' }
+    function Test-Writable([string]$File) {
+        try { [IO.File]::WriteAllText($File, 'x'); return $true } catch { return $false }
+    }
+
+    BeforeEach {
+        Mock Write-Host {}
+        $script:Root = Join-Path $env:ProgramData ('EP-acl-test-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        New-Item -ItemType Directory -Path $script:Root | Out-Null
+        foreach ($d in 'venv', 'pythons', 'models', 'engines', 'logs') {
+            New-Item -ItemType Directory -Path (Join-Path $script:Root $d) | Out-Null
+        }
+        [IO.File]::WriteAllText((Join-Path $script:Root 'node.yaml'), "signingKey: not-a-real-key`n")
+        [IO.File]::WriteAllText((Join-Path $script:Root 'venv\site.py'), "# python`n")
+    }
+    AfterEach {
+        # This shell made everything here and an owner may always rewrite
+        # a DACL: take full control back, then delete.
+        & icacls.exe $script:Root /grant "*$($Me):(OI)(CI)F" /T /C /Q | Out-Null
+        Remove-Item -LiteralPath $script:Root -Recurse -Force
+    }
+
+    It 'starts from what %ProgramData% hands down: Users may read and may add' {
+        $usersAces = @(Get-Grants $script:Root | Where-Object Sid -eq $USERS)
+        @($usersAces | Where-Object { $_.Inheritance -match 'ObjectInherit' -and ($_.Rights -band $Rights::ReadData) }).Count |
+            Should BeGreaterThan 0
+        @($usersAces | Where-Object { $_.Rights -band $Rights::CreateFiles }).Count | Should BeGreaterThan 0
+        # CREATOR OWNER hands the file's maker full control too: this shell.
+        Get-Sids (Join-Path $script:Root 'node.yaml') | Should Be (Join-Sids $Me $USERS $SYSTEM $ADMINS)
+    }
+
+    It 'a service install: nobody else reads the secrets or adds a file, and three doors stay open' {
+        Protect-InstallDirectory -Path $script:Root -Service -PersonSid $Me | Should Be $true
+
+        (Get-Acl -LiteralPath $script:Root).AreAccessRulesProtected | Should Be $true
+        $root = @(Get-Grants $script:Root)
+        $root.Count | Should Be 3
+        @($root | Where-Object { $_.Sid -eq $USERS -and $_.Inheritance -eq 'None' }).Count | Should Be 1
+        @($root | Where-Object { $_.Sid -eq $USERS -and ($_.Rights -band $Rights::CreateFiles) }).Count | Should Be 0
+
+        $node = Join-Path $script:Root 'node.yaml'
+        Get-Sids $node | Should Be (Join-Sids $SYSTEM $ADMINS)
+        # A non-elevated run of the installer still finds this install.
+        Test-Path -LiteralPath $node | Should Be $true
+        if (-not $Elevated) {
+            { [IO.File]::ReadAllText($node) } | Should Throw
+            Test-Writable (Join-Path $script:Root 'planted.txt') | Should Be $false
+            Test-Writable (Join-Path $script:Root 'venv\evil.pth') | Should Be $false
+        }
+        # The tray icon runs from these.
+        [IO.File]::ReadAllText((Join-Path $script:Root 'venv\site.py')) | Should Be "# python`n"
+        foreach ($door in 'venv', 'pythons') {
+            @(Get-Grants (Join-Path $script:Root $door) | Where-Object { $_.Sid -eq $USERS -and -not $_.Inherited }).Count |
+                Should Be 1
+        }
+        # The person's model folder is theirs to fill.
+        Test-Writable (Join-Path $script:Root 'models\mine.gguf') | Should Be $true
+        foreach ($closed in 'engines', 'logs') {
+            Get-Sids (Join-Path $script:Root $closed) | Should Be (Join-Sids $SYSTEM $ADMINS)
+        }
+    }
+
+    It 'a per-user install: the person keeps everything and a stranger grant on the folder goes' {
+        # A grant made on the folder itself, the way the profile's
+        # sandbox group arrived: explicit ACEs are removed too, not only
+        # inherited ones.
+        & icacls.exe $script:Root /grant "*$($USERS):(OI)(CI)M" /Q | Out-Null
+        Protect-InstallDirectory -Path $script:Root -PersonSid $Me | Should Be $true
+
+        (Get-Acl -LiteralPath $script:Root).AreAccessRulesProtected | Should Be $true
+        Get-Sids $script:Root | Should Be (Join-Sids $Me $SYSTEM $ADMINS)
+        Get-Sids (Join-Path $script:Root 'node.yaml') | Should Be (Join-Sids $Me $SYSTEM $ADMINS)
+        [IO.File]::WriteAllText((Join-Path $script:Root 'agent.yaml'), "later: true`n")
+        Get-Sids (Join-Path $script:Root 'agent.yaml') | Should Be (Join-Sids $Me $SYSTEM $ADMINS)
+        [IO.File]::ReadAllText((Join-Path $script:Root 'node.yaml')) | Should Match 'signingKey'
+    }
+
+    It 'running it again adds nothing' {
+        Protect-InstallDirectory -Path $script:Root -Service -PersonSid $Me | Should Be $true
+        Protect-InstallDirectory -Path $script:Root -Service -PersonSid $Me | Should Be $true
+        @(Get-Grants $script:Root).Count | Should Be 3
+        @(Get-Grants (Join-Path $script:Root 'venv') | Where-Object { $_.Sid -eq $USERS -and -not $_.Inherited }).Count |
+            Should Be 1
+    }
+
+    # The cases above call the function; this is what says the installer
+    # does. Before the venv, so nothing is ever written unprotected, and
+    # after the service block, which is what creates models\.
+    It 'the installer calls it before anything is written and again once the doors exist' {
+        $calls = @([regex]::Matches($source, '(?m)^(?:if \()?Protect-InstallDirectory -Path \$Prefix -Service:\$WantsService'))
+        $calls.Count | Should Be 2
+        $calls[0].Index | Should BeGreaterThan $source.IndexOf('# --- 1. uv ')
+        $calls[0].Index | Should BeLessThan $source.IndexOf('# --- 2. venv')
+        $calls[1].Index | Should BeGreaterThan $source.IndexOf('# --- 5. autostart')
+        $calls[1].Index | Should BeLessThan $source.IndexOf('# --- 5b. the tray icon')
+    }
+
+    It 'a folder it cannot protect warns and does not stop the install' {
+        Protect-InstallDirectory -Path (Join-Path $script:Root 'no such folder') -Service | Should Be $false
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*could not make*private*' }
     }
 }
