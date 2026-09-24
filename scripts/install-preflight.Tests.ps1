@@ -236,8 +236,13 @@ Describe 'The install directory is private' {
         @($usersAces | Where-Object { $_.Inheritance -match 'ObjectInherit' -and ($_.Rights -band $Rights::ReadData) }).Count |
             Should BeGreaterThan 0
         @($usersAces | Where-Object { $_.Rights -band $Rights::CreateFiles }).Count | Should BeGreaterThan 0
-        # CREATOR OWNER hands the file's maker full control too: this shell.
-        Get-Sids (Join-Path $script:Root 'node.yaml') | Should Be (Join-Sids $Me $USERS $SYSTEM $ADMINS)
+        # CREATOR OWNER hands the file's OWNER full control too. That is
+        # this shell's account unelevated, and Administrators elevated --
+        # an elevated admin token's default owner -- which is what CI is.
+        $node = Join-Path $script:Root 'node.yaml'
+        $owner = (Get-Acl -LiteralPath $node).GetOwner([Security.Principal.SecurityIdentifier]).Value
+        if (-not $Elevated) { $owner | Should Be $Me }
+        Get-Sids $node | Should Be (Join-Sids $owner $USERS $SYSTEM $ADMINS)
     }
 
     It 'a service install: nobody else reads the secrets or adds a file, and three doors stay open' {
