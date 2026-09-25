@@ -4,12 +4,19 @@ info:
   version: 0.3.0-draft
   summary: The operator's own model directories, scanned, described, and given launch profiles.
   description: |
-    **Token verification (R7):** new installs and rotations use Ed25519
-    JWTs with `alg: EdDSA`. The agent supplies base64 SubjectPublicKeyInfo
-    public PEM via `AUTH_VERIFY_KEY`, never the private signing key.
-    Existing HS256 installs retain legacy `AUTH_SIGNING_KEY` until explicit
-    rotation. Only one algorithm is accepted, selected from trusted key
-    material, never the JWT header. Supplying both bootstrap keys is invalid.
+    **Token verification (per-node token keys, 2026-09-25).** This
+    component holds no signing key. Its agent gives it, at spawn:
+
+    * the path of the install's **trust bundle** (`common.yaml`,
+      `TrustBundle`), which it reloads when the file changes;
+    * the pinned authority key that must have signed it;
+    * its own recipient name, `node:<name>`;
+    * a service token addressed to this machine alone.
+
+    Every bearer is checked against the bundle: the key found by `kid`,
+    the algorithm taken from the key, and the `typ`, `iss`, `aud`, grant
+    and lifetime rules in `TrustBundle`. The key material is Ed25519
+    only.
 
     The library is how Eugene Plexus knows what models the operator
     owns. It is pointed at directories that already exist, reads what
@@ -529,7 +536,8 @@ paths:
         reader that matters is a node's agent inheriting its path rules
         — a worker with no library of its own reaches this through the
         install (`agent.yaml`, `POST /v1/library/folders/check`) with a
-        `service:agent` token, at every launch, and holds a copy for
+        `sub: agent` service token its own node minted for this machine,
+        at every launch, and holds a copy for
         spawns the library is not around for. Nothing here is secret:
         the same paths appear on every model in `GET /v1/models`, and
         the mounts are addresses an operator typed for other machines

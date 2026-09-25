@@ -127,7 +127,7 @@ The root publishes the set of keys and what each may issue.
 {
   "version": 812,
   "epoch": 3,
-  "issuedAt": "2026-09-25T12:00:00Z",
+  "iat": 1790337600,
   "authority": "<root identity public key, base64>",
   "keys": [
     {"kid": "…", "issuer": "control", "publicKey": "…", "grants": ["authority"]},
@@ -138,9 +138,12 @@ The root publishes the set of keys and what each may issue.
 }
 ```
 
-**Signing.** It is signed with the root identity key over
-`b"eugene-plexus trust bundle v1\n" + canonical JSON`. Every node
-already pins that key from enrollment.
+**Signing.** It travels as a compact JWS with
+`typ: ep-trust-bundle+jwt`, signed with the root identity key. Every
+node already pins that key from enrollment. A JWS signs the payload's
+exact bytes, so nothing is re-serialized before checking it. That is
+the trap a canonical-JSON signature over a parsed body walked into at
+M9.
 
 - `version` is the replicated log's index, so it only ever grows, and
   it grows across a promotion too.
@@ -148,7 +151,7 @@ already pins that key from enrollment.
   is not the pinned key, or whose `version` is lower than the one it
   holds. Refusing a lower version is the rollback protection.
 - An **equal** version replaces the held one. Two builds at one log
-  index differ only in `issuedAt` and in pruned, already-expired
+  index differ only in `iat` and in pruned, already-expired
   sign-outs, so replacing is harmless.
 - The root keeps its last signed bundle on disk, so a sealed root still
   serves one.

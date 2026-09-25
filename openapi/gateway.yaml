@@ -4,12 +4,19 @@ info:
   version: 0.3.0-draft
   summary: The one OpenAI-compatible front door over every configured backend.
   description: |
-    **Token verification (R7):** new installs and rotations use Ed25519
-    JWTs with `alg: EdDSA`. The agent supplies base64 SubjectPublicKeyInfo
-    public PEM via `AUTH_VERIFY_KEY`, never the private signing key.
-    Existing HS256 installs retain legacy `AUTH_SIGNING_KEY` until explicit
-    rotation. Only one algorithm is accepted, selected from trusted key
-    material, never the JWT header. Supplying both bootstrap keys is invalid.
+    **Token verification (per-node token keys, 2026-09-25).** This
+    component holds no signing key. Its agent gives it, at spawn:
+
+    * the path of the install's **trust bundle** (`common.yaml`,
+      `TrustBundle`), which it reloads when the file changes;
+    * the pinned authority key that must have signed it;
+    * its own recipient name, `node:<name>`;
+    * a service token addressed to this machine alone.
+
+    Every bearer is checked against the bundle: the key found by `kid`,
+    the algorithm taken from the key, and the `typ`, `iss`, `aud`, grant
+    and lifetime rules in `TrustBundle`. The key material is Ed25519
+    only.
 
     The gateway is the single endpoint a client talks to. It resolves a
     requested model to a backend, load-balances across the drivers
@@ -176,9 +183,9 @@ info:
     protocol; and since B2 `POST /v1/systemone`, the TypeSafe-shaped
     decision door, for the same reason. `/v1/config`, `/v1/admin/*` and `/v1/metrics` refuse
     it exactly as they refuse a driver's service token, and so does
-    every other component in the install: `client` matches neither
-    `operator` nor the `service:` prefix that every other check tests
-    for.
+    every other component in the install: an `ep-client+jwt` is a class
+    no other route accepts. It must also be signed by a key the trust
+    bundle grants `authority`; a node's key cannot mint one.
 
     That narrowing is the point of the audience. Before it, the only
     bearer a person could paste into a harness was their **operator
@@ -198,8 +205,9 @@ info:
     down because the local agent restarted would be a worse failure than
     a revoked key living a few seconds longer, and the token still has
     to carry a valid signature and an unexpired `exp`. The instant,
-    total revocation is the one that has existed since M7: rotate the
-    install's signing key and every token everywhere stops verifying.
+    total revocation is rotating the control root's token key
+    (`control.yaml`, `POST /v1/control/rotate-key`), after which every
+    client key and session stops verifying.
 
     A client key is **not** a per-request identity. Nothing here records
     which key served a request; `/v1/metrics` counts backends, not
@@ -1582,11 +1590,10 @@ paths:
 
         **Probed anonymously** (2026-09-18). Operator-gated, as every
         admin path here is, and it dials whatever the operator typed —
-        that is the feature. What it no longer carries is this install's
-        `service:gateway` token, which every component in the install
-        accepts, so a URL in a form was enough to collect one. An
-        operator typing an address is not an operator deciding to hand
-        out a credential.
+        that is the feature. What it no longer carries is this
+        gateway's service token, so a URL in a form is not enough to
+        collect one. An operator typing an address is not an operator
+        deciding to hand out a credential.
 
         Consequently a backend that wants a key answers **401, and that
         is reported as `reachable: true`** with the reason in `error`. It
@@ -1742,8 +1749,8 @@ paths:
         emitted none. Treat absence as a per-request fact, not a
         property of a backend kind.
 
-        Operator-only. No component needs this, so a `service:*` token
-        is refused rather than accepted for reads as elsewhere; and
+        Operator-only. No component needs this, so a service token is
+        refused rather than accepted for reads as elsewhere; and
         model names plus traffic volumes are not nothing on a shared
         tailnet.
       parameters:

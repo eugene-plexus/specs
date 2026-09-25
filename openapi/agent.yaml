@@ -26,8 +26,8 @@ info:
     because supervision is inherently per-host while a trust root is
     inherently singular. Until that implementation lands, the
     trust-root surface is still served here and still documented here.
-    The **node half** — identity, enrollment, re-key, an address other
-    hosts can reach — is served from M7
+    The **node half** — identity, enrollment, the trust bundle, an
+    address other hosts can reach — is served from M7
     (`docs/design/m7-second-host-readiness.md`).
     Design: `docs/design/m5-multi-host-and-trust.md`.
 
@@ -97,8 +97,10 @@ info:
         env var (`EUGENE_PLEXUS_<KIND>_MASTER_KEY`, base64); children
         decrypt at construction time.
       * **UI session auth.** `POST /v1/auth/login` accepts the
-        passphrase, verifies it, and issues a `SessionToken`. Every UI
-        proxy request thereafter presents it as
+        passphrase. On an enrolled agent it forwards the sign-in to the
+        control root, which is the only thing that mints sessions; a
+        standalone agent verifies and mints its own. Every UI proxy
+        request thereafter presents the session as
         `Authorization: Bearer <token>`.
 
     Three `securityMode` options:
@@ -119,17 +121,28 @@ info:
         only that account and root can open. The installer selects it;
         the wizard does not offer it as a choice.
 
-    Component-internal calls (gateway → driver, and so on) use
-    per-component service tokens: same `Authorization: Bearer ...`
-    shape, different audience claim. **From M7 the key is the
-    install's**: an agent that has enrolled (`POST /v1/node/enroll`)
-    adopts the signing key the control root hands it, persists it, and
-    gives it to every component it spawns, so a token minted anywhere
-    in the install verifies everywhere in it — and a restart is no
-    longer a re-key. An agent that has not enrolled still mints its own
-    per-restart key, which is the single-host behaviour unchanged.
-    A mesh VPN (Tailscale / WireGuard) remains the network boundary
-    between hosts; this auth layer sits on top rather than replacing it.
+    **Tokens (per-node token keys, 2026-09-25;
+    `docs/design/per-node-token-keys.md`).** This agent generates its
+    own Ed25519 token key the first time it starts, keeps it in
+    `node.yaml`, and sends only the public half at enrollment. No
+    private token key ever arrives here. The token profile and the
+    trust bundle every verifier checks against are defined in
+    `common.yaml` (`TrustBundle`).
+
+    * **Its children** get a service token addressed to this machine
+      alone, the bundle's path, the pinned authority key and their own
+      recipient name. A child's token is worthless on any other
+      machine.
+    * **Other machines** are reached with tokens addressed to them: a
+      session is exchanged at the root, and this node's own `agent` or
+      `gateway` tokens are minted per destination
+      (`POST /v1/auth/service-token`).
+    * **The proxy never sends a session to another machine.**
+
+    An agent that has not enrolled is its own authority, and signs a
+    bundle that names only itself. A mesh VPN (Tailscale / WireGuard)
+    remains the network boundary between hosts; this auth layer sits on
+    top rather than replacing it.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -388,9 +401,21 @@ paths:
       summary: Exchange the operator's passphrase for a session token.
       security: []
       description: |
-        Verifies the supplied passphrase against the Argon2id hash set
-        during the first-run wizard. On success, returns a
-        `SessionToken` the UI presents on every subsequent request.
+        **Enrolled, this forwards to the control root**, which is the
+        only thing in an install that mints operator sessions. If this
+        agent holds a passphrase of its own, it checks it first and
+        unlocks its own master key. It then sends the passphrase to the
+        root, with its own `agent` service token as proof of which
+        machine is asking, and returns the root's session. That session
+        is addressed to this machine and to the root. A worker with no
+        passphrase of its own is a console now too.
+
+        If the root does not answer, this is a **503** saying so.
+        Sessions already issued keep working, and so does inference.
+
+        **Standalone** (not enrolled), this agent verifies the Argon2id
+        hash set during the first-run wizard and mints the session
+        itself.
 
         Rate-limited per source IP. After 5 failed attempts within
         60 seconds, the endpoint returns 429 and refuses further
@@ -428,15 +453,64 @@ paths:
       operationId: logout
       summary: Invalidate the current session token.
       description: |
-        The token presented in `Authorization` is added to the
-        agent's revocation list. UI uses this for explicit
-        logout; expired sessions are cleaned up server-side
-        without an explicit call.
+        The token presented in `Authorization` is added to this
+        agent's revocation list and, when enrolled, forwarded to the
+        control root. The root's replicated sign-out reaches every
+        machine through the trust bundle. The local list covers a
+        sign-out made while the root cannot be reached.
       responses:
         "204":
           description: Logged out.
         "401":
           $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/auth/service-token:
+    post:
+      tags: [auth]
+      operationId: mintServiceToken
+      summary: A short-lived token for one of this agent's children to present on another machine.
+      description: |
+        **How the gateway reaches every node's drivers and agents without
+        a key of its own.** A child authenticates with the local token it
+        was spawned with, which is addressed to this machine alone, and
+        asks for a token addressed to one other recipient. The agent signs
+        it with this node's key for 15 minutes, under the caller's own
+        `sub`. The child caches it and asks again at half its life. No
+        root is involved, so the data path outlives a dead root.
+
+        **Only what the trust bundle grants this node is minted.**
+        `sub: gateway` to another machine needs this node's `gateway`
+        grant, which the operator gave at enrollment. Any other `sub`
+        cannot leave this machine and is refused with 403: a driver's or
+        the library's token has no business anywhere else.
+
+        Local callers only in practice, since the credential it takes is
+        a local token. Nothing about that is assumed: the token is
+        verified like any other.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServiceTokenRequest"
+      responses:
+        "200":
+          description: Minted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServiceTokenResponse"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          description: |
+            The caller's `sub` may not be carried to that recipient by
+            this node: no `gateway` grant, or a kind that never leaves
+            its machine.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
 
   # -------- client keys (hobbyist UX S4, 2026-09-15) --------
 
@@ -472,9 +546,10 @@ paths:
       description: |
         Returns the bearer an OpenAI-compatible client presents to the
         gateway — Continue, Cline, Open WebUI, SillyTavern, the OpenAI
-        SDK, `curl`. Signed with the install's signing key like every
-        other token here, and carrying `aud: client`, which **only the
-        gateway's three OpenAI-compatible paths accept**
+        SDK, `curl`. An `ep-client+jwt` signed by the install's
+        authority (the control root when enrolled, which is where this
+        forwards), addressed to `gateway`, which **only the gateway's
+        OpenAI-compatible paths accept**
         (`/v1/models`, `/v1/chat/completions`, `/v1/embeddings`). It
         opens no operator surface anywhere: this agent, the control
         root, the library and the gateway's own config and admin paths
@@ -545,7 +620,7 @@ paths:
         Compatibility endpoint for older gateways. Enrolled agents return the
         active control root's revoked identifiers. New gateways use /policy,
         which also registers permitted identifiers and bounds cache age.
-        Operator or service:gateway only. No empty fallback on authority failure.
+        An operator session, or a `gateway` service token. No empty fallback on authority failure.
       responses:
         "200":
           description: The revoked ids.
@@ -1426,9 +1501,9 @@ paths:
         rather than refusing every launch, and
         `POST /v1/library/folders/check` says `libraryConsulted: false`.
 
-        Accepts the operator **or the control root's own service
-        audience** (`service:control`, checked exactly — not any service
-        token), because the control root forwards declarations to the
+        Accepts the operator **or a service token from the control root
+        itself** (`sub: control`, `iss: control`, addressed to this
+        node), because the control root forwards declarations to the
         node that will run them (`control.yaml`, `POST /v1/runtimes`) and
         the trust root's token is what every other credential in the
         install reduces to. A leaked driver or library token still cannot
@@ -1662,8 +1737,9 @@ paths:
         for something else needs a stop that is not a delete and not a
         crash. Start it again with `POST .../start`.
 
-        **Accepts the operator or the gateway's service token**
-        (`service:gateway`, checked exactly — not any service token).
+        **Accepts the operator or a `gateway` service token** addressed
+        to this node: from this machine's own gateway, or from a node the
+        trust bundle grants `gateway`.
         The gateway is the component that sees demand, so it is the one
         that unloads an idle runtime; it says so in the body, and the
         agent reports it back as `Runtime.stopReason: idle` so a
@@ -1711,8 +1787,8 @@ paths:
         will not fit — this is where a runtime declared with `autoStart`
         false meets admission. `?force=true` starts it anyway.
 
-        Accepts the operator or the gateway's service token
-        (`service:gateway`), because the gateway is what starts a
+        Accepts the operator or a `gateway` service token, because the
+        gateway is what starts a
         `startOnDemand` runtime when a request arrives for its model.
       parameters:
         - in: query
@@ -1805,8 +1881,13 @@ paths:
         radius the design refuses.
 
         Returns 409 if already enrolled. Re-enrolling elsewhere is a
-        deliberate act: revoke at the old control root first, so its
-        signing key rotates and this node stops being trusted there.
+        deliberate act: revoke at the old control root first, so this
+        node's key leaves that install's trust bundle.
+
+        The body the root returns carries a trust bundle that already
+        lists this node's key. The agent pins the root's identity key,
+        stores the bundle, and restarts every supervised component so
+        they verify against it.
       requestBody:
         required: true
         content:
@@ -1841,21 +1922,20 @@ paths:
     post:
       tags: [node]
       operationId: unenrollNode
-      summary: Leave an install — discard the install's key and return to this node's own.
+      summary: Leave an install — forget its trust bundle and become standalone again.
       description: |
         Operator-only, and the exact inverse of `POST /v1/node/enroll`.
-        The agent discards the install's signing key, the epoch, the
-        control root's URL and identity, mints a fresh per-restart
-        signing key of its own, and restarts every supervised component
-        so they pick it up. **Its runtimes stay declared and its model
-        files are untouched** — only routing stops, which is already the
+        The agent discards the install's trust bundle, the epoch, the
+        control root's URL and identity, becomes its own authority
+        again, and restarts every supervised component so they pick
+        that up. **Its runtimes stay declared and its model files are
+        untouched** — only routing stops, which is already the
         documented consequence of revocation.
 
-        **Why this is safe to allow locally, which is the only part that
-        needs an argument.** Revocation exists because *a node that still
-        holds the signing key can still authenticate*, so removing a
-        registry entry alone does nothing. Un-enrolling **discards** that
-        key — the opposite direction. A node cannot escape revocation by
+        **Why this is safe to allow locally.** The install stops
+        trusting this node when the root drops its key, which is what
+        `DELETE /v1/nodes/{name}` does. Un-enrolling only makes this node
+        stop trusting the install. A node cannot escape revocation by
         un-enrolling; it can only disarm itself.
 
         **It proceeds when the control root is unreachable**, per the
@@ -1863,16 +1943,15 @@ paths:
         dead install is precisely the case where refusing is useless.
         When the root *is* reachable the agent calls
         `DELETE /v1/nodes/{name}` there first, forwarding the caller's
-        own operator bearer — one install, one signing key, so the
-        session that authorized this call is an operator session at the
-        root too. That rotates the install key for every remaining node,
-        which is the whole point of revoking rather than deleting.
-        `controlNotified` reports whether it happened; `false` means the
-        operator still owes the root a revocation.
+        own operator session, which is addressed to the root as well as
+        to this machine. That drops this node's key from the bundle every
+        other machine holds, which is the whole point of revoking rather
+        than deleting. `controlNotified` reports whether it happened;
+        `false` means the operator still owes the root a revocation.
 
         **This logs out every session on this node**, exactly as
-        enrollment does and for the same reason: the key those sessions
-        were signed with has been replaced.
+        enrollment does and for the same reason: the authority those
+        sessions were signed by is no longer trusted here.
       requestBody:
         required: false
         content:
@@ -1985,48 +2064,41 @@ paths:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
 
-  /v1/node/rekey:
+  /v1/node/trust-bundle:
     post:
       tags: [node]
-      operationId: rekeyNode
-      summary: Take a new signing key, or a new epoch, from the control root.
+      operationId: pushTrustBundle
+      summary: Take a newer trust bundle, or a new epoch, from the control root.
       security: []
       description: |
-        Called by the **control root**, during a signing-key rotation
-        (`control.yaml`, `POST /v1/control/rotate-key`, and revocation,
-        which is one) and after a promotion, to announce the new epoch.
+        Called by the **control root** whenever the bundle changes: a
+        node enrolled or was revoked, a session was signed out, the root's
+        token key rotated, or a promotion raised the epoch. The agent also
+        pulls the same bundle every 60 s (`control.yaml`,
+        `GET /v1/trust/bundle`), so a node that missed a push catches up
+        by itself.
 
-        **The credential is the signature, not a bearer token.** A
-        rotation is the one operation that invalidates every service
-        token in the install, including any the control root could
-        present here, and a re-run of an interrupted rotation cannot
-        know which key each node still holds. So the body is signed with
-        the control root's identity key — the one whose public half this
-        agent recorded at enrollment as `controlPublicKey`, and the one
-        that does not rotate. Anything that can reach this port but does
-        not hold the control identity is refused with 401.
+        **The credential is the signature, not a bearer token.** The body
+        is a JWS signed by the control root's identity key, the one this
+        agent pinned at enrollment as `controlPublicKey`. Anything that
+        can reach this port but does not hold that key is refused with
+        401, and a bundle's content cannot be forged by whoever relays it.
 
-        **This is where epoch fencing happens.** The agent records the
-        highest `epoch` it has accepted and answers **409** to a lower
-        one: a superseded control root returning after a promotion is
-        refused with no election, no quorum, and no agreement between
-        agents, each of which declines the downgrade on its own. An equal
-        epoch with a `signingKeyId` lower than the one held is a replayed
-        rotation and is refused the same way.
+        **This is where rollback protection and epoch fencing happen.**
+        The agent answers **409** to a bundle whose `epoch` or `version`
+        is lower than the one it holds. That is how a superseded control
+        root returning after a promotion is refused, with no election and
+        no quorum: every agent declines the downgrade on its own. An
+        equal version is accepted and replaces the held bundle.
 
-        On acceptance the agent persists the epoch and the key, adopts
-        the key for its own token verification, and restarts every
-        component it supervises so they pick it up — they read the key
-        from their environment at spawn. Engines are untouched. A message
-        carrying the key the agent already holds records the epoch and
-        restarts nothing, which is what makes the same message serve as a
-        promotion's announcement.
+        On acceptance the agent writes the bundle atomically beside
+        `node.yaml`, where its children reload it. Nothing restarts.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RekeyRequest"
+              $ref: "components/common.yaml#/components/schemas/SignedTrustBundle"
       responses:
         "200":
           description: Accepted; the identity as it now stands.
@@ -2036,7 +2108,7 @@ paths:
                 $ref: "#/components/schemas/NodeIdentity"
         "401":
           description: |
-            The signature does not verify against the recorded
+            The signature does not verify against the pinned
             `controlPublicKey`, or this agent has not enrolled and so has
             no root to recognise.
           content:
@@ -2045,9 +2117,8 @@ paths:
                 $ref: "components/common.yaml#/components/schemas/Problem"
         "409":
           description: |
-            Fenced. The `epoch` is lower than the highest this agent has
-            recorded, or equal with a lower `signingKeyId`. `detail`
-            names both numbers.
+            Refused: the bundle's `epoch` or `version` is lower than the
+            one this agent holds. `detail` names both numbers.
           content:
             application/problem+json:
               schema:
@@ -2415,9 +2486,11 @@ components:
       scheme: bearer
       bearerFormat: opaque
       description: |
-        Bearer session token. Issued via `POST /v1/auth/login`
-        after operator passphrase entry. Component-internal calls
-        present service tokens threaded via env var at spawn time.
+        An operator session (`POST /v1/auth/login`, or an exchanged
+        token addressed to this machine), or a service token addressed
+        to this machine and signed by a key in the trust bundle
+        (`common.yaml`, `TrustBundle`). Each route says which classes
+        and which `sub` it accepts.
 
   parameters:
     AppId:
@@ -2753,19 +2826,34 @@ components:
             Where other hosts reach this agent — the `advertiseUrl` config
             field, or the value derived at enrollment when none was set.
             What the control root holds as this node's `Node.url`.
-        signingKeyId:
+        trustBundleVersion:
+          type: integer
+          format: int64
+          description: |
+            The version of the trust bundle this agent holds. After a
+            revocation or a rotation, a node still below the root's
+            current version is the answer to "which host is stale", from
+            the host itself.
+        trustBundleAgeSeconds:
+          type: integer
+          format: int64
+          description: |
+            Seconds since the held bundle was signed. Reported, never
+            enforced: a bundle keeps working while the root is dead, so
+            its age is what tells an operator this node has not heard
+            from the root.
+        tokenPublicKey:
           type: string
           description: |
-            The generation of the install signing key this agent holds,
-            as the control root named it. During a rotation, the answer
-            to "which host is stale" from the host itself.
+            Base64 of this node's raw Ed25519 token public key. The
+            private half was generated here and never leaves.
         controlPublicKey:
           type: string
           description: |
             The identity public key of the control root this agent
-            enrolled with, recorded then and checked against every
-            `POST /v1/node/rekey` since. A dashboard can compare it with
-            the root's own `Snapshot.controlPublicKey`.
+            enrolled with, pinned then and checked against every trust
+            bundle since. A dashboard can compare it with the root's own
+            `Snapshot.controlPublicKey`.
         signingPublicKey:
           type: string
           description: |
@@ -3216,53 +3304,31 @@ components:
             Requested node name. Defaults to the host's own name, which
             is the answer an operator would have typed anyway.
 
-    RekeyRequest:
+    ServiceTokenRequest:
       type: object
       description: |
-        A new signing key, or a new epoch, from the control root. The
-        credential is `signature`; see `POST /v1/node/rekey`.
+        A token for one other machine, asked for by one of this agent's
+        own children. See `POST /v1/auth/service-token`.
       required:
-        - signingKey
-        - signingKeyId
-        - epoch
-        - signature
+        - audience
       properties:
-        signingKey:
+        audience:
           type: string
-          description: |
-            Base64 of the install's unencrypted Ed25519 private key in
-            PKCS8 PEM format. Trusted agents mint operator, service and
-            client JWTs with `alg: EdDSA`; verifier children receive only
-            the corresponding SubjectPublicKeyInfo public PEM through
-            `AUTH_VERIFY_KEY`. The master encryption key is separate.
-            During upgrade, an existing 32-byte HS256 key is accepted
-            until rotation. A node that has adopted Ed25519 refuses an
-            HS256 downgrade, even at a higher epoch or generation.
-            The algorithm is determined by trusted key material, never
-            the incoming JWT header. Promotion announces the held key;
-            explicit rotation generates Ed25519 and invalidates old tokens.
-        signingKeyId:
+          pattern: '^(control|node:.+)$'
+          description: The one recipient the token may be presented to.
+
+    ServiceTokenResponse:
+      type: object
+      required:
+        - token
+        - expiresAt
+      properties:
+        token:
           type: string
-          description: The key's generation, as `Snapshot.signingKeyId` names it.
-        epoch:
-          type: integer
-          format: int64
-          minimum: 0
-          description: |
-            The control root's current epoch. The agent refuses a value
-            below the highest it has recorded.
-        signature:
+          description: An `ep-service+jwt` signed by this node's key, addressed to `audience`.
+        expiresAt:
           type: string
-          description: |
-            Detached Ed25519 signature, base64, by the control root's
-            identity key over the **canonical message**: the UTF-8 bytes of
-            the JSON object `{"epoch": <epoch>, "signingKey":
-            "<signingKey>", "signingKeyId": "<signingKeyId>"}` with keys
-            sorted and no whitespace — `json.dumps(obj, sort_keys=True,
-            separators=(",", ":"))`. Verified against the
-            `controlPublicKey` the agent recorded at enrollment. Three
-            fields, one serializer, stated here so both sides implement it
-            from the same sentence.
+          format: date-time
 
     UnenrollRequest:
       type: object
@@ -3276,8 +3342,7 @@ components:
           default: true
           description: |
             Call `DELETE /v1/nodes/{name}` at the control root first, so
-            the install rotates its signing key and stops trusting this
-            node. Set false to skip the attempt entirely — it does not
+            the install drops this node's key and stops trusting it. Set false to skip the attempt entirely — it does not
             change what happens *here*, only whether the root is told.
 
     UnenrollResult:
@@ -3336,8 +3401,7 @@ components:
           type: boolean
           description: |
             True while the master key is in this process's memory, so
-            sealed values (provider API keys, the install signing key on
-            an enrolled node) can be opened. False after a restart under
+            sealed values (provider API keys) can be opened. False after a restart under
             `securityMode: prompt_on_startup` until someone signs in, or
             when an `os_keyring` recovery found nothing usable. Absent
             from an agent that predates the field.
