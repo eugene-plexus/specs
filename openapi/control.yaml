@@ -294,33 +294,6 @@ paths:
         '204': {description: Revocation durably recorded.}
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
-  /v1/nodes/{name}/client-keys/import:
-    parameters:
-      - {name: name, in: path, required: true, schema: {type: string}}
-    post:
-      security: []
-      operationId: importLegacyClientKeys
-      summary: Import existing node-local client-key records
-      description: Authenticated by the enrolled node signature, not a service bearer. Active root only. Idempotent and revocation-preserving; a node cannot overwrite another node's record.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/ClientKeyImport'}
-      responses:
-        '200':
-          description: Import committed; metadata confirms migration. Keys are empty to avoid disclosing the operator registry to a node.
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/ClientKeyList'}
-        '401':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-
-
-        '409':
-          $ref: 'components/common.yaml#/components/responses/Problem'
-        '503':
-          $ref: 'components/common.yaml#/components/responses/Problem'
 
   # -------- nodes: the hosts this install spans --------
 
@@ -1355,10 +1328,6 @@ components:
     ClientKeyPolicy:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyPolicy'
 
-    ClientKeyImport:
-      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyImport'
-
-
     # -------- nodes --------
 
     NodeList:
@@ -1974,7 +1943,6 @@ components:
         - deleteRuntime
         - patchConfig
         - putClientKey
-        - importClientKeys
         - revokeClientKey
         - setClientKeyLimits
         - putClientAdmission
@@ -2044,10 +2012,6 @@ components:
         clientKeys:
           type: array
           items: {$ref: '#/components/schemas/ClientKey'}
-        clientKeyImports:
-          type: object
-          additionalProperties: {type: string}
-          description: Node-to-digest map of committed legacy imports, replicated with the registry.
         index:
           type: integer
           format: int64
