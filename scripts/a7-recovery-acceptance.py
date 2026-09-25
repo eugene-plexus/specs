@@ -214,9 +214,12 @@ def exercise(args):
                 agent_token = call(
                     name, "POST", "/v1/auth/initialize", json={"passphrase": phrase}
                 ).json()["sessionToken"]
-            join = call("control", "POST", "/v1/nodes/join-token", operator).json()[
-                "token"
-            ]
+            # The root runs the gateway, which reaches the worker's driver
+            # only with the gateway grant (per-node token keys).
+            grants = ["gateway"] if name == "root" else []
+            join = call(
+                "control", "POST", "/v1/nodes/join-token", operator, json={"grants": grants}
+            ).json()["token"]
             call(
                 name,
                 "POST",
@@ -229,6 +232,9 @@ def exercise(args):
                 },
             ).raise_for_status()
         operator = login("root")
+        # A session is good on the machine it was signed in on and the
+        # root; the worker takes its own.
+        worker_session = login("worker")
         runtime = {
             "name": "a7-model",
             "modelAlias": "a7-model",
@@ -241,12 +247,12 @@ def exercise(args):
             "autoStart": True,
             "flags": {"gpuLayers": 0, "contextSize": 2048},
         }
-        response = call("worker", "POST", "/v1/runtimes", operator, json=runtime)
+        response = call("worker", "POST", "/v1/runtimes", worker_session, json=runtime)
         assert response.status_code == 201, response.text
         wait(
             lambda: any(
                 r["status"] == "ready"
-                for r in call("worker", "GET", "/v1/runtimes", operator).json()[
+                for r in call("worker", "GET", "/v1/runtimes", worker_session).json()[
                     "runtimes"
                 ]
             ),
@@ -394,6 +400,7 @@ def exercise(args):
                 login("control")
             timings[name + "RestoreSeconds"] = time.monotonic() - started
         operator = login("root")
+        worker_session = login("worker")
         response = call(
             "library", "GET", f"/v1/models/{model_id}/profiles/{profile_id}", operator
         )
@@ -410,7 +417,7 @@ def exercise(args):
         wait(
             lambda: any(
                 r["status"] == "ready"
-                for r in call("worker", "GET", "/v1/runtimes", operator).json()[
+                for r in call("worker", "GET", "/v1/runtimes", worker_session).json()[
                     "runtimes"
                 ]
             ),

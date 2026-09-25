@@ -435,7 +435,7 @@ Python repos, and so are its tests apart from the import line.
 | agent | `fd4fe3c`, `0ab922d`, `a5a15b6`, `ce90e34` | 26 of 26, after ten first-pass escapes each earned a test; 5 of 5 for the bundle age |
 | gateway | `84a0b4b`, `d9d4ccb`, `53e98ae` | 13 of 13, and 3 of 3 for naming a refused mint |
 | library, inference-driver | `e6ee80a`/`47dfdf0`, `24bfd1d`/`f754620` | 8 of 8 together |
-| ui | `3a33350`, `9faffb5`, `53d465f`, dist `53d465f` | 2 of 2, and 3 of 3 for the new issue |
+| ui | `3a33350`, `9faffb5`, `b879c76`, dist `53d465f` | 2 of 2, and 3 of 3 for the new issue |
 
 `scripts/row3-per-node-keys-acceptance.py` runs a root, two enrolled
 agents, and a gateway and library started with the environment an agent
