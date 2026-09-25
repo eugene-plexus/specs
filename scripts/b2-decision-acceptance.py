@@ -15,12 +15,35 @@ Designed to run INSIDE WSL from one venv holding all four components
 `CUDA_VISIBLE_DEVICES=""` rides the runtime's own env so the owner's GPU
 is never touched. Ephemeral ports, ambient EUGENE_PLEXUS_* cleared,
 teardown by pid.
+
+Credentials (per-node token keys, 2026-09-25). `agent-a` is the control
+host's agent and joins with the `gateway` grant, as the wizard joins it,
+because the gateway on its machine reads the control root. The kev
+runtime and its companion driver are the agent's own children and get
+their credentials from it; the two stub drivers and the gateway, which
+this script starts itself, are given exactly what `agent-a` hands a child:
+its `trust_bundle.json`, the `controlPublicKey` from its `node.yaml`,
+`node:agent-a`, and a service token `agent-a`'s own key signs for its
+machine. The operator signs in on `agent-a`, whose session the root
+mints for `agent-a` and the root; every call here lands on that machine.
+Client keys are the root's, forwarded by `agent-a`. No check was removed;
+the install signing key the old harness read out of `node.yaml` to derive
+a verify key and mint the gateway's token no longer exists, so those two
+derivations are gone rather than any assertion.
+
+Last run, 2026-09-25, inside WSL2 Ubuntu from the B2 venv (`~/b2/ep-venv`,
+the four components editable from the current local repos under /mnt/d;
+a dry-run reinstall showed nothing to change), CPU only:
+    cd /mnt/d/py/eugene-plexus/specs/scripts && \\
+        ~/b2/ep-venv/bin/python b2-decision-acceptance.py --directory /tmp/ep-b2-row3
+-> ALL 13 CHECKS PASSED, first execution: cold start 9.4 s, offline
+restart 6.0 s, p50 239 ms / p95 252 ms, peak RSS 5627392 kB, routing
+fidelity 5/5, proxy overhead 37 ms median.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import secrets
@@ -169,10 +192,33 @@ def serve(kind: str, directory: Path, port: int) -> None:
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
 
 
-def exercise(directory: Path) -> None:
-    from cryptography.hazmat.primitives import serialization
+def child_environment(agent_dir: Path, sub: str, agent_url: str) -> dict:
+    """What `agent_dir`'s agent hands a child it spawns (supervisor.py).
 
-    from eugene_plexus_agent import security
+    The bundle path, the authority pinned at enrollment, this machine's
+    recipient name and a token this node's own key signs for this machine
+    only -- never a key. `sub` is the child's kind, as the agent mints it.
+    """
+    from eugene_plexus_agent.node_identity import NodeIdentityStore
+    from eugene_plexus_agent.trust import BUNDLE_FILE, NodeTrust
+
+    store = NodeIdentityStore(agent_dir / "node.yaml")
+    store.load()
+    trust = NodeTrust(store, agent_dir / BUNDLE_FILE)
+    trust.load()
+    assert trust.enrolled and trust.bundle is not None, f"{agent_dir.name} holds no bundle"
+    token, _ = trust.mint_service(sub=sub, audience=trust.recipient)
+    return {
+        "trust_bundle_file": str(trust.bundle_path),
+        "trust_authority": trust.authority,
+        "auth_recipient": trust.recipient,
+        "service_token": token,
+        "agent_url": agent_url,
+    }
+
+
+def exercise(directory: Path) -> None:
+    import jwt
 
     passed = 0
 
@@ -252,8 +298,15 @@ def exercise(directory: Path) -> None:
                 process.wait(timeout=5)
 
     def login(name: str) -> str:
-        response = call(name, "POST", "/v1/auth/login", json={"passphrase": passphrase})
-        assert response.status_code == 200, response.text
+        """A session from `name`'s sign-in. An enrolled agent forwards it to
+        the root and answers 503 while the root is unreachable, so wait."""
+        deadline = time.perf_counter() + 20
+        while True:
+            response = call(name, "POST", "/v1/auth/login", json={"passphrase": passphrase})
+            if response.status_code != 503 or time.perf_counter() > deadline:
+                break
+            time.sleep(0.25)
+        assert response.status_code == 200, (name, response.text)
         return response.json()["sessionToken"]
 
     def decide(token: str, model: str, questions: dict, state: object = "x", **kwargs):
@@ -295,7 +348,7 @@ def exercise(directory: Path) -> None:
             ).status_code
             == 204
         )
-        operator = login("control")
+        root_session = login("control")
         work = directory / "agent-a"
         work.mkdir(exist_ok=True)
         (work / "agent.yaml").write_text(
@@ -317,29 +370,26 @@ def exercise(directory: Path) -> None:
             == 200
         )
         local_operator = login("agent-a")
-        join = call("control", "POST", "/v1/nodes/join-token", operator).json()["token"]
-        assert (
-            call(
-                "agent-a",
-                "POST",
-                "/v1/node/enroll",
-                local_operator,
-                json={"controlUrl": url("control"), "token": join, "name": "agent-a"},
-            ).status_code
-            == 200
+        # The control host's join: with the gateway grant, as the wizard
+        # mints it, because the gateway on this machine reads the root.
+        join = call(
+            "control", "POST", "/v1/nodes/join-token", root_session, json={"grants": ["gateway"]}
         )
+        assert join.status_code in (200, 201), join.text
+        enrolled = call(
+            "agent-a",
+            "POST",
+            "/v1/node/enroll",
+            local_operator,
+            json={"controlUrl": url("control"), "token": join.json()["token"], "name": "agent-a"},
+        )
+        assert enrolled.status_code == 200, enrolled.text
 
-        identity = yaml.safe_load((directory / "agent-a/node.yaml").read_text(encoding="utf-8"))
-        private = base64.b64decode(identity["signingKey"])
-        public = (
-            serialization.load_pem_private_key(private, password=None)
-            .public_key()
-            .public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-        )
-        verify_key = base64.b64encode(public).decode()
+        # The operator's session for everything on agent-a's machine: the
+        # root mints it on agent-a's sign-in, addressed to agent-a and it.
+        operator = login("agent-a")
+        aud = jwt.decode(operator, options={"verify_signature": False})["aud"]
+        assert aud == ["node:agent-a", "control"], aud
 
         # --- the REAL kev runtime, supervised by the agent ----------------
         # The launch policy refused the first two shapes, correctly, and
@@ -412,7 +462,10 @@ def exercise(directory: Path) -> None:
             config.update(extra)
             (work / "driver.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
             (work / "bootstrap.json").write_text(
-                json.dumps({"auth_verify_key": verify_key}), encoding="utf-8"
+                json.dumps(
+                    child_environment(directory / "agent-a", "inference-driver", url("agent-a"))
+                ),
+                encoding="utf-8",
             )
             start(name, "driver")
             assert (
@@ -432,15 +485,7 @@ def exercise(directory: Path) -> None:
         work = directory / "gateway"
         work.mkdir(exist_ok=True)
         (work / "bootstrap.json").write_text(
-            json.dumps(
-                {
-                    "agent_url": url("agent-a"),
-                    "auth_verify_key": verify_key,
-                    "service_token": security.issue_service_token(
-                        signing_key=private, kind="gateway"
-                    ),
-                }
-            ),
+            json.dumps(child_environment(directory / "agent-a", "gateway", url("agent-a"))),
             encoding="utf-8",
         )
         (work / "gateway.yaml").write_text(

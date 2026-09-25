@@ -19,12 +19,35 @@ byte-identically.
 
 Safe beside a live install: ephemeral ports, ambient EUGENE_PLEXUS_*
 cleared, teardown by pid, everything under a temp directory.
+
+Credentials (per-node token keys, 2026-09-25). `agent-a` joins with the
+`gateway` grant, the way the wizard joins the control host, because the
+gateway runs on its machine and must reach `agent-b`'s drivers; `agent-b`
+joins with none. Every process the script starts itself is given exactly
+what its node's agent hands a child: that node's `trust_bundle.json`,
+the `controlPublicKey` from its `node.yaml` as the authority, `node:<name>`
+as its recipient, and a service token that agent's own key signs for its
+machine (drivers on `agent-b` get `agent-b`'s, so the gateway reaching
+them proves the per-machine token it asks `agent-a` for). The operator
+signs in on each agent it calls: `agent-a`'s session for `agent-a`, its
+gateway and its drivers, `agent-b`'s for `agent-b` and its drivers.
+Check 4 now also asserts `agent-b`'s driver refuses no token and
+`agent-a`'s session and serves `agent-b`'s, so the cross-node route is
+shown to carry a token addressed to that machine. No check was removed;
+the install signing key the old harness read out of `node.yaml` to derive
+a verify key and mint the gateway's token no longer exists, so those two
+derivations are gone rather than any assertion.
+
+Last run, 2026-09-25, from `specs/scripts`, with every component under
+one interpreter (the brief's xvenv, all five components editable):
+    EP_GATEWAY_PYTHON=<xvenv python> EP_DRIVER_PYTHON=<xvenv python> \\
+        <xvenv python> b1-mlx-identity-acceptance.py
+-> ALL 11 CHECKS PASSED.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import secrets
@@ -199,10 +222,33 @@ def serve(kind: str, directory: Path, port: int) -> None:
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
 
 
-def exercise(directory: Path) -> None:
-    from cryptography.hazmat.primitives import serialization
+def child_environment(agent_dir: Path, sub: str, agent_url: str) -> dict:
+    """What `agent_dir`'s agent hands a child it spawns (supervisor.py).
 
-    from eugene_plexus_agent import security
+    The bundle path, the authority pinned at enrollment, this machine's
+    recipient name and a token this node's own key signs for this machine
+    only -- never a key. `sub` is the child's kind, as the agent mints it.
+    """
+    from eugene_plexus_agent.node_identity import NodeIdentityStore
+    from eugene_plexus_agent.trust import BUNDLE_FILE, NodeTrust
+
+    store = NodeIdentityStore(agent_dir / "node.yaml")
+    store.load()
+    trust = NodeTrust(store, agent_dir / BUNDLE_FILE)
+    trust.load()
+    assert trust.enrolled and trust.bundle is not None, f"{agent_dir.name} holds no bundle"
+    token, _ = trust.mint_service(sub=sub, audience=trust.recipient)
+    return {
+        "trust_bundle_file": str(trust.bundle_path),
+        "trust_authority": trust.authority,
+        "auth_recipient": trust.recipient,
+        "service_token": token,
+        "agent_url": agent_url,
+    }
+
+
+def exercise(directory: Path) -> None:
+    import jwt
 
     passed = 0
 
@@ -300,9 +346,19 @@ def exercise(directory: Path) -> None:
                 process.wait(timeout=5)
 
     def login(name: str) -> str:
-        response = call(name, "POST", "/v1/auth/login", json={"passphrase": passphrase})
-        assert response.status_code == 200, response.text
+        """A session from `name`'s sign-in. An enrolled agent forwards it to
+        the root and answers 503 while the root is unreachable, so wait."""
+        deadline = time.perf_counter() + 20
+        while True:
+            response = call(name, "POST", "/v1/auth/login", json={"passphrase": passphrase})
+            if response.status_code != 503 or time.perf_counter() > deadline:
+                break
+            time.sleep(0.25)
+        assert response.status_code == 200, (name, response.text)
         return response.json()["sessionToken"]
+
+    def audience(token: str) -> list[str]:
+        return list(jwt.decode(token, options={"verify_signature": False})["aud"])
 
     def stub_dir(name: str, expected: str, answer: str) -> None:
         work = directory / name
@@ -337,8 +393,11 @@ def exercise(directory: Path) -> None:
             ).status_code
             == 204
         )
-        operator = login("control")
-        for name in ("agent-a", "agent-b"):
+        root_session = login("control")
+        # agent-a hosts the gateway, which reaches agent-b's drivers: it
+        # joins with the gateway grant, as the wizard joins the control
+        # host. agent-b is a worker joined from /nodes, with none.
+        for name, grants in (("agent-a", ["gateway"]), ("agent-b", [])):
             work = directory / name
             work.mkdir(exist_ok=True)
             (work / "agent.yaml").write_text(
@@ -360,27 +419,26 @@ def exercise(directory: Path) -> None:
                 == 200
             )
             local_operator = login(name)
-            join = call("control", "POST", "/v1/nodes/join-token", operator).json()["token"]
+            join = call(
+                "control", "POST", "/v1/nodes/join-token", root_session, json={"grants": grants}
+            )
+            assert join.status_code in (200, 201), join.text
             enrolled = call(
                 name,
                 "POST",
                 "/v1/node/enroll",
                 local_operator,
-                json={"controlUrl": url("control"), "token": join, "name": name},
+                json={"controlUrl": url("control"), "token": join.json()["token"], "name": name},
             )
             assert enrolled.status_code == 200, enrolled.text
 
-        identity = yaml.safe_load((directory / "agent-a/node.yaml").read_text(encoding="utf-8"))
-        private = base64.b64decode(identity["signingKey"])
-        public = (
-            serialization.load_pem_private_key(private, password=None)
-            .public_key()
-            .public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-        )
-        verify_key = base64.b64encode(public).decode()
+        # A session works on the machine it was signed in on and on the
+        # root, nowhere else: one per agent this run calls.
+        operator = login("agent-a")
+        operator_b = login("agent-b")
+        assert audience(operator) == ["node:agent-a", "control"], audience(operator)
+        assert audience(operator_b) == ["node:agent-b", "control"], audience(operator_b)
+        session_for = {"agent-a": operator, "agent-b": operator_b}
 
         # --- four simulated backends, four REAL drivers -------------------
         # a1/b1/a2 are MLX-shaped: they resolve only the sentinel. c is
@@ -393,7 +451,9 @@ def exercise(directory: Path) -> None:
         for stub in ("stub-a", "stub-b", "stub-a2", "stub-c"):
             start(stub, "mlxstub")
 
-        def driver_dir(name: str, stub: str, alias: str, upstream: str | None) -> None:
+        def driver_dir(
+            name: str, node: str, stub: str, alias: str, upstream: str | None
+        ) -> None:
             work = directory / name
             work.mkdir(exist_ok=True)
             config = {
@@ -405,21 +465,23 @@ def exercise(directory: Path) -> None:
             if upstream is not None:
                 config["upstreamModelId"] = upstream
             (work / "driver.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+            # What `node`'s agent would hand the companion it spawns.
             (work / "bootstrap.json").write_text(
-                json.dumps({"auth_verify_key": verify_key}), encoding="utf-8"
+                json.dumps(child_environment(directory / node, "inference-driver", url(node))),
+                encoding="utf-8",
             )
             start(name, "driver")
 
-        driver_dir("driver-a1", "stub-a", "alias-a", SENTINEL)
-        driver_dir("driver-b1", "stub-b", "alias-b", SENTINEL)
-        driver_dir("driver-c", "stub-c", "alias-c", None)
+        driver_dir("driver-a1", "agent-a", "stub-a", "alias-a", SENTINEL)
+        driver_dir("driver-b1", "agent-b", "stub-b", "alias-b", SENTINEL)
+        driver_dir("driver-c", "agent-a", "stub-c", "alias-c", None)
 
         def declare(agent: str, driver: str) -> None:
             response = call(
                 agent,
                 "POST",
                 "/v1/components",
-                operator,
+                session_for[agent],
                 json={"name": driver, "kind": "inference-driver", "url": url(driver)},
             )
             assert response.status_code == 201, response.text
@@ -431,16 +493,10 @@ def exercise(directory: Path) -> None:
         # --- the gateway, finding the control root through its agent ------
         work = directory / "gateway"
         work.mkdir(exist_ok=True)
+        # agent-a's child: a token good on agent-a's machine only; for
+        # agent-b's drivers it asks agent-a, which the gateway grant lets it.
         (work / "bootstrap.json").write_text(
-            json.dumps(
-                {
-                    "agent_url": url("agent-a"),
-                    "auth_verify_key": verify_key,
-                    "service_token": security.issue_service_token(
-                        signing_key=private, kind="gateway"
-                    ),
-                }
-            ),
+            json.dumps(child_environment(directory / "agent-a", "gateway", url("agent-a"))),
             encoding="utf-8",
         )
         (work / "gateway.yaml").write_text(
@@ -483,7 +539,15 @@ def exercise(directory: Path) -> None:
         body = response.json()
         assert body["choices"][0]["message"]["content"] == "answer from model-b", body
         assert body["model"] == "alias-b", body
-        ok("alias-b serves from the OTHER backend behind the same sentinel, on the other node")
+        # And it got there with a token agent-b's driver verified: that
+        # driver refuses no token and agent-a's session, and serves agent-b's.
+        assert call("driver-b1", "GET", "/v1/info").status_code == 401
+        assert call("driver-b1", "GET", "/v1/info", operator).status_code == 401
+        assert call("driver-b1", "GET", "/v1/info", operator_b).status_code == 200
+        ok(
+            "alias-b serves from the OTHER backend behind the same sentinel, on the other "
+            "node, through a driver that takes only tokens addressed to its own machine"
+        )
 
         # --- 5: streaming keeps the public identity on every frame --------
         collected: list[dict] = []
@@ -518,7 +582,7 @@ def exercise(directory: Path) -> None:
         ok("the sentinel and the absolute path are not models anyone can select")
 
         # --- 7: replicas of one alias on two nodes stay one model ---------
-        driver_dir("driver-b2", "stub-a2", "alias-a", SENTINEL)
+        driver_dir("driver-b2", "agent-b", "stub-a2", "alias-a", SENTINEL)
         declare("agent-b", "driver-b2")
 
         def replica_ready() -> bool:

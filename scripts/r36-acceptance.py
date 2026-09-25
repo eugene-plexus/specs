@@ -1,8 +1,22 @@
 """R3.6: real agent API, real child processes, no real model or live install.
 
 Run with the agent dev interpreter. Port 8179 is the agent; 8199 is a
-llama.cpp-shaped stand-in. Ambient install settings are removed, state is
-temporary, ports must be free, and only owned PIDs are stopped.
+llama.cpp-shaped stand-in (both movable: `--port`, `--engine-port`).
+Ambient install settings are removed, state is temporary, ports must be
+free, and only owned PIDs are stopped.
+
+Credentials (per-node token keys, 2026-09-25): the agent is standalone,
+so it is its own authority, `node:local`. The run sets the passphrase
+through the agent's real first-run `POST /v1/auth/initialize` and uses
+the session that call returns (an `ep-session+jwt` addressed to
+`node:local`, asserted before any runtime check), instead of
+pre-populating the agent's auth state with a script-made HS256 signing
+key, which no longer exists.
+
+Last run, 2026-09-25, from `specs/scripts`, beside other acceptance runs
+holding 81xx and 82xx:
+    <xvenv>/Scripts/python.exe r36-acceptance.py --port 8379 --engine-port 8399
+-> 6 PASS; runtime API and real child exits.
 """
 
 from __future__ import annotations
@@ -11,6 +25,7 @@ import argparse
 import contextlib
 import json
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -19,6 +34,7 @@ import time
 from pathlib import Path
 
 import httpx
+import jwt
 import yaml
 
 
@@ -66,10 +82,9 @@ def engine(work: Path, port: int) -> None:
 def serve_agent(work: Path, port: int) -> None:
     import uvicorn
 
-    from eugene_plexus_agent import runtimes, security
+    from eugene_plexus_agent import runtimes
     from eugene_plexus_agent._generated.models import EngineKind, Origin, RuntimeSpec
     from eugene_plexus_agent.app import create_app
-    from eugene_plexus_agent.auth_state import AuthState
     from eugene_plexus_agent.engines.base import DiscoveredBinary
     from eugene_plexus_agent.engines.llama_cpp import LlamaCppAdapter
     from eugene_plexus_agent.settings import Settings
@@ -99,11 +114,12 @@ def serve_agent(work: Path, port: int) -> None:
             return str(work)
 
     runtimes.ADAPTERS[EngineKind.llama_cpp] = Adapter()
-    app = create_app(Settings(config_file=work / "agent.yaml", default_topology=False))
-    signing_key = security.generate_signing_key()
-    app.state.auth_state = AuthState(signing_key=signing_key)
-    token, _ = security.issue_operator_token(signing_key=signing_key)
-    (work / "token").write_text(token, encoding="utf-8")
+    # The agent builds its own trust in its lifespan: a standalone node
+    # signs with the token key it writes to `node.yaml` beside agent.yaml,
+    # as `node:local`. The parent signs in through the real API.
+    app = create_app(
+        Settings(config_file=work / "agent.yaml", default_topology=False, bind_port=port)
+    )
     uvicorn.run(app, host="127.0.0.1", port=port, access_log=False)
 
 
@@ -178,15 +194,42 @@ def acceptance(agent_port: int, engine_port: int) -> None:
                 **process_signals.spawn_kwargs(),
             )
 
+            def sign_in() -> None:
+                """The agent's own first-run setup, which returns its session."""
+                deadline = time.perf_counter() + 20
+                while True:
+                    assert process.poll() is None, "agent exited"
+                    try:
+                        if client.get("/healthz").status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    assert time.perf_counter() < deadline, "agent never became healthy"
+                    time.sleep(0.1)
+                response = client.post(
+                    "/v1/auth/initialize",
+                    json={"passphrase": secrets.token_urlsafe(24)},
+                    timeout=30,
+                )
+                assert response.status_code == 200, response.text
+                session = response.json()["sessionToken"]
+                header = jwt.get_unverified_header(session)
+                claims = jwt.decode(session, options={"verify_signature": False})
+                assert header["typ"] == "ep-session+jwt" and header["alg"] == "EdDSA", header
+                assert claims["aud"] == ["node:local"], claims
+                assert claims["iss"] == "node:local" and claims["sub"] == "operator", claims
+                client.headers["Authorization"] = f"Bearer {session}"
+                refused = httpx.get(
+                    f"http://127.0.0.1:{agent_port}/v1/runtimes/r36-engine",
+                    timeout=2,
+                    trust_env=False,
+                )
+                assert refused.status_code == 401, refused.text
+
             def runtime(wanted: str, *, after_pid: int | None = None) -> dict:
                 deadline = time.perf_counter() + 20
                 while time.perf_counter() < deadline:
                     assert process.poll() is None, "agent exited"
-                    token = work / "token"
-                    if token.exists():
-                        client.headers["Authorization"] = (
-                            f"Bearer {token.read_text(encoding='utf-8')}"
-                        )
                     try:
                         response = client.get("/v1/runtimes/r36-engine")
                     except httpx.TransportError:
@@ -207,8 +250,12 @@ def acceptance(agent_port: int, engine_port: int) -> None:
                 return (work / "starts.txt").read_text(encoding="utf-8").splitlines()
 
             try:
+                sign_in()
                 runtime("loading")
-                passed("real runtime observed loading through the agent API")
+                passed(
+                    "real runtime observed loading through the agent API, with the "
+                    "node:local session the standalone agent's own setup returned"
+                )
                 crash()
                 failed = runtime("crashed")
                 deadline = time.perf_counter() + 3
