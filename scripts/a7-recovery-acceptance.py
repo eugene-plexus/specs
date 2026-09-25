@@ -391,12 +391,21 @@ def exercise(args):
             recovery.activate(replacement, original_stopped=True)
             locations[name] = replacement / "state"
             start(name, python)
-            login(name)
             if name == "root":
                 wait(
                     lambda: call("control", "GET", "/healthz").status_code == 200,
                     "restored root",
                 )
+            # An enrolled agent's sign-in is checked by the control root
+            # (per-node token keys), so it answers once the root does.
+            wait(
+                lambda: call(
+                    name, "POST", "/v1/auth/login", json={"passphrase": phrase}
+                ).status_code
+                == 200,
+                f"{name} sign-in after restore",
+            )
+            if name == "root":
                 login("control")
             timings[name + "RestoreSeconds"] = time.monotonic() - started
         operator = login("root")
