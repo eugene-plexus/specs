@@ -3,13 +3,21 @@
 Only the model-serving HTTP backend is a counting fixture. No installed service,
 model, external provider, or operator state is touched. Run with editable/pinned
 agent, control and gateway packages in one Python environment.
+
+Per-node token keys (2026-09-25, `docs/design/per-node-token-keys.md`). Both
+agents enroll with the `gateway` grant, because each runs a gateway and
+gateway-b must reach the drivers declared on agent-a's machine and the root's
+node list. Each gateway is handed its own node's bundle, authority, recipient
+and a token minted by that node's `NodeTrust` (A3's `gateway_bootstrap`), not
+one node's key shared by both. Operator calls to an agent or a gateway use a
+session from that machine's own agent login; the root's session only mints
+join tokens and unlocks the root after its restart. No check was removed.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import importlib.util
 import json
 import os
@@ -108,17 +116,21 @@ def serve(kind: str, directory: Path, port: int) -> None:
             app, host="127.0.0.1", port=port, log_level="error", access_log=False
         )
     else:
-        spec = importlib.util.spec_from_file_location(
-            "a3_acceptance", Path(__file__).with_name("a3-client-keys-acceptance.py")
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        module.serve(kind, directory, port)
+        a3().serve(kind, directory, port)
+
+
+def a3():
+    spec = importlib.util.spec_from_file_location(
+        "a3_acceptance", Path(__file__).with_name("a3-client-keys-acceptance.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def exercise(directory: Path) -> None:
-    from eugene_plexus_agent import security
-    from cryptography.hazmat.primitives import serialization
+    for name in [k for k in os.environ if k.startswith("EUGENE_PLEXUS_")]:
+        del os.environ[name]
     from eugene_plexus_gateway.settings import Settings as GatewaySettings
 
     defaults = GatewaySettings()
@@ -218,7 +230,9 @@ def exercise(directory: Path) -> None:
             ).status_code
             == 204
         )
-        operator = login("control")
+        # Addressed to the root alone: good at the root, refused by every node.
+        root_session = login("control")
+        operator = {}
         for name in ("agent-a", "agent-b"):
             work = directory / name
             work.mkdir(exist_ok=True)
@@ -239,38 +253,37 @@ def exercise(directory: Path) -> None:
                 ).status_code
                 == 200
             )
-            local_operator = login(name)
-            join = call("control", "POST", "/v1/nodes/join-token", operator).json()[
-                "token"
-            ]
+            # Standalone until it enrolls: this session is the agent's own.
+            standalone = login(name)
+            join = call(
+                "control",
+                "POST",
+                "/v1/nodes/join-token",
+                root_session,
+                json={"grants": ["gateway"]},
+            )
+            assert join.status_code == 201, join.text
             enrolled = call(
                 name,
                 "POST",
                 "/v1/node/enroll",
-                local_operator,
-                json={"controlUrl": url("control"), "token": join, "name": name},
+                standalone,
+                json={"controlUrl": url("control"), "token": join.json()["token"], "name": name},
             )
             assert enrolled.status_code == 200, enrolled.text
+            # Signed in through the enrolled agent: addressed to this machine
+            # and the root, so it opens this agent and this node's gateway.
+            operator[name] = login(name)
+        # Each gateway is on its agent's machine, so it takes that agent's session.
+        operator["gateway-a"], operator["gateway-b"] = operator["agent-a"], operator["agent-b"]
 
-        identity = yaml.safe_load(
-            (directory / "agent-a/node.yaml").read_text(encoding="utf-8")
-        )
-        private = base64.b64decode(identity["signingKey"])
-        public = (
-            serialization.load_pem_private_key(private, password=None)
-            .public_key()
-            .public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-        )
         start("fixture")
         for model in ("allowed", "excluded", "embedding"):
             response = call(
                 "agent-a",
                 "POST",
                 "/v1/components",
-                operator,
+                operator["agent-a"],
                 json={
                     "name": model + "-driver",
                     "kind": "inference-driver",
@@ -282,15 +295,7 @@ def exercise(directory: Path) -> None:
             work = directory / gateway
             work.mkdir()
             (work / "bootstrap.json").write_text(
-                json.dumps(
-                    {
-                        "agent_url": url(agent),
-                        "auth_verify_key": base64.b64encode(public).decode(),
-                        "service_token": security.issue_service_token(
-                            signing_key=private, kind="gateway"
-                        ),
-                    }
-                ),
+                json.dumps(a3().gateway_bootstrap(directory / agent, url(agent))),
                 encoding="utf-8",
             )
             (work / "gateway.yaml").write_text(
@@ -311,7 +316,7 @@ def exercise(directory: Path) -> None:
                 "agent-a",
                 "POST",
                 "/v1/auth/client-keys",
-                operator,
+                operator["agent-a"],
                 json={
                     "name": name,
                     "limits": {
@@ -423,7 +428,7 @@ def exercise(directory: Path) -> None:
             "agent-b",
             "PUT",
             "/v1/auth/client-keys/" + a["key"]["id"] + "/limits",
-            operator,
+            operator["agent-b"],
             json={
                 "limits": {
                     "allowedModels": ["alias", "allowed", "excluded"],
@@ -444,9 +449,10 @@ def exercise(directory: Path) -> None:
         for gateway in ("gateway-a", "gateway-b"):
             assert call(gateway, "GET", "/v1/models", a["token"]).status_code == 503
             assert chat(gateway, a).status_code == 503
-            assert call(gateway, "GET", "/v1/config", operator).status_code == 200
+            assert call(gateway, "GET", "/v1/config", operator[gateway]).status_code == 200
         start("control")
-        operator = login("control")
+        # Unlocks the restarted root; the machines' own sessions stay valid.
+        login("control")
         wait(
             lambda: (
                 call("gateway-a", "GET", "/v1/models", a["token"]).status_code == 200
@@ -463,12 +469,14 @@ def exercise(directory: Path) -> None:
         for gateway in ("gateway-a", "gateway-b"):
 
             def enough_metrics():
-                r = call(gateway, "GET", "/v1/metrics/clients", operator)
+                r = call(gateway, "GET", "/v1/metrics/clients", operator[gateway])
                 return r.status_code == 200 and len(r.json()["clients"]) == 2
 
             wait(enough_metrics, "usage persisted")
-            report = call(gateway, "GET", "/v1/metrics/clients", operator).json()
-            history = call(gateway, "GET", "/v1/metrics/requests?limit=100", operator)
+            report = call(gateway, "GET", "/v1/metrics/clients", operator[gateway]).json()
+            history = call(
+                gateway, "GET", "/v1/metrics/requests?limit=100", operator[gateway]
+            )
             for row in report["clients"]:
                 assert row["clientKeyId"] in (a["key"]["id"], b["key"]["id"])
                 total = totals.setdefault(

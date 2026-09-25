@@ -311,35 +311,49 @@ and nothing else can set its passphrase for it. Until it has one it
 answers **503 across its entire surface**: an uninitialized trust root
 does not fall open.
 
-**Service tokens.** Minted from the install's signing key and handed to
-each component in its environment at spawn. This is what lets a gateway
-on A authenticate to a driver on B — one signing key for the whole
-install, which is precisely what a single-supervisor install could not
-do. A service token names a **kind**, not a host.
+**A key per machine** (since 2026-09-25). Every machine makes its own
+token key when it first starts and never sends it anywhere. When it
+joins, the control root adds the public half to a **trust bundle** —
+signed by the root, listing every machine's key and what that machine
+may do — and every machine checks every token against the bundle it
+holds. A token names the machine it is for (`node:<name>`, or `control`
+for the root) and is refused everywhere else. So a token copied off one
+machine, or that machine's key itself, is good on that machine and for
+little beyond it; the control root and its bundle are what the install
+trusts.
 
-**The control identity's signature.** Used for exactly two operations,
-and never a bearer for either:
-
-- `POST /v1/node/rekey` — the root proves itself to a node. A rotation
-  invalidates every service token in the install, *including any the root
-  could present*, so a bearer cannot survive the operation that needs it.
-- `PATCH /v1/nodes/{name}` — a node proves itself to the root, signed
-  with the node's own identity key. Same argument in the other direction,
-  plus: a service token names a kind, so any agent could otherwise
-  re-address any node.
+**The control root's identity signature.** It signs the trust bundle,
+and every machine pinned the root's identity key when it joined, so a
+bundle anyone else wrote is refused. A machine's own identity key signs
+the other direction: `PATCH /v1/nodes/{name}`, the address announcement,
+which no bearer can make for it.
 
 **Consequences worth knowing before they surprise you:**
 
-- **Enrolling a node logs out the operator session that asked for it**,
-  on that node. The key it was signed with has been replaced by the
-  install's. Log in again — at that node or at the control root; both now
-  mint tokens it accepts.
-- **Rotating the signing key logs everyone out**, for the same reason.
-- **Revoking a node is a rotation, not a deletion.** A revoked node still
-  *holds* the signing key, so removing its registry entry would not stop
-  it authenticating. `DELETE /v1/nodes/{name}` re-mints the key and
-  redistributes it, which means nodes that are down during the rotation
-  hold a superseded key until they reconnect.
+- **Enrolling a machine logs out the session that asked for it**, on that
+  machine: until then it was its own authority, and now it trusts only
+  the install. Sign in again there; the passphrase is checked by the
+  control root and the session that comes back works on that machine and
+  on the root.
+- **A session works on the machine you signed in on, and on the root.**
+  To act on another machine, stay in your console: it exchanges your
+  session at the root for a five-minute token for that machine alone.
+  Presented to another machine directly, your session is refused.
+- **The machine that runs the gateway needs the `gateway` grant**, given
+  when it joins. The setup wizard gives it to the control host; machines
+  joined from **Nodes** get none. Without it, the gateway reaches no other
+  machine's drivers.
+- **Revoking a machine takes its key out of the bundle.** Every other
+  machine stops trusting it the moment it takes the new bundle — pushed
+  at once, and pulled within a minute by any machine that missed the
+  push. No other machine's key changes and nothing secret is sent.
+- **Signing out ends that session on every machine**, the same way.
+- **Rotating the control root's token key** (`POST /v1/control/rotate-key`)
+  ends every session and every client key at once. Machine keys are
+  untouched. It is the lever for "the root's key may have leaked".
+- **A machine that was off keeps the bundle it had** and takes the newer
+  one when it is back. `GET /v1/node` reports its version and age
+  (`trustBundleVersion`, `trustBundleAgeSeconds`).
 
 ### Connecting an OpenAI client, or a browser
 
@@ -364,7 +378,7 @@ The published alpha retains its earlier node-local behavior. See
 The card carries snippets for Claude Code, Continue, Cline, Open WebUI,
 SillyTavern, OpenCode, `OPENAI_BASE_URL`/`OPENAI_API_KEY`, and `curl`.
 Revoking one client key affects that key throughout the install. Rotating the
-install signing key remains the way to invalidate all credentials together.
+control root's token key remains the way to invalidate all credentials together.
 
 The **operator session token** still works as a bearer, and the
 playground's **Diagnostic** panel still shows it — but it can do
@@ -396,19 +410,19 @@ gateway over HTTPS too for the direct path.
 Two operations, each local to the thing whose keys are changing:
 
 ```bash
-# On the machine leaving. Discards the install's key and returns the
-# node to its own; tells the root on the way out, and proceeds anyway
-# if the root is gone.
+# On the machine leaving. Drops the install's trust bundle and returns
+# the machine to its own authority; tells the root on the way out, and
+# proceeds anyway if the root is gone.
 curl -X POST -H "Authorization: Bearer $TOKEN" \
   http://100.64.0.7:8079/v1/node/unenroll
 ```
 
-Un-enrolling is safe to run from the node because it **discards** the
-signing key — the opposite direction from revocation. A node cannot
-escape revocation this way; it can only disarm itself. Read
-`controlNotified` in the response: `false` means the install still lists
-this node and still trusts the key it just threw away, and you owe the
-root a `DELETE /v1/nodes/<name>`.
+Un-enrolling is safe to run from the node because it only makes the node
+**stop trusting** the install — the opposite direction from revocation.
+A node cannot escape revocation this way; it can only disarm itself.
+Read `controlNotified` in the response: `false` means the install still
+lists this node and still trusts its key, and you owe the root a
+`DELETE /v1/nodes/<name>`.
 
 ---
 
@@ -524,7 +538,7 @@ stops.
   why the control root and the node agent are separate components, and
   why a root is never marked `out` automatically.
 - [`m7-second-host-readiness.md`](../design/m7-second-host-readiness.md) —
-  enrollment, the signed re-key, and advertise addresses.
+  enrollment, the trust bundle, and advertise addresses.
 - [`m9-networked-polish.md`](../design/m9-networked-polish.md) —
   un-enrolling, re-advertising, and the onboarding question.
 - [`m7-two-host-run.md`](../acceptance/m7-two-host-run.md) — the run this

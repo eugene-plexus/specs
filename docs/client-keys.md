@@ -91,22 +91,22 @@ clients use more than one. Historical rows from before A5 remain unattributed.
 
 ## Updating an existing install
 
-Update control components, including any standbys, then every agent and gateway.
-An older standby cannot replay the new registry/admission operations. An older
-gateway does not enforce A5 limits. Update the whole install before relying on
-these controls. Agents automatically register existing
-unexpired key records, including revocations, with the root using their enrolled
-node identities. Existing tokens do not change after a successful import.
+**Keys made before 2026-09-25 stop working, and are not migrated.** They
+were signed with the install's shared key, which per-node token keys
+retired (design: [per-node token keys](design/per-node-token-keys.md)).
+A client key is now signed by the control root and checked against the
+trust bundle on every machine. Make a new key under **Home → Use it from
+your apps** and paste it into each app.
 
-The console shows migration status and identifies each migrated record's source
-node. Use **Refresh key status** to check progress. Keys from a node that is offline
-or has not been updated cannot be used until its records have been imported.
+Keys made on a machine that has not joined an install are signed by that
+machine alone and stop working when it joins one; make them again there.
 
-Keep `client_keys.json` beside the originating agent's configuration. If that
-file is damaged or missing, restore it from a backup and restart the agent so it
-can import the records, or issue replacement keys. A node that predates node
-signing identities needs re-enrollment before it can migrate. Never delete the
-file as a repair: it includes revocation records as well as active keys.
+Update control components, including any standbys, then every agent and
+gateway. An older gateway does not enforce A5 limits.
+
+Keep `client_keys.json` beside the agent's configuration on a machine that
+has not joined an install: it is that machine's registry, and includes
+revocation records as well as active keys. Never delete it as a repair.
 
 For the policy format, replication rules and advanced startup settings, see the
 [A3 registry design](design/install-wide-client-keys.md) and

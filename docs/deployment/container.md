@@ -178,8 +178,7 @@ node registry, on its Config tab, in the resource tree, and in Home's
 "kept on …" line. **A node cannot be renamed afterwards**: the name is the
 registry key, and `PATCH /v1/nodes/{name}` announces an address rather than
 a name. Changing it later means un-enrolling and re-enrolling the control
-host, which replaces the install's signing key. Set it before the first
-start, or accept it.
+host, which signs everyone out. Set it before the first start, or accept it.
 
 It pulls `ghcr.io/eugene-plexus/control-plane:edge`, which CI builds and
 **verifies before pushing** — `scripts/compose-acceptance.sh` runs its
@@ -346,7 +345,7 @@ as the one replacing it. The named volume is kept unless you ask for `down
 -v` — which is the one command in this document that destroys an install.
 
 **The restart leaves the trust root LOCKED, and nothing says so.** The
-control root holds the install's signing key sealed with your passphrase. On
+control root holds its token key sealed with your passphrase. On
 a host install the OS keyring opens it unattended; **a container has no
 keyring**, so it comes back initialized-but-locked after every restart --
 upgrades included -- until somebody logs in **to the control root itself**.
@@ -430,7 +429,7 @@ the check is against the schema and not the version.
 Skip this and every restart of this container needs a person at a browser.
 Set it up and the install comes back on its own.
 
-The trust root seals the install's signing key with your passphrase. On a
+The trust root seals its token key with your passphrase. On a
 host install the OS keyring opens it unattended; a container has no keyring,
 so it needs the passphrase from somewhere. **Point it at a file.**
 
@@ -722,8 +721,8 @@ which is a Python environment plus a toolchain rather than a download.
    ```
 
    Windows GPU boxes use `install.ps1 -Join <url> -Token <jwt>`. The machine
-   enrolls, adopts the install's signing key, and declares no control plane of
-   its own.
+   enrolls with its own key, takes the install's trust bundle, and declares no
+   control plane of its own.
 
 3. Back in the UI, launch a runtime on that node. The agent there declares a
    companion inference-driver for it, and the gateway joins driver to runtime

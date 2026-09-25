@@ -2,14 +2,33 @@
 
 Uses disposable state and dynamically allocated loopback ports. No engines,
 external providers, installed node state, or operator profiles are touched.
-Run with a Python environment containing gateway and library (editable or pinned).
+Run with a Python environment containing agent, gateway and library (editable
+or pinned); the agent is imported for its token code and is not started.
+
+Per-node token keys (2026-09-25, `docs/design/per-node-token-keys.md`). R8 has
+never had a control root, and gains nothing from one: every claim here is about
+a gateway reading one model's profile from the Library beside it. So the
+authority is the smallest one the product has, a standalone agent, which is its
+own authority as `node:local`. The script is that agent's key holder and runs
+the agent's own code for it: `NodeIdentityStore.ensure_keypair` and
+`NodeTrust.load`, the two calls the agent makes at boot, write `node.yaml` and a
+self-signed `trust_bundle.json`; the gateway's and Library's service tokens are
+`NodeTrust.mint_service` for this machine, as the supervisor mints them; the
+operator session is `NodeTrust.mint_local_session`, the call a standalone
+agent's login makes once the passphrase checks out. No agent process runs
+because the fixture must stay the agent's HTTP surface (a real agent cannot
+report a ready runtime without a real engine behind it), and a real login would
+add only the passphrase check in front of that same call. Both real processes
+are handed the four trust settings and verify every token against that bundle;
+the new check proves it by refusing no bearer and a session signed by a key the
+bundle does not list. The old `service:gateway` and `operator` audiences were
+retired with the shared key, so no token here is hand-encoded any more.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -23,10 +42,7 @@ import threading
 import time
 
 import httpx
-import jwt
 import yaml
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 def serve(kind: str, root: Path, port: int, agent_url: str) -> None:
@@ -52,21 +68,35 @@ def serve(kind: str, root: Path, port: int, agent_url: str) -> None:
     asyncio.run(run())
 
 
+def standalone(directory: Path):
+    """A standalone agent's trust, built by the agent's own boot sequence."""
+    from eugene_plexus_agent.node_identity import NodeIdentityStore
+    from eugene_plexus_agent.trust import BUNDLE_FILE, NodeTrust
+
+    directory.mkdir()
+    identity = NodeIdentityStore(directory / "node.yaml")
+    identity.load()
+    identity.ensure_keypair()
+    trust = NodeTrust(identity, directory / BUNDLE_FILE)
+    trust.load()
+    assert not trust.enrolled and trust.recipient == "node:local", trust.recipient
+    assert trust.bundle_path.is_file(), "a standalone agent keeps its own bundle"
+    return trust
+
+
 def main() -> None:
     from eugene_plexus_library._generated.models import LibraryModel
     from eugene_plexus_library.store import StateStore
 
     with tempfile.TemporaryDirectory(prefix="ep-r8-") as directory:
         root = Path(directory)
-        key = Ed25519PrivateKey.generate()
-        public = key.public_key().public_bytes(serialization.Encoding.PEM,
-                                               serialization.PublicFormat.SubjectPublicKeyInfo)
-        issued = int(time.time())
-        def token(audience: str) -> str:
-            return jwt.encode({"sub": "r8", "aud": audience, "iat": issued, "exp": issued + 600},
-                              key, algorithm="EdDSA")
-        service = token("service:gateway")
-        operator = token("operator")
+        trust = standalone(root / "agent")
+        service = {kind: trust.mint_service(sub=kind, audience=trust.recipient)[0]
+                   for kind in ("gateway", "library")}
+        operator, _ = trust.mint_local_session()
+        # Well formed and correctly addressed, from a standalone agent this
+        # install's bundle does not list: verification must refuse it.
+        stranger, _ = standalone(root / "stranger").mint_local_session()
         model_path = str(root / "model.gguf")
         store = StateStore(root / "state.json")
         store.replace_models([LibraryModel(id="opaque-model", name="fixture", path=model_path,
@@ -99,7 +129,7 @@ def main() -> None:
 
             def do_GET(self) -> None:
                 if self.path.startswith("/api/proxy/library/"):
-                    assert self.headers.get("Authorization") == f"Bearer {service}"
+                    assert self.headers.get("Authorization") == f"Bearer {service['gateway']}"
                     reads.append(self.path)
                     if state["outage"]:
                         self.reply({"error": "fixture Library unavailable"}, 503)
@@ -150,8 +180,12 @@ def main() -> None:
                 sock.close()
             for kind, port in (("library", library_port), ("gateway", gateway_port)):
                 env = {k: v for k, v in os.environ.items() if not k.startswith("EUGENE_PLEXUS_")}
-                env[f"EUGENE_PLEXUS_{kind.upper()}_AUTH_VERIFY_KEY"] = base64.b64encode(public).decode()
-                env[f"EUGENE_PLEXUS_{kind.upper()}_SERVICE_TOKEN"] = service
+                prefix = f"EUGENE_PLEXUS_{kind.upper()}_"
+                # All four, exactly as the agent's supervisor hands a child.
+                env[prefix + "TRUST_BUNDLE_FILE"] = str(trust.bundle_path)
+                env[prefix + "TRUST_AUTHORITY"] = trust.authority
+                env[prefix + "AUTH_RECIPIENT"] = trust.recipient
+                env[prefix + "SERVICE_TOKEN"] = service[kind]
                 log = (root / f"{kind}.log").open("w", encoding="utf-8")
                 logs.append(log)
                 processes[kind] = subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
@@ -167,6 +201,19 @@ def main() -> None:
                     time.sleep(0.1)
                 else:
                     raise AssertionError(f"{kind} did not start")
+            # Real verification, against the standalone bundle and nothing
+            # else: a missing bearer and a stranger's session are refused by
+            # both processes, and the bundle's own session is accepted.
+            for target in (library_url + "/v1/models/opaque-model/profiles",
+                           gateway_url + "/v1/models"):
+                for label, bearer in (("no bearer", None), ("unlisted key", stranger),
+                                      ("standalone session", operator)):
+                    got = httpx.get(target, trust_env=False, timeout=15,
+                                    headers={"Authorization": f"Bearer {bearer}"} if bearer else {})
+                    expected = 200 if bearer == operator else 401
+                    assert got.status_code == expected, (target, label, got.status_code, got.text)
+            print("PASS gateway and Library verify against the node:local bundle: "
+                  "no bearer and an unlisted key refused, its own session accepted", flush=True)
             with httpx.Client(headers={"Authorization": f"Bearer {operator}"}, trust_env=False, timeout=15) as client:
                 url = library_url + "/v1/models/opaque-model/profiles"
                 spec = {"name": "tuned", "engine": "llama_cpp", "maxTokens": 111,

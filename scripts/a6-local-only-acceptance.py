@@ -2,13 +2,28 @@
 
 No live service, model or external provider is touched. Run in an environment
 containing all five Python components. Logs and state stay in a temporary tree.
+
+Per-node token keys (2026-09-25, `docs/design/per-node-token-keys.md`). The
+agent enrolls with a join token carrying the `gateway` grant, because this
+node runs the gateway (the wizard's shape for the control host). The drivers
+and the gateway are started by this script rather than supervised, so it hands
+each of them exactly what the agent's supervisor would: the trust bundle file
+the agent keeps beside `node.yaml`, the root's identity key as the authority,
+`node:a6-agent` as the recipient, and a service token minted by the agent's
+own `NodeTrust` from that `node.yaml`, addressed to this machine alone. The
+operator's session comes from the enrolled agent's login, which the root
+mints for `node:a6-agent` and `control`; the root's own session is used only
+to mint the join token, since it is not addressed to this node. One check is
+new: the gateway reaches the root with a token its agent mints under that
+grant, which is the only thing the grant changes on a one-node install. The
+control, agent and gateway servers live here now instead of being borrowed
+from A3, whose gateway bootstrap assumed the retired shared verify key.
 """
 
 from __future__ import annotations
 
 import argparse
 import base64
-import importlib.util
 import io
 import json
 import os
@@ -23,6 +38,8 @@ import time
 import httpx
 import yaml
 from fastapi import Request
+
+NODE_NAME = "a6-agent"
 
 
 def serve(kind: str, directory: Path, port: int) -> None:
@@ -140,20 +157,52 @@ def serve(kind: str, directory: Path, port: int) -> None:
         app = create_app(
             settings=Settings(config_file=directory / "driver.yaml", **bootstrap)
         )
-    else:
-        spec = importlib.util.spec_from_file_location(
-            "a3_acceptance", Path(__file__).with_name("a3-client-keys-acceptance.py")
+    elif kind == "control":
+        from eugene_plexus_control.app import create_app
+        from eugene_plexus_control.settings import Settings
+
+        app = create_app(
+            Settings(
+                config_file=directory / "control.yaml", state_dir=directory / "state"
+            )
         )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        module.serve(kind, directory, port)
-        return
+    elif kind == "agent":
+        from eugene_plexus_agent.app import create_app
+        from eugene_plexus_agent.settings import Settings
+
+        app = create_app(
+            settings=Settings(
+                config_file=directory / "agent.yaml",
+                default_topology=False,
+                bind_port=port,
+            )
+        )
+    elif kind == "gateway":
+        from eugene_plexus_gateway.app import create_app
+        from eugene_plexus_gateway.settings import Settings
+
+        bootstrap = json.loads(
+            (directory / "bootstrap.json").read_text(encoding="utf-8")
+        )
+        app = create_app(
+            settings=Settings(
+                config_file=directory / "gateway.yaml",
+                metrics_file=directory / "metrics.sqlite3",
+                client_key_refresh_seconds=0.15,
+                client_key_max_age_seconds=3.5,
+                client_key_timeout_seconds=0.4,
+                client_key_retry_seconds=0.1,
+                **bootstrap,
+            )
+        )
+    else:
+        raise SystemExit(f"unknown process kind {kind!r}")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
 
 
 def exercise(directory: Path) -> None:
-    from cryptography.hazmat.primitives import serialization
-    from eugene_plexus_agent import security
+    from eugene_plexus_agent.node_identity import NodeIdentityStore
+    from eugene_plexus_agent.trust import NodeTrust
     from PIL import Image
 
     picture = io.BytesIO()
@@ -259,7 +308,10 @@ def exercise(directory: Path) -> None:
         call(
             "control", "POST", "/v1/auth/initialize", json={"passphrase": passphrase}
         ).raise_for_status()
-        operator = login("control")
+        # Addressed to the root alone: good for minting the join token and
+        # refused by the agent, which is why the operator signs in again
+        # through the agent once it is enrolled.
+        root_session = login("control")
         write(
             "agent",
             "agent.yaml",
@@ -274,31 +326,54 @@ def exercise(directory: Path) -> None:
         call(
             "agent", "POST", "/v1/auth/initialize", json={"passphrase": passphrase}
         ).raise_for_status()
-        local_operator = login("agent")
-        join = call("control", "POST", "/v1/nodes/join-token", operator).json()["token"]
+        # Standalone until it enrolls: this session is the agent's own, as
+        # `node:local`, and it stops verifying the moment enrollment lands.
+        standalone_session = login("agent")
+        join = call(
+            "control",
+            "POST",
+            "/v1/nodes/join-token",
+            root_session,
+            json={"grants": ["gateway"]},
+        )
+        join.raise_for_status()
         call(
             "agent",
             "POST",
             "/v1/node/enroll",
-            local_operator,
-            json={"controlUrl": url("control"), "token": join, "name": "a6-agent"},
+            standalone_session,
+            json={
+                "controlUrl": url("control"),
+                "token": join.json()["token"],
+                "name": NODE_NAME,
+            },
         ).raise_for_status()
-        identity = yaml.safe_load(
-            (directory / "agent/node.yaml").read_text(encoding="utf-8")
-        )
-        private = base64.b64decode(identity["signingKey"])
-        public = (
-            serialization.load_pem_private_key(private, password=None)
-            .public_key()
-            .public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-        )
-        bootstrap = {
-            "agent_url": url("agent"),
-            "auth_verify_key": base64.b64encode(public).decode(),
-        }
+        # Signed in through the enrolled agent: the root mints it for this
+        # machine and for itself, so it works on the agent, on the drivers
+        # and gateway beside it, and when the agent forwards to the root.
+        operator = login("agent")
+
+        agent_dir = directory / "agent"
+        store = NodeIdentityStore(agent_dir / "node.yaml")
+        store.load()
+        trust = NodeTrust(store, agent_dir / "trust_bundle.json")
+        trust.load()
+        assert trust.enrolled and trust.recipient == "node:" + NODE_NAME, trust.recipient
+        assert trust.bundle is not None, "enrollment kept no trust bundle"
+
+        def bootstrap(sub):
+            # What the supervisor hands a child it spawns (supervisor.py):
+            # the bundle, the authority it must be signed by, this machine
+            # as the recipient, and a token addressed to this machine alone.
+            token, _ = trust.mint_service(sub=sub, audience=trust.recipient)
+            return {
+                "agent_url": url("agent"),
+                "trust_bundle_file": str(trust.bundle_path),
+                "trust_authority": trust.authority,
+                "auth_recipient": trust.recipient,
+                "service_token": token,
+            }
+
         start("fixture")
         for model, locality in (
             ("local", "local"),
@@ -306,16 +381,7 @@ def exercise(directory: Path) -> None:
             ("unknown", "unknown"),
             ("embedding", "local"),
         ):
-            write(
-                model,
-                "bootstrap.json",
-                {
-                    **bootstrap,
-                    "service_token": security.issue_service_token(
-                        signing_key=private, kind="inference-driver"
-                    ),
-                },
-            )
+            write(model, "bootstrap.json", bootstrap("inference-driver"))
             write(
                 model,
                 "driver.yaml",
@@ -338,16 +404,7 @@ def exercise(directory: Path) -> None:
                     "url": url(model),
                 },
             ).raise_for_status()
-        write(
-            "gateway",
-            "bootstrap.json",
-            {
-                **bootstrap,
-                "service_token": security.issue_service_token(
-                    signing_key=private, kind="gateway"
-                ),
-            },
-        )
+        write("gateway", "bootstrap.json", bootstrap("gateway"))
         write(
             "gateway",
             "gateway.yaml",
@@ -385,6 +442,16 @@ def exercise(directory: Path) -> None:
                 == 5
             ),
             "all backends discovered",
+        )
+        # The gateway read the root with a `control` token its own agent
+        # minted under the join token's gateway grant (D8). Without the
+        # grant the agent refuses, the root answers 401 and this is False.
+        view = call("gateway", "GET", "/v1/admin/routing", operator).json()
+        assert view["control_root"]["reachable"] is True, view["control_root"]
+        assert view["control_root"]["source"] == "agent", view["control_root"]
+        print(
+            "PASS gateway reached the control root with an agent-minted token under the gateway grant",
+            flush=True,
         )
         models = call("gateway", "GET", "/v1/models", protected).json()["data"]
         assert {m["id"] for m in models} == {"alias", "local", "embedding"}

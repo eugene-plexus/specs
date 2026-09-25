@@ -132,7 +132,7 @@ The agent supervises two different kinds of process and keeps them in separate c
 | How it starts | `<python> -m <module>`                                                             | argv built by an engine adapter |
 | Readiness     | the shared `/healthz`                                                              | engine-specific probe           |
 | Config        | the standard config trio                                                           | curated engine flag surface     |
-| Auth          | receives signing key + service token, except the control root, which owns its auth | gets none; fronted by a driver  |
+| Auth          | receives the trust bundle's path + a token for its own machine, never a key; the control root owns its auth | gets none; fronted by a driver  |
 
 `ComponentKind` contains exactly `gateway`, `inference-driver`, `library`, and
 `control`. The agent and UI are processes but are not members of that enum.

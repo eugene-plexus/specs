@@ -424,6 +424,80 @@ The last step ends in a live multi-process run and a sabotage pass.
 7. **Acceptance:** a root and two agents, where a stolen worker key is
    tried against every surface. Then pins in both installers.
 
+## 7. Built (2026-09-25)
+
+All seven steps. `tokens.py` is one file, byte-identical in the five
+Python repos, and so are its tests apart from the import line.
+
+| Repo | Commit | Sabotage |
+| --- | --- | --- |
+| control | `11e662d`, `9669978`, `b14bd57` | 13 of 14; the escape is a route check the verifier already makes, kept as policy |
+| agent | `fd4fe3c`, `0ab922d`, `a5a15b6`, `ce90e34` | 26 of 26, after ten first-pass escapes each earned a test; 5 of 5 for the bundle age |
+| gateway | `84a0b4b`, `d9d4ccb`, `53e98ae` | 13 of 13, and 3 of 3 for naming a refused mint |
+| library, inference-driver | `e6ee80a`/`47dfdf0`, `24bfd1d`/`f754620` | 8 of 8 together |
+| ui | `3a33350`, `9faffb5`, `53d465f`, dist `53d465f` | 2 of 2, and 3 of 3 for the new issue |
+
+`scripts/row3-per-node-keys-acceptance.py` runs a root, two enrolled
+agents, and a gateway and library started with the environment an agent
+hands a child. It steals the worker's token key and tries twelve tokens
+against the other processes; each is refused. What the key still buys
+is asserted: library reads and root reads as that worker's agent, which
+§2 predicts. It then revokes the worker, and after that the key buys
+nothing, with no restart. A sign-out on one machine ends the session on
+every machine. 26 checks pass. The browser hop through a console's
+proxy runs only with `--lan`, because the hop refuses a loopback
+advertise address by design. CI runs it with `--lan`.
+
+**Three findings the build made:**
+
+- **Most sabotage escapes named missing checks, not weak code.** In
+  the agent, one first-pass escape was a distinction nothing could
+  observe: an epoch lower than the held bundle's, answered as a rollback
+  rather than a fence. Both are one 409. It was deleted. The fence that
+  matters on its own is the epoch recorded in `node.yaml`, which holds
+  when the kept bundle is lost. That fence is now tested.
+- **The library's own sub check is redundant for another machine's
+  key**, because the verifier's grant rule refuses that key first. It
+  still matters for tokens the root signs. The test now uses those.
+- **A 503 at sign-in is not "set up this install".** The login page
+  read every 503 as a fresh install. With sign-in forwarded to the
+  root, a root the agent could not reach would have sent an installed
+  user to the setup wizard.
+
+**The client-key import is gone** (contract `8296e4a`). It carried a
+standalone machine's key records into the root's registry. Under
+per-node keys those keys cannot verify anywhere in the install, so the
+records looked active and were refused. The import was also the one
+write a stolen worker `node.yaml` still had on the root: unbounded
+appends to the replicated log, signed with a key meant only for address
+announcements. A standalone machine's keys now stop working when it
+joins, and the Home card says so.
+
+**The bundle's age was measured from the wrong moment.** A pull returns
+the same signed bundle until something changes, so its `iat` grows
+without limit on a quiet install. It would have read as stale while
+being current. `trustBundleAgeSeconds` is now the time since the node
+last took a bundle, and it survives a restart through the kept file's
+own time. It rides on `/healthz`, and past ten minutes the console lists
+it as an issue. D3 promised both, and neither had been built.
+
+**Two findings from the CI-script rewrite:**
+
+- **A missing grant was silent.** Without the `gateway` grant the agent
+  refuses to mint, and the far side answers "401 Missing token". The
+  gateway's routing view now carries the agent's own refusal.
+- **One control test was green for the wrong reason.** A check that
+  imported fields are refused passed a malformed payload, which is
+  refused whatever it carries. It now shows a clean record accepted
+  before any refusal counts.
+
+**Not done, named:**
+
+- **Some manual acceptance scripts still speak the old model:** `m7`,
+  `m9`, `r24`, `b1`, `b2` and `r36`.
+- **An install from before this change must be installed again.** Its
+  `node.yaml` has no token key the root knows.
+
 ## Sources
 
 - RFC 8725, JSON Web Token Best Current Practices (§3.1, §3.9, §3.11, §3.12)

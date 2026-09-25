@@ -98,13 +98,15 @@ jobs:
         run: python -m pip check
       - name: Score the shipped starter set for 8 GB GPU and 16 GB RAM
         run: python specs/scripts/s10-starter-check.py
-      - name: Verify algorithm separation and detect broken guards
+      - name: One token module in five repos, and nothing of the shared-key model left
         run: python specs/scripts/r7-signing-checks.py
-      - name: Rotate an isolated live legacy install without re-enrollment
+      - name: Rotate the root's token key across two live agents
         run: python specs/scripts/r7-rotation-acceptance.py
+      - name: A stolen worker key tried against every other process, then revoked
+        run: python specs/scripts/row3-per-node-keys-acceptance.py --lan
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         run: python specs/scripts/r8-profile-acceptance.py
-      - name: Verify A3 client-key migration, revocation and outage bounds across five processes
+      - name: Verify A3 client-key revocation and outage bounds across five processes
         run: python specs/scripts/a3-client-keys-acceptance.py
       - name: Verify A5 scoped keys, shared limits, cancellation and usage across gateways
         run: python specs/scripts/a5-scoped-keys-acceptance.py
