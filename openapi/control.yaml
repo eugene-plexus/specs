@@ -1628,6 +1628,12 @@ components:
         nodeName:
           type: string
           description: The node name this token is bound to, when it is bound.
+        grants:
+          type: array
+          items:
+            type: string
+            enum: [gateway]
+          description: What the node it enrolls will be granted, as minted.
         used:
           type: boolean
           description: |
