@@ -5,7 +5,7 @@ $preflight = [scriptblock]::Create($source.Substring(0, $source.IndexOf('# --- 1
 # Import only helper definitions for tests that launch harmless child scripts.
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$null)
 $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    $node.Name -in @('Say', 'Warn', 'Die', 'Invoke-Native', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds', 'Protect-InstallDirectory') }, $false) |
+    $node.Name -in @('Say', 'Warn', 'Die', 'Invoke-Native', 'Show-InstallerLog', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds', 'Protect-InstallDirectory') }, $false) |
     ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
 
 Describe 'Installer failure reporting' {
@@ -378,5 +378,65 @@ Describe 'A join that fails' {
         # must end in a failure when the join did.
         $source | Should Match '(?s)if \(\$JoinFailed\) \{\s*Say "the install that was here is running again'
         $source.TrimEnd() | Should Match '(?s)if \(\$JoinFailed\) \{\s*Die "the join failed[^"]*"\s*\}$'
+    }
+}
+
+Describe 'How a failed run ends' {
+    # 2026-09-26: a failure ended in the message and then the whole
+    # ErrorRecord -- "At line:145 char:71", CategoryInfo,
+    # FullyQualifiedErrorId -- once from the elevated child and again from
+    # the person's own prompt. `-Isolated` with nothing else refuses before
+    # anything is written, so it is safe to run the real script here.
+    $installer = Join-Path $PSScriptRoot 'install.ps1'
+
+    It 'says the one line at a prompt, keeps the prompt, and sets the exit code' {
+        Mock Write-Host {}
+        $global:LASTEXITCODE = 0
+        $threw = $null
+        try { & ([scriptblock]::Create($source)) -Isolated } catch { $threw = $_ }
+        $threw | Should Be $null
+        $global:LASTEXITCODE | Should Be 1
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -like 'error: -Isolated requires*' }
+    }
+
+    It 'exits 1 with the one line under powershell -File, which CI reads' {
+        $out = & powershell.exe -NoProfile -File $installer -Isolated 2>&1 | ForEach-Object { "$_" }
+        $LASTEXITCODE | Should Be 1
+        ($out -join "`n") | Should Match '^error: -Isolated requires'
+        @($out | Where-Object { $_ -match 'FullyQualifiedErrorId|CategoryInfo|At line:|char:' }).Count | Should Be 0
+        @($out | Where-Object { $_.Trim() }).Count | Should Be 1
+    }
+
+    It 'fails the elevated run when the script stopped itself without throwing' {
+        Mock Write-Host {}
+        Mock Start-Process {
+            param($FilePath, $ArgumentList)
+            $start = New-Object Diagnostics.ProcessStartInfo
+            $start.FileName = $FilePath
+            $start.Arguments = $ArgumentList -join ' '
+            $start.UseShellExecute = $false
+            $start.CreateNoWindow = $true
+            $process = [Diagnostics.Process]::Start($start)
+            if (-not $process.WaitForExit(20000)) { $process.Kill(); throw 'test child timed out' }
+            [pscustomobject]@{ ExitCode = $process.ExitCode }
+        }
+        { Invoke-ElevatedInstaller -ScriptText '$global:EugenePlexusInstallFailed = $true' -Parameters @{} -WorkDirectory $TestDrive } |
+            Should Throw 'did not finish'
+    }
+
+    It 'replays the hidden run without the transcript banners or error noise' {
+        Mock Write-Host {}
+        $log = Join-Path $TestDrive 'replay.log'
+        [IO.File]::WriteAllLines($log, @(
+                '**********************', 'Windows PowerShell transcript start',
+                'Host Application: powershell.exe -EncodedCommand JABFAHIAcgBvAHIA', '**********************',
+                '==> installing', 'error: the join failed', 'PS>TerminatingError(): "the join failed"',
+                '>> TerminatingError(): "the join failed"',
+                '**********************', 'Windows PowerShell transcript end', '**********************'))
+        Show-InstallerLog $log
+        Assert-MockCalled Write-Host -Times 2 -Exactly -Scope It
+        Assert-MockCalled Write-Host -Times 1 -Exactly -Scope It -ParameterFilter { $Object -eq 'error: the join failed' }
+        Assert-MockCalled Write-Host -Times 0 -Exactly -Scope It -ParameterFilter { "$Object" -match 'EncodedCommand|TerminatingError|transcript' }
     }
 }

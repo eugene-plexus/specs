@@ -105,7 +105,7 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "fe87f69571eaec3e6c06f5cb0f34f63934b9cf98"
+    "agent"            = "5318d0a56c7c931654fcfb1795d467f85e8c695c"
     "control"          = "b14bd5764d233944ad9209104ca97e1ba40a418e"
     "gateway"          = "2f4d8ddbabd8400dae6fcd9689fc195653e88d4d"
     "inference-driver" = "f754620003950991b546503f79775450f1113737"
@@ -142,7 +142,19 @@ function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
 # no way to find out what went wrong. Reported from a VS Code terminal
 # that vanished on every failure. A throw is catchable, prints, and
 # still yields exit code 1 under `powershell -File`.
-function Die { param($m) Write-Host "error: $m" -ForegroundColor Red; throw $m }
+#
+# **And the throw is marked, so nothing prints it a second time.** An
+# uncaught throw in a scriptblock run at a person's prompt is printed as
+# a whole ErrorRecord -- the message again, "At line:145 char:71", a
+# snippet of this function, CategoryInfo, FullyQualifiedErrorId -- after
+# the message has already been said (2026-09-26). The script-level
+# `trap` below step 1 recognises this id and stops the run quietly.
+function Die {
+    param($m)
+    Write-Host "error: $m" -ForegroundColor Red
+    throw [Management.Automation.ErrorRecord]::new(
+        [Exception]::new($m), 'EugenePlexusInstallFailed', 'NotSpecified', $null)
+}
 
 # Acceptance/development installs must never take over the live service or
 # account environment. Require a fresh, explicitly named prefix and no startup.
@@ -191,6 +203,26 @@ function Set-ServiceBootstrap {
         -Name Environment -PropertyType MultiString -Value $values -Force | Out-Null
 }
 
+# Replay the elevated run's transcript: what the person would have seen in
+# the window that was hidden, and nothing else. Start-Transcript wraps the
+# output in two banners of asterisks (the second repeats every
+# environment detail, the first carries the whole -EncodedCommand), and
+# logs every terminating error as a "PS>TerminatingError(...)" line.
+function Show-InstallerLog {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    $inBanner = $false
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        if ($line -match '^\*{10,}$') { $inBanner = -not $inBanner; continue }
+        if ($inBanner) { continue }
+        if ($line -match '^(PS>|>> )TerminatingError\(') { continue }
+        if ($line -like 'error:*') { Write-Host $line -ForegroundColor Red }
+        elseif ($line -like 'warning:*') { Write-Host $line -ForegroundColor Yellow }
+        elseif ($line -like '==>*') { Write-Host $line -ForegroundColor Cyan }
+        else { Write-Host $line }
+    }
+}
+
 function Invoke-ElevatedInstaller {
     param([string]$ScriptText, [System.Collections.IDictionary]$Parameters,
         [string]$WorkDirectory = ([IO.Path]::GetTempPath()))
@@ -213,10 +245,17 @@ $result = 0
 try {
     Start-Transcript -LiteralPath '__LOG__' -Force | Out-Null
     $parameters = Import-Clixml -LiteralPath '__PARAMETERS__'
+    $global:EugenePlexusInstallFailed = $false
     & '__SCRIPT__' @parameters
+    # The script's trap stops a failed run without throwing, and says so
+    # here; $LASTEXITCODE cannot, because a native command earlier in a
+    # successful run can leave it non-zero.
+    if ($global:EugenePlexusInstallFailed) { $result = 1 }
 }
 catch {
-    Write-Host ($_ | Out-String) -ForegroundColor Red
+    # Reached only when the script could not start at all. One line, not
+    # the whole ErrorRecord.
+    Write-Host "error: the installer could not run: $($_.Exception.Message)" -ForegroundColor Red
     $result = 1
 }
 finally {
@@ -231,11 +270,13 @@ exit $result
         $elevated = Start-Process -FilePath 'powershell.exe' `
             -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) `
             -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+        # The elevated window is hidden, so its output is only in the log.
+        # Shown after every run, success too -- otherwise a successful
+        # install said nothing but "done" -- and without the transcript's
+        # own banners, which carried a screenful of -EncodedCommand base64.
+        Show-InstallerLog $logFile
         if ($elevated.ExitCode -ne 0) {
-            if (Test-Path -LiteralPath $logFile) {
-                Get-Content -LiteralPath $logFile -Tail 80 | ForEach-Object { Write-Host $_ }
-            }
-            Die "the elevated install exited with code $($elevated.ExitCode). Log: $logFile"
+            Die "the install did not finish (see above). Log: $logFile"
         }
         Say "done. Installer log: $logFile"
     }
@@ -1196,6 +1237,39 @@ a Windows service needs Administrator, and -NoElevate was given.
 }
 
 # --- 1. uv ------------------------------------------------------------
+
+# **How a failed run ends** (2026-09-26). A PowerShell trap covers its
+# whole scope wherever it is written, so this one also handles every
+# `Die` above it. It sits here, below the `# --- 1. uv` line, because
+# install-preflight.Tests.ps1 runs the text ABOVE that line on its own
+# and asserts that each refusal throws.
+#
+#   * A refusal `Die` made has already printed its message. Stop there:
+#     no ErrorRecord, no "At line:145 char:71", no FullyQualifiedErrorId.
+#   * Anything else is a defect or something the machine threw. Say it in
+#     two lines -- what and where -- instead of the raw record.
+#
+# Then end the run without closing the person's terminal. Run as a file
+# (`powershell -File`, and the elevated child), `exit 1` ends only that
+# script and is the exit code every caller reads. Run as a scriptblock at
+# a prompt, `exit` would close the prompt, so it returns with
+# $LASTEXITCODE set instead -- the rule this file already keeps for
+# `-Detect`. The global flag is what the elevated runner checks.
+trap {
+    $global:EugenePlexusInstallFailed = $true
+    if ($_.FullyQualifiedErrorId -notlike 'EugenePlexusInstallFailed*') {
+        Write-Host "error: the installer stopped unexpectedly: $($_.Exception.Message)" -ForegroundColor Red
+        $where = $_.InvocationInfo
+        if ($where -and $where.ScriptLineNumber) {
+            Write-Host "       at line $($where.ScriptLineNumber): $($where.Line.Trim())" -ForegroundColor Red
+        }
+        Write-Host "       This is a defect in the installer; please report it with this output." -ForegroundColor Red
+    }
+    if ($PSCommandPath) { exit 1 }
+    $global:LASTEXITCODE = 1
+    return
+}
+
 Say "installing into $Prefix$(if ($WantsService) { ' (a Windows service: starts at boot)' } else { ' (per-user: starts when you log in)' })"
 New-Item -ItemType Directory -Force -Path (Join-Path $Prefix "bin"), (Join-Path $Prefix "logs") | Out-Null
 # Before anything else is written, so that nothing -- a venv, a
