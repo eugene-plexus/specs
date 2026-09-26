@@ -118,8 +118,10 @@ EP_BINARY_B="${EP_BINARY_B:-}"   # B's own path to the engine binary
 EP_FLAGS_B="${EP_FLAGS_B:-}"     # JSON object of engine launch flags
 EP_ENV_B="${EP_ENV_B:-}"         # JSON object of extra engine env
 # The engine's port on B, and (same-box only) its companion driver's. Unset,
-# B's agent assigns both from 8090 up without asking the host, which on a
-# box that already runs an install lands on that install's engine. Set, the
+# B's agent assigns both from 8090 up -- past any port the host already
+# holds since agent ad48abd, which this run found missing -- but this
+# script tears down BY PORT, so it must know which ports are its own: on a
+# box that already runs an install, set both. Set, the
 # engine's port rides on the declaration, and the companion's topology entry
 # is written into B's agent.yaml where the agent would write it -- the agent
 # adopts it as its companion (`companions.is_companion`), writes its config
