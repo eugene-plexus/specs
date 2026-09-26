@@ -196,10 +196,15 @@ image route**.
 
 ## 1. Scope
 
-**In:** every operation in the 0.1 table apart from its stateful edges,
-and every data type in 0.2.
+**This is short-term scope only.** Nothing below is ruled out for Eugene.
+Long term, the aim is to be as open, flexible and capable as possible
+(Troy, 2026-09-26), so every choice here should keep what comes later
+possible.
 
-**Out, and later:**
+**In this design:** every operation in the 0.1 table apart from its
+stateful edges, and every data type in 0.2.
+
+**Later, on the roadmap:**
 
 - The platform half: files, uploads, batches, vector stores, fine-tuning,
   evals, graders, containers, stored chat completions, stored responses
@@ -208,9 +213,10 @@ and every data type in 0.2.
 - **`file_id` inputs** are refused until then, because they name a store
   Eugene does not have.
 
-**Out, as not inference:** assistants and threads (deprecated upstream),
-agents, skills, vaults, ChatKit, webhooks, organisation and project admin,
-spend alerts, and content-provenance checks.
+**Not in this design, because they are not inference, and not ruled
+out:** assistants and threads (deprecated upstream), agents, skills,
+vaults, ChatKit, webhooks, organisation and project admin, spend alerts,
+and content-provenance checks.
 
 **Phase 2**, after the survey (§3): shapes with no OpenAI standard.
 
