@@ -316,3 +316,67 @@ Describe 'The install directory is private' {
         Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*could not make*private*' }
     }
 }
+
+Describe 'A join that fails' {
+    # The real join block, lifted out of install.ps1 by its AST: the
+    # `if ($Join) { ... } elseif ...` chain, run against a stub agent whose
+    # `join` exits 1. Found live on 2026-09-26: an upgrade had stopped and
+    # removed the service, the join was refused, and the machine was left
+    # with nothing registered to start.
+    $joinBlock = $ast.Find({ param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+            $node.Clauses[0].Item1.Extent.Text -eq '$Join' }, $true)
+    $runJoin = [scriptblock]::Create($joinBlock.Extent.Text)
+
+    BeforeEach {
+        Mock Write-Host {}
+        $script:AgentEx = Join-Path $TestDrive 'agent-stub.ps1'
+        [IO.File]::WriteAllText($script:AgentEx, 'exit 1')
+    }
+
+    It 'says nothing was set up to start, on a machine that had no install' {
+        $Join = 'http://192.168.16.252:8283'; $Token = 't'; $Config = Join-Path $TestDrive 'agent.yaml'
+        $AgentEx = $script:AgentEx; $HadAutostart = $false; $JoinFailed = $false
+        { . $runJoin } | Should Throw 'nothing was set up to start'
+    }
+
+    It 'goes on to start the install that was here, and remembers to fail at the end' {
+        $Join = 'http://192.168.16.252:8283'; $Token = 't'; $Config = Join-Path $TestDrive 'agent.yaml'
+        $AgentEx = $script:AgentEx; $HadAutostart = $true; $JoinFailed = $false
+        # Dot-sourced here, not inside `{ } | Should Not Throw`: that block
+        # is a scope of its own, and the flag it sets would vanish with it.
+        $threw = $null
+        try { . $runJoin } catch { $threw = $_ }
+        $threw | Should Be $null
+        $JoinFailed | Should Be $true
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*being started again, as it was*' }
+    }
+
+    It 'knows an install was here, from the step that stops it for the upgrade' {
+        # The join block trusts $HadAutostart, so the flag must come from the
+        # real upgrade step -- a test that sets it itself proves nothing
+        # about who sets it (the first sabotage pass escaped exactly so).
+        $stopBlock = $ast.Find({ param($node)
+                $node -is [System.Management.Automation.Language.IfStatementAst] -and
+                $node.Clauses[0].Item1.Extent.Text -like '-not $Isolated -and ((Get-AgentTask)*' }, $true)
+        function Get-AgentTask { $false }
+        function Get-AgentService { $true }
+        function Remove-Autostart {}
+        $Isolated = $false; $HadAutostart = $false
+        . ([scriptblock]::Create($stopBlock.Extent.Text))
+        $HadAutostart | Should Be $true
+
+        function Get-AgentService { $false }
+        $HadAutostart = $false
+        . ([scriptblock]::Create($stopBlock.Extent.Text))
+        $HadAutostart | Should Be $false
+    }
+
+    It 'fails the run once that install is back, on both ways the script can end' {
+        # Text, because the start step talks to a real service: both exits
+        # -- the health check that answered and the -NoStart summary --
+        # must end in a failure when the join did.
+        $source | Should Match '(?s)if \(\$JoinFailed\) \{\s*Say "the install that was here is running again'
+        $source.TrimEnd() | Should Match '(?s)if \(\$JoinFailed\) \{\s*Die "the join failed[^"]*"\s*\}$'
+    }
+}

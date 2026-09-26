@@ -105,7 +105,7 @@ $ErrorActionPreference = "Stop"
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "ad48abd6515bac9432d8cb90ce18cb34e2c6eec7"
+    "agent"            = "fe87f69571eaec3e6c06f5cb0f34f63934b9cf98"
     "control"          = "b14bd5764d233944ad9209104ca97e1ba40a418e"
     "gateway"          = "2f4d8ddbabd8400dae6fcd9689fc195653e88d4d"
     "inference-driver" = "f754620003950991b546503f79775450f1113737"
@@ -1274,9 +1274,14 @@ if (Test-Path $Config) {
 # again in step 5 and the agent restarted in step 6, so a running
 # install pauses across the upgrade rather than surviving it -- which is
 # also what an upgrade of a supervised install means.
+# Remembered, because a failed join below must put this install back
+# rather than leave the machine with nothing registered to start.
+$HadAutostart = $false
+$JoinFailed = $false
 if (-not $Isolated -and ((Get-AgentTask) -or (Get-AgentService))) {
     Say "stopping the running agent so its files can be replaced"
     Remove-Autostart
+    $HadAutostart = $true
 }
 Say "installing Eugene Plexus"
 $specs = foreach ($repo in $DIST.Keys) {
@@ -1358,7 +1363,19 @@ if ($Join) {
     if ($Advertise) { $joinArgs += @("--advertise", $Advertise) }
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @joinArgs
-    if ($LASTEXITCODE -ne 0) { Die "enrollment failed; nothing was started" }
+    if ($LASTEXITCODE -ne 0) {
+        if (-not $HadAutostart) {
+            Die "the join failed (see above), so nothing was set up to start. Fix what it says and run the same command again."
+        }
+        # **A failed join must not take a working machine down with it**
+        # (2026-09-26). The upgrade above stopped and removed this
+        # install's autostart, and a refused join changes nothing on
+        # disk, so the rest of this run registers and starts the same
+        # install again -- then reports the failure. Before, it stopped
+        # here and the machine was left with no service at all.
+        $JoinFailed = $true
+        Warn "the join failed (see above). Nothing on this machine changed, so the install that was running here is being started again, as it was."
+    }
 
     # **A node that advertises an address must be reachable at it** --
     # found on the first enrollment between two genuinely separate
@@ -1590,6 +1607,10 @@ if (-not $NoStart -and $autostart -ne "none") {
         try {
             Invoke-RestMethod "http://127.0.0.1:$Port/healthz" -TimeoutSec 2 | Out-Null
             Write-Host ""
+            if ($JoinFailed) {
+                Say "the install that was here is running again at http://127.0.0.1:$Port/"
+                Die "the join failed (see above), and this machine is back as it was. Fix what it says and run the join again."
+            }
             Say "Eugene Plexus is running -- open http://127.0.0.1:$Port/"
             Say "logs:  $Prefix\logs\    config: $Config"
             return
@@ -1617,4 +1638,7 @@ if ($autostart -eq "service") {
     Write-Host "    stopped and then opens it, so it is the way back once you have"
     Write-Host "    stopped it -- the web page is not, because stopping Eugene takes"
     Write-Host "    the web page with it."
+}
+if ($JoinFailed) {
+    Die "the join failed (see above), and this machine is back as it was. Fix what it says and run the join again."
 }
