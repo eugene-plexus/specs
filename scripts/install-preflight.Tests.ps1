@@ -5,7 +5,13 @@ $preflight = [scriptblock]::Create($source.Substring(0, $source.IndexOf('# --- 1
 # Import only helper definitions for tests that launch harmless child scripts.
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$null)
 $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-    $node.Name -in @('Say', 'Warn', 'Die', 'Invoke-Native', 'Show-InstallerLog', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds', 'Protect-InstallDirectory') }, $false) |
+    $node.Name -in @('Say', 'Warn', 'Die', 'Invoke-Native', 'Show-InstallerLog', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds', 'Protect-InstallDirectory',
+        'Stop-ProcessUnder', 'Test-LooksLikeInstall', 'Test-UnderProgramData', 'Get-EugeneInstall',
+        'Remove-AgentServiceRegistration', 'Get-AgentServiceEnvironment', 'Register-AgentServiceFrom',
+        'Suspend-EugeneInstall', 'Restore-EugeneInstall', 'Show-SetAsideNote', 'Assert-UpgradeableInstall',
+        'Get-ServiceConversionSource', 'Get-AutostartExecutable', 'Get-AgentService', 'Get-AgentTask',
+        'Remove-Autostart', 'Remove-StartMenuShortcut', 'Test-RunsFromThisInstall', 'Get-OtherInstall',
+        'Grant-ServiceControl', 'Move-Folder', 'Get-ErrorText') }, $false) |
     ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
 
 Describe 'Installer failure reporting' {
@@ -317,67 +323,451 @@ Describe 'The install directory is private' {
     }
 }
 
-Describe 'A join that fails' {
-    # The real join block, lifted out of install.ps1 by its AST: the
-    # `if ($Join) { ... } elseif ...` chain, run against a stub agent whose
-    # `join` exits 1. Found live on 2026-09-26: an upgrade had stopped and
-    # removed the service, the join was refused, and the machine was left
-    # with nothing registered to start.
+Describe 'A join takes over whatever is here' {
+    # 2026-09-26: getting Amish_Station into a new install took an
+    # afternoon of refusals. `-Join` now finds every install on the
+    # machine, sets each aside, installs fresh and joins -- and a failure
+    # before the join succeeds puts every one of them back.
+    #
+    # **Nothing here may touch this machine's own install.** Discovery
+    # reads the environment and the service manager, and on a developer's
+    # box both name a live install. So the default locations are pointed
+    # at the test drive, the config variable has a name of its own, every
+    # service and task cmdlet is mocked, and a move, delete or process stop
+    # outside the temp folder throws.
     $joinBlock = $ast.Find({ param($node)
             $node -is [System.Management.Automation.Language.IfStatementAst] -and
             $node.Clauses[0].Item1.Extent.Text -eq '$Join' }, $true)
     $runJoin = [scriptblock]::Create($joinBlock.Extent.Text)
 
     BeforeEach {
+        # TestDrive is shared by every test in a Describe, so each test gets
+        # a root of its own and cannot see another's folders.
+        $script:Root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $script:SavedEnv = @{}
+        foreach ($name in 'ProgramData', 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
+            $script:SavedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+            $dir = Join-Path $script:Root $name
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            [Environment]::SetEnvironmentVariable($name, $dir, 'Process')
+        }
+        $script:ConfigVariable = 'EUGENE_PLEXUS_TEST_ONLY_CONFIG_FILE'
+        $script:BindHostVariable = 'EUGENE_PLEXUS_TEST_ONLY_BIND_HOST'
+        $script:EngineRootVariable = 'EUGENE_PLEXUS_TEST_ONLY_ENGINE_ROOT'
+        $script:InstallVariables = @($script:ConfigVariable, $script:BindHostVariable, $script:EngineRootVariable)
+        $script:ServiceName = 'EPTestOnlyService'
+        $script:TaskName = 'EPTestOnlyTask'
+        $script:TrayTaskName = 'EPTestOnlyTray'
+        $script:IsElevated = $true
+        $script:WantsService = $true
+        $script:InstallerUrl = 'https://example.invalid/install.ps1'
+        $temp = [IO.Path]::GetTempPath()
+        Mock Move-Folder { throw "TEST: refused to move $From" } -ParameterFilter {
+            -not ("$From".StartsWith($temp, 'OrdinalIgnoreCase') -and
+                "$To".StartsWith($temp, 'OrdinalIgnoreCase')) }
+        Mock Remove-Item { throw "TEST: refused to remove $LiteralPath" } -ParameterFilter {
+            -not "$LiteralPath".StartsWith($temp, 'OrdinalIgnoreCase') }
+        Mock Stop-Process { throw 'TEST: no process may be stopped' }
+        Mock Get-CimInstance { $null }
+        Mock Get-AutostartExecutable { $null }
+        Mock Get-AgentService { $null }
+        Mock Get-ScheduledTask { $null }
+        Mock Stop-Service {}
+        Mock Start-Service {}
+        Mock Remove-AgentServiceRegistration {}
+        Mock Register-AgentServiceFrom {}
+        Mock Get-AgentServiceEnvironment { @('EUGENE_PLEXUS_AGENT_BIND_PORT=18279') }
+        Mock Stop-ScheduledTask {}
+        Mock Unregister-ScheduledTask {}
+        Mock Register-ScheduledTask {}
+        Mock Start-ScheduledTask {}
+        Mock Export-ScheduledTask { '<Task>saved</Task>' }
+        Mock Grant-ServiceControl { $true }
         Mock Write-Host {}
-        $script:AgentEx = Join-Path $TestDrive 'agent-stub.ps1'
-        [IO.File]::WriteAllText($script:AgentEx, 'exit 1')
     }
 
-    It 'says nothing was set up to start, on a machine that had no install' {
-        $Join = 'http://192.168.16.252:8283'; $Token = 't'; $Config = Join-Path $TestDrive 'agent.yaml'
-        $AgentEx = $script:AgentEx; $HadAutostart = $false; $JoinFailed = $false
-        { . $runJoin } | Should Throw 'nothing was set up to start'
+    AfterEach {
+        foreach ($name in $script:SavedEnv.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $script:SavedEnv[$name], 'Process')
+        }
+        [Environment]::SetEnvironmentVariable('EUGENE_PLEXUS_TEST_ONLY_CONFIG_FILE', $null, 'User')
     }
 
-    It 'goes on to start the install that was here, and remembers to fail at the end' {
-        $Join = 'http://192.168.16.252:8283'; $Token = 't'; $Config = Join-Path $TestDrive 'agent.yaml'
-        $AgentEx = $script:AgentEx; $HadAutostart = $true; $JoinFailed = $false
-        # Dot-sourced here, not inside `{ } | Should Not Throw`: that block
-        # is a scope of its own, and the flag it sets would vanish with it.
+    function New-FakeInstall {
+        param([string]$Path, [string]$Marker = 'agent.yaml', [string]$Content = 'firstRunComplete: true')
+        New-Item -ItemType Directory -Force -Path $Path | Out-Null
+        if ($Marker -eq 'venv') { New-Item -ItemType Directory -Force -Path (Join-Path $Path 'venv') | Out-Null }
+        else { [IO.File]::WriteAllText((Join-Path $Path $Marker), $Content) }
+        return $Path
+    }
+
+    It 'never sees a live install through the real config variable' {
+        # The guard every case below relies on: if this fails, the suite
+        # was about to read the developer's own install.
+        Get-EugeneInstall | Should BeNullOrEmpty
+        $env:ProgramData | Should Match ([regex]::Escape($Root))
+    }
+
+    It 'finds the autostart''s install first, then the variable''s, the target and both defaults' {
+        $service = New-FakeInstall (Join-Path $Root 'svc') 'venv'
+        Mock Get-AutostartExecutable { Join-Path $Root 'svc\venv\Scripts\eugene-plexus-agent.exe' }
+        $pointed = New-FakeInstall (Join-Path $Root 'pointed') 'node.yaml'
+        [Environment]::SetEnvironmentVariable($ConfigVariable, (Join-Path $pointed 'agent.yaml'), 'User')
+        $Prefix = Join-Path $Root 'target'
+        New-Item -ItemType Directory -Force -Path (Join-Path $Prefix 'logs') | Out-Null
+        $machine = New-FakeInstall (Join-Path $env:ProgramData 'EugenePlexus')
+        $perUser = New-FakeInstall (Join-Path $env:LOCALAPPDATA 'EugenePlexus') 'venv'
+
+        $found = @(Get-EugeneInstall)
+
+        $found.Count | Should Be 5
+        $found[0] | Should Be $service
+        $found[1] | Should Be $pointed
+        $found[2] | Should Be $Prefix
+        ($found -contains $machine) | Should Be $true
+        ($found -contains $perUser) | Should Be $true
+    }
+
+    It 'passes over a folder that holds no install, and an empty target' {
+        $Prefix = Join-Path $Root 'empty target'
+        New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
+        $other = Join-Path $env:ProgramData 'EugenePlexus'
+        New-Item -ItemType Directory -Force -Path $other | Out-Null
+        [IO.File]::WriteAllText((Join-Path $other 'notes.txt'), 'not an install')
+        @(Get-EugeneInstall).Count | Should Be 0
+    }
+
+    It 'sets each install aside, deletes nothing, and puts each back when the join fails' {
+        $Prefix = New-FakeInstall (Join-Path $env:ProgramData 'EugenePlexus') 'agent.yaml' 'the old install'
+        $perUser = New-FakeInstall (Join-Path $env:LOCALAPPDATA 'EugenePlexus') 'node.yaml' 'signingKey: old'
+
+        $record = Suspend-EugeneInstall -Installs @($Prefix, $perUser)
+
+        Test-Path $Prefix | Should Be $false
+        Test-Path $perUser | Should Be $false
+        $aside = @($record.Moved | ForEach-Object { $_.To })
+        $aside.Count | Should Be 2
+        [IO.File]::ReadAllText((Join-Path $aside[0] 'agent.yaml')) | Should Be 'the old install'
+        $aside[0] | Should Match '\.replaced-\d{14}$'
+
+        # The fresh install the run went on to make, then a refused join.
+        New-Item -ItemType Directory -Force -Path (Join-Path $Prefix 'venv') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $Prefix 'fresh.txt'), 'new')
+        Restore-EugeneInstall $record | Should Be $true
+
+        [IO.File]::ReadAllText((Join-Path $Prefix 'agent.yaml')) | Should Be 'the old install'
+        Test-Path (Join-Path $Prefix 'fresh.txt') | Should Be $false
+        [IO.File]::ReadAllText((Join-Path $perUser 'node.yaml')) | Should Be 'signingKey: old'
+        @(Get-ChildItem $env:ProgramData, $env:LOCALAPPDATA -Filter '*.replaced-*').Count | Should Be 0
+    }
+
+    It 'leaves nothing behind on a machine that had no install' {
+        $Prefix = Join-Path $env:ProgramData 'EugenePlexus'
+        $record = Suspend-EugeneInstall -Installs @()
+        New-Item -ItemType Directory -Force -Path (Join-Path $Prefix 'venv') | Out-Null
+        Restore-EugeneInstall $record | Out-Null
+        Test-Path $Prefix | Should Be $false
+    }
+
+    It 'registers the service again from the old install and starts it, when it was running' {
+        $Prefix = New-FakeInstall (Join-Path $env:ProgramData 'EugenePlexus') 'venv'
+        Mock Get-AgentService { [pscustomobject]@{ Status = 'Running' } }
+        Mock Get-AutostartExecutable { Join-Path $env:ProgramData 'EugenePlexus\venv\Scripts\eugene-plexus-agent.exe' }
+
+        $record = Suspend-EugeneInstall -Installs @($Prefix)
+        Assert-MockCalled Stop-Service -Scope It -Times 1
+        Assert-MockCalled Remove-AgentServiceRegistration -Scope It -Times 1
+
+        Mock Get-AutostartExecutable { $null }
+        Restore-EugeneInstall $record | Should Be $true
+        Assert-MockCalled Register-AgentServiceFrom -Scope It -Times 1 -Exactly -ParameterFilter {
+            $ServicePrefix -eq $Prefix -and $Environment -contains 'EUGENE_PLEXUS_AGENT_BIND_PORT=18279' }
+        Assert-MockCalled Start-Service -Scope It -Times 1 -Exactly
+    }
+
+    It 'registers a stopped service again without starting it' {
+        $Prefix = New-FakeInstall (Join-Path $env:ProgramData 'EugenePlexus') 'venv'
+        Mock Get-AgentService { [pscustomobject]@{ Status = 'Stopped' } }
+        Mock Get-AutostartExecutable { Join-Path $env:ProgramData 'EugenePlexus\venv\Scripts\eugene-plexus-agent.exe' }
+        $record = Suspend-EugeneInstall -Installs @($Prefix)
+        Mock Get-AutostartExecutable { $null }
+        Restore-EugeneInstall $record | Out-Null
+        Assert-MockCalled Register-AgentServiceFrom -Scope It -Times 1 -Exactly
+        Assert-MockCalled Start-Service -Scope It -Times 0 -Exactly
+    }
+
+    It 'puts a per-user install''s task and the tray icon back from their own definitions' {
+        $Prefix = New-FakeInstall (Join-Path $env:LOCALAPPDATA 'EugenePlexus') 'venv'
+        Mock Get-ScheduledTask { [pscustomobject]@{ State = 'Running' } }
+        $record = Suspend-EugeneInstall -Installs @($Prefix)
+        Assert-MockCalled Unregister-ScheduledTask -Scope It -Times 2 -Exactly
+        Restore-EugeneInstall $record | Out-Null
+        Assert-MockCalled Register-ScheduledTask -Scope It -Times 2 -Exactly -ParameterFilter { $Xml -eq '<Task>saved</Task>' }
+        Assert-MockCalled Start-ScheduledTask -Scope It -Times 2 -Exactly
+    }
+
+    It 'clears the install''s variables and puts them back' {
+        $Prefix = New-FakeInstall (Join-Path $env:LOCALAPPDATA 'EugenePlexus')
+        [Environment]::SetEnvironmentVariable($ConfigVariable, (Join-Path $Prefix 'agent.yaml'), 'User')
+        $record = Suspend-EugeneInstall -Installs @($Prefix)
+        [Environment]::GetEnvironmentVariable($ConfigVariable, 'User') | Should BeNullOrEmpty
+        Restore-EugeneInstall $record | Out-Null
+        [Environment]::GetEnvironmentVariable($ConfigVariable, 'User') | Should Be (Join-Path $Prefix 'agent.yaml')
+    }
+
+    It 'puts the Start menu entry back' {
+        $Prefix = New-FakeInstall (Join-Path $env:LOCALAPPDATA 'EugenePlexus')
+        $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+        New-Item -ItemType Directory -Force -Path $programs | Out-Null
+        $link = Join-Path $programs 'Eugene Plexus.lnk'
+        [IO.File]::WriteAllText($link, 'shortcut')
+        $record = Suspend-EugeneInstall -Installs @($Prefix)
+        Test-Path $link | Should Be $false
+        Restore-EugeneInstall $record | Out-Null
+        [IO.File]::ReadAllText($link) | Should Be 'shortcut'
+    }
+
+    It 'stops what runs from each install, its pythons and engines included' {
+        $Prefix = New-FakeInstall (Join-Path $env:ProgramData 'EugenePlexus')
+        $script:Stopped = @()
+        Mock Get-CimInstance {
+            if (@($script:Stopped).Count -gt 0) { return $null }
+            @(
+                [pscustomobject]@{ Name = 'python.exe'; ProcessId = 101; ExecutablePath = Join-Path $env:ProgramData 'EugenePlexus\pythons\cpython-3.12\python.exe' },
+                [pscustomobject]@{ Name = 'llama-server.exe'; ProcessId = 102; ExecutablePath = Join-Path $env:USERPROFILE '.eugene-plexus\engines\llama_cpp\b1\llama-server.exe' },
+                [pscustomobject]@{ Name = 'python.exe'; ProcessId = 103; ExecutablePath = 'C:\Somebody Else\python.exe' }
+            )
+        }
+        Mock Stop-Process { $script:Stopped += $Id }
+        Suspend-EugeneInstall -Installs @($Prefix) | Out-Null
+        ($script:Stopped | Sort-Object) -join ',' | Should Be '101,102'
+    }
+
+    It 'puts back what it moved when a folder cannot be moved, and says why' {
+        $first = New-FakeInstall (Join-Path $env:ProgramData 'EugenePlexus')
+        $second = New-FakeInstall (Join-Path $env:LOCALAPPDATA 'EugenePlexus')
+        $Prefix = $first
+        Mock Start-Sleep {}
+        $held = [IO.File]::Open((Join-Path $second 'agent.yaml'), 'Open', 'Read', 'None')
+        try {
+            { Suspend-EugeneInstall -Installs @($first, $second) } | Should Throw 'could not move'
+        }
+        finally { $held.Dispose() }
+        [IO.File]::ReadAllText((Join-Path $first 'agent.yaml')) | Should Be 'firstRunComplete: true'
+        Test-Path $second | Should Be $true
+        @(Get-ChildItem $env:ProgramData, $env:LOCALAPPDATA -Filter '*.replaced-*').Count | Should Be 0
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*back as it was*' }
+    }
+
+    It 'refuses an unelevated join that meets a service install, before touching it' {
+        $IsElevated = $false
+        $Prefix = New-FakeInstall (Join-Path $env:ProgramData 'EugenePlexus')
+        { Suspend-EugeneInstall -Installs @($Prefix) } | Should Throw 'needs Administrator'
+        Test-Path (Join-Path $Prefix 'agent.yaml') | Should Be $true
+        Assert-MockCalled Stop-Service -Scope It -Times 0 -Exactly
+    }
+
+    It 'says to make a NEW token when the root refused this one, and restores first' {
+        $Join = 'http://192.168.16.252:8283'; $Token = 't'; $Config = Join-Path $Root 'agent.yaml'
+        $AgentEx = Join-Path $Root 'agent-stub.ps1'
+        [IO.File]::WriteAllText($AgentEx, 'exit 3')
+        $SetAside = [pscustomobject]@{ Moved = @(); Restored = $false }
+        Mock Restore-EugeneInstall { $true }
         $threw = $null
-        try { . $runJoin } catch { $threw = $_ }
-        $threw | Should Be $null
-        $JoinFailed | Should Be $true
-        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*being started again, as it was*' }
+        try { . $runJoin } catch { $threw = $_.Exception.Message }
+        $threw | Should Match 'refused the join token'
+        $threw | Should Match 'Make a new one on its Nodes page'
+        $threw | Should Match 'back as it was'
+        $threw | Should Not Match 'again'
+        Assert-MockCalled Restore-EugeneInstall -Scope It -Times 1 -Exactly
+        $lines = @($threw -split "`n")
+        ('error: ' + $lines[0]).Length | Should BeLessThan 81
+        @($lines | Select-Object -Skip 1 | Where-Object { $_.Length -gt 80 }).Count | Should Be 0
     }
 
-    It 'knows an install was here, from the step that stops it for the upgrade' {
-        # The join block trusts $HadAutostart, so the flag must come from the
-        # real upgrade step -- a test that sets it itself proves nothing
-        # about who sets it (the first sabotage pass escaped exactly so).
-        $stopBlock = $ast.Find({ param($node)
-                $node -is [System.Management.Automation.Language.IfStatementAst] -and
-                $node.Clauses[0].Item1.Extent.Text -like '-not $Isolated -and ((Get-AgentTask)*' }, $true)
-        function Get-AgentTask { $false }
-        function Get-AgentService { $true }
-        function Remove-Autostart {}
-        $Isolated = $false; $HadAutostart = $false
-        . ([scriptblock]::Create($stopBlock.Extent.Text))
-        $HadAutostart | Should Be $true
-
-        function Get-AgentService { $false }
-        $HadAutostart = $false
-        . ([scriptblock]::Create($stopBlock.Extent.Text))
-        $HadAutostart | Should Be $false
+    It 'says to run it again after any other failure, and restores first' {
+        $Join = 'http://192.168.16.252:8283'; $Token = 't'; $Config = Join-Path $Root 'agent.yaml'
+        $AgentEx = Join-Path $Root 'agent-stub.ps1'
+        [IO.File]::WriteAllText($AgentEx, 'exit 1')
+        $SetAside = [pscustomobject]@{ Moved = @(); Restored = $false }
+        Mock Restore-EugeneInstall { $true }
+        { . $runJoin } | Should Throw 'Fix what it says, then run this command again'
+        Assert-MockCalled Restore-EugeneInstall -Scope It -Times 1 -Exactly
     }
 
-    It 'fails the run once that install is back, on both ways the script can end' {
-        # Text, because the start step talks to a real service: both exits
-        # -- the health check that answered and the -NoStart summary --
-        # must end in a failure when the join did.
-        $source | Should Match '(?s)if \(\$JoinFailed\) \{\s*Say "the install that was here is running again'
-        $source.TrimEnd() | Should Match '(?s)if \(\$JoinFailed\) \{\s*Die "the join failed[^"]*"\s*\}$'
+    It 'commits once the join succeeds, and carries the old engine builds over' {
+        $Join = 'http://192.168.16.252:8283'; $Token = 't'; $Config = Join-Path $Root 'agent.yaml'
+        $AgentEx = Join-Path $Root 'agent-stub.ps1'
+        [IO.File]::WriteAllText($AgentEx, 'exit 0')
+        $JoinCommitted = $false
+        $SetAside = [pscustomobject]@{ Moved = @([pscustomobject]@{ From = 'a'; To = (Join-Path $Root 'old.replaced-1') }) }
+        Mock Restore-EugeneInstall { $true }
+        Mock Copy-EngineBuilds {}
+        . $runJoin
+        $JoinCommitted | Should Be $true
+        Assert-MockCalled Restore-EugeneInstall -Scope It -Times 0 -Exactly
+        Assert-MockCalled Copy-EngineBuilds -Scope It -Times 1 -Exactly -ParameterFilter {
+            $Source -eq (Join-Path $Root 'old.replaced-1\engines') }
+    }
+
+    It 'sets installs aside after the trap that restores them and before anything is written' {
+        # Text, because the steps between talk to uv and the network.
+        $uv = $source.IndexOf('# --- 1. uv ')
+        $trap = $source.IndexOf('trap {', $uv)
+        $suspend = $source.IndexOf('$SetAside = Suspend-EugeneInstall', $uv)
+        $firstWrite = $source.IndexOf('Say "installing into $Prefix', $uv)
+        ($uv -lt $trap -and $trap -lt $suspend -and $suspend -lt $firstWrite) | Should Be $true
+        $source | Should Match '(?s)trap \{.*if \(\$SetAside -and -not \$SetAside\.Restored -and -not \$JoinCommitted\) \{\s*Restore-EugeneInstall'
+    }
+}
+
+Describe 'An install from alpha.2 or earlier' {
+    BeforeEach {
+        $script:Root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        Mock Write-Host {}
+        $script:InstallerUrl = 'https://example.invalid/install.ps1'
+    }
+
+    It 'is refused in plain words, with the command that removes it' {
+        $Prefix = Join-Path $Root 'old'
+        New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
+        [IO.File]::WriteAllText((Join-Path $Prefix 'node.yaml'), "name: Amish_Station`nsigningKey: c2VjcmV0`nsigningKeyId: '1'`n")
+        $threw = $null
+        try { Assert-UpgradeableInstall } catch { $threw = $_.Exception.Message }
+        $threw | Should Match 'alpha\.2 or earlier'
+        $threw | Should Match '-Uninstall'
+        $threw | Should Match 'model files are not touched'
+        # Every line fits a console except the command, which is copied.
+        $lines = @($threw -split "`n" | Select-Object -Skip 1)
+        @($lines | Where-Object { $_ -notmatch 'scriptblock' -and $_.Length -gt 80 }).Count | Should Be 0
+    }
+
+    It 'lets an install with per-node keys through' {
+        $Prefix = Join-Path $Root 'new'
+        New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
+        [IO.File]::WriteAllText((Join-Path $Prefix 'node.yaml'), "name: box`ntokenPrivateKey: a2V5`nsigningPrivateKey: a2V5`n")
+        { Assert-UpgradeableInstall } | Should Not Throw
+    }
+
+    It 'lets a machine with no node file through' {
+        $Prefix = Join-Path $Root 'none'
+        { Assert-UpgradeableInstall } | Should Not Throw
+    }
+}
+
+Describe 'Re-registering a service install whose service is gone' {
+    # Amish_Station, 2026-09-26: a failed join had removed the service, and
+    # re-running the installer asked for -Migrate as though a per-user
+    # install were being turned into a service.
+    BeforeEach {
+        $script:Root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $script:SavedProgramData = $env:ProgramData
+        $env:ProgramData = Join-Path $script:Root 'ProgramData'
+        $script:WantsService = $true
+        Mock Get-AgentService { $null }
+        Mock Get-OtherInstall { $null }
+    }
+    AfterEach { $env:ProgramData = $script:SavedProgramData }
+
+    It 'is no conversion when the install already lives in ProgramData' {
+        $Prefix = Join-Path $env:ProgramData 'EugenePlexus'
+        New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
+        [IO.File]::WriteAllText((Join-Path $Prefix 'agent.yaml'), 'firstRunComplete: true')
+        Get-ServiceConversionSource | Should BeNullOrEmpty
+    }
+
+    It 'is still a conversion for a per-user install' {
+        $Prefix = Join-Path $Root 'LocalAppData\EugenePlexus'
+        New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
+        [IO.File]::WriteAllText((Join-Path $Prefix 'agent.yaml'), 'firstRunComplete: true')
+        Get-ServiceConversionSource | Should Be $Prefix
+    }
+}
+
+Describe 'Uninstall finds the install wherever it is' {
+    # 2026-09-26: an ordinary PowerShell looked only in %LOCALAPPDATA% and
+    # said "nothing installed" with a service install in %ProgramData%.
+    $uninstallBlock = $ast.Find({ param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+            $node.Clauses[0].Item1.Extent.Text -eq '$Uninstall' -and
+            $node.Extent.Text -match 'Get-EugeneInstall' }, $true)
+    $runUninstall = [scriptblock]::Create($uninstallBlock.Extent.Text)
+
+    BeforeEach {
+        # TestDrive is shared by every test in a Describe, so each test gets
+        # a root of its own and cannot see another's folders.
+        $script:Root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $script:SavedEnv = @{}
+        foreach ($name in 'ProgramData', 'LOCALAPPDATA', 'APPDATA', 'USERPROFILE') {
+            $script:SavedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+            $dir = Join-Path $script:Root $name
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            [Environment]::SetEnvironmentVariable($name, $dir, 'Process')
+        }
+        $script:ConfigVariable = 'EUGENE_PLEXUS_TEST_ONLY_CONFIG_FILE'
+        $script:BindHostVariable = 'EUGENE_PLEXUS_TEST_ONLY_BIND_HOST'
+        $script:EngineRootVariable = 'EUGENE_PLEXUS_TEST_ONLY_ENGINE_ROOT'
+        $script:InstallVariables = @($script:ConfigVariable, $script:BindHostVariable, $script:EngineRootVariable)
+        $script:ServiceName = 'EPTestOnlyService'
+        $script:TaskName = 'EPTestOnlyTask'
+        $script:TrayTaskName = 'EPTestOnlyTray'
+        $temp = [IO.Path]::GetTempPath()
+        Mock Move-Folder { throw "TEST: refused to move $From" } -ParameterFilter {
+            -not ("$From".StartsWith($temp, 'OrdinalIgnoreCase') -and
+                "$To".StartsWith($temp, 'OrdinalIgnoreCase')) }
+        Mock Stop-Process { throw 'TEST: no process may be stopped' }
+        Mock Get-CimInstance { $null }
+        Mock Get-AutostartExecutable { $null }
+        Mock Get-AgentService { $null }
+        Mock Get-AgentTask { $null }
+        Mock Get-ScheduledTask { $null }
+        Mock Invoke-ElevatedInstaller {}
+        Mock Write-Host {}
+    }
+    AfterEach {
+        foreach ($name in $script:SavedEnv.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $script:SavedEnv[$name], 'Process')
+        }
+    }
+
+    It 'asks for Administrator itself when the install is a service install' {
+        $Uninstall = $true; $IsElevated = $false; $PrefixGiven = $false; $NoElevate = $false
+        $Prefix = Join-Path $env:LOCALAPPDATA 'EugenePlexus'
+        $machine = Join-Path $env:ProgramData 'EugenePlexus'
+        New-Item -ItemType Directory -Force -Path $machine | Out-Null
+        [IO.File]::WriteAllText((Join-Path $machine 'agent.yaml'), 'x')
+        . $runUninstall
+        Assert-MockCalled Invoke-ElevatedInstaller -Scope It -Times 1 -Exactly
+        Test-Path (Join-Path $machine 'agent.yaml') | Should Be $true
+        Assert-MockCalled Write-Host -Scope It -Times 0 -ParameterFilter { $Object -like '*nothing*' }
+    }
+
+    It 'removes every install it finds, moving each aside' {
+        # Two per-user installs -- the default one and one found through the
+        # config variable -- so nothing here needs Administrator.
+        $Uninstall = $true; $IsElevated = $false; $PrefixGiven = $false; $NoElevate = $false
+        $Prefix = Join-Path $env:LOCALAPPDATA 'EugenePlexus'
+        $elsewhere = Join-Path $Root 'elsewhere\EugenePlexus'
+        foreach ($dir in $Prefix, $elsewhere) {
+            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+            [IO.File]::WriteAllText((Join-Path $dir 'agent.yaml'), 'x')
+        }
+        [Environment]::SetEnvironmentVariable($ConfigVariable, (Join-Path $elsewhere 'agent.yaml'), 'User')
+        try { . $runUninstall }
+        finally { [Environment]::SetEnvironmentVariable($ConfigVariable, $null, 'User') }
+        Test-Path $Prefix | Should Be $false
+        Test-Path $elsewhere | Should Be $false
+        @(Get-ChildItem $env:LOCALAPPDATA -Filter 'EugenePlexus.removed-*').Count | Should Be 1
+        @(Get-ChildItem (Split-Path -Parent $elsewhere) -Filter 'EugenePlexus.removed-*').Count | Should Be 1
+        Assert-MockCalled Invoke-ElevatedInstaller -Scope It -Times 0 -Exactly
+    }
+
+    It 'says where it looked when there is nothing to remove' {
+        $Uninstall = $true; $IsElevated = $false; $PrefixGiven = $false; $NoElevate = $false
+        $Prefix = Join-Path $env:LOCALAPPDATA 'EugenePlexus'
+        . $runUninstall
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*nothing to remove*' }
+        Assert-MockCalled Invoke-ElevatedInstaller -Scope It -Times 0 -Exactly
     }
 }
 

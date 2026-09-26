@@ -58,12 +58,12 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=e29eb299742955b4100c4bdf2db291a240c8f3cd
+PIN_AGENT=8a87b1d5fce16a6eef9692ac357e944464d08ee0
 PIN_CONTROL=b14bd5764d233944ad9209104ca97e1ba40a418e
 PIN_GATEWAY=2f4d8ddbabd8400dae6fcd9689fc195653e88d4d
 PIN_DRIVER=f754620003950991b546503f79775450f1113737
 PIN_LIBRARY=47dfdf032ab9cc63cef3753e37af0d08c2b71e23
-PIN_UI=9f44e120d5d3eab6551943898b8c93ca43485336   # branch `dist`, not `main`
+PIN_UI=c8bd8b0ff10f81aa2f28d2d9e7b449e030db0a0b   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
@@ -239,10 +239,15 @@ as_service() {
         ${HTTP_PROXY:+"HTTP_PROXY=$HTTP_PROXY"} ${http_proxy:+"http_proxy=$http_proxy"} \
         ${NO_PROXY:+"NO_PROXY=$NO_PROXY"} ${no_proxy:+"no_proxy=$no_proxy"} \
         ${SSL_CERT_FILE:+"SSL_CERT_FILE=$SSL_CERT_FILE"} "$@"
+    # **From `/`, not from wherever this was started** (found 2026-09-26).
+    # Eugene's account cannot read the directory a person runs this from
+    # when it is root's home or a 0700 one (Fedora's default), and uv reads
+    # `uv.toml` from the working directory upwards: "failed to open file
+    # `/root/uv.toml`: Permission denied", and the install stopped there.
     if [ "$(id -u)" = 0 ] && command -v runuser >/dev/null 2>&1; then
-        runuser -u "$SYSTEM_ACCOUNT" -- "$@"
+        (cd / && runuser -u "$SYSTEM_ACCOUNT" -- "$@")
     else
-        sudo -u "$SYSTEM_ACCOUNT" -- "$@"
+        (cd / && sudo -u "$SYSTEM_ACCOUNT" -- "$@")
     fi
 }
 
@@ -459,6 +464,161 @@ if [ "$DO_UNINSTALL" = 1 ]; then
     exit 0
 fi
 
+# --- a join takes over whatever Eugene is already here ------------------
+# **Someone running a join command with a valid token knows what they are
+# doing** (Troy, 2026-09-26). The Windows join took an afternoon of
+# refusals, each right on its own terms, so a join no longer asks: it
+# stops every Eugene install on this machine, moves each folder aside --
+# nothing is deleted -- installs fresh and joins. If anything fails before
+# the join succeeds, every install it moved is put back and whatever was
+# running is started again, so a bad token leaves the machine as it was.
+INSTALLER_URL=https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.sh
+SET_ASIDE_STAMP=
+SET_ASIDE_LIST=
+JOIN_COMMITTED=0
+RESTORED=0
+FRESH_PREFIX=
+ACCOUNT_CREATED=0
+SYS_UNIT_BACKUP= SYS_WAS_ACTIVE=0 SYS_WAS_ENABLED=0
+USR_UNIT_BACKUP= USR_WAS_ACTIVE=0 USR_WAS_ENABLED=0
+PLIST_BACKUP= PLIST_WAS_LOADED=0
+
+# Move one folder aside, as root for the system layout.
+set_aside_one() {
+    _aside="$2.replaced-$SET_ASIDE_STAMP"
+    if [ "$1" = root ]; then as_root mv "$2" "$_aside"; else mv "$2" "$_aside"; fi \
+        || die "could not move $2 aside.
+       Close anything using that folder, then run this again."
+    SET_ASIDE_LIST="$SET_ASIDE_LIST$1|$2|$_aside
+"
+    say "set aside the install at $2; nothing deleted"
+    echo "    it is now at $_aside"
+}
+
+take_over_existing() {
+    # A per-user install belonging to someone else, when this runs as root:
+    # its service is theirs to stop, so say so before touching anything.
+    _person_prefix=${PERSON_HOME:-/nonexistent}/.local/share/eugene-plexus
+    _person_unit=${PERSON_HOME:-/nonexistent}/.config/systemd/user/$SERVICE_LABEL.service
+    if [ "$(id -u)" = 0 ] && [ -n "$PERSON" ] \
+            && { [ -f "$_person_unit" ] || [ -d "$_person_prefix" ]; }; then
+        die "Eugene is also installed under $PERSON's own account. Run this join as
+       $PERSON (without sudo), so that install can be stopped and moved aside too."
+    fi
+    SET_ASIDE_STAMP=$(date +%Y%m%d%H%M%S)
+    if [ "$PLATFORM" = linux ] && { [ -f "$SYSTEM_UNIT" ] || [ -d "$SYSTEM_PREFIX" ]; }; then
+        if [ "$(id -u)" != 0 ]; then
+            say "Eugene is already installed here under its own account; moving it aside needs sudo"
+            sudo -v || die "sudo was refused, so the install that is here was left as it is."
+        fi
+        if [ -f "$SYSTEM_UNIT" ]; then
+            SYS_UNIT_BACKUP=$(mktemp "${TMPDIR:-/tmp}/eugene-plexus-unit.XXXXXX")
+            cp "$SYSTEM_UNIT" "$SYS_UNIT_BACKUP"
+            if as_root systemctl is-active --quiet "$SERVICE_LABEL"; then SYS_WAS_ACTIVE=1; fi
+            if as_root systemctl is-enabled --quiet "$SERVICE_LABEL" 2>/dev/null; then SYS_WAS_ENABLED=1; fi
+            say "stopping the $SERVICE_LABEL service"
+            as_root systemctl stop "$SERVICE_LABEL" >/dev/null 2>&1 || true
+            as_root systemctl disable "$SERVICE_LABEL" >/dev/null 2>&1 || true
+            as_root rm -f "$SYSTEM_UNIT"
+            as_root systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        if [ -d "$SYSTEM_PREFIX" ]; then set_aside_one root "$SYSTEM_PREFIX"; fi
+    fi
+    if [ "$PLATFORM" = linux ] && [ -f "$SYSTEMD_UNIT" ]; then
+        USR_UNIT_BACKUP=$(mktemp "${TMPDIR:-/tmp}/eugene-plexus-unit.XXXXXX")
+        cp "$SYSTEMD_UNIT" "$USR_UNIT_BACKUP"
+        if systemctl --user is-active --quiet "$SERVICE_LABEL" 2>/dev/null; then USR_WAS_ACTIVE=1; fi
+        if systemctl --user is-enabled --quiet "$SERVICE_LABEL" 2>/dev/null; then USR_WAS_ENABLED=1; fi
+        say "stopping your $SERVICE_LABEL service"
+        systemctl --user stop "$SERVICE_LABEL" >/dev/null 2>&1 || true
+        systemctl --user disable "$SERVICE_LABEL" >/dev/null 2>&1 || true
+        rm -f "$SYSTEMD_UNIT"
+        systemctl --user daemon-reload >/dev/null 2>&1 || true
+    fi
+    if [ "$PLATFORM" = macos ] && [ -f "$LAUNCHD_PLIST" ]; then
+        PLIST_BACKUP=$(mktemp "${TMPDIR:-/tmp}/eugene-plexus-plist.XXXXXX")
+        cp "$LAUNCHD_PLIST" "$PLIST_BACKUP"
+        if launchctl print "gui/$(id -u)/$LAUNCHD_LABEL" >/dev/null 2>&1; then PLIST_WAS_LOADED=1; fi
+        launchctl bootout "gui/$(id -u)/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+        rm -f "$LAUNCHD_PLIST"
+    fi
+    if [ -d "$USER_PREFIX" ]; then set_aside_one self "$USER_PREFIX"; fi
+    # The target itself, when it is somewhere else and holds anything.
+    if [ -d "$PREFIX" ]; then
+        if [ -n "$(ls -A "$PREFIX" 2>/dev/null || as_root ls -A "$PREFIX" 2>/dev/null)" ]; then
+            if [ "$MODE" = system ]; then set_aside_one root "$PREFIX"; else set_aside_one self "$PREFIX"; fi
+        else
+            if [ "$MODE" = system ]; then as_root rmdir "$PREFIX"; else rmdir "$PREFIX"; fi
+        fi
+    fi
+    # Only a folder this run makes is ever removed again.
+    [ -e "$PREFIX" ] || FRESH_PREFIX=$PREFIX
+}
+
+# Put the machine back as take_over_existing found it. Never fails; what
+# it could not do, it says, with where the files are.
+restore_existing() {
+    [ -n "$SET_ASIDE_STAMP" ] || return 0
+    [ "$RESTORED" = 0 ] || return 0
+    RESTORED=1
+    case "$FRESH_PREFIX" in
+        ""|/) : ;;
+        *)
+            if [ "$MODE" = system ]; then as_root rm -rf "$FRESH_PREFIX" || true
+            else rm -rf "$FRESH_PREFIX" || true; fi ;;
+    esac
+    if [ "$ACCOUNT_CREATED" = 1 ]; then as_root userdel "$SYSTEM_ACCOUNT" >/dev/null 2>&1 || true; fi
+    printf '%s' "$SET_ASIDE_LIST" | awk '{ lines[NR] = $0 } END { for (i = NR; i > 0; i--) print lines[i] }' |
+    while IFS='|' read -r _kind _path _aside; do
+        [ -n "$_path" ] || continue
+        if [ -e "$_path" ]; then
+            warn "$_path exists again, so the old install was left at $_aside"
+        elif { if [ "$_kind" = root ]; then as_root mv "$_aside" "$_path"; else mv "$_aside" "$_path"; fi; }; then
+            say "put back the Eugene install at $_path"
+        else
+            warn "could not move $_aside back to $_path"
+        fi
+    done
+    if [ -n "$SYS_UNIT_BACKUP" ]; then
+        as_root cp "$SYS_UNIT_BACKUP" "$SYSTEM_UNIT" && rm -f "$SYS_UNIT_BACKUP" || warn "could not restore $SYSTEM_UNIT"
+        as_root systemctl daemon-reload >/dev/null 2>&1 || true
+        if [ "$SYS_WAS_ENABLED" = 1 ]; then as_root systemctl enable "$SERVICE_LABEL" >/dev/null 2>&1 || true; fi
+        if [ "$SYS_WAS_ACTIVE" = 1 ]; then
+            if as_root systemctl start "$SERVICE_LABEL"; then say "the $SERVICE_LABEL service is running again"
+            else warn "could not start the $SERVICE_LABEL service again: sudo systemctl start $SERVICE_LABEL"; fi
+        fi
+    fi
+    if [ -n "$USR_UNIT_BACKUP" ]; then
+        mkdir -p "$(dirname "$SYSTEMD_UNIT")"
+        cp "$USR_UNIT_BACKUP" "$SYSTEMD_UNIT" && rm -f "$USR_UNIT_BACKUP" || warn "could not restore $SYSTEMD_UNIT"
+        systemctl --user daemon-reload >/dev/null 2>&1 || true
+        if [ "$USR_WAS_ENABLED" = 1 ]; then systemctl --user enable "$SERVICE_LABEL" >/dev/null 2>&1 || true; fi
+        if [ "$USR_WAS_ACTIVE" = 1 ]; then systemctl --user start "$SERVICE_LABEL" || warn "could not start your $SERVICE_LABEL service again"; fi
+    fi
+    if [ -n "$PLIST_BACKUP" ]; then
+        cp "$PLIST_BACKUP" "$LAUNCHD_PLIST" && rm -f "$PLIST_BACKUP" || warn "could not restore $LAUNCHD_PLIST"
+        if [ "$PLIST_WAS_LOADED" = 1 ]; then launchctl bootstrap "gui/$(id -u)" "$LAUNCHD_PLIST" >/dev/null 2>&1 || true; fi
+    fi
+}
+
+# Whatever stops this run after installs were set aside and before the
+# join succeeded -- a refusal, a failed download, an interrupt -- puts them
+# back. `die` exits, and so does `run_step`, so this is the one place.
+on_exit() {
+    _code=$?
+    if [ "$_code" != 0 ] && [ -n "$SET_ASIDE_STAMP" ] && [ "$JOIN_COMMITTED" = 0 ] && [ "$RESTORED" = 0 ]; then
+        restore_existing
+        printf '       This machine is back as it was.\n' >&2
+    fi
+}
+trap on_exit EXIT
+trap 'exit 130' INT TERM
+
+if [ -n "$JOIN_CONTROL" ]; then
+    [ -n "$JOIN_TOKEN" ] || die "--join needs --token (mint one at the control root: Nodes -> Add a node)"
+    take_over_existing
+fi
+
 # --- one install per machine --------------------------------------------
 # **Two installs on one machine are two trust roots**, and the second one
 # strands everything the first enrolled (R2.6 found this on Windows, where
@@ -504,12 +664,31 @@ if [ "$MODE" = system ]; then
         as_root useradd --system --user-group --home-dir "$PREFIX" --no-create-home \
             --shell "$NOLOGIN" "$SYSTEM_ACCOUNT" \
             || die "could not create the $SYSTEM_ACCOUNT account"
+        ACCOUNT_CREATED=1
     fi
     # 0750: Eugene's account, and nobody but root, can look inside -- which
     # is the whole point. Applied on every run, so a prefix somebody opened
     # up by hand is closed again.
     as_root install -d -m 0750 -o "$SYSTEM_ACCOUNT" -g "$SYSTEM_ACCOUNT" \
         "$PREFIX" "$PREFIX/bin" "$PREFIX/logs"
+fi
+
+# **An install from alpha.2 or earlier cannot be upgraded, and says so**
+# (Troy, 2026-09-26: alpha.3 requires a fresh install). Per-node token
+# keys deleted the install-wide signing key rather than converting it, so
+# an old install upgraded in place does not come back, and sign-in blames
+# the network. The marker is the old key: node.yaml held `signingKey:`,
+# and nothing written since does. A join never gets here with one: it set
+# the old install aside above.
+if [ -z "$JOIN_CONTROL" ] && in_prefix grep -q '^signingKey:' "$PREFIX/node.yaml" 2>/dev/null; then
+    die "the Eugene install at $PREFIX
+       is from alpha.2 or earlier, and this version cannot upgrade it: how
+       machines prove who they are changed, and the old keys do not carry
+       over. Start fresh: remove it (its files are kept, moved aside), then
+       run this command again.
+         curl -fsSL $INSTALLER_URL | sh -s -- --uninstall
+       Your model files are not touched. You will choose a new passphrase,
+       and machines that were joined to it will need to join again."
 fi
 
 # --- 1. uv ------------------------------------------------------------
@@ -693,8 +872,36 @@ if [ -n "$JOIN_CONTROL" ]; then
     set -- join --control "$JOIN_CONTROL" --token "$JOIN_TOKEN"
     if [ -n "$JOIN_NAME" ]; then set -- "$@" --name "$JOIN_NAME"; fi
     if [ -n "$JOIN_ADVERTISE" ]; then set -- "$@" --advertise "$JOIN_ADVERTISE"; fi
+    JOIN_RC=0
     in_prefix env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$CONFIG" "$VENV/bin/eugene-plexus-agent" "$@" \
-        || die "enrollment failed; nothing was started"
+        || JOIN_RC=$?
+    if [ "$JOIN_RC" != 0 ]; then
+        # The new install goes and every install set aside comes back, then
+        # the reason, last, where it is read.
+        restore_existing
+        if [ "$JOIN_RC" = 3 ]; then
+            # The agent's EXIT_TOKEN_REFUSED: unknown, expired or used. The
+            # same command cannot work again, so this never says to retry.
+            die "the control root refused the join token.
+       Make a new one on its Nodes page (Add a node) and run the command
+       it gives you. This machine is back as it was."
+        fi
+        die "the join failed (see above). This machine is back as it was.
+       Fix what it says, then run this command again."
+    fi
+    # The commit point: from here a failure is reported, never undone.
+    JOIN_COMMITTED=1
+    if [ "$MODE" = system ]; then
+        # Save a download: the set-aside install's engine builds are exactly
+        # what this machine runs.
+        printf '%s' "$SET_ASIDE_LIST" | while IFS='|' read -r _kind _path _aside; do
+            if [ -n "$_aside" ] && as_root test -d "$_aside/engines" && ! as_root test -e "$PREFIX/engines"; then
+                as_root cp -a "$_aside/engines" "$PREFIX/engines" \
+                    && as_root chown -R "$SYSTEM_ACCOUNT:$SYSTEM_ACCOUNT" "$PREFIX/engines" \
+                    && say "carried over the engine builds from $_aside"
+            fi
+        done
+    fi
     # **A node that advertises an address must be reachable at it.**
     # Found on the first enrollment between two genuinely separate
     # machines: the worker advertised its LAN address, bound 127.0.0.1,

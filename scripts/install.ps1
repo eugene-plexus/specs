@@ -101,16 +101,19 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Read before `$Prefix` is given its default below: -Uninstall with no
+# -Prefix finds the install wherever it is.
+$PrefixGiven = [bool]$Prefix
 
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "e29eb299742955b4100c4bdf2db291a240c8f3cd"
+    "agent"            = "8a87b1d5fce16a6eef9692ac357e944464d08ee0"
     "control"          = "b14bd5764d233944ad9209104ca97e1ba40a418e"
     "gateway"          = "2f4d8ddbabd8400dae6fcd9689fc195653e88d4d"
     "inference-driver" = "f754620003950991b546503f79775450f1113737"
     "library"          = "47dfdf032ab9cc63cef3753e37af0d08c2b71e23"
-    "ui"               = "9f44e120d5d3eab6551943898b8c93ca43485336"  # branch `dist`, not `main`
+    "ui"               = "c8bd8b0ff10f81aa2f28d2d9e7b449e030db0a0b"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -131,6 +134,8 @@ $TaskName = "EugenePlexusAgent"
 # the task as evidence of where the install is, which a tray icon in a
 # user's session is not.
 $TrayTaskName = "EugenePlexusTray"
+# Quoted in messages that tell a person which command to run next.
+$InstallerUrl = "https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.ps1"
 
 function Say { param($m) Write-Host "==> $m" -ForegroundColor Cyan }
 function Warn { param($m) Write-Host "warning: $m" -ForegroundColor Yellow }
@@ -812,7 +817,16 @@ function Get-ServiceConversionSource {
     if ($other -and $other.Prefix -and (Test-Path (Join-Path $other.Prefix "agent.yaml"))) {
         return $other.Prefix
     }
-    if (Test-Path (Join-Path $Prefix "agent.yaml")) { return $Prefix }
+    if (Test-Path (Join-Path $Prefix "agent.yaml")) {
+        # **An install under %ProgramData% already WAS a service** -- only
+        # an elevated run puts one there -- so registering it again costs
+        # none of the two things below: its key is in the service's store
+        # and it never used this person's file-server logins. Found
+        # 2026-09-26 on Amish_Station, whose service had been removed by a
+        # failed join: re-running the installer asked for -Migrate.
+        if (Test-UnderProgramData $Prefix) { return $null }
+        return $Prefix
+    }
     return $null
 }
 
@@ -972,17 +986,379 @@ function Remove-Autostart {
         Unregister-ScheduledTask -TaskName $TrayTaskName -Confirm:$false
     }
     Remove-StartMenuShortcut
-    Get-CimInstance Win32_Process -Filter "Name='eugene-plexus-tray.exe'" |
-    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-
     # A task's process keeps running after the task is unregistered.
-    Get-CimInstance Win32_Process -Filter "Name='python.exe' OR Name='eugene-plexus-agent.exe'" |
-    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($Venv, 'OrdinalIgnoreCase') } |
-    ForEach-Object {
-        Say "stopping pid $($_.ProcessId)"
-        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    # **Everything under the prefix, not only the venv** (2026-09-26): a
+    # venv's python.exe is a launcher, and the interpreter it starts runs
+    # from `pythons\`, as does every engine under `engines\`. Matching the
+    # venv alone left those holding files open, and the move below failed
+    # on them.
+    Stop-ProcessUnder -Paths @($Prefix)
+}
+
+# **A rename, never a copy** (measured 2026-09-26). `Move-Item` on a
+# folder holding a file another process has open fails AFTER creating the
+# destination, and a second attempt then moves the folder INTO that empty
+# directory rather than renaming it. `Directory.Move` renames or changes
+# nothing. Also the seam the Pester suite guards: no test may move a
+# folder outside the temp directory.
+function Move-Folder {
+    param([string]$From, [string]$To)
+    [IO.Directory]::Move($From, $To)
+}
+
+# What went wrong, without .NET's "Exception calling ... with 2 argument(s)".
+function Get-ErrorText {
+    param($ErrorRecord)
+    $e = $ErrorRecord.Exception
+    while ($e.InnerException) { $e = $e.InnerException }
+    return $e.Message
+}
+
+# Stop every process whose program lives under one of `Paths`, and wait
+# for them to go. Matched by the program's path, so nothing else on the
+# machine can be caught by a name that happens to match.
+function Stop-ProcessUnder {
+    param([string[]]$Paths)
+    $roots = @($Paths | Where-Object { $_ } | ForEach-Object {
+            [IO.Path]::GetFullPath($_).TrimEnd('\') + '\'
+        })
+    if ($roots.Count -eq 0) { return }
+    $isUnder = {
+        param($Process)
+        $exe = $Process.ExecutablePath
+        if (-not $exe) { return $false }
+        foreach ($root in $roots) {
+            if ($exe.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+        }
+        return $false
     }
+    $running = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { & $isUnder $_ })
+    foreach ($process in $running) {
+        Say "stopping $($process.Name) (pid $($process.ProcessId))"
+        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+    if ($running.Count -eq 0) { return }
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline) {
+        $left = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object { & $isUnder $_ })
+        if ($left.Count -eq 0) { return }
+        Start-Sleep -Milliseconds 250
+    }
+}
+
+# --- a join takes over whatever Eugene is already here ------------------
+# **Someone running a join command with a valid token knows what they are
+# doing** (Troy, 2026-09-26). Getting Amish_Station into a new install took
+# an afternoon of refusals, each correct on its own terms: a second
+# install, a service conversion, an install someone had set up, a token
+# that expired while the refusals were being read. So `-Join` no longer
+# asks what to do with what it finds. It stops every Eugene install on the
+# machine, moves each folder aside -- nothing is deleted -- installs fresh
+# and joins. If anything fails before the join succeeds, every install it
+# moved is put back and whatever was running is started again, so a bad
+# token leaves the machine exactly as it was.
+
+# The variables an install sets, in both scopes. One list, because the
+# uninstall clears these and a join sets them aside and puts them back.
+# The config-file variable is named once so the Pester suite can point
+# discovery at a name of its own: on a developer's machine the real one
+# names a live install.
+$ConfigVariable = "EUGENE_PLEXUS_AGENT_CONFIG_FILE"
+$BindHostVariable = "EUGENE_PLEXUS_AGENT_BIND_HOST"
+$EngineRootVariable = "EUGENE_PLEXUS_AGENT_ENGINE_ROOT"
+$InstallVariables = @($ConfigVariable, $BindHostVariable,
+    "EUGENE_PLEXUS_AGENT_BIND_PORT", $EngineRootVariable,
+    "EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS")
+
+function Test-LooksLikeInstall {
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) { return $false }
+    foreach ($marker in @("agent.yaml", "node.yaml", "venv", "bin\uv.exe")) {
+        if (Test-Path -LiteralPath (Join-Path $Path $marker)) { return $true }
+    }
+    return $false
+}
+
+function Test-UnderProgramData {
+    param([string]$Path)
+    if (-not $Path -or -not $env:ProgramData) { return $false }
+    $root = [IO.Path]::GetFullPath($env:ProgramData).TrimEnd('\') + '\'
+    return [IO.Path]::GetFullPath($Path).StartsWith($root, [StringComparison]::OrdinalIgnoreCase)
+}
+
+# Every Eugene install on this machine, the autostart's first. Each is a
+# prefix: where the autostart runs from, where either scope's config-file
+# variable points, and the two default locations. `$Prefix` is included
+# when it holds anything at all, because a join installs there and must
+# start from an empty folder; the others only when they hold an install.
+function Get-EugeneInstall {
+    $seen = New-Object Collections.ArrayList
+    $consider = {
+        param([string]$Path, [bool]$AnyContent)
+        if (-not $Path) { return }
+        try { $full = [IO.Path]::GetFullPath($Path).TrimEnd('\') } catch { return }
+        if ($seen -contains $full) { return }
+        if (-not (Test-Path -LiteralPath $full -PathType Container)) { return }
+        $holds = if ($AnyContent) {
+            [bool](Get-ChildItem -LiteralPath $full -Force -ErrorAction SilentlyContinue |
+                Select-Object -First 1)
+        }
+        else { Test-LooksLikeInstall $full }
+        if ($holds) { [void]$seen.Add($full) }
+    }
+    $exe = Get-AutostartExecutable
+    # <prefix>\venv\Scripts\<exe> -- three levels up is the prefix.
+    if ($exe) { & $consider (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $exe))) $false }
+    foreach ($scope in @("User", "Machine")) {
+        $cfg = [Environment]::GetEnvironmentVariable($ConfigVariable, $scope)
+        if ($cfg) { & $consider (Split-Path -Parent $cfg) $false }
+    }
+    & $consider $Prefix $true
+    & $consider (Join-Path $env:ProgramData "EugenePlexus") $false
+    & $consider (Join-Path $env:LOCALAPPDATA "EugenePlexus") $false
+    return $seen.ToArray()
+}
+
+# Seams, so the Pester suite can drive the set-aside and the restore
+# without a real service on the machine running it.
+function Remove-AgentServiceRegistration { & sc.exe delete $ServiceName | Out-Null }
+function Get-AgentServiceEnvironment {
+    (Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" `
+        -Name Environment -ErrorAction SilentlyContinue).Environment
+}
+function Register-AgentServiceFrom {
+    param([string]$ServicePrefix, [string[]]$Environment)
+    $python = Join-Path $ServicePrefix "venv\Scripts\python.exe"
+    & $python -m eugene_plexus_agent.winservice install 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "registering it exited $LASTEXITCODE" }
+    & sc.exe config $ServiceName start= auto | Out-Null
+    & sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+    if ($Environment) {
+        New-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" `
+            -Name Environment -PropertyType MultiString -Value $Environment -Force | Out-Null
+    }
+    Grant-ServiceControl | Out-Null
+}
+
+# Stop every install in `Installs` and move each one aside. Returns what
+# `Restore-EugeneInstall` needs to put the machine back. Nothing on disk is
+# deleted: each folder becomes `<prefix>.replaced-<time>`.
+function Suspend-EugeneInstall {
+    param([string[]]$Installs)
+    $record = [pscustomobject]@{
+        Moved       = New-Object Collections.ArrayList
+        Service     = $null
+        AgentTask   = $null
+        TrayTask    = $null
+        Links       = New-Object Collections.ArrayList
+        Variables   = New-Object Collections.ArrayList
+        FreshPrefix = $Prefix
+        Restored    = $false
+    }
+    $installs = @($Installs | Where-Object { $_ })
+    $service = Get-AgentService
+    $adminOnly = $service -or @($installs | Where-Object { Test-UnderProgramData $_ }).Count -gt 0
+    if ($adminOnly -and -not $IsElevated) {
+        Die @"
+Eugene is already installed on this machine as a Windows service, and
+       moving it aside needs Administrator. Run this command again from an
+       elevated PowerShell, or without -NoService.
+"@
+    }
+    $stamp = Get-Date -Format yyyyMMddHHmmss
+    try {
+        # The autostart and the icon first, remembered so they can come back.
+        if ($service) {
+            $exe = Get-AutostartExecutable
+            $record.Service = [pscustomobject]@{
+                Prefix      = if ($exe) { Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $exe)) } else { $null }
+                Environment = @(Get-AgentServiceEnvironment)
+                Running     = ($service.Status -eq 'Running')
+            }
+            Say "stopping the $ServiceName service"
+            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+            Remove-AgentServiceRegistration
+        }
+        foreach ($name in @($TaskName, $TrayTaskName)) {
+            $task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+            if (-not $task) { continue }
+            $saved = [pscustomobject]@{
+                Xml     = (Export-ScheduledTask -TaskName $name)
+                Running = ($task.State -eq 'Running')
+            }
+            if ($name -eq $TaskName) { $record.AgentTask = $saved } else { $record.TrayTask = $saved }
+            Stop-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $name -Confirm:$false
+        }
+        foreach ($programs in @(
+                (Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"),
+                (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"))) {
+            $link = Join-Path $programs "Eugene Plexus.lnk"
+            if (-not (Test-Path -LiteralPath $link)) { continue }
+            $backup = Join-Path ([IO.Path]::GetTempPath()) ("eugene-plexus-" + [guid]::NewGuid().ToString('N') + ".lnk")
+            Copy-Item -LiteralPath $link -Destination $backup -Force
+            Remove-Item -LiteralPath $link -Force
+            [void]$record.Links.Add([pscustomobject]@{ Path = $link; Backup = $backup })
+        }
+
+        # Its engines too: a per-user install keeps them outside the prefix.
+        $engines = [Environment]::GetEnvironmentVariable($EngineRootVariable, "User")
+        if (-not $engines -and $env:USERPROFILE) { $engines = Join-Path $env:USERPROFILE ".eugene-plexus\engines" }
+        Stop-ProcessUnder -Paths (@($installs) + @($engines))
+
+        foreach ($scope in @("User", "Machine")) {
+            if ($scope -eq "Machine" -and -not $IsElevated) { continue }
+            foreach ($name in $InstallVariables) {
+                $value = [Environment]::GetEnvironmentVariable($name, $scope)
+                if ($null -eq $value) { continue }
+                [void]$record.Variables.Add([pscustomobject]@{ Scope = $scope; Name = $name; Value = $value })
+                [Environment]::SetEnvironmentVariable($name, $null, $scope)
+            }
+        }
+
+        foreach ($path in $installs) {
+            $aside = "$path.replaced-$stamp"
+            $attempt = 0
+            while ($true) {
+                try {
+                    Move-Folder -From $path -To $aside
+                    break
+                }
+                catch {
+                    # A process that was just stopped can hold a file for a
+                    # moment after it is gone.
+                    $attempt += 1
+                    if ($attempt -ge 8) { throw "could not move $path aside: $(Get-ErrorText $_)" }
+                    Start-Sleep -Milliseconds 500
+                }
+            }
+            [void]$record.Moved.Add([pscustomobject]@{ From = $path; To = $aside })
+            Say "set aside the install at $path; nothing deleted"
+            Write-Host "    it is now at $aside"
+        }
+    }
+    catch {
+        $why = $_.Exception.Message
+        Restore-EugeneInstall $record | Out-Null
+        Die @"
+$why
+       Nothing was installed, and whatever was here is back as it was. Close
+       anything that has files open in that folder, then run this again.
+"@
+    }
+    return $record
+}
+
+# Put the machine back as `Suspend-EugeneInstall` found it: the new
+# install removed, every folder moved back, the variables, the Start menu
+# entry, the service or task registered again and started if it was
+# running. Never throws; what it could not do, it says, with where the
+# files are.
+function Restore-EugeneInstall {
+    param($Record)
+    if (-not $Record -or $Record.Restored) { return $true }
+    $Record.Restored = $true
+    $problems = New-Object Collections.ArrayList
+
+    $fresh = $Record.FreshPrefix
+    if ($fresh -and (Test-Path -LiteralPath $fresh)) {
+        # Only a folder this run made. `FreshPrefix` is $Prefix, which was
+        # either moved aside above or did not exist, so what is there now
+        # is the new install and nothing a person put there.
+        $exe = Get-AutostartExecutable
+        if ($exe -and $exe.StartsWith($fresh.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+            Remove-AgentServiceRegistration
+        }
+        Stop-ProcessUnder -Paths @($fresh)
+        try { Remove-Item -LiteralPath $fresh -Recurse -Force -ErrorAction Stop }
+        catch { [void]$problems.Add("could not remove the new install at $fresh ($($_.Exception.Message))") }
+    }
+
+    for ($i = $Record.Moved.Count - 1; $i -ge 0; $i--) {
+        $move = $Record.Moved[$i]
+        if (Test-Path -LiteralPath $move.From) {
+            [void]$problems.Add("$($move.From) exists again, so the old install was left at $($move.To)")
+            continue
+        }
+        try {
+            Move-Folder -From $move.To -To $move.From
+            Say "put back the Eugene install at $($move.From)"
+        }
+        catch { [void]$problems.Add("could not move $($move.To) back to $($move.From) ($(Get-ErrorText $_))") }
+    }
+    foreach ($variable in $Record.Variables) {
+        try { [Environment]::SetEnvironmentVariable($variable.Name, $variable.Value, $variable.Scope) }
+        catch { [void]$problems.Add("could not restore $($variable.Name) ($($variable.Scope))") }
+    }
+    foreach ($link in $Record.Links) {
+        try {
+            Copy-Item -LiteralPath $link.Backup -Destination $link.Path -Force -ErrorAction Stop
+            Remove-Item -LiteralPath $link.Backup -Force -ErrorAction SilentlyContinue
+        }
+        catch { [void]$problems.Add("could not restore the Start menu entry $($link.Path)") }
+    }
+    if ($Record.Service -and $Record.Service.Prefix) {
+        try {
+            Register-AgentServiceFrom -ServicePrefix $Record.Service.Prefix -Environment $Record.Service.Environment
+            if ($Record.Service.Running) {
+                Start-Service -Name $ServiceName -ErrorAction Stop
+                Say "the $ServiceName service is running again"
+            }
+        }
+        catch {
+            [void]$problems.Add("could not register the $ServiceName service again ($($_.Exception.Message)); re-run the installer with -Prefix '$($Record.Service.Prefix)' to do it")
+        }
+    }
+    foreach ($pair in @(@($TaskName, $Record.AgentTask), @($TrayTaskName, $Record.TrayTask))) {
+        $name = $pair[0]
+        $saved = $pair[1]
+        if (-not $saved) { continue }
+        try {
+            Register-ScheduledTask -TaskName $name -Xml $saved.Xml -ErrorAction Stop | Out-Null
+            if ($saved.Running) { Start-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue }
+        }
+        catch { [void]$problems.Add("could not register the $name task again ($($_.Exception.Message))") }
+    }
+    foreach ($problem in $problems) { Warn $problem }
+    return ($problems.Count -eq 0)
+}
+
+# After a join, where each old install went -- said last, so it is seen.
+function Show-SetAsideNote {
+    if (-not $SetAside -or -not $JoinCommitted) { return }
+    foreach ($move in $SetAside.Moved) {
+        Say "the install that was here before is kept at $($move.To)"
+        Write-Host "    Delete it once this machine is working."
+    }
+}
+
+# **An install from alpha.2 or earlier cannot be upgraded, and says so**
+# (Troy, 2026-09-26: alpha.3 requires a fresh install). Per-node token
+# keys (2026-09-25) deleted the install-wide signing key rather than
+# converting it, so an old install upgraded in place does not come back:
+# its control root cannot read its own log, and sign-in says the root
+# "did not answer" -- which sent this project's own NAS hunting for a
+# network fault. The marker is the old key itself: `node.yaml` held the
+# install's `signingKey`, and nothing written since does. A join never
+# gets here; it sets the old install aside instead.
+function Assert-UpgradeableInstall {
+    $identity = Join-Path $Prefix "node.yaml"
+    if (-not (Test-Path -LiteralPath $identity)) { return }
+    $text = try { [IO.File]::ReadAllText($identity) } catch { "" }
+    if ($text -notmatch '(?m)^signingKey:') { return }
+    Die @"
+the Eugene install at $Prefix
+       is from alpha.2 or earlier, and this version cannot upgrade it: how
+       machines prove who they are changed, and the old keys do not carry
+       over. Start fresh: remove it (its files are kept, moved aside), then
+       run this command again.
+         & ([scriptblock]::Create((irm $InstallerUrl))) -Uninstall
+       Your model files are not touched. You will choose a new passphrase,
+       and machines that were joined to it will need to join again.
+"@
 }
 
 # --- -Detect ----------------------------------------------------------
@@ -1013,55 +1389,90 @@ if ($Detect) {
 
 # --- uninstall --------------------------------------------------------
 if ($Uninstall) {
-    # **Deliberately no `Assert-OwnInstall` here.** Removing a named
-    # prefix is a legitimate thing to do on a machine whose autostart
-    # belongs to a different install -- it is, in fact, exactly how the
-    # operator recovers from #10. What must not happen is taking that
-    # other install's autostart away, and `Remove-Autostart` is where
-    # that is refused.
-    Remove-Autostart
-    # The installer sets the config path; the installer takes it back.
-    # Found by checking after an acceptance run: the User-scope variable
-    # outlived the uninstall and would have pointed the next
-    # hand-started agent at a prefix that no longer exists.
-    #
-    # BIND_HOST is still cleared even though this installer stopped
-    # setting it on 2026-09-11, because every install made before then
-    # did -- and that variable is account-wide, so leaving it behind
-    # keeps widening the bind of every other agent on the account long
-    # after this one is gone.
-    # **Only the variables that pointed at THIS prefix.** They are
-    # account-wide, so clearing them while uninstalling some other
-    # prefix would unpoint a live install -- which is the same mistake
-    # as #10, one scope over.
-    $names = @("EUGENE_PLEXUS_AGENT_CONFIG_FILE", "EUGENE_PLEXUS_AGENT_BIND_HOST",
-        "EUGENE_PLEXUS_AGENT_BIND_PORT", "EUGENE_PLEXUS_AGENT_ENGINE_ROOT",
-        "EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS")
-    foreach ($scope in @("User", "Machine")) {
-        if ($scope -eq "Machine" -and -not $IsElevated) { continue }
-        $cfg = [Environment]::GetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $scope)
-        $mine = $cfg -and ([IO.Path]::GetFullPath($cfg) -eq [IO.Path]::GetFullPath($Config))
-        # BIND_HOST is cleared whatever it points at: this installer
-        # stopped setting it on 2026-09-11, every install made before
-        # then did, and an account-wide widened bind outliving the
-        # install that set it is the thing that made it a defect.
-        if (-not $mine) {
-            [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_HOST", $null, $scope)
-            continue
+    # **Wherever the install is** (2026-09-26). Run with no -Prefix, this
+    # removes every Eugene install on the machine and asks for
+    # Administrator itself when one of them needs it. Before, the prefix
+    # came from how the shell was started: an ordinary PowerShell looked
+    # only in %LOCALAPPDATA% and said "nothing installed" with a service
+    # install sitting in %ProgramData%. `-Prefix` still names exactly one.
+    $targets = @($Prefix)
+    if (-not $PrefixGiven) {
+        $targets = @(Get-EugeneInstall)
+        if ($targets.Count -eq 0) {
+            Say "nothing to remove: no Eugene install in $(Join-Path $env:ProgramData 'EugenePlexus'),"
+            Write-Host "    $(Join-Path $env:LOCALAPPDATA 'EugenePlexus'), or behind a $ServiceName service or task."
+            return
         }
-        foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $null, $scope) }
+        $needsAdmin = [bool](Get-AgentService) -or
+        @($targets | Where-Object { Test-UnderProgramData $_ }).Count -gt 0
+        if ($needsAdmin -and -not $IsElevated) {
+            if ($NoElevate) {
+                Die "removing the Eugene service needs Administrator, and -NoElevate was given. Run this from an elevated PowerShell."
+            }
+            Say "removing Eugene needs Administrator -- asking for it now"
+            Invoke-ElevatedInstaller -ScriptText $MyInvocation.MyCommand.ScriptBlock.ToString() -Parameters $PSBoundParameters
+            return
+        }
+        # An autostart whose install has gone: nothing below owns it.
+        $orphan = Get-AutostartExecutable
+        if ($orphan -and -not (Test-Path -LiteralPath $orphan)) {
+            $Venv = Split-Path -Parent (Split-Path -Parent $orphan)
+            Remove-Autostart
+        }
     }
+    foreach ($target in $targets) {
+        $Prefix = $target
+        $Venv = Join-Path $Prefix "venv"
+        $PyBin = Join-Path $Venv "Scripts\python.exe"
+        $Config = Join-Path $Prefix "agent.yaml"
+        # **Deliberately no `Assert-OwnInstall` here.** Removing a named
+        # prefix is a legitimate thing to do on a machine whose autostart
+        # belongs to a different install -- it is, in fact, exactly how the
+        # operator recovers from #10. What must not happen is taking that
+        # other install's autostart away, and `Remove-Autostart` is where
+        # that is refused. With no -Prefix the autostart's own install comes
+        # first, so by the time any other is removed there is none left.
+        Remove-Autostart
+        # The installer sets the config path; the installer takes it back.
+        # Found by checking after an acceptance run: the User-scope variable
+        # outlived the uninstall and would have pointed the next
+        # hand-started agent at a prefix that no longer exists.
+        #
+        # BIND_HOST is still cleared even though this installer stopped
+        # setting it on 2026-09-11, because every install made before then
+        # did -- and that variable is account-wide, so leaving it behind
+        # keeps widening the bind of every other agent on the account long
+        # after this one is gone.
+        # **Only the variables that pointed at THIS prefix.** They are
+        # account-wide, so clearing them while uninstalling some other
+        # prefix would unpoint a live install -- which is the same mistake
+        # as #10, one scope over.
+        $names = $InstallVariables
+        foreach ($scope in @("User", "Machine")) {
+            if ($scope -eq "Machine" -and -not $IsElevated) { continue }
+            $cfg = [Environment]::GetEnvironmentVariable($ConfigVariable, $scope)
+            $mine = $cfg -and ([IO.Path]::GetFullPath($cfg) -eq [IO.Path]::GetFullPath($Config))
+            # BIND_HOST is cleared whatever it points at: this installer
+            # stopped setting it on 2026-09-11, every install made before
+            # then did, and an account-wide widened bind outliving the
+            # install that set it is the thing that made it a defect.
+            if (-not $mine) {
+                [Environment]::SetEnvironmentVariable($BindHostVariable, $null, $scope)
+                continue
+            }
+            foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $null, $scope) }
+        }
 
-    # **Two keyring entries, not one** (review 6.3 #31). The agent
-    # stores its master key under `eugene-plexus-agent` and the control
-    # root stores the install's signing key under
-    # `eugene-plexus-control`, each scoped by a fingerprint of this
-    # install's master salt (S0). The salt goes into the `.removed-`
-    # directory with everything else, so after this runs nothing can
-    # work out what to delete -- it has to happen here or not at all.
-    if ((Test-Path $PyBin) -and (Test-Path $Config)) {
-        Say "clearing this install's OS keyring entries"
-        $drop = @'
+        # **Two keyring entries, not one** (review 6.3 #31). The agent
+        # stores its master key under `eugene-plexus-agent` and the control
+        # root stores the install's signing key under
+        # `eugene-plexus-control`, each scoped by a fingerprint of this
+        # install's master salt (S0). The salt goes into the `.removed-`
+        # directory with everything else, so after this runs nothing can
+        # work out what to delete -- it has to happen here or not at all.
+        if ((Test-Path $PyBin) -and (Test-Path $Config)) {
+            Say "clearing this install's OS keyring entries"
+            $drop = @'
 import base64, hashlib, sys
 
 try:
@@ -1098,83 +1509,92 @@ for service in ("eugene-plexus-agent", "eugene-plexus-control"):
 if removed == 0:
     print("  no keyring entries belonged to this install")
 '@
-        $dropFile = Join-Path $env:TEMP "eugene-plexus-uninstall-keyring.py"
-        [IO.File]::WriteAllText($dropFile, $drop, (New-Object Text.UTF8Encoding $false))
-        & $PyBin $dropFile $Config
-        Remove-Item $dropFile -Force -ErrorAction SilentlyContinue
-    }
-
-    # **The node-local model copy directory is ours and is not under the
-    # prefix** (review 6.3 #31). The agent creates it, fills it with
-    # whole model files and deletes from it; a Library folder is the
-    # operator's and is never written to. So it is the one thing an
-    # uninstall can offer to remove -- offered, not taken, because tens
-    # of gigabytes is not a thing to delete on somebody's behalf.
-    $purge = $PurgeDownloads -or $PurgeModelCopies
-    $copyDir = $null
-    if (Test-Path $Config) {
-        $line = Select-String -LiteralPath $Config -Pattern '^modelCopyDir:\s*(.+)$' |
-        Select-Object -First 1
-        if ($line) {
-            $raw = $line.Matches[0].Groups[1].Value.Trim()
-            # `yaml.safe_dump` writes a Windows path as a plain scalar,
-            # backslashes and all. A double-quoted one is the only form
-            # that escapes them.
-            if ($raw.StartsWith('"')) { $copyDir = $raw.Trim('"').Replace('\\', '\') }
-            else { $copyDir = $raw.Trim("'") }
+            $dropFile = Join-Path $env:TEMP "eugene-plexus-uninstall-keyring.py"
+            [IO.File]::WriteAllText($dropFile, $drop, (New-Object Text.UTF8Encoding $false))
+            & $PyBin $dropFile $Config
+            Remove-Item $dropFile -Force -ErrorAction SilentlyContinue
         }
-    }
-    if ($copyDir -and (Test-Path $copyDir)) {
-        $bytes = (Get-ChildItem -LiteralPath $copyDir -Recurse -File -ErrorAction SilentlyContinue |
-            Measure-Object -Property Length -Sum).Sum
-        $gib = if ($bytes) { [math]::Round($bytes / 1GB, 1) } else { 0 }
-        if ($purge) {
-            Say "removing this node's model copies at $copyDir ($gib GiB)"
-            Remove-Item -LiteralPath $copyDir -Recurse -Force -ErrorAction SilentlyContinue
+
+        # **The node-local model copy directory is ours and is not under the
+        # prefix** (review 6.3 #31). The agent creates it, fills it with
+        # whole model files and deletes from it; a Library folder is the
+        # operator's and is never written to. So it is the one thing an
+        # uninstall can offer to remove -- offered, not taken, because tens
+        # of gigabytes is not a thing to delete on somebody's behalf.
+        $purge = $PurgeDownloads -or $PurgeModelCopies
+        $copyDir = $null
+        if (Test-Path $Config) {
+            $line = Select-String -LiteralPath $Config -Pattern '^modelCopyDir:\s*(.+)$' |
+            Select-Object -First 1
+            if ($line) {
+                $raw = $line.Matches[0].Groups[1].Value.Trim()
+                # `yaml.safe_dump` writes a Windows path as a plain scalar,
+                # backslashes and all. A double-quoted one is the only form
+                # that escapes them.
+                if ($raw.StartsWith('"')) { $copyDir = $raw.Trim('"').Replace('\\', '\') }
+                else { $copyDir = $raw.Trim("'") }
+            }
+        }
+        if ($copyDir -and (Test-Path $copyDir)) {
+            $bytes = (Get-ChildItem -LiteralPath $copyDir -Recurse -File -ErrorAction SilentlyContinue |
+                Measure-Object -Property Length -Sum).Sum
+            $gib = if ($bytes) { [math]::Round($bytes / 1GB, 1) } else { 0 }
+            if ($purge) {
+                Say "removing this node's model copies at $copyDir ($gib GiB)"
+                Remove-Item -LiteralPath $copyDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                Say "this node's model copies are at $copyDir ($gib GiB) -- they are copies, so"
+                Say "  deleting them loses nothing. Re-run with -PurgeDownloads, or remove it yourself."
+            }
+        }
+        elseif ($copyDir) {
+            Say "no model copies on disk (modelCopyDir was $copyDir)"
+        }
+
+        # **The engine store is ours too, and it is not under the prefix.**
+        # The agent downloads llama.cpp builds into `~/.eugene-plexus/engines`
+        # (or wherever EUGENE_PLEXUS_AGENT_ENGINE_ROOT says -- which an
+        # elevated install now pins under the prefix, so this is the
+        # per-user case), keeps two of them, and nothing else on the machine
+        # writes there.
+        $engineRootPath = $env:EUGENE_PLEXUS_AGENT_ENGINE_ROOT
+        if (-not $engineRootPath) {
+            $engineRootPath = Join-Path $env:USERPROFILE ".eugene-plexus\engines"
+        }
+        if (Test-Path $engineRootPath) {
+            $eb = (Get-ChildItem -LiteralPath $engineRootPath -Recurse -File -ErrorAction SilentlyContinue |
+                Measure-Object -Property Length -Sum).Sum
+            $egib = if ($eb) { [math]::Round($eb / 1GB, 1) } else { 0 }
+            if ($purge) {
+                Say "removing the engine store at $engineRootPath ($egib GiB)"
+                Remove-Item -LiteralPath $engineRootPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                Say "the engine builds this install downloaded are at $engineRootPath ($egib GiB) --"
+                Say "  re-run with -PurgeDownloads, or remove it yourself."
+            }
+        }
+        if (Test-Path $Prefix) {
+            # agent.yaml and node.yaml are the install's identity and logs\
+            # are the only record of what it did. Move the prefix aside
+            # rather than delete it: an uninstall must not be the thing that
+            # loses an enrollment.
+            $keep = "$Prefix.removed-$(Get-Date -Format yyyyMMddHHmmss)"
+            try { Move-Folder -From $Prefix -To $keep }
+            catch {
+                Die @"
+could not move $Prefix aside: $(Get-ErrorText $_)
+       A program still has files open in it. Close it, or restart Windows,
+       then run -Uninstall again. Its service and autostart are already off.
+"@
+            }
+            Say "removed the install at $Prefix."
+            Write-Host "    Its config and logs are at $keep -- delete it when you are sure."
         }
         else {
-            Say "this node's model copies are at $copyDir ($gib GiB) -- they are copies, so"
-            Say "  deleting them loses nothing. Re-run with -PurgeDownloads, or remove it yourself."
+            Say "nothing installed at $Prefix"
         }
-    }
-    elseif ($copyDir) {
-        Say "no model copies on disk (modelCopyDir was $copyDir)"
-    }
-
-    # **The engine store is ours too, and it is not under the prefix.**
-    # The agent downloads llama.cpp builds into `~/.eugene-plexus/engines`
-    # (or wherever EUGENE_PLEXUS_AGENT_ENGINE_ROOT says -- which an
-    # elevated install now pins under the prefix, so this is the
-    # per-user case), keeps two of them, and nothing else on the machine
-    # writes there.
-    $engineRootPath = $env:EUGENE_PLEXUS_AGENT_ENGINE_ROOT
-    if (-not $engineRootPath) {
-        $engineRootPath = Join-Path $env:USERPROFILE ".eugene-plexus\engines"
-    }
-    if (Test-Path $engineRootPath) {
-        $eb = (Get-ChildItem -LiteralPath $engineRootPath -Recurse -File -ErrorAction SilentlyContinue |
-            Measure-Object -Property Length -Sum).Sum
-        $egib = if ($eb) { [math]::Round($eb / 1GB, 1) } else { 0 }
-        if ($purge) {
-            Say "removing the engine store at $engineRootPath ($egib GiB)"
-            Remove-Item -LiteralPath $engineRootPath -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        else {
-            Say "the engine builds this install downloaded are at $engineRootPath ($egib GiB) --"
-            Say "  re-run with -PurgeDownloads, or remove it yourself."
-        }
-    }
-    if (Test-Path $Prefix) {
-        # agent.yaml and node.yaml are the install's identity and logs\
-        # are the only record of what it did. Move the prefix aside
-        # rather than delete it: an uninstall must not be the thing that
-        # loses an enrollment.
-        $keep = "$Prefix.removed-$(Get-Date -Format yyyyMMddHHmmss)"
-        Move-Item -LiteralPath $Prefix -Destination $keep
-        Say "removed. Your config and logs are at $keep -- delete it when you are sure."
-    }
-    else {
-        Say "nothing installed at $Prefix"
     }
     return
 }
@@ -1194,7 +1614,9 @@ if ($Isolated) {
         }
     }
 }
-else {
+elseif (-not $Join) {
+    # A join asks neither: it sets every install aside below, so there is
+    # no second install to refuse and no conversion to warn about.
     Assert-OwnInstall
     Show-MigrationConsequences
 }
@@ -1265,9 +1687,29 @@ trap {
         }
         Write-Host "       This is a defect in the installer; please report it with this output." -ForegroundColor Red
     }
+    # A join that set installs aside and did not get as far as joining
+    # puts them back, whatever stopped it (see Suspend-EugeneInstall).
+    if ($SetAside -and -not $SetAside.Restored -and -not $JoinCommitted) {
+        Restore-EugeneInstall $SetAside | Out-Null
+        Write-Host "       This machine is back as it was." -ForegroundColor Red
+    }
     if ($PSCommandPath) { exit 1 }
     $global:LASTEXITCODE = 1
     return
+}
+
+# --- 0b. what is already here -------------------------------------------
+# Below the trap, so a refusal ends cleanly, and below `# --- 1. uv`, so
+# the preflight suite, which runs the text above that line, never sets a
+# real install aside.
+$SetAside = $null
+$JoinCommitted = $false
+if ($Join -and -not $Isolated) {
+    if (-not $Token) { Die "-Join needs -Token (mint one at the control root: Nodes -> Add a node)" }
+    $SetAside = Suspend-EugeneInstall -Installs (Get-EugeneInstall)
+}
+elseif (-not $Isolated) {
+    Assert-UpgradeableInstall
 }
 
 Say "installing into $Prefix$(if ($WantsService) { ' (a Windows service: starts at boot)' } else { ' (per-user: starts when you log in)' })"
@@ -1347,15 +1789,11 @@ if (Test-Path $Config) {
 # is why install.sh needs nothing here. The autostart is registered
 # again in step 5 and the agent restarted in step 6, so a running
 # install pauses across the upgrade rather than surviving it -- which is
-# also what an upgrade of a supervised install means.
-# Remembered, because a failed join below must put this install back
-# rather than leave the machine with nothing registered to start.
-$HadAutostart = $false
-$JoinFailed = $false
+# also what an upgrade of a supervised install means. (A join never
+# finds one running: 0b set every install aside.)
 if (-not $Isolated -and ((Get-AgentTask) -or (Get-AgentService))) {
     Say "stopping the running agent so its files can be replaced"
     Remove-Autostart
-    $HadAutostart = $true
 }
 Say "installing Eugene Plexus"
 $specs = foreach ($repo in $DIST.Keys) {
@@ -1437,18 +1875,36 @@ if ($Join) {
     if ($Advertise) { $joinArgs += @("--advertise", $Advertise) }
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @joinArgs
-    if ($LASTEXITCODE -ne 0) {
-        if (-not $HadAutostart) {
-            Die "the join failed (see above), so nothing was set up to start. Fix what it says and run the same command again."
+    $joinCode = $LASTEXITCODE
+    if ($joinCode -ne 0) {
+        # **A failed join leaves the machine as it found it** (2026-09-26):
+        # the new install is removed and every install 0b set aside is put
+        # back and started. Then the reason, last, where it is read.
+        Restore-EugeneInstall $SetAside | Out-Null
+        if ($joinCode -eq 3) {
+            # The agent's EXIT_TOKEN_REFUSED: unknown, expired or used.
+            # Running the same command again cannot work, so it is never
+            # what this says.
+            Die @"
+the control root refused the join token.
+       Make a new one on its Nodes page (Add a node) and run the command
+       it gives you. This machine is back as it was.
+"@
         }
-        # **A failed join must not take a working machine down with it**
-        # (2026-09-26). The upgrade above stopped and removed this
-        # install's autostart, and a refused join changes nothing on
-        # disk, so the rest of this run registers and starts the same
-        # install again -- then reports the failure. Before, it stopped
-        # here and the machine was left with no service at all.
-        $JoinFailed = $true
-        Warn "the join failed (see above). Nothing on this machine changed, so the install that was running here is being started again, as it was."
+        Die @"
+the join failed (see above). This machine is back as it was.
+       Fix what it says, then run this command again.
+"@
+    }
+    # The commit point: this machine now belongs to that install, so from
+    # here a failure is reported, never undone by bringing the old one back.
+    $JoinCommitted = $true
+    if ($SetAside -and $WantsService) {
+        # Save a download: engine builds are whole directories, and the
+        # set-aside install's are exactly what this machine runs.
+        foreach ($move in $SetAside.Moved) {
+            Copy-EngineBuilds -Source (Join-Path $move.To "engines")
+        }
     }
 
     # **A node that advertises an address must be reachable at it** --
@@ -1681,12 +2137,9 @@ if (-not $NoStart -and $autostart -ne "none") {
         try {
             Invoke-RestMethod "http://127.0.0.1:$Port/healthz" -TimeoutSec 2 | Out-Null
             Write-Host ""
-            if ($JoinFailed) {
-                Say "the install that was here is running again at http://127.0.0.1:$Port/"
-                Die "the join failed (see above), and this machine is back as it was. Fix what it says and run the join again."
-            }
             Say "Eugene Plexus is running -- open http://127.0.0.1:$Port/"
             Say "logs:  $Prefix\logs\    config: $Config"
+            Show-SetAsideNote
             return
         }
         catch {
@@ -1713,6 +2166,4 @@ if ($autostart -eq "service") {
     Write-Host "    stopped it -- the web page is not, because stopping Eugene takes"
     Write-Host "    the web page with it."
 }
-if ($JoinFailed) {
-    Die "the join failed (see above), and this machine is back as it was. Fix what it says and run the join again."
-}
+Show-SetAsideNote
