@@ -2481,13 +2481,15 @@ components:
               type: boolean
               description: |
                 **An Eugene Plexus extension, not OpenAI's.** With streaming,
-                true adds progress chunks while the model reads the prompt:
-                `choices: []` and an `x_eugene_plexus` carrying only
-                `progress`. Only a backend that says how far it has read
-                produces them -- today llama.cpp and nothing else -- so for
-                any other the stream is exactly what it is without the key.
-                A client that sets it must tolerate a chunk with no choices,
-                as it already must for `include_usage`.
+                true adds progress chunks saying what the backend is doing
+                while it is not producing output: `choices: []` and an
+                `x_eugene_plexus` carrying only `progress`. Local and cloud
+                backends alike report what they can observe -- llama.cpp how
+                far it has read the prompt, any HTTP backend that the service
+                has the request, Claude Code and Codex the tools they run.
+                See `StreamProgress`. A client that sets it must tolerate a
+                chunk with no choices, as it already must for
+                `include_usage`.
 
                 A progress chunk is not output: failover to another backend
                 is still possible after one, and a second backend's progress
@@ -3113,30 +3115,46 @@ components:
             that refuses instead of truncating needs none of this: its
             refusal is exact and is passed straight through as a 400.
         progress:
-          $ref: '#/components/schemas/PromptProgress'
+          $ref: '#/components/schemas/StreamProgress'
 
-    PromptProgress:
+    StreamProgress:
       type: object
       required:
-        - prompt_tokens
-        - processed_tokens
+        - stage
       description: |
-        How far the backend has read the prompt, on a progress chunk
-        (`stream_options.include_progress`). The only thing such a chunk
-        carries: its `x_eugene_plexus` has this and nothing else, and
-        its `choices` is empty.
+        What the backend is doing while it is not producing output, on a
+        progress chunk (`stream_options.include_progress`). The only
+        thing such a chunk carries: its `x_eugene_plexus` has this and
+        nothing else, and its `choices` is empty. It can arrive at any
+        point before the final chunk -- an agent backend runs a tool
+        between two bursts of thinking.
+
+        What each backend can report is in `inference-driver.yaml`'s
+        `StreamProgress`: llama.cpp's prompt reading, a hosted API
+        accepting the request and its keepalives, Claude Code's and
+        Codex's own tools. Nothing is estimated here.
 
         **Why it exists (2026-09-27).** Until the first token a stream
         said nothing. On the processor a long prompt takes minutes to
         read -- measured, 35 s for 7,795 tokens with a 0.6B -- and a
         tester who saw nothing for that long concluded the request had
-        failed. llama.cpp says how far it has got, one frame per batch;
-        this carries it to the caller.
+        failed. A cloud agent is the same shape from the other end.
       properties:
+        stage:
+          type: string
+          enum: [prompt, working, tool]
+          description: |
+            `prompt`: reading the prompt, with the token counts below.
+            `working`: the backend says it is working and not how far.
+            `tool`: an agent backend is running one of its own tools,
+            named in `tool`.
+        tool:
+          type: string
+          description: On `tool`, the tool's name as the backend gives it.
         prompt_tokens:
           type: integer
           minimum: 0
-          description: Tokens in the whole prompt.
+          description: On `prompt`, tokens in the whole prompt.
         cached_tokens:
           type: integer
           minimum: 0
