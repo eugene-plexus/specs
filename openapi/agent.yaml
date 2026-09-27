@@ -889,7 +889,13 @@ paths:
 
         Returns 409 when an install is already running, and 422 when
         this host has no installable build (see
-        `EngineAcquisition.reason`).
+        `EngineAcquisition.reason`) or when a requested `variant` is not
+        one the release publishes for this host.
+
+        Installing a variant other than the one already there, at the
+        same version, replaces that build's directory. A runtime running
+        from it holds its files open on Windows, so stop it first; the
+        install fails naming the reason otherwise.
 
         **An engine with `acquisition.policy: manual` always returns
         422**, on every host, because we do not install that engine at
@@ -921,7 +927,7 @@ paths:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
         "422":
-          description: Nothing installable for this host.
+          description: Nothing installable for this host, or not the variant asked for.
           content:
             application/problem+json:
               schema:
@@ -3601,6 +3607,17 @@ components:
         variant:
           type: string
           description: The asset variant that would be fetched, when installable.
+        alternatives:
+          type: array
+          items:
+            type: string
+          description: |
+            Every variant the newest usable release publishes for this
+            operating system and CPU, the default included, for
+            `EngineInstallRequest.variant`. On a Windows x64 machine that
+            is the CPU, CUDA, Vulkan, ROCm, SYCL and OpenVINO builds; on
+            Linux the same families under `ubuntu-`. Empty when no
+            release could be read.
         reason:
           type: string
           description: |
@@ -3714,6 +3731,24 @@ components:
             alike. `rocm` is still reported on Windows when the HIP SDK
             is actually installed, which is what makes
             `win-rocm-10.0-x64` reachable rather than dead code.
+
+            **Since 2026-09-27 the same holds on Linux**, and SYCL is
+            narrower there. An AMD card without ROCm, an Intel card
+            without oneAPI, and an NVIDIA card with no `nvidia-smi` (the
+            Mesa driver) get `vulkan` and `ubuntu-vulkan-*` when the
+            Vulkan loader is installed. Before, the AMD card got a CPU
+            build, and any machine with Intel graphics (so every Intel
+            laptop, by the `i915` driver) got `ubuntu-sycl-fp16-x64`,
+            which needs a oneAPI runtime that such a machine rarely
+            has. `sycl` now means `sycl-ls` answered.
+
+            **A Qualcomm Adreno (Snapdragon X) is `none`, and says why.**
+            Upstream publishes no Vulkan build for Windows on ARM. Its
+            `win-opencl-adreno-arm64` build is documented as tuned for
+            Q4_0 models, which are not what the starter set downloads,
+            and no one on the project has run it. So the CPU build, which
+            upstream tunes for ARM, is the default, and the OpenCL one is
+            available through `EngineInstallRequest.variant`.
         acceleratorVersion:
           type: string
           description: |
@@ -3776,6 +3811,23 @@ components:
             Present so an operator who found a regression can pin the
             build that worked, which is the whole reason we record the
             version rather than just "installed".
+        variant:
+          type: string
+          description: |
+            Install this build variant instead of the one chosen for
+            this host, e.g. `win-sycl-x64` for an Intel Arc through
+            oneAPI rather than Vulkan, or `win-cpu-x64` to rule the GPU
+            out while diagnosing. Omit it for the default, which is what
+            `EngineAcquisition.variant` names. It must be one of
+            `EngineAcquisition.alternatives` (a variant the release
+            publishes for this operating system and CPU); anything else
+            is a 422 that lists them.
+
+            This is the expert's way past a default chosen for hardware
+            nobody on the project has run, which is most of it. It does
+            not change how this host's devices are reported: those
+            follow the default build, so a model is still scored against
+            the card the default would use.
 
     EngineInstall:
       type: object

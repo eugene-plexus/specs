@@ -240,7 +240,10 @@ components:
           description: |
             Device ordinal on its own host — what `CUDA_VISIBLE_DEVICES`
             or `HIP_VISIBLE_DEVICES` in a runtime's `env` selects to pin
-            that runtime to one card.
+            that runtime to one card. For a `vulkan` device it is the
+            order the operating system lists its adapters in, which is
+            not promised to be the order `GGML_VK_VISIBLE_DEVICES`
+            counts in.
         memoryTotalBytes:
           type: integer
           format: int64
@@ -252,12 +255,37 @@ components:
             2.9 GiB of a 32 GiB card already held on an idle desktop.
             Both are reported so the difference is visible rather than
             surprising.
+        sharedMemory:
+          type: boolean
+          description: |
+            True when this device has no memory of its own and computes
+            out of the host's RAM: an integrated GPU (an Intel Arc or
+            Iris in a laptop or mini PC, an AMD Radeon 780M or Strix
+            Halo), Apple silicon, NVIDIA's GB10. Then `memoryTotalBytes`
+            is how much RAM the operating system lets the GPU address,
+            plus any carve-out reserved for it at boot, and
+            `memoryFreeBytes` is what is left of that. There is no second
+            pool for a partial offload to spill into, so a fit that also
+            counted host RAM would count the same memory twice.
+
+            Absent or false for a card with memory of its own. Added
+            2026-09-27, when an Intel Arc mini PC read "no GPU" and the
+            only unified-memory case the install knew was a Mac.
 
     ComputeDeviceKind:
       type: string
-      enum: [cuda, rocm, xpu, metal, cpu]
+      enum: [cuda, rocm, xpu, metal, vulkan, cpu]
       description: |
         What kind of device this is.
+
+        `vulkan` is a GPU served by llama.cpp's Vulkan build, which needs
+        nothing but the graphics driver: an Intel Arc, an AMD Radeon or
+        any other vendor's card on a machine without that vendor's
+        compute SDK. Added 2026-09-27. Before it, such a card was
+        invisible to this list even when the Vulkan build was the one
+        installed to serve it, so every fit on that machine was scored
+        against host memory. `rocm` and `xpu` are for a card whose SDK
+        is present.
 
         A named schema rather than an inline enum because an inline one
         generated a bare `Kind` class, which is too generic to sit in a
