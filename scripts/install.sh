@@ -58,12 +58,12 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=2dcf64522a5cdd5d6756cb89ed2fc832994e5dc9
-PIN_CONTROL=cfd8138cb964aa09699767f1a9508a2b427b3363
-PIN_GATEWAY=6f2994a994dd7ba6637b9dc9fd60e84b3eee6784
-PIN_DRIVER=87cf908c4ea51b459e7e08f65bd7ce0f99c853a9
-PIN_LIBRARY=8a25e7115eabcaedefdb288c064c4eb98f624eb5
-PIN_UI=35461c3ec9a1f219c5d32ffffada336f9cfe6feb   # branch `dist`, not `main`
+PIN_AGENT=06c321b6c9599419a602c6d6d7c5773eb53cdff2
+PIN_CONTROL=32a110f70ff47ec2b51050d085d49e5f9c39f30a
+PIN_GATEWAY=f6e02115ca3f72153eac4cf84ae171853be649cf
+PIN_DRIVER=8c6f5a8d222b07f0258e9637e2def733b1a6d012
+PIN_LIBRARY=cec7815d73bb3d64a2d82e93d4825491c41b3153
+PIN_UI=645ab749f76adb752c08a6370e327dba925f5242   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
@@ -85,6 +85,7 @@ JOIN_ADVERTISE=
 JOINED=0
 DO_PURGE_COPIES=0
 ADVERTISED=0
+UPDATE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -99,6 +100,7 @@ while [ $# -gt 0 ]; do
         --token) JOIN_TOKEN=$2; shift 2 ;;
         --name) JOIN_NAME=$2; shift 2 ;;
         --advertise) JOIN_ADVERTISE=$2; shift 2 ;;
+        --update) UPDATE=1; shift ;;
         -h|--help)
             sed -n '2,52p' "$0" 2>/dev/null || true
             echo "options: --user  --prefix DIR  --no-service  --no-start  --uninstall"
@@ -258,6 +260,145 @@ in_prefix() {
     if [ "$MODE" = system ]; then as_service "$@"; else "$@"; fi
 }
 
+# --- --update ---------------------------------------------------------
+# **How the app updates an install** (2026-09-27). The agent asks for it
+# -- a system install through the root unit below, a per-user one through
+# a transient user unit -- and this run replaces the packages with the
+# ones this script pins and restarts Eugene. Everything else about the
+# install stays exactly as it was written: its unit, its models folder,
+# who it runs as. Refused for anything that is not already an install, so
+# an update can never be the thing that makes a second one.
+if [ "$UPDATE" = 1 ]; then
+    if [ -n "$JOIN_CONTROL" ] || [ "$DO_UNINSTALL" = 1 ]; then
+        die "--update upgrades the install at $PREFIX; it cannot be combined with --join or --uninstall"
+    fi
+    if ! in_prefix test -x "$PYBIN" || ! in_prefix test -f "$CONFIG"; then
+        die "--update found no install at $PREFIX to update"
+    fi
+fi
+
+# --- the root unit a system install updates through ---------------------
+# **Root never runs anything from the prefix**: Eugene's account owns it,
+# so it could put code there and have root run it. The agent writes one
+# thing, a request naming a specs commit or a release tag. This root-owned
+# helper, outside the prefix, reads that request AS the account, checks
+# its shape, downloads our installer for it into a folder only root can
+# write, checks it against the release's checksums when there are any,
+# runs it, and hands the account a record to copy back -- so nothing it
+# writes lands through a path the account could have pointed elsewhere.
+UPDATE_HELPER=/usr/local/lib/eugene-plexus/update
+UPDATE_STAGE=/var/lib/eugene-plexus-update
+UPDATE_SERVICE=/etc/systemd/system/eugene-plexus-update.service
+UPDATE_PATH=/etc/systemd/system/eugene-plexus-update.path
+
+write_update_helper() {
+    as_root install -d -m 0755 "$(dirname "$UPDATE_HELPER")"
+    as_root install -d -m 0711 "$UPDATE_STAGE"
+    in_prefix mkdir -p "$PREFIX/update"
+    {
+        printf '#!/bin/sh\n'
+        printf "PREFIX='%s'\n" "$PREFIX"
+        printf "ACCOUNT='%s'\n" "$SYSTEM_ACCOUNT"
+        printf "STAGE='%s'\n" "$UPDATE_STAGE"
+        cat <<'HELPER'
+# Installed by Eugene Plexus's install.sh; see "the root unit a system
+# install updates through" there. Run as root by eugene-plexus-update.service.
+set -u
+DIR=$PREFIX/update
+REPO=https://github.com/eugene-plexus/specs
+RAW=https://raw.githubusercontent.com/eugene-plexus/specs
+as_account() { (cd / && runuser -u "$ACCOUNT" -- "$@"); }
+
+# Read and remove the request as Eugene's account: a path it controls
+# could point anywhere root can read.
+LINE=$(as_account head -c 200 "$DIR/request" 2>/dev/null | head -n 1)
+as_account rm -f "$DIR/request"
+[ -n "$LINE" ] || exit 0
+REF=${LINE%% *}
+
+STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+WORK=$(mktemp -d "$STAGE/run.XXXXXX") || exit 1
+chmod 0711 "$WORK"
+trap 'rm -rf "$WORK"' EXIT
+LOG=$WORK/update.log
+: >"$LOG"
+
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037'; }
+finish() {
+    {
+        printf '{"target":"%s","startedAt":"%s",' "$(esc "$REF")" "$STARTED"
+        printf '"finishedAt":"%s","outcome":"%s",' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"
+        printf '"detail":"%s","log":"%s"}' "$(esc "$2")" "$DIR/update.log"
+    } >"$WORK/last.json"
+    chmod 0644 "$WORK/last.json" "$LOG"
+    # Copied in by the account, never written by root through its paths.
+    as_account cp -f "$LOG" "$DIR/update.log"
+    as_account cp -f "$WORK/last.json" "$DIR/last.json.tmp" \
+        && as_account mv -f "$DIR/last.json.tmp" "$DIR/last.json"
+    as_account rm -f "$DIR/running.json"
+}
+
+if printf '%s' "$REF" | grep -Eq '^[0-9a-f]{40}$'; then
+    URL=$RAW/$REF/scripts/install.sh
+    SUMS=
+elif printf '%s' "$REF" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+    URL=$REPO/releases/download/$REF/install.sh
+    SUMS=$REPO/releases/download/$REF/SHA256SUMS
+else
+    # Never echoed back: it came from a file root does not own.
+    REF=unrecognised
+    finish failed "The update request did not name a specs commit or a release tag, so nothing was installed."
+    exit 1
+fi
+if ! curl -fsSL "$URL" -o "$WORK/install.sh" 2>>"$LOG"; then
+    finish failed "Could not download $URL."
+    exit 1
+fi
+if [ -n "$SUMS" ]; then
+    if ! curl -fsSL "$SUMS" -o "$WORK/SHA256SUMS" 2>>"$LOG" \
+        || ! (cd "$WORK" && grep ' install.sh$' SHA256SUMS | sha256sum -c - >>"$LOG" 2>&1); then
+        finish failed "The installer for $REF did not match the checksum its release published, so it was not run."
+        exit 1
+    fi
+fi
+sh "$WORK/install.sh" --update >>"$LOG" 2>&1
+CODE=$?
+if [ "$CODE" = 0 ]; then
+    finish succeeded "Installed $REF."
+else
+    # Whatever the installer left behind, bring the agent back.
+    systemctl start eugene-plexus-agent >/dev/null 2>&1 || true
+    finish failed "The installer exited with $CODE. Its last lines: $(tail -n 12 "$LOG" | tr '\n' '|')"
+fi
+HELPER
+    } | as_root tee "$UPDATE_HELPER" >/dev/null
+    as_root chown root:root "$UPDATE_HELPER"
+    as_root chmod 0755 "$UPDATE_HELPER"
+    as_root tee "$UPDATE_SERVICE" >/dev/null <<EOF
+[Unit]
+Description=Eugene Plexus update, asked for by the agent
+
+[Service]
+Type=oneshot
+ExecStart=$UPDATE_HELPER
+TimeoutStartSec=1800
+EOF
+    as_root tee "$UPDATE_PATH" >/dev/null <<EOF
+[Unit]
+Description=Eugene Plexus update requests
+
+[Path]
+PathExists=$PREFIX/update/request
+Unit=eugene-plexus-update.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    as_root systemctl daemon-reload
+    as_root systemctl enable --now eugene-plexus-update.path >/dev/null 2>&1 \
+        || warn "could not enable eugene-plexus-update.path, so this install cannot update itself from the app"
+}
+
 # --- service plumbing -------------------------------------------------
 # A *user* service in the per-user layout: it reads the user's own model
 # directories and writes to the user's own keyring, and the cost is
@@ -385,7 +526,9 @@ if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
     fi
     say "stopping the service"
     service_stop
-    as_root rm -f "$SYSTEM_UNIT"
+    as_root systemctl disable --now eugene-plexus-update.path >/dev/null 2>&1 || true
+    as_root rm -f "$SYSTEM_UNIT" "$UPDATE_SERVICE" "$UPDATE_PATH" "$UPDATE_HELPER"
+    as_root rm -rf "$UPDATE_STAGE"
     as_root systemctl daemon-reload >/dev/null 2>&1 || true
     if as_root test -d "$PREFIX"; then
         KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
@@ -1129,12 +1272,17 @@ write_launchd_plist() {
 EOF
 }
 
-if [ "$MODE" = system ]; then
+if [ "$UPDATE" = 1 ]; then
+    # The unit stays as it was written; the update helper is this
+    # version's, since a newer installer may carry a newer one.
+    if [ "$MODE" = system ]; then write_update_helper; fi
+elif [ "$MODE" = system ]; then
     prepare_models_dir
     say "writing $SYSTEM_UNIT"
     write_system_unit
     as_root systemctl daemon-reload
     as_root systemctl enable "$SERVICE_LABEL" >/dev/null 2>&1 || true
+    write_update_helper
 elif [ "$DO_SERVICE" = 1 ] && [ "$PLATFORM" = linux ]; then
     if ! command -v systemctl >/dev/null 2>&1 || [ ! -d "${XDG_RUNTIME_DIR:-/nonexistent}" ]; then
         warn "no systemd user session here — skipping the service. Start the agent with:

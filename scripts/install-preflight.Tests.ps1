@@ -310,8 +310,12 @@ Describe 'The install directory is private' {
     # does. Before the venv, so nothing is ever written unprotected, and
     # after the service block, which is what creates models\.
     It 'the installer calls it before anything is written and again once the doors exist' {
-        $calls = @([regex]::Matches($source, '(?m)^(?:if \()?Protect-InstallDirectory -Path \$Prefix -Service:\$WantsService'))
+        # Amended 2026-09-27: both calls are skipped on -Update, because a
+        # run as SYSTEM would grant the install's folder to SYSTEM instead of
+        # the person. The guard is asserted, not only allowed.
+        $calls = @([regex]::Matches($source, '(?m)^if \(.*Protect-InstallDirectory -Path \$Prefix -Service:\$WantsService.*$'))
         $calls.Count | Should Be 2
+        @($calls | Where-Object { $_.Value -notmatch '-not \$Update' }).Count | Should Be 0
         $calls[0].Index | Should BeGreaterThan $source.IndexOf('# --- 1. uv ')
         $calls[0].Index | Should BeLessThan $source.IndexOf('# --- 2. venv')
         $calls[1].Index | Should BeGreaterThan $source.IndexOf('# --- 5. autostart')
@@ -653,6 +657,52 @@ Describe 'An install from alpha.2 or earlier' {
     It 'lets a machine with no node file through' {
         $Prefix = Join-Path $Root 'none'
         { Assert-UpgradeableInstall } | Should Not Throw
+    }
+}
+
+Describe 'An update started from the app' {
+    # 2026-09-27: the agent runs this script with -Update from a one-shot
+    # scheduled task. It may only ever upgrade the install that is there.
+    BeforeEach {
+        $script:Existing = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Force -Path (Join-Path $script:Existing 'venv\Scripts') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $script:Existing 'agent.yaml'), 'firstRunComplete: true')
+        [IO.File]::WriteAllText((Join-Path $script:Existing 'venv\Scripts\python.exe'), '')
+        Mock Get-CimInstance { $null }
+        Mock Get-Service { $null }
+        Mock Get-ScheduledTask {
+            [pscustomobject]@{ Actions = @([pscustomobject]@{
+                Execute = Join-Path $script:Existing 'venv\Scripts\eugene-plexus-agent.exe'
+            }) }
+        }
+        Mock Start-Process { throw 'TEST: elevation must not be reached' }
+        Mock Write-Host {}
+    }
+
+    It 'upgrades the per-user install that is here' {
+        { & $preflight -Prefix $script:Existing -NoService -Update -NoElevate } | Should Not Throw
+    }
+
+    It 'never makes a second install' {
+        $empty = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        { & $preflight -Prefix $empty -NoService -Update -NoElevate } |
+            Should Throw '-Update found no install'
+        Test-Path (Join-Path $empty 'venv') | Should Be $false
+    }
+
+    It 'never touches an autostart that runs a different install' {
+        $source -match '(?s)if \(\$Update\) \{\s+# \*\*Only the autostart that runs THIS install' | Should Be $true
+        $guard = $source.IndexOf('-Update only updates the install its autostart runs')
+        $stop = $source.IndexOf('if (Get-AgentService) { Stop-Service')
+        $guard | Should BeGreaterThan 0
+        $guard | Should BeLessThan $stop
+    }
+
+    It 'is only ever an upgrade' {
+        foreach ($other in @(@{ Join = 'http://root:8083' }, @{ Migrate = $true }, @{ Isolated = $true })) {
+            { & $preflight -Prefix $script:Existing -NoService -Update -NoElevate @other } |
+                Should Throw 'cannot be combined'
+        }
     }
 }
 

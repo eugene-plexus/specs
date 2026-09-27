@@ -236,4 +236,14 @@
     Display="advanced"
     Required="false"
     Mask="false">0</Config>
+
+  <Config
+    Name="Container host"
+    Target="EUGENE_PLEXUS_CONTAINER_HOST"
+    Default="unraid"
+    Description="Leave at unraid. It tells Eugene this container runs on Unraid, so when a newer version is out the page says to use Force Update rather than general Docker steps."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false">unraid</Config>
 </Container>

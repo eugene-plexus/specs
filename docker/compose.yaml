@@ -36,8 +36,18 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        # The name this image is published as, which it reports so an
+        # update can say which tag to pull. CI sets it for a release.
+        EP_IMAGE: ${EP_IMAGE:-ghcr.io/eugene-plexus/control-plane:edge}
     image: eugene-plexus/control-plane:0.1
     container_name: eugene-plexus-control-plane
+
+    # So the page's update steps are Compose's own commands rather than
+    # general Docker ones. A container cannot update itself: an update is a
+    # new image, `docker compose pull && docker compose up -d`.
+    environment:
+      EUGENE_PLEXUS_CONTAINER_HOST: compose
 
     # The node's name in this install is `socket.gethostname()` at
     # enrollment, and a container's default hostname is its container ID

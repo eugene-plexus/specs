@@ -96,6 +96,9 @@ jobs:
           echo "EP_AGENT_SRC=$RUNNER_TEMP/agent/src/eugene_plexus_agent" >> "$GITHUB_ENV"
 
       - name: Build and verify the image (27 checks)
+        env:
+          # The name the image reports, so an update can say which tag to pull.
+          EP_IMAGE: ${{ env.IMAGE }}:${{ inputs.release_tag || 'edge' }}
         run: bash scripts/compose-acceptance.sh
 
       - name: Restore isolated control plane and worker after a failed update

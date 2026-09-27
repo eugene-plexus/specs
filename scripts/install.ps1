@@ -60,6 +60,15 @@
   graphics card for a game, start it again afterwards. `-NoTray` skips
   it.
 
+  -UPDATE IS HOW THE APP UPDATES AN INSTALL (2026-09-27). The agent starts
+  this script from a one-shot scheduled task -- as SYSTEM for the service,
+  as the person for a per-user install -- because the first thing an
+  upgrade does is stop the agent. It replaces the packages with the ones
+  this script pins, refreshes the service host, starts Eugene again, and
+  keeps everything else about the install exactly as it is: its autostart,
+  the tray icon, who may start and stop it, and its folder's permissions.
+  Run as SYSTEM, an ordinary run would re-register those for SYSTEM.
+
   WHERE THE PACKAGES COME FROM. GitHub source archives at pinned
   commits -- the same mechanism `SPECS_REF` has used in every consumer
   since M0. No package registry, no release. The UI pin points at the
@@ -97,7 +106,8 @@ param(
     [string]$Join,
     [string]$Token,
     [string]$NodeName,
-    [string]$Advertise
+    [string]$Advertise,
+    [switch]$Update
 )
 
 $ErrorActionPreference = "Stop"
@@ -108,12 +118,12 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "2dcf64522a5cdd5d6756cb89ed2fc832994e5dc9"
-    "control"          = "cfd8138cb964aa09699767f1a9508a2b427b3363"
-    "gateway"          = "6f2994a994dd7ba6637b9dc9fd60e84b3eee6784"
-    "inference-driver" = "87cf908c4ea51b459e7e08f65bd7ce0f99c853a9"
-    "library"          = "8a25e7115eabcaedefdb288c064c4eb98f624eb5"
-    "ui"               = "35461c3ec9a1f219c5d32ffffada336f9cfe6feb"  # branch `dist`, not `main`
+    "agent"            = "06c321b6c9599419a602c6d6d7c5773eb53cdff2"
+    "control"          = "32a110f70ff47ec2b51050d085d49e5f9c39f30a"
+    "gateway"          = "f6e02115ca3f72153eac4cf84ae171853be649cf"
+    "inference-driver" = "8c6f5a8d222b07f0258e9637e2def733b1a6d012"
+    "library"          = "cec7815d73bb3d64a2d82e93d4825491c41b3153"
+    "ui"               = "645ab749f76adb752c08a6370e327dba925f5242"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -333,6 +343,19 @@ $AgentEx = Join-Path $Venv "Scripts\eugene-plexus-agent.exe"
 $UvExe = Join-Path $Prefix "bin\uv.exe"
 $Config = Join-Path $Prefix "agent.yaml"
 $Port = if ($env:EUGENE_PLEXUS_AGENT_BIND_PORT) { $env:EUGENE_PLEXUS_AGENT_BIND_PORT } else { 8079 }
+
+# --- -Update ----------------------------------------------------------
+# An upgrade of the install at -Prefix and nothing else: see the top of
+# this file. Refused for anything that is not already an install, so an
+# update can never be the thing that makes a second one.
+if ($Update) {
+    if ($Join -or $Uninstall -or $Migrate -or $Isolated) {
+        Die "-Update upgrades the install at $Prefix; it cannot be combined with -Join, -Uninstall, -Migrate or -Isolated"
+    }
+    if (-not (Test-Path -LiteralPath $PyBin) -or -not (Test-Path -LiteralPath $Config)) {
+        Die "-Update found no install at $Prefix to update"
+    }
+}
 
 # --- -Verify ----------------------------------------------------------
 # The two commands that close the one gap this installer cannot close
@@ -1772,8 +1795,10 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Prefix "bin"), (Join-Path 
 # Before anything else is written, so that nothing -- a venv, a
 # node.yaml from -Join, a copied agent.yaml -- ever exists here with
 # another account able to read or add to it. Run again after step 5,
-# once the folders the service's doors open onto exist.
-Protect-InstallDirectory -Path $Prefix -Service:$WantsService | Out-Null
+# once the folders the service's doors open onto exist. Not on -Update:
+# the install already has its permissions, and a run as SYSTEM would
+# grant them to SYSTEM instead of the person.
+if (-not $Update) { Protect-InstallDirectory -Path $Prefix -Service:$WantsService | Out-Null }
 
 # Before uv, before the venv, before anything can read a config: if this
 # run is taking over an install that lives somewhere else, its identity
@@ -1846,7 +1871,24 @@ if (Test-Path $Config) {
 # install pauses across the upgrade rather than surviving it -- which is
 # also what an upgrade of a supervised install means. (A join never
 # finds one running: 0b set every install aside.)
-if (-not $Isolated -and ((Get-AgentTask) -or (Get-AgentService))) {
+if ($Update) {
+    # **Only the autostart that runs THIS install.** The service and task
+    # names are fixed, so without this an update pointed at any other
+    # folder would stop this machine's real Eugene and re-point its service
+    # at that folder -- the same guard Remove-Autostart keeps, for the same
+    # reason.
+    $exe = Get-AutostartExecutable
+    if ($exe -and -not (Test-RunsFromThisInstall $exe)) {
+        Die "the autostart on this machine runs $exe, which is not the install at $Prefix; -Update only updates the install its autostart runs"
+    }
+    # Stopped, never unregistered: the autostart, the tray icon and who may
+    # start and stop the service all stay exactly as they are.
+    Say "stopping the running agent so its files can be replaced"
+    if (Get-AgentService) { Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue }
+    if (Get-AgentTask) { Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue }
+    Stop-ProcessUnder -Paths @($Prefix)
+}
+elseif (-not $Isolated -and ((Get-AgentTask) -or (Get-AgentService))) {
     Say "stopping the running agent so its files can be replaced"
     Remove-Autostart
 }
@@ -2052,7 +2094,25 @@ elseif ($Advertise) {
 
 # --- 5. autostart -----------------------------------------------------
 $autostart = "none"
-if (-not $NoService) {
+if ($Update) {
+    if (Get-AgentService) {
+        # `update`, not `install`: the service is there, and this refreshes
+        # its host in the venv (pythonservice.exe and the DLLs beside it)
+        # for the packages just installed.
+        Say "refreshing the $ServiceName service"
+        & $PyBin -m eugene_plexus_agent.winservice update
+        if ($LASTEXITCODE -ne 0) { Die "could not refresh the service" }
+        Set-ServiceBootstrap
+        $autostart = "service"
+    }
+    elseif (Get-AgentTask) {
+        $autostart = "task"
+    }
+    else {
+        Warn "nothing starts this install automatically, so it was updated and left stopped"
+    }
+}
+elseif (-not $NoService) {
     Remove-Autostart
     if ($WantsService) {
         Say "registering the $ServiceName service"
@@ -2113,7 +2173,7 @@ if (-not $NoService) {
 }
 
 # venv\ and pythons\ exist now, and a service's models\ was made above.
-if (Protect-InstallDirectory -Path $Prefix -Service:$WantsService) {
+if (-not $Update -and (Protect-InstallDirectory -Path $Prefix -Service:$WantsService)) {
     Say "this install's settings and keys are private to $(if ($WantsService) { 'the service and administrators' } else { 'you' })"
 }
 
@@ -2132,11 +2192,11 @@ if (Protect-InstallDirectory -Path $Prefix -Service:$WantsService) {
 # The Start menu entry goes in for every install that has an autostart,
 # tray icon or not: it is the only discoverable way back to a Eugene
 # that has been stopped, and the URL is not one.
-if ($autostart -ne "none") {
+if ($autostart -ne "none" -and -not $Update) {
     Add-StartMenuShortcut
 }
 
-if ($autostart -eq "service" -and -not $NoTray) {
+if ($autostart -eq "service" -and -not $NoTray -and -not $Update) {
     $trayExe = Join-Path $Venv "Scripts\eugene-plexus-tray.exe"
     if (Test-Path $trayExe) {
         Say "registering the $TrayTaskName logon task (the notification-area icon)"
@@ -2169,7 +2229,7 @@ if ($autostart -eq "service" -and -not $NoTray) {
 # inherits the user environment; a service reads the machine one, set
 # above. The bind host is deliberately not set beside it -- see the join
 # block for why the agent derives that one itself.
-if (-not $Isolated) {
+if (-not $Isolated -and -not $Update) {
     [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_CONFIG_FILE", $Config, "User")
 }
 $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
@@ -2191,6 +2251,9 @@ $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
 # (#10 above). -Uninstall clears it.
 if ($Isolated) {
     Say "isolated install: no service, task, tray or persistent environment was changed"
+}
+elseif ($Update) {
+    # The port this install uses is already where its autostart reads it.
 }
 elseif ($Port -ne 8079) {
     [Environment]::SetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_PORT", "$Port", "User")
@@ -2225,6 +2288,11 @@ if (-not $NoStart -and $autostart -ne "none") {
             Say "Eugene Plexus is running -- open http://127.0.0.1:$Port/"
             Say "logs:  $Prefix\logs\    config: $Config"
             Show-SetAsideNote
+            # Stopping the install stopped the tray icon too (it runs from
+            # the venv). Its task belongs to the person, and SYSTEM may run it.
+            if ($Update -and (Get-ScheduledTask -TaskName $TrayTaskName -ErrorAction SilentlyContinue)) {
+                Start-ScheduledTask -TaskName $TrayTaskName -ErrorAction SilentlyContinue
+            }
             return
         }
         catch {

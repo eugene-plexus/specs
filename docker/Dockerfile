@@ -136,6 +136,12 @@ RUN sh /tmp/install.sh --prefix /opt/eugene-plexus --no-service --no-start \
 # its compute capability. The second is what hands a card over, so it is
 # the operator's to set -- baked in here, every host whose default
 # runtime is NVIDIA would pass its GPUs to this container unasked.
+# **What this image is published as**, so a newer version can be named:
+# a container cannot update itself, and the page tells the person which
+# image to pull. `edge` unless the release workflow says otherwise.
+ARG EP_IMAGE=ghcr.io/eugene-plexus/control-plane:edge
+ENV EUGENE_PLEXUS_CONTAINER_IMAGE=$EP_IMAGE
+
 ENV EUGENE_PLEXUS_AGENT_CONFIG_FILE=/data/agent.yaml \
     EUGENE_PLEXUS_AGENT_ENGINE_ROOT=/data/engines \
     CUDA_CACHE_PATH=/data/cuda-cache \
