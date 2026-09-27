@@ -113,7 +113,7 @@ $PIN = @{
     "gateway"          = "2f4d8ddbabd8400dae6fcd9689fc195653e88d4d"
     "inference-driver" = "f754620003950991b546503f79775450f1113737"
     "library"          = "47dfdf032ab9cc63cef3753e37af0d08c2b71e23"
-    "ui"               = "c8bd8b0ff10f81aa2f28d2d9e7b449e030db0a0b"  # branch `dist`, not `main`
+    "ui"               = "20c972f59a8c1f3ea10af329c05d2face3098efb"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -1356,8 +1356,10 @@ the Eugene install at $Prefix
        over. Start fresh: remove it (its files are kept, moved aside), then
        run this command again.
          & ([scriptblock]::Create((irm $InstallerUrl))) -Uninstall
-       Your model files are not touched. You will choose a new passphrase,
-       and machines that were joined to it will need to join again.
+       No model file is deleted. Any in its own models folder move aside
+       with it; the uninstall says where, so you can move them into the new
+       install's. You will choose a new passphrase, and machines that were
+       joined to it will need to join again.
 "@
 }
 
@@ -1591,6 +1593,15 @@ could not move $Prefix aside: $(Get-ErrorText $_)
             }
             Say "removed the install at $Prefix."
             Write-Host "    Its config and logs are at $keep -- delete it when you are sure."
+            # A service install's default models folder is inside the prefix,
+            # so its models moved too. Say where, before anyone deletes it.
+            $movedModels = Join-Path $keep "models"
+            if (Get-ChildItem -LiteralPath $movedModels -Recurse -File -ErrorAction SilentlyContinue |
+                Select-Object -First 1) {
+                Say "the models that were in $(Join-Path $Prefix 'models') moved with it, to"
+                Write-Host "    $movedModels"
+                Write-Host "    Move them into a new install's models folder to use them there."
+            }
         }
         else {
             Say "nothing installed at $Prefix"

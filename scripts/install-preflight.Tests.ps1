@@ -636,7 +636,7 @@ Describe 'An install from alpha.2 or earlier' {
         try { Assert-UpgradeableInstall } catch { $threw = $_.Exception.Message }
         $threw | Should Match 'alpha\.2 or earlier'
         $threw | Should Match '-Uninstall'
-        $threw | Should Match 'model files are not touched'
+        $threw | Should Match 'No model file is deleted'
         # Every line fits a console except the command, which is copied.
         $lines = @($threw -split "`n" | Select-Object -Skip 1)
         @($lines | Where-Object { $_ -notmatch 'scriptblock' -and $_.Length -gt 80 }).Count | Should Be 0
@@ -752,6 +752,9 @@ Describe 'Uninstall finds the install wherever it is' {
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
             [IO.File]::WriteAllText((Join-Path $dir 'agent.yaml'), 'x')
         }
+        # A service install's default models folder is inside the prefix.
+        New-Item -ItemType Directory -Force -Path (Join-Path $Prefix 'models') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $Prefix 'models\m.gguf'), 'weights')
         [Environment]::SetEnvironmentVariable($ConfigVariable, (Join-Path $elsewhere 'agent.yaml'), 'User')
         try { . $runUninstall }
         finally { [Environment]::SetEnvironmentVariable($ConfigVariable, $null, 'User') }
@@ -760,6 +763,9 @@ Describe 'Uninstall finds the install wherever it is' {
         @(Get-ChildItem $env:LOCALAPPDATA -Filter 'EugenePlexus.removed-*').Count | Should Be 1
         @(Get-ChildItem (Split-Path -Parent $elsewhere) -Filter 'EugenePlexus.removed-*').Count | Should Be 1
         Assert-MockCalled Invoke-ElevatedInstaller -Scope It -Times 0 -Exactly
+        # Its models moved with it, and it says where -- once, for the one
+        # install that had any.
+        Assert-MockCalled Write-Host -Scope It -Times 1 -Exactly -ParameterFilter { "$Object" -like '*models that were in*moved with it*' }
     }
 
     It 'says where it looked when there is nothing to remove' {

@@ -63,7 +63,7 @@ PIN_CONTROL=b14bd5764d233944ad9209104ca97e1ba40a418e
 PIN_GATEWAY=2f4d8ddbabd8400dae6fcd9689fc195653e88d4d
 PIN_DRIVER=f754620003950991b546503f79775450f1113737
 PIN_LIBRARY=47dfdf032ab9cc63cef3753e37af0d08c2b71e23
-PIN_UI=c8bd8b0ff10f81aa2f28d2d9e7b449e030db0a0b   # branch `dist`, not `main`
+PIN_UI=20c972f59a8c1f3ea10af329c05d2face3098efb   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
@@ -402,6 +402,12 @@ if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
         as_root chmod 0700 "$KEEP"
         say "removed. Its config and logs are at $KEEP (readable by root only) —"
         say "  delete it when you are sure: sudo rm -rf '$KEEP'"
+        # With nobody to make a home folder for, the models went under the
+        # prefix, so they moved too. Say where, before anyone deletes it.
+        if [ -n "$(as_root find "$KEEP/models" -type f 2>/dev/null | head -1)" ]; then
+            say "the models that were in $PREFIX/models moved with it, to $KEEP/models"
+            say "  (readable by root only). Move them into a new install's models folder."
+        fi
     else
         say "nothing installed at $PREFIX"
     fi
@@ -687,8 +693,10 @@ if [ -z "$JOIN_CONTROL" ] && in_prefix grep -q '^signingKey:' "$PREFIX/node.yaml
        over. Start fresh: remove it (its files are kept, moved aside), then
        run this command again.
          curl -fsSL $INSTALLER_URL | sh -s -- --uninstall
-       Your model files are not touched. You will choose a new passphrase,
-       and machines that were joined to it will need to join again."
+       No model file is deleted. Any in its own models folder move aside
+       with it; the uninstall says where, so you can move them into the new
+       install's. You will choose a new passphrase, and machines that were
+       joined to it will need to join again."
 fi
 
 # --- 1. uv ------------------------------------------------------------
