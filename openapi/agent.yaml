@@ -275,10 +275,114 @@ tags:
       an app needs, the public contract offers to everyone. Its UI runs
       on its own port — its own browser origin — and is never embedded
       in the console. Design: `docs/design/apps-and-spokes.md`.
+  - name: logs
+    description: |
+      This machine's log: the agent's own lines and every component,
+      driver and engine it supervises, one stream, each line stamped at
+      receipt and tagged with its source (2026-09-27). Read from any
+      console through `node:<name>`, like `docker logs`.
   - name: meta
     description: Health and version.
 
 paths:
+  /v1/logs:
+    get:
+      tags: [logs]
+      operationId: readLogs
+      summary: This machine's log, newest last.
+      description: |
+        The newest `tail` lines that match, oldest first, read from the
+        current file and its rotated predecessors (10 MB x 5). Every line
+        of this agent's stream: its own lines (`source: agent`) and each
+        supervised child's, under the name the supervisor prefixes it with
+        (`gateway`, `engine: qwen`). `update` is the in-app updater's own
+        log, served only when asked for by name: it has no stamps to place
+        it among the rest.
+
+        **Tokens and API keys are masked** (`[redacted]`). A line that
+        prints one is a defect where it is written; the mask is insurance.
+
+        Operator-only: a log says more about a machine than any other
+        read, so no service credential opens it.
+      parameters:
+        - name: source
+          in: query
+          description: Only these sources. Repeat the parameter for several.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: since
+          in: query
+          description: Only lines stamped at or after this instant.
+          schema:
+            type: string
+            format: date-time
+        - name: contains
+          in: query
+          description: Only lines whose text contains this, ignoring case.
+          schema:
+            type: string
+            maxLength: 200
+        - name: tail
+          in: query
+          description: How many of the newest matching lines, at most.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 5000
+            default: 500
+      responses:
+        "200":
+          description: The lines.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogPage"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/logs/stream:
+    get:
+      tags: [logs]
+      operationId: followLogs
+      summary: Follow this machine's log as it is written.
+      description: |
+        Server-sent events, one `line` event per line written from the
+        moment of the request (`docker logs -f`): read `GET /v1/logs` for
+        what came before. A comment every 15 s keeps idle proxies from
+        closing it. A follower that falls more than 2,000 lines behind
+        loses lines rather than holding the machine's memory; a `dropped`
+        event says how many. Same filters and masking as `GET /v1/logs`.
+        Operator-only.
+      parameters:
+        - name: source
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: contains
+          in: query
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "200":
+          description: |
+            `event: line` frames whose `data:` is a `LogLine`, and
+            `event: dropped` frames whose `data:` is `{"dropped": n}`.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/LogLine"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
   /v1/auth/client-keys/admission:
     post:
       tags: [auth]
@@ -3251,6 +3355,45 @@ components:
     UpdateOutcome:
       type: string
       enum: [running, succeeded, failed]
+
+    LogLine:
+      type: object
+      required: [time, source, text]
+      properties:
+        time:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When the agent received the line, UTC. Null for a line written
+            before lines were stamped that carries no time of its own, and
+            for the updater's log.
+        source:
+          type: string
+          description: |
+            `agent`, or the supervised child the line came from as the
+            supervisor names it (`gateway`, `library`, `control`,
+            `engine: qwen`, a companion driver), or `update`.
+        text:
+          type: string
+          description: The line, with tokens and API keys masked.
+
+    LogPage:
+      type: object
+      required: [lines, sources, truncated]
+      properties:
+        lines:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogLine"
+          description: Oldest first; the last is the newest that matched.
+        sources:
+          type: array
+          items:
+            type: string
+          description: Every source seen in the part of the log read, for a picker.
+        truncated:
+          type: boolean
+          description: Older matching lines exist beyond `tail`.
 
     UpdateRequest:
       type: object
