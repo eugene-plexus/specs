@@ -1,9 +1,9 @@
 # Tested configurations and support boundaries
 
-This matrix describes the evidence included in `v0.1.0-alpha.3` as of 2026-09-26.
-`v0.1.0-alpha.1` and `v0.1.0-alpha.2` remain frozen earlier builds; use their
-release notes ([alpha.1](releases/v0.1.0-alpha.1.md), [alpha.2](releases/v0.1.0-alpha.2.md))
-for those builds' limits. A passing fixture or one owner's machine is not
+This matrix describes the evidence included in `v0.1.0-alpha.4` as of 2026-09-27.
+Earlier alphas remain frozen builds; use their release notes
+([alpha.1](releases/v0.1.0-alpha.1.md), [alpha.2](releases/v0.1.0-alpha.2.md),
+[alpha.3](releases/v0.1.0-alpha.3.md)) for those builds' limits. A passing fixture or one owner's machine is not
 platform certification.
 
 **Measured** means a real process/device performed the stated task.
@@ -25,6 +25,8 @@ These labels apply to individual promises, not an entire operating system.
 | WSL2 + RTX 5090, llama.cpp CUDA | **Measured:** [hobbyist run](acceptance/hobbyist-run.md), with actual Linux CUDA acquisition and first reply. | Historical engine/build evidence; no current five-client GPU capacity measurement. |
 | Linux system service under Eugene's own account (the default since alpha.3) | **Measured** in WSL2 with systemd: [own-account run](acceptance/own-account-run.md), plus the join set-aside/restore runs below. Native unattended boot is **pending**. | A running WSL systemd does not establish an unattended native Linux reboot. `--user` keeps the per-user layout, which needs lingering to start before login. |
 | Joining a worker with the one command from Add a node | **Measured:** a Windows worker rejoined a new control root on its first run (owner, 2026-09-26). In WSL2 as a system service: an unreachable root, a root refusing the token, a clean machine and a leftover alpha.2 folder each ended with the machine as it was and its service running again. **Simulated:** a failed Windows join restoring the machine (Pester, on real folders). **Pending:** a successful Linux join. | The join moves every install on the machine aside; nothing is deleted, and a failure before the join succeeds puts them back. |
+| Updating a machine from the console, Nodes → Versions (new in alpha.4) | **Measured** for a Linux system install: in WSL2 with systemd, [the updates run](acceptance/updates-run.md), including an alpha.3 install upgraded by hand and then updated from the console; and in CI on every commit, from the previous commit's installer to the new one. **Pending:** a Windows service updating itself (the one-shot task runs as SYSTEM), a Windows per-user install and a Linux per-user install, each covered by unit tests and sabotage only. A container is told the steps; nothing runs them. | An install from before alpha.4 has no updater: its first update is re-running the installer. An update is the installer for the node's channel, so it restarts that machine's models. |
+| Every machine's log in the console (new in alpha.4) | **Measured:** [logs run](acceptance/logs-run.md), two agents on one host, read and followed through the node hop, with a token masked and a real engine's failed load read by source. | Operator-only. 10 MB × 5 files per machine. Lines written before alpha.4 carry no time unless the agent wrote them. |
 | Linux amd64 container control plane | **Measured:** Compose acceptance and [A7 restore](acceptance/a7-recovery-run.md), including real CPU inference after replacement. | Isolated Docker CI; NAS mounts, host networking, secrets and permissions remain operator-specific. Container control plane does not automatically use the Windows GPU. |
 | Models inside the container on a passed-through NVIDIA card | **Pending:** built, with CI covering everything that does not need a GPU; the [physical run](acceptance/container-gpu-run.md) is owed. | GPU use is opt-in. The llama.cpp CUDA build is chosen by the card's compute capability. |
 | Apple Silicon native and Rosetta-started installation; Metal inference; launchd startup | **Simulated** interpreter-selection and installer cases; **pending** physical Mac checks in [R3.7](acceptance/native-apple-python-run.md). | No physical Mac acceptance available; do not advertise verified Mac operation. |
