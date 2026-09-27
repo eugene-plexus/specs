@@ -136,18 +136,27 @@ def exercise(args):
         return response.json()["sessionToken"]
 
     def infer(token):
-        response = call(
-            "gateway",
-            "POST",
-            "/v1/chat/completions",
-            token,
-            json={
-                "model": "a7-model",
-                "messages": [{"role": "user", "content": "Say hello. /no_think"}],
-                "max_tokens": 64,
-                "temperature": 0,
-            },
-        )
+        # The gateway learns a runtime is ready one routing refresh after
+        # its agent does, and says so as a 503 "still coming up". That one
+        # answer is waited through; any other failure is the check's.
+        deadline = time.monotonic() + 60
+        while True:
+            response = call(
+                "gateway",
+                "POST",
+                "/v1/chat/completions",
+                token,
+                json={
+                    "model": "a7-model",
+                    "messages": [{"role": "user", "content": "Say hello. /no_think"}],
+                    "max_tokens": 64,
+                    "temperature": 0,
+                },
+            )
+            coming_up = response.status_code == 503 and "still coming up" in response.text
+            if not coming_up or time.monotonic() > deadline:
+                break
+            time.sleep(1)
         assert response.status_code == 200, response.text
         content = response.json()["choices"][0]["message"]["content"]
         assert content.strip(), response.text
