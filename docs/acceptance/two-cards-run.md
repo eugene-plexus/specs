@@ -43,13 +43,18 @@ alone, entirely in GPU memory. Eugene got in the way in two places:
   two cards.
 
 A related defect surfaced while reading the library: **an override kept the
-library host's own card count.** On the live install the library is in a
-container with no GPU and every launch goes to Amish_Station's 5090. The UI
-passed 30 GiB as `vramBytes` with a `gpuCount` of 0. The starter set reads
-`gpuCount` to decide whether a machine has a card at all, and so recommended
-the smallest model, "on a machine with no graphics card", about a 5090.
-Measured before the fix: `budget_from_hardware(nas, vram_override=30 GiB)`
-returned `gpuCount 0`.
+library host's own card count.** A library in a container without GPU
+passthrough, which is the default, has no GPU. Scoring a worker's 5090 from
+there, the UI passed 30 GiB as `vramBytes`, and the budget kept the library's
+`gpuCount` of 0. The starter set reads `gpuCount` to decide whether a machine
+has a card at all, and so would recommend the smallest model, "on a machine
+with no graphics card", about a 5090. Measured before the fix:
+`budget_from_hardware(<no GPU>, vram_override=30 GiB)` returned `gpuCount 0`.
+
+**Not seen on the live install** (corrected by Troy the same day, after a first
+version of this record said it was). That library has its P4000 passed through
+and reports one GPU, so the count it kept happened to match the one card being
+scored. It would still have been wrong for a node with two.
 
 ---
 
