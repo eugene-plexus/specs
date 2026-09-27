@@ -137,12 +137,20 @@ refuses anything that is not already an install, and refuses an autostart that
 runs a different install. The second guard was added after the first version
 was found able to re-point this machine's live service at another folder.
 
+It also keeps the install's port, read from where the autostart keeps it (the
+unit, the plist, the service's registry entry, or the account variable a task
+reads), never from the update's own environment. The live run found the
+Linux half waiting on 8079 for an install on 8179, and on Windows the same
+mistake would have moved a service's port.
+
 **The Linux system install's root helper follows one rule: root never runs,
 and never writes through, anything the Eugene account controls.** The account
 owns the prefix, so it could plant code for root to run, or plant a symlink
 for root to write through. So the helper:
 - is root-owned and lives outside the prefix, at
-  `/usr/local/lib/eugene-plexus/update`;
+  `/usr/local/lib/eugene-plexus/update`, and is replaced by renaming a new
+  file into place, since the installer it runs rewrites it;
+- sets `HOME`, which systemd gives a unit with no `User=` none of;
 - reads the request as the account (`runuser`);
 - accepts only a 40-hex specs commit or a `v*` release tag;
 - downloads our installer for it into a root-only staging folder;
