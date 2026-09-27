@@ -4707,6 +4707,22 @@ components:
             recomputed on every read.
         localPathSource:
           $ref: "#/components/schemas/RuntimeLocalPathSource"
+        openedPath:
+          type: [string, "null"]
+          readOnly: true
+          description: |
+            The model file the **running** process was started with,
+            resolved exactly as `localPath` is, at that start. Null when
+            no process is running (`stopped`, `exited`, `crashed`,
+            `copying`).
+
+            `localPath` is recomputed on every read, so the two differ
+            exactly when the rules changed after this process started — a
+            Library folder's mount, this node's overrides, or its local
+            copy. The process keeps the file it opened; a restart opens
+            `localPath` instead. (2026-09-27: a folder change on ten nodes
+            should say which models still run from the old path, not ask
+            anyone to reboot the nodes.)
         localPathNote:
           type: string
           readOnly: true
