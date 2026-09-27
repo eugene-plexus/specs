@@ -184,6 +184,26 @@ jobs:
       - name: Verify the regressions detect broken architecture selection
         run: python3 scripts/r37-sabotage.py
 
+  system-update:
+    name: Linux system install updates itself through its root helper
+    # A real sudo install on the runner, then an update asked for the way
+    # the agent asks, carried out by root (docs/design/in-app-updates.md
+    # §1.4). Its first two live runs each found a defect nothing else could.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install, request an update to this commit, and check what root did
+        # This commit's own installer is what the helper downloads, so the
+        # target must be one raw.githubusercontent.com can serve: a pull
+        # request's merge commit is not.
+        env:
+          EP_TARGET: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          sudo env EP_PERSON="$(id -un)" EP_TARGET="$EP_TARGET" \
+            bash scripts/updates-system-install-acceptance.sh 2>&1 | tee update-run.log
+          grep -q '^ALL PASS$' update-run.log
+
   dev-tasks:
     name: Windows development tasks
     runs-on: windows-latest
