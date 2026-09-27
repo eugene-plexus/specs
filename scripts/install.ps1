@@ -108,12 +108,12 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "8a87b1d5fce16a6eef9692ac357e944464d08ee0"
+    "agent"            = "9bc706fd2c7c864888ec0c20c07f8c804144a2e5"
     "control"          = "b14bd5764d233944ad9209104ca97e1ba40a418e"
     "gateway"          = "2f4d8ddbabd8400dae6fcd9689fc195653e88d4d"
     "inference-driver" = "f754620003950991b546503f79775450f1113737"
     "library"          = "47dfdf032ab9cc63cef3753e37af0d08c2b71e23"
-    "ui"               = "20c972f59a8c1f3ea10af329c05d2face3098efb"  # branch `dist`, not `main`
+    "ui"               = "46fc9b429c01932d3b7ddec60eb4774478a62e5e"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -1326,6 +1326,50 @@ function Restore-EugeneInstall {
     return ($problems.Count -eq 0)
 }
 
+# The Visual C++ runtime llama.cpp's Windows build links against (see step
+# 4c). Microsoft's own permanent links, one per processor architecture.
+$VcRedistArch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+$VcRedistUrl = "https://aka.ms/vs/17/release/vc_redist.$VcRedistArch.exe"
+
+function Get-NativeSystemDirectory {
+    # A 32-bit PowerShell sees SysWOW64 as System32; the engine is 64-bit.
+    if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+        return (Join-Path $env:windir "Sysnative")
+    }
+    return [Environment]::GetFolderPath("System")
+}
+
+function Test-VcRuntime {
+    $system = Get-NativeSystemDirectory
+    foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
+        if (-not (Test-Path -LiteralPath (Join-Path $system $dll))) { return $false }
+    }
+    return $true
+}
+
+# Download Microsoft's redistributable, refuse it unless Microsoft signed it,
+# and run it silently. Throws, with what went wrong, on any failure.
+function Install-VcRuntime {
+    $file = Join-Path ([IO.Path]::GetTempPath()) "eugene-plexus-vc_redist.$VcRedistArch.exe"
+    try {
+        Invoke-WebRequest -Uri $VcRedistUrl -OutFile $file -UseBasicParsing
+        $signature = Get-AuthenticodeSignature -LiteralPath $file
+        if ($signature.Status -ne "Valid" -or
+            "$($signature.SignerCertificate.Subject)" -notmatch "O=Microsoft Corporation") {
+            throw "the file from $VcRedistUrl is not signed by Microsoft ($($signature.Status))"
+        }
+        $run = Start-Process -FilePath $file -ArgumentList @("/install", "/quiet", "/norestart") -Wait -PassThru
+        # 0: installed. 1638: a newer one is already there. 3010: installed,
+        # and Windows wants a restart for something else it replaced.
+        if ($run.ExitCode -notin @(0, 1638, 3010)) {
+            throw "its installer exited with code $($run.ExitCode)"
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # After a join, where each old install went -- said last, so it is seen.
 function Show-SetAsideNote {
     if (-not $SetAside -or -not $JoinCommitted) { return }
@@ -1873,6 +1917,36 @@ Remove-Item $checkFile -Force
 if ($checkRc -ne 0) { Die "the install is incomplete -- see above" }
 if (-not (Test-Path $AgentEx)) { Die "the eugene-plexus-agent command did not install" }
 Say "all six packages present, with a web UI"
+
+# --- 4c. what the engine needs from Windows ---------------------------
+# **llama.cpp's Windows build needs the Microsoft Visual C++ runtime and
+# does not ship it** (found 2026-09-26). `llama-server.exe` and its DLLs
+# import VCRUNTIME140.dll, VCRUNTIME140_1.dll and MSVCP140.dll. Those come
+# from the Visual C++ Redistributable, which a freshly installed Windows
+# does not have; Eugene's own Python carries its own copy, so everything
+# else works. On a friend's newly reinstalled machine every model died at
+# start, and the screen said only "crashed". The service install is
+# elevated, so it installs the runtime from Microsoft. A per-user install
+# says where to get it, because installing it needs Administrator.
+if (-not (Test-VcRuntime)) {
+    if ($Isolated) {
+        Warn "this Windows has no Microsoft Visual C++ runtime, which llama.cpp needs. An isolated install changes nothing outside its folder, so it was not installed: $VcRedistUrl"
+    }
+    elseif ($IsElevated) {
+        Say "installing the Microsoft Visual C++ runtime, which llama.cpp needs and this Windows does not have"
+        try {
+            Install-VcRuntime
+            if (Test-VcRuntime) { Say "the Visual C++ runtime is installed" }
+            else { Warn "the Visual C++ runtime installer finished, but its DLLs are not in place. llama.cpp will not start until they are: $VcRedistUrl" }
+        }
+        catch {
+            Warn "could not install the Microsoft Visual C++ runtime ($(Get-ErrorText $_)). Eugene works, but llama.cpp will not start until it is installed: $VcRedistUrl"
+        }
+    }
+    else {
+        Warn "llama.cpp needs the Microsoft Visual C++ runtime, which this Windows does not have. Install it from $VcRedistUrl (it asks for Administrator), then start your models."
+    }
+}
 
 # --- 4b. join, if this machine is a worker -----------------------------
 # **The installer owns the one onboarding question, because this is the

@@ -11,7 +11,8 @@ $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.Fun
         'Suspend-EugeneInstall', 'Restore-EugeneInstall', 'Show-SetAsideNote', 'Assert-UpgradeableInstall',
         'Get-ServiceConversionSource', 'Get-AutostartExecutable', 'Get-AgentService', 'Get-AgentTask',
         'Remove-Autostart', 'Remove-StartMenuShortcut', 'Test-RunsFromThisInstall', 'Get-OtherInstall',
-        'Grant-ServiceControl', 'Move-Folder', 'Get-ErrorText') }, $false) |
+        'Grant-ServiceControl', 'Move-Folder', 'Get-ErrorText',
+        'Get-NativeSystemDirectory', 'Test-VcRuntime', 'Install-VcRuntime') }, $false) |
     ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
 
 Describe 'Installer failure reporting' {
@@ -774,6 +775,103 @@ Describe 'Uninstall finds the install wherever it is' {
         . $runUninstall
         Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like '*nothing to remove*' }
         Assert-MockCalled Invoke-ElevatedInstaller -Scope It -Times 0 -Exactly
+    }
+}
+
+Describe 'The Visual C++ runtime llama.cpp needs' {
+    # 2026-09-26: a freshly reinstalled Windows has no VCRUNTIME140.dll,
+    # VCRUNTIME140_1.dll or MSVCP140.dll, so llama-server died at start and
+    # every model read "crashed". Nothing here downloads or installs
+    # anything: every command that would is mocked.
+    $vcBlock = $ast.Find({ param($node)
+            $node -is [System.Management.Automation.Language.IfStatementAst] -and
+            $node.Clauses[0].Item1.Extent.Text -eq '-not (Test-VcRuntime)' }, $true)
+    $runVcBlock = [scriptblock]::Create($vcBlock.Extent.Text)
+
+    BeforeEach {
+        $script:VcRedistArch = 'x64'
+        $script:VcRedistUrl = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+        Mock Write-Host {}
+        Mock Invoke-WebRequest {}
+        Mock Remove-Item {}
+        Mock Get-AuthenticodeSignature {
+            [pscustomobject]@{ Status = 'Valid'; SignerCertificate = [pscustomobject]@{ Subject = 'CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US' } }
+        }
+        Mock Start-Process { [pscustomobject]@{ ExitCode = 0 } }
+    }
+
+    It 'is missing when any one of its three DLLs is' {
+        Mock Test-Path { $LiteralPath -notlike '*vcruntime140_1.dll' }
+        Test-VcRuntime | Should Be $false
+        Mock Test-Path { $true }
+        Test-VcRuntime | Should Be $true
+    }
+
+    It 'installs quietly from Microsoft when Microsoft signed it' {
+        Install-VcRuntime
+        Assert-MockCalled Invoke-WebRequest -Scope It -Times 1 -Exactly -ParameterFilter { $Uri -eq 'https://aka.ms/vs/17/release/vc_redist.x64.exe' }
+        Assert-MockCalled Start-Process -Scope It -Times 1 -Exactly -ParameterFilter { ($ArgumentList -join ' ') -eq '/install /quiet /norestart' }
+    }
+
+    It 'refuses a download that Microsoft did not sign, and never runs it' {
+        Mock Get-AuthenticodeSignature { [pscustomobject]@{ Status = 'HashMismatch'; SignerCertificate = $null } }
+        { Install-VcRuntime } | Should Throw 'not signed by Microsoft'
+        Assert-MockCalled Start-Process -Scope It -Times 0 -Exactly
+    }
+
+    It 'takes "a newer one is there" and "restart pending" as installed' {
+        foreach ($code in 1638, 3010) {
+            Mock Start-Process { [pscustomobject]@{ ExitCode = $code } }
+            { Install-VcRuntime } | Should Not Throw
+        }
+    }
+
+    It 'says what the redistributable''s installer said when it fails' {
+        Mock Start-Process { [pscustomobject]@{ ExitCode = 1603 } }
+        { Install-VcRuntime } | Should Throw 'exited with code 1603'
+    }
+
+    It 'installs it on an elevated run when it is missing' {
+        $IsElevated = $true; $Isolated = $false
+        Mock Test-VcRuntime { $false }
+        Mock Install-VcRuntime {}
+        . $runVcBlock
+        Assert-MockCalled Install-VcRuntime -Scope It -Times 1 -Exactly
+    }
+
+    It 'says where to get it on a per-user run, which cannot install it' {
+        $IsElevated = $false; $Isolated = $false
+        Mock Test-VcRuntime { $false }
+        Mock Install-VcRuntime {}
+        . $runVcBlock
+        Assert-MockCalled Install-VcRuntime -Scope It -Times 0 -Exactly
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*Visual C++ runtime*aka.ms/vs/17/release/vc_redist.x64.exe*' }
+    }
+
+    It 'changes nothing on an isolated run, and says so' {
+        $IsElevated = $true; $Isolated = $true
+        Mock Test-VcRuntime { $false }
+        Mock Install-VcRuntime {}
+        . $runVcBlock
+        Assert-MockCalled Install-VcRuntime -Scope It -Times 0 -Exactly
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*isolated install changes nothing*' }
+    }
+
+    It 'says nothing and installs nothing when it is already there' {
+        $IsElevated = $true; $Isolated = $false
+        Mock Test-VcRuntime { $true }
+        Mock Install-VcRuntime {}
+        . $runVcBlock
+        Assert-MockCalled Install-VcRuntime -Scope It -Times 0 -Exactly
+        Assert-MockCalled Write-Host -Scope It -Times 0 -Exactly
+    }
+
+    It 'warns rather than failing the install when it cannot install it' {
+        $IsElevated = $true; $Isolated = $false
+        Mock Test-VcRuntime { $false }
+        Mock Install-VcRuntime { throw 'the network is down' }
+        { . $runVcBlock } | Should Not Throw
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*could not install the Microsoft Visual C++ runtime (the network is down)*' }
     }
 }
 
