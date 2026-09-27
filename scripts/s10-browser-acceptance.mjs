@@ -81,7 +81,11 @@ try {
   await page.evaluate(() => {
     const card = document.querySelector('[data-testid="home-try-it"]');
     const observer = new MutationObserver(() => {
-      if (card.querySelector(".group.items-start > div:first-child")?.textContent?.trim()) {
+      // The bubble by its test id, not by position: since the response
+      // timestamps (2026-09-22) an assistant message's first child is a
+      // screen-reader <time>, and `> div:first-child` matched nothing -- the
+      // alpha.3 run saw the reply on screen and reported none.
+      if (card.querySelector('.group.items-start [data-testid="message-bubble"]')?.textContent?.trim()) {
         window.__s10FirstToken = Date.now(); observer.disconnect();
       }
     });
