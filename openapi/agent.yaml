@@ -5535,6 +5535,20 @@ components:
         libraryUrl:
           type: string
           description: Where the library was, or was looked for.
+        libraryError:
+          type: string
+          description: |
+            Why the library could not be read on this call, when
+            `libraryConsulted` is false, in the words of what failed: the
+            install lookup (for instance a control host registered at a
+            loopback address), the library's own refusal, or the
+            connection. Absent when the library answered.
+
+            On the wire because the failure is otherwise silent where it
+            matters: a worker that cannot read the folders applies no
+            folder's mount, and its launch is refused as "nothing exists
+            at" the Library's own path — the mount the operator already
+            set is never mentioned (2026-09-27, the live install).
         folders:
           type: array
           items:
