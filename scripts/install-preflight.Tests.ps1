@@ -7,7 +7,7 @@ $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]
 $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
     $node.Name -in @('Say', 'Warn', 'Die', 'Invoke-Native', 'Show-InstallerLog', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds', 'Protect-InstallDirectory',
         'Stop-ProcessUnder', 'Test-LooksLikeInstall', 'Test-UnderProgramData', 'Get-EugeneInstall',
-        'Remove-AgentServiceRegistration', 'Get-AgentServiceEnvironment', 'Register-AgentServiceFrom',
+        'Remove-AgentServiceRegistration', 'Get-AgentServiceEnvironment', 'Get-InstalledPort', 'Register-AgentServiceFrom',
         'Suspend-EugeneInstall', 'Restore-EugeneInstall', 'Show-SetAsideNote', 'Assert-UpgradeableInstall',
         'Get-ServiceConversionSource', 'Get-AutostartExecutable', 'Get-AgentService', 'Get-AgentTask',
         'Remove-Autostart', 'Remove-StartMenuShortcut', 'Test-RunsFromThisInstall', 'Get-OtherInstall',
@@ -696,6 +696,24 @@ Describe 'An update started from the app' {
         $stop = $source.IndexOf('if (Get-AgentService) { Stop-Service')
         $guard | Should BeGreaterThan 0
         $guard | Should BeLessThan $stop
+    }
+
+    It 'keeps the port the service already starts on' {
+        Mock Get-AgentService { [pscustomobject]@{ Name = 'EugenePlexusAgent' } }
+        Mock Get-AgentServiceEnvironment {
+            @('EUGENE_PLEXUS_AGENT_CONFIG_FILE=C:\x\agent.yaml', 'EUGENE_PLEXUS_AGENT_BIND_PORT=18279')
+        }
+        Get-InstalledPort | Should Be 18279
+        Mock Get-AgentServiceEnvironment { @('EUGENE_PLEXUS_AGENT_CONFIG_FILE=C:\x\agent.yaml') }
+        Get-InstalledPort | Should Be 8079
+    }
+
+    It 'reads that port before writing the service environment back' {
+        $block = $source.Substring($source.IndexOf("if (`$Update) {`n    # Before Set-ServiceBootstrap"))
+        $read = $block.IndexOf('$Port = Get-InstalledPort')
+        $write = $block.IndexOf("`n        Set-ServiceBootstrap`n")
+        $read | Should BeGreaterThan 0
+        $read | Should BeLessThan $write
     }
 
     It 'is only ever an upgrade' {

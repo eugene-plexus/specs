@@ -1126,6 +1126,19 @@ fi
 # person to open the port it would not be on. The port is decided once,
 # here, above everything that quotes it.
 PORT=${EUGENE_PLEXUS_AGENT_BIND_PORT:-8079}
+# An update keeps the unit it finds, so the port is the one that unit
+# starts the agent on -- not whatever the update's own environment says.
+# The update helper and a transient user unit both start with none.
+if [ "$UPDATE" = 1 ]; then
+    if [ "$MODE" = system ]; then _kept=$SYSTEM_UNIT
+    elif [ "$PLATFORM" = linux ]; then _kept=$SYSTEMD_UNIT
+    else _kept=$LAUNCHD_PLIST; fi
+    PORT=$(sed -n \
+        -e 's/^Environment=EUGENE_PLEXUS_AGENT_BIND_PORT=\([0-9][0-9]*\)$/\1/p' \
+        -e 's/.*<key>EUGENE_PLEXUS_AGENT_BIND_PORT<\/key><string>\([0-9][0-9]*\)<\/string>.*/\1/p' \
+        "$_kept" 2>/dev/null | head -n 1)
+    PORT=${PORT:-8079}
+fi
 if [ "$PORT" != 8079 ]; then
     PORT_UNIT="Environment=EUGENE_PLEXUS_AGENT_BIND_PORT=$PORT"
     PORT_PLIST="

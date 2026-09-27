@@ -1151,6 +1151,21 @@ function Get-AgentServiceEnvironment {
     (Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" `
         -Name Environment -ErrorAction SilentlyContinue).Environment
 }
+function Get-InstalledPort {
+    # The port an install's autostart already starts the agent on. -Update
+    # keeps it, and must not take it from its own environment: the update
+    # runs from a task Windows builds an environment for, and a service
+    # reads its port from its own registry entry, not from that.
+    if (Get-AgentService) {
+        foreach ($line in @(Get-AgentServiceEnvironment)) {
+            if ("$line" -match '^EUGENE_PLEXUS_AGENT_BIND_PORT=(\d+)$') { return [int]$Matches[1] }
+        }
+        return 8079
+    }
+    $account = [Environment]::GetEnvironmentVariable("EUGENE_PLEXUS_AGENT_BIND_PORT", "User")
+    if ($account -match '^\d+$') { return [int]$account }
+    return 8079
+}
 function Register-AgentServiceFrom {
     param([string]$ServicePrefix, [string[]]$Environment)
     $python = Join-Path $ServicePrefix "venv\Scripts\python.exe"
@@ -2095,6 +2110,8 @@ elseif ($Advertise) {
 # --- 5. autostart -----------------------------------------------------
 $autostart = "none"
 if ($Update) {
+    # Before Set-ServiceBootstrap writes it back, and before the wait below.
+    $Port = Get-InstalledPort
     if (Get-AgentService) {
         # `update`, not `install`: the service is there, and this refreshes
         # its host in the venv (pythonservice.exe and the DLLs beside it)
