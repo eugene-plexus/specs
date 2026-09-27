@@ -164,7 +164,9 @@ modelRoots:
       - '$MOUNT_BS'
 YAML
 # B: enrolled, no library, and NOTHING about paths.
-printf 'firstRunComplete: true\ncomponents: []\nruntimes: []\n' > b/agent.yaml
+# R7: an agent launches engine binaries only from the directories it trusts.
+printf "firstRunComplete: true\nengineBinaryRoots:\n  - '%s'\ncomponents: []\nruntimes: []\n" \
+  "$(dirname "$LLAMA")" > b/agent.yaml
 
 BIND=()
 [ "$ADV_HOST" != "127.0.0.1" ] && BIND=(EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0)
@@ -185,7 +187,7 @@ B_PID=$!
 wait_healthy "$B_URL" && ok "agent B answering at $B_URL" || { bad "agent B never came up"; tail -30 agent-b.log; exit 1; }
 BTOK=$(curl -s -X POST "$B_URL/v1/auth/initialize" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" | jq_ "d.get('sessionToken','')")
 
-TOK_A=$(curl -s -X POST -H "Authorization: Bearer $CTOK" "$CTL/v1/nodes/join-token" -H 'content-type: application/json' -d '{"nodeName":"node-a"}' | jq_ "d['token']")
+TOK_A=$(curl -s -X POST -H "Authorization: Bearer $CTOK" "$CTL/v1/nodes/join-token" -H 'content-type: application/json' -d '{"nodeName":"node-a","grants":["gateway"]}' | jq_ "d['token']")
 [ "$(code_of -X POST -H "Authorization: Bearer $ATOK" "$A_URL/v1/node/enroll" -H 'content-type: application/json' -d "{\"controlUrl\":\"$CTL\",\"token\":\"$TOK_A\",\"name\":\"node-a\"}")" = "200" ] && ok "A enrolled as node-a" || { bad "A enroll failed"; tail -20 agent-a.log; exit 1; }
 wait_healthy "$GW" 90 || bad "gateway did not come back after A adopted the install key"
 wait_healthy "$LIB" 60 || bad "library did not come back after A adopted the install key"
@@ -200,28 +202,36 @@ done
 sleep 2
 TOK=$(curl -s -X POST "$A_URL/v1/auth/login" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" | jq_ "d.get('sessionToken','')")
 [ -n "$TOK" ] || { bad "no operator session after enrollment"; exit 1; }
+# Row 3: a session is addressed to the console it was signed in at and to
+# the root, so B's own API takes the session B's sign-in got.
+TOKB=""
+for _ in $(seq 1 30); do
+  TOKB=$(curl -s -X POST "$B_URL/v1/auth/login" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" | jq_ "d.get('sessionToken','')")
+  [ -n "$TOKB" ] && break; sleep 1
+done
+[ -n "$TOKB" ] || { bad "no session from B's sign-in after enrollment"; exit 1; }
 
 # --- 4. the folder record, the labels ---------------------------------------------------
 say "4. the Library's folder carries its mounts; the labels say Library"
 for _ in $(seq 1 60); do
-  LIBM=$(curl -s -H "Authorization: Bearer $CTOK" "$LIB/v1/models")
+  LIBM=$(curl -s -H "Authorization: Bearer $TOK" "$LIB/v1/models")
   [ "$(echo "$LIBM" | jq_ "len(d.get('models',[]))")" = "1" ] && break; sleep 1
 done
 LIB_PATH=$(echo "$LIBM" | jq_ "d['models'][0]['path']")
 [ -n "$LIB_PATH" ] && ok "library lists $LIB_PATH" || { bad "library never listed the model: $LIBM"; exit 1; }
 LIB_PATH_JSON=$(json_bs "$LIB_PATH")
-F=$(curl -s -H "Authorization: Bearer $CTOK" "$LIB/v1/folders")
+F=$(curl -s -H "Authorization: Bearer $TOK" "$LIB/v1/folders")
 [ "$(echo "$F" | jq_ "len(d['folders'])==1 and d['folders'][0]['path']==r'$LIB_ROOT_BS' and sorted(d['folders'][0]['mounts'])==sorted(['/mnt/decoy-models', r'$MOUNT_BS'])")" = "True" ] && ok "GET library /v1/folders: one folder, two mounts, in the object form the file did not use" || bad "folders: $F"
-[ "$(curl -s -H "Authorization: Bearer $CTOK" "$LIB/v1/config/schema" | jq_ "next((f['valueType'] for f in d['fields'] if f['key']=='modelRoots'), None)")" = "library_folders" ] && ok "the library's schema: modelRoots is library_folders" || bad "library schema"
-[ "$(curl -s -H "Authorization: Bearer $CTOK" "$LIB/v1/config" | jq_ "d['modelRoots'][0]['path']")" = "$LIB_ROOT_BS" ] && ok "GET library /v1/config answers the object form" || bad "config form"
-SCHEMA=$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/config/schema")
+[ "$(curl -s -H "Authorization: Bearer $TOK" "$LIB/v1/config/schema" | jq_ "next((f['valueType'] for f in d['fields'] if f['key']=='modelRoots'), None)")" = "library_folders" ] && ok "the library's schema: modelRoots is library_folders" || bad "library schema"
+[ "$(curl -s -H "Authorization: Bearer $TOK" "$LIB/v1/config" | jq_ "d['modelRoots'][0]['path']")" = "$LIB_ROOT_BS" ] && ok "GET library /v1/config answers the object form" || bad "config form"
+SCHEMA=$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/config/schema")
 [ "$(echo "$SCHEMA" | jq_ "next((f['label'] for f in d['fields'] if f['key']=='pathMappings'), None)")" = "Library folder overrides" ] && ok "B's schema labels pathMappings 'Library folder overrides'" || bad "label: $(echo "$SCHEMA" | jq_ "[f['label'] for f in d['fields'] if f['key']=='pathMappings']")"
 [ "$(echo "$SCHEMA" | jq_ "d['categories'].get(next((f['category'] for f in d['fields'] if f['key']=='pathMappings'), ''))")" = "Library" ] && ok "...under the category 'Library'" || bad "category: $(echo "$SCHEMA" | jq_ "d['categories']")"
-[ "$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/config" | jq_ "d['pathMappings']")" = "[]" ] && ok "B carries NO overrides" || bad "B has pathMappings"
+[ "$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/config" | jq_ "d['pathMappings']")" = "[]" ] && ok "B carries NO overrides" || bad "B has pathMappings"
 
 # --- 5. B inherits ------------------------------------------------------------------------
 say "5. POST node-b /v1/library/folders/check: what B would open, and which rule said so"
-CHK=$(curl -s -X POST -H "Authorization: Bearer $TOK" "$B_URL/v1/library/folders/check" -H 'content-type: application/json' -d '{}')
+CHK=$(curl -s -X POST -H "Authorization: Bearer $TOKB" "$B_URL/v1/library/folders/check" -H 'content-type: application/json' -d '{}')
 echo "  check: $(echo "$CHK" | head -c 400)"
 if [ "$ADV_HOST" = "127.0.0.1" ]; then
   note "loopback registry: B cannot dial node-a's agent for the library, so libraryConsulted=$(echo "$CHK" | jq_ "d['libraryConsulted']") is the honest answer; the inheritance checks below will degrade"
@@ -241,24 +251,24 @@ SPEC_LIB="{\"name\":\"$RT\",\"engine\":\"llama_cpp\",\"modelPath\":\"$LIB_PATH_J
 R=$(curl -s -w '\n%{http_code}' -X POST -H "Authorization: Bearer $CTOK" "$CTL/v1/runtimes" -H 'content-type: application/json' -d "{\"node\":\"node-b\",\"spec\":$SPEC_LIB}")
 CODE=$(echo "$R" | tail -1); BODY=$(echo "$R" | sed '$d')
 [ "$CODE" = "201" ] && ok "*** 201: declared with NO mapping on B ***" || { bad "control answered $CODE: $BODY"; tail -20 agent-b.log; }
-RB=$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/runtimes/$RT")
+RB=$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/runtimes/$RT")
 [ "$(echo "$RB" | jq_ "d['modelPath']")" = "$LIB_PATH" ] && ok "Runtime.modelPath is the library's spelling, untouched" || bad "modelPath: $(echo "$RB" | jq_ "d.get('modelPath')")"
 [ "$(echo "$RB" | jq_ "d.get('localPath')")" = "$MOUNT_BS\\$BASENAME" ] && ok "*** Runtime.localPath is the INHERITED mount: $MOUNT_BS\\$BASENAME ***" || bad "localPath: $(echo "$RB" | jq_ "d.get('localPath')")"
 for _ in $(seq 1 120); do
-  RB=$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/runtimes/$RT"); ST=$(echo "$RB" | jq_ "d.get('status')" 2>/dev/null)
+  RB=$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/runtimes/$RT"); ST=$(echo "$RB" | jq_ "d.get('status')" 2>/dev/null)
   [ "$ST" = "ready" ] || [ "$ST" = "crashed" ] && break; sleep 1
 done
 [ "$ST" = "ready" ] && ok "engine ready on node-b" || { bad "runtime status=$ST $(echo "$RB" | jq_ "d.get('lastError')")"; tail -20 agent-b.log; }
 [ "$(echo "$RB" | jq_ "'--model' in (d.get('argv') or []) and (d['argv'][d['argv'].index('--model')+1] == r'$MOUNT_BS\\$BASENAME')")" = "True" ] && ok "*** the engine's argv names the mount, and nobody typed it on B ***" || bad "argv: $(echo "$RB" | jq_ "d.get('argv')")"
-[ "$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/config" | jq_ "d['pathMappings']")" = "[]" ] && ok "B still carries no overrides" || bad "B gained pathMappings"
+[ "$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/config" | jq_ "d['pathMappings']")" = "[]" ] && ok "B still carries no overrides" || bad "B gained pathMappings"
 
 say "7. a completion through the gateway, served by $RT"
 for _ in $(seq 1 60); do
-  RN=$(curl -s -H "Authorization: Bearer $CTOK" "$GW/v1/models" | jq_ "next((m['x_eugene_plexus'].get('ready_backends') for m in d.get('data',[]) if m['id']=='$ALIAS'), 0)" 2>/dev/null)
+  RN=$(curl -s -H "Authorization: Bearer $TOK" "$GW/v1/models" | jq_ "next((m['x_eugene_plexus'].get('ready_backends') for m in d.get('data',[]) if m['id']=='$ALIAS'), 0)" 2>/dev/null)
   [ "$RN" = "1" ] && break; sleep 1
 done
 [ "$RN" = "1" ] && ok "gateway lists $ALIAS with ready_backends=1" || bad "gateway never listed $ALIAS ready (ready_backends=$RN)"
-C=$(curl -s -m 300 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $CTOK" -H 'content-type: application/json' -d "{\"model\":\"$ALIAS\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word OK. /no_think\"}],\"max_tokens\":16,\"temperature\":0.1}")
+C=$(curl -s -m 300 -X POST "$GW/v1/chat/completions" -H "Authorization: Bearer $TOK" -H 'content-type: application/json' -d "{\"model\":\"$ALIAS\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word OK. /no_think\"}],\"max_tokens\":16,\"temperature\":0.1}")
 TXT=$(echo "$C" | jq_ "(d.get('choices') or [{}])[0].get('message',{}).get('content','').strip()" 2>/dev/null)
 [ -n "$TXT" ] && [ "$(echo "$C" | jq_ "d['x_eugene_plexus'].get('runtime')")" = "$RT" ] && ok "*** COMPLETION from a model opened through the folder's own mount: '$TXT' (runtime=$RT) ***" || bad "completion: $(echo "$C" | head -c 300)"
 
@@ -275,52 +285,52 @@ else
   echo "$DETAIL" | grep -q "answered 400" && ok "*** ...and the node answered 400, not 201 and not 422: not a Library model ***" || bad "detail: $DETAIL"
   echo "$DETAIL" | grep -q "is not under any Library folder" && ok "the refusal says why" || bad "detail: $DETAIL"
   echo "$DETAIL" | grep -q "Library -> Folders" && ok "*** ...and the fix: add the directory to the Library (Library -> Folders) ***" || bad "detail does not name the fix: $DETAIL"
-  [ "$(code_of -X POST -H "Authorization: Bearer $TOK" "$B_URL/v1/runtimes?force=true" -H 'content-type: application/json' -d "$SPEC_STRAY")" = "400" ] && ok "force does not bypass it" || bad "force bypassed the folder rule"
-  [ "$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/runtimes" | jq_ "[r['name'] for r in d['runtimes']]")" = "['$RT']" ] && ok "B has only $RT; nothing was declared for $STRAY" || bad "B's runtimes changed"
-  [ "$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/components" | jq_ "any(c['name']=='$STRAY-driver' for c in d['components'])")" = "False" ] && ok "...and no companion driver was left behind" || bad "$STRAY-driver exists"
+  [ "$(code_of -X POST -H "Authorization: Bearer $TOKB" "$B_URL/v1/runtimes?force=true" -H 'content-type: application/json' -d "$SPEC_STRAY")" = "400" ] && ok "force does not bypass it" || bad "force bypassed the folder rule"
+  [ "$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/runtimes" | jq_ "[r['name'] for r in d['runtimes']]")" = "['$RT']" ] && ok "B has only $RT; nothing was declared for $STRAY" || bad "B's runtimes changed"
+  [ "$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/components" | jq_ "any(c['name']=='$STRAY-driver' for c in d['components'])")" = "False" ] && ok "...and no companion driver was left behind" || bad "$STRAY-driver exists"
   # Built explicitly rather than by sed over the JSON: the first version
   # substituted the library path through sed, whose pattern read the
   # JSON-escaped backslashes as escapes and never matched, so the PATCH
   # carried the library's path and the 200 it got was the right answer to
   # the wrong question.
   SPEC_RT_FOREIGN="{\"name\":\"$RT\",\"engine\":\"llama_cpp\",\"modelPath\":\"$FOREIGN_ROOT/$BASENAME\",\"modelAlias\":\"$ALIAS\",\"binary\":\"$(win_path "$LLAMA" | sed 's|/|\\\\|g')\",\"flags\":{\"contextSize\":4096,\"gpuLayers\":99,\"parallelSlots\":1}}"
-  R=$(curl -s -w '\n%{http_code}' -X PATCH -H "Authorization: Bearer $TOK" "$B_URL/v1/runtimes/$RT" -H 'content-type: application/json' -d "$SPEC_RT_FOREIGN")
+  R=$(curl -s -w '\n%{http_code}' -X PATCH -H "Authorization: Bearer $TOKB" "$B_URL/v1/runtimes/$RT" -H 'content-type: application/json' -d "$SPEC_RT_FOREIGN")
   [ "$(echo "$R" | tail -1)" = "400" ] && ok "an update to a path outside the Library is refused too" || bad "update answered $(echo "$R" | tail -1)"
-  [ "$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/runtimes/$RT" | jq_ "d['modelPath']")" = "$LIB_PATH" ] && ok "...and $RT still names the library's path" || bad "$RT's modelPath changed"
+  [ "$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/runtimes/$RT" | jq_ "d['modelPath']")" = "$LIB_PATH" ] && ok "...and $RT still names the library's path" || bad "$RT's modelPath changed"
 fi
 
 # --- 9. the override ------------------------------------------------------------------------
 say "9. B's overrides: a from that is no Library folder is rejected; the folder's is applied and wins"
-BAD=$(curl -s -X PATCH -H "Authorization: Bearer $TOK" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$FOREIGN_ROOT\",\"to\":\"$(json_bs "$OVERRIDE_BS")\"}]}")
+BAD=$(curl -s -X PATCH -H "Authorization: Bearer $TOKB" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$FOREIGN_ROOT\",\"to\":\"$(json_bs "$OVERRIDE_BS")\"}]}")
 if [ "$ADV_HOST" = "127.0.0.1" ]; then
   note "loopback: the folder list is unknown to B, so the override is accepted with a warning: $(echo "$BAD" | jq_ "d['applied']")"
-  curl -s -o /dev/null -X PATCH -H "Authorization: Bearer $TOK" "$B_URL/v1/config" -H 'content-type: application/json' -d '{"pathMappings":[]}'
+  curl -s -o /dev/null -X PATCH -H "Authorization: Bearer $TOKB" "$B_URL/v1/config" -H 'content-type: application/json' -d '{"pathMappings":[]}'
 else
   [ "$(echo "$BAD" | jq_ "d['applied']")" = "[]" ] && echo "$BAD" | jq_ "d['rejected'][0]['message'] if d['rejected'] else ''" | grep -q "is not a Library folder" && ok "*** rejected: '$FOREIGN_ROOT' is not a Library folder -- an override says where THIS machine mounts a Library folder ***" || bad "bad override: $BAD"
 fi
-GOOD=$(curl -s -X PATCH -H "Authorization: Bearer $TOK" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$(json_bs "$LIB_ROOT_BS")\",\"to\":\"$(json_bs "$OVERRIDE_BS")\"}]}")
+GOOD=$(curl -s -X PATCH -H "Authorization: Bearer $TOKB" "$B_URL/v1/config" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$(json_bs "$LIB_ROOT_BS")\",\"to\":\"$(json_bs "$OVERRIDE_BS")\"}]}")
 [ "$(echo "$GOOD" | jq_ "d['applied']")" = "['pathMappings']" ] && ok "override applied: $LIB_ROOT_BS -> $OVERRIDE_BS" || bad "override: $GOOD"
-CHK=$(curl -s -X POST -H "Authorization: Bearer $TOK" "$B_URL/v1/library/folders/check" -H 'content-type: application/json' -d '{}')
+CHK=$(curl -s -X POST -H "Authorization: Bearer $TOKB" "$B_URL/v1/library/folders/check" -H 'content-type: application/json' -d '{}')
 [ "$(echo "$CHK" | jq_ "next((f['source'] for f in d['folders'] if f['path']==r'$LIB_ROOT_BS'), None)")" = "override" ] && ok "*** the check says source=override: B's own rule beats the folder's mount ***" || bad "check after override: $(echo "$CHK" | head -c 300)"
 [ "$(echo "$CHK" | jq_ "next((f['localPath'] for f in d['folders'] if f['path']==r'$LIB_ROOT_BS'), None)")" = "$OVERRIDE_BS" ] && ok "localPath is the override directory" || bad "localPath: $(echo "$CHK" | head -c 300)"
 SPEC_LIB2="{\"name\":\"$RT2\",\"engine\":\"llama_cpp\",\"modelPath\":\"$LIB_PATH_JSON\",\"modelAlias\":\"qwen3-override\",\"binary\":\"$(win_path "$LLAMA" | sed 's|/|\\\\|g')\",\"autoStart\":false,\"flags\":{\"contextSize\":4096,\"gpuLayers\":99}}"
 [ "$(code_of -X POST -H "Authorization: Bearer $CTOK" "$CTL/v1/runtimes" -H 'content-type: application/json' -d "{\"node\":\"node-b\",\"spec\":$SPEC_LIB2}")" = "201" ] && ok "declared $RT2 from the library's path (autoStart false: the rule, not the GPU, is under test)" || bad "declare $RT2 failed"
-[ "$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/runtimes/$RT2" | jq_ "d.get('localPath')")" = "$OVERRIDE_BS\\$BASENAME" ] && ok "*** Runtime.localPath for $RT2 is the OVERRIDE; $RT, already running, still holds the mount ***" || bad "localPath: $(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/runtimes/$RT2" | jq_ "d.get('localPath')")"
+[ "$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/runtimes/$RT2" | jq_ "d.get('localPath')")" = "$OVERRIDE_BS\\$BASENAME" ] && ok "*** Runtime.localPath for $RT2 is the OVERRIDE; $RT, already running, still holds the mount ***" || bad "localPath: $(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/runtimes/$RT2" | jq_ "d.get('localPath')")"
 # The unsaved-override form of the check: the Test button.
-UNSAVED=$(curl -s -X POST -H "Authorization: Bearer $TOK" "$B_URL/v1/library/folders/check" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$(json_bs "$LIB_ROOT_BS")\",\"to\":\"$(json_bs "$WORK/node-b/nowhere" | sed 's|/|\\\\|g')\"}]}")
+UNSAVED=$(curl -s -X POST -H "Authorization: Bearer $TOKB" "$B_URL/v1/library/folders/check" -H 'content-type: application/json' -d "{\"pathMappings\":[{\"from\":\"$(json_bs "$LIB_ROOT_BS")\",\"to\":\"$(json_bs "$WORK/node-b/nowhere" | sed 's|/|\\\\|g')\"}]}")
 [ "$(echo "$UNSAVED" | jq_ "next((f['exists'] for f in d['folders'] if f['path']==r'$LIB_ROOT_BS'), None)")" = "False" ] && echo "$UNSAVED" | jq_ "next((f.get('problem') or '' for f in d['folders'] if f['path']==r'$LIB_ROOT_BS'), '')" | grep -q "does not exist on this host" && ok "an unsaved override to a missing directory is reported, not saved" || bad "unsaved check: $(echo "$UNSAVED" | head -c 300)"
-[ "$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/config" | jq_ "d['pathMappings'][0]['to']")" = "$OVERRIDE_BS" ] && ok "...and the saved override is untouched" || bad "the check saved something"
-curl -s -o /dev/null -X PATCH -H "Authorization: Bearer $TOK" "$B_URL/v1/config" -H 'content-type: application/json' -d '{"pathMappings":[]}'
-CHK=$(curl -s -X POST -H "Authorization: Bearer $TOK" "$B_URL/v1/library/folders/check" -H 'content-type: application/json' -d '{}')
+[ "$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/config" | jq_ "d['pathMappings'][0]['to']")" = "$OVERRIDE_BS" ] && ok "...and the saved override is untouched" || bad "the check saved something"
+curl -s -o /dev/null -X PATCH -H "Authorization: Bearer $TOKB" "$B_URL/v1/config" -H 'content-type: application/json' -d '{"pathMappings":[]}'
+CHK=$(curl -s -X POST -H "Authorization: Bearer $TOKB" "$B_URL/v1/library/folders/check" -H 'content-type: application/json' -d '{}')
 [ "$(echo "$CHK" | jq_ "next((f['source'] for f in d['folders'] if f['path']==r'$LIB_ROOT_BS'), None)")" = "inherited" ] && ok "clearing the override returns B to the folder's mount" || bad "after clear: $(echo "$CHK" | head -c 300)"
 
 # --- 10. the library refuses a bad folder record ---------------------------------------------
 say "10. PATCH library modelRoots: a relative mount, two mounts of one shape"
-R=$(curl -s -X PATCH -H "Authorization: Bearer $CTOK" "$LIB/v1/config" -H 'content-type: application/json' -d "{\"modelRoots\":[{\"path\":\"$(json_bs "$LIB_ROOT_BS")\",\"mounts\":[\"models\"]}]}")
+R=$(curl -s -X PATCH -H "Authorization: Bearer $TOK" "$LIB/v1/config" -H 'content-type: application/json' -d "{\"modelRoots\":[{\"path\":\"$(json_bs "$LIB_ROOT_BS")\",\"mounts\":[\"models\"]}]}")
 [ "$(echo "$R" | jq_ "d['rejected'][0]['key'] if d['rejected'] else ''")" = "modelRoots" ] && echo "$R" | jq_ "d['rejected'][0]['message']" | grep -q "absolute" && ok "a relative mount is rejected: $(echo "$R" | jq_ "d['rejected'][0]['message'][:80]")" || bad "relative mount accepted: $R"
-R=$(curl -s -X PATCH -H "Authorization: Bearer $CTOK" "$LIB/v1/config" -H 'content-type: application/json' -d "{\"modelRoots\":[{\"path\":\"$(json_bs "$LIB_ROOT_BS")\",\"mounts\":[\"/mnt/a\",\"/mnt/b\"]}]}")
+R=$(curl -s -X PATCH -H "Authorization: Bearer $TOK" "$LIB/v1/config" -H 'content-type: application/json' -d "{\"modelRoots\":[{\"path\":\"$(json_bs "$LIB_ROOT_BS")\",\"mounts\":[\"/mnt/a\",\"/mnt/b\"]}]}")
 echo "$R" | jq_ "d['rejected'][0]['message'] if d['rejected'] else ''" | grep -q "POSIX-shaped" && ok "two POSIX mounts are rejected: a node takes the first of its shape" || bad "two mounts accepted: $R"
-[ "$(curl -s -H "Authorization: Bearer $CTOK" "$LIB/v1/folders" | jq_ "len(d['folders'][0]['mounts'])")" = "2" ] && ok "the folder record is unchanged by the refused edits" || bad "folder record changed"
+[ "$(curl -s -H "Authorization: Bearer $TOK" "$LIB/v1/folders" | jq_ "len(d['folders'][0]['mounts'])")" = "2" ] && ok "the folder record is unchanged by the refused edits" || bad "folder record changed"
 
 # --- 11. the browser ----------------------------------------------------------------------------
 say "11. the browser: node-b under Library, its Folders page, and Browse on B's disk from A's console"
@@ -345,7 +355,7 @@ B_LISTINGS_AFTER=$(grep -c "GET /v1/directories" agent-b.log || true)
 [ "${B_LISTINGS_AFTER:-0}" -gt "${B_LISTINGS_BEFORE:-0}" ] \
   && ok "*** B's OWN access log gained $((B_LISTINGS_AFTER - B_LISTINGS_BEFORE)) directory listing(s) during the browser run: the picker on A's console browsed B's disk ***" \
   || bad "B's log shows no /v1/directories request: the picker did not reach B (before=$B_LISTINGS_BEFORE after=$B_LISTINGS_AFTER)"
-[ "$(curl -s -H "Authorization: Bearer $TOK" "$B_URL/v1/config" | jq_ "d['pathMappings']")" = "[]" ] && ok "the browser's override round-trip left B with no overrides" || bad "B still has overrides after the browser run"
+[ "$(curl -s -H "Authorization: Bearer $TOKB" "$B_URL/v1/config" | jq_ "d['pathMappings']")" = "[]" ] && ok "the browser's override round-trip left B with no overrides" || bad "B still has overrides after the browser run"
 
 # --- 12. result ------------------------------------------------------------------------------
 say "result"
