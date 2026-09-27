@@ -3055,21 +3055,31 @@ components:
       required: [name, state]
       properties:
         name:
-          type: string
-          enum: [agent, control, gateway, inference-driver, library, ui]
+          $ref: "#/components/schemas/ComponentName"
         state:
+          $ref: "#/components/schemas/InstalledComponentState"
+        commit:
           type: string
-          enum: [stamped, development, unrecorded, missing]
-          description: |
+          pattern: "^[0-9a-f]{40}$"
+          description: The full commit id, when `state` is `stamped`.
+
+    ComponentName:
+      type: string
+      enum: [agent, control, gateway, inference-driver, library, ui]
+      description: |
+        One of the six packages an install is made of. Named rather than
+        inline: an inline enum here renamed the engine install's `State`
+        to `State1` in the agent's generated models (the S6 trap again).
+
+    InstalledComponentState:
+      type: string
+      enum: [stamped, development, unrecorded, missing]
+      description: |
             `stamped`: built from a GitHub archive, `commit` is its commit.
             `development`: a git checkout, which keeps the placeholder.
             `unrecorded`: installed before components recorded their
             commit (before 2026-09-27), so its version is unknown.
             `missing`: not installed in this agent's environment.
-        commit:
-          type: string
-          pattern: "^[0-9a-f]{40}$"
-          description: The full commit id, when `state` is `stamped`.
 
     InstallMechanism:
       type: string
@@ -3116,15 +3126,9 @@ components:
         enabled:
           type: boolean
         channel:
-          type: string
-          enum: [edge, releases]
+          $ref: "#/components/schemas/UpdateChannel"
         channelSource:
-          type: string
-          enum: [setting, inferred]
-          description: |
-            `setting`: `updateChannel` on this agent's config.
-            `inferred`: not set, so `releases` when the installed commits
-            are exactly one of the recent releases, and `edge` otherwise.
+          $ref: "#/components/schemas/UpdateChannelSource"
         checkedAt:
           type: string
           format: date-time
@@ -3155,8 +3159,7 @@ components:
       required: [channel, ref, components]
       properties:
         channel:
-          type: string
-          enum: [edge, releases]
+          $ref: "#/components/schemas/UpdateChannel"
         ref:
           type: string
           description: |
@@ -3223,8 +3226,7 @@ components:
           type: string
           format: date-time
         outcome:
-          type: string
-          enum: [running, succeeded, failed]
+          $ref: "#/components/schemas/UpdateOutcome"
         detail:
           type: string
           description: |
@@ -3233,6 +3235,22 @@ components:
         log:
           type: string
           description: Where the whole installer output is, on this machine.
+
+    UpdateChannel:
+      type: string
+      enum: [edge, releases]
+
+    UpdateChannelSource:
+      type: string
+      enum: [setting, inferred]
+      description: |
+        `setting`: `updateChannel` on this agent's config.
+        `inferred`: not set, so `releases` when the installed commits
+        are exactly one of the recent releases, and `edge` otherwise.
+
+    UpdateOutcome:
+      type: string
+      enum: [running, succeeded, failed]
 
     UpdateRequest:
       type: object
