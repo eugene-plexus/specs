@@ -60,10 +60,10 @@ set -eu
 # One commit per repo. Bump these to ship a new version.
 PIN_AGENT=2dcf64522a5cdd5d6756cb89ed2fc832994e5dc9
 PIN_CONTROL=cfd8138cb964aa09699767f1a9508a2b427b3363
-PIN_GATEWAY=6bf371acacb1c1a3eaabe6eb121d5d427c35269d
-PIN_DRIVER=b9526296363ae3d12ef65ed4835a5551787d7362
+PIN_GATEWAY=6f2994a994dd7ba6637b9dc9fd60e84b3eee6784
+PIN_DRIVER=87cf908c4ea51b459e7e08f65bd7ce0f99c853a9
 PIN_LIBRARY=8a25e7115eabcaedefdb288c064c4eb98f624eb5
-PIN_UI=cce0eb1674eaad4005f69d7d3fc18fafd949228e   # branch `dist`, not `main`
+PIN_UI=35461c3ec9a1f219c5d32ffffada336f9cfe6feb   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
