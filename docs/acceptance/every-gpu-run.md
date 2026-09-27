@@ -3,7 +3,7 @@
 **2026-09-27. `scripts/every-gpu-acceptance.sh`: 19 PASS live, zero failures,
 first execution.** It was then run twice more with a defect put back, and failed
 both times for the defect's own reason (§4). Sabotage passes: agent **29 of 29
-caught** (28 scripted, one by hand), library **6 of 6**, UI **9 of 9**.
+caught** (28 scripted, one by hand), library **6 of 6**, UI **9 of 9**, plus 4 of 4 for the CPU-build issue.
 
 Repos:
 
@@ -12,7 +12,7 @@ Repos:
 | `specs` | `e7e2601` | the contract |
 | `agent` | `5b6de3b` | detection, the build choice, the device list, admission |
 | `library` | `6525f0e` | hardware reading, the fit routes |
-| `ui` | `a52d85b`, dist `726bb28` | the device copy, the other builds |
+| `ui` | `a52d85b`, then `b45bba8`; dist `436abd3` | the device copy, the other builds, and the CPU-build issue (§5a) |
 | `control`, `gateway`, `inference-driver` | `c09a409`, `6bf371a`, `b952629` | regenerated only |
 
 Both installers pin all six. **`scripts/install-acceptance.sh EP_MODE=posix`
@@ -180,6 +180,26 @@ so. It is right for SYCL on the same Arc. It is wrong for the CPU build on a
 machine with a card, where fit is still scored against the card.
 
 ---
+
+## 5a. The issue this made observable
+
+Hobbyist-plan §11.9 named one issue worth raising and could not build it: a CPU
+engine build on a machine with a card. The device list could not see an Arc or
+a Radeon, so nothing could say the build was wrong. Now it can, as
+`engine-build-cpu`: a CPU build installed while the device list names a GPU and
+the default is not a CPU build. The warning names the card, the build installed
+and the one to install.
+
+It finds real machines. Every Intel and AMD owner on alpha.3 keeps whatever build
+was installed before this fix, and an expert may choose the CPU build under
+Other builds and forget.
+
+Two cases are silent on purpose:
+- a Snapdragon, where the CPU build is the default;
+- a Windows too old for DXCore, where the picker chooses Vulkan from
+  `Win32_VideoController`'s names but the device list has no card with memory
+  figures. The first sabotage pass left this untested, and removing its guard
+  would have thrown on the Issues page. It has a test now.
 
 ## 6. Not done, named
 
