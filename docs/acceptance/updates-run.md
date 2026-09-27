@@ -101,10 +101,10 @@ The job `Linux system install updates itself through its root helper` in
 - took 36 s on `7e1f4bd`.
 
 **So a commit that moves a pin is a real version change** from the pins
-before it to the pins it names, with nobody running anything. Every run so far
-has had the same six pins on both sides (6e reports "no version changed"),
-because nothing has moved a pin since the updater was built. **The first real
-version change will be the next pin bump.**
+before it to the pins it names, with nobody running anything. **The first one
+ran on `8f2b995` (2026-09-27):** it installed from `24429e1` (agent `06c321b`),
+root updated it, and 6e read *"runs all six commits 8f2b995 pins, 3 of them
+new"* -- agent, control and the UI moved.
 
 Two limits:
 - **The edge gate counts this job.** A network failure in it blocks `edge`
@@ -126,7 +126,6 @@ Two limits:
 - **The per-user Linux path** (`systemd-run --user`) and **macOS** are covered
   by unit tests and sabotages only. macOS is refused with the installer
   command, as designed.
-- **A real version change** has not run yet (§3).
 - **The UI was never driven in a browser.** The card, the confirm, the
   "Updating" hold through the restart, and Check now are covered by component
   and page tests (1,234 green) and 12 UI sabotages.
