@@ -2477,6 +2477,21 @@ components:
           properties:
             include_usage:
               type: boolean
+            include_progress:
+              type: boolean
+              description: |
+                **An Eugene Plexus extension, not OpenAI's.** With streaming,
+                true adds progress chunks while the model reads the prompt:
+                `choices: []` and an `x_eugene_plexus` carrying only
+                `progress`. Only a backend that says how far it has read
+                produces them -- today llama.cpp and nothing else -- so for
+                any other the stream is exactly what it is without the key.
+                A client that sets it must tolerate a chunk with no choices,
+                as it already must for `include_usage`.
+
+                A progress chunk is not output: failover to another backend
+                is still possible after one, and a second backend's progress
+                starts again from its own beginning.
           description: |
             With streaming, true adds a usage-only chunk before DONE when the driver
             reports usage. False omits usage. If absent, retains Eugene's historical
@@ -2702,7 +2717,10 @@ components:
             Set on the **final frame only**, alongside `usage` — the
             same place OpenAI puts its own end-of-stream extras.
             Absent on every earlier frame, because the values are not
-            known until the completion is done.
+            known until the completion is done. **One exception, asked
+            for:** with `stream_options.include_progress`, a progress
+            chunk before the first token carries an `x_eugene_plexus`
+            holding only `progress`, with `choices: []`.
 
             Added at M8. Until then a streaming client could see no
             routing information at all: the non-streaming response
@@ -3094,6 +3112,48 @@ components:
             condition report two different ways, so both flag. A backend
             that refuses instead of truncating needs none of this: its
             refusal is exact and is passed straight through as a 400.
+        progress:
+          $ref: '#/components/schemas/PromptProgress'
+
+    PromptProgress:
+      type: object
+      required:
+        - prompt_tokens
+        - processed_tokens
+      description: |
+        How far the backend has read the prompt, on a progress chunk
+        (`stream_options.include_progress`). The only thing such a chunk
+        carries: its `x_eugene_plexus` has this and nothing else, and
+        its `choices` is empty.
+
+        **Why it exists (2026-09-27).** Until the first token a stream
+        said nothing. On the processor a long prompt takes minutes to
+        read -- measured, 35 s for 7,795 tokens with a 0.6B -- and a
+        tester who saw nothing for that long concluded the request had
+        failed. llama.cpp says how far it has got, one frame per batch;
+        this carries it to the caller.
+      properties:
+        prompt_tokens:
+          type: integer
+          minimum: 0
+          description: Tokens in the whole prompt.
+        cached_tokens:
+          type: integer
+          minimum: 0
+          description: |
+            Of those, reused from the backend's cache and not read again.
+            The fraction still to read is
+            `(prompt_tokens - processed_tokens) / (prompt_tokens - cached_tokens)`.
+        processed_tokens:
+          type: integer
+          minimum: 0
+          description: Read so far, the cached ones included.
+        elapsed_ms:
+          type: integer
+          minimum: 0
+          description: |
+            The backend's time on this prompt so far, from which a client
+            can estimate what is left.
 
     EmbeddingRequest:
       type: object

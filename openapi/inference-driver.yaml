@@ -265,6 +265,11 @@ paths:
         - `event: token` — `data` is a JSON `StreamToken`: `text` for a
           text fragment, `reasoning` for a reasoning fragment,
           `toolCalls` for tool-call fragments, exactly one per frame
+        - `event: progress` — `data` is a JSON `StreamProgress`: how far
+          the backend has read the prompt. Only when the request set
+          `reportProgress` and the backend reports it. **Not output**:
+          not a commit point one layer up, not a first token, and the
+          stall clock (`streamStallSeconds`) does not run on it
         - `event: done`  — `data` is the final `GenerateResponse` JSON
         - `event: error` — `data` is a `Problem` JSON
 
@@ -952,6 +957,24 @@ components:
             - $ref: '#/components/schemas/NamedToolChoice'
         responseFormat:
           $ref: '#/components/schemas/ResponseFormat'
+        reportProgress:
+          type: boolean
+          default: false
+          description: |
+            On `POST /v1/generate/stream` only: emit `event: progress`
+            frames while the backend reads the prompt. Only
+            `llama-server` reports it (`return_progress`), and the
+            driver sends that flag only once the backend has answered as
+            one (its `/props`), since a hosted API refuses a field it
+            does not know. Ignored by every other backend and by
+            `POST /v1/generate`. Not an output setting: it changes what
+            the stream says about the work, never what the model says.
+
+            **The 200 commits at the first progress frame**, where it
+            otherwise commits at the first token, so a backend that
+            fails partway through reading the prompt fails as an
+            `event: error` frame instead of a status code. That is why
+            it is asked for rather than sent by default.
     TokenCount:
       type: object
       additionalProperties: false
@@ -1093,6 +1116,44 @@ components:
             $ref: '#/components/schemas/ToolCallDelta'
           description: |
             Fragments of one or more tool calls, accumulated by `index`.
+
+    StreamProgress:
+      type: object
+      required:
+        - promptTokens
+        - processedTokens
+      description: |
+        One `event: progress` payload: the backend reading the prompt,
+        before the first token. From llama.cpp's own `prompt_progress`
+        (`return_progress: true`), one frame per batch it processes.
+
+        **Why it exists (2026-09-27).** Before the first token a stream
+        says nothing at all: measured on llama.cpp b11215 with a 7,795
+        token prompt on the processor, 35 s passed with no frame, then
+        the answer began. A person watching that reads a dead request,
+        and one did.
+      properties:
+        promptTokens:
+          type: integer
+          minimum: 0
+          description: Tokens in the whole prompt, as the backend counted them.
+        cachedTokens:
+          type: integer
+          minimum: 0
+          description: |
+            Of those, the tokens reused from the backend's cache and so
+            not read again. A follow-up turn in a conversation is mostly
+            cache.
+        processedTokens:
+          type: integer
+          minimum: 0
+          description: |
+            Read so far, the cached ones included, so it starts at
+            `cachedTokens` and ends at `promptTokens`.
+        elapsedMs:
+          type: integer
+          minimum: 0
+          description: Time the backend has spent reading this prompt so far.
 
     Tool:
       type: object
