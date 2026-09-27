@@ -48,7 +48,7 @@ def checks():
             ("isolated mode permits startup", "-or -not $NoStart -or", "-or $false -or"),
             ("isolated prefix overlaps the live install", 'Die "the isolated prefix must be outside the existing install"', 'Say "the isolated prefix must be outside the existing install"'),
             ("isolated install stops the live autostart", "-not $Isolated -and ((Get-AgentTask)", "((Get-AgentTask)"),
-            ("isolated install writes the account config path", 'if (-not $Isolated) {\n    [Environment]::SetEnvironmentVariable', 'if ($true) {\n    [Environment]::SetEnvironmentVariable'),
+            ("isolated install writes the account config path", 'if (-not $Isolated -and -not $Update) {\n    [Environment]::SetEnvironmentVariable', 'if ($true) {\n    [Environment]::SetEnvironmentVariable'),
             ("isolated install writes persistent ports", 'if ($Isolated) {\n    Say "isolated install:', 'if ($false) {\n    Say "isolated install:'),
         ]:
             # Universal newlines here, restoring the exact original bytes later.
