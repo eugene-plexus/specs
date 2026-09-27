@@ -113,6 +113,34 @@ else
     exit 1
 fi
 
+TOKEN=""
+if [ ! -e "$HELPER" ]; then
+    # A release from before the updater (alpha.3 and earlier) has no root
+    # helper and no update route: its first update is by hand, the same
+    # one-line installer run again (docs/design/in-app-updates.md §3).
+    # Set up first, so the upgrade has an install with a passphrase to keep.
+    say "1b. an install from before the updater: its first update is by hand"
+    TOKEN=$(curl -fsS -X POST -H 'content-type: application/json' \
+        -d "{\"passphrase\": \"$PASS_PHRASE\"}" "http://127.0.0.1:$PORT/v1/auth/initialize" | json 'd["sessionToken"]')
+    cp "$HERE/install.sh" "$WORK/install.sh"
+    OUT=$( (cd "$WORK" && env SUDO_USER="$PERSON" EUGENE_PLEXUS_AGENT_BIND_PORT="$PORT" sh ./install.sh) 2>&1 ); RC=$?
+    if [ "$RC" = 0 ] && printf '%s' "$OUT" | grep -q "Eugene Plexus is running"; then
+        ok "1b. this checkout's installer, run over it, upgraded it in place"
+    else
+        bad "1b. the by-hand upgrade: rc=$RC: $(printf '%s' "$OUT" | tail -8)"
+        exit 1
+    fi
+    TOKEN=""
+    for _ in $(seq 1 30); do
+        TOKEN=$(curl -fsS -X POST -H 'content-type: application/json' \
+            -d "{\"passphrase\": \"$PASS_PHRASE\"}" "http://127.0.0.1:$PORT/v1/auth/login" 2>/dev/null \
+            | json 'd["sessionToken"]' 2>/dev/null) && [ -n "$TOKEN" ] && break
+        sleep 2
+    done
+    [ -n "$TOKEN" ] && ok "1b. and kept the install: the passphrase set before the upgrade signs in" \
+        || bad "1b. the passphrase set before the upgrade no longer signs in"
+fi
+
 say "2. the helper is root's, and outside the prefix"
 got=$(stat -c '%U:%G %a' "$HELPER" 2>/dev/null || echo missing)
 [ "$got" = "root:root 755" ] && ok "2a. $HELPER is $got" || bad "2a. $HELPER is $got"
@@ -130,7 +158,7 @@ else
 fi
 
 say "3. what the agent reports"
-TOKEN=$(curl -fsS -X POST -H 'content-type: application/json' \
+[ -n "$TOKEN" ] || TOKEN=$(curl -fsS -X POST -H 'content-type: application/json' \
     -d "{\"passphrase\": \"$PASS_PHRASE\"}" "http://127.0.0.1:$PORT/v1/auth/initialize" | json 'd["sessionToken"]')
 NODE=$(api GET /v1/node)
 states=$(printf '%s' "$NODE" | json '" ".join(c["state"] for c in d["install"]["components"])')
