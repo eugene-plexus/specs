@@ -133,8 +133,16 @@ def run(root: Path, download: bool, seed: Path | None, installer_source: Path | 
         fixture = root / "fixture"; fixture.mkdir()
         (fixture / "sitecustomize.py").write_text('''
 from eugene_plexus_agent.engines import host, devices
+from eugene_plexus_agent.engines import gpu_probe as agent_gpu_probe
 from eugene_plexus_agent import state
 from eugene_plexus_library import hardware
+from eugene_plexus_library import gpu_probe as library_gpu_probe
+# Since 2026-09-27 every GPU the OS lists comes from gpu_probe (DXCore on
+# Windows, sysfs on Linux) in both the agent and the library. Hiding only
+# the vendor tools left this box's integrated Radeon visible: a CPU run
+# scored its model against the Radeon's 1.36 GiB and refused the launch.
+agent_gpu_probe.adapters = lambda *args, **kw: []
+library_gpu_probe.adapters = lambda *args, **kw: []
 host._detect_accelerator = lambda *args: (host.Accelerator.none, None)
 _detect = devices.detect_devices
 devices.detect_devices = lambda **kw: _detect(run=lambda argv: None)
