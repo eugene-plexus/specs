@@ -304,6 +304,9 @@ write_update_helper() {
 # Installed by Eugene Plexus's install.sh; see "the root unit a system
 # install updates through" there. Run as root by eugene-plexus-update.service.
 set -u
+# systemd gives a unit with no User= no HOME, and the installer reads it.
+HOME=$(getent passwd root | cut -d: -f6)
+export HOME=${HOME:-/root}
 DIR=$PREFIX/update
 REPO=https://github.com/eugene-plexus/specs
 RAW=https://raw.githubusercontent.com/eugene-plexus/specs
@@ -371,9 +374,13 @@ else
     finish failed "The installer exited with $CODE. Its last lines: $(tail -n 12 "$LOG" | tr '\n' '|')"
 fi
 HELPER
-    } | as_root tee "$UPDATE_HELPER" >/dev/null
-    as_root chown root:root "$UPDATE_HELPER"
-    as_root chmod 0755 "$UPDATE_HELPER"
+    } | as_root tee "$UPDATE_HELPER.new" >/dev/null
+    as_root chown root:root "$UPDATE_HELPER.new"
+    as_root chmod 0755 "$UPDATE_HELPER.new"
+    # Renamed into place, never rewritten: an update runs this function
+    # from inside the helper it replaces, and sh reads a script as it goes,
+    # so truncating the running file would hand it the new text mid-line.
+    as_root mv -f "$UPDATE_HELPER.new" "$UPDATE_HELPER"
     as_root tee "$UPDATE_SERVICE" >/dev/null <<EOF
 [Unit]
 Description=Eugene Plexus update, asked for by the agent
