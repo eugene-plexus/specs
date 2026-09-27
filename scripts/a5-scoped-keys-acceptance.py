@@ -465,45 +465,71 @@ def exercise(directory: Path) -> None:
             "PASS coordination outage fails closed, operator repair stays open, restart preserves both rates",
             flush=True,
         )
-        totals = {}
-        for gateway in ("gateway-a", "gateway-b"):
-
-            def enough_metrics():
-                r = call(gateway, "GET", "/v1/metrics/clients", operator[gateway])
-                return r.status_code == 200 and len(r.json()["clients"]) == 2
-
-            wait(enough_metrics, "usage persisted")
-            report = call(gateway, "GET", "/v1/metrics/clients", operator[gateway]).json()
-            history = call(
-                gateway, "GET", "/v1/metrics/requests?limit=100", operator[gateway]
-            )
-            for row in report["clients"]:
-                assert row["clientKeyId"] in (a["key"]["id"], b["key"]["id"])
-                total = totals.setdefault(
-                    row["clientKeyName"],
-                    {
-                        k: 0
-                        for k in (
-                            "requests",
-                            "served",
-                            "failed",
-                            "attempts",
-                            "promptTokens",
-                            "completionTokens",
-                            "incompleteUsageRequests",
-                        )
-                    },
+        # **Wait for the counts, not for the clients to appear** (2026-09-26).
+        # The gateway records usage off the request path, so both keys can be
+        # listed while App A's last failed attempts are still being written;
+        # summing at that moment came up short in CI twice in three runs on
+        # an unrelated change. The totals are collected until they reach
+        # what this run produced, and a run that never gets there fails
+        # below with the numbers it saw.
+        def collect():
+            sums, texts = {}, []
+            for gateway in ("gateway-a", "gateway-b"):
+                report = call(
+                    gateway, "GET", "/v1/metrics/clients", operator[gateway]
+                ).json()
+                history = call(
+                    gateway, "GET", "/v1/metrics/requests?limit=100", operator[gateway]
                 )
-                for key in total:
-                    total[key] += row[key]
-            for secret in (
-                a["token"],
-                b["token"],
-                "A5_PRIVATE_PROMPT",
-                "A5_PRIVATE_INPUT",
-                "FORGED_USER",
-            ):
-                assert secret not in json.dumps(report) + history.text
+                texts.append(json.dumps(report) + history.text)
+                for row in report["clients"]:
+                    assert row["clientKeyId"] in (a["key"]["id"], b["key"]["id"])
+                    total = sums.setdefault(
+                        row["clientKeyName"],
+                        {
+                            k: 0
+                            for k in (
+                                "requests",
+                                "served",
+                                "failed",
+                                "attempts",
+                                "promptTokens",
+                                "completionTokens",
+                                "incompleteUsageRequests",
+                            )
+                        },
+                    )
+                    for key in total:
+                        total[key] += row[key]
+            return sums, texts
+
+        def usage_recorded():
+            sums, _ = collect()
+            app_a, app_b = sums.get("App A"), sums.get("App B")
+            return bool(
+                app_a
+                and app_b
+                and app_a["served"] >= 2
+                and app_a["failed"] >= 4
+                and app_a["attempts"] >= 5
+                and app_a["incompleteUsageRequests"] >= 2
+                and app_b["served"] >= 2
+            )
+
+        try:
+            wait(usage_recorded, "usage persisted", seconds=20)
+        except AssertionError:
+            pass  # the assertions below say what was, and was not, recorded
+        totals, texts = collect()
+        print(f"usage recorded: {json.dumps(totals)}", flush=True)
+        for secret in (
+            a["token"],
+            b["token"],
+            "A5_PRIVATE_PROMPT",
+            "A5_PRIVATE_INPUT",
+            "FORGED_USER",
+        ):
+            assert all(secret not in text for text in texts)
         assert totals["App A"]["served"] == 2 and totals["App A"]["failed"] >= 4
         assert (
             totals["App A"]["attempts"] >= 5
