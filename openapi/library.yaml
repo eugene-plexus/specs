@@ -523,6 +523,21 @@ paths:
             `ComputeDevice.sharedMemory`. Without it a `vramBytes` override
             reads as a discrete card, and a partial offload is scored as
             spilling into RAM that is the same RAM.
+        - name: gpuCount
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: |
+            How many cards `vramBytes` is the combined free memory of, for
+            a launch that spreads one model across them (llama.cpp's
+            default whenever more than one card is visible). Each card
+            holds its own compute buffers and driver context, so the
+            overhead allowance is counted once per card. Omitted, the
+            budget is one card, which is what a caller that knows only one
+            device's memory is describing. Added 2026-09-27: two 5090s
+            were scored against one of them, and a 48 GB model that fits
+            across both read `split`, which a launch refuses.
       responses:
         '200':
           description: The verdict and the arithmetic behind it.
@@ -869,6 +884,21 @@ paths:
             `ComputeDevice.sharedMemory`. Without it a `vramBytes` override
             reads as a discrete card, and a partial offload is scored as
             spilling into RAM that is the same RAM.
+        - name: gpuCount
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: |
+            How many cards `vramBytes` is the combined free memory of, for
+            a launch that spreads one model across them (llama.cpp's
+            default whenever more than one card is visible). Each card
+            holds its own compute buffers and driver context, so the
+            overhead allowance is counted once per card. Omitted, the
+            budget is one card, which is what a caller that knows only one
+            device's memory is describing. Added 2026-09-27: two 5090s
+            were scored against one of them, and a 48 GB model that fits
+            across both read `split`, which a launch refuses.
       responses:
         '200':
           description: The repo, its candidates, and the guidance.
@@ -1002,6 +1032,21 @@ paths:
             `ComputeDevice.sharedMemory`. Without it a `vramBytes` override
             reads as a discrete card, and a partial offload is scored as
             spilling into RAM that is the same RAM.
+        - name: gpuCount
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: |
+            How many cards `vramBytes` is the combined free memory of, for
+            a launch that spreads one model across them (llama.cpp's
+            default whenever more than one card is visible). Each card
+            holds its own compute buffers and driver context, so the
+            overhead allowance is counted once per card. Omitted, the
+            budget is one card, which is what a caller that knows only one
+            device's memory is describing. Added 2026-09-27: two 5090s
+            were scored against one of them, and a 48 GB model that fits
+            across both read `split`, which a launch refuses.
       responses:
         '200':
           description: The starter set, with a recommendation or a reason there is none.
@@ -1098,6 +1143,21 @@ paths:
             `ComputeDevice.sharedMemory`. Without it a `vramBytes` override
             reads as a discrete card, and a partial offload is scored as
             spilling into RAM that is the same RAM.
+        - name: gpuCount
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: |
+            How many cards `vramBytes` is the combined free memory of, for
+            a launch that spreads one model across them (llama.cpp's
+            default whenever more than one card is visible). Each card
+            holds its own compute buffers and driver context, so the
+            overhead allowance is counted once per card. Omitted, the
+            budget is one card, which is what a caller that knows only one
+            device's memory is describing. Added 2026-09-27: two 5090s
+            were scored against one of them, and a 48 GB model that fits
+            across both read `split`, which a launch refuses.
       responses:
         '200':
           description: What the file says about itself.
@@ -3663,6 +3723,10 @@ components:
         gpuCount:
           type: integer
           minimum: 0
+          description: |
+            How many cards the budget spans. More than one means the
+            model is spread across them, and the overhead allowance is
+            counted once per card.
         unifiedMemory:
           type: boolean
           description: |
