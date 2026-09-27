@@ -197,10 +197,13 @@ jobs:
         # This commit's own installer is what the helper downloads, so the
         # target must be one raw.githubusercontent.com can serve: a pull
         # request's merge commit is not.
+        # On a push the install starts from the previous push's installer,
+        # so a commit that moves a pin is a real version change.
         env:
           EP_TARGET: ${{ github.event.pull_request.head.sha || github.sha }}
+          EP_FROM: ${{ github.event.before || github.event.pull_request.base.sha }}
         run: |
-          sudo env EP_PERSON="$(id -un)" EP_TARGET="$EP_TARGET" \
+          sudo env EP_PERSON="$(id -un)" EP_TARGET="$EP_TARGET" EP_FROM="$EP_FROM" \
             bash scripts/updates-system-install-acceptance.sh 2>&1 | tee update-run.log
           grep -q '^ALL PASS$' update-run.log
 

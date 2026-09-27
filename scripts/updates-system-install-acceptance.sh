@@ -22,7 +22,9 @@
 #   4. a request naming junk is refused, and what it named is not echoed
 #   5. a request that is a symlink to a root-only file reads nothing
 #   6. a real update: requested through the app's own route (or the request
-#      file), carried out by root, reported back by the agent that comes back
+#      file), carried out by root, reported back by the agent that comes back,
+#      and running exactly the six commits the target pins (with EP_FROM, an
+#      earlier specs commit to install first, those can differ)
 #   7. what the update wrote into the prefix is the account's, not root's
 #   8. teardown: nothing of this run is left
 set -uo pipefail
@@ -90,9 +92,19 @@ teardown() {
 trap teardown EXIT
 
 rm -rf "$WORK"; mkdir -p "$WORK"; chmod 0755 "$WORK"
-cp "$HERE/install.sh" "$WORK/install.sh"
+# EP_FROM installs what an earlier specs commit pinned, so the update to
+# EP_TARGET changes the version when the two pin different commits. CI
+# passes the previous push.
+FROM=${EP_FROM:-}
+case $FROM in 0000000000000000000000000000000000000000) FROM= ;; esac
+if [ -n "$FROM" ]; then
+    curl -fsSL "https://raw.githubusercontent.com/eugene-plexus/specs/$FROM/scripts/install.sh" \
+        -o "$WORK/install.sh" || { echo "could not fetch the installer at $FROM" >&2; exit 2; }
+else
+    cp "$HERE/install.sh" "$WORK/install.sh"
+fi
 
-say "1. a system install, as sudo runs it"
+say "1. a system install, as sudo runs it${FROM:+ (the installer at $FROM)}"
 OUT=$( (cd "$WORK" && env SUDO_USER="$PERSON" EUGENE_PLEXUS_AGENT_BIND_PORT="$PORT" sh ./install.sh) 2>&1 ); RC=$?
 if [ "$RC" = 0 ] && printf '%s' "$OUT" | grep -q "Eugene Plexus is running"; then
     ok "1. installed, and the agent answers on $PORT"
@@ -184,9 +196,10 @@ if [ "$available" = True ] && [ "$TARGET" = "$newest" ]; then
         && ok "6b. asked through POST /v1/node/update for $TARGET" \
         || bad "6b. POST /v1/node/update: $R"
 else
-    # Already the newest: the same request the route writes, by hand.
+    # Not what this agent found newest (already on it, or a target it
+    # cannot know of yet): the same request the route writes, by hand.
     as_account sh -c "printf '%s edge\n' '$TARGET' > '$PREFIX/update/request'"
-    ok "6b. already the newest; asked for $TARGET through the request file"
+    ok "6b. asked for $TARGET through the request file, as the route writes it"
 fi
 if wait_record 600; then
     rec=$(cat "$PREFIX/update/last.json")
@@ -200,13 +213,25 @@ for _ in $(seq 1 60); do curl -fsS -o /dev/null "http://127.0.0.1:$PORT/healthz"
 AFTER=$(api GET /v1/node)
 last=$(printf '%s' "$AFTER" | json '(d["update"].get("last") or {}).get("outcome","")')
 [ "$last" = succeeded ] && ok "6d. the agent that came back reports it" || bad "6d. update: $(printf '%s' "$AFTER" | json 'd["update"]')"
-if [ "$TARGET" != "$pinned" ] && [ "$available" = True ]; then
-    now_agent=$(printf '%s' "$AFTER" | json 'next(c.get("commit","") for c in d["install"]["components"] if c["name"]=="agent")')
-    want=$(curl -fsSL "https://raw.githubusercontent.com/eugene-plexus/specs/$TARGET/scripts/install.sh" \
-        | sed -n 's/^PIN_AGENT=\([0-9a-f]*\).*/\1/p')
-    [ "$now_agent" = "$want" ] && ok "6e. it now runs the agent $TARGET pins ($want)" \
-        || bad "6e. agent $now_agent, $TARGET pins $want"
-fi
+curl -fsSL "https://raw.githubusercontent.com/eugene-plexus/specs/$TARGET/scripts/install.sh" \
+    -o "$WORK/target-install.sh" 2>/dev/null || : >"$WORK/target-install.sh"
+compare=$(printf '%s' "$AFTER" | python3 -c '
+import json, re, sys
+pins = dict(re.findall(r"^PIN_([A-Z]+)=([0-9a-f]{40})", open(sys.argv[1]).read(), re.M))
+before = dict(re.findall(r"^PIN_([A-Z]+)=([0-9a-f]{40})", open(sys.argv[2]).read(), re.M))
+names = {"agent": "AGENT", "control": "CONTROL", "gateway": "GATEWAY",
+         "inference-driver": "DRIVER", "library": "LIBRARY", "ui": "UI"}
+now = {c["name"]: c.get("commit", "") for c in json.load(sys.stdin)["install"]["components"]}
+wrong = ["%s %s not %s" % (n, (now.get(n) or "-")[:7], pins.get(k, "?")[:7])
+         for n, k in names.items() if now.get(n) != pins.get(k)]
+moved = sum(1 for k in names.values() if pins.get(k) != before.get(k))
+print("; ".join(wrong) if wrong else f"ok {moved}")
+' "$WORK/target-install.sh" "$WORK/install.sh")
+case $compare in
+    "ok 0") ok "6e. it runs all six commits $TARGET pins (the same six it had: no version changed)" ;;
+    ok\ *)  ok "6e. it runs all six commits $TARGET pins, ${compare#ok } of them new" ;;
+    *)      bad "6e. $compare" ;;
+esac
 
 say "7. what the update left in the prefix"
 bad_owner=$(find "$PREFIX/update" -maxdepth 1 ! -user "$ACCOUNT" -printf '%p ' 2>/dev/null)
