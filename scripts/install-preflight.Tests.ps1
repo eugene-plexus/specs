@@ -709,7 +709,9 @@ Describe 'An update started from the app' {
     }
 
     It 'reads that port before writing the service environment back' {
-        $block = $source.Substring($source.IndexOf("if (`$Update) {`n    # Before Set-ServiceBootstrap"))
+        # CI checks the script out with CRLF; this box has LF.
+        $text = $source -replace "`r`n", "`n"
+        $block = $text.Substring($text.IndexOf("if (`$Update) {`n    # Before Set-ServiceBootstrap"))
         $read = $block.IndexOf('$Port = Get-InstalledPort')
         $write = $block.IndexOf("`n        Set-ServiceBootstrap`n")
         $read | Should BeGreaterThan 0
