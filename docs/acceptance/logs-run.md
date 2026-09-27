@@ -24,7 +24,7 @@ model whose load had failed did nothing.
 | Repo | Commit | What changed |
 | --- | --- | --- |
 | `specs` | `4a89511` | `GET /v1/logs`, `GET /v1/logs/stream`, `LogLine`, `LogPage` |
-| `agent` | `9bf6985` | the stamped stream, reading, following, masking; Start after a failed load |
+| `agent` | `9bf6985`, `1b416da` | the stamped stream, reading, following, masking; Start after a failed load |
 | `control` | `40ec143` | regenerated |
 | `ui` | `5506613`, dist `7f62539` | the Logs page, the Inference link |
 
