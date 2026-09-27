@@ -3535,6 +3535,11 @@ components:
             because it is the answer to "why is this slow" often enough
             to be worth surfacing: a host that fell back to a CPU build
             looks identical from the outside otherwise.
+
+            A `+vulkan` suffix (`win-cuda-13.4-x64+vulkan`, since
+            2026-09-27) is that build with the Vulkan backend from the
+            same release added, so a second vendor's card can be used
+            beside an NVIDIA one in one process.
         installedAt:
           type: string
           format: date-time
@@ -3618,6 +3623,12 @@ components:
             is the CPU, CUDA, Vulkan, ROCm, SYCL and OpenVINO builds; on
             Linux the same families under `ubuntu-`. Empty when no
             release could be read.
+
+            On Windows each CUDA build is also offered with `+vulkan`
+            (see `HostAccelerator.secondary`). That is the default for a
+            machine with an AMD or Intel card beside an NVIDIA one, and
+            the expert's way to test an integrated GPU as overflow, with
+            the runtime's `devices` flag naming it.
         reason:
           type: string
           description: |
@@ -3749,6 +3760,26 @@ components:
             and no one on the project has run it. So the CPU build, which
             upstream tunes for ARM, is the default, and the OpenCL one is
             available through `EngineInstallRequest.variant`.
+        secondary:
+          type: string
+          enum: [vulkan]
+          description: |
+            A second backend the build carries, for GPUs the first cannot
+            use: `vulkan` for a discrete AMD or Intel card beside an
+            NVIDIA one. The variant is then the CUDA build with the
+            Vulkan backend from the same release added (`+vulkan`), and
+            llama.cpp uses every discrete card through whichever backend
+            reaches it. It skips a card reachable through both, by its
+            PCI id. Added 2026-09-27; absent when there is no such card.
+
+            **Windows only.** Upstream's Windows CUDA and Vulkan builds
+            share byte-identical core libraries, and the backends are
+            plug-ins, so one can be added to the other. The install
+            checks that and refuses if a release breaks it. The Linux
+            builds are compiled separately and their ggml core differs
+            (`libggml-base.so`, measured on b11211). Combining them
+            would be an ABI gamble, so a second vendor's card on Linux
+            is named as unused instead.
         acceleratorVersion:
           type: string
           description: |
