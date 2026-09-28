@@ -1527,6 +1527,124 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/audio/transcriptions:
+    post:
+      tags: [inference]
+      operationId: createTranscription
+      summary: OpenAI-compatible speech to text.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `/v1/audio/transcriptions` (P3b, 2026-09-28), multipart
+        exactly as the OpenAI SDK sends it (captured). The model is any
+        with the `transcription` surface on `GET /v1/models`: an
+        OpenRouter transcription model, OpenAI's, or a `llama-server`
+        whose projector hears.
+
+        **Tiers, as chat** (§5, call #4): a transcript from a fallback
+        model is still a transcript. Only backends with the
+        `transcription` surface are tried, fallback tiers included.
+
+        **The file is at most 25 MiB**, OpenAI's limit; this is the one
+        door with its own. `response_format`:
+
+        * `json` (the default) and `verbose_json` are the backend's;
+          `verbose_json` from one that cannot make it is its refusal,
+          relayed.
+        * `text` is rendered here from `json`, because `llama-server`
+          refuses `text` (measured).
+        * `srt` and `vtt` are refused: nothing here makes subtitles.
+
+        **Refused with a 400 naming the field:** `stream: true` (the answer
+        is one JSON document), `chunking_strategy`, `include[]`, and
+        `timestamp_granularities[]` without `verbose_json`, as OpenAI
+        requires. **The same caller settings route as chat's do** only in
+        that a model without the surface is never asked.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TranscriptionForm'
+      responses:
+        '200':
+          description: |
+            The transcript: JSON, or plain text for `response_format: text`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Transcription'
+                  - $ref: '#/components/schemas/TranscriptionVerbose'
+            text/plain:
+              schema:
+                type: string
+        '400':
+          description: |
+            A field this door refuses, a model with no `transcription`
+            surface, or the backend's refusal, with its words.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '413':
+          description: The file is over 25 MiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every backend failed, or a provider refused a driver's own key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The model is served but not ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/audio/translations:
+    post:
+      tags: [inference]
+      operationId: createTranslation
+      summary: 'Refused: no backend here translates (P3-4).'
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's translation door, which only OpenAI's own API serves
+        (OpenRouter answers 404, measured). Deferred by Troy (P3-4), so it
+        answers a 400 saying no backend here translates, rather than a 404
+        that reads as a typo. Transcribe with `language` and translate the
+        text with a chat model instead.
+      responses:
+        '400':
+          description: Always.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/embeddings:
     post:
       tags: [inference]
@@ -2537,12 +2655,13 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings, decisions, speech]
+            enum: [chat, embeddings, decisions, speech, transcription]
           description: |
             Which surfaces this model can be sent to. `decisions` means
             `POST /v1/systemone`; a decision-only model lists nothing
             else, and a chat request naming it is refused with the
-            door's name. `speech` means `POST /v1/audio/speech` (P3a).
+            door's name. `speech` means `POST /v1/audio/speech` (P3a),
+            `transcription` `POST /v1/audio/transcriptions` (P3b).
 
             OpenAI's own `/v1/models` does not say, which is why every
             RAG front-end makes you pick an embedding model from a
@@ -3003,6 +3122,99 @@ components:
       type: string
       enum: [audio, sse]
       description: '`audio` is the raw bytes, streamed; `sse` is refused.'
+
+    TranscriptionForm:
+      type: object
+      required: [file, model]
+      description: |
+        OpenAI's multipart form (P3b). Fields this door does not carry are
+        refused naming them.
+      properties:
+        file:
+          type: string
+          format: binary
+          description: At most 25 MiB.
+        model:
+          type: string
+        language:
+          type: string
+        prompt:
+          type: string
+        response_format:
+          $ref: '#/components/schemas/TranscriptionResponseFormat'
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 1
+        timestamp_granularities:
+          type: array
+          items:
+            type: string
+            enum: [word, segment]
+          description: Sent as `timestamp_granularities[]`, once per value, as the SDK does.
+        stream:
+          type: boolean
+          description: Refused when true.
+
+    TranscriptionResponseFormat:
+      type: string
+      enum: [json, text, verbose_json, srt, vtt]
+      description: '`srt` and `vtt` are refused; `text` is rendered here from `json`.'
+
+    Transcription:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+        usage:
+          $ref: '#/components/schemas/TranscriptionUsageOut'
+
+    TranscriptionVerbose:
+      type: object
+      required: [task, text]
+      properties:
+        task:
+          type: string
+          const: transcribe
+        language:
+          type: string
+        duration:
+          type: number
+        text:
+          type: string
+        segments:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        words:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        usage:
+          $ref: '#/components/schemas/TranscriptionUsageOut'
+
+    TranscriptionUsageOut:
+      type: object
+      description: |
+        OpenAI's two shapes: `{"type": "duration", "seconds"}` for a
+        backend that counts audio, `{"type": "tokens", ...}` for one that
+        counts tokens.
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [duration, tokens]
+        seconds:
+          type: number
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
 
     ChatModality:
       type: string
@@ -5701,6 +5913,24 @@ components:
           type:
             - integer
             - 'null'
+        door:
+          type:
+            - string
+            - 'null'
+          description: |
+            Which door the request came in by (P3b): `speech` or
+            `transcription`. Null on rows from before schema v7 and on every
+            other door, whose rows carry tokens.
+        characters:
+          type:
+            - integer
+            - 'null'
+          description: For speech, the characters spoken, the unit providers bill it in.
+        audioSeconds:
+          type:
+            - number
+            - 'null'
+          description: For transcription, the seconds of audio heard, where the backend says.
         outcome:
           type: string
           enum: [served, error]

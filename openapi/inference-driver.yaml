@@ -526,6 +526,69 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/transcribe:
+    post:
+      tags: [inference]
+      operationId: transcribe
+      summary: Transcribe audio on the configured backend.
+      description: |
+        The transcription counterpart of `POST /v1/generate` (P3b,
+        2026-09-28): normalised, so one request fronts OpenAI's and
+        OpenRouter's `/v1/audio/transcriptions` and `llama-server`'s, each
+        asked in the multipart form they take (measured).
+
+        **The audio travels as base64 in JSON**, as attachments do (P2a).
+        It is at most 25 MiB, OpenAI's upload limit, so this path's body
+        limit is 36 MiB where every other inference path's is 16.
+
+        **`llama-server` makes `json` only** (measured): `verbose` asked of
+        it is its own 400, relayed. Its Qwen3-ASR text carries the model's
+        own preamble (`language English<asr_text>...`), which the same
+        model on OpenRouter does not send; the driver parses it into
+        `language` and the text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranscribeRequest'
+      responses:
+        '200':
+          description: The transcript.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscribeResponse'
+        '400':
+          description: |
+            Audio that is not base64, or the backend's own refusal (a format
+            it cannot read, `verbose` on `llama-server`), with its words.
+            Does not cascade.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/ModelNotServed'
+        '413':
+          description: The body is over this path's 36 MiB limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The backend failed, or refused this driver's own key.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: '`requestTimeoutSeconds` passed with no answer.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/embed:
     post:
       tags: [inference]
@@ -1395,6 +1458,124 @@ components:
           type: string
           format: uuid
 
+    TranscribeRequest:
+      type: object
+      additionalProperties: false
+      required: [audio]
+      properties:
+        model:
+          $ref: '#/components/schemas/RequestModel'
+        localOnly:
+          type: boolean
+          default: false
+          description: |
+            As `GenerateRequest.localOnly`: refuse before forwarding any
+            audio unless the active engine is classified local.
+        audio:
+          $ref: '#/components/schemas/TranscribeAudio'
+        language:
+          type: string
+          minLength: 2
+          maxLength: 16
+          description: The spoken language, ISO-639-1 (`en`), when the caller knows it.
+        prompt:
+          type: string
+          maxLength: 8192
+          description: Text to guide the transcript's style or spelling, as OpenAI's.
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 1
+        verbose:
+          type: boolean
+          default: false
+          description: |
+            Ask for `language`, `duration` and segments as well as the text:
+            OpenAI's `verbose_json`. A backend that cannot make it refuses,
+            and the refusal is relayed.
+        timestampGranularities:
+          type: array
+          maxItems: 2
+          items:
+            type: string
+            enum: [word, segment]
+          description: With `verbose` only, as OpenAI requires.
+        requestId:
+          type: string
+          format: uuid
+
+    TranscribeAudio:
+      type: object
+      additionalProperties: false
+      required: [data, filename]
+      properties:
+        data:
+          type: string
+          minLength: 1
+          maxLength: 35000000
+          description: The file's bytes, base64, no `data:` prefix. At most 25 MiB decoded.
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: |
+            The name the caller uploaded it under. Backends read the format
+            from its extension as often as from its bytes, so it is sent on.
+        mediaType:
+          type: string
+          maxLength: 128
+          description: The upload's `Content-Type`, when the caller sent one.
+
+    TranscribeResponse:
+      type: object
+      additionalProperties: false
+      required: [text]
+      properties:
+        text:
+          type: string
+        language:
+          type: string
+          description: The spoken language, as the backend names it.
+        duration:
+          type: number
+          description: The audio's length in seconds, when the backend says.
+        segments:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: '`verbose` only: the backend''s segments, as it sent them.'
+        words:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+          description: '`verbose` with word timestamps: the backend''s words, as it sent them.'
+        usage:
+          $ref: '#/components/schemas/TranscriptionUsage'
+        modelId:
+          type: string
+          description: The model the backend says answered.
+        latencyMs:
+          type: integer
+
+    TranscriptionUsage:
+      type: object
+      additionalProperties: false
+      description: |
+        What the backend counted, in its own unit (measured 2026-09-28):
+        seconds of audio for Whisper, tokens for `gpt-4o-mini-transcribe`
+        and `llama-server`.
+      properties:
+        seconds:
+          type: number
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        totalTokens:
+          type: integer
+
     AudioOutputRequest:
       type: object
       additionalProperties: false
@@ -2024,11 +2205,17 @@ components:
           description: |
             Which requests this model answers. The values so far:
 
-            * `chat` (`/v1/generate`), `embeddings` (`/v1/embed`) and
-              `decisions` (`/v1/decide`), which have doors today;
-            * `completion`, `speech`, `transcription`, `image`, `video`,
-              `moderation` and `rerank`, which name OpenAI's and
-              OpenRouter's doors Eugene has not built yet.
+            * `chat` (`/v1/generate`), `embeddings` (`/v1/embed`),
+              `decisions` (`/v1/decide`), `speech` (`/v1/speak`, P3a) and
+              `transcription` (`/v1/transcribe`, P3b), which have doors;
+            * `completion`, `image`, `video`, `moderation` and `rerank`,
+              which name OpenAI's and OpenRouter's doors Eugene has not
+              built yet.
+
+            A single-model `llama-server` whose projector hears
+            (`/props` `modalities.audio`) serves `transcription` beside
+            `chat`: its `/v1/audio/transcriptions` answers only then
+            (measured).
 
             A driver reports those anyway, so a model's id does not
             change on the day its door arrives, and the gateway lists a
