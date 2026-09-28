@@ -223,3 +223,40 @@ a header; any other format would need a transcoder.
   `/messages/count_tokens` do not.**
 - **`openrouter/auto` is itself a model**, a router whose pricing reads
   `-1`. Prefixed, it becomes `openrouter/openrouter/auto`.
+
+## 7. For P2c: the missing fields (2026-09-28)
+
+Read from the account listing (455 text-output models of 626) and then sent
+to the cheapest model listing each, about $0.012 in all.
+
+**How many models list each parameter** in `supported_parameters`:
+
+| Parameter | Models | Sent to | Result |
+|---|---|---|---|
+| `reasoning_effort` | 186 (and `reasoning` 323) | `openai/gpt-oss-20b` | Honoured: 17 reasoning tokens at `low`, 275 at `high`. The answer carries `reasoning` and `reasoning_details` |
+| `logprobs`, `top_logprobs` | 149 each | `mistralai/mistral-nemo` | Honoured; shapes below |
+| `logit_bias` | 141 | `mistralai/mistral-nemo` | Accepted (200). Its effect is not visible without the model's token ids |
+| `verbosity` | 23, mostly Anthropic | `anthropic/claude-sonnet-5` | Accepted (200) |
+| `web_search_options` | 18 | `openai/gpt-4o-mini`, then `perplexity/sonar` | **Refused by OpenAI although listed**; answered by Sonar, shapes below |
+| `prediction` | 12 | `openai/gpt-4o-mini` | Accepted (200); usage names no accepted or rejected prediction tokens |
+| `service_tier`, `prompt_cache_key` | **0** | — | Not listed anywhere |
+
+- **`logprobs`, not streamed:** `choices[0].logprobs` is `{"content": [{"token",
+  "bytes", "logprob", "top_logprobs": [{"token", "bytes", "logprob"}]}],
+  "refusal": null}`, OpenAI's shape. **Streamed:** the same object on the
+  frame's choice beside `delta`, not inside it, on the frames that carry
+  tokens (1 of 3 here).
+- **One call of ten came back with `logprobs: null`** though it asked for
+  them. It was not reproduced in eight more, with `provider.require_parameters`
+  and without. The driver already sends `require_parameters` whenever a caller
+  set a setting explicitly.
+- **A listed parameter is not a promise.** OpenRouter lists
+  `web_search_options` for `gpt-4o-mini`, and OpenAI answers 400 *"Web search
+  options not supported with this model."* (relayed with `provider_name`, and
+  Azure's identical refusal in `previous_errors`). The listing is a filter to
+  route by, and the provider's own refusal is still the caller's 400.
+- **Web search, not streamed:** `message.annotations` is `[{"type":
+  "url_citation", "url_citation": {"url", "title", "start_index",
+  "end_index"}}]`, and `content` carries `[2][3]`-style markers. Sonar's
+  indices were all 0. **Streamed:** `delta.annotations` on 20 of 34 frames,
+  one citation per frame. $0.005 per request, almost all of it the search.
