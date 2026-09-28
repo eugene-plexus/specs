@@ -1889,6 +1889,27 @@ components:
             Whether the loaded model is confirmed to accept inline PNG/JPEG
             images. Unknown or unverified backends report false. Rechecked
             before image generation; never inferred from the provider name.
+        audioInput:
+          type: boolean
+          description: |
+            Whether the model is confirmed to hear an `input_audio` part
+            (WAV or MP3). The same rule as `imageInput`: unknown reports
+            false, and the gateway routes a request carrying audio only
+            to a model that says true. From the account's listing
+            (`audio` in OpenRouter's `input_modalities`) or, for
+            `llama-server`, its `/props` `modalities.audio`.
+
+            **Added 2026-09-28 (P2).** Without it a text-only model is
+            sent the audio: measured, OpenRouter answers *"No endpoints
+            found that support input audio"*, and a backend that drops
+            the part answers a question the caller did not ask.
+        fileInput:
+          type: boolean
+          description: |
+            Whether the model is confirmed to read a `file` part (PDF).
+            The same rule as `audioInput`. From `file` in the account's
+            `input_modalities`; no local engine reads one today, so a
+            single-model driver reports false.
         toolCalling:
           type: boolean
           description: |

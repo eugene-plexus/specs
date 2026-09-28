@@ -418,6 +418,17 @@ paths:
         request. Profile edits take effect on subsequent requests after
         cache expiry and do not restart engines.
 
+        **Audio and files ride the image path (P2, 2026-09-28).** An
+        `input_audio` part (WAV or MP3) and a `file` part (a PDF, inline
+        as `file_data`) are carried to the backend as they are, within
+        the limits `MessageContent` states, and route **only** to a model
+        whose backend confirms that kind of input
+        (`x_eugene_plexus.audio_input`, `file_input` on `GET /v1/models`),
+        fallback included. A model that cannot hear or read the
+        attachment is never asked: with no such backend the request is a
+        400 saying so, before anything is forwarded or woken. A `file_id`
+        is refused; it names a store this install does not have.
+
         Set `stream: true` for Server-Sent Events. The stream emits
         `data:` lines carrying `ChatCompletionChunk` objects and
         terminates with `data: [DONE]`, matching OpenAI's framing
@@ -770,13 +781,27 @@ paths:
         64, and a refusal names both the setting and the block that tipped
         it.
 
+        ### Documents are carried too (P2, 2026-09-28)
+
+        A `document` block with a `base64` PDF source is carried as a
+        file part and routes only to a model that confirms file input; a
+        `text` source (`text/plain`) is carried as the text it holds.
+        Either may sit inside a `tool_result`, which is where Claude
+        Code's `Read` of a PDF puts it, and moves to the next user
+        message exactly as an image does. `title` becomes the file's
+        name. Refused with a 400: a `url`, `file` or `content` source,
+        and `citations` enabled -- this gateway returns no citation
+        blocks, and a client that asked for them would read an answer
+        with none as uncited.
+
         ### What is refused, with a 400 naming the field
 
-        Document blocks, server-side tool types, `mcp_servers`, more
-        than four `stop_sequences`, a missing `max_tokens`, and the image
-        cases above. Each is refused rather than dropped because each
-        changes what the answer would be: a model that never saw the
-        document is not answering the question that was asked.
+        Server-side tool types, `mcp_servers`, more than four
+        `stop_sequences`, a missing `max_tokens`, and the image and
+        document cases above. Each is refused rather than dropped
+        because each changes what the answer would be: a model that
+        never saw the document is not answering the question that was
+        asked.
 
         **A model nothing serves is also a 400 here, not a 404.**
         Measured: Claude Code discards the body of a 404 and shows a
@@ -905,8 +930,8 @@ paths:
         '400':
           description: |
             The request names something this gateway cannot carry —
-            a document block, an image it cannot carry or no ready
-            backend can see, a server-side tool,
+            a document or image it cannot carry or no ready backend can
+            read, a server-side tool,
             `mcp_servers`, more than four `stop_sequences`, a missing
             `max_tokens` — **or names a model nothing serves**, which is
             a 400 here rather than a 404 because Claude Code discards a
@@ -1119,6 +1144,16 @@ paths:
         that assistant turn's reasoning, so a tool loop reaches the model
         with its own earlier thinking.
 
+        ### Files and audio (P2, 2026-09-28)
+
+        An `input_file` whose `file_data` is an inline PDF is carried as
+        the chat door's `file` part, and an `input_audio` part as its
+        `input_audio`, with the same limits and the same routing: only to
+        a model that confirms that input. `filename` is the name the
+        model is shown. A `file_id` or a `file_url` is refused and never
+        fetched. `detail` is accepted and, other than `auto`, named on
+        the ignored-settings header, as for images.
+
         ### Images
 
         An `input_image` whose `image_url` is an inline `data:` URL is
@@ -1216,9 +1251,9 @@ paths:
         here produces. `max_tool_calls` bounds built-in tools, of which
         none run here, and is accepted. Refused with a 400 naming the
         field: every stateful field above, `top_logprobs` above 0 and the
-        `message.output_text.logprobs` include, an `input_file` or
-        `input_audio` part, `tool_choice` forcing a tool that is not a
-        function, and any top-level field not listed in
+        `message.output_text.logprobs` include, an `input_file` with a
+        `file_id` or a `file_url`, `tool_choice` forcing a tool that is
+        not a function, and any top-level field not listed in
         `ResponsesRequest`.
       requestBody:
         required: true
@@ -2342,6 +2377,17 @@ components:
             At least one backend confirms image input for its loaded model.
             Image requests route only to those backends, including fallback.
             Inline PNG/JPEG only; see MessageContent for request limits.
+        audio_input:
+          type: boolean
+          description: |
+            At least one backend confirms audio input for this model. A
+            request carrying `input_audio` routes only to those backends,
+            including fallback. Added 2026-09-28 (P2).
+        file_input:
+          type: boolean
+          description: |
+            At least one backend confirms file (PDF) input for this
+            model, with the same routing rule. Added 2026-09-28 (P2).
         tool_calling:
           type: boolean
           description: |
@@ -3564,10 +3610,10 @@ components:
         are accepted with a response header naming ignored settings;
         `thinking` chooses whether reasoning is returned. Metadata is
         discarded. Unknown top-level settings are explicitly rejected.
-        This is a text, image and tool translation, not full parity.
+        This is a text, image, document and tool translation, not full parity.
 
         Consequently **this schema does not decide what is refused**.
-        The refusals — document blocks, server-side tools,
+        The refusals — documents it cannot carry, server-side tools,
         `mcp_servers`, more than four `stop_sequences` — are enforced
         against the raw request body by the implementation, with a 400
         naming the field, because a model that ignores extra keys cannot
@@ -3843,7 +3889,8 @@ components:
         we do not own.
 
         The variants this gateway carries: `text` (`text`), `image`
-        (`source`, base64 only -- see the endpoint), `tool_use`
+        (`source`, base64 only -- see the endpoint), `document`
+        (`source`, a base64 PDF or plain text; `title`), `tool_use`
         (`id`, `name`, `input`), `tool_result` (`tool_use_id`,
         `content`, `is_error`), and `thinking` (`thinking`,
         `signature`) -- returned ahead of the answer when the request
@@ -3851,18 +3898,18 @@ components:
         turn's reasoning. `redacted_thinking` is accepted on the way in
         and dropped.
 
-        The variant it refuses with a 400: `document`. Refused rather
-        than dropped because a model that never received the document
-        is not answering the question that was asked. `image` was
-        refused on the same reasoning until 2026-09-23, when it began
-        to be carried to backends that confirm image input.
+        `document` was refused with a 400 until 2026-09-28, and `image`
+        until 2026-09-23, on one reasoning: a model that never received
+        the attachment is not answering the question that was asked.
+        Each began to be carried once a backend that confirms that input
+        could be routed to.
       additionalProperties: true
       required:
         - type
       properties:
         type:
           type: string
-          description: '`text`, `tool_use`, `tool_result`, `image`, `document`, …'
+          description: '`text`, `tool_use`, `tool_result`, `image`, `document`, `thinking`, …'
         text:
           type: string
         id:
