@@ -429,6 +429,29 @@ paths:
         400 saying so, before anything is forwarded or woken. A `file_id`
         is refused; it names a store this install does not have.
 
+        **Audio out (P2b, 2026-09-28).** `modalities: ["text", "audio"]`
+        with `audio: {voice, format}` asks for a spoken answer, and routes
+        **only** to a model that confirms audio output
+        (`x_eugene_plexus.audio_output`), fallback included; with none it
+        is a 400 naming that field. The answer's audio is
+        `message.audio` (`delta.audio` when streamed), and what it says
+        is `audio.transcript`, not `content`.
+
+        Every audio-output model behind an account answers audio only
+        when streamed and only as `pcm16` (measured 2026-09-28), so that
+        is what is asked of it, whatever the caller asked. A non-streamed
+        answer is that stream assembled; asked for `wav`, it carries a
+        WAV header. **Only `wav` and `pcm16` can be served** that way, and
+        `mp3`, `flac`, `opus` and `aac` are refused with a 400 naming the
+        two that work, rather than transcoded (P2-1). A streamed request
+        takes `pcm16` only, as OpenAI's own does. `audio.format` on the
+        answer is **what the bytes are**: Lyria answers MP3 whatever it is
+        asked, and its audio is labelled `mp3` (P2-2).
+
+        Nothing keeps the audio: an assistant message sent back with
+        `audio: {id}` is refused, because the id names a store this
+        install does not have. Send the transcript as `content` instead.
+
         Set `stream: true` for Server-Sent Events. The stream emits
         `data:` lines carrying `ChatCompletionChunk` objects and
         terminates with `data: [DONE]`, matching OpenAI's framing
@@ -2412,6 +2435,12 @@ components:
           description: |
             At least one backend confirms file (PDF) input for this
             model, with the same routing rule. Added 2026-09-28 (P2).
+        audio_output:
+          type: boolean
+          description: |
+            At least one backend confirms this model answers with audio.
+            A request with `modalities` including `audio` routes only to
+            those backends, including fallback. Added 2026-09-28 (P2b).
         tool_calling:
           type: boolean
           description: |
@@ -2679,6 +2708,96 @@ components:
             one of them already does.
         response_format:
           $ref: '#/components/schemas/ResponseFormat'
+        modalities:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ChatModality'
+          description: |
+            What the answer is made of. `["text"]` is the default;
+            `["text", "audio"]` asks for a spoken answer and needs
+            `audio`. Routes only to a model that confirms audio output.
+            Added 2026-09-28 (P2b).
+        audio:
+          $ref: '#/components/schemas/ChatAudioRequest'
+
+    ChatModality:
+      type: string
+      enum: [text, audio]
+      description: |
+        One part of what the answer is made of. Named rather than inline
+        so a later inline enum cannot rename it (S6's `Source1`).
+
+    ChatAudioRequest:
+      type: object
+      additionalProperties: false
+      required: [voice, format]
+      description: |
+        The spoken answer's voice and format, with `modalities`
+        including `audio`; refused without it, rather than ignored.
+        `format` is `wav` or `pcm16` for a non-streamed request and
+        `pcm16` for a streamed one; the others are refused (see the
+        operation).
+      properties:
+        voice:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            The provider's voice name (`alloy`, `coral`, ...), passed
+            through. A model with no voices (Lyria) ignores it.
+        format:
+          $ref: './components/common.yaml#/components/schemas/AudioOutputFormat'
+
+    ChatCompletionAudio:
+      type: object
+      required: [data, format]
+      description: |
+        The spoken answer, on a response's `message.audio`: OpenAI's
+        shape, plus `format`, which says what `data` is. **Refused on a
+        request message**, where OpenAI takes `{id}` to name stored
+        audio; this install stores none.
+      properties:
+        id:
+          type: string
+          description: The backend's id for the audio, when it gives one.
+        data:
+          type: string
+          description: The audio, base64-encoded.
+        format:
+          $ref: './components/common.yaml#/components/schemas/AudioOutputFormat'
+          description: |
+            **Not OpenAI's field, and added because OpenAI's shape
+            cannot say this:** what `data` is, read from its bytes.
+            Lyria answers MP3 when asked for WAV (measured), and
+            presenting MP3 bytes as the WAV that was asked for would be
+            a lie a player discovers first (P2-2).
+        transcript:
+          type: string
+          description: What the audio says. The answer's text is here, not in `content`.
+        expires_at:
+          type: integer
+          description: |
+            Unix seconds the backend says it keeps the audio until.
+            Nothing here keeps it.
+
+    ChatCompletionAudioDelta:
+      type: object
+      description: |
+        A fragment of the spoken answer. Decode each `data` fragment
+        from base64 and concatenate the bytes. `id`, `format` and
+        `expires_at` arrive once; `transcript` arrives in fragments.
+      properties:
+        id:
+          type: string
+        data:
+          type: string
+        format:
+          $ref: './components/common.yaml#/components/schemas/AudioOutputFormat'
+        transcript:
+          type: string
+        expires_at:
+          type: integer
 
     ChatCompletionMessage:
       type: object
@@ -2749,6 +2868,11 @@ components:
             Required on a **tool** message: which call in the preceding
             assistant turn this is the result of. `content` is the
             result, as a string — the caller serializes it.
+        audio:
+          $ref: '#/components/schemas/ChatCompletionAudio'
+          description: |
+            On a response: the spoken answer (P2b). On a request:
+            refused with a 400, since it would name stored audio.
 
     ChatCompletionResponse:
       type: object
@@ -2882,7 +3006,8 @@ components:
           description: |
             Incremental payload. The first chunk carries `role`;
             subsequent chunks carry `content` fragments, `tool_calls`
-            fragments, or neither on the terminal chunk.
+            fragments, `audio` fragments, or neither on the terminal
+            chunk.
           properties:
             role:
               type: string
@@ -2913,6 +3038,8 @@ components:
                 arrive once, `function.arguments` arrives as a string
                 split across any number of frames. A single frame is
                 **not** parseable JSON and was never meant to be.
+            audio:
+              $ref: '#/components/schemas/ChatCompletionAudioDelta'
         finish_reason:
           type:
             - string

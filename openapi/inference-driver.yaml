@@ -238,10 +238,12 @@ paths:
         '400':
           description: |
             The request cannot be served as asked. Either the driver
-            refused it (tools against a backend that cannot carry them)
-            or the backend rejected it in a way another backend would
-            reject identically — including a prompt longer than the
-            context window. Does not cascade.
+            refused it (tools against a backend that cannot carry them;
+            `audioOutput` against a model that does not confirm it, or
+            in a `format` other than `wav` or `pcm16`) or the backend
+            rejected it in a way another backend would reject
+            identically — including a prompt longer than the context
+            window. Does not cascade.
           content:
             application/problem+json:
               schema:
@@ -1047,6 +1049,8 @@ components:
             - $ref: '#/components/schemas/NamedToolChoice'
         responseFormat:
           $ref: '#/components/schemas/ResponseFormat'
+        audioOutput:
+          $ref: '#/components/schemas/AudioOutputRequest'
         reportProgress:
           type: boolean
           default: false
@@ -1160,6 +1164,8 @@ components:
             have their own name for this state and the gateway renders
             it in the caller's vocabulary, so a client that switches on
             the field gets the vendor value it already understands.
+        audio:
+          $ref: '#/components/schemas/GeneratedAudio'
         usage:
           $ref: '#/components/schemas/Usage'
         requestId:
@@ -1184,8 +1190,8 @@ components:
     StreamToken:
       type: object
       description: |
-        One `event: token` payload. Exactly one of `text`, `reasoning`
-        or `toolCalls` is set.
+        One `event: token` payload. Exactly one of `text`, `reasoning`,
+        `toolCalls` or `audio` is set.
 
         A reasoning frame is output like any other: it is the first
         thing a reasoning model produces, so it is also the commit point
@@ -1208,6 +1214,93 @@ components:
             $ref: '#/components/schemas/ToolCallDelta'
           description: |
             Fragments of one or more tool calls, accumulated by `index`.
+        audio:
+          $ref: '#/components/schemas/AudioDelta'
+
+    AudioOutputRequest:
+      type: object
+      additionalProperties: false
+      required: [voice, format]
+      description: |
+        Answer with audio as well as text (P2b, 2026-09-28): the chat
+        door's `modalities` including `audio`, with its `audio` object.
+        Sent only to a model whose capabilities say `audioOutput`; any
+        other is refused with 400 before anything is forwarded.
+
+        **Upstream it is always a stream of `pcm16`**, whichever door
+        asked: every audio-output model behind an account answers audio
+        only that way (measured 2026-09-28). `POST /v1/generate`
+        assembles the stream into one `GeneratedAudio`; asked for `wav`,
+        it adds the header. It refuses any other `format` with 400,
+        naming `wav` and `pcm16`. `POST /v1/generate/stream` carries
+        `pcm16` only and refuses the rest the same way, as OpenAI itself
+        does.
+      properties:
+        voice:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            The voice, in the provider's own names (`alloy`, `coral`,
+            ...). Passed through; a model with no voices (Lyria)
+            ignores it.
+        format:
+          $ref: 'components/common.yaml#/components/schemas/AudioOutputFormat'
+
+    GeneratedAudio:
+      type: object
+      required: [data, format]
+      description: |
+        The audio of a `POST /v1/generate` answer, assembled from the
+        stream the backend sent.
+      properties:
+        data:
+          type: string
+          description: The whole answer's audio, base64-encoded.
+        format:
+          $ref: 'components/common.yaml#/components/schemas/AudioOutputFormat'
+          description: |
+            What `data` is, read from its bytes: `mp3` for an ID3 tag or
+            frame sync, `wav` for a RIFF/WAVE header (including one this
+            driver added), `pcm16` for headerless samples. **Not what
+            was asked** when the backend sent something else: Lyria's
+            MP3 is `mp3` (P2-2).
+        id:
+          type: string
+          description: The backend's id for the audio, when it gives one.
+        transcript:
+          type: string
+          description: |
+            What the audio says, when the backend reports it. A speech
+            model's spoken answer is here, not in `content`.
+        expiresAt:
+          type: integer
+          description: |
+            Unix seconds after which the backend forgets the audio, when
+            it says. Nothing here stores it; see the chat door.
+
+    AudioDelta:
+      type: object
+      description: |
+        A fragment of the answer's audio on the stream. `data` fragments
+        concatenate, after base64 decoding each one, into the whole
+        answer. `id`, `format` and `expiresAt` arrive once; `transcript`
+        arrives in fragments, like `text`.
+      properties:
+        data:
+          type: string
+          description: A fragment of the audio, base64-encoded on its own.
+        format:
+          $ref: 'components/common.yaml#/components/schemas/AudioOutputFormat'
+          description: |
+            On the first fragment carrying `data`: what the bytes are,
+            read from them (`pcm16`, or Lyria's `mp3`).
+        id:
+          type: string
+        transcript:
+          type: string
+        expiresAt:
+          type: integer
 
     StreamProgress:
       type: object
@@ -1930,6 +2023,18 @@ components:
             The same rule as `audioInput`. From `file` in the account's
             `input_modalities`; no local engine reads one today, so a
             single-model driver reports false.
+        audioOutput:
+          type: boolean
+          description: |
+            Whether the model is confirmed to answer with audio
+            (`GenerateRequest.audioOutput`). From `audio` in the
+            account's `output_modalities`; no local engine or CLI speaks,
+            so they report false. Unknown is false, as for the inputs.
+
+            **Not from `supported_parameters`** (A2's setting list): no
+            audio-output model on OpenRouter lists `modalities` or
+            `audio` there (measured 2026-09-28), so routing by it would
+            route nothing. Added 2026-09-28 (P2b).
         toolCalling:
           type: boolean
           description: |
