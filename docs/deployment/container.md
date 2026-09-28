@@ -436,19 +436,44 @@ so it needs the passphrase from somewhere. **Point it at a file.**
 ```sh
 # 1. Put the passphrase in a file. printf, not echo -- see below.
 printf 'your-passphrase' > /mnt/user/appdata/eugene-plexus-secret
+# The container runs as 99:100. Owned by root with mode 400, it cannot
+# read the file, and the root stays sealed.
+chown 99:100 /mnt/user/appdata/eugene-plexus-secret
 chmod 400 /mnt/user/appdata/eugene-plexus-secret
 
 # 2. Mount it and name it, adding these to your existing docker run:
 #      -v /mnt/user/appdata/eugene-plexus-secret:/run/secrets/passphrase:ro
 #      -e EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE=/run/secrets/passphrase
 
-# 3. Turn it on, once, in the UI: Settings -> Security mode ->
+# 3. Turn it on, once, in the UI: Control root -> Config -> Security mode ->
 #    "Passphrase file auto-unlock". Or over the API:
 curl -X PATCH http://<control-host>:8083/v1/config \
   -H "Authorization: Bearer <operator token>" \
   -H "Content-Type: application/json" \
   -d '{"securityMode": "passphrase_file"}'
+
+# 4. Restart the container. The file is read at startup, not when the
+#    mode changes.
 ```
+
+**The variable is the path the container sees, never the server's.**
+`/run/secrets/passphrase` exists only because step 2 mounts a file there.
+A file you put inside the Data folder needs no mount at all: Data is
+`/data` in the container, so `/mnt/user/appdata/eugene-plexus/passphrase`
+is `EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE=/data/passphrase`. The cost of
+that shortcut is that a backup of Data then carries both the sealed key
+and the passphrase that opens it; a file outside Data keeps them apart.
+
+**Two fields are called Security mode.** Set the Control root's. The
+agent's is a separate field for the agent's own key, read from a
+different variable, and leaves the root sealed.
+
+**If the root still comes back sealed, the Logs page says which of these
+it was:** the variable is not set; the file does not exist at that path
+(usually a server path in the variable, or a mount that was declared but
+not filled in); the file could not be read (usually ownership); or the
+passphrase in it is not this install's. On success it logs `master key
+derived from <path>; this root is unlocked`.
 
 With Compose, use a real secret rather than a bind mount:
 
