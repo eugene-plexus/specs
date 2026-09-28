@@ -205,11 +205,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _info_for(self, port):
         model = {BACKUP_PORT: BACKUP_MODEL, STALL_PORT: STALLED, DEAD_PORT: CASCADE}[port]
+        # The driver shape since P1: one entry in `models`.
         return {
             "backend": "openai_compat_http",
-            "modelId": model,
+            "models": [
+                {
+                    "id": model,
+                    "surfaces": ["chat"],
+                    "capabilities": {"streaming": True, "maxContextTokens": 4096},
+                }
+            ],
             "version": "0.0.0-stub",
-            "capabilities": {"streaming": True, "maxContextTokens": 4096},
         }
 
     def do_GET(self):  # noqa: N802

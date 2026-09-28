@@ -67,10 +67,17 @@ def serve(kind: str, directory: Path, port: int) -> None:
 
         @app.get("/{model}/v1/info")
         async def info(model: str):
+            # The driver shape since P1: one entry in `models`, whose
+            # surfaces say embeddings or chat.
             return {
                 "backend": "openai_compat_http",
-                "modelId": model,
-                "capabilities": {"embeddings": model == "embedding", "streaming": True, "supportedSettings": ["maxTokens", "temperature", "topP", "seed", "stop", "tools", "toolChoice", "responseFormat"]},
+                "models": [
+                    {
+                        "id": model,
+                        "surfaces": ["embeddings"] if model == "embedding" else ["chat"],
+                        "capabilities": {"streaming": True, "supportedSettings": ["maxTokens", "temperature", "topP", "seed", "stop", "tools", "toolChoice", "responseFormat"]},
+                    }
+                ],
             }
 
         @app.post("/{model}/v1/{operation:path}")

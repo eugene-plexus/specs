@@ -178,7 +178,9 @@ def serve(kind, directory, ports):
         if kind == "cli":
             from eugene_plexus_inference_driver.engines.codex_cli import CodexCliEngine
 
-            engine = CodexCliEngine()
+            # The model a real driver reads from its config; built by hand
+            # here, so it is passed by hand (a driver with none serves none).
+            engine = CodexCliEngine(model_id="cli")
             effect = directory / "effect.txt"
             code = "from pathlib import Path; import sys; p=Path(sys.argv[1]); p.write_text(p.read_text()+'acted\\n' if p.exists() else 'acted\\n'); sys.exit(2)"
             engine._build_argv = lambda prompt: [

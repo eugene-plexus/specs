@@ -1,6 +1,9 @@
 # OpenAI inference compatibility, and one driver per provider account
 
-**Status: design, 2026-09-26. Nothing here is built.** §0 is measured.
+**Status: P1 built 2026-09-27** (one driver per provider account; record
+[`provider-accounts-run.md`](../acceptance/provider-accounts-run.md)).
+**P2-P8 are not built.** §0 is measured, and §6's authenticated measurements
+are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
 recommended; #3 (replace `modelId`) and #8 (Eugene runs some
 server-side tools itself) did not.

@@ -146,10 +146,13 @@ def main() -> None:
                     self.reply({"runtimes": [{"name": "fixture-runtime", "modelAlias": "friendly-alias",
                         "modelPath": model_path, "localPath": "/wrong/local-copy.gguf", "status": "ready",
                         "engine": "llama_cpp", "host": "127.0.0.1", "port": 1}]})
-                elif self.path.endswith("/v1/info"):
-                    self.reply({"backend": "openai_compat_http", "modelId":
-                                "fallback-alias" if self.path.startswith("/fallback/") else "friendly-alias",
-                                "runtime": "fixture-runtime", "capabilities": {"supportedSettings": ["maxTokens", "temperature", "topP", "seed", "stop", "tools", "toolChoice", "responseFormat"]}})
+                elif self.path.split("?", 1)[0].endswith("/v1/info"):
+                    # The driver shape since P1: one entry in `models`, which
+                    # carries the capabilities. `?model=` narrows it.
+                    self.reply({"backend": "openai_compat_http", "runtime": "fixture-runtime",
+                                "models": [{"id": "fallback-alias" if self.path.startswith("/fallback/") else "friendly-alias",
+                                            "surfaces": ["chat"],
+                                            "capabilities": {"supportedSettings": ["maxTokens", "temperature", "topP", "seed", "stop", "tools", "toolChoice", "responseFormat"]}}]})
                 elif self.path == "/v1/node":
                     self.reply({"enrolled": False})
                 else:

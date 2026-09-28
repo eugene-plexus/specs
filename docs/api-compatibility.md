@@ -10,7 +10,10 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/messages` | Supported subset | Anthropic text/tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
-| `/v1/responses`, audio, files, batches, provider storage | Not implemented | No Responses API or general provider endpoint parity. |
+| `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, function and client-run custom tools, streamed or not. No stored responses (`store`, `previous_response_id`), no `input_file`, no server-run tools. See [responses and completions](design/responses-and-completions.md). |
+| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (speech, image, video, transcription) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
+| Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
+| Audio, image generation, video, files, batches, provider storage | Not implemented | Phases P2-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
 | OpenAI image/content-part input | Supported subset | Ordered text plus inline PNG/JPEG on user messages, confirmed vision backends only. See limits below. Anthropic images remain refused. |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |

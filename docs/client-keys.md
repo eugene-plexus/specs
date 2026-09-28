@@ -19,11 +19,17 @@ New keys default to **all models, two concurrent requests and 60 requests per
 rolling minute**. Set these in the new-key form, or use **Edit limits** beside
 an existing key. Saving permissions keeps the same token.
 
-Uncheck **Allow all models** to enter exact model IDs, one per line. An empty
+Uncheck **Allow all models** to enter model IDs, one per line. An empty
 list denies every model. For a routing alias, allow both its name and each target
 it may use. Excluded targets are removed before selection, wake and fallback;
 model discovery reveals only allowed models and their permitted backends.
-“All models” includes future additions; a selected list does not.
+“All models” includes future additions; a list of exact IDs does not.
+
+An entry can be a pattern: `*` matches anything, `/` included, and is the only
+wildcard. A connection that serves every model its provider lists names them
+`<connection>/<model>`, so `openrouter/*` allows all of one connection's models,
+including ones the provider adds later, and `openrouter/anthropic/*` narrows it to
+one vendor.
 
 Enable **Local-only inference** to exclude cloud and unconfirmed endpoints from
 every alias, fallback and wake decision. Models Eugene runs locally qualify

@@ -230,10 +230,10 @@ def main() -> int:
         check(
             "the real driver is on its port, fronting the engine, advertising the samplers",
             s == 200
-            and info.get("modelId") == MODEL
+            and [m.get("id") for m in info.get("models") or []] == [MODEL]
             and {"topK", "minP", "frequencyPenalty", "presencePenalty", "parallelToolCalls"}
-            <= set((info.get("capabilities") or {}).get("supportedSettings") or []),
-            f"supportedSettings={(info.get('capabilities') or {}).get('supportedSettings')}",
+            <= set(((info.get("models") or [{}])[0].get("capabilities") or {}).get("supportedSettings") or []),
+            f"models={info.get('models')}",
         )
         if not check("the gateway routes the model", routable):
             return 1

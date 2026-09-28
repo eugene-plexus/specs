@@ -28,26 +28,26 @@ SABOTAGES: list[tuple[str, Path, str, str]] = [
     (
         "the wire carries the public alias instead of the upstream id",
         DRIVER / "engines" / "openai_compat_http.py",
-        '            "model": self._upstream_model_id,',
-        '            "model": self._model_id,',
+        '            "model": target.upstream,',
+        '            "model": target.id,',
     ),
     (
         "a translating driver echoes the backend's name on responses",
         DRIVER / "engines" / "openai_compat_http.py",
-        "        if self._upstream_model_id != self._model_id:\n            return self._model_id\n        return str(reported or self._model_id)",
-        "        return str(reported or self._model_id)",
+        "        if target.upstream != target.id:\n            return target.id\n        return str(reported or target.id)",
+        "        return str(reported or target.id)",
     ),
     (
         "the stream's terminal frame takes the backend's name raw",
         DRIVER / "engines" / "openai_compat_http.py",
-        '                    served_model = self._public_model_id(event.get("model") or served_model)',
+        '                    served_model = self._public_model_id(event.get("model") or served_model, target)',
         '                    served_model = str(event.get("model") or served_model)',
     ),
     (
         "the gateway routes on the upstream id when one is advertised",
         GATEWAY / "routing.py",
-        "        model_id = backend.info.modelId",
-        "        model_id = getattr(backend.info, 'upstreamModelId', None) or backend.info.modelId",
+        '            public = f"{driver.name}/{entry.id}" if account else entry.id',
+        '            public = f"{driver.name}/{entry.id}" if account else (entry.upstreamId or entry.id)',
     ),
 ]
 

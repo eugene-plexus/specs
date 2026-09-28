@@ -89,13 +89,20 @@ class DriverHandler(BaseHTTPRequestHandler):
                 self,
                 {
                     "backend": "openai_compat_http",
-                    "modelId": STATE["model"],
+                    # The driver shape since P1: the model and its
+                    # capabilities are one entry in `models`.
+                    "models": [
+                        {
+                            "id": STATE["model"],
+                            "surfaces": ["chat"],
+                            "capabilities": {
+                                "toolCalling": True,
+                                "streaming": True,
+                                "maxContextTokens": 32768,
+                            },
+                        }
+                    ],
                     "runtime": None,
-                    "capabilities": {
-                        "toolCalling": True,
-                        "streaming": True,
-                        "maxContextTokens": 32768,
-                    },
                     "version": "0.0.0-stub",
                 },
             )

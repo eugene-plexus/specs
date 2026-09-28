@@ -507,13 +507,14 @@ def exercise(directory: Path) -> None:
         # --- 1: the driver advertises both halves of the split ------------
         info = call("driver-a1", "GET", "/v1/info", operator)
         assert info.status_code == 200, info.text
-        body = info.json()
-        assert body["modelId"] == "alias-a", body
-        assert body["upstreamModelId"] == SENTINEL, body
-        plain = call("driver-c", "GET", "/v1/info", operator).json()
-        assert plain["modelId"] == "alias-c", plain
-        assert plain.get("upstreamModelId") in (None, ""), plain
-        ok("a real driver advertises modelId=alias and upstreamModelId=sentinel on /v1/info")
+        # Since P1 the identity is per model: `models[]`, one entry here.
+        (entry,) = info.json()["models"]
+        assert entry["id"] == "alias-a", entry
+        assert entry["upstreamId"] == SENTINEL, entry
+        (plain,) = call("driver-c", "GET", "/v1/info", operator).json()["models"]
+        assert plain["id"] == "alias-c", plain
+        assert plain.get("upstreamId") in (None, ""), plain
+        ok("a real driver advertises id=alias and upstreamId=sentinel on /v1/info")
 
         # --- 2: the public model list is aliases, never the sentinel ------
         wait(

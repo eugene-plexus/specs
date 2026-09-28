@@ -228,10 +228,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(
                 {
                     "backend": "openai_compat_http",
-                    "modelId": MODEL,
+                    # The driver shape since P1: one entry in `models`.
+                    "models": [
+                        {
+                            "id": MODEL,
+                            "surfaces": ["chat"],
+                            "capabilities": {"streaming": True, "maxContextTokens": 4096},
+                        }
+                    ],
                     "runtime": RUNTIME_NAME,
                     "version": "0.0.0-stub",
-                    "capabilities": {"streaming": True, "maxContextTokens": 4096},
                 }
             )
         if path == "/healthz":

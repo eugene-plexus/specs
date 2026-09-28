@@ -584,9 +584,11 @@ class Driver(BaseHTTPRequestHandler):
                 {
                     "backend": "openai_compat_http",
                     "version": "0.1.0",
-                    "modelId": MODEL,
+                    # The driver shape since P1: one entry in `models`.
+                    "models": [
+                        {"id": MODEL, "surfaces": ["chat"], "capabilities": {"streaming": True}}
+                    ],
                     "runtime": RUNTIME,
-                    "capabilities": {"streaming": True},
                 }
             )
         return self._json({"detail": self.path}, 404)
