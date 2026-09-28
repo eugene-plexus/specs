@@ -476,3 +476,51 @@ sending. `create_and_poll` polls `GET /videos/{id}`; `download_content` is
 `GET /videos/{id}/content`, with `?variant=` when one is asked for. **The SDK
 warns on every video call** that *"The Sora API is scheduled to permanently
 shut down on September 24, 2026."*
+
+## 11. For P3-1 and P3-4: ElevenLabs' speech-to-text, and who translates (2026-09-28, late)
+
+Troy widened the ElevenLabs key and added an OpenAI key, which removed both
+deferrals' reasons, and took both. Measured with those keys; the spend was a
+few seconds of ElevenLabs transcription, one `tts-1` sentence and a handful of
+`whisper-1` calls, under a cent.
+
+**ElevenLabs' `/v1/models` lists text-to-speech models only**: nine with
+`can_do_text_to_speech: true`, two speech-to-speech. No scribe model, and its
+`ModelResponseModel` has no speech-to-text flag. **What names them is its own
+refusal of an unknown model id**: *"'x' is not a valid model_id. Available
+models: 'scribe_v1', 'scribe_v1_experimental', 'scribe_v2',
+'scribe_v2_medical'"*, a 400 with `code: unsupported_model` and
+`param: model_id`. It is given with no file, costs nothing (no
+`character-cost` header), and **is given even to a wrong key**, so it is
+ElevenLabs' list, not the account's.
+
+**The key's permission is answered by an empty file**: a valid model with a
+0-byte file is a 400 `status: empty_file` for a key that may transcribe, and a
+401 naming `speech_to_text` for one that may not (the second measured before
+the key was widened). Neither costs anything.
+
+**`POST /v1/speech-to-text`** is multipart: `model_id` (required), `file`,
+`language_code` (ISO-639-1 or -3), `tag_audio_events` (default **true**: the
+text carries *(laughter)*), `timestamps_granularity` (`none`, `word` default,
+`character`), `temperature` (0-2), `seed`, `keyterms`, diarization and more.
+**There is no `prompt`, and an unknown field is ignored** (a `prompt` was a
+200). The answer: `language_code` (`eng`, ISO-639-3), `language_probability`,
+`text`, `words` (each with `text`, `start`, `end`, `type` of `word`, `spacing`
+or `audio_event`, and `logprob`), `audio_duration_secs` and
+`transcription_id`. **No segments.** `character-cost: 1` for four seconds of
+audio. `scribe_v1` and `scribe_v2` answered the fox identically.
+
+**Only OpenAI's `whisper-1` translates.** `POST /v1/audio/translations`
+through an OpenAI account: `whisper-1` made *"The fast brown fox jumps over
+the lazy dog."* of `tts-1`'s French in `json`, `text`, `verbose_json`
+(`task: translate`, `language: english`, `duration`, segments) and `srt`.
+`gpt-4o-mini-transcribe` and `gpt-4o-transcribe` answer this door **404
+"Invalid URL"**. A `language` other than `en` is a 400 (*"Input should be
+'en'"*); `timestamp_granularities[]` is accepted and ignored (no words
+return); `prompt` and `temperature` are taken. No usage is returned.
+
+**Nothing else here translates.** OpenRouter answers `/audio/translations`
+404, and `task=translate` on its transcriptions door is ignored (the French
+came back French). `llama-server` b11235 answers `/v1/audio/translations` 404
+and transcribes French as French, with its preamble (`language
+French<asr_text>...`).

@@ -625,10 +625,10 @@ Measured first:
 
 | # | Question | Taken |
 |---|---|---|
-| P3-1 | The ElevenLabs key speaks but lacks `speech_to_text`, `models_read` and `voices_read` | **ElevenLabs transcription is deferred.** In P3, ElevenLabs is speech only; transcription goes to OpenRouter and `llama-server`. |
+| P3-1 | The ElevenLabs key speaks but lacks `speech_to_text`, `models_read` and `voices_read` | **ElevenLabs transcription is deferred.** In P3, ElevenLabs is speech only; transcription goes to OpenRouter and `llama-server`. **Taken 2026-09-28 (late), once Troy widened the key: built** ([record](../acceptance/stt-and-translation-run.md)). Its models are named only by ElevenLabs' refusal of an unknown model, and offered only to a key that may use them, as P3-2 requires. |
 | P3-2 | What an ElevenLabs driver offers when its key cannot list models or voices | **Require the permission** (not as recommended, which was a built-in model list). No model is offered until the key can read `/v1/models`, and `/v1/info` names `models_read` as the reason. Voices are listed when `voices_read` allows and are passed through either way (P3-3). |
 | P3-3 | A client sending OpenAI's default voice (`alloy`) to a backend that does not know it | **Pass voices through**, as recommended. The voice is the provider's own id. `x_eugene_plexus.voices` lists each model's voices where the provider says, and an unknown voice is the provider's 400, relayed naming it. |
-| P3-4 | `/v1/audio/translations`, which only OpenAI's own API serves, with no OpenAI key to verify it | **Deferred** (not as recommended, which was to build it unverified). The door answers 400 saying no backend here translates. |
+| P3-4 | `/v1/audio/translations`, which only OpenAI's own API serves, with no OpenAI key to verify it | **Deferred** (not as recommended, which was to build it unverified). The door answers 400 saying no backend here translates. **Taken 2026-09-28 (late), once Troy added an OpenAI key: built and verified live** ([record](../acceptance/stt-and-translation-run.md)). Only `whisper-*` translates (measured), under a new `translation` surface. |
 
 **Consequence of P3-2 for the done-when:** "ElevenLabs speaks through
 `/v1/audio/speech` from the OpenAI SDK unchanged" can be run live only with a
@@ -672,6 +672,7 @@ measurement:**
 |---|---|---|
 | **P3a** | `/v1/audio/speech`: OpenAI-shaped speech through accounts (OpenRouter's 21 models, OpenAI) and the new `elevenlabs_http` engine; binary streamed; voices on `/v1/models`; same-model failover | **Built and pinned 2026-09-28** ([record](../acceptance/speech-run.md)). ElevenLabs live waits on a key with `models_read` |
 | **P3b** | `/v1/audio/transcriptions`: multipart, through OpenRouter's 24 models and `llama-server`; `/v1/audio/translations` refused (P3-4); metrics units | **Built and pinned 2026-09-28** ([record](../acceptance/transcription-run.md)) |
+| **P3c** | P3-1 and P3-4 taken: ElevenLabs' `scribe_*` transcribe; `/v1/audio/translations` through OpenAI's `whisper-*`; the `translation` surface | **Built 2026-09-28 (late)** ([record](../acceptance/stt-and-translation-run.md)) |
 
 ## 10. P4's own calls, 2026-09-28
 

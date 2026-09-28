@@ -14,8 +14,8 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. `/v1/responses/input_tokens` counts (P2c). Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
 | Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (rerank, moderation) is not listed on `GET /v1/models`, nor is a model past its provider's `shutdown_date`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
-| `POST /v1/audio/transcriptions` | Supported (P3b, since 2026-09-28) | OpenAI's multipart form, through OpenRouter's transcription models and a `llama-server` whose projector hears. Tiers as chat. See [transcription](#transcription). |
-| `POST /v1/audio/translations` | Refused | A 400: only OpenAI's own API translates, and this door is deferred (P3-4). |
+| `POST /v1/audio/transcriptions` | Supported (P3b, since 2026-09-28) | OpenAI's multipart form, through OpenRouter's transcription models, OpenAI's, ElevenLabs' `scribe_*` (P3-1) and a `llama-server` whose projector hears. Tiers as chat. See [transcription](#transcription). |
+| `POST /v1/audio/translations` | Supported (P3-4, since 2026-09-28) | The SDK's five fields, through OpenAI's `whisper-*`, the only model that translates. Tiers, holding only translators. See [transcription](#transcription). |
 | `POST /v1/images/generations`, `POST /v1/images/edits` | Supported (P4, since 2026-09-28) | OpenAI's shapes, streamed or not, through OpenRouter's image models and OpenAI's. Edits as multipart or JSON with `data:` URLs; a URL or `file_id` input is refused. Every answer is `b64_json`. See [images](#images). |
 | `POST /v1/images/variations` | Refused | A 400: only OpenAI's `dall-e-2` makes variations, and this door is deferred (P4-2). |
 | `POST /v1/videos`, `GET /v1/videos/{video_id}` and `/content` | Supported (P5, since 2026-09-28) | OpenAI's shape, as jobs, through OpenRouter's video models (OpenAI's own video API shut down on 2026-09-24). The job id is a signed handle: no store, another key cannot read it, a restart loses nothing. See [videos](#videos). |
@@ -324,8 +324,14 @@ SDKs work unchanged.
 
 - **Backends:** OpenRouter's transcription models, and a `llama-server`
   whose projector hears (`/props` reports audio), which is then listed with
-  both `chat` and `transcription` surfaces, and OpenAI's own API (`whisper-1`
-  and `gpt-4o-mini-transcribe` verified).
+  both `chat` and `transcription` surfaces, OpenAI's own API (`whisper-1`
+  and `gpt-4o-mini-transcribe` verified), and ElevenLabs' `scribe_*` models
+  (P3-1), offered only to a key with the `speech_to_text` permission.
+- **ElevenLabs** is asked for no audio-event tags, so its text reads as
+  OpenAI's does. It takes no `prompt` and would ignore one, so a prompt is
+  refused; it makes no segments, so `segment` timestamps are refused. Its
+  words come back as OpenAI's `{word, start, end}`, its language as it names
+  it (`eng`), and its audio seconds as the usage.
 - **Tiers, as chat.** A slot's fallback tiers are used, holding only
   backends that transcribe. Unlike speech, a transcript from another model is
   still a transcript.
@@ -345,8 +351,16 @@ SDKs work unchanged.
 - **Metrics:** each row says its door, with characters for speech and audio
   seconds for transcription.
 
-`POST /v1/audio/translations` answers a 400 saying no backend here
-translates.
+**`POST /v1/audio/translations`** (P3-4, since 2026-09-28) gives the text in
+English, whatever was spoken. It takes the OpenAI SDK's five fields (`file`,
+`model`, `prompt`, `response_format`, `temperature`); a `language` or
+`timestamp_granularities[]` is refused naming it. Only OpenAI's `whisper-*`
+translates (its `gpt-4o-*-transcribe` models, OpenRouter and `llama-server`
+answer this door 404, measured), so a model with the `translation` surface is
+required, and a slot's tiers hold only translators: a model that only
+transcribes would answer in the language spoken, with a 200. `verbose_json`
+says `task: translate`. Verified live: `whisper-1` translated `tts-1`'s French
+as *"The fast brown fox jumps over the lazy dog."*
 
 Verified on 2026-09-28: a real `llama-server` b11235 with Qwen3-ASR 0.6B
 transcribed the fox on this machine's CPU in 0.99 s through the OpenAI SDK,

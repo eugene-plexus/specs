@@ -16,8 +16,16 @@ started here with isolated state and ports:
   with its own key, against a fixture playing ElevenLabs' API as measured on
   2026-09-28: `xi-api-key`, the voice in the path, `output_format` in the
   query, `text` and `model_id` in the body, and its error bodies word for
-  word. `eleven`'s key reads models and voices; `voiceless`'s reads models
-  only; `scoped`'s reads neither, like the key Troy was given.
+  word. `eleven`'s key reads models and voices and may transcribe;
+  `voiceless`'s reads models only and may not transcribe; `scoped`'s reads
+  neither, like the key Troy was first given. Its `/v1/speech-to-text` names
+  its models when refusing an unknown one, refuses an empty file only after
+  the key's permission passed, tags audio events unless told not to, and
+  ignores fields it does not know (all measured, P3-1);
+* `oai` -- the real `openai` provider against a fixture playing OpenAI's API:
+  `whisper-1` and `gpt-4o-mini-transcribe` listed, and `/v1/audio/translations`
+  answering whisper-1 only (the gpt-4o transcribe models are OpenAI's 404) and
+  refusing a `language` other than `en` (measured, P3-4).
 
 The fixture streams its audio in six chunks, and 0.4 s apart when the text
 carries `[slow]`, so a check can tell streamed bytes from buffered ones by
@@ -30,8 +38,10 @@ from its own interpreter: this one if it has `openai`, else `$EP_SDK_PYTHON`.
 No live service is touched unless `--live` is passed, which adds OpenRouter
 (`hexgrad/kokoro-82m` speaks; `google/gemini-2.5-flash-lite` hears it back;
 `openai/whisper-large-v3-turbo` transcribes), ElevenLabs (`eleven_flash_v2_5`
-speaks, as WAV and streamed mp3) and an OpenAI account (`tts-1` speaks;
-`whisper-1` and `gpt-4o-mini-transcribe` transcribe) with the keys in
+speaks, as WAV and streamed mp3; `scribe_v2` transcribes it back) and an
+OpenAI account (`tts-1` speaks, in English and in French; `whisper-1` and
+`gpt-4o-mini-transcribe` transcribe; `whisper-1` translates the French) with
+the keys in
 `C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env` (or `$EP_KEYS`).
 Each key is handed to its driver only in the environment variable the engine
 already falls back to (`OPENAI_API_KEY`, `ELEVENLABS_API_KEY`), and the last
@@ -94,6 +104,12 @@ EL_MODELS = [
      "can_do_text_to_speech": False},
 ]
 EL_VOICES = ["21m00Tcm4TlvDq8ikWAM", "EXAVITQu4vr4xnSDxMaL"]
+#: ElevenLabs' speech-to-text models: named by nothing but its refusal of an
+#: unknown model id (measured 2026-09-28, P3-1).
+EL_STT = ["scribe_v1", "scribe_v2"]
+#: An OpenAI account's audio models, and what whisper-1 made of French (P3-4).
+OAI_MODELS = ["whisper-1", "gpt-4o-mini-transcribe"]
+TRANSLATED = "The fast brown fox jumps over the lazy dog."
 #: The three fixture keys. `scoped` is the measured case: it can speak and
 #: cannot list models or voices.
 EL_KEYS = {"eleven": "fixture-el-full", "voiceless": "fixture-el-novoices", "scoped": "fixture-el-scoped"}
@@ -119,6 +135,7 @@ LIVE_TRANSCRIBES = "openai/whisper-large-v3-turbo"
 #: ElevenLabs' cheapest speech model, and an OpenAI account's speech and two
 #: transcription models (the key Troy added 2026-09-28).
 LIVE_EL = "eleven_flash_v2_5"
+LIVE_EL_STT = "scribe_v2"
 LIVE_OPENAI = ["tts-1", "whisper-1", "gpt-4o-mini-transcribe"]
 
 #: Transcription through the SDK. Each job is `audio.transcriptions.create`
@@ -303,16 +320,17 @@ def serve(kind: str, directory: Path, port: int) -> None:
                                                f"at response_format (got {fmt!r})", "code": 400}}, status_code=400)
             return audio(model, fmt, {"mp3": "audio/mpeg", "pcm": "audio/pcm"}[fmt], "[slow]" in body.get("input", ""))
 
-        async def heard(request, model_field="model"):
+        async def heard(request, model_field="model", prefix=""):
             """A transcription upload as it arrived, recorded under its model."""
             form = await request.form()
             upload = form.get("file")
             data = await upload.read() if upload is not None and not isinstance(upload, str) else b""
             fields = {k: form.getlist(k) if k.endswith("[]") else form.get(k) for k in form if k != "file"}
             model = form.get(model_field)
-            record(model, {"fields": fields, "filename": getattr(upload, "filename", None),
-                           "type": getattr(upload, "content_type", None), "size": len(data),
-                           "sha": hashlib.sha256(data).hexdigest()})
+            record(prefix + str(model), {"fields": fields, "filename": getattr(upload, "filename", None),
+                                         "type": getattr(upload, "content_type", None), "size": len(data),
+                                         "sha": hashlib.sha256(data).hexdigest(),
+                                         "key": request.headers.get("xi-api-key")})
             return model, fields
 
         @app.post("/v1/audio/transcriptions")
@@ -359,6 +377,35 @@ def serve(kind: str, directory: Path, port: int) -> None:
             return {"type": "transcript.text.done", "text": "language English<asr_text>" + SAID,
                     "usage": {"type": "tokens", "input_tokens": 61, "output_tokens": 14, "total_tokens": 75}}
 
+        # --- an OpenAI account (P3-4) -----------------------------------------------
+
+        @app.get("/oai/v1/models")
+        async def oai_models():
+            return {"object": "list",
+                    "data": [{"id": m, "object": "model", "owned_by": "openai"} for m in OAI_MODELS]}
+
+        @app.post("/oai/v1/audio/translations")
+        async def oai_translate(request: Request):
+            from fastapi.responses import PlainTextResponse
+
+            model, fields = await heard(request, prefix="translate:")
+            if model != "whisper-1":
+                # OpenAI's answer for gpt-4o-*-transcribe at this door (measured).
+                return JSONResponse({"error": {"message": "Invalid URL (POST /v1/audio/translations)",
+                                               "type": "invalid_request_error", "param": None, "code": None}},
+                                    status_code=404)
+            if fields.get("language") not in (None, "en"):
+                return JSONResponse({"error": {"message": "[{'type': 'enum', 'loc': ('body', 'language'), "
+                                                          "'msg': \"Input should be 'en'\"}]",
+                                               "type": "invalid_request_error"}}, status_code=400)
+            fmt = fields.get("response_format") or "json"
+            if fmt == "text":
+                return PlainTextResponse(TRANSLATED + "\n")
+            if fmt == "verbose_json":
+                return {"task": "translate", "language": "english", "duration": 3.38, "text": TRANSLATED,
+                        "segments": [{"id": 0, "start": 0.0, "end": 3.6, "text": " " + TRANSLATED}]}
+            return {"text": TRANSLATED}
+
         # --- ElevenLabs -----------------------------------------------------
 
         def el_refusal(status, detail):
@@ -370,7 +417,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 return el_refusal(401, {"status": "needs_authorization",
                                         "message": "Neither authorization header nor xi-api-key received, "
                                                    "please provide one."})
-            lacking = {"fixture-el-novoices": {"voices_read"},
+            lacking = {"fixture-el-novoices": {"voices_read", "speech_to_text"},
                        "fixture-el-scoped": {"models_read", "voices_read"}}.get(key, set())
             if permission in lacking:
                 return el_refusal(401, {"type": "authentication_error", "code": "unauthorized",
@@ -387,6 +434,43 @@ def serve(kind: str, directory: Path, port: int) -> None:
         async def el_voices(request: Request):
             return el_key(request, permission="voices_read") or {
                 "voices": [{"voice_id": v, "name": v[:6]} for v in EL_VOICES]}
+
+        @app.post("/el/v1/speech-to-text")
+        async def el_transcribe(request: Request):
+            """ElevenLabs' speech-to-text as measured (P3-1): an unknown model is
+            refused naming every model, before the key is even read; an empty
+            file is refused only after the key's permission passed."""
+            form = await request.form()
+            model = form.get("model_id")
+            if model not in EL_STT:
+                return el_refusal(400, {"type": "validation_error", "code": "unsupported_model",
+                                        "message": f"'{model}' is not a valid model_id. Available models: "
+                                                   + ", ".join(f"'{m}'" for m in EL_STT),
+                                        "status": "invalid_model_id", "param": "model_id"})
+            refused = el_key(request, permission="speech_to_text")
+            if refused is not None:
+                return refused
+            upload = form.get("file")
+            data = await upload.read() if upload is not None and not isinstance(upload, str) else b""
+            if not data:
+                return el_refusal(400, {"type": "invalid_request", "code": "bad_request",
+                                        "message": "The uploaded file is empty or corrupted.",
+                                        "status": "empty_file", "param": "file"})
+            fields = {k: form.get(k) for k in form if k != "file"}
+            record(model, {"fields": fields, "filename": getattr(upload, "filename", None), "size": len(data),
+                           "sha": hashlib.sha256(data).hexdigest(), "key": request.headers.get("xi-api-key")})
+            tagged = fields.get("tag_audio_events", "true") != "false"
+            timed = fields.get("timestamps_granularity", "word") != "none"
+            words = [{"text": "The", "start": 0.26, "end": 0.36, "type": "word"},
+                     {"text": " ", "start": 0.36, "end": 0.42, "type": "spacing"},
+                     *([{"text": "(laughter)", "start": 0.42, "end": 0.5, "type": "audio_event"}] if tagged else []),
+                     {"text": "quick", "start": 0.5, "end": 0.6, "type": "word"}]
+            if not timed:
+                words = [{k: v for k, v in w.items() if k not in ("start", "end")} for w in words]
+            return {"language_code": "eng", "language_probability": 0.7,
+                    "text": ("(laughter) " if tagged else "") + SAID,
+                    "words": [{**w, "logprob": -0.01} for w in words],
+                    "audio_duration_secs": 3.38, "transcription_id": "fixture"}
 
         @app.post("/el/v1/text-to-speech/{voice}")
         async def el_speech_whole(voice: str, request: Request):
@@ -420,7 +504,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
             fmt, media = EL_FORMATS[output]
             return audio(model, fmt, media, "[slow]" in body.get("text", ""), whole=whole)
 
-    elif kind in ("router", "eleven", "voiceless", "scoped", "llama", "asr", "openrouter", "el-live",
+    elif kind in ("router", "eleven", "voiceless", "scoped", "llama", "oai", "asr", "openrouter", "el-live",
                   "oai-live"):
         from eugene_plexus_inference_driver.app import create_app
         from eugene_plexus_inference_driver.settings import Settings
@@ -460,7 +544,7 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
     from eugene_plexus_agent.node_identity import NodeIdentityStore
     from eugene_plexus_agent.trust import NodeTrust
 
-    names = ["control", "agent", "gateway", "fixture", "router", "eleven", "voiceless", "scoped", "llama"]
+    names = ["control", "agent", "gateway", "fixture", "router", "eleven", "voiceless", "scoped", "llama", "oai"]
     if live:
         names += ["openrouter", "el-live", "oai-live"]
     if llama_dir is not None:
@@ -590,9 +674,9 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         assert result.returncode == 0, result.stderr[-2000:]
         return json.loads(result.stdout.strip().splitlines()[-1])
 
-    def upload(token, model, *, data=None, content=None, **fields):
+    def upload(token, model, *, data=None, content=None, door="transcriptions", **fields):
         return client.post(
-            url("gateway") + "/v1/audio/transcriptions",
+            url("gateway") + f"/v1/audio/{door}",
             headers={"Authorization": "Bearer " + token},
             data={"model": model, **fields},
             files={"file": ("fox.mp3", FOX.read_bytes() if content is None else content, "audio/mpeg")},
@@ -658,9 +742,13 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
             driver(name, {"provider": "elevenlabs", "baseUrl": url("fixture") + "/el"}, {"ELEVENLABS_API_KEY": key})
         driver("llama", {"provider": "openai_compat_custom", "baseUrl": url("fixture") + "/llama",
                          "modelId": "local-asr", "backendLocality": "local"}, {})
+        driver("oai", {"provider": "openai", "baseUrl": url("fixture") + "/oai"},
+               {"OPENAI_API_KEY": "fixture-not-a-key"})
         slots = [
             {"model": "narrator", "targets": ["router/acme/kokoro", "eleven/eleven_flash_v2_5"]},
             {"model": "scribe", "targets": ["router/acme/chat", "router/acme/whisper", "router/acme/whisper-2"]},
+            # A transcriber first, then a translator (P3-4).
+            {"model": "english", "targets": ["router/acme/whisper", "oai/whisper-1"]},
         ]
         if llama_dir is not None:
             binary = llama_dir / "llama" / ("llama-server.exe" if os.name == "nt" else "llama-server")
@@ -705,7 +793,8 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
 
         wanted = {"router/acme/kokoro", "router/acme/flux", "router/acme/chat", "eleven/eleven_flash_v2_5",
                   "eleven/eleven_multilingual_v2", "voiceless/eleven_flash_v2_5", "narrator",
-                  "router/acme/whisper", "router/acme/whisper-2", "local-asr", "scribe"}
+                  "router/acme/whisper", "router/acme/whisper-2", "local-asr", "scribe",
+                  "eleven/scribe_v1", "eleven/scribe_v2", "oai/whisper-1", "oai/gpt-4o-mini-transcribe", "english"}
         wait(lambda: wanted <= set(models()), "the fixture accounts' models are routable")
 
         # --- 1. what each model is listed with ----------------------------
@@ -974,13 +1063,10 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         assert response.status_code == 413 and error_of(response).get("param") == "file", response.text[:300]
         response = upload(key, "router/acme/chat")
         assert response.status_code == 400 and "/v1/chat/completions" in error_of(response).get("message", ""), response.text
-        results = transcribe_by_sdk(key, [{"model": "router/acme/whisper", "file": str(FOX), "translate": True}])
-        assert results[0]["status"] == 400 and "No backend here translates" in results[0]["error"], results[0]
         assert counts() == before, (before, counts())
         ok("srt, stream, chunking_strategy and timestamps without verbose_json are 400s naming the field and "
-           "why, a file over 25 MiB is a 413 naming it, a chat model is sent to the chat door (and refused by "
-           "the driver asked directly), and translation says no backend here translates; nothing reaches an "
-           "upstream")
+           "why, a file over 25 MiB is a 413 naming it, and a chat model is sent to the chat door (and refused "
+           "by the driver asked directly); nothing reaches an upstream")
 
         call("fixture", "POST", "/mode", params={"model": "acme/whisper", "mode": "busy"}).raise_for_status()
         before = counts()
@@ -1012,6 +1098,124 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         assert after.get("local-asr", 0) == before.get("local-asr", 0) + 1, (before, after)
         ok("a key allowed only acme/flux cannot transcribe, and a local-only key is refused a hosted "
            "transcriber and served by the local llama-server")
+
+        # --- 11. ElevenLabs transcribes (P3-1) ------------------------------------
+        listed = models()
+        assert listed["eleven/scribe_v2"]["surfaces"] == ["transcription"], listed["eleven/scribe_v2"]
+        assert listed["eleven/scribe_v1"]["surfaces"] == ["transcription"], listed["eleven/scribe_v1"]
+        assert not [m for m in listed if m.startswith("voiceless/scribe")], sorted(listed)
+        assert listed["voiceless/eleven_flash_v2_5"]["surfaces"] == ["speech"], listed["voiceless/eleven_flash_v2_5"]
+        ok("ElevenLabs' scribe models, named by nothing but its own refusal of an unknown model, are offered to a "
+           "key that may transcribe and not to one that may not, which still speaks")
+
+        before = counts()
+        results = transcribe_by_sdk(key, [
+            {"model": "eleven/scribe_v2", "file": str(FOX), "language": "en", "temperature": 0.2},
+            {"model": "eleven/scribe_v2", "file": str(FOX), "response_format": "verbose_json",
+             "timestamp_granularities": ["word"]},
+            {"model": "eleven/scribe_v2", "file": str(FOX), "response_format": "text"},
+        ])
+        plain, verbose, text = results
+        assert plain["status"] == 200 and plain["body"]["text"] == SAID, plain
+        assert plain["body"]["usage"] == {"type": "duration", "seconds": 3.38}, plain["body"]
+        body = verbose["body"]
+        assert verbose["status"] == 200 and (body["language"], body["duration"]) == ("eng", 3.38), verbose
+        # Spacing and audio events are ElevenLabs' entries, not words.
+        assert body["words"] == [{"word": "The", "start": 0.26, "end": 0.36},
+                                 {"word": "quick", "start": 0.5, "end": 0.6}], body["words"]
+        assert text == {"status": 200, "kind": "str", "text": SAID}, text
+        assert counts().get("scribe_v2", 0) == before.get("scribe_v2", 0) + 3, (before, counts())
+        seen = call("fixture", "GET", "/seen", params={"model": "scribe_v2"}).json()[-3:]
+        assert all((e["size"], e["sha"], e["key"]) == (len(fox), fox_sha, EL_KEYS["eleven"]) for e in seen), seen
+        assert seen[0]["fields"] == {"model_id": "scribe_v2", "tag_audio_events": "false",
+                                     "timestamps_granularity": "none", "language_code": "en",
+                                     "temperature": "0.2"}, seen[0]["fields"]
+        assert seen[1]["fields"]["timestamps_granularity"] == "word", seen[1]["fields"]
+        ok("the OpenAI SDK, unchanged, transcribes through ElevenLabs: asked in its own shape with no audio-event "
+           "tags, the file byte for byte, the driver's own key; words and duration come back in OpenAI's shape, "
+           "the usage as ElevenLabs' seconds, and text rendered here")
+
+        before = counts()
+        refusals = [
+            (upload(key, "eleven/scribe_v2", prompt="Foxes."), "prompt"),
+            (upload(key, "eleven/scribe_v2", response_format="verbose_json",
+                    **{"timestamp_granularities[]": "segment"}), "segments"),
+        ]
+        for response, said in refusals:
+            assert response.status_code == 400, response.text[:300]
+            assert said in error_of(response).get("message", ""), response.text[:300]
+        assert counts() == before, (before, counts())
+        ok("a prompt (which ElevenLabs would ignore, measured) and segment timestamps (which it does not make) "
+           "are 400s saying why; nothing reaches ElevenLabs")
+
+        # --- 12. translation (P3-4) ------------------------------------------------
+        assert listed["oai/whisper-1"]["surfaces"] == ["transcription", "translation"], listed["oai/whisper-1"]
+        assert listed["oai/gpt-4o-mini-transcribe"]["surfaces"] == ["transcription"], listed["oai/gpt-4o-mini-transcribe"]
+        assert "translation" not in listed["router/acme/whisper"]["surfaces"], listed["router/acme/whisper"]
+        before = counts()
+        results = transcribe_by_sdk(key, [
+            {"model": "oai/whisper-1", "file": str(FOX), "translate": True, "prompt": "Foxes.", "temperature": 0.1},
+            {"model": "oai/whisper-1", "file": str(FOX), "translate": True, "response_format": "verbose_json"},
+            {"model": "oai/whisper-1", "file": str(FOX), "translate": True, "response_format": "text"},
+        ])
+        plain, verbose, text = results
+        assert plain["status"] == 200 and plain["kind"] == "Translation", plain
+        assert plain["body"]["text"] == TRANSLATED, plain
+        assert verbose["kind"] == "TranslationVerbose", verbose
+        assert (verbose["body"]["task"], verbose["body"]["language"], verbose["body"]["duration"]) == (
+            "translate", "english", 3.38), verbose
+        assert verbose["body"]["segments"][0]["text"] == " " + TRANSLATED, verbose
+        assert text == {"status": 200, "kind": "str", "text": TRANSLATED}, text
+        assert counts().get("translate:whisper-1", 0) == before.get("translate:whisper-1", 0) + 3
+        seen = call("fixture", "GET", "/seen", params={"model": "translate:whisper-1"}).json()[-3:]
+        assert seen[0]["fields"] == {"model": "whisper-1", "prompt": "Foxes.", "temperature": "0.1"}, seen[0]
+        assert seen[0]["sha"] == fox_sha, seen[0]
+        assert seen[1]["fields"]["response_format"] == "verbose_json", seen[1]
+        assert "response_format" not in seen[2]["fields"], seen[2]
+        ok("the OpenAI SDK, unchanged, translates through an OpenAI account's whisper-1: its translations door, "
+           "OpenAI's Translation and TranslationVerbose types back, text rendered here")
+
+        before = counts()
+        told = []
+        for model in ("router/acme/whisper", "eleven/scribe_v2", "oai/gpt-4o-mini-transcribe"):
+            response = upload(key, model, door="translations")
+            assert response.status_code == 400, response.text[:300]
+            told.append(error_of(response).get("message", ""))
+            assert "/v1/audio/transcriptions" in told[-1], response.text[:300]
+        for fields, param, reason in (({"language": "fr"}, "language", "always English"),
+                                      ({"timestamp_granularities[]": "word"}, "timestamp_granularities",
+                                       "not taken by a translation")):
+            response = upload(key, "oai/whisper-1", door="translations", **fields)
+            assert response.status_code == 400 and error_of(response).get("param") == param, response.text[:300]
+            assert reason in error_of(response)["message"], response.text[:300]
+        scoped = mint("Only flux, a third time", allowedModels=["router/acme/flux"])
+        response = upload(scoped, "oai/whisper-1", door="translations")
+        assert response.status_code in (403, 404), response.text[:300]
+        local = mint("Local only, a third time", localOnly=True)
+        response = upload(local, "oai/whisper-1", door="translations")
+        assert response.status_code == 403, response.text[:300]
+        # The driver's own copy of the surface rule, asked directly.
+        response = call("router", "POST", "/v1/transcribe", operator, json={
+            "model": "acme/whisper", "translate": True,
+            "audio": {"data": base64.b64encode(fox).decode(), "filename": "fox.mp3"}})
+        assert response.status_code == 400, response.text[:300]
+        assert response.json()["detail"]["type"].endswith("#translation-unsupported"), response.text[:300]
+        assert counts() == before, (before, counts())
+        ok("a model that transcribes but does not translate (OpenRouter's, ElevenLabs', OpenAI's gpt-4o) is sent "
+           "to the transcription door, a language or timestamps on a translation are 400s naming the field and "
+           "why, a key's model and local-only limits hold at this door, and the driver refuses too when asked "
+           "directly; nothing reaches an upstream")
+
+        before = counts()
+        response = upload(key, "english", door="translations")
+        assert response.status_code == 200 and response.json()["text"] == TRANSLATED, response.text[:300]
+        after = counts()
+        assert after.get("acme/whisper", 0) == before.get("acme/whisper", 0), (before, after)
+        assert after.get("translate:whisper-1", 0) == before.get("translate:whisper-1", 0) + 1, (before, after)
+        row = recorded(response)
+        assert (row["servedModel"], row["tier"], row["door"]) == ("oai/whisper-1", 2, "translation"), row
+        ok("english -> [OpenRouter's whisper, whisper-1] translates at tier 2: the first model would have answered "
+           "in the language spoken, with a 200, so it is never asked; the row's door is translation")
 
         if llama_dir is not None:
             wait(lambda: "qwen3-asr" in models(), "the real llama-server is routable", 60)
@@ -1099,10 +1303,32 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
             ok(f"live: ElevenLabs speaks through the gateway from the OpenAI SDK unchanged, {len(el_voices)} "
                f"voices listed: a WAV made from its pcm, and mp3 streamed")
 
+            el_stt = f"el-live/{LIVE_EL_STT}"
+            wait(lambda: el_stt in models(), "ElevenLabs' live transcription model", 60)
+            answers = transcribe_by_sdk(key, [
+                {"model": el_stt, "file": str(el_clip)},
+                {"model": el_stt, "file": str(el_clip), "response_format": "verbose_json",
+                 "timestamp_granularities": ["word"]},
+            ])
+            el_words = {w for w in el_said.lower().strip(".").split() if len(w) >= 4}
+            for answer in answers:
+                assert answer["status"] == 200, answer
+                heard = {"".join(c for c in w if c.isalpha()) for w in answer["body"]["text"].lower().split()}
+                assert len(el_words & heard) * 2 >= len(el_words), (answer, sorted(el_words))
+            timed = answers[1]["body"]
+            assert timed.get("duration") and timed.get("words"), timed
+            assert all(set(w) == {"word", "start", "end"} for w in timed["words"]), timed["words"][:3]
+            print(f"INFO live ElevenLabs {LIVE_EL_STT} heard its own speech as "
+                  f"{answers[0]['body']['text'].strip()!r}; {len(timed['words'])} words timed, "
+                  f"{timed['duration']} s, usage {answers[0]['body'].get('usage')}", flush=True)
+            ok(f"live: ElevenLabs' {LIVE_EL_STT} transcribes that WAV through the SDK, and times each word in "
+               "OpenAI's shape")
+
             # An OpenAI account: its own speech and transcription models.
             tts, whisper, mini = (f"oai-live/{m}" for m in LIVE_OPENAI)
             wait(lambda: {tts, whisper, mini} <= set(models()), "OpenAI's live models", 60)
-            assert models()[tts]["surfaces"] == ["speech"] and models()[whisper]["surfaces"] == ["transcription"]
+            assert models()[tts]["surfaces"] == ["speech"]
+            assert models()[whisper]["surfaces"] == ["transcription", "translation"], models()[whisper]
             oai_clip = directory / "oai-live.mp3"
             results = by_sdk(key, [
                 {"model": tts, "voice": "alloy", "input": el_said, "response_format": "mp3", "save": str(oai_clip)},
@@ -1128,6 +1354,29 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
                   f"{len(verbose['words'])} words timed", flush=True)
             ok("live: an OpenAI account speaks with tts-1 (mp3 and its own wav), whisper-1 transcribes the "
                "ElevenLabs clip, gpt-4o-mini-transcribe the tts-1 one, and whisper-1's verbose_json times each word")
+
+            french = directory / "oai-live-fr.mp3"
+            results = by_sdk(key, [{"model": tts, "voice": "alloy", "response_format": "mp3", "save": str(french),
+                                    "input": "Le renard brun rapide saute par-dessus le chien paresseux."}])
+            assert results[0]["status"] == 200, results[0]
+            answers = transcribe_by_sdk(key, [
+                {"model": whisper, "file": str(french), "translate": True},
+                {"model": whisper, "file": str(french), "translate": True, "response_format": "verbose_json"},
+                {"model": whisper, "file": str(french)},
+            ])
+            english = {"brown", "jumps", "lazy"}
+            for answer in answers[:2]:
+                assert answer["status"] == 200, answer
+                heard = {"".join(c for c in w if c.isalpha()) for w in answer["body"]["text"].lower().split()}
+                assert len(english & heard) >= 2 and "renard" not in heard, answer
+            assert answers[1]["kind"] == "TranslationVerbose" and answers[1]["body"]["duration"], answers[1]
+            # The same file transcribed is French: the door, not the model, translated.
+            assert "renard" in answers[2]["body"]["text"].lower(), answers[2]
+            print(f"INFO live OpenAI whisper-1 translated tts-1's French as "
+                  f"{answers[0]['body']['text'].strip()!r}; transcribed it as "
+                  f"{answers[2]['body']['text'].strip()!r}", flush=True)
+            ok("live: tts-1 speaks French, whisper-1 translates it to English through the SDK's translations door "
+               "(verbose_json included), and the same file transcribed stays French")
 
             leaked = [str(p) for p in directory.rglob("*") if p.is_file()
                       and any(k.encode() in p.read_bytes() for k in live_keys.values())]

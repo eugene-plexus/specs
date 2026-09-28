@@ -39,6 +39,13 @@ ROUTING = GATEWAY / "routing.py"
 ROUTE = GATEWAY / "routes" / "inference.py"
 
 _GATEWAY_FORMATS = "    if offered and fmt not in offered:\n"
+_ELIGIBLE = (
+    "            eligible = [\n"
+    "                b for b in tier.eligible() if (b.translates if translate else b.transcribes)\n"
+    "            ]\n"
+)
+TRANSCRIBE = DRIVER / "routes" / "transcribe.py"
+CONTRACT = GATEWAY / "chat_contract.py"
 _EL_FORMATS = "        refuse_format(asked, ELEVENLABS_FORMATS)\n"
 
 
@@ -139,20 +146,19 @@ SABOTAGES: list[Sabotage] = [
     # --- the gateway ----------------------------------------------------------
     Sabotage(
         "speech walks a slot's tiers, as chat does",
+        # Since gateway ea12c1a speech chooses from `Resolution.first_model()`.
         ((ROUTING,
-          "        first = resolution.tiers[0] if resolution.tiers else None\n"
-          "        if first is None:\n            return None\n",
+          "        eligible = [b for b in resolution.first_model() if b.speaks]\n",
           "        tiers = [[b.client for b in t.eligible() if b.speaks]\n"
           "                 for t in resolution.tiers]\n"
           "        if any(tiers):\n"
           "            return TieredClient(name=resolution.model, tiers=[t for t in tiers if t], hooks=self)\n"
-          "        first = resolution.tiers[0] if resolution.tiers else None\n"
-          "        if first is None:\n            return None\n"),),
+          "        eligible = [b for b in resolution.first_model() if b.speaks]\n"),),
     ),
     Sabotage(
         "a slot alias finds no speaker, because no backend is named after it",
-        ((ROUTING, "if b.speaks and b.public_id == first.target]\n",
-          "if b.speaks and b.public_id == resolution.model]\n"),),
+        # The rule lives in `Resolution.first_model()` since gateway ea12c1a.
+        ((ROUTING, "if b.public_id == first.target]\n", "if b.public_id == self.model]\n"),),
     ),
     Sabotage(
         "a slot is listed with the voices of every tier",
@@ -225,7 +231,7 @@ SABOTAGES: list[Sabotage] = [
     Sabotage(
         "the driver transcribes with a model that does not",
         ((DRIVER / "routes" / "transcribe.py",
-          "    if not await transcribes(engine, entry.surfaces if entry is not None else None):\n",
+          "    if not body.translate and not await transcribes(engine, surfaces):\n",
           "    if False:\n"),),
     ),
     Sabotage(
@@ -241,13 +247,12 @@ SABOTAGES: list[Sabotage] = [
     ),
     Sabotage(
         "a transcription is handed to a model that only chats",
-        ((ROUTING, "            eligible = [b for b in tier.eligible() if b.transcribes]\n",
-          "            eligible = list(tier.eligible())\n"),),
+        ((ROUTING, _ELIGIBLE, "            eligible = list(tier.eligible())\n"),),
     ),
     Sabotage(
         "transcription keeps to the slot's first model, as speech does",
-        ((ROUTING, "        for tier in resolution.tiers:\n            eligible = [b for b in tier.eligible() if b.transcribes]\n",
-          "        for tier in resolution.tiers[:1]:\n            eligible = [b for b in tier.eligible() if b.transcribes]\n"),),
+        ((ROUTING, "        for tier in resolution.tiers:\n" + _ELIGIBLE,
+          "        for tier in resolution.tiers[:1]:\n" + _ELIGIBLE),),
     ),
     Sabotage(
         "srt is refused only as an unknown value",
@@ -283,8 +288,8 @@ SABOTAGES: list[Sabotage] = [
     ),
     Sabotage(
         "a transcription row does not count its seconds",
-        ((ROUTE, '                door="transcription",\n                audio_seconds=seconds,\n',
-          '                door="transcription",\n                audio_seconds=None,\n'),),
+        ((ROUTE, "                door=surface,\n                audio_seconds=seconds,\n",
+          "                door=surface,\n                audio_seconds=None,\n"),),
     ),
     Sabotage(
         "a speech row does not count its characters",
@@ -294,6 +299,101 @@ SABOTAGES: list[Sabotage] = [
         "a wrong door names one fixed door, not the model's own",
         ((ROUTE, "Send this request to {' or '.join(doors) or instead} instead. ",
           "Send this request to {instead} instead. "),),
+    ),
+    # --- P3-1: ElevenLabs transcribes ---------------------------------------------
+    Sabotage(
+        "ElevenLabs' speech-to-text models are never listed",
+        ((EL, "            heard = await self._transcription_models()\n", "            heard = []\n"),),
+    ),
+    Sabotage(
+        "scribe models are offered to a key that may not transcribe",
+        ((EL, "        if not _refused_as_empty(allowed):\n", "        if False:\n"),),
+    ),
+    Sabotage(
+        "ElevenLabs is left to tag audio events",
+        ((EL, '            "tag_audio_events": "false",\n', ""),),
+    ),
+    Sabotage(
+        "a prompt is sent to ElevenLabs, which would ignore it",
+        ((EL, "        if request.prompt:\n", "        if False:\n"),),
+    ),
+    Sabotage(
+        "segment timestamps are asked of ElevenLabs, which makes none",
+        ((EL, "        if TimestampGranularity.segment in granularities:\n", "        if False:\n"),),
+    ),
+    Sabotage(
+        "ElevenLabs' spacing and audio events are returned as words",
+        ((EL, '                and w.get("type") == "word"\n', ""),),
+    ),
+    Sabotage(
+        "ElevenLabs' audio seconds are not the usage",
+        ((EL, "            usage=TranscriptionUsage(seconds=seconds) if seconds is not None else None,\n",
+          "            usage=None,\n"),),
+    ),
+    # --- P3-4: translation, in the driver ------------------------------------------
+    Sabotage(
+        "OpenAI's whisper is not said to translate",
+        ((COMPAT, '        return ["transcription", "translation"]\n', '        return ["transcription"]\n'),),
+    ),
+    Sabotage(
+        "a translation is asked of the transcription door",
+        ((COMPAT, '                f"/v1/audio/{what}s",\n', '                "/v1/audio/transcriptions",\n'),),
+    ),
+    Sabotage(
+        "the driver translates with a model that does not",
+        ((TRANSCRIBE, "    if body.translate and not await transcribes(engine, surfaces, translate=True):\n",
+          "    if False:\n"),),
+    ),
+    Sabotage(
+        "the driver alone lets a language through on a translation",
+        ((TRANSCRIBE, "    if body.translate and (body.language or body.timestampGranularities):\n",
+          "    if False:\n"),),
+        escapes="the gateway's translation form refuses a language and timestamps first",
+    ),
+    Sabotage(
+        "neither layer stops a language on a translation",
+        ((TRANSCRIBE, "    if body.translate and (body.language or body.timestampGranularities):\n",
+          "    if False:\n"),
+         (CONTRACT, '    "language": "is not taken by a translation: the text is always English",\n', ""),
+         (CONTRACT, '_TRANSLATION_CARRIED = {"file", "model", "prompt", "response_format", "temperature"}\n',
+          '_TRANSLATION_CARRIED = {"file", "model", "prompt", "response_format", "temperature", "language"}\n')),
+    ),
+    # --- P3-4: translation, in the gateway -------------------------------------------
+    Sabotage(
+        "a model that translates is not listed as translating",
+        ((ROUTING, '            + (["translation"] if any(b.translates for b in backends) else [])\n', ""),),
+    ),
+    Sabotage(
+        "a translation is handed to a model that only transcribes",
+        ((ROUTING, "(b.translates if translate else b.transcribes)", "b.transcribes"),),
+    ),
+    Sabotage(
+        "a transcriber at the translation door is not sent to the transcription door",
+        ((ROUTE, "    if surfaces and surface not in surfaces:\n        return _wrong_surface(\n"
+                 "            ask.model, surfaces, wanted=surface,",
+          '    if surfaces and "transcription" not in surfaces:\n        return _wrong_surface(\n'
+          "            ask.model, surfaces, wanted=surface,"),),
+    ),
+    Sabotage(
+        "the driver is not told to translate",
+        ((ROUTE, "                        translate=translate,\n", ""),),
+    ),
+    Sabotage(
+        "a verbose translation says task transcribe",
+        ((ROUTE, '            "task": "translate" if translate else "transcribe",\n',
+          '            "task": "transcribe",\n'),),
+    ),
+    Sabotage(
+        "a language on a translation is refused only as an unknown field",
+        ((CONTRACT, '    "language": "is not taken by a translation: the text is always English",\n', ""),),
+    ),
+    Sabotage(
+        "a translation row is filed as a transcription",
+        ((ROUTE, "                door=surface,\n", '                door="transcription",\n'),),
+    ),
+    Sabotage(
+        "the translation door is not under client admission",
+        ((GATEWAY / "admission.py", '        "/v1/audio/translations",\n', ""),),
     ),
     Sabotage(
         "the form is parsed without caching the body first",

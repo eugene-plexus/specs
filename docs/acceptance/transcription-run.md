@@ -107,10 +107,10 @@ and `transcription`, and a local-only key is served by it.
   OpenAI account, `whisper-1` heard the ElevenLabs clip word for word and
   timed each word in `verbose_json`, and `gpt-4o-mini-transcribe` heard
   `tts-1`'s.
-- **ElevenLabs' speech-to-text** is deferred (P3-1). Its reason, a key
-  without `speech_to_text`, is gone since the key was widened.
-- **Translation** is deferred (P3-4). Its reason, no OpenAI key, is gone
-  too: `whisper-1` is on the account.
+- ~~**ElevenLabs' speech-to-text** is deferred (P3-1).~~ **Built 2026-09-28
+  (late)** once the key was widened: [record](stt-and-translation-run.md).
+- ~~**Translation** is deferred (P3-4).~~ **Built 2026-09-28 (late)** through
+  an OpenAI account's `whisper-1`: [record](stt-and-translation-run.md).
 - **Streaming transcription** (`stream: true`, SSE deltas) is refused, not
   served. `llama-server` supports it (measured), OpenRouter ignores it.
 - **No `ui` screen consumes P3.** The agent's browser proxy forwards raw

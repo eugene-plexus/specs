@@ -120,8 +120,8 @@ $PrefixGiven = [bool]$Prefix
 $PIN = @{
     "agent"            = "89358602ab96a5282ea74fcf16aba7befb2db138"
     "control"          = "847200f920949e2ef9762b28be9a413cbc319a39"
-    "gateway"          = "ccfaa7c1f24a172bb6ab44a7652cb3abcf1f9d0a"
-    "inference-driver" = "c9e0dcb12f4eba31db9622dfa7c3c64a37d35a9e"
+    "gateway"          = "0987cce01d9b395e46a5ab17099f1fa85ab08488"
+    "inference-driver" = "5172b597caf329a0576cdda4bf2dc3f1eb4bbeff"
     "library"          = "f4e79794fad46e856d9ee6a36b1bc26ba8ae2166"
     "ui"               = "323e3b5ca5f96a5d0c9a511b74e8165a1ce95391"  # branch `dist`, not `main`
 }
