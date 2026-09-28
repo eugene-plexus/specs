@@ -14,7 +14,9 @@ P2's end. **P3a, speech, is built and pinned 2026-09-28** (record
 [`speech-run.md`](../acceptance/speech-run.md): 15 fixture and 3 live
 checks, the OpenAI SDK unchanged). **P3b, transcription, is built and pinned
 2026-09-28** (record [`transcription-run.md`](../acceptance/transcription-run.md):
-`llama-server` transcribes locally), which completes P3. **P4-P8 are not
+`llama-server` transcribes locally), which completes P3. **P4, images, is
+built and pinned 2026-09-28** (record [`images-run.md`](../acceptance/images-run.md):
+15 fixture and 2 live checks, the OpenAI SDK unchanged). **P5-P8 are not
 built.** §0 is measured, and §6's authenticated measurements
 are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
@@ -734,3 +736,7 @@ measurement:**
   usage is `input_tokens`/`output_tokens`; stream events carry every field
   OpenAI's schema requires, which OpenRouter's omit.
 - **Metrics units:** the image count beside tokens (schema v8).
+
+**P4 is built in one part** (specs `8455ff2`, driver `e484972`, gateway
+`6be3f0a` and `3e54fbb`), pinned in both installers; record
+[`images-run.md`](../acceptance/images-run.md).

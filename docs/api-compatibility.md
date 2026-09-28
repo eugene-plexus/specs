@@ -12,11 +12,13 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/audio/speech` | Supported (P3a, since 2026-09-28) | Text in, audio bytes out, streamed as made, through OpenRouter's speech models and ElevenLabs. Voices are the provider's own ids. See [speech](#speech). |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
 | `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. `/v1/responses/input_tokens` counts (P2c). Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
-| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (image, video) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
+| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (video) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
 | `POST /v1/audio/transcriptions` | Supported (P3b, since 2026-09-28) | OpenAI's multipart form, through OpenRouter's transcription models and a `llama-server` whose projector hears. Tiers as chat. See [transcription](#transcription). |
 | `POST /v1/audio/translations` | Refused | A 400: only OpenAI's own API translates, and this door is deferred (P3-4). |
-| Image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P4-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
+| `POST /v1/images/generations`, `POST /v1/images/edits` | Supported (P4, since 2026-09-28) | OpenAI's shapes, streamed or not, through OpenRouter's image models and OpenAI's. Edits as multipart or JSON with `data:` URLs; a URL or `file_id` input is refused. Every answer is `b64_json`. See [images](#images). |
+| `POST /v1/images/variations` | Refused | A 400: only OpenAI's `dall-e-2` makes variations, and this door is deferred (P4-2). |
+| Video, uploaded files, batches, provider storage | Not implemented | Phase P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
 | Content-part input: images, audio, PDFs | Supported subset | Ordered text plus inline PNG/JPEG, WAV/MP3 and PDF on user messages, sent only to backends that confirm that input. See [attachments](#attachments). |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
@@ -351,6 +353,47 @@ transcribed the fox on this machine's CPU in 0.99 s through the OpenAI SDK,
 and `openai/whisper-large-v3-turbo` on OpenRouter transcribed speech
 `hexgrad/kokoro-82m` had made through the same gateway
 ([record](acceptance/transcription-run.md)).
+
+## Images
+
+Since 2026-09-28 (P4), `POST /v1/images/generations` takes OpenAI's JSON body
+and `POST /v1/images/edits` takes OpenAI's multipart form (`image` for one
+image, `image[]` for several, `mask`) or its JSON form (`images[].image_url`,
+`mask.image_url`). The OpenAI SDKs work unchanged, `stream=True` included.
+
+- **Backends:** OpenRouter's image models (Gemini's image+text models answer
+  here as well as on chat) and OpenAI's `gpt-image-*` and `dall-e-*`.
+  OpenRouter has no edit route: an edit reaches it as a generation with the
+  images as `input_references`. OpenAI's own API is classified by id and
+  untested here (no OpenAI key).
+- **Tiers, as chat,** each holding only models whose listing takes the
+  request. `x_eugene_plexus.image_streaming`, `image_edits` and `image_mask`
+  on `GET /v1/models` say what each model does.
+- **Settings route by the model's own listing:** a listed `n`, `quality`,
+  `background` or `output_format` goes only to a model that takes that value;
+  with none in the slot, a 400 names the setting. `auto` asks for nothing. An
+  `output_format` a listing does not mention is carried, and the answer's
+  `output_format` is what the image is.
+- **`stream: true`** goes only to a model that streams partial images (on
+  OpenRouter, OpenAI's eight); otherwise a 400 names `stream`. The first
+  event is the commit point.
+- **`mask`** goes only to OpenAI's own API, which alone honours it.
+- **Inputs are inline bytes only:** an `image_url` that is not a `data:` URL,
+  and a `file_id`, are refused. An image's type is read from its bytes (PNG,
+  JPEG, WebP, GIF). At most 16 images and 25 MiB in all; over it is a 413.
+- **Every answer is `b64_json`.** `response_format: url` is accepted and
+  ignored: there is nothing here to serve a URL from.
+- **Refused with a 400 naming the field:** OpenRouter's own `aspect_ratio`,
+  `resolution` and `seed` (use `size`, which reaches every backend), and any
+  unknown field.
+- **Metrics:** each row counts its images beside the tokens.
+
+`POST /v1/images/variations` answers a 400 saying no backend here makes
+variations.
+
+Verified on 2026-09-28 against OpenRouter: `black-forest-labs/flux.2-klein-4b`
+made an image through the OpenAI SDK and edited it, and
+`openai/gpt-image-1-mini` streamed one ([record](acceptance/images-run.md)).
 
 ## Typed decisions (B2)
 
