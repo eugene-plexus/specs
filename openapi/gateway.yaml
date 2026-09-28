@@ -1362,6 +1362,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/responses/input_tokens:
+    post:
+      tags: [inference]
+      operationId: countResponseInputTokens
+      summary: Count a Responses request's input tokens, without generating.
+      description: |
+        OpenAI's `POST /v1/responses/input_tokens` (P2c, 2026-09-28): the
+        body is a Responses request, translated as `/v1/responses`
+        translates it, and counted by a **ready** backend of the tier that
+        would serve it, with its own template and tokenizer -- the way
+        `/v1/messages/count_tokens` counts. Nothing is generated, woken or
+        recorded.
+
+        **A count this door cannot give is a 400 saying why**: a backend
+        that cannot count without generating (every hosted provider;
+        OpenRouter has no such endpoint, measured), an attachment, whose
+        cost is the encoder's, or nothing running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponsesRequest'
+      responses:
+        '200':
+          description: The count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponsesInputTokens'
+        '400':
+          description: A request this door refuses, or a count it cannot give.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/responses/{responseId}:
     parameters:
       - name: responseId
@@ -2623,15 +2666,75 @@ components:
           description: Ignored annotations; not provider storage or queryable metadata.
         safety_identifier:
           type: string
-          description: Ignored annotation; not an authenticated user identity.
+          maxLength: 64
+          description: |
+            A hint (P2c): carried to OpenAI's own API, which uses it for abuse
+            detection, and dropped for every other backend, none of which
+            lists it. Not an authenticated identity here.
+        prompt_cache_key:
+          type: string
+          maxLength: 1024
+          description: |
+            A hint (P2c): OpenAI's cache routing key, carried to OpenAI's own
+            API and dropped elsewhere. A hint changes where or how cheaply an
+            answer is made, never what it says, so dropping it is honest
+            where refusing a setting is not. No OpenRouter model lists it
+            (measured).
+        prompt_cache_retention:
+          $ref: './components/common.yaml#/components/schemas/PromptCacheRetention'
+        service_tier:
+          $ref: './components/common.yaml#/components/schemas/ServiceTier'
         n:
           type: integer
           const: 1
           description: Only one completion is supported; any other non-null value returns 400.
         logprobs:
           type: boolean
-          const: false
-          description: Only false is supported; log probabilities are not implemented.
+          description: |
+            Return each chosen token's log probability (P2c). Routes only to
+            a model that lists `logprobs` (149 on OpenRouter, measured),
+            where it was refused with a 400 before 2026-09-28.
+        top_logprobs:
+          type: integer
+          minimum: 0
+          maximum: 20
+          description: How many alternatives per token, with `logprobs` true; refused without it.
+        logit_bias:
+          type: object
+          maxProperties: 300
+          additionalProperties:
+            type: integer
+            minimum: -100
+            maximum: 100
+          description: |
+            Token id (as a string) to a bias from -100 to 100, OpenAI's
+            shape. A setting, routed as A2 says (141 models list it). Token
+            ids are the model's own, so the same bias means something else
+            on another model -- which is why it is never sent to one that
+            did not list it.
+        reasoning_effort:
+          $ref: './components/common.yaml#/components/schemas/ReasoningEffort'
+        verbosity:
+          $ref: './components/common.yaml#/components/schemas/Verbosity'
+        prediction:
+          $ref: './components/common.yaml#/components/schemas/Prediction'
+        web_search_options:
+          $ref: './components/common.yaml#/components/schemas/WebSearchOptions'
+        functions:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/FunctionDefinition'
+          description: |
+            **Deprecated by OpenAI; translated, not refused (P2c).** The same
+            thing as `tools` with every tool a function, carried as tools.
+            The answer is given back in the deprecated shape too,
+            `message.function_call` and `finish_reason: function_call`,
+            because a client that sends this shape reads that one. One call
+            per turn, as the old API had: `parallel_tool_calls` is sent as
+            false. Refused together with `tools` or `tool_choice`.
+        function_call:
+          $ref: '#/components/schemas/FunctionCallChoice'
         store:
           type: boolean
           const: false
@@ -2720,6 +2823,35 @@ components:
             Added 2026-09-28 (P2b).
         audio:
           $ref: '#/components/schemas/ChatAudioRequest'
+
+    FunctionCallChoice:
+      description: |
+        The deprecated `function_call`: `none`, `auto`, or `{"name"}` to
+        force one function. Translated to `tool_choice`.
+      oneOf:
+        - $ref: '#/components/schemas/FunctionCallMode'
+        - $ref: '#/components/schemas/FunctionCallName'
+
+    FunctionCallMode:
+      type: string
+      enum: [none, auto]
+
+    FunctionCallName:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    FunctionCallDelta:
+      type: object
+      description: A fragment of a deprecated `function_call`, accumulated like a tool call's.
+      properties:
+        name:
+          type: string
+        arguments:
+          type: string
 
     ChatModality:
       type: string
@@ -2818,7 +2950,12 @@ components:
             - user
             - assistant
             - tool
+            - function
           description: |
+            `function` is the deprecated role for a function's result,
+            answering the assistant's `function_call` before it; it is
+            carried as a `tool` message answering that call (P2c).
+
             `developer` is OpenAI's newer name for the instruction role,
             sent by current SDKs and frameworks when they target a
             reasoning model. It reaches the backend as `system`, in
@@ -2873,6 +3010,20 @@ components:
           description: |
             On a response: the spoken answer (P2b). On a request:
             refused with a 400, since it would name stored audio.
+        function_call:
+          $ref: '#/components/schemas/FunctionCall'
+          description: |
+            The deprecated single function call (P2c). On a response, only
+            when the request used `functions`. On a request's assistant
+            message, it is carried as that turn's one tool call.
+        annotations:
+          type: array
+          items:
+            $ref: './components/common.yaml#/components/schemas/ChatAnnotation'
+          description: |
+            On a response: the web sources the answer cites (P2c). On a
+            request's assistant message, accepted and not forwarded: it
+            describes the text beside it and instructs nothing.
 
     ChatCompletionResponse:
       type: object
@@ -2918,6 +3069,11 @@ components:
           type: integer
         message:
           $ref: '#/components/schemas/ChatCompletionMessage'
+        logprobs:
+          oneOf:
+            - $ref: './components/common.yaml#/components/schemas/ChatLogprobs'
+            - type: 'null'
+          description: With `logprobs` true, the answer's; otherwise null.
         finish_reason:
           type: string
           enum:
@@ -2925,7 +3081,11 @@ components:
             - length
             - tool_calls
             - content_filter
+            - function_call
           description: |
+            `function_call` only when the request used the deprecated
+            `functions`, in place of `tool_calls` (P2c).
+
             `stop` for a natural end or a matched stop sequence,
             `length` for hitting the token cap, `tool_calls` when the
             model stopped because it wants one or more tools run,
@@ -3040,6 +3200,18 @@ components:
                 **not** parseable JSON and was never meant to be.
             audio:
               $ref: '#/components/schemas/ChatCompletionAudioDelta'
+            annotations:
+              type: array
+              items:
+                $ref: './components/common.yaml#/components/schemas/ChatAnnotation'
+              description: Citations, as the provider streams them (P2c); accumulate them.
+            function_call:
+              $ref: '#/components/schemas/FunctionCallDelta'
+        logprobs:
+          oneOf:
+            - $ref: './components/common.yaml#/components/schemas/ChatLogprobs'
+            - type: 'null'
+          description: The log probabilities of this frame's tokens, with `logprobs` true.
         finish_reason:
           type:
             - string
@@ -3049,6 +3221,7 @@ components:
             - length
             - tool_calls
             - content_filter
+            - function_call
             - null
           description: Null until the terminal chunk.
 
@@ -4408,6 +4581,17 @@ components:
                 the user verbatim while a 404's message is discarded,
                 which is why this door answers 400 for a model nothing
                 serves.
+
+    ResponsesInputTokens:
+      type: object
+      required: [object, input_tokens]
+      properties:
+        object:
+          type: string
+          const: response.input_tokens
+        input_tokens:
+          type: integer
+          minimum: 0
 
     ResponsesRequest:
       type: object

@@ -244,6 +244,154 @@ components:
 
         Named rather than inline so a later inline enum cannot rename it
         (S6's `Source1`).
+    ReasoningEffort:
+      type: string
+      enum: [none, minimal, low, medium, high, xhigh]
+      description: |
+        How much a reasoning model thinks before it answers: OpenAI's
+        `reasoning_effort` (P2c, 2026-09-28). Measured on
+        `openai/gpt-oss-20b` through OpenRouter: 17 reasoning tokens at
+        `low`, 275 at `high`. A setting, so it routes only to a model
+        that lists it (A2).
+    Verbosity:
+      type: string
+      enum: [low, medium, high]
+      description: OpenAI's `verbosity`, how long the answer is. A setting, routed as A2 says.
+    Prediction:
+      type: object
+      additionalProperties: false
+      required: [type, content]
+      description: |
+        OpenAI's predicted output: text the answer is expected to repeat
+        most of, which a backend can use to answer faster. A setting,
+        routed as A2 says.
+      properties:
+        type:
+          type: string
+          const: content
+        content:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: '#/components/schemas/TextContentPart'
+    WebSearchOptions:
+      type: object
+      additionalProperties: false
+      description: |
+        Ask the model to search the web before it answers: OpenAI's
+        `web_search_options`. The search is the model provider's, not this
+        install's. A setting, routed as A2 says; **listed is not promised**
+        (OpenRouter lists it for `gpt-4o-mini`, and OpenAI refuses it for
+        that model, measured), so a provider's refusal is still the
+        caller's 400. The citations come back as `annotations`.
+      properties:
+        search_context_size:
+          $ref: '#/components/schemas/WebSearchContextSize'
+        user_location:
+          $ref: '#/components/schemas/WebSearchUserLocation'
+    WebSearchContextSize:
+      type: string
+      enum: [low, medium, high]
+    WebSearchUserLocation:
+      type: object
+      additionalProperties: false
+      required: [type, approximate]
+      properties:
+        type:
+          type: string
+          const: approximate
+        approximate:
+          type: object
+          additionalProperties: false
+          properties:
+            city:
+              type: string
+            country:
+              type: string
+            region:
+              type: string
+            timezone:
+              type: string
+    PromptCacheRetention:
+      type: string
+      enum: [in_memory, 24h]
+      description: OpenAI's `prompt_cache_retention`, a hint (see `prompt_cache_key`).
+    ServiceTier:
+      type: string
+      enum: [auto, default, flex, scale, priority]
+      description: OpenAI's `service_tier`, a hint carried to OpenAI's own API only.
+    ChatLogprobs:
+      type: object
+      description: |
+        The chosen tokens' log probabilities, OpenAI's shape (P2c). Asked
+        for with `logprobs` (and `top_logprobs` for alternatives). Streamed,
+        each frame carries the entries for its own tokens.
+      properties:
+        content:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/ChatTokenLogprob'
+        refusal:
+          type: [array, 'null']
+          items:
+            $ref: '#/components/schemas/ChatTokenLogprob'
+    ChatTokenLogprob:
+      type: object
+      required: [token, logprob]
+      properties:
+        token:
+          type: string
+        logprob:
+          type: number
+        bytes:
+          type: [array, 'null']
+          items:
+            type: integer
+        top_logprobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatTopLogprob'
+    ChatTopLogprob:
+      type: object
+      required: [token, logprob]
+      properties:
+        token:
+          type: string
+        logprob:
+          type: number
+        bytes:
+          type: [array, 'null']
+          items:
+            type: integer
+    ChatAnnotation:
+      type: object
+      required: [type, url_citation]
+      description: |
+        A web source the answer cites, OpenAI's shape (P2c). Carried back
+        from a search the provider ran for `web_search_options`. Only
+        `url_citation` is carried: OpenRouter's own `file` annotations are
+        a cache of how it parsed a PDF, not a citation, and no OpenAI
+        client reads them.
+      properties:
+        type:
+          type: string
+          const: url_citation
+        url_citation:
+          $ref: '#/components/schemas/UrlCitation'
+    UrlCitation:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+        title:
+          type: string
+        start_index:
+          type: integer
+          description: Where in `content` the citation applies. Perplexity's Sonar sends 0 for all.
+        end_index:
+          type: integer
     # -------- Backend + component identity --------
 
     BackendKind:
