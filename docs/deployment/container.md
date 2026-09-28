@@ -434,8 +434,8 @@ host install the OS keyring opens it unattended; a container has no keyring,
 so it needs the passphrase from somewhere. **Point it at a file.**
 
 ```sh
-# 1. Put the passphrase in a file. printf, not echo -- see below.
-printf 'your-passphrase' > /mnt/user/appdata/eugene-plexus-secret
+# 1. Put the passphrase in a file. printf '%s', not echo -- see below.
+printf '%s' 'your-passphrase' > /mnt/user/appdata/eugene-plexus-secret
 # The container runs as 99:100. Owned by root with mode 400, it cannot
 # read the file, and the root stays sealed.
 chown 99:100 /mnt/user/appdata/eugene-plexus-secret
@@ -500,6 +500,14 @@ screen. A file is neither broadcast into every process nor visible to
 `inspect`. Be honest about what it does not buy: inside one container every
 process runs as the same user and can read the file, so this is about not
 *spreading* the secret, not about hiding it from your own components.
+
+**`printf '%s'`, not `printf` alone.** The first argument to `printf` is a
+format string, so a `%` or a backslash in a passphrase written as
+`printf 'pass%word'` is rewritten on its way into the file, and the root
+then reports that the file holds *not this install's passphrase*. Single
+quotes keep the shell from expanding `$` and `!`; a single quote inside
+the passphrase is written `'\''`. `wc -c` on the file should equal the
+passphrase's length, one more if a newline follows it.
 
 **`printf`, not `echo`.** `echo` appends a newline. One trailing newline is
 stripped for exactly this reason, so `echo` works too — but nothing else is
