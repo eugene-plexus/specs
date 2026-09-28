@@ -607,3 +607,59 @@ Troy took all three as recommended.
 | **P2a** | Attachments in: `input_audio` and `file` on chat, `input_file`/`input_audio` on Responses, `document` on Messages; routing by `audioInput`/`fileInput` | **Built 2026-09-28** (specs `6ac2761`, driver `e231aaf`, gateway `de7a65f`). Acceptance, live OpenRouter run and sabotage pass done; both installers pin driver `934d824` and gateway `ba25538`. |
 | **P2b** | Audio out: `modalities` and `audio` on chat; streamed pcm16 assembled for a batch answer, WAV-wrapped when `wav` was asked (P2-1); Lyria's mp3 labelled by its header (P2-2); routing by `outputModalities` | **Built 2026-09-28** (specs `060f516`, driver `429d0d0`, gateway `e44b88b`). Acceptance, live OpenRouter run and sabotage pass done; both installers pin driver `429d0d0` and gateway `e44b88b`. Routing keys on `output_modalities` because no audio model lists `modalities` or `audio` as a parameter (measured). |
 | **P2c** | The missing fields (the list above) and `/v1/responses/input_tokens` | **Built 2026-09-28** (specs `8ee10cf` and `eca5391`, driver `8390004`, gateway `2977f8b` and `fa81fca`). Acceptance, live OpenRouter run and sabotage pass done. The acceptance run found that sending `parallel_tool_calls: false` for the old `functions` routed them to 12 of 455 models; it is not sent. |
+
+## 9. P3's own calls, 2026-09-28
+
+Measured first:
+[`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md)
+§3 and §8. Troy took two of four as recommended.
+
+| # | Question | Taken |
+|---|---|---|
+| P3-1 | The ElevenLabs key speaks but lacks `speech_to_text`, `models_read` and `voices_read` | **ElevenLabs transcription is deferred.** In P3, ElevenLabs is speech only; transcription goes to OpenRouter and `llama-server`. |
+| P3-2 | What an ElevenLabs driver offers when its key cannot list models or voices | **Require the permission** (not as recommended, which was a built-in model list). No model is offered until the key can read `/v1/models`, and `/v1/info` names `models_read` as the reason. Voices are listed when `voices_read` allows and are passed through either way (P3-3). |
+| P3-3 | A client sending OpenAI's default voice (`alloy`) to a backend that does not know it | **Pass voices through**, as recommended. The voice is the provider's own id. `x_eugene_plexus.voices` lists each model's voices where the provider says, and an unknown voice is the provider's 400, relayed naming it. |
+| P3-4 | `/v1/audio/translations`, which only OpenAI's own API serves, with no OpenAI key to verify it | **Deferred** (not as recommended, which was to build it unverified). The door answers 400 saying no backend here translates. |
+
+**Consequence of P3-2 for the done-when:** "ElevenLabs speaks through
+`/v1/audio/speech` from the OpenAI SDK unchanged" can be run live only with a
+key that has `models_read`. Until then that half is proven against a fixture
+playing ElevenLabs' measured API.
+
+**Taken without a separate call, because each follows a held rule or a
+measurement:**
+
+- **Speech failover is same-model only** (§5, #4), as embeddings' is. A slot's
+  other targets are never used for speech.
+- **Speech formats:** each backend is asked for what it can make.
+  - OpenRouter makes `mp3` and `pcm` (measured). ElevenLabs makes mp3, pcm and
+    opus on this plan. OpenAI's API makes all six.
+  - `wav` is `pcm` with a header wherever `pcm` exists, as P2b does.
+  - Anything else is a 400 naming what that model can make, never a transcode.
+- **The default format is `mp3` and is always sent**, because OpenRouter's own
+  default is `pcm` (measured) where OpenAI's is `mp3`. A client that relies on
+  the default gets what OpenAI promised it.
+- **`stream_format: "sse"` is refused**; the body is streamed raw bytes, and a
+  first byte is the commit point.
+- **Transcription formats:**
+  - `json` everywhere.
+  - `text` rendered by the gateway from the JSON, since llama-server refuses
+    `text` (measured).
+  - `verbose_json` carried to a backend that makes it; a backend's refusal is
+    relayed.
+  - `srt` and `vtt` refused.
+- **`llama-server`'s Qwen3-ASR preamble** (`language English<asr_text>…`) is
+  parsed by the driver into `language` and the text. The same model on
+  OpenRouter answers without it (measured), so the prefix is llama.cpp not
+  parsing its own output.
+- **Uploads are at most 25 MiB**, OpenAI's limit, on the multipart doors only.
+  The 16 MiB JSON limit stands everywhere else.
+- **Metrics units:** characters for speech, audio seconds for transcription
+  where the backend reports them.
+
+**P3 is built in two parts:**
+
+| Part | Content | State |
+|---|---|---|
+| **P3a** | `/v1/audio/speech`: OpenAI-shaped speech through accounts (OpenRouter's 21 models, OpenAI) and the new `elevenlabs_http` engine; binary streamed; voices on `/v1/models`; same-model failover | Not started |
+| **P3b** | `/v1/audio/transcriptions`: multipart, through OpenRouter's 24 models and `llama-server`; `/v1/audio/translations` refused (P3-4); metrics units | Not started |

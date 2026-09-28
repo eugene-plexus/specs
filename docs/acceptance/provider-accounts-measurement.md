@@ -260,3 +260,65 @@ to the cheapest model listing each, about $0.012 in all.
   "end_index"}}]`, and `content` carries `[2][3]`-style markers. Sonar's
   indices were all 0. **Streamed:** `delta.annotations` on 20 of 34 frames,
   one citation per frame. $0.005 per request, almost all of it the search.
+
+## 8. For P3: the OpenAI SDK, ElevenLabs and llama-server (2026-09-28)
+
+**What the OpenAI Python SDK sends** (openai 3.20.0, against a capture
+listener):
+
+- **Speech** is `POST /v1/audio/speech` with a JSON body `{model, voice,
+  input}` plus `response_format`, `speed` and `instructions` when set, and
+  `Accept: application/octet-stream`. **The SDK passes any `voice` string
+  through**, an ElevenLabs voice id included. `with_streaming_response` is the
+  same request, and the answer is read as raw bytes.
+- **Transcription** is `POST /v1/audio/transcriptions`, multipart: `model`,
+  `file` (with its filename and `Content-Type`), and `language`, `prompt`,
+  `response_format`, `temperature` and `timestamp_granularities[]` when set.
+  With `response_format: text` the SDK takes a plain-text body as the answer.
+  Translation is the same form at `/v1/audio/translations`.
+
+**ElevenLabs, with the key Troy gave** (`xi-api-key`):
+
+- **Speech works.** `eleven_flash_v2_5` and `eleven_multilingual_v2` answered in
+  0.17 s and 0.86 s, with a `character-cost` header (5 and 10 for 23
+  characters). `mp3_44100_128` is `audio/mpeg`, `pcm_24000` is `audio/pcm`
+  (16-bit mono), and `opus_48000_64` is `audio/opus` (an Ogg stream).
+  Streamed at `/stream`: headers at 0.18 s, then 62 chunks, chunked transfer.
+- **Its published formats are mp3, pcm (8-48 kHz), opus, μ-law and A-law.**
+  `wav_44100` exists but is refused on this plan: 403 *"Output format
+  'wav_44100' is only available on the Pro tier and above"*. There is no AAC
+  or FLAC.
+- **The key is scoped, and missing four permissions:** `models_read`,
+  `voices_read`, `user_read`, and **`speech_to_text`**. Each is a 401 with
+  `status: missing_permissions` and a message naming the permission. So this
+  key can speak but cannot list models or voices, and cannot transcribe.
+- **The errors name their cause:** an unknown voice is 400 `invalid_uid`, an
+  unknown model is 400 `model_not_found`, and no key is 401
+  `needs_authorization`.
+
+**`llama-server` b11235 (published 2026-09-28) with
+`ggml-org/Qwen3-ASR-0.6B-GGUF` Q8_0 and its projector, on the CPU:**
+
+- `/props` reports `modalities: {audio: true}`. The route answers only when an
+  audio projector is loaded; otherwise *"The current model does not support
+  audio input."*
+- `/v1/audio/transcriptions`, OpenAI's multipart form: the fox in 0.3-0.4 s.
+  The answer is `{"type": "transcript.text.done", "text", "usage": {"type":
+  "tokens", …}}`.
+- **The text carries the model's own preamble**: `"language
+  English<asr_text>The quick brown fox jumps over the lazy dog."`. The same
+  model on OpenRouter answers `"The quick brown fox jumps over the lazy dog."`
+  with `usage.seconds: 3.5`. So the prefix is llama.cpp not parsing the
+  model's output, not the model's normal answer.
+- **Only `response_format: json`**: `text` and `verbose_json` are 400 *"Only
+  'json' response_format is supported"*. `stream: true` gives
+  `transcript.text.delta` SSE events. A request with no file is a 500 JSON
+  parse error.
+
+**OpenRouter's listing for the new doors:** 21 speech models and 24
+transcription models. Most speech models carry `supported_voices`, from 2 to
+90 each; `fish-audio`'s and `bytedance`'s carry none. **No speech or
+transcription model lists any `supported_parameters`.** `hexgrad/kokoro-82m`
+and the free `deepgram/flux-tts:free` are the cheapest to speak with.
+`openai/whisper-large-v3-turbo` transcribed the fox in 6.2 s, and
+`qwen/qwen3-asr-0.6b` in 0.6 s.
