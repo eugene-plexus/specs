@@ -595,6 +595,16 @@ components:
         one. UIs render it as rows of host / user / password, with the
         password a password input, and must not display a redacted
         entry as though its password were empty.
+
+        `string_list` (P1, 2026-09-27) is an ordered JSON array of
+        strings with no further meaning to the type: a list of plain
+        values the field's own description explains. Its first users are
+        the inference-driver's `catalogueInclude` and `catalogueExclude`,
+        model-id patterns for a provider account. It exists for the
+        reason `url_list` does: a comma-separated text field is a bug
+        report, and reusing `path_list` or `url_list` would tell every UI
+        to open a directory picker or an address field. UIs render it as
+        an add/remove list of text fields.
       enum:
         - string
         - integer
@@ -613,6 +623,7 @@ components:
         - path_mappings # ordered {from, to} directory mappings; see the description
         - library_folders # ordered {path, mounts[]} library folders; see the description
         - share_credentials # ordered {host, username, password} file-server logins
+        - string_list # ordered list of plain strings; see the description
 
     ConfigField:
       type: object

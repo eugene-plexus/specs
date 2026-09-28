@@ -56,10 +56,23 @@ info:
 
     The gateway does not store backend URLs. It reads the agent
     topology (`GET /v1/components`, `kind: inference-driver`) and asks
-    each driver's `/v1/info` what model it is serving, then builds
+    each driver's `/v1/info` which models it is serving, then builds
     model → drivers from the answers. Backend URLs live in exactly one
     place — the agent topology — and are never duplicated into the
     gateway's own config.
+
+    **A driver serves one model or, as a provider account, many (P1,
+    2026-09-27).** Every entry of its `models` list is a routing
+    candidate, keyed by **(node, driver, model)**. A single-model
+    driver's entry is published under its own id; an account's under
+    `<driver name>/<id>`, with the gateway adding the prefix because a
+    driver does not know its name. The same driver name on two machines
+    is therefore one account served from both, a replica per model,
+    exactly as a model alias on two machines is today. Every request the
+    gateway sends a driver names its `model`, unprefixed, and a driver
+    from before P1 — which would ignore that field and answer with its
+    one model — is routed nothing and listed in
+    `RoutingTableView.outdated_drivers` instead.
 
     Each driver is joined to the engine runtime it follows by the
     `runtime` it reports on `/v1/info` — by **(node, name)**, never by alias,
@@ -67,7 +80,7 @@ info:
     exactly the case load balancing is for. The join is what enforces
     the rule the runtime contract has stated since M0: **a driver whose
     runtime is not `ready` is not routed to.** A driver reports its
-    `modelId` from config whether or not its engine answers, so without
+    model from config whether or not its engine answers, so without
     the gate a stopped replica would take every other request. A driver
     that follows no runtime — a cloud provider, a CLI subscription — is
     eligible whenever it is reachable; there is no engine of ours for
@@ -2149,8 +2162,52 @@ components:
           description: How the gateway reaches this driver.
         backend:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        node:
+          type:
+            - string
+            - 'null'
+          description: |
+            The machine this driver runs on, as the agent that declares
+            it names it. Null on a standalone install whose agent has no
+            node name yet.
         modelId:
           type: string
+          description: |
+            The one model a single-model driver serves, as published.
+            Absent for an account (see `account`) and for a driver
+            serving nothing yet.
+        modelCount:
+          type: integer
+          minimum: 0
+          description: |
+            How many models this driver serves (`DriverInfo.models`).
+            One for a single-model driver; hundreds for an aggregator
+            account. Absent for an outdated driver.
+        account:
+          type: boolean
+          description: |
+            True when the driver is a provider account, whose models are
+            published as `<name>/<model id>`.
+        catalogueRefreshedAt:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: When the account's model list in force was read.
+        catalogueError:
+          type:
+            - string
+            - 'null'
+          description: |
+            Why the account's most recent catalogue read failed, in the
+            backend's words. The previous list stays in force.
+        outdated:
+          type: boolean
+          description: |
+            True when the driver answered `/v1/info` without a `models`
+            list: a driver from before P1, on a machine that has not
+            been updated. It routes nothing until updated, and appears
+            in `RoutingTableView.outdated_drivers`.
         runtime:
           type: string
           description: |
@@ -2205,7 +2262,16 @@ components:
             What the client puts in `ChatCompletionRequest.model`. For a
             local runtime this is its `modelAlias`, which defaults to
             the model's own filename — so the name a user sees is the
-            name of the file they downloaded.
+            name of the file they downloaded. For a provider account
+            it is `<driver name>/<the provider's id>`
+            (`openrouter/anthropic/claude-opus-5.5`, `ollama/qwen3:8b`),
+            so two accounts never collide and one model through two
+            providers stays two ids.
+
+            Listed only when a door serves one of the model's surfaces
+            (P1-4): an account's speech, image, video and transcription
+            models appear as their doors are built, under the ids they
+            already have.
         object:
           type: string
           const: model
@@ -3310,8 +3376,42 @@ components:
           items:
             type: string
           description: Drivers in the topology that did not answer `/v1/info`.
+        outdated_drivers:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutdatedDriver'
+          description: |
+            Drivers that answered `/v1/info` in the shape from before P1
+            (a single `modelId`, no `models`). The gateway routes nothing
+            to one: it would ignore the `model` a request names and
+            answer with its own. Listed so the console can say which
+            machine to update, rather than a model silently vanishing
+            after its gateway was updated and its worker was not.
         control_root:
           $ref: '#/components/schemas/ControlRootView'
+
+    OutdatedDriver:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: The driver's name, as its agent declares it.
+        node:
+          type:
+            - string
+            - 'null'
+          description: The machine it runs on; null on a standalone install.
+        url:
+          type: string
+          format: uri
+        version:
+          type: string
+          description: The driver's own version, as it reported it.
+        modelId:
+          type: string
+          description: The one model it said it serves, so the console can name what is missing.
 
     ControlRootView:
       type: object
@@ -3400,6 +3500,12 @@ components:
       properties:
         driver:
           type: string
+        model:
+          type: string
+          description: |
+            The driver's own id for the model this row serves: the tier's
+            target for a single-model driver, and the target without its
+            `<driver>/` prefix for an account.
         url:
           type: string
           format: uri
@@ -3430,7 +3536,10 @@ components:
             the agent owns the enum.
         node:
           type: string
-          description: The node the runtime runs on, when the agent reports one.
+          description: |
+            The machine the driver runs on. Was the runtime's node only,
+            which left a cloud driver's row with none although its agent
+            is known.
         stop_reason:
           type: string
           description: The agent's `Runtime.stopReason`, when the runtime is stopped.
@@ -4886,6 +4995,15 @@ components:
         completionTokens: {type: integer, minimum: 0}
         driver:
           type: string
+        model:
+          type:
+            - string
+            - 'null'
+          description: |
+            The published id of the model this attempt asked for — a
+            slot's target, prefixed for an account — since one account's
+            driver serves hundreds. Null on rows recorded before metrics
+            schema v6.
         runtime:
           type:
             - string

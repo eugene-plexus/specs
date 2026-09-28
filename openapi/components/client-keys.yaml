@@ -59,7 +59,19 @@ components:
           maxItems: 100
           uniqueItems: true
           items: {type: string, minLength: 1, maxLength: 256}
-          description: Null permits all. Empty permits none. Exact alias and actual target IDs must both be allowed.
+          description: |
+            Null permits all. Empty permits none. Both the id the caller
+            asked for and every model actually tried (a slot's fallback
+            targets) must be allowed.
+
+            An entry is an exact id, or a pattern with `*` (P1,
+            2026-09-27): `*` matches any run of characters, `/` included,
+            and is the only wildcard, so `openrouter/*` allows every
+            model of the account named `openrouter`
+            (`openrouter/anthropic/claude-opus-5.5`) and nothing else.
+            Without it, scoping a key to one account means typing out
+            hundreds of names. The same matcher runs in the gateway, the
+            agent and the control root.
         maxConcurrentRequests: {type: integer, minimum: 1, maximum: 64, default: 2}
         requestsPerMinute: {type: integer, minimum: 1, maximum: 10000, default: 60}
     ClientKeyUpdateRequest:
