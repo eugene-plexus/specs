@@ -6,15 +6,15 @@ Compatibility means the features below, not every feature of a provider API.
 | Surface or feature | Status | Boundary |
 | --- | --- | --- |
 | `GET /v1/models` | Supported | Eugene's discovered models and routing aliases. |
-| `POST /v1/chat/completions` | Supported | Text messages, tools, structured-output forwarding, batch responses and SSE. |
-| `POST /v1/messages` | Supported subset | Anthropic text/tool translation; measured Claude Code 2.1.207 shapes remain covered. |
+| `POST /v1/chat/completions` | Supported | Text messages, tools, structured-output forwarding, batch responses and SSE. Images, audio and PDFs as content parts (see [attachments](#attachments)). |
+| `POST /v1/messages` | Supported subset | Anthropic text, image, document and tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
-| `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, function and client-run custom tools, streamed or not. No stored responses (`store`, `previous_response_id`), no `input_file`, no server-run tools. See [responses and completions](design/responses-and-completions.md). |
+| `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
 | Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (speech, image, video, transcription) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
-| Audio, image generation, video, files, batches, provider storage | Not implemented | Phases P2-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
-| OpenAI image/content-part input | Supported subset | Ordered text plus inline PNG/JPEG on user messages, confirmed vision backends only. See limits below. Anthropic images remain refused. |
+| Audio output, speech, transcription, image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P2b-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
+| Content-part input: images, audio, PDFs | Supported subset | Ordered text plus inline PNG/JPEG, WAV/MP3 and PDF on user messages, sent only to backends that confirm that input. See [attachments](#attachments). |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
 | `frequency_penalty`, `presence_penalty`, `top_k`, `min_p`, `parallel_tool_calls`, the `developer` role | Carried | Refused with 400 before 2026-09-23. Backends that cannot take one are routed around; see [chat settings](#chat-settings). |
@@ -85,10 +85,12 @@ cap has been measured here. [OpenAI Chat Completions reference](https://develope
 
 `/v1/messages` requires a positive integer `max_tokens`. It carries text, tool
 definitions/results, temperature, top-p, `top_k`, stop sequences and
-`tool_choice.disable_parallel_tool_use` into the same routing path. Images,
-documents, hosted tools, `mcp_servers`, any `output_config` key other than
-`effort` (structured output's `format` included) and unknown top-level settings
-receive explicit refusals. The measured Claude Code request includes `thinking`,
+`tool_choice.disable_parallel_tool_use` into the same routing path. Images
+(since 2026-09-23) and `document` blocks (since 2026-09-28: a base64 PDF, or
+plain text) are carried to backends that confirm them, including from inside a
+`tool_result`. A document by URL or file id, `citations` enabled, hosted tools,
+`mcp_servers`, any `output_config` key other than `effort` (structured output's
+`format` included) and unknown top-level settings receive explicit refusals. The measured Claude Code request includes `thinking`,
 `context_management`, `output_config.effort` and cache hints even when pointed at
 local models. `context_management`, `output_config.effort` and cache hints remain
 accepted, but **are not enforced**;
@@ -146,7 +148,10 @@ order; arrays containing images remain structured through every routing attempt.
 
 Limits cover the entire conversation, including images in earlier turns:
 
-- Four images per request, each at most 5 MiB decoded; 10 MiB decoded total.
+- `maxImagesPerRequest` images per request (12 by default, at most 64), each at
+  most 5 MiB decoded; 10 MiB decoded total.
+- Audio clips and PDFs at most 10 MiB decoded each, and every attachment
+  together at most 11 MiB decoded (see [attachments](#attachments)).
 - At most 16 million pixels per image and 8192 pixels along either dimension.
 - At most 16 MiB for the JSON body, including text and base64 overhead.
 
@@ -158,6 +163,35 @@ error excerpts.
 `x_eugene_plexus.image_input` on `GET /v1/models` means at least one candidate
 confirms vision support. Image requests use only those candidates; text-only
 fallbacks are skipped. The driver rechecks the loaded model before forwarding.
+
+## Attachments
+
+Since 2026-09-28 (P2a), chat user messages also take:
+
+- `input_audio`: `{"data": <base64, no data: prefix>, "format": "wav" | "mp3"}`.
+  The bytes must match the format (a WAV header, or an ID3 tag or MPEG frame).
+- `file`: `{"filename": ..., "file_data": "data:application/pdf;base64,..."}`.
+  PDF only. Bare base64 is accepted and sent on as that data URL, because
+  OpenRouter refuses anything else. `file_id` is refused: this install has no
+  file store.
+
+Each is at most 10 MiB decoded, and all attachments in a request, images
+included, at most 11 MiB decoded. That is what fits in the 16 MiB body once
+base64 has grown it by a third. `/v1/responses` takes `input_file` and
+`input_audio` the same way, and `/v1/messages` takes `document` blocks.
+
+A request is routed only to a backend that confirms every kind of attachment in
+it, fallback tiers included. `x_eugene_plexus.audio_input` and `file_input` on
+`GET /v1/models` say which models do. An OpenRouter account's models confirm
+what OpenRouter's listing says they take. A `llama-server` confirms audio from
+its `/props`. No local engine confirms PDFs yet, and neither CLI backend
+confirms either. With no confirming backend the request is refused before
+anything is sent or woken. `count_tokens` cannot count a request with an
+attachment and says so.
+
+Unverified: no live provider has answered through the gateway yet. The shapes
+were measured against OpenRouter directly on 2026-09-28
+([measurement](acceptance/provider-accounts-measurement.md)).
 Initially verified capability discovery is the single-model llama.cpp server's
 `/props` vision modality plus matching `/v1/models` identity. Other engines and
 multi-model endpoints do not yet advertise image input, even if they could

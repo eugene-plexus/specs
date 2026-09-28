@@ -2,7 +2,9 @@
 
 **Status: P1 built 2026-09-27** (one driver per provider account; record
 [`provider-accounts-run.md`](../acceptance/provider-accounts-run.md)).
-**P2-P8 are not built.** §0 is measured, and §6's authenticated measurements
+**P2a, attachments in, is on main 2026-09-28 and not yet in an install**
+(record [`media-inputs-run.md`](../acceptance/media-inputs-run.md): unit
+tested, acceptance and live run owed). **P2b, P2c and P3-P8 are not built.** §0 is measured, and §6's authenticated measurements
 are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
 recommended; #3 (replace `modelId`) and #8 (Eugene runs some
@@ -580,9 +582,19 @@ Troy took all three as recommended.
 - **`functions`/`function_call`** are translated to tools and back again,
   because a client that sends the deprecated shape reads the deprecated answer.
 - **Inline media stays inside the 16 MiB body:** at most 10 MiB for one audio
-  clip or file, and 12 MiB across all attachments, decoded. A `file_id`, a URL
+  clip or file, and 11 MiB across all attachments, decoded. (Written as 12
+  here first; 12 MiB grows to 16 MiB in base64, which no body could carry
+  alongside its JSON, so the limit could never have bound.) A `file_id`, a URL
   and an assistant turn's `audio: {id}` are refused, since each names a store
   Eugene does not have.
 - **`/v1/responses/input_tokens`** is counted by the backend, the way
   `/v1/messages/count_tokens` already is. **`/v1/responses/compact` is
   deferred:** OpenAI's compaction returns an item no other backend can read back.
+
+**P2 is built in three parts**, each landing on its own:
+
+| Part | Content | State |
+|---|---|---|
+| **P2a** | Attachments in: `input_audio` and `file` on chat, `input_file`/`input_audio` on Responses, `document` on Messages; routing by `audioInput`/`fileInput` | **On main 2026-09-28** (specs `6ac2761`, driver `e231aaf`, gateway `de7a65f`). Unit tested; the acceptance script, sabotage pass and live OpenRouter run are owed, and neither installer pins it yet. |
+| **P2b** | Audio out: `modalities` and `audio` on chat; streamed pcm16 assembled for a batch answer, WAV-wrapped when `wav` was asked (P2-1); Lyria's mp3 labelled by its header (P2-2); routing by `outputModalities` | Not started |
+| **P2c** | The missing fields (the list above) and `/v1/responses/input_tokens` | Not started |
