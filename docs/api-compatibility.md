@@ -12,13 +12,14 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/audio/speech` | Supported (P3a, since 2026-09-28) | Text in, audio bytes out, streamed as made, through OpenRouter's speech models and ElevenLabs. Voices are the provider's own ids. See [speech](#speech). |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
 | `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. `/v1/responses/input_tokens` counts (P2c). Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
-| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (video) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
+| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (rerank, moderation) is not listed on `GET /v1/models`, nor is a model past its provider's `shutdown_date`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
 | `POST /v1/audio/transcriptions` | Supported (P3b, since 2026-09-28) | OpenAI's multipart form, through OpenRouter's transcription models and a `llama-server` whose projector hears. Tiers as chat. See [transcription](#transcription). |
 | `POST /v1/audio/translations` | Refused | A 400: only OpenAI's own API translates, and this door is deferred (P3-4). |
 | `POST /v1/images/generations`, `POST /v1/images/edits` | Supported (P4, since 2026-09-28) | OpenAI's shapes, streamed or not, through OpenRouter's image models and OpenAI's. Edits as multipart or JSON with `data:` URLs; a URL or `file_id` input is refused. Every answer is `b64_json`. See [images](#images). |
 | `POST /v1/images/variations` | Refused | A 400: only OpenAI's `dall-e-2` makes variations, and this door is deferred (P4-2). |
-| Video, uploaded files, batches, provider storage | Not implemented | Phase P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
+| `POST /v1/videos`, `GET /v1/videos/{video_id}` and `/content` | Supported (P5, since 2026-09-28) | OpenAI's shape, as jobs, through OpenRouter's video models (OpenAI's own video API shut down on 2026-09-24). The job id is a signed handle: no store, another key cannot read it, a restart loses nothing. See [videos](#videos). |
+| Uploaded files, batches, provider storage; video remix, edits, extensions and delete | Not implemented | The platform half of [the design](design/openai-inference-compatibility.md). The video operations only OpenAI's shut-down API served are not routed (P5-2). |
 | Content-part input: images, audio, PDFs | Supported subset | Ordered text plus inline PNG/JPEG, WAV/MP3 and PDF on user messages, sent only to backends that confirm that input. See [attachments](#attachments). |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
@@ -393,6 +394,38 @@ variations.
 Verified on 2026-09-28 against OpenRouter: `black-forest-labs/flux.2-klein-4b`
 made an image through the OpenAI SDK and edited it, and
 `openai/gpt-image-1-mini` streamed one ([record](acceptance/images-run.md)).
+
+## Videos
+
+Since 2026-09-28 (P5), `POST /v1/videos` takes OpenAI's body (the SDK sends
+multipart; JSON works too) and answers a job; `GET /v1/videos/{video_id}`
+polls it and `GET /v1/videos/{video_id}/content` streams the MP4. The OpenAI
+SDK's `client.videos.create`, `create_and_poll`, `retrieve` and
+`download_content` work unchanged.
+
+- **Backends:** OpenRouter's video models. OpenAI's own video API shut down
+  on 2026-09-24; an OpenAI connection no longer lists Sora.
+- **The job id is a signed handle.** It names the backend and the key that
+  made the job, so a poll reaches that backend, another key's poll is a 404,
+  and a gateway restart loses nothing. Nothing is stored; the id is the job.
+- **Status is OpenAI's:** `queued`, `in_progress`, `completed`, `failed`,
+  with `progress` 0 until the job ends and 100 when it completes. A failure
+  carries the provider's reason.
+- **Settings route by the model's listing:** `seconds` (any whole number
+  the model lists, not only OpenAI's 4, 8 and 12), `size`, and
+  `input_reference` (an image file or `data:` URL) only to a model that takes
+  a first frame. `x_eugene_plexus.video_durations`, `video_sizes` and
+  `video_first_frame` on `GET /v1/models` say what each takes.
+- **Failover happens at submit only**; an accepted job stays with its
+  backend.
+- **Refused:** `variant` other than `video`, `GET /v1/videos` (no store to
+  list from), a URL or `file_id` reference. Remix, edits, extensions and
+  delete are not routed.
+- **Metrics:** each submit's row counts the seconds asked for.
+
+Verified on 2026-09-28: `x-ai/grok-imagine-video` made one second at 480p
+from text and one from a first frame through the OpenAI SDK, both polled to
+completion after a gateway restart ([record](acceptance/videos-run.md)).
 
 ## Typed decisions (B2)
 

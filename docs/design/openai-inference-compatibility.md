@@ -16,8 +16,10 @@ checks, the OpenAI SDK unchanged). **P3b, transcription, is built and pinned
 2026-09-28** (record [`transcription-run.md`](../acceptance/transcription-run.md):
 `llama-server` transcribes locally), which completes P3. **P4, images, is
 built and pinned 2026-09-28** (record [`images-run.md`](../acceptance/images-run.md):
-15 fixture and 2 live checks, the OpenAI SDK unchanged). **P5-P8 are not
-built.** §0 is measured, and §6's authenticated measurements
+15 fixture and 2 live checks, the OpenAI SDK unchanged). **P5, videos, is
+built and pinned 2026-09-28** (record [`videos-run.md`](../acceptance/videos-run.md):
+8 fixture and 2 live checks; OpenAI's own video API had shut down, so
+OpenRouter is the backend). **P6-P8 are not built.** §0 is measured, and §6's authenticated measurements
 are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
 recommended; #3 (replace `modelId`) and #8 (Eugene runs some
@@ -788,3 +790,7 @@ measurement:**
   two Sora models today): it can serve nothing.
 - **Metrics units:** the seconds of video asked for, on the submit's row
   (schema v9).
+
+**P5 is built in one part** (specs `c09b264`, driver `c9e0dcb`, gateway
+`ccfaa7c`), pinned in both installers; record
+[`videos-run.md`](../acceptance/videos-run.md).

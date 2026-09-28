@@ -467,3 +467,12 @@ at 480p).
   [WKE=invalid_image]"*) and no `usage`.
 - **An unknown job is a 404** naming it. **There is no list, delete or remix
   route** (`GET /videos`, `DELETE /videos/{id}`, `POST .../remix`: plain 404s).
+
+**What the OpenAI SDK sends for videos** (3.20.0, capture listener): **every
+`videos.create` is multipart**, with or without a file (`prompt`, `model`,
+`seconds`, `size`, and `input_reference` as a file part). A dict
+`input_reference` (`{"image_url": ...}`) is refused by the SDK itself before
+sending. `create_and_poll` polls `GET /videos/{id}`; `download_content` is
+`GET /videos/{id}/content`, with `?variant=` when one is asked for. **The SDK
+warns on every video call** that *"The Sora API is scheduled to permanently
+shut down on September 24, 2026."*
