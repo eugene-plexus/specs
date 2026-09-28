@@ -96,14 +96,63 @@ the check accepts either. And the lifecycle verbs answer **202**, not
 delta — both the agent's contract working as written, asserted wrongly
 by the harness first.
 
-## Pending, named
+## Hosted Jev through OpenRouter, 2026-09-28
 
-- **Hosted Jev is unverified.** No TypeSafe credentials exist here, so
-  the hosted provider (`typesafe`, key-required, always
-  cloud-classified) is covered by driver fixture tests only. One real
-  synthetic-data request with authorized credentials, a pinned model id
-  and a recorded result is Troy's to run before "hosted Jev access" is
-  claimed as verified. The local release does not wait on it.
+The pending item below said hosted Jev needed TypeSafe credentials. It no
+longer does: OpenRouter serves Jev at `https://openrouter.ai/api/v1/systemone`
+with the same pinned protocol, so the `typesafe` provider was pointed there
+(`baseUrl: https://openrouter.ai/api`, `upstreamModelId: typesafe/jev-1.13`,
+an OpenRouter key in the driver's `apiKey`). `scripts/b2-hosted-jev-check.py`
+builds a real control root, an enrolled agent, a real gateway and two
+`typesafe` drivers (one with a deliberately invalid key), run from the B2
+venv in WSL2:
+
+```
+cd /mnt/d/py/eugene-plexus/specs/scripts && ~/b2/ep-venv/bin/python b2-hosted-jev-check.py
+```
+
+**ALL 9 CHECKS PASSED**, on the second attempt: the first was cut off by the
+upstream, not by Eugene (see below).
+
+1. The provider starts against OpenRouter: `locality: external`, `jev` →
+   `typesafe/jev-1.13`, decisions only (noul, choice, score).
+2. The gateway lists `jev` as decisions-only.
+3. A real hosted decision through gateway and driver on the refund ticket:
+   `refunded` 0.98, routed `billing`, urgency 0.17, 441 input tokens.
+4. String, object and array states all decided; end-to-end p50 **278 ms**,
+   max 399 ms over 6 calls.
+5. A chat request naming `jev` is refused with the decision door's name.
+6. A client key decides; a local-only key is refused with 403, because the
+   provider is external.
+7. An unknown question field is a 422 at the gateway.
+8. A key OpenRouter refuses comes back as a refusal, not a hang (see finding 2).
+9. The key appears in no process log and no response (32 responses scanned).
+
+**Findings, recorded and not fixed:**
+
+1. **The upstream revision is not surfaced.** `gateway.yaml`
+   (`SystemOneResponse.model`) says the backend's own model revision is
+   "surfaced in `x_eugene_plexus`". The driver records it
+   (`reportedModel: typesafe/jev-1.13-20260917`, `systemone_http.py`), but
+   `CompletionRoutingInfo` has no field for it and the gateway drops it.
+   Either the contract gains the field or the sentence changes.
+2. **A provider-refused key blames the caller.** OpenRouter's 401 for a bad
+   key reached the client as HTTP 400 `invalid_request_error` ("The backend
+   rejected the request: systemone_http returned 401: User not found."). The
+   driver's `_backend_error` (`routes/generate.py`) turns every upstream 4xx
+   except 408/409/425/429 into its own 400, so this is not decision-specific:
+   a chat driver whose OpenAI, OpenRouter or xAI key is revoked says the same.
+   R3.4 fixed the neighbouring case, where the driver refuses the gateway
+   (502 `upstream_auth_error`); this is the provider refusing the driver.
+3. **The hosted service stalls in bursts.** The first attempt's opening
+   decision took 22 s and the next was an OpenRouter 503 ("upstream connect
+   error … connection timeout"). A direct probe minutes later saw 4 of 6
+   calls fail after 20-30 s (read timeouts, 503, 520). Eugene reported it
+   correctly as `upstream_error` with "outcome unknown, no automatic replay",
+   but that sentence appears twice in one message, once from the driver and
+   once from the gateway.
+
+## Pending, named
 - **The documented SDK half is blocked on distribution, measured:**
   PyPI's `typesafe` package is an unrelated library capped at 0.9.1, so
   `pip install typesafe==1.13.*` cannot install TypeSafe's SDK. The

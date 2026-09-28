@@ -235,7 +235,7 @@ in any SDK you use; a retried decision is a second decision.
 | --- | --- |
 | Kev (`jaredpalmer/kev-0.8b`), supervised by the agent | **Measured** on WSL2 CPU ([run](acceptance/decision-run.md)); CUDA, ROCm, Metal unverified |
 | Another System One server (`systemone_custom`) | Supported when it passes the answer checks above; see [the recipe](application-workflows.md#register-another-system-one-server) |
-| Hosted Jev (`typesafe`) | **Unverified** — fixture tests only; always external, refused to local-only keys, never a fallback for a local model |
+| Hosted Jev (`typesafe`) | **Measured** through OpenRouter's System One endpoint, 2026-09-28 ([run](acceptance/decision-run.md#hosted-jev-through-openrouter-2026-09-28), [recipe](application-workflows.md#hosted-jev)); TypeSafe's own endpoint unverified. Always external, refused to local-only keys, never a fallback for a local model |
 | Vercel `/v1/evaluate`, AI SDK evaluation | Not implemented — a different dialect |
 
 Decision requests are not yet rows in `GET /v1/metrics`.

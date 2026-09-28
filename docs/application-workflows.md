@@ -198,11 +198,29 @@ naming the defect:
 Before trusting a server, send it the curl request above and one question of
 each kind with your real data. Eugene checks shape, not accuracy.
 
-### Hosted Jev (unverified)
+### Hosted Jev
 
 Provider **TypeSafe (hosted Jev)** (`typesafe`) sends decisions to
 `https://api.typesafe.ai` with your TypeSafe `apiKey` set on the driver, never
 in the client request. It is always external: local-only keys are refused before
 any state leaves the machine, and it is never used as a fallback for a local
-model. It has passed fixture tests only. No credentialed request has been
-recorded, so do not rely on it until one has.
+model.
+
+**Through OpenRouter (verified 2026-09-28).** OpenRouter serves Jev with the
+same protocol, so the same provider works with an OpenRouter key:
+
+| Driver field | Value |
+| --- | --- |
+| Provider | `typesafe` |
+| `baseUrl` | `https://openrouter.ai/api` |
+| `apiKey` | your OpenRouter key |
+| `modelId` | the name your clients use, for example `jev` |
+| `upstreamModelId` | `typesafe/jev-1.13`, or `jev-latest` (OpenRouter refuses `typesafe/jev-latest`) |
+
+The run is [recorded here](acceptance/decision-run.md#hosted-jev-through-openrouter-2026-09-28).
+Two things to know. The hosted service stalls in bursts: in one probe, 4 of 6
+calls failed after 20-30 s, while healthy calls take about 300 ms. Set the
+driver's request timeout to what your application can wait. And a key the
+provider refuses currently comes back as a 400 `invalid_request_error`
+naming the provider's 401, not as a credential error; check the driver's key
+first when you see one.
