@@ -101,14 +101,16 @@ and `transcription`, and a local-only key is served by it.
 
 ## Not done, named
 
-- **Agent, control and library still pin P2's specs.** None of them uses a
-  speech or transcription schema, so they regenerate once, regen-only, at
-  P3's end. That re-pin is owed.
-
-- **OpenAI's own API** is classified for transcription by id and untested:
-  there is no OpenAI key.
-- **ElevenLabs' speech-to-text** is deferred (P3-1).
-- **Translation** is deferred (P3-4).
+- ~~**Agent, control and library still pin P2's specs.**~~ Re-pinned
+  regen-only at P3's end (specs `02330fb`).
+- **OpenAI's own API transcribes, live since 2026-09-28 (late)**: through an
+  OpenAI account, `whisper-1` heard the ElevenLabs clip word for word and
+  timed each word in `verbose_json`, and `gpt-4o-mini-transcribe` heard
+  `tts-1`'s.
+- **ElevenLabs' speech-to-text** is deferred (P3-1). Its reason, a key
+  without `speech_to_text`, is gone since the key was widened.
+- **Translation** is deferred (P3-4). Its reason, no OpenAI key, is gone
+  too: `whisper-1` is on the account.
 - **Streaming transcription** (`stream: true`, SSE deltas) is refused, not
   served. `llama-server` supports it (measured), OpenRouter ignores it.
 - **No `ui` screen consumes P3.** The agent's browser proxy forwards raw

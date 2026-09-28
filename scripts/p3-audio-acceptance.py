@@ -29,7 +29,9 @@ from its own interpreter: this one if it has `openai`, else `$EP_SDK_PYTHON`.
 
 No live service is touched unless `--live` is passed, which adds OpenRouter
 (`hexgrad/kokoro-82m` speaks; `google/gemini-2.5-flash-lite` hears it back;
-`openai/whisper-large-v3-turbo` transcribes) and ElevenLabs with the keys in
+`openai/whisper-large-v3-turbo` transcribes), ElevenLabs (`eleven_flash_v2_5`
+speaks, as WAV and streamed mp3) and an OpenAI account (`tts-1` speaks;
+`whisper-1` and `gpt-4o-mini-transcribe` transcribe) with the keys in
 `C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env` (or `$EP_KEYS`).
 Each key is handed to its driver only in the environment variable the engine
 already falls back to (`OPENAI_API_KEY`, `ELEVENLABS_API_KEY`), and the last
@@ -114,6 +116,10 @@ LIVE_HEARS = "google/gemini-2.5-flash-lite"
 #: answered the fox in 0.6 s in the morning and hung past 90 s on every file
 #: in the afternoon, while Whisper took our streaming WAV in 2.3 s.
 LIVE_TRANSCRIBES = "openai/whisper-large-v3-turbo"
+#: ElevenLabs' cheapest speech model, and an OpenAI account's speech and two
+#: transcription models (the key Troy added 2026-09-28).
+LIVE_EL = "eleven_flash_v2_5"
+LIVE_OPENAI = ["tts-1", "whisper-1", "gpt-4o-mini-transcribe"]
 
 #: Transcription through the SDK. Each job is `audio.transcriptions.create`
 #: arguments with `file` a path, or `translate: true` for the other door; the
@@ -414,7 +420,8 @@ def serve(kind: str, directory: Path, port: int) -> None:
             fmt, media = EL_FORMATS[output]
             return audio(model, fmt, media, "[slow]" in body.get("text", ""), whole=whole)
 
-    elif kind in ("router", "eleven", "voiceless", "scoped", "llama", "asr", "openrouter", "el-live"):
+    elif kind in ("router", "eleven", "voiceless", "scoped", "llama", "asr", "openrouter", "el-live",
+                  "oai-live"):
         from eugene_plexus_inference_driver.app import create_app
         from eugene_plexus_inference_driver.settings import Settings
 
@@ -455,7 +462,7 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
 
     names = ["control", "agent", "gateway", "fixture", "router", "eleven", "voiceless", "scoped", "llama"]
     if live:
-        names += ["openrouter", "el-live"]
+        names += ["openrouter", "el-live", "oai-live"]
     if llama_dir is not None:
         names += ["llama-server", "asr"]
     sockets = [socket.socket() for _ in names]
@@ -470,7 +477,13 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
     passphrase = secrets.token_urlsafe(24)
     passed = 0
     sdk = sdk_python()
-    live_keys = {"OPENAI_API_KEY": _key("OPENROUTER_API_KEY"), "ELEVENLABS_API_KEY": _key("ELEVENLABS_API_KEY")} if live else {}
+    # Three keys, each handed only to its own driver, in the variable its
+    # engine falls back to: OpenRouter's and OpenAI's both as OPENAI_API_KEY.
+    live_keys = {
+        "openrouter": _key("OPENROUTER_API_KEY"),
+        "elevenlabs": _key("ELEVENLABS_API_KEY"),
+        "openai": _key("OPENAI_API_KEY"),
+    } if live else {}
 
     def ok(message: str) -> None:
         nonlocal passed
@@ -667,8 +680,10 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         if live:
             driver("openrouter", {"provider": "openrouter",
                                   "catalogueInclude": [LIVE_SPEAKS, LIVE_HEARS, LIVE_TRANSCRIBES]},
-                   {"OPENAI_API_KEY": live_keys["OPENAI_API_KEY"]})
-            driver("el-live", {"provider": "elevenlabs"}, {"ELEVENLABS_API_KEY": live_keys["ELEVENLABS_API_KEY"]})
+                   {"OPENAI_API_KEY": live_keys["openrouter"]})
+            driver("el-live", {"provider": "elevenlabs"}, {"ELEVENLABS_API_KEY": live_keys["elevenlabs"]})
+            driver("oai-live", {"provider": "openai", "catalogueInclude": LIVE_OPENAI},
+                   {"OPENAI_API_KEY": live_keys["openai"]})
         write("gateway", "bootstrap.json", bootstrap("gateway"))
         write("gateway", "gateway.yaml", {"routingRefreshSeconds": 2, "modelSlots": slots})
         start("gateway")
@@ -1057,19 +1072,67 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
             assert len(said & words) * 2 >= len(said), (answer, sorted(said))
             ok(f"live: {LIVE_TRANSCRIBES} transcribes that WAV through the SDK as {answer['body']['text'].strip()!r}")
 
-            def refused_models():
-                summary = call("el-live", "GET", "/v1/info", operator).json().get("catalogue") or {}
-                return summary.get("error") or ""
-            wait(lambda: "models_read" in refused_models(), "ElevenLabs' live refusal", 60)
-            assert not [m for m in models() if m.startswith("el-live/")], sorted(models())
-            response = speak(key, "el-live/eleven_flash_v2_5", voice="21m00Tcm4TlvDq8ikWAM")
-            assert response.status_code == 404, response.text[:300]
-            ok(f"live: the ElevenLabs key offers no model, as P3-2 decided, and says why: {refused_models()!r}")
+            # ElevenLabs, with the key widened on 2026-09-28 (it reads models
+            # and voices now; P3-2 said no model is offered until it can).
+            el_model = f"el-live/{LIVE_EL}"
+            wait(lambda: el_model in models(), "ElevenLabs' live models", 60)
+            el_voices = models()[el_model].get("voices") or []
+            assert el_voices, models()[el_model]
+            assert not [m for m in models() if m.startswith("el-live/") and "sts" in m], sorted(models())
+            el_clip = directory / "el-live.wav"
+            el_said = "The quick brown fox jumps over the lazy dog near the river bank."
+            results = by_sdk(key, [
+                {"model": el_model, "voice": el_voices[0], "input": el_said, "response_format": "wav",
+                 "save": str(el_clip)},
+                {"model": el_model, "voice": el_voices[0], "response_format": "mp3",
+                 "input": "This longer sentence gives the audio a chance to arrive in pieces while the rest "
+                          "of it is still being spoken."},
+            ])
+            assert results[0]["status"] == 200 and results[0]["type"] == "audio/wav", results[0]
+            el_raw = el_clip.read_bytes()
+            assert wav_header(el_raw) == STREAMING_WAV and len(el_raw) > 44 + 48000, (wav_header(el_raw), len(el_raw))
+            got = results[1]
+            assert got["status"] == 200 and got["type"] == "audio/mpeg" and got["length"] > 10_000, got
+            print(f"INFO live ElevenLabs {LIVE_EL} voice {el_voices[0]}: wav {(len(el_raw) - 44) / 48000:.2f} s; "
+                  f"mp3 {got['length']} bytes in {len(got['arrivals'])} reads, first {got['arrivals'][0]:.2f} s, "
+                  f"last {got['arrivals'][-1]:.2f} s", flush=True)
+            ok(f"live: ElevenLabs speaks through the gateway from the OpenAI SDK unchanged, {len(el_voices)} "
+               f"voices listed: a WAV made from its pcm, and mp3 streamed")
+
+            # An OpenAI account: its own speech and transcription models.
+            tts, whisper, mini = (f"oai-live/{m}" for m in LIVE_OPENAI)
+            wait(lambda: {tts, whisper, mini} <= set(models()), "OpenAI's live models", 60)
+            assert models()[tts]["surfaces"] == ["speech"] and models()[whisper]["surfaces"] == ["transcription"]
+            oai_clip = directory / "oai-live.mp3"
+            results = by_sdk(key, [
+                {"model": tts, "voice": "alloy", "input": el_said, "response_format": "mp3", "save": str(oai_clip)},
+                {"model": tts, "voice": "alloy", "input": "Short.", "response_format": "wav"},
+            ])
+            assert results[0]["status"] == 200 and results[0]["type"] == "audio/mpeg", results[0]
+            assert results[1]["status"] == 200 and results[1]["type"] == "audio/wav", results[1]
+            answers = transcribe_by_sdk(key, [
+                {"model": whisper, "file": str(el_clip)},
+                {"model": mini, "file": str(oai_clip)},
+                {"model": whisper, "file": str(oai_clip), "response_format": "verbose_json",
+                 "timestamp_granularities": ["word"]},
+            ])
+            said_words = {w for w in el_said.lower().strip(".").split() if len(w) >= 4}
+            for answer in answers:
+                assert answer["status"] == 200, answer
+                heard = {"".join(c for c in w if c.isalpha()) for w in answer["body"]["text"].lower().split()}
+                assert len(said_words & heard) * 2 >= len(said_words), (answer, sorted(said_words))
+            verbose = answers[2]["body"]
+            assert verbose.get("language") and verbose.get("duration") and verbose.get("words"), verbose
+            print(f"INFO live OpenAI: whisper-1 heard ElevenLabs as {answers[0]['body']['text'].strip()!r}; "
+                  f"gpt-4o-mini-transcribe heard tts-1 as {answers[1]['body']['text'].strip()!r}; "
+                  f"{len(verbose['words'])} words timed", flush=True)
+            ok("live: an OpenAI account speaks with tts-1 (mp3 and its own wav), whisper-1 transcribes the "
+               "ElevenLabs clip, gpt-4o-mini-transcribe the tts-1 one, and whisper-1's verbose_json times each word")
 
             leaked = [str(p) for p in directory.rglob("*") if p.is_file()
                       and any(k.encode() in p.read_bytes() for k in live_keys.values())]
             assert not leaked, f"a live key was written to {len(leaked)} file(s) of the run's state"
-            ok(f"neither live key is in any of the {sum(1 for p in directory.rglob('*') if p.is_file())} files "
+            ok(f"none of the three live keys is in any of the {sum(1 for p in directory.rglob('*') if p.is_file())} files "
                "of the run's state and logs")
 
         # The fixture's ElevenLabs keys were handed over the same way.

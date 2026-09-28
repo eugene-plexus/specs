@@ -14,7 +14,8 @@
 | gateway | `6be3f0a`, `3e54fbb` |
 
 - **`scripts/p4-images-acceptance.py`**: 15 fixture checks, in specs CI.
-  `--live` adds two OpenRouter checks. **17 of 17 PASS with `--live`.**
+  `--live` adds OpenRouter and, since the OpenAI key was added, OpenAI's own
+  API. **18 of 18 PASS with `--live`.**
 - **`scripts/p4-sabotage.py`: 31 of 31 caught**, and two declared escapes: the
   driver's own refusals of a mask and of a stream it cannot give, which the
   gateway's routing reaches first (removing both layers is caught, twice).
@@ -32,9 +33,11 @@
 `client.images.generate(model=..., prompt=..., size="1536x1024")` from the
 unmodified OpenAI SDK (3.20.0) is answered through an OpenRouter account's
 flux and an OpenAI account's `gpt-image-1`, as `b64_json` the SDK decodes.
-OpenAI's half is proven against a fixture playing its API from its own spec,
-since there is no OpenAI key; OpenRouter's is proven live as well: flux made a
-512×512 image and edited it, and `gpt-image-1-mini` streamed one.
+Both are proven live. On OpenRouter, flux made a 512×512 image and edited
+it, and `gpt-image-1-mini` streamed one. On OpenAI's own API (the key added
+2026-09-28, late), `gpt-image-1-mini` made an image, took a **masked edit
+through the multipart form** (the setting only OpenAI honours), and streamed a
+partial render at 3.9 s and the image at 6.2 s.
 
 **A URL input is refused.** An edit whose `image_url` is not a `data:` URL is
 a 400 naming `images[0].image_url` ("is not fetched"), a `file_id` a 400
@@ -121,8 +124,10 @@ with a `data:` URL is served.
 
 ## Not done, named
 
-- **OpenAI's own image API is untested live**: there is no OpenAI key. It is
-  classified by id (`gpt-image-*`, `dall-e-*`) and carried as its API checks.
+- **`dall-e-*` is untested**: the OpenAI account lists none. It is classified
+  by id and asked for `b64_json`, against the fixture only.
+- **`chatgpt-image-latest` was filed as nothing** until classifying the real
+  account's 134 ids found it (driver `96b6026`).
 - **Live streaming gave no partial render.** `gpt-image-1-mini` at low quality
   answered in 7.5 s with one `completed` event, although `partial_images: 1`
   was sent (the fixture proves it reaches the upstream). OpenAI's contract

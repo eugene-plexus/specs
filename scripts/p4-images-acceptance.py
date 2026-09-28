@@ -30,10 +30,13 @@ one by the clock. It keeps every request per model, so a check can say what
 reached an upstream and what did not.
 
 No live service is touched unless `--live` is passed, which adds OpenRouter
-with the key in `C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env` (or
-`$EP_KEYS`), handed to its driver only as `OPENAI_API_KEY`: flux.2-klein-4b
-makes a 512x512 image through the SDK and then edits it, and gpt-image-1-mini
-streams one at low quality. The live run costs about two cents.
+and an OpenAI account with the keys in
+`C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env` (or `$EP_KEYS`), each
+handed only to its own driver as `OPENAI_API_KEY`. On OpenRouter,
+flux.2-klein-4b makes a 512x512 image through the SDK and then edits it, and
+gpt-image-1-mini streams one at low quality. On OpenAI's own API,
+gpt-image-1-mini generates, edits the result with a mask (the one setting only
+OpenAI honours), and streams. The live run costs about five cents.
 
 Run in an environment containing all five Python components (on this box,
 `agent/.venv`). Logs and state stay in a temporary tree.
@@ -50,10 +53,12 @@ import os
 from pathlib import Path
 import secrets
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
 import time
+import zlib
 
 import httpx
 import yaml
@@ -123,6 +128,23 @@ GAP = 1.2
 #: The live models, measured on OpenRouter 2026-09-28.
 LIVE_MAKES = "black-forest-labs/flux.2-klein-4b"
 LIVE_STREAMS = "openai/gpt-image-1-mini"
+#: The same model on OpenAI's own API, through an OpenAI account.
+LIVE_OPENAI = "gpt-image-1-mini"
+
+
+def rgba_png(width: int, height: int, clear: tuple[int, int, int, int]) -> bytes:
+    """A mask for OpenAI's edit: opaque white, fully transparent inside
+    `clear` (x0, y0, x1, y1), which is where the edit may change the image."""
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    x0, y0, x1, y1 = clear
+    opaque, hole = b"\xff\xff\xff\xff", b"\x00\x00\x00\x00"
+    solid = b"\x00" + opaque * width
+    holed = b"\x00" + opaque * x0 + hole * (x1 - x0) + opaque * (width - x1)
+    raw = b"".join(holed if y0 <= y < y1 else solid for y in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
 
 #: What the SDK does, in its own interpreter. Each job is `images.generate`,
 #: `images.edit` or `images.create_variation` arguments, with image paths
@@ -369,7 +391,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 return StreamingResponse(frames(), media_type="text/event-stream")
             return {"created": int(time.time()), "data": [{"b64_json": b64(model)}]}
 
-    elif kind in ("router", "oai", "openrouter"):
+    elif kind in ("router", "oai", "openrouter", "oai-live"):
         from eugene_plexus_inference_driver.app import create_app
         from eugene_plexus_inference_driver.settings import Settings
 
@@ -410,7 +432,7 @@ def exercise(directory: Path, *, live: bool) -> None:
 
     names = ["control", "agent", "gateway", "fixture", "router", "oai"]
     if live:
-        names += ["openrouter"]
+        names += ["openrouter", "oai-live"]
     sockets = [socket.socket() for _ in names]
     for sock in sockets:
         sock.bind(("127.0.0.1", 0))
@@ -424,6 +446,7 @@ def exercise(directory: Path, *, live: bool) -> None:
     passed = 0
     sdk = sdk_python()
     live_key = _key("OPENROUTER_API_KEY") if live else None
+    openai_key = _key("OPENAI_API_KEY") if live else None
     files = directory / "images"
     files.mkdir()
     png_file, jpeg_file, pdf_file = files / "square.png", files / "photo.jpg", files / "not-an-image.png"
@@ -568,6 +591,8 @@ def exercise(directory: Path, *, live: bool) -> None:
         if live:
             driver("openrouter", {"provider": "openrouter", "catalogueInclude": [LIVE_MAKES, LIVE_STREAMS]},
                    {"OPENAI_API_KEY": live_key})
+            driver("oai-live", {"provider": "openai", "catalogueInclude": [LIVE_OPENAI]},
+                   {"OPENAI_API_KEY": openai_key})
         slots = [{"model": "pictures", "targets": ["router/acme/flux", "router/acme/mini"]}]
         write("gateway", "bootstrap.json", bootstrap("gateway"))
         write("gateway", "gateway.yaml", {"routingRefreshSeconds": 2, "modelSlots": slots})
@@ -852,9 +877,39 @@ def exercise(directory: Path, *, live: bool) -> None:
                   f"{LIVE_STREAMS} stream {kinds} at {[e['at'] for e in flowed['events']]}", flush=True)
             ok(f"live: the SDK makes an image with {LIVE_MAKES}, edits it through input_references, and streams "
                f"one from {LIVE_STREAMS}, all through the gateway")
-            leaked = [str(p) for p in directory.rglob("*") if p.is_file() and live_key.encode() in p.read_bytes()]
-            assert not leaked, f"the live key was written to {len(leaked)} file(s) of the run's state"
-            ok("the live key is in none of the run's state and logs")
+
+            # OpenAI's own API: the same SDK calls, and the masked edit only it honours.
+            oai = f"oai-live/{LIVE_OPENAI}"
+            wait(lambda: oai in models(), "the OpenAI account's image model", 60)
+            listed_oai = models()[oai]
+            assert listed_oai["surfaces"] == ["image"] and listed_oai["image_mask"] is True, listed_oai
+            [made] = by_sdk(key, [{"model": oai, "prompt": "a plain blue square on a white background",
+                                   "size": "1024x1024", "quality": "low"}])[:1]
+            assert made["status"] == 200 and kind_of(image(made)) == "png", made.get("error")
+            source = files / "oai-live.png"
+            source.write_bytes(image(made))
+            mask = files / "oai-mask.png"
+            mask.write_bytes(rgba_png(1024, 1024, (256, 256, 768, 768)))
+            [edited] = by_sdk(key, [{"kind": "edit", "model": oai, "prompt": "make the square bright red",
+                                     "image": str(source), "mask": str(mask), "size": "1024x1024",
+                                     "quality": "low"}])[:1]
+            assert edited["status"] == 200 and kind_of(image(edited)) == "png", edited.get("error")
+            [flowed_oai] = by_sdk(key, [{"model": oai, "prompt": "a yellow star", "quality": "low",
+                                         "size": "1024x1024", "stream": True, "partial_images": 1}])[:1]
+            assert flowed_oai["status"] == 200, flowed_oai
+            kinds = [e["type"] for e in flowed_oai["events"]]
+            assert kinds[-1] == "image_generation.completed", kinds
+            print(f"INFO live OpenAI {LIVE_OPENAI}: generation {len(image(made))} bytes, usage {made['usage']}; "
+                  f"masked edit {len(image(edited))} bytes; stream {kinds} at "
+                  f"{[e['at'] for e in flowed_oai['events']]}", flush=True)
+            ok(f"live: the same SDK calls reach OpenAI's own API through an OpenAI account: {LIVE_OPENAI} makes an "
+               f"image, edits it through the multipart form with a mask, and streams one")
+
+            keys = [live_key, openai_key]
+            leaked = [str(p) for p in directory.rglob("*")
+                      if p.is_file() and any(k.encode() in p.read_bytes() for k in keys)]
+            assert not leaked, f"a live key was written to {len(leaked)} file(s) of the run's state"
+            ok("neither live key is in the run's state and logs")
 
         (directory / "summary.json").write_text(json.dumps({"passed": passed}, indent=2), encoding="utf-8")
         print(f"{passed} PASS", flush=True)

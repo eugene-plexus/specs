@@ -33,10 +33,12 @@
 - **ElevenLabs speaks through `/v1/audio/speech` from the OpenAI SDK
   unchanged:** proven against a fixture playing ElevenLabs' API as measured
   (the voice in the path, `output_format` in the query, `xi-api-key`, its
-  error bodies word for word). **Not live**: the key available lacks
-  `models_read`, and P3-2 decided that such a key offers no model. The live run
-  shows exactly that, in ElevenLabs' own words. With a key that can read
-  models, `--live` needs one more check and no code.
+  error bodies word for word). **And live, since 2026-09-28 (late)**, once
+  Troy widened the key: its 11 models are read (the 2 speech-to-speech ones
+  not offered) with 22 voices, and `eleven_flash_v2_5` spoke through the
+  unmodified SDK, a WAV made from its pcm and an mp3 streamed from 0.19 s,
+  which OpenAI's `whisper-1` then transcribed word for word. No code changed:
+  the check was added to `--live`, as this record said it would be.
 - **Nothing buffers, measured by clock.** The fixture sends six chunks 0.4 s
   apart. Through the driver and the gateway, the SDK's first byte arrived at
   0.02-0.06 s and the last at 2.05-2.09 s, for both engines, and raw `pcm`
@@ -132,13 +134,13 @@ Live, on 2026-09-28:
 
 ## Not done, named
 
-- **ElevenLabs live**, for want of a key with `models_read` (above).
 - **A replica failover through real processes.** Replicas of one speech model
   are two connections with the same name on two machines, and this run is one
   machine. Failover between replicas, and the commit point after the first
   byte, are unit-tested in the gateway (`tests/test_speech.py`).
-- **OpenAI's own API** is classified for speech (all six formats) and is
-  untested: there is no OpenAI key.
+- **OpenAI's own API speaks, live since 2026-09-28 (late)**: an OpenAI
+  account's `tts-1` gave mp3 and its own wav through the SDK. The other four
+  formats are asked of it and unmeasured.
 - **No local engine speaks.** A single-model driver is chat, embeddings or
   decisions; a local OpenAI-shaped speech server is not yet a speech backend.
 - **Metrics units** (characters for speech) came with P3b's schema v7

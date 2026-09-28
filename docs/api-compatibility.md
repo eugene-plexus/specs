@@ -279,9 +279,8 @@ backend makes them. The OpenAI SDKs work unchanged, including
 `with_streaming_response`.
 
 - **Backends:** OpenRouter's speech models, through an OpenRouter connection,
-  and ElevenLabs, through an ElevenLabs connection (a new provider). OpenAI's
-  own API is classified the same way and is untested here. No local engine
-  speaks yet.
+  ElevenLabs, through an ElevenLabs connection (a new provider), and OpenAI's
+  own API (`tts-1` verified). No local engine speaks yet.
 - **ElevenLabs needs a key that can read models** (`models_read`). A key
   without it offers no model, and the connection's `/v1/info` says which
   permission is missing, in ElevenLabs' own words. A key that cannot read
@@ -324,8 +323,8 @@ SDKs work unchanged.
 
 - **Backends:** OpenRouter's transcription models, and a `llama-server`
   whose projector hears (`/props` reports audio), which is then listed with
-  both `chat` and `transcription` surfaces. OpenAI's own API is classified
-  the same way and is untested here.
+  both `chat` and `transcription` surfaces, and OpenAI's own API (`whisper-1`
+  and `gpt-4o-mini-transcribe` verified).
 - **Tiers, as chat.** A slot's fallback tiers are used, holding only
   backends that transcribe. Unlike speech, a transcript from another model is
   still a transcript.
@@ -364,8 +363,8 @@ image, `image[]` for several, `mask`) or its JSON form (`images[].image_url`,
 - **Backends:** OpenRouter's image models (Gemini's image+text models answer
   here as well as on chat) and OpenAI's `gpt-image-*` and `dall-e-*`.
   OpenRouter has no edit route: an edit reaches it as a generation with the
-  images as `input_references`. OpenAI's own API is classified by id and
-  untested here (no OpenAI key).
+  images as `input_references`. OpenAI's own API is verified with
+  `gpt-image-1-mini`, a masked edit included; `dall-e-*` is not.
 - **Tiers, as chat,** each holding only models whose listing takes the
   request. `x_eugene_plexus.image_streaming`, `image_edits` and `image_mask`
   on `GET /v1/models` say what each model does.
