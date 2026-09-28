@@ -11,8 +11,9 @@
   agent and 12 in the UI.
 - **Pester** (`install-preflight.Tests.ps1`): 62 of 62, including the port
   guard added here, whose two sabotages are both caught.
-- **The Windows service path has not run for real.** Its first run is
-  Amish_Station (§4).
+- **The Windows service path has now run once, on Amish_Station**
+  (2026-09-27, owner-performed and owner-reported; §4). No script
+  measured it.
 
 | Repo | Commit | What changed |
 | --- | --- | --- |
@@ -115,14 +116,22 @@ Two limits:
 
 ## 4. What it does not prove
 
-- **The Windows service path has never run.** That is the SYSTEM task, the
-  wrapper and `install.ps1 -Update` as SYSTEM. It cannot run here without
-  touching this machine's live service.
+- **The Windows service path has run once, and only as the owner's own
+  report.** That is the SYSTEM task, the wrapper and `install.ps1 -Update`
+  as SYSTEM. It cannot run here from a script without touching this
+  machine's live service.
   - The wrapper did run for real as a user. That found PowerShell 5.1's
     `Start-Process` splitting a folder name with a space in it, now fixed.
-  - Amish_Station is the first real run. **Its first update is by hand**:
-    re-run the one-line installer once, because the version it runs has no
-    `POST /v1/node/update` to call.
+  - **2026-09-27, Amish_Station: Troy updated the machine from the
+    console** and reported it as successful, just before the session
+    that recorded it. It is the service install in
+    `C:\ProgramData\EugenePlexus`, so the one-shot task ran as SYSTEM.
+    Afterwards the agent answered `/healthz` `ok`. The install's
+    `update\` folder, which the wrapper creates, is dated 21:54 local
+    time; it is protected, so its `last.json` was not read.
+  - **Not recorded:** the commits it moved from and to, its duration,
+    and whether its models came back by themselves. A second update,
+    with Nodes → Versions read before and after, would close those.
 - **The per-user Linux path** (`systemd-run --user`) and **macOS** are covered
   by unit tests and sabotages only. macOS is refused with the installer
   command, as designed.
