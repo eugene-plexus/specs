@@ -1355,6 +1355,12 @@ components:
       properties:
         model:
           $ref: '#/components/schemas/RequestModel'
+        localOnly:
+          type: boolean
+          default: false
+          description: |
+            As `GenerateRequest.localOnly`: refuse before forwarding any text
+            unless the active engine is classified local.
         input:
           type: string
           minLength: 1
