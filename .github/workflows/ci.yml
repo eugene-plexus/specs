@@ -116,8 +116,8 @@ jobs:
         run: python specs/scripts/a6b-failover-acceptance.py
       - name: Verify P2a audio and PDF inputs at every door through signed processes
         run: python specs/scripts/p2-media-acceptance.py
-      - name: Verify P3a speech through signed processes and the unchanged OpenAI SDK
-        run: python specs/scripts/p3-speech-acceptance.py
+      - name: Verify P3 speech and transcription through signed processes and the unchanged OpenAI SDK
+        run: python specs/scripts/p3-audio-acceptance.py
       - name: Verify A7 encrypted checkpoints and destructive restore refusals
         run: python specs/scripts/a7-recovery-checks.py
       - name: Detect deliberately broken R8 profile defaults

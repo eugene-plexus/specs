@@ -12,9 +12,11 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/audio/speech` | Supported (P3a, since 2026-09-28) | Text in, audio bytes out, streamed as made, through OpenRouter's speech models and ElevenLabs. Voices are the provider's own ids. See [speech](#speech). |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
 | `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. `/v1/responses/input_tokens` counts (P2c). Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
-| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (image, video, transcription) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
+| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (image, video) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
-| Transcription, translation, image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P3b-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
+| `POST /v1/audio/transcriptions` | Supported (P3b, since 2026-09-28) | OpenAI's multipart form, through OpenRouter's transcription models and a `llama-server` whose projector hears. Tiers as chat. See [transcription](#transcription). |
+| `POST /v1/audio/translations` | Refused | A 400: only OpenAI's own API translates, and this door is deferred (P3-4). |
+| Image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P4-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
 | Content-part input: images, audio, PDFs | Supported subset | Ordered text plus inline PNG/JPEG, WAV/MP3 and PDF on user messages, sent only to backends that confirm that input. See [attachments](#attachments). |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
@@ -310,6 +312,45 @@ Verified live on 2026-09-28: the OpenAI Python SDK 3.20.0 got
 cannot read models, so ElevenLabs speaking through the product is proven
 against a fixture playing its measured API
 ([record](acceptance/speech-run.md)).
+
+## Transcription
+
+Since 2026-09-28 (P3b), `POST /v1/audio/transcriptions` takes OpenAI's
+multipart form (`file`, `model`, and optionally `language`, `prompt`,
+`response_format`, `temperature`, `timestamp_granularities[]`). The OpenAI
+SDKs work unchanged.
+
+- **Backends:** OpenRouter's transcription models, and a `llama-server`
+  whose projector hears (`/props` reports audio), which is then listed with
+  both `chat` and `transcription` surfaces. OpenAI's own API is classified
+  the same way and is untested here.
+- **Tiers, as chat.** A slot's fallback tiers are used, holding only
+  backends that transcribe. Unlike speech, a transcript from another model is
+  still a transcript.
+- **Formats:** `json` (the default) and `verbose_json` come from the
+  backend; `llama-server` makes `json` only and refuses the other, and that
+  refusal is relayed. `text` is rendered here from `json`. `srt` and `vtt`
+  are refused.
+- **The file is at most 25 MiB**, OpenAI's limit; over it is a 413 naming
+  `file`.
+- **Refused with a 400 naming the field:** `stream: true` (the answer is one
+  JSON document), `chunking_strategy`, `include[]`, speaker labels, unknown
+  fields, and `timestamp_granularities[]` without `verbose_json`.
+- **`llama-server`'s Qwen3-ASR preamble** (`language English<asr_text>...`)
+  is parsed away: the text is the transcript, as it is from OpenRouter.
+- **Usage** is OpenAI's: `{"type": "duration", "seconds"}` where the backend
+  counts audio, `{"type": "tokens", ...}` where it counts tokens.
+- **Metrics:** each row says its door, with characters for speech and audio
+  seconds for transcription.
+
+`POST /v1/audio/translations` answers a 400 saying no backend here
+translates.
+
+Verified on 2026-09-28: a real `llama-server` b11235 with Qwen3-ASR 0.6B
+transcribed the fox on this machine's CPU in 0.99 s through the OpenAI SDK,
+and `openai/whisper-large-v3-turbo` on OpenRouter transcribed speech
+`hexgrad/kokoro-82m` had made through the same gateway
+([record](acceptance/transcription-run.md)).
 
 ## Typed decisions (B2)
 

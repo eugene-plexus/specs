@@ -1,6 +1,6 @@
-"""Sabotage pass for p3-speech-acceptance.py.
+"""Sabotage pass for p3-audio-acceptance.py.
 
-Each sabotage puts back one way P3a could be wrong -- in the driver or the
+Each sabotage puts back one way P3 could be wrong -- in the driver or the
 gateway -- runs the fixture half of the acceptance, and requires it to FAIL.
 The acceptance runs the editable installs, so a source edit is what runs.
 
@@ -29,11 +29,12 @@ SPECS = Path(__file__).resolve().parents[1]
 ROOT = SPECS.parent
 DRIVER = ROOT / "inference-driver" / "src" / "eugene_plexus_inference_driver"
 GATEWAY = ROOT / "gateway" / "src" / "eugene_plexus_gateway"
-ACCEPTANCE = SPECS / "scripts" / "p3-speech-acceptance.py"
+ACCEPTANCE = SPECS / "scripts" / "p3-audio-acceptance.py"
 EL = DRIVER / "engines" / "elevenlabs_http.py"
 COMPAT = DRIVER / "engines" / "openai_compat_http.py"
 CATALOGUE = DRIVER / "engines" / "_catalogue.py"
 SPEAK = DRIVER / "routes" / "speak.py"
+TRANSCRIPTION = DRIVER / "transcription.py"
 ROUTING = GATEWAY / "routing.py"
 ROUTE = GATEWAY / "routes" / "inference.py"
 
@@ -175,7 +176,8 @@ SABOTAGES: list[Sabotage] = [
     ),
     Sabotage(
         "the speech door is not under client admission",
-        ((GATEWAY / "admission.py", '        "/v1/audio/speech",\n    }', "    }"),),
+        ((GATEWAY / "admission.py", '        "/v1/audio/speech",\n        "/v1/audio/transcriptions",\n',
+          '        "/v1/audio/transcriptions",\n'),),
     ),
     Sabotage(
         "stream_format sse is accepted",
@@ -190,6 +192,113 @@ SABOTAGES: list[Sabotage] = [
     Sabotage(
         "speech to a chat model is not told the right door",
         ((ROUTE, '    if surfaces and "speech" not in surfaces:\n', "    if False:\n"),),
+    ),
+    # --- P3b: transcription, in the driver ------------------------------------
+    Sabotage(
+        "the driver always sends a response_format",
+        ((COMPAT, '        if request.verbose:\n            fields["response_format"] = "verbose_json"\n',
+          '        fields["response_format"] = "verbose_json" if request.verbose else "json"\n'),),
+    ),
+    Sabotage(
+        "the driver drops the timestamp granularities",
+        ((COMPAT,
+          '            fields["timestamp_granularities[]"] = [g.value for g in request.timestampGranularities]\n',
+          "            pass\n"),),
+    ),
+    Sabotage(
+        "the driver drops the uploaded file's name",
+        ((COMPAT, "            request.audio.filename,\n", '            "audio",\n'),),
+    ),
+    Sabotage(
+        "Qwen3-ASR's preamble is left in the text",
+        ((TRANSCRIPTION, '    language, text = split_preamble(body["text"])\n',
+          '    language, text = None, body["text"]\n'),),
+    ),
+    Sabotage(
+        "a backend's usage is not read",
+        ((TRANSCRIPTION, "        usage=usage_from(body),\n", "        usage=None,\n"),),
+    ),
+    Sabotage(
+        "a llama-server that hears is not said to transcribe",
+        ((DRIVER / "routes" / "info.py", '            surfaces.append("transcription")\n', "            pass\n"),),
+    ),
+    Sabotage(
+        "the driver transcribes with a model that does not",
+        ((DRIVER / "routes" / "transcribe.py",
+          "    if not await transcribes(engine, entry.surfaces if entry is not None else None):\n",
+          "    if False:\n"),),
+    ),
+    Sabotage(
+        "the driver takes audio over 25 MiB",
+        ((DRIVER / "routes" / "transcribe.py", "    if len(audio) > MAX_AUDIO_BYTES:\n", "    if False:\n"),),
+        escapes="the gateway refuses the file first; the driver's copy is unit-tested (test_transcribe.py)",
+    ),
+    # --- P3b: transcription, in the gateway -------------------------------------
+    Sabotage(
+        "text is sent as JSON",
+        ((ROUTE, "    if fmt == \"text\":\n        return PlainTextResponse(result.text)\n",
+          "    if fmt == \"text\":\n        return JSONResponse(content={\"text\": result.text})\n"),),
+    ),
+    Sabotage(
+        "a transcription is handed to a model that only chats",
+        ((ROUTING, "            eligible = [b for b in tier.eligible() if b.transcribes]\n",
+          "            eligible = list(tier.eligible())\n"),),
+    ),
+    Sabotage(
+        "transcription keeps to the slot's first model, as speech does",
+        ((ROUTING, "        for tier in resolution.tiers:\n            eligible = [b for b in tier.eligible() if b.transcribes]\n",
+          "        for tier in resolution.tiers[:1]:\n            eligible = [b for b in tier.eligible() if b.transcribes]\n"),),
+    ),
+    Sabotage(
+        "srt is refused only as an unknown value",
+        ((GATEWAY / "chat_contract.py", '    if fmt in ("srt", "vtt"):\n', "    if False:\n"),),
+    ),
+    Sabotage(
+        "stream: true is accepted",
+        ((GATEWAY / "chat_contract.py", '    if stream is not None and stream.lower() not in ("false", "0"):\n',
+          "    if False:\n"),),
+    ),
+    Sabotage(
+        "chunking_strategy is refused only as an unknown field",
+        ((GATEWAY / "chat_contract.py",
+          '    "chunking_strategy": "is not carried: the backend decides how to split the audio",\n', ""),),
+    ),
+    Sabotage(
+        "timestamps are taken without verbose_json",
+        ((GATEWAY / "chat_contract.py", '    if granularities and fmt != "verbose_json":\n', "    if False:\n"),),
+    ),
+    Sabotage(
+        "the gateway takes a file over 25 MiB",
+        ((GATEWAY / "chat_contract.py", "    if len(audio) > MAX_UPLOAD_BYTES:\n", "    if False:\n"),),
+    ),
+    Sabotage(
+        "the translation door is not there",
+        ((ROUTE, '@router.post("/v1/audio/translations", dependencies=_auth)\n',
+          '@router.post("/v1/audio/translations-gone", dependencies=_auth)\n'),),
+    ),
+    Sabotage(
+        "the transcription door is not under client admission",
+        ((GATEWAY / "admission.py", '        "/v1/audio/transcriptions",\n        "/v1/audio/translations",\n',
+          '        "/v1/audio/translations",\n'),),
+    ),
+    Sabotage(
+        "a transcription row does not count its seconds",
+        ((ROUTE, '                door="transcription",\n                audio_seconds=seconds,\n',
+          '                door="transcription",\n                audio_seconds=None,\n'),),
+    ),
+    Sabotage(
+        "a speech row does not count its characters",
+        ((ROUTE, "                    characters=len(body.input),\n", "                    characters=None,\n"),),
+    ),
+    Sabotage(
+        "a wrong door names one fixed door, not the model's own",
+        ((ROUTE, "Send this request to {' or '.join(doors) or instead} instead. ",
+          "Send this request to {instead} instead. "),),
+    ),
+    Sabotage(
+        "the form is parsed without caching the body first",
+        ((ROUTE, "        await request.body()\n        form = await request.form(max_files=1, max_fields=32)\n",
+          "        form = await request.form(max_files=1, max_fields=32)\n"),),
     ),
 ]
 

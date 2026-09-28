@@ -12,7 +12,7 @@
 | inference-driver | `ad039d8`, `13f2664` |
 | gateway | `afff7f7`, `829ca38`, `e12e14a`, `8dab0ea`, `5b82a68` |
 
-- **`scripts/p3-speech-acceptance.py`: 15 checks with fixtures, 18 with
+- **`scripts/p3-audio-acceptance.py`: 15 checks with fixtures, 18 with
   `--live`, all PASS.** Five processes plus four drivers, signed and enrolled,
   as P2's run is. The requests the done-when names are made by **the OpenAI
   Python SDK 3.20.0, unchanged**, from its own interpreter.
@@ -141,4 +141,5 @@ Live, on 2026-09-28:
   untested: there is no OpenAI key.
 - **No local engine speaks.** A single-model driver is chat, embeddings or
   decisions; a local OpenAI-shaped speech server is not yet a speech backend.
-- **Metrics units** (characters for speech) are P3b.
+- **Metrics units** (characters for speech) came with P3b's schema v7
+  ([record](transcription-run.md)).

@@ -1,12 +1,17 @@
-"""P3a: text in, audio out, at `/v1/audio/speech`, through real signed processes.
+"""P3: speech and transcription, at `/v1/audio/*`, through real signed processes.
 
-A control root, an enrolled agent, a gateway and four inference-drivers, all
+A control root, an enrolled agent, a gateway and five inference-drivers, all
 started here with isolated state and ports:
 
 * `router` -- the real `openrouter` provider, its `baseUrl` a fixture playing
-  OpenRouter: an account listing (`/v1/models/user`) with two speech models
-  and one chat model, and OpenRouter's `/v1/audio/speech`, which makes `mp3`
-  and `pcm` only (measured 2026-09-28);
+  OpenRouter: an account listing (`/v1/models/user`) with two speech models,
+  two transcription models and one chat model; OpenRouter's
+  `/v1/audio/speech`, which makes `mp3` and `pcm` only; and its
+  `/v1/audio/transcriptions`, which answers `json` or `verbose_json` and
+  refuses `text` (all measured 2026-09-28);
+* `llama` -- a single-model `openai_compat_custom` driver against a fixture
+  playing `llama-server` b11235 with Qwen3-ASR: `/props` says it hears, it
+  answers `json` only, and its text carries the model's own preamble;
 * `eleven`, `voiceless` and `scoped` -- the real `elevenlabs` provider, each
   with its own key, against a fixture playing ElevenLabs' API as measured on
   2026-09-28: `xi-api-key`, the voice in the path, `output_format` in the
@@ -23,12 +28,17 @@ a check can say what reached an upstream and what did not.
 from its own interpreter: this one if it has `openai`, else `$EP_SDK_PYTHON`.
 
 No live service is touched unless `--live` is passed, which adds OpenRouter
-(`hexgrad/kokoro-82m` speaks; `google/gemini-2.5-flash-lite` hears it back)
-and ElevenLabs with the keys in
+(`hexgrad/kokoro-82m` speaks; `google/gemini-2.5-flash-lite` hears it back;
+`openai/whisper-large-v3-turbo` transcribes) and ElevenLabs with the keys in
 `C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env` (or `$EP_KEYS`).
 Each key is handed to its driver only in the environment variable the engine
 already falls back to (`OPENAI_API_KEY`, `ELEVENLABS_API_KEY`), and the last
 check scans the run's state for both. The live run costs well under a cent.
+
+`--llama-server DIR` adds a real `llama-server` on this machine: DIR holds
+`llama/llama-server[.exe]`, `Qwen3-ASR-0.6B-Q8_0.gguf` and its
+`mmproj-Qwen3-ASR-0.6B-Q8_0.gguf` (on this box, the scratchpad's `m4/`). It
+runs on the CPU and transcribes the fox locally, which is the done-when.
 
 Run in an environment containing all five Python components (on this box,
 `agent/.venv`). Logs and state stay in a temporary tree.
@@ -66,7 +76,13 @@ OR_LISTING = {
     "acme/kokoro": {"output": ["speech"], "voices": ["af_heart", "af_bella"]},
     "acme/flux": {"output": ["speech"], "voices": None},
     "acme/chat": {"output": ["text"], "voices": None},
+    # Transcription: audio in, and no parameters listed (measured).
+    "acme/whisper": {"output": ["transcription"], "input": ["audio"], "voices": None},
+    "acme/whisper-2": {"output": ["transcription"], "input": ["audio"], "voices": None},
 }
+#: What the transcription fixtures heard, and the file the SDK uploads.
+FOX = Path(__file__).resolve().parent / "fixtures" / "p2-fox.mp3"
+SAID = "The quick brown fox jumps over the lazy dog."
 #: ElevenLabs' account list: the speech-to-speech model says it cannot do
 #: text to speech and must not be offered.
 EL_MODELS = [
@@ -94,6 +110,35 @@ GAP = 0.4
 #: The live models, measured on OpenRouter 2026-09-28.
 LIVE_SPEAKS = "hexgrad/kokoro-82m"
 LIVE_HEARS = "google/gemini-2.5-flash-lite"
+#: Whisper, not qwen3-asr: on 2026-09-28 OpenRouter's `qwen/qwen3-asr-0.6b`
+#: answered the fox in 0.6 s in the morning and hung past 90 s on every file
+#: in the afternoon, while Whisper took our streaming WAV in 2.3 s.
+LIVE_TRANSCRIBES = "openai/whisper-large-v3-turbo"
+
+#: Transcription through the SDK. Each job is `audio.transcriptions.create`
+#: arguments with `file` a path, or `translate: true` for the other door; the
+#: answer is reported as the SDK typed it.
+SDK_TRANSCRIBE = """
+import json, sys
+import openai
+args = json.loads(sys.argv[1])
+client = openai.OpenAI(base_url=args["base"], api_key=args["key"], max_retries=0, timeout=120)
+out = []
+for job in args["jobs"]:
+    translate = job.pop("translate", False)
+    door = client.audio.translations if translate else client.audio.transcriptions
+    try:
+        with open(job.pop("file"), "rb") as fh:
+            answer = door.create(file=fh, **job)
+    except openai.APIStatusError as e:
+        out.append({"status": e.status_code, "error": e.message})
+        continue
+    if isinstance(answer, str):
+        out.append({"status": 200, "kind": "str", "text": answer})
+    else:
+        out.append({"status": 200, "kind": type(answer).__name__, "body": answer.model_dump()})
+print(json.dumps(out))
+"""
 
 #: What the SDK does, in its own interpreter. `jobs` are
 #: `audio.speech.create` arguments; each is streamed and timed, and the first
@@ -224,9 +269,10 @@ def serve(kind: str, directory: Path, port: int) -> None:
             return {"data": [
                 {
                     "id": model_id, "name": model_id, "context_length": 4096,
-                    "architecture": {"input_modalities": ["text"], "output_modalities": entry["output"]},
-                    # No speech model on OpenRouter lists any parameter (measured).
-                    "supported_parameters": [] if "speech" in entry["output"] else ["max_tokens"],
+                    "architecture": {"input_modalities": entry.get("input", ["text"]),
+                                     "output_modalities": entry["output"]},
+                    # No speech or transcription model lists any parameter (measured).
+                    "supported_parameters": [] if "text" not in entry["output"] else ["max_tokens"],
                     **({"supported_voices": entry["voices"]} if entry["voices"] else {}),
                 }
                 for model_id, entry in OR_LISTING.items()
@@ -250,6 +296,62 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 return JSONResponse({"error": {"message": f"Invalid option: expected one of \"mp3\"|\"pcm\" "
                                                f"at response_format (got {fmt!r})", "code": 400}}, status_code=400)
             return audio(model, fmt, {"mp3": "audio/mpeg", "pcm": "audio/pcm"}[fmt], "[slow]" in body.get("input", ""))
+
+        async def heard(request, model_field="model"):
+            """A transcription upload as it arrived, recorded under its model."""
+            form = await request.form()
+            upload = form.get("file")
+            data = await upload.read() if upload is not None and not isinstance(upload, str) else b""
+            fields = {k: form.getlist(k) if k.endswith("[]") else form.get(k) for k in form if k != "file"}
+            model = form.get(model_field)
+            record(model, {"fields": fields, "filename": getattr(upload, "filename", None),
+                           "type": getattr(upload, "content_type", None), "size": len(data),
+                           "sha": hashlib.sha256(data).hexdigest()})
+            return model, fields
+
+        @app.post("/v1/audio/transcriptions")
+        async def or_transcribe(request: Request):
+            model, fields = await heard(request)
+            if "transcription" not in OR_LISTING.get(model, {}).get("output", []):
+                return JSONResponse({"error": {"message": f"No endpoints found for {model}.", "code": 404}},
+                                    status_code=404)
+            if modes.get(model) == "busy":
+                return JSONResponse({"error": {"message": "Rate limit exceeded: free-models-per-min.",
+                                               "code": 429}}, status_code=429, headers={"Retry-After": "1"})
+            fmt = fields.get("response_format") or "json"
+            if fmt not in ("json", "verbose_json"):
+                # `text` is a 400 naming the two it makes (measured).
+                return JSONResponse({"error": {"message": "response_format must be json or verbose_json",
+                                               "code": 400}}, status_code=400)
+            usage = {"seconds": 3.5, "cost": 0.0001}
+            if fmt == "json":
+                return {"text": " " + SAID, "usage": usage}
+            granular = fields.get("timestamp_granularities[]") or []
+            return {"task": "transcribe", "language": "english", "duration": 3.5, "text": SAID,
+                    "segments": [{"id": 0, "start": 0.0, "end": 3.5, "text": SAID}],
+                    **({"words": [{"word": "The", "start": 0.1, "end": 0.3}]} if "word" in granular else {}),
+                    "usage": usage}
+
+        # --- llama-server, with Qwen3-ASR -------------------------------------
+
+        @app.get("/llama/props")
+        async def llama_props():
+            return {"modalities": {"vision": False, "audio": True},
+                    "default_generation_settings": {"n_ctx": 4096}}
+
+        @app.get("/llama/v1/models")
+        async def llama_models():
+            return {"data": [{"id": "local-asr", "object": "model"}]}
+
+        @app.post("/llama/v1/audio/transcriptions")
+        async def llama_transcribe(request: Request):
+            _, fields = await heard(request)
+            if (fields.get("response_format") or "json") != "json":
+                return JSONResponse({"error": {"code": 400, "type": "invalid_request_error",
+                                               "message": "Only 'json' response_format is supported"}},
+                                    status_code=400)
+            return {"type": "transcript.text.done", "text": "language English<asr_text>" + SAID,
+                    "usage": {"type": "tokens", "input_tokens": 61, "output_tokens": 14, "total_tokens": 75}}
 
         # --- ElevenLabs -----------------------------------------------------
 
@@ -312,7 +414,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
             fmt, media = EL_FORMATS[output]
             return audio(model, fmt, media, "[slow]" in body.get("text", ""), whole=whole)
 
-    elif kind in ("router", "eleven", "voiceless", "scoped", "openrouter", "el-live"):
+    elif kind in ("router", "eleven", "voiceless", "scoped", "llama", "asr", "openrouter", "el-live"):
         from eugene_plexus_inference_driver.app import create_app
         from eugene_plexus_inference_driver.settings import Settings
 
@@ -347,13 +449,15 @@ def serve(kind: str, directory: Path, port: int) -> None:
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
 
 
-def exercise(directory: Path, *, live: bool) -> None:
+def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> None:
     from eugene_plexus_agent.node_identity import NodeIdentityStore
     from eugene_plexus_agent.trust import NodeTrust
 
-    names = ["control", "agent", "gateway", "fixture", "router", "eleven", "voiceless", "scoped"]
+    names = ["control", "agent", "gateway", "fixture", "router", "eleven", "voiceless", "scoped", "llama"]
     if live:
         names += ["openrouter", "el-live"]
+    if llama_dir is not None:
+        names += ["llama-server", "asr"]
     sockets = [socket.socket() for _ in names]
     for sock in sockets:
         sock.bind(("127.0.0.1", 0))
@@ -464,6 +568,23 @@ def exercise(directory: Path, *, live: bool) -> None:
         assert result.returncode == 0, result.stderr[-2000:]
         return json.loads(result.stdout.strip().splitlines()[-1])
 
+    def transcribe_by_sdk(token, jobs):
+        result = subprocess.run(
+            [sdk, "-c", SDK_TRANSCRIBE, json.dumps({"base": url("gateway") + "/v1", "key": token, "jobs": jobs})],
+            capture_output=True, text=True, timeout=300,
+            env={k: v for k, v in os.environ.items() if k not in ("OPENAI_API_KEY", "OPENAI_BASE_URL")},
+        )
+        assert result.returncode == 0, result.stderr[-2000:]
+        return json.loads(result.stdout.strip().splitlines()[-1])
+
+    def upload(token, model, *, data=None, content=None, **fields):
+        return client.post(
+            url("gateway") + "/v1/audio/transcriptions",
+            headers={"Authorization": "Bearer " + token},
+            data={"model": model, **fields},
+            files={"file": ("fox.mp3", FOX.read_bytes() if content is None else content, "audio/mpeg")},
+        )
+
     def streamed(arrivals, label):
         """Nothing buffered: the first byte arrives long before the last is
         sent. A buffering hop delivers every byte at once, at the end."""
@@ -522,9 +643,30 @@ def exercise(directory: Path, *, live: bool) -> None:
         driver("router", {"provider": "openrouter", "baseUrl": url("fixture")}, {"OPENAI_API_KEY": "fixture-not-a-key"})
         for name, key in EL_KEYS.items():
             driver(name, {"provider": "elevenlabs", "baseUrl": url("fixture") + "/el"}, {"ELEVENLABS_API_KEY": key})
-        slots = [{"model": "narrator", "targets": ["router/acme/kokoro", "eleven/eleven_flash_v2_5"]}]
+        driver("llama", {"provider": "openai_compat_custom", "baseUrl": url("fixture") + "/llama",
+                         "modelId": "local-asr", "backendLocality": "local"}, {})
+        slots = [
+            {"model": "narrator", "targets": ["router/acme/kokoro", "eleven/eleven_flash_v2_5"]},
+            {"model": "scribe", "targets": ["router/acme/chat", "router/acme/whisper", "router/acme/whisper-2"]},
+        ]
+        if llama_dir is not None:
+            binary = llama_dir / "llama" / ("llama-server.exe" if os.name == "nt" else "llama-server")
+            output = (directory / "llama-server.log").open("ab")
+            logs.append(output)
+            processes["llama-server"] = subprocess.Popen(
+                [str(binary), "-m", str(llama_dir / "Qwen3-ASR-0.6B-Q8_0.gguf"),
+                 "--mmproj", str(llama_dir / "mmproj-Qwen3-ASR-0.6B-Q8_0.gguf"),
+                 "--alias", "qwen3-asr", "--host", "127.0.0.1", "--port", str(ports["llama-server"]),
+                 "-c", "4096"],
+                stdout=output, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            wait(lambda: call("llama-server", "GET", "/health").status_code == 200, "llama-server", 120)
+            driver("asr", {"provider": "openai_compat_custom", "baseUrl": url("llama-server"),
+                           "modelId": "qwen3-asr", "backendLocality": "local"}, {})
         if live:
-            driver("openrouter", {"provider": "openrouter", "catalogueInclude": [LIVE_SPEAKS, LIVE_HEARS]},
+            driver("openrouter", {"provider": "openrouter",
+                                  "catalogueInclude": [LIVE_SPEAKS, LIVE_HEARS, LIVE_TRANSCRIBES]},
                    {"OPENAI_API_KEY": live_keys["OPENAI_API_KEY"]})
             driver("el-live", {"provider": "elevenlabs"}, {"ELEVENLABS_API_KEY": live_keys["ELEVENLABS_API_KEY"]})
         write("gateway", "bootstrap.json", bootstrap("gateway"))
@@ -547,7 +689,8 @@ def exercise(directory: Path, *, live: bool) -> None:
             }
 
         wanted = {"router/acme/kokoro", "router/acme/flux", "router/acme/chat", "eleven/eleven_flash_v2_5",
-                  "eleven/eleven_multilingual_v2", "voiceless/eleven_flash_v2_5", "narrator"}
+                  "eleven/eleven_multilingual_v2", "voiceless/eleven_flash_v2_5", "narrator",
+                  "router/acme/whisper", "router/acme/whisper-2", "local-asr", "scribe"}
         wait(lambda: wanted <= set(models()), "the fixture accounts' models are routable")
 
         # --- 1. what each model is listed with ----------------------------
@@ -670,7 +813,9 @@ def exercise(directory: Path, *, live: bool) -> None:
         assert response.status_code == 400 and "/v1/chat/completions" in error_of(response).get("message", ""), response.text
         response = call("gateway", "POST", "/v1/chat/completions", key, json={
             "model": "router/acme/kokoro", "messages": [{"role": "user", "content": "hi"}]})
-        assert response.status_code == 400 and "speech" in error_of(response).get("message", ""), response.text
+        # The model's own door, not the one a chat caller's refusal once named for everything.
+        told = error_of(response).get("message", "")
+        assert response.status_code == 400 and "Send this request to /v1/audio/speech" in told, response.text
         assert counts() == before, (before, counts())
         ok("speech to a chat model and chat to a speech model are each told the right door; no upstream is called")
 
@@ -715,8 +860,10 @@ def exercise(directory: Path, *, live: bool) -> None:
         row = recorded(response)
         assert row["outcome"] == "served" and row["servedModel"] == "router/acme/kokoro", row
         assert row["tier"] == 1 and [t["served"] for t in row["tries"]] == [True], row
+        assert (row["door"], row["characters"]) == ("speech", len("Hello there.")), row
         ok("narrator -> [router/acme/kokoro, eleven/eleven_flash_v2_5] speaks with kokoro, is listed with "
-           "kokoro's voices and formats, and is retained in /v1/metrics as served by kokoro at tier 1")
+           "kokoro's voices and formats, and is retained in /v1/metrics as served by kokoro at tier 1, "
+           "in characters")
 
         call("fixture", "POST", "/mode", params={"model": "acme/kokoro", "mode": "cut"}).raise_for_status()
         before = counts()
@@ -743,7 +890,128 @@ def exercise(directory: Path, *, live: bool) -> None:
            f"answers {response.status_code} and ElevenLabs is never asked: a speech failover never changes voice")
         call("fixture", "POST", "/mode", params={"model": "acme/kokoro", "mode": "ok"}).raise_for_status()
 
-        # --- 10. the live half ---------------------------------------------------
+        # --- 10. transcription -------------------------------------------------------
+        fox = FOX.read_bytes()
+        fox_sha = hashlib.sha256(fox).hexdigest()
+        listed = models()
+        assert listed["router/acme/whisper"]["surfaces"] == ["transcription"], listed["router/acme/whisper"]
+        assert listed["local-asr"]["surfaces"] == ["chat", "transcription"], listed["local-asr"]
+        assert "transcription" in listed["scribe"]["surfaces"], listed["scribe"]
+        ok("an OpenRouter transcription model is listed as transcription, and a llama-server whose projector "
+           "hears as chat and transcription")
+
+        before = counts()
+        results = transcribe_by_sdk(key, [
+            {"model": "router/acme/whisper", "file": str(FOX), "language": "en", "prompt": "Foxes."},
+            {"model": "router/acme/whisper", "file": str(FOX), "response_format": "text"},
+            {"model": "router/acme/whisper", "file": str(FOX), "response_format": "verbose_json",
+             "timestamp_granularities": ["word", "segment"]},
+        ])
+        plain, text, verbose = results
+        assert plain["status"] == 200 and plain["body"]["text"] == " " + SAID, plain
+        assert plain["body"]["usage"]["type"] == "duration" and plain["body"]["usage"]["seconds"] == 3.5, plain
+        assert text == {"status": 200, "kind": "str", "text": " " + SAID}, text
+        body = verbose["body"]
+        assert verbose["status"] == 200 and (body["language"], body["duration"]) == ("english", 3.5), verbose
+        assert body["segments"][0]["text"] == SAID and body["words"][0]["word"] == "The", verbose
+        assert counts().get("acme/whisper", 0) == before.get("acme/whisper", 0) + 3
+        seen = call("fixture", "GET", "/seen", params={"model": "acme/whisper"}).json()[-3:]
+        assert all((e["filename"], e["size"], e["sha"]) == ("p2-fox.mp3", len(fox), fox_sha) for e in seen), seen
+        assert seen[0]["fields"] == {"model": "acme/whisper", "language": "en", "prompt": "Foxes."}, seen[0]
+        # `text` was asked of nobody: OpenRouter refuses it, so it is made here.
+        assert "response_format" not in seen[1]["fields"], seen[1]
+        assert seen[2]["fields"]["response_format"] == "verbose_json", seen[2]
+        assert seen[2]["fields"]["timestamp_granularities[]"] == ["word", "segment"], seen[2]
+        ok("the OpenAI SDK, unchanged, transcribes through OpenRouter: the file arrives byte for byte under "
+           "its name, json and verbose_json are the backend's with each granularity, and text is rendered "
+           "here from json, since OpenRouter refuses it")
+
+        results = transcribe_by_sdk(key, [
+            {"model": "local-asr", "file": str(FOX)},
+            {"model": "local-asr", "file": str(FOX), "response_format": "verbose_json"},
+        ])
+        assert results[0]["status"] == 200 and results[0]["body"]["text"] == SAID, results[0]
+        # The SDK's message is its repr of the body, so the quotes arrive escaped.
+        assert results[1]["status"] == 400 and "response_format is supported" in results[1]["error"], results[1]
+        seen = call("fixture", "GET", "/seen", params={"model": "local-asr"}).json()
+        assert seen[0]["fields"] == {"model": "local-asr"} and seen[0]["sha"] == fox_sha, seen[0]
+        ok("llama-server's answer comes back without Qwen3-ASR's preamble, and verbose_json asked of it is "
+           "its own refusal, relayed with its words")
+
+        before = counts()
+        # Each with its own reason, not only the field: srt and chunking_strategy
+        # would otherwise also fall to the generic "not a value / not a field".
+        for fields, param, reason in (
+            ({"response_format": "srt"}, "response_format", "srt and vtt are not made here"),
+            ({"stream": "true"}, "stream", "not served"),
+            ({"chunking_strategy": "auto"}, "chunking_strategy", "not carried"),
+            ({"timestamp_granularities[]": "word"}, "timestamp_granularities", "verbose_json"),
+        ):
+            response = upload(key, "router/acme/whisper", **fields)
+            assert response.status_code == 400 and error_of(response).get("param") == param, response.text
+            assert reason in error_of(response)["message"], response.text
+        # The driver's own copy of the surface rule, asked directly.
+        response = call("router", "POST", "/v1/transcribe", operator, json={
+            "model": "acme/chat", "audio": {"data": base64.b64encode(fox).decode(), "filename": "fox.mp3"}})
+        assert response.status_code == 400, response.text[:300]
+        assert response.json()["detail"]["type"].endswith("#transcription-unsupported"), response.text[:300]
+        response = upload(key, "router/acme/whisper", content=b"\0" * (25 * 1024 * 1024 + 1))
+        assert response.status_code == 413 and error_of(response).get("param") == "file", response.text[:300]
+        response = upload(key, "router/acme/chat")
+        assert response.status_code == 400 and "/v1/chat/completions" in error_of(response).get("message", ""), response.text
+        results = transcribe_by_sdk(key, [{"model": "router/acme/whisper", "file": str(FOX), "translate": True}])
+        assert results[0]["status"] == 400 and "No backend here translates" in results[0]["error"], results[0]
+        assert counts() == before, (before, counts())
+        ok("srt, stream, chunking_strategy and timestamps without verbose_json are 400s naming the field and "
+           "why, a file over 25 MiB is a 413 naming it, a chat model is sent to the chat door (and refused by "
+           "the driver asked directly), and translation says no backend here translates; nothing reaches an "
+           "upstream")
+
+        call("fixture", "POST", "/mode", params={"model": "acme/whisper", "mode": "busy"}).raise_for_status()
+        before = counts()
+        response = upload(key, "scribe")
+        assert response.status_code == 200 and response.json()["text"] == " " + SAID, response.text
+        after = counts()
+        assert after.get("acme/whisper", 0) == before.get("acme/whisper", 0) + 1, (before, after)
+        assert after.get("acme/whisper-2", 0) == before.get("acme/whisper-2", 0) + 1, (before, after)
+        assert after.get("acme/chat", 0) == before.get("acme/chat", 0), (before, after)
+        row = recorded(response)
+        assert (row["servedModel"], row["tier"], row["outcome"]) == ("router/acme/whisper-2", 3, "served"), row
+        assert [t["served"] for t in row["tries"]] == [False, True], row
+        assert (row["door"], row["audioSeconds"], row["characters"]) == ("transcription", 3.5, None), row
+        call("fixture", "POST", "/mode", params={"model": "acme/whisper", "mode": "ok"}).raise_for_status()
+        ok("scribe -> [chat, whisper, whisper-2] skips the chat model, and with whisper rate-limited is answered "
+           "by whisper-2 at tier 3, as chat cascades; the row counts 3.5 seconds of audio")
+
+        before = counts()
+        scoped = mint("Only flux, again", allowedModels=["router/acme/flux"])
+        response = upload(scoped, "router/acme/whisper")
+        assert response.status_code in (403, 404), response.text[:300]
+        local = mint("Local only, again", localOnly=True)
+        response = upload(local, "router/acme/whisper")
+        assert response.status_code == 403, response.text[:300]
+        response = upload(local, "local-asr")
+        assert response.status_code == 200 and response.json()["text"] == SAID, response.text[:300]
+        after = counts()
+        assert after.get("acme/whisper", 0) == before.get("acme/whisper", 0), (before, after)
+        assert after.get("local-asr", 0) == before.get("local-asr", 0) + 1, (before, after)
+        ok("a key allowed only acme/flux cannot transcribe, and a local-only key is refused a hosted "
+           "transcriber and served by the local llama-server")
+
+        if llama_dir is not None:
+            wait(lambda: "qwen3-asr" in models(), "the real llama-server is routable", 60)
+            assert models()["qwen3-asr"]["surfaces"] == ["chat", "transcription"], models()["qwen3-asr"]
+            started = time.perf_counter()
+            [answer] = transcribe_by_sdk(key, [{"model": "qwen3-asr", "file": str(FOX)}])
+            took = time.perf_counter() - started
+            assert answer["status"] == 200, answer
+            local_text = answer["body"]["text"]
+            assert "quick brown fox" in local_text.lower() and "<asr_text>" not in local_text, local_text
+            print(f"INFO local llama-server (CPU): {local_text!r} in {took:.2f} s through the SDK", flush=True)
+            ok(f"llama-server transcribes locally, on this machine's CPU, through the OpenAI SDK unchanged: "
+               f"{local_text!r}")
+
+        # --- 11. the live half ---------------------------------------------------
         if live:
             speaks_live, hears_live = f"openrouter/{LIVE_SPEAKS}", f"openrouter/{LIVE_HEARS}"
             wait(lambda: {speaks_live, hears_live} <= set(models()), "OpenRouter's live models", 60)
@@ -780,6 +1048,14 @@ def exercise(directory: Path, *, live: bool) -> None:
             assert len(said & words) * 2 >= len(said), (heard, sorted(said))
             ok(f"live: the OpenAI SDK gets {LIVE_SPEAKS}'s speech through the gateway as a WAV made from its pcm, "
                f"and {LIVE_HEARS} hears it back as {heard.strip()!r}")
+
+            transcribes_live = f"openrouter/{LIVE_TRANSCRIBES}"
+            wait(lambda: transcribes_live in models(), "OpenRouter's live transcription model", 60)
+            [answer] = transcribe_by_sdk(key, [{"model": transcribes_live, "file": str(clip)}])
+            assert answer["status"] == 200, answer
+            words = {"".join(c for c in w if c.isalpha()) for w in answer["body"]["text"].lower().split()}
+            assert len(said & words) * 2 >= len(said), (answer, sorted(said))
+            ok(f"live: {LIVE_TRANSCRIBES} transcribes that WAV through the SDK as {answer['body']['text'].strip()!r}")
 
             def refused_models():
                 summary = call("el-live", "GET", "/v1/info", operator).json().get("catalogue") or {}
@@ -818,10 +1094,11 @@ if __name__ == "__main__":
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--port", type=int)
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--llama-server", type=Path, dest="llama_dir")
     args = parser.parse_args()
     if args.serve:
         serve(args.serve, args.directory, args.port)
     else:
         directory = Path(tempfile.mkdtemp(prefix="ep-p3-acceptance-"))
         print(f"Isolated state and process logs: {directory}", flush=True)
-        exercise(directory, live=args.live)
+        exercise(directory, live=args.live, llama_dir=args.llama_dir)
