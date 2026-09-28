@@ -633,6 +633,18 @@ paths:
           description: |
             `false` omits `models`. A driver from before P1 ignores the
             parameter, which is harmless: it has no list to omit.
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+          description: |
+            Only this model's entry in `models` — an empty list when it is
+            not served. For the gateway's per-request re-check of one
+            candidate's settings and tools before it wakes or sends
+            anything, which would otherwise re-read an account's entire
+            list on every request that carries a setting. Unprefixed, as
+            a request's `model` is.
       responses:
         '200':
           description: Driver metadata.
