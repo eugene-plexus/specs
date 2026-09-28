@@ -534,8 +534,24 @@ paths:
       description: |
         The transcription counterpart of `POST /v1/generate` (P3b,
         2026-09-28): normalised, so one request fronts OpenAI's and
-        OpenRouter's `/v1/audio/transcriptions` and `llama-server`'s, each
-        asked in the multipart form they take (measured).
+        OpenRouter's `/v1/audio/transcriptions`, `llama-server`'s, and
+        ElevenLabs' `/v1/speech-to-text` (P3-1), each asked in the form it
+        takes (measured).
+
+        **`translate` asks for English instead** (P3-4): OpenAI's
+        `/v1/audio/translations`, which only OpenAI's `whisper-*` models
+        answer (measured: its `gpt-4o-*-transcribe` models, OpenRouter and
+        `llama-server` all answer 404). A model without the `translation`
+        surface is refused before any audio is sent, and `language` and
+        `timestampGranularities` are refused with it, since OpenAI's door
+        takes neither.
+
+        **ElevenLabs** is asked for no audio-event tags, so its transcript
+        reads as OpenAI's does. It takes no `prompt` and would ignore one
+        (measured), so a prompt is refused; it makes no segments, so
+        `segment` timestamps are refused. Its words become OpenAI's
+        `{word, start, end}` and its `audio_duration_secs` the usage
+        seconds.
 
         **The audio travels as base64 in JSON**, as attachments do (P2a).
         It is at most 25 MiB, OpenAI's upload limit, so this path's body
@@ -1763,6 +1779,14 @@ components:
           items:
             $ref: '#/components/schemas/TimestampGranularity'
           description: With `verbose` only, as OpenAI requires.
+        translate:
+          type: boolean
+          default: false
+          description: |
+            The text in English, whatever was spoken: OpenAI's
+            `/v1/audio/translations` (P3-4). Only a model with the
+            `translation` surface is asked. Refused with `language` or
+            `timestampGranularities`, which that door does not take.
         requestId:
           type: string
           format: uuid
@@ -2713,7 +2737,8 @@ components:
 
             * `chat` (`/v1/generate`), `embeddings` (`/v1/embed`),
               `decisions` (`/v1/decide`), `speech` (`/v1/speak`, P3a),
-              `transcription` (`/v1/transcribe`, P3b), `image`
+              `transcription` (`/v1/transcribe`, P3b), `translation`
+              (`/v1/transcribe` with `translate`, P3-4), `image`
               (`/v1/image`, P4) and `video` (`/v1/video`, P5), which have
               doors;
             * `completion`, `moderation` and `rerank`, which name OpenAI's
@@ -2727,6 +2752,12 @@ components:
             (`/props` `modalities.audio`) serves `transcription` beside
             `chat`: its `/v1/audio/transcriptions` answers only then
             (measured).
+
+            OpenAI's `whisper-*` models serve `translation` beside
+            `transcription`; nothing else here translates (measured).
+            ElevenLabs' `scribe_*` models serve `transcription`, listed
+            only while the key may use speech-to-text (P3-1, as P3-2
+            requires `models_read` for its speech models).
 
             A driver reports those anyway, so a model's id does not
             change on the day its door arrives, and the gateway lists a

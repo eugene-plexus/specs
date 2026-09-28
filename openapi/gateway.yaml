@@ -1538,8 +1538,13 @@ paths:
         OpenAI's `/v1/audio/transcriptions` (P3b, 2026-09-28), multipart
         exactly as the OpenAI SDK sends it (captured). The model is any
         with the `transcription` surface on `GET /v1/models`: an
-        OpenRouter transcription model, OpenAI's, or a `llama-server`
-        whose projector hears.
+        OpenRouter transcription model, OpenAI's, ElevenLabs' `scribe_*`
+        (P3-1), or a `llama-server` whose projector hears.
+
+        **ElevenLabs** takes no `prompt` (it would ignore one, measured)
+        and makes no segments, so a prompt and `segment` timestamps are
+        refused for it, naming it; its language is named as it names it
+        (`eng`).
 
         **Tiers, as chat** (§5, call #4): a transcript from a fallback
         model is still a transcript. Only backends with the
@@ -1622,24 +1627,80 @@ paths:
     post:
       tags: [inference]
       operationId: createTranslation
-      summary: 'Refused: no backend here translates (P3-4).'
+      summary: OpenAI-compatible speech to English text.
       security:
         - bearerAuth: []
       description: |
-        OpenAI's translation door, which only OpenAI's own API serves
-        (OpenRouter answers 404, measured). Deferred by Troy (P3-4), so it
-        answers a 400 saying no backend here translates, rather than a 404
-        that reads as a typo. Transcribe with `language` and translate the
-        text with a chat model instead.
+        OpenAI's `/v1/audio/translations` (P3-4, taken 2026-09-28), multipart
+        exactly as the OpenAI SDK sends it: whatever was spoken, the text
+        comes back in English. The model is any with the `translation`
+        surface on `GET /v1/models`, which today means OpenAI's `whisper-*`
+        through an OpenAI account: its `gpt-4o-*-transcribe` models,
+        OpenRouter and `llama-server` all answer this door 404 (measured).
+
+        **Tiers, as transcription:** a fallback model's translation is still
+        a translation, and only backends with the `translation` surface are
+        tried.
+
+        **The form is the SDK's five fields**: `file` (at most 25 MiB),
+        `model`, `prompt`, `response_format` and `temperature`. Anything
+        else is refused naming it; OpenAI's own API refuses `language`
+        other than `en` (measured). `response_format` is as transcription's:
+        `json`, `verbose_json` (with `task: translate`), `text` rendered
+        here, and `srt`/`vtt` refused.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TranslationForm'
       responses:
+        '200':
+          description: |
+            The English text: JSON, or plain text for `response_format: text`.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Translation'
+                  - $ref: '#/components/schemas/TranslationVerbose'
+            text/plain:
+              schema:
+                type: string
         '400':
-          description: Always.
+          description: |
+            A field this door refuses, a model with no `translation`
+            surface, or the backend's refusal, with its words.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
         '401':
           description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '413':
+          description: The file is over 25 MiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every backend failed, or a provider refused a driver's own key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The model is served but not ready.
           content:
             application/json:
               schema:
@@ -3040,13 +3101,14 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings, decisions, speech, transcription, image, video]
+            enum: [chat, embeddings, decisions, speech, transcription, translation, image, video]
           description: |
             Which surfaces this model can be sent to. `decisions` means
             `POST /v1/systemone`; a decision-only model lists nothing
             else, and a chat request naming it is refused with the
             door's name. `speech` means `POST /v1/audio/speech` (P3a),
-            `transcription` `POST /v1/audio/transcriptions` (P3b), `image`
+            `transcription` `POST /v1/audio/transcriptions` (P3b),
+            `translation` `POST /v1/audio/translations` (P3-4), `image`
             `POST /v1/images/generations` and `/edits` (P4), `video`
             `POST /v1/videos` (P5).
 
@@ -3624,6 +3686,57 @@ components:
             additionalProperties: true
         usage:
           $ref: '#/components/schemas/TranscriptionUsageOut'
+
+    TranslationForm:
+      type: object
+      required: [file, model]
+      description: |
+        The OpenAI SDK's translation form (P3-4): five fields, every other
+        refused naming it.
+      properties:
+        file:
+          type: string
+          format: binary
+          description: At most 25 MiB.
+        model:
+          type: string
+        prompt:
+          type: string
+          description: English text to guide the style, as OpenAI's.
+        response_format:
+          $ref: '#/components/schemas/TranscriptionResponseFormat'
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    Translation:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: The speech, in English.
+
+    TranslationVerbose:
+      type: object
+      required: [task, text]
+      properties:
+        task:
+          type: string
+          const: translate
+        language:
+          type: string
+          description: The language of the text, which OpenAI names `english`.
+        duration:
+          type: number
+        text:
+          type: string
+        segments:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
 
     TranscriptionUsageOut:
       type: object
@@ -6737,9 +6850,10 @@ components:
             - 'null'
           description: |
             Which door the request came in by (P3b): `speech`,
-            `transcription`, `images` (P4, schema v8) or `videos` (P5,
-            schema v9, the submit's row). Null on rows from before schema v7
-            and on every other door, whose rows carry tokens.
+            `transcription`, `translation` (P3-4), `images` (P4, schema v8)
+            or `videos` (P5, schema v9, the submit's row). Null on rows from
+            before schema v7 and on every other door, whose rows carry
+            tokens.
         characters:
           type:
             - integer
@@ -6749,7 +6863,7 @@ components:
           type:
             - number
             - 'null'
-          description: For transcription, the seconds of audio heard, where the backend says.
+          description: For transcription and translation, the seconds of audio heard, where the backend says.
         images:
           type:
             - integer
