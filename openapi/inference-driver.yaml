@@ -718,6 +718,141 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/video:
+    post:
+      tags: [inference]
+      operationId: video
+      summary: Submit a video job on the configured backend.
+      description: |
+        The video counterpart of `POST /v1/generate` (P5, 2026-09-28):
+        normalised, so the gateway speaks OpenAI's `/v1/videos` and this
+        driver asks OpenRouter's `/videos` in its own shape (`duration` an
+        integer, `size` one it lists, the first frame as `frame_images`).
+        OpenAI's own video API shut down on 2026-09-24 (measured); an OpenAI
+        account makes no videos.
+
+        **The answer is the job, not the video.** OpenRouter accepts a job in
+        a few seconds and makes it in tens (24-47 s for one second at 480p,
+        measured); the caller polls `GET /v1/video/{jobId}`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VideoRequest'
+      responses:
+        '200':
+          description: The job, accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoJob'
+        '400':
+          description: |
+            A model that makes no videos, a first frame that is not an
+            image, or the backend's own refusal (a size it does not list),
+            with its words. Does not cascade.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/ModelNotServed'
+        '413':
+          description: The body is over this path's 36 MiB limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The backend failed, or refused this driver's own key.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: '`requestTimeoutSeconds` passed with no answer.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/video/{jobId}:
+    get:
+      tags: [inference]
+      operationId: videoJob
+      summary: Poll a video job.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      responses:
+        '200':
+          description: The job as the backend reports it now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoJob'
+        '404':
+          description: The backend knows no such job.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The backend failed, or refused this driver's own key.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/video/{jobId}/content:
+    get:
+      tags: [inference]
+      operationId: videoContent
+      summary: A finished video job's MP4, streamed.
+      description: |
+        Streamed as the backend sends it. OpenRouter sends it chunked, with
+        no length, and ignores `Range` (measured), so a download is whole.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 256
+      responses:
+        '200':
+          description: The video.
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: The backend's refusal (a job that has no video yet).
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          description: The backend knows no such job.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The backend failed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/embed:
     post:
       tags: [inference]
@@ -1885,6 +2020,68 @@ components:
           type: number
           description: The provider's charge in US dollars, where it says (OpenRouter).
 
+    VideoRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      description: |
+        One video job (P5). `seconds` and `size` are the gateway's, already
+        routed to a model whose listing takes them (A2).
+      properties:
+        model:
+          $ref: '#/components/schemas/RequestModel'
+        localOnly:
+          type: boolean
+          default: false
+          description: As `GenerateRequest.localOnly`.
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        seconds:
+          type: integer
+          minimum: 1
+          maximum: 120
+          description: Sent as OpenRouter's `duration`.
+        size:
+          type: string
+          maxLength: 32
+          description: '`WIDTHxHEIGHT`, one the model lists.'
+        firstFrame:
+          $ref: '#/components/schemas/ImageData'
+        requestId:
+          type: string
+          format: uuid
+
+    VideoJobStatus:
+      type: string
+      enum: [queued, in_progress, completed, failed]
+      description: OpenAI's words. OpenRouter's `pending` is `queued`.
+
+    VideoJob:
+      type: object
+      additionalProperties: false
+      required: [jobId, status]
+      properties:
+        jobId:
+          type: string
+          description: The backend's own job id.
+        status:
+          $ref: '#/components/schemas/VideoJobStatus'
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Where the backend says; OpenRouter does not (measured).
+        error:
+          type: string
+          description: A failed job's reason, in the backend's words.
+        cost:
+          type: number
+          description: The provider's charge in US dollars, once it says.
+        modelId:
+          type: string
+
     AudioOutputRequest:
       type: object
       additionalProperties: false
@@ -2516,10 +2713,11 @@ components:
 
             * `chat` (`/v1/generate`), `embeddings` (`/v1/embed`),
               `decisions` (`/v1/decide`), `speech` (`/v1/speak`, P3a),
-              `transcription` (`/v1/transcribe`, P3b) and `image`
-              (`/v1/image`, P4), which have doors;
-            * `completion`, `video`, `moderation` and `rerank`, which name
-              OpenAI's and OpenRouter's doors Eugene has not built yet.
+              `transcription` (`/v1/transcribe`, P3b), `image`
+              (`/v1/image`, P4) and `video` (`/v1/video`, P5), which have
+              doors;
+            * `completion`, `moderation` and `rerank`, which name OpenAI's
+              and OpenRouter's doors Eugene has not built yet.
 
             An OpenRouter model whose output is image and text (Gemini's
             image models) serves `image` beside `chat`: its images route
@@ -2768,6 +2966,34 @@ components:
           $ref: '#/components/schemas/DecisionCapability'
         image:
           $ref: '#/components/schemas/ImageCapabilities'
+        video:
+          $ref: '#/components/schemas/VideoCapabilities'
+
+    VideoCapabilities:
+      type: object
+      additionalProperties: false
+      description: |
+        For a `video` model (P5): what OpenRouter's `GET /videos/models`
+        lists, which the gateway routes on. Null lists mean the listing did
+        not say.
+      properties:
+        durations:
+          type:
+            - array
+            - 'null'
+          items:
+            type: integer
+          description: The whole seconds it makes.
+        sizes:
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+          description: The `WIDTHxHEIGHT` sizes it makes; another is its 400 (measured).
+        firstFrame:
+          type: boolean
+          description: Whether it takes a first frame (image-to-video).
 
     ImageCapabilities:
       type: object

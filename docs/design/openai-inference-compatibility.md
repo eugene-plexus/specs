@@ -740,3 +740,51 @@ measurement:**
 **P4 is built in one part** (specs `8455ff2`, driver `e484972`, gateway
 `6be3f0a` and `3e54fbb`), pinned in both installers; record
 [`images-run.md`](../acceptance/images-run.md).
+
+## 11. P5's own calls, 2026-09-28
+
+Measured first, with Troy's $10 for test videos ($0.102 spent):
+[`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md)
+§10. **OpenAI shut its video API down on 2026-09-24** (`sora-2` and
+`sora-2-pro` carry that `shutdown_date`; `/v1/videos` answers an empty 404),
+so OpenRouter is the only live video backend. OpenAI's shape is still the
+standard the SDK's `client.videos` speaks, so the door is OpenAI's and the
+driver translates to OpenRouter's. Troy took three of four as recommended.
+
+| # | Question | Taken |
+|---|---|---|
+| P5-1 | OpenAI's `seconds` is Sora's `4`/`8`/`12`; OpenRouter's models each list their own (grok 1-15) | **Any whole number of seconds a model lists**, as recommended: routed by the model's listing (A2), a 400 naming `seconds` otherwise. |
+| P5-2 | Remix, edits, extensions and delete, which only OpenAI's shut-down API served (OpenRouter has none) | **Not routed** (not as recommended, which was a 400 saying why): they answer as any unknown path does. |
+| P5-3 | Who may poll a job an operator session made, when sessions rotate at every sign-in | **Any operator session of the install**, as recommended. A client key's job is readable only with that key. |
+| P5-4 | What signs the job handle | **The gateway's own secret file**, as recommended: made once, owner-only, kept beside its config. A restart keeps it; a reinstall makes a new one and older handles read as not found. |
+
+**Taken without a separate call, because each follows a held rule or a
+measurement:**
+
+- **The handle is the job** (call #5): `video_` and a signed payload naming
+  the driver, its node, the model, the upstream job, the owner, and the
+  `seconds` and `size` asked for. OpenRouter's poll carries none of those
+  last two and OpenAI's `VideoResource` requires them. `prompt` is not kept,
+  and is `null` on a poll, as OpenAI's schema allows.
+- **`GET /v1/videos` is refused** with a 400: with no store, one key's jobs
+  cannot be told from another's (call #5).
+- **Failover at submit only** (§5, #4): a submit walks the slot's tiers; an
+  accepted job is bound to its backend for life.
+- **Settings route by the model's listing**, which on OpenRouter is only
+  `GET /videos/models` (the images rule, P4): `seconds`, `size`, and an
+  `input_reference` only to a model that takes a first frame. The listing is
+  supplementary: a failed read of it must not unroute the account.
+- **`input_reference` is inline only** (A4): a file upload or a `data:` URL;
+  another URL and a `file_id` are refused. It becomes OpenRouter's
+  `frame_images` first frame.
+- **`variant` other than `video` is refused**: OpenRouter ignores it and
+  answers the MP4 (measured), which a caller asking for a thumbnail would
+  save as one.
+- **Status is OpenAI's words**: OpenRouter's `pending` is `queued`.
+  `progress` is 0 until the job ends and 100 when it completes, since
+  OpenRouter reports none. A failure's `error` is OpenAI's
+  `{code, message}`, with the provider's own words.
+- **An OpenAI account stops listing a model past its `shutdown_date`** (the
+  two Sora models today): it can serve nothing.
+- **Metrics units:** the seconds of video asked for, on the submit's row
+  (schema v9).

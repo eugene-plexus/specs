@@ -1840,6 +1840,196 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/videos:
+    post:
+      tags: [inference]
+      operationId: createVideo
+      summary: OpenAI-compatible video generation, as a job.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `/v1/videos` (P5, 2026-09-28): the OpenAI SDK's
+        `client.videos.create(...)` and `create_and_poll(...)` work unchanged.
+        OpenAI's own video API shut down on 2026-09-24 (measured), so the
+        backends are OpenRouter's video models.
+
+        **The answer is a job whose `id` is a signed handle** (call #5): it
+        names the backend and the key that made it, so a poll reaches that
+        backend and no other key can read it, and a gateway restart loses
+        nothing. There is no store.
+
+        **Failover at submit only** (§5, #4): the slot's tiers are walked
+        until one backend accepts the job; an accepted job belongs to that
+        backend. **Settings route by the model's listing**: `seconds` (any
+        whole number the model lists, P5-1), `size`, and an
+        `input_reference` only to a model that takes a first frame.
+
+        `input_reference` is inline: a multipart file or a `data:` URL; any
+        other URL, and a `file_id`, are refused (A4).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VideoCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VideoCreateForm'
+      responses:
+        '200':
+          description: The job, accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoResource'
+        '400':
+          description: |
+            A field this door refuses, a model with no `video` surface, a
+            setting no model in the slot takes (named), or the backend's
+            refusal, with its words.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every backend failed, or a provider refused a driver's own key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+    get:
+      tags: [inference]
+      operationId: listVideos
+      summary: 'Refused: there is no store to list one key''s jobs from (call #5).'
+      security:
+        - bearerAuth: []
+      responses:
+        '400':
+          description: Always.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/videos/{video_id}:
+    get:
+      tags: [inference]
+      operationId: retrieveVideo
+      summary: Poll a video job.
+      security:
+        - bearerAuth: []
+      description: |
+        The job as its backend reports it now, in OpenAI's shape: `queued`,
+        `in_progress`, `completed` or `failed`, with `progress` 0 until it
+        ends (OpenRouter reports none, measured) and `prompt` null (the
+        handle does not carry it). **Another key's handle, a forged one and
+        one from another install all read as not found.**
+
+        Remix, edits, extensions and delete are not routed (P5-2): only
+        OpenAI's shut-down API served them.
+      parameters:
+        - name: video_id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 4096
+          description: The handle `POST /v1/videos` returned.
+      responses:
+        '200':
+          description: The job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VideoResource'
+        '404':
+          description: No such job for this key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: The backend failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The backend that holds the job is not reachable right now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/videos/{video_id}/content:
+    get:
+      tags: [inference]
+      operationId: downloadVideoContent
+      summary: A finished job's MP4, streamed.
+      security:
+        - bearerAuth: []
+      description: |
+        The video, streamed as the backend sends it. **`variant` other than
+        `video` is refused**: OpenRouter ignores it and answers the MP4
+        (measured), which a caller asking for a thumbnail would save as one.
+      parameters:
+        - name: video_id
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 4096
+          description: The handle `POST /v1/videos` returned.
+        - name: variant
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/VideoVariant'
+      responses:
+        '200':
+          description: The video.
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: A `variant` other than `video`, or a job that has not completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No such job for this key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: The backend failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The backend that holds the job is not reachable right now.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/embeddings:
     post:
       tags: [inference]
@@ -2850,14 +3040,15 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings, decisions, speech, transcription, image]
+            enum: [chat, embeddings, decisions, speech, transcription, image, video]
           description: |
             Which surfaces this model can be sent to. `decisions` means
             `POST /v1/systemone`; a decision-only model lists nothing
             else, and a chat request naming it is refused with the
             door's name. `speech` means `POST /v1/audio/speech` (P3a),
             `transcription` `POST /v1/audio/transcriptions` (P3b), `image`
-            `POST /v1/images/generations` and `/edits` (P4).
+            `POST /v1/images/generations` and `/edits` (P4), `video`
+            `POST /v1/videos` (P5).
 
             OpenAI's own `/v1/models` does not say, which is why every
             RAG front-end makes you pick an embedding model from a
@@ -2923,6 +3114,19 @@ components:
           description: |
             For an `image` model: at least one backend honours `mask`
             (OpenAI's API only, measured).
+        video_durations:
+          type: array
+          items:
+            type: integer
+          description: For a `video` model, the whole seconds its backends list (P5).
+        video_sizes:
+          type: array
+          items:
+            type: string
+          description: For a `video` model, the sizes its backends list.
+        video_first_frame:
+          type: boolean
+          description: For a `video` model, at least one backend takes an `input_reference`.
         audio_output:
           type: boolean
           description: |
@@ -3725,6 +3929,110 @@ components:
           type: integer
         usage:
           $ref: '#/components/schemas/ImagesUsage'
+
+    VideoCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [model, prompt]
+      description: OpenAI's JSON video request (P5). Unknown fields are refused naming them.
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        seconds:
+          type: string
+          pattern: '^[0-9]{1,3}$'
+          description: Whole seconds, as a string as OpenAI's is; any the model lists (P5-1).
+        size:
+          type: string
+          maxLength: 32
+        input_reference:
+          $ref: '#/components/schemas/ImageRef'
+
+    VideoCreateForm:
+      type: object
+      required: [model, prompt]
+      description: OpenAI's multipart video request, with `input_reference` a file.
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+        seconds:
+          type: string
+        size:
+          type: string
+        input_reference:
+          type: string
+          format: binary
+
+    VideoStatus:
+      type: string
+      enum: [queued, in_progress, completed, failed]
+
+    VideoVariant:
+      type: string
+      enum: [video, thumbnail, spritesheet]
+      description: Only `video` is served.
+
+    VideoError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+    VideoResource:
+      type: object
+      required: [id, object, model, status, progress, created_at, completed_at, expires_at, prompt, size, seconds, remixed_from_video_id, error]
+      description: |
+        OpenAI's `VideoResource`, every field its schema requires. `id` is
+        the signed handle.
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: video
+        model:
+          type: string
+        status:
+          $ref: '#/components/schemas/VideoStatus'
+        progress:
+          type: integer
+        created_at:
+          type: integer
+        completed_at:
+          type:
+            - integer
+            - 'null'
+        expires_at:
+          type:
+            - integer
+            - 'null'
+        prompt:
+          type:
+            - string
+            - 'null'
+        size:
+          type: string
+        seconds:
+          type: string
+        remixed_from_video_id:
+          type:
+            - string
+            - 'null'
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/VideoError'
+            - type: 'null'
+        x_eugene_plexus:
+          $ref: '#/components/schemas/CompletionRoutingInfo'
 
     ChatModality:
       type: string
@@ -6429,9 +6737,9 @@ components:
             - 'null'
           description: |
             Which door the request came in by (P3b): `speech`,
-            `transcription`, or `images` (P4, schema v8). Null on rows from
-            before schema v7 and on every other door, whose rows carry
-            tokens.
+            `transcription`, `images` (P4, schema v8) or `videos` (P5,
+            schema v9, the submit's row). Null on rows from before schema v7
+            and on every other door, whose rows carry tokens.
         characters:
           type:
             - integer
@@ -6447,6 +6755,11 @@ components:
             - integer
             - 'null'
           description: For images, how many were returned (P4, schema v8). Tokens ride beside it.
+        videoSeconds:
+          type:
+            - integer
+            - 'null'
+          description: For a video job, the seconds asked for (P5, schema v9).
         outcome:
           type: string
           enum: [served, error]

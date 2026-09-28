@@ -414,3 +414,56 @@ those). The completed event carries `type`, `b64_json`, `created`,
 `media_type` and chat-shaped `usage`. Partial at 3.6 s, completed at 6.2 s,
 then `[DONE]`. **flux, which does not stream, asked to stream answers plain
 `application/json`**: the flag is dropped, not refused.
+
+## 10. For P5: videos (2026-09-28)
+
+Troy cleared test videos with a $10 budget. **Spent: $0.102** on OpenRouter
+(two 1-second 480p jobs); OpenAI's calls were refused before any work.
+
+**OpenAI's video API is shut down.** `sora-2` and `sora-2-pro` both carry
+`"shutdown_date": "2026-09-24"` on `GET /v1/models`, and `GET` and `POST
+/v1/videos` answer an empty 404 with no request id, although `openai-openapi`
+of 2026-09-26 still describes them. **OpenRouter is the only live video
+backend.** It still lists `openai/sora-2-pro` among its 29, untried. OpenAI's
+list carries `shutdown_date` on 56 of its 134 models (future dates too:
+`gpt-image-1-mini` says 2026-12-01).
+
+**The OpenAI SDK's `client.videos`** (3.20.0) has `create`, `create_and_poll`,
+`poll`, `retrieve`, `list`, `delete`, `download_content` (with `variant`:
+`video`, `thumbnail`, `spritesheet`), `remix`, `edit`, `extend` and the
+character calls. OpenAI's contract: `POST /videos` takes `prompt`, `model`,
+`seconds` (a string, `4`/`8`/`12`), `size` (four sizes) and `input_reference`
+(an image, multipart or JSON `{image_url | file_id}`); the job is a
+`VideoResource` with `status` `queued|in_progress|completed|failed`,
+`progress`, `created_at`, `completed_at`, `expires_at`, `prompt`, `size`,
+`seconds` and `error`, every one required.
+
+**OpenRouter's video API is its own shape** (`POST /api/v1/videos`):
+`duration` is an **integer**, `resolution` and `aspect_ratio` or an exact
+`size` (one or the other), `frame_images` for image-to-video
+(`{"type": "image_url", "image_url": {"url"}, "frame_type": "first_frame"}`),
+`input_references`, `generate_audio`, `seed`. **A `size` it does not list is a
+400** (*"Unsupported size \"848x480\""*); `GET /videos/models` lists each
+model's `supported_durations`, `supported_sizes`, `supported_resolutions`,
+`supported_aspect_ratios`, `supported_frame_images` and `pricing_skus`
+(`x-ai/grok-imagine-video`: 1-15 s, 14 sizes, first frame only, 5¢ a second
+at 480p).
+
+**The lifecycle, measured** (`x-ai/grok-imagine-video`, 1 s, 480p):
+
+- **Submit is a 202** in 1.7-3.8 s: `{id: "gen-vid-...", polling_url, status:
+  "pending"}`.
+- **Poll** (`GET /videos/{id}`): `pending`, then `completed` at 24 s (47 s
+  with a first frame). **No `in_progress` was seen and there is no
+  `progress` field.** Completed adds `unsigned_urls` and `usage: {cost}`
+  ($0.05, $0.052).
+- **Content** (`GET /videos/{id}/content?index=0`, the same bearer): 200
+  `video/mp4`, chunked with **no length, and `Range` is ignored** (a full 200).
+  No CDN redirect. `index=1` is a 400 naming the count. **`variant=thumbnail`
+  is ignored: it returns the MP4.**
+- **A bad input is accepted and fails later**: a 1×1 first frame was a 202,
+  then `failed` 17 s on with `error` a string (*"Image dimensions 1x1 are too
+  small. Both width and height must be at least 8 pixels.
+  [WKE=invalid_image]"*) and no `usage`.
+- **An unknown job is a 404** naming it. **There is no list, delete or remix
+  route** (`GET /videos`, `DELETE /videos/{id}`, `POST .../remix`: plain 404s).
