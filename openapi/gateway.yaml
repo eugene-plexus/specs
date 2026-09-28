@@ -342,6 +342,49 @@ paths:
               schema:
                 $ref: '#/components/schemas/ModelList'
 
+  /v1/models/{model}:
+    get:
+      tags: [inference]
+      operationId: retrieveModel
+      summary: One model, as the list shows it.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `GET /v1/models/{model}` (P6): the same object
+        `GET /v1/models` lists for this caller, `x_eugene_plexus`
+        included. **The id may contain slashes** (an account's
+        `openrouter/anthropic/claude-opus-5.5`), and the path takes the
+        rest of the URL as the id. A model this key may not use is a 404,
+        as one that does not exist is, so a scoped key learns nothing of
+        what it cannot reach.
+      parameters:
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The model's id, slashes included.
+      responses:
+        '200':
+          description: The model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Model'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that id that this caller may use (`code`
+            `model_not_found`, as OpenAI's).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/chat/completions:
     post:
       tags: [inference]
@@ -1424,6 +1467,80 @@ paths:
       responses:
         '404':
           description: No response is ever stored here.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/moderations:
+    post:
+      tags: [inference]
+      operationId: createModeration
+      summary: OpenAI-compatible moderation.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `/v1/moderations` (P6, 2026-09-28), in its shape: the
+        OpenAI SDK's `client.moderations.create(...)` works unchanged. The
+        model is any with the `moderation` surface on `GET /v1/models`,
+        which today means OpenAI's `omni-moderation-*` through an OpenAI
+        account: OpenRouter has no moderation door (404, measured).
+
+        **`model` may be left out**, as the SDK does (P6-1): the one model
+        with the `moderation` surface this key may use answers. With none
+        or several, a 400 names the choices.
+
+        **Same model only** (P6-2): a slot's other targets are never used,
+        since categories and thresholds are the model's own; its replicas
+        balance and fail over.
+
+        **`input`** is a string, an array of strings (one result each), or
+        an array of parts: `text`, and `image_url` with a `data:` URL (A4:
+        the gateway never forwards a remote URL). OpenAI moderates at most
+        one image per request and refuses more, relayed. Unknown fields are
+        refused naming them.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModerationRequest'
+      responses:
+        '200':
+          description: One result per input.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModerationResponse'
+        '400':
+          description: |
+            A field this door refuses, `model` left out with none or
+            several moderation models, a model with no `moderation`
+            surface, or the backend's refusal, with its words.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every replica failed, or a provider refused a driver's own key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The model is served but not ready.
           content:
             application/json:
               schema:
@@ -3101,7 +3218,7 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings, decisions, speech, transcription, translation, image, video]
+            enum: [chat, embeddings, decisions, speech, transcription, translation, image, video, moderation]
           description: |
             Which surfaces this model can be sent to. `decisions` means
             `POST /v1/systemone`; a decision-only model lists nothing
@@ -3110,7 +3227,8 @@ components:
             `transcription` `POST /v1/audio/transcriptions` (P3b),
             `translation` `POST /v1/audio/translations` (P3-4), `image`
             `POST /v1/images/generations` and `/edits` (P4), `video`
-            `POST /v1/videos` (P5).
+            `POST /v1/videos` (P5), `moderation` `POST /v1/moderations`
+            (P6).
 
             OpenAI's own `/v1/models` does not say, which is why every
             RAG front-end makes you pick an embedding model from a
@@ -3686,6 +3804,97 @@ components:
             additionalProperties: true
         usage:
           $ref: '#/components/schemas/TranscriptionUsageOut'
+
+    ModerationRequest:
+      type: object
+      additionalProperties: false
+      required: [input]
+      properties:
+        model:
+          type: string
+          description: Left out, the one moderation model this key may use (P6-1).
+        input:
+          description: |
+            A string, an array of strings, or an array of parts. Every piece
+            is a named schema: an inline array here was generated as `Input`
+            and renamed the embeddings request's `Input` to `Input2`.
+          oneOf:
+            - type: string
+            - $ref: '#/components/schemas/ModerationTexts'
+            - $ref: '#/components/schemas/ModerationParts'
+
+    ModerationTexts:
+      type: array
+      minItems: 1
+      items:
+        type: string
+      description: Moderated one by one, with one result each.
+
+    ModerationParts:
+      type: array
+      minItems: 1
+      items:
+        $ref: '#/components/schemas/ModerationInputPart'
+      description: One input of text and an image, with one result.
+
+    ModerationInputPart:
+      type: object
+      required: [type]
+      properties:
+        type:
+          $ref: '#/components/schemas/ModerationInputPartType'
+        text:
+          type: string
+        image_url:
+          $ref: '#/components/schemas/ModerationImageUrl'
+
+    ModerationImageUrl:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: A `data:` URL (A4).
+
+    ModerationInputPartType:
+      type: string
+      enum: [text, image_url]
+
+    ModerationResponse:
+      type: object
+      required: [id, model, results]
+      properties:
+        id:
+          type: string
+        model:
+          type: string
+          description: The public id of the model that answered.
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModerationResult'
+
+    ModerationResult:
+      type: object
+      additionalProperties: true
+      required: [flagged]
+      properties:
+        flagged:
+          type: boolean
+        categories:
+          type: object
+          additionalProperties:
+            type: boolean
+        category_scores:
+          type: object
+          additionalProperties:
+            type: number
+        category_applied_input_types:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
 
     TranslationForm:
       type: object
@@ -6850,10 +7059,10 @@ components:
             - 'null'
           description: |
             Which door the request came in by (P3b): `speech`,
-            `transcription`, `translation` (P3-4), `images` (P4, schema v8)
-            or `videos` (P5, schema v9, the submit's row). Null on rows from
-            before schema v7 and on every other door, whose rows carry
-            tokens.
+            `transcription`, `translation` (P3-4), `images` (P4, schema v8),
+            `videos` (P5, schema v9, the submit's row) or `moderation` (P6).
+            Null on rows from before schema v7 and on every other door,
+            whose rows carry tokens.
         characters:
           type:
             - integer
