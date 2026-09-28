@@ -172,10 +172,22 @@ paths:
         only works if this driver keeps the two apart, so it does:
 
         * A backend 4xx that another backend would hit identically — an
-          over-long prompt, a malformed request, a rejected key, an
-          unknown model — is **400**, `type` ending
-          `#backend-rejected-request`, with the backend's own status and
-          body in `detail`.
+          over-long prompt, a malformed request, an unknown model — is
+          **400**, `type` ending `#backend-rejected-request`, with the
+          backend's own status and body in `detail`.
+        * **A backend that refuses THIS DRIVER's own credential is 502,
+          `type` ending `#backend-credential-refused`, since
+          2026-09-28**: a `401`, a `402` (the account behind the key has
+          no credit), or a `403` unless the backend's own words say the
+          *content* was flagged or moderated (OpenRouter answers 403 for
+          flagged input, and that one stays the caller's 400). It was a
+          400, which told the caller to fix a request that was fine for
+          a key only the operator holds; measured live against
+          OpenRouter with an invalid key. `retryDisposition` is
+          `terminal`, so it **does not cascade** — the 4xx non-cascade
+          rule is older than this and unchanged — and `detail` carries
+          the backend's own status and words plus the next step: set a
+          working API key on this driver.
         * A backend 4xx that is worth trying elsewhere — `408`, `409`,
           `425`, `429` — stays **502**, so the priority-list cascade
           still fires. A rate-limited cloud provider falling through to
@@ -251,7 +263,9 @@ paths:
           description: |
             Upstream model backend error, or a backend refusal worth
             retrying elsewhere (`408`, `409`, `425`, `429`). Cascades to
-            the next backend in the slot.
+            the next backend in the slot. The one 502 that does not:
+            `#backend-credential-refused`, the backend refusing this
+            driver's own key (see the overview).
           content:
             application/problem+json:
               schema:
@@ -339,7 +353,9 @@ paths:
         '502':
           description: |
             Backend failure before the stream opened, or a refusal worth
-            retrying elsewhere (`408`, `409`, `425`, `429`). Cascades.
+            retrying elsewhere (`408`, `409`, `425`, `429`). Cascades —
+            except `#backend-credential-refused`, the backend refusing
+            this driver's own key, which does not.
           content:
             application/problem+json:
               schema:
@@ -496,6 +512,8 @@ paths:
             Upstream backend error, or a refusal worth retrying
             elsewhere (`408`, `409`, `425`, `429`). Cascades — but only
             across replicas of the SAME model; see `gateway.yaml`.
+            `#backend-credential-refused` (the backend refusing this
+            driver's own key) does not cascade.
           content:
             application/problem+json:
               schema:
@@ -590,6 +608,8 @@ paths:
             answer, an illegal choice, a distribution that is not one),
             or a refusal-before-work worth retrying elsewhere. Cascades
             across replicas of the same model per the gateway's rules.
+            `#backend-credential-refused` (the backend refusing this
+            driver's own key) does not cascade.
           content:
             application/problem+json:
               schema:
