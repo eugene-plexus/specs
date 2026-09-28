@@ -2730,9 +2730,12 @@ components:
             thing as `tools` with every tool a function, carried as tools.
             The answer is given back in the deprecated shape too,
             `message.function_call` and `finish_reason: function_call`,
-            because a client that sends this shape reads that one. One call
-            per turn, as the old API had: `parallel_tool_calls` is sent as
-            false. Refused together with `tools` or `tool_choice`.
+            because a client that sends this shape reads that one. The old
+            API gave one call per turn; if a model asks for more, the first
+            is given. **`parallel_tool_calls` is not sent for it**: set
+            false, it would be an explicit setting, and A2 would route the
+            request only to models that list it (12 of 455 on OpenRouter,
+            measured). Refused together with `tools` or `tool_choice`.
         function_call:
           $ref: '#/components/schemas/FunctionCallChoice'
         store:
