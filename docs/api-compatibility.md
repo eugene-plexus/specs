@@ -9,11 +9,12 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/chat/completions` | Supported | Text messages, tools, structured-output forwarding, batch responses and SSE. Images, audio and PDFs as content parts (see [attachments](#attachments)). A spoken answer with `modalities` and `audio` (see [audio output](#audio-output)). |
 | `POST /v1/messages` | Supported subset | Anthropic text, image, document and tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
+| `POST /v1/audio/speech` | Supported (P3a, since 2026-09-28) | Text in, audio bytes out, streamed as made, through OpenRouter's speech models and ElevenLabs. Voices are the provider's own ids. See [speech](#speech). |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
 | `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. `/v1/responses/input_tokens` counts (P2c). Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
-| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (speech, image, video, transcription) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
+| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (image, video, transcription) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
-| Speech, transcription, image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P3-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
+| Transcription, translation, image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P3b-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
 | Content-part input: images, audio, PDFs | Supported subset | Ordered text plus inline PNG/JPEG, WAV/MP3 and PDF on user messages, sent only to backends that confirm that input. See [attachments](#attachments). |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
@@ -264,6 +265,51 @@ Verified live on 2026-09-28 against OpenRouter: `openai/gpt-audio-mini`
 answered as a WAV that `google/gemini-2.5-flash-lite` then transcribed word
 for word, and `google/lyria-3-clip-preview` returned music, labelled `mp3`
 ([record](acceptance/audio-output-run.md)).
+
+## Speech
+
+Since 2026-09-28 (P3a), `POST /v1/audio/speech` takes OpenAI's body
+(`model`, `input`, `voice`, and optionally `response_format`, `speed`,
+`instructions`) and answers with the audio as raw bytes, streamed as the
+backend makes them. The OpenAI SDKs work unchanged, including
+`with_streaming_response`.
+
+- **Backends:** OpenRouter's speech models, through an OpenRouter connection,
+  and ElevenLabs, through an ElevenLabs connection (a new provider). OpenAI's
+  own API is classified the same way and is untested here. No local engine
+  speaks yet.
+- **ElevenLabs needs a key that can read models** (`models_read`). A key
+  without it offers no model, and the connection's `/v1/info` says which
+  permission is missing, in ElevenLabs' own words. A key that cannot read
+  voices still speaks.
+- **Voices are the provider's own ids** and are passed through as sent.
+  `x_eugene_plexus.voices` on `GET /v1/models` lists them where the provider
+  does, and is absent where it does not, which is not "no voices". A voice the
+  provider does not know is its refusal, relayed as a 400 that names it. So
+  OpenAI's `alloy` reaches ElevenLabs and is refused there.
+- **Formats:** `x_eugene_plexus.speech_formats` lists what each model can be
+  given in. OpenRouter makes `mp3` and `pcm`, ElevenLabs `mp3`, `opus` and
+  `pcm` on its lower plans, and `wav` is their `pcm` with a streaming header
+  written here (24 kHz, 16-bit, mono). Anything else is a 400 naming what
+  would work; nothing transcodes. **`mp3` is always asked for when no format
+  is named**, since OpenRouter's own default is `pcm`.
+- **Refused with a 400 naming the field:** `stream_format: "sse"` (the audio
+  itself is streamed), `instructions` to ElevenLabs (which would drop them),
+  and speech to a chat model or chat to a speech model.
+- **The same model, always.** A slot alias speaks with its first model, and
+  its later tiers are never used for speech: a failover would change the
+  voice mid-conversation. A replica of the same model (the same connection
+  name on another machine) is a failover. After the first byte a failure ends
+  the audio.
+- **Client keys** apply here as at every other door: allowed models,
+  local-only, rate and concurrency limits.
+
+Verified live on 2026-09-28: the OpenAI Python SDK 3.20.0 got
+`hexgrad/kokoro-82m`'s speech through the gateway as a WAV, and
+`google/gemini-2.5-flash-lite` heard it back. The ElevenLabs key available
+cannot read models, so ElevenLabs speaking through the product is proven
+against a fixture playing its measured API
+([record](acceptance/speech-run.md)).
 
 ## Typed decisions (B2)
 

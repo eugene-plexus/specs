@@ -453,8 +453,8 @@ paths:
       description: |
         The speech counterpart of `POST /v1/generate` (P3a, 2026-09-28):
         normalised, so one request fronts OpenAI's `/v1/audio/speech`,
-        OpenRouter's, a local OpenAI-shaped speech server, and ElevenLabs'
-        text-to-speech, each translated here.
+        OpenRouter's and ElevenLabs' text-to-speech, each translated here.
+        No local engine speaks yet.
 
         **The answer is the audio itself, streamed** as the backend sends
         it, with the format's media type. Nothing is buffered; the first

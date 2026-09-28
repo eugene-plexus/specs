@@ -1,0 +1,262 @@
+"""Sabotage pass for p3-speech-acceptance.py.
+
+Each sabotage puts back one way P3a could be wrong -- in the driver or the
+gateway -- runs the fixture half of the acceptance, and requires it to FAIL.
+The acceptance runs the editable installs, so a source edit is what runs.
+
+Where the gateway and the driver each enforce the same rule (both refuse a
+format the model cannot make), removing one copy alone is hidden by the
+other; the pass says which it expects to escape and why, and removing BOTH
+must be caught.
+
+Restores are from byte copies taken before the first edit, never `git
+checkout --`. Opens with a baseline assertion that the gate passes
+unsabotaged, and refuses to start if any anchor is not found exactly once.
+
+    python scripts/p3-sabotage.py <python with all five components> [label filter]
+
+The acceptance's SDK half needs `openai` in that python or `$EP_SDK_PYTHON`.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+SPECS = Path(__file__).resolve().parents[1]
+ROOT = SPECS.parent
+DRIVER = ROOT / "inference-driver" / "src" / "eugene_plexus_inference_driver"
+GATEWAY = ROOT / "gateway" / "src" / "eugene_plexus_gateway"
+ACCEPTANCE = SPECS / "scripts" / "p3-speech-acceptance.py"
+EL = DRIVER / "engines" / "elevenlabs_http.py"
+COMPAT = DRIVER / "engines" / "openai_compat_http.py"
+CATALOGUE = DRIVER / "engines" / "_catalogue.py"
+SPEAK = DRIVER / "routes" / "speak.py"
+ROUTING = GATEWAY / "routing.py"
+ROUTE = GATEWAY / "routes" / "inference.py"
+
+_GATEWAY_FORMATS = "    if offered and fmt not in offered:\n"
+_EL_FORMATS = "        refuse_format(asked, ELEVENLABS_FORMATS)\n"
+
+
+@dataclass(frozen=True)
+class Sabotage:
+    label: str
+    edits: tuple[tuple[Path, str, str], ...]
+    #: Why it is expected to ESCAPE, when it is: another layer does the job.
+    escapes: str | None = None
+
+
+SABOTAGES: list[Sabotage] = [
+    # --- the driver: what each account offers ------------------------------
+    Sabotage(
+        "ElevenLabs' speech-to-speech model is offered for text to speech",
+        ((EL, '            if entry.get("can_do_text_to_speech") is False:\n',
+          "            if False:\n"),),
+    ),
+    Sabotage(
+        "ElevenLabs' voices are never read",
+        ((EL, "        voices = await self._voices()\n", "        voices = None\n"),),
+    ),
+    Sabotage(
+        "a key that cannot read voices is reported as having none",
+        ((EL, "                    upstream_words(response),\n                )\n            return None\n",
+          "                    upstream_words(response),\n                )\n            return []\n"),),
+    ),
+    Sabotage(
+        "the driver sends ElevenLabs no key",
+        ((EL, '        return {"xi-api-key": self._api_key} if self._api_key else {}\n',
+          "        return {}\n"),),
+    ),
+    Sabotage(
+        "OpenRouter's voices are not read from its listing",
+        ((CATALOGUE, '        voices = entry.get("supported_voices")\n', "        voices = None\n"),),
+    ),
+    Sabotage(
+        "OpenRouter's speech models are not sorted into speech",
+        ((CATALOGUE, '        ("speech", "speech"),\n', ""),),
+    ),
+    Sabotage(
+        "an OpenRouter speech model lists no formats",
+        ((CATALOGUE,
+          '                    speechFormats=list(OPENROUTER_FORMATS) if "speech" in surfaces else None,\n',
+          "                    speechFormats=None,\n"),),
+    ),
+    # --- the driver: how each backend is asked -----------------------------------
+    Sabotage(
+        "ElevenLabs is asked for its Pro-tier wav instead of pcm",
+        ((EL, '    SpeechFormat.wav: "pcm_24000",\n}', '    SpeechFormat.wav: "wav_44100",\n}'),),
+    ),
+    Sabotage(
+        "ElevenLabs' pcm is sent as wav with no header",
+        ((EL, "                header_sent = asked is not SpeechFormat.wav\n",
+          "                header_sent = True\n"),),
+    ),
+    Sabotage(
+        "instructions to ElevenLabs are dropped silently",
+        ((EL, "        if request.instructions:\n            raise SpeechRefusal(\n",
+          "        if False:\n            raise SpeechRefusal(\n"),),
+    ),
+    Sabotage(
+        "speed is not carried to ElevenLabs",
+        ((EL, '            body["voice_settings"] = {"speed": request.speed}\n', "            pass\n"),),
+    ),
+    Sabotage(
+        "the driver uses ElevenLabs' route that answers once the audio is made",
+        ((EL, "        path = f\"/v1/text-to-speech/{quote(request.voice, safe='')}/stream\"\n",
+          "        path = f\"/v1/text-to-speech/{quote(request.voice, safe='')}\"\n"),),
+    ),
+    Sabotage(
+        "OpenRouter is asked for wav, which it does not make",
+        ((COMPAT, '        made_here = asked is SpeechFormat.wav and self._catalogue_source == "openrouter"\n',
+          "        made_here = False\n"),),
+    ),
+    Sabotage(
+        "the format is left to OpenRouter's default",
+        ((COMPAT, '            "response_format": (SpeechFormat.pcm if made_here else asked).value,\n', ""),),
+    ),
+    Sabotage(
+        "the driver reads OpenRouter's whole answer before sending any",
+        ((COMPAT, "                header_sent = not made_here\n                async for chunk in response.aiter_raw():\n",
+          "                header_sent = not made_here\n                for chunk in [await response.aread()]:\n"),),
+    ),
+    Sabotage(
+        "the driver serves speech as octet-stream",
+        ((SPEAK, "    return StreamingResponse(audio(), media_type=MEDIA_TYPES[fmt])\n",
+          '    return StreamingResponse(audio(), media_type="application/octet-stream")\n'),),
+    ),
+    Sabotage(
+        "a refused speech request is the driver's 500, not the caller's 400",
+        ((SPEAK, '"speech-refused"\n        ) from None', '"speech-refused", code=500\n        ) from None'),),
+    ),
+    Sabotage(
+        "the driver does not refuse a format ElevenLabs cannot make",
+        ((EL, _EL_FORMATS, ""),),
+    ),
+    # --- the gateway ----------------------------------------------------------
+    Sabotage(
+        "speech walks a slot's tiers, as chat does",
+        ((ROUTING,
+          "        first = resolution.tiers[0] if resolution.tiers else None\n"
+          "        if first is None:\n            return None\n",
+          "        tiers = [[b.client for b in t.eligible() if b.speaks]\n"
+          "                 for t in resolution.tiers]\n"
+          "        if any(tiers):\n"
+          "            return TieredClient(name=resolution.model, tiers=[t for t in tiers if t], hooks=self)\n"
+          "        first = resolution.tiers[0] if resolution.tiers else None\n"
+          "        if first is None:\n            return None\n"),),
+    ),
+    Sabotage(
+        "a slot alias finds no speaker, because no backend is named after it",
+        ((ROUTING, "if b.speaks and b.public_id == first.target]\n",
+          "if b.speaks and b.public_id == resolution.model]\n"),),
+    ),
+    Sabotage(
+        "a slot is listed with the voices of every tier",
+        ((ROUTING,
+          "        for backend in resolution.tiers[0].backends if resolution.tiers else []:\n",
+          "        for backend in resolution.backends():\n"),),
+    ),
+    Sabotage(
+        "the gateway reads the driver's whole answer before sending any",
+        ((GATEWAY / "driver_client.py",
+          '            yield response.headers.get("content-type", "application/octet-stream")\n'
+          "            async for chunk in response.aiter_raw():\n",
+          '            yield response.headers.get("content-type", "application/octet-stream")\n'
+          "            for chunk in [await response.aread()]:\n"),),
+    ),
+    Sabotage(
+        "a served clip is left to the middleware's fallback row",
+        ((ROUTE,
+          "                await events.aclose()\n                _record(\n                    rec,\n",
+          "                await events.aclose()\n                (lambda *a, **k: None)(\n                    rec,\n"),),
+    ),
+    Sabotage(
+        "the speech door is not under client admission",
+        ((GATEWAY / "admission.py", '        "/v1/audio/speech",\n    }', "    }"),),
+    ),
+    Sabotage(
+        "stream_format sse is accepted",
+        ((GATEWAY / "chat_contract.py",
+          '    if parsed.stream_format is not None and parsed.stream_format.value == "sse":\n',
+          "    if False:\n"),),
+    ),
+    Sabotage(
+        "the gateway alone does not refuse a format a model cannot make",
+        ((ROUTE, _GATEWAY_FORMATS, "    if False:\n"),),
+    ),
+    Sabotage(
+        "speech to a chat model is not told the right door",
+        ((ROUTE, '    if surfaces and "speech" not in surfaces:\n', "    if False:\n"),),
+    ),
+]
+
+
+def run_acceptance(python: str) -> int:
+    result = subprocess.run(
+        [python, str(ACCEPTANCE)],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        stdin=subprocess.DEVNULL,
+    )
+    lines = (result.stdout + result.stderr).strip().splitlines()
+    print(f"    exit={result.returncode}  {lines[-1] if lines else ''}", flush=True)
+    return result.returncode
+
+
+def main() -> None:
+    python = sys.argv[1] if len(sys.argv) > 1 else sys.executable
+    only = sys.argv[2] if len(sys.argv) > 2 else None
+    chosen = [s for s in SABOTAGES if only is None or only in s.label]
+    files = {path for s in chosen for path, _, _ in s.edits}
+    copies = {path: path.read_bytes() for path in files}
+    for sabotage in chosen:
+        for path, old, _ in sabotage.edits:
+            if copies[path].decode("utf-8").replace("\r\n", "\n").count(old) != 1:
+                raise SystemExit(f"sabotage anchor not found exactly once in {path.name}: {sabotage.label}")
+    caught = 0
+    expected_escapes: list[str] = []
+    surprises: list[str] = []
+    try:
+        print("baseline: the gate must pass unsabotaged", flush=True)
+        if run_acceptance(python) != 0:
+            raise SystemExit("BASELINE FAILED: the gate does not pass unsabotaged; fix that first")
+        print("baseline PASS\n", flush=True)
+        for sabotage in chosen:
+            print(f"sabotage: {sabotage.label}", flush=True)
+            sources: dict[Path, str] = {}
+            for path, old, new in sabotage.edits:
+                source = sources.get(path, copies[path].decode("utf-8").replace("\r\n", "\n"))
+                sources[path] = source.replace(old, new)
+            for path, source in sources.items():
+                path.write_text(source, encoding="utf-8", newline="\n")
+            try:
+                code = run_acceptance(python)
+            finally:
+                for path in sources:
+                    path.write_bytes(copies[path])
+            if code != 0 and sabotage.escapes is None:
+                caught += 1
+                print("    CAUGHT\n", flush=True)
+            elif code == 0 and sabotage.escapes is not None:
+                expected_escapes.append(sabotage.label)
+                print(f"    ESCAPED, as expected: {sabotage.escapes}\n", flush=True)
+            else:
+                surprises.append(sabotage.label)
+                print("    ESCAPED\n" if code == 0 else "    CAUGHT, BUT EXPECTED TO ESCAPE\n", flush=True)
+        must = [s for s in chosen if s.escapes is None]
+        print(f"{caught} of {len(must)} caught; {len(expected_escapes)} escaped as expected", flush=True)
+        for label in surprises:
+            print(f"SURPRISE: {label}", flush=True)
+        if surprises:
+            sys.exit(1)
+    finally:
+        for path, data in copies.items():
+            path.write_bytes(data)
+
+
+if __name__ == "__main__":
+    main()

@@ -1441,8 +1441,9 @@ paths:
         the OpenAI SDK's `client.audio.speech.create(...)` and its
         `with_streaming_response` both work unchanged (captured). The model
         is any with the `speech` surface on `GET /v1/models`: an OpenRouter
-        speech model, OpenAI's, a local OpenAI-shaped speech server, or
-        ElevenLabs through its own engine.
+        speech model, OpenAI's, or ElevenLabs through its own engine. No
+        local driver is a speech backend yet: a single-model driver is chat,
+        embeddings or decisions, and a local server's list is read as chat.
 
         **Same model only** (§5, #4): replicas of one model balance and fail
         over, and nothing else is tried. A voice-over whose voice changes

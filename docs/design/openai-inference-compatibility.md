@@ -10,7 +10,9 @@ checks and 5 live OpenRouter checks, 21 of 21 sabotages caught).
 live checks, 19 of 19 new sabotages caught). **P2c, the missing fields, is built and pinned 2026-09-28** (record
 [`chat-fields-run.md`](../acceptance/chat-fields-run.md)), which completes P2:
 its done-when is met, and both installers pin all five Python components at
-P2's end. **P3-P8 are not built.** §0 is measured, and §6's authenticated measurements
+P2's end. **P3a, speech, is built and pinned 2026-09-28** (record
+[`speech-run.md`](../acceptance/speech-run.md): 15 fixture and 3 live
+checks, the OpenAI SDK unchanged). **P3b and P4-P8 are not built.** §0 is measured, and §6's authenticated measurements
 are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
 recommended; #3 (replace `modelId`) and #8 (Eugene runs some
@@ -661,5 +663,5 @@ measurement:**
 
 | Part | Content | State |
 |---|---|---|
-| **P3a** | `/v1/audio/speech`: OpenAI-shaped speech through accounts (OpenRouter's 21 models, OpenAI) and the new `elevenlabs_http` engine; binary streamed; voices on `/v1/models`; same-model failover | Not started |
+| **P3a** | `/v1/audio/speech`: OpenAI-shaped speech through accounts (OpenRouter's 21 models, OpenAI) and the new `elevenlabs_http` engine; binary streamed; voices on `/v1/models`; same-model failover | **Built and pinned 2026-09-28** ([record](../acceptance/speech-run.md)). ElevenLabs live waits on a key with `models_read` |
 | **P3b** | `/v1/audio/transcriptions`: multipart, through OpenRouter's 24 models and `llama-server`; `/v1/audio/translations` refused (P3-4); metrics units | Not started |
