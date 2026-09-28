@@ -495,6 +495,15 @@ alone.
 
 ## 6. Measurements owed before building
 
+**Taken 2026-09-27** except the video job and the local engines:
+[`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
+The ones that change this design: a driver reads
+`/models/user?output_modalities=all` (the account's own 625), not
+`/models`; an alias answers with its target's id; OpenRouter has no
+`GET /models/{id}`; Lyria's music needs `stream: true` and arrives as one
+~1 MB SSE event; image output on chat is an OpenRouter-only
+`message.images[]`; and speech defaults to `pcm`, not `mp3`.
+
 - **OpenRouter, authenticated** (needs Troy's key; pennies):
   - the speech response format;
   - the video job lifecycle, and whether `/content` redirects to a CDN,
