@@ -159,26 +159,31 @@ components:
           type: string
           const: input_audio
         input_audio:
-          type: object
-          additionalProperties: false
-          required: [data, format]
-          properties:
-            data:
-              type: string
-              maxLength: 13981016
-              description: |
-                The audio, base64-encoded, with no `data:` prefix (OpenAI's
-                shape). At most 10 MiB decoded. Checked against `format`:
-                a WAV must begin `RIFF....WAVE` and an MP3 with an ID3 tag
-                or a frame sync, so a mislabelled clip is refused here
-                rather than as whatever the provider happens to say.
-            format:
-              type: string
-              enum: [wav, mp3]
-              description: |
-                OpenAI's two input formats, which `llama-server` also
-                reads. OpenRouter accepts more; they are refused rather
-                than passed to a backend that may not.
+          $ref: '#/components/schemas/InputAudio'
+    InputAudio:
+      type: object
+      additionalProperties: false
+      required: [data, format]
+      properties:
+        data:
+          type: string
+          maxLength: 13981016
+          description: |
+            The audio, base64-encoded, with no `data:` prefix (OpenAI's
+            shape). At most 10 MiB decoded. Checked against `format`:
+            a WAV must begin `RIFF....WAVE` and an MP3 with an ID3 tag
+            or a frame sync, so a mislabelled clip is refused here
+            rather than as whatever the provider happens to say.
+        format:
+          $ref: '#/components/schemas/InputAudioFormat'
+    InputAudioFormat:
+      type: string
+      enum: [wav, mp3]
+      description: |
+        OpenAI's two input formats, which `llama-server` also reads.
+        OpenRouter accepts more; they are refused rather than passed to
+        a backend that may not. Named rather than inline so a later
+        inline enum cannot rename it (S6's `Source1`).
     FileContentPart:
       type: object
       additionalProperties: false
@@ -192,31 +197,31 @@ components:
           type: string
           const: file
         file:
-          type: object
-          additionalProperties: false
-          properties:
-            filename:
-              type: string
-              maxLength: 255
-              description: |
-                The name the model is shown. Optional; forwarded when set.
-            file_data:
-              type: string
-              maxLength: 13981100
-              description: |
-                The file as a `data:application/pdf;base64,...` URL, at
-                most 10 MiB decoded, beginning `%PDF-`. Bare base64 is
-                accepted and carried as that data URL, because OpenAI's
-                own schema describes it as base64 while OpenRouter refuses
-                anything but the URL (measured 2026-09-28: *"Invalid
-                content"*).
-            file_id:
-              type: string
-              description: |
-                Refused with a 400. It names a file uploaded to one
-                provider's store, which this install does not have; send
-                `file_data`.
-
+          $ref: '#/components/schemas/InputFile'
+    InputFile:
+      type: object
+      additionalProperties: false
+      properties:
+        filename:
+          type: string
+          maxLength: 255
+          description: |
+            The name the model is shown. Optional; forwarded when set.
+        file_data:
+          type: string
+          maxLength: 13981100
+          description: |
+            The file as a `data:application/pdf;base64,...` URL, at most
+            10 MiB decoded, beginning `%PDF-`. Bare base64 is accepted
+            and carried as that data URL, because OpenAI's own schema
+            describes it as base64 while OpenRouter refuses anything but
+            the URL (measured 2026-09-28: *"Invalid content"*).
+        file_id:
+          type: string
+          description: |
+            Refused with a 400. It names a file uploaded to one
+            provider's store, which this install does not have; send
+            `file_data`.
     # -------- Backend + component identity --------
 
     BackendKind:
