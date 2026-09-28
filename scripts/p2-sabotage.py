@@ -108,8 +108,8 @@ SABOTAGES: list[Sabotage] = [
     Sabotage(
         "the chat door never works out what the request carries",
         ((GATEWAY / "routes" / "inference.py",
-          "    needs = attachment_kinds(body.messages)\n    wake: WakeResult | None = None\n",
-          "    needs = frozenset()\n    wake: WakeResult | None = None\n"),),
+          "    needs = attachment_kinds(body.messages)\n",
+          "    needs = frozenset()\n"),),
     ),
     Sabotage(
         "GET /v1/models reports no audio input",
@@ -188,6 +188,122 @@ SABOTAGES: list[Sabotage] = [
         ((GATEWAY / "responses.py",
           "input_audio=InputAudio(data=data, format=InputAudioFormat(fmt))",
           'input_audio=InputAudio(data=data, format=InputAudioFormat("wav"))'),),
+    ),
+    # --- P2b, the driver: audio out ---------------------------------------------------
+    Sabotage(
+        "the driver reads no audio output from the listing",
+        ((DRIVER / "engines" / "_catalogue.py",
+          '                    audioOutput="audio" in output,\n',
+          "                    audioOutput=False,\n"),),
+    ),
+    Sabotage(
+        "the backend is asked for the caller's format instead of pcm16",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          '"format": "pcm16"}',
+          '"format": request.audioOutput.format.value}'),),
+    ),
+    Sabotage(
+        "a non-streamed spoken answer is asked for without a stream",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          "            return await self._assembled(request)\n",
+          "            pass\n"),),
+    ),
+    Sabotage(
+        "a pcm16 stream asked for as wav gets no header",
+        ((DRIVER / "audio_out.py",
+          "        if fmt is AudioOutputFormat.pcm16 and asked is AudioOutputFormat.wav:\n",
+          "        if False:\n"),),
+    ),
+    Sabotage(
+        "the clip is labelled with the format asked, not the one it is",
+        ((DRIVER / "audio_out.py",
+          "        fmt = self.format or AudioOutputFormat.pcm16\n",
+          "        fmt = asked\n"),),
+    ),
+    Sabotage(
+        "a lone frame sync is taken for an MP3",
+        ((DRIVER / "audio_out.py",
+          "    if length is not None and _mp3_frame_length(raw, length) is not None:\n",
+          "    if length is not None:\n"),),
+    ),
+    Sabotage(
+        "the driver's stream never frames an audio fragment",
+        ((DRIVER / "routes" / "generate.py",
+          '    audio = getattr(chunk, "audio", None)\n    if audio is not None:\n',
+          '    audio = getattr(chunk, "audio", None)\n    if False:\n'),),
+    ),
+    Sabotage(
+        "the driver asks a model that does not speak to",
+        ((DRIVER / "routes" / "generate.py",
+          "    if not confirmed:\n        raise HTTPException(\n",
+          "    if False:\n        raise HTTPException(\n"),),
+    ),
+    Sabotage(
+        "the driver takes any audio format",
+        ((DRIVER / "routes" / "generate.py",
+          "    if asked.format not in formats:\n",
+          "    if False:\n"),),
+    ),
+    # --- P2b, the gateway: audio out ----------------------------------------------------
+    Sabotage(
+        "a spoken request is routed like a text one",
+        ((GATEWAY / "routes" / "inference.py",
+          '        needs = needs | {"audio_output"}\n',
+          "        pass\n"),),
+    ),
+    Sabotage(
+        "GET /v1/models reports no audio output",
+        ((GATEWAY / "routing.py",
+          "                        audio_output=any(takes(b.caps, _SPEAKS) for b in backends),\n",
+          "                        audio_output=False,\n"),),
+    ),
+    Sabotage(
+        "the gateway takes any non-streamed audio format",
+        ((GATEWAY / "chat_contract.py",
+          '    if not parsed.stream and fmt not in ("wav", "pcm16"):\n',
+          "    if False:\n"),),
+    ),
+    Sabotage(
+        "the gateway takes any streamed audio format",
+        ((GATEWAY / "chat_contract.py",
+          '    if parsed.stream and fmt != "pcm16":\n',
+          "    if False:\n"),),
+    ),
+    Sabotage(
+        "audio without modalities is ignored rather than refused",
+        ((GATEWAY / "chat_contract.py",
+          "    if parsed.audio is not None and not asked:\n",
+          "    if False:\n"),),
+    ),
+    Sabotage(
+        "an assistant's audio {id} is not told why",
+        ((GATEWAY / "chat_contract.py",
+          '        if isinstance(message, dict) and "audio" in message:\n',
+          "        if False:\n"),),
+    ),
+    Sabotage(
+        "the driver is never asked for audio",
+        ((GATEWAY / "routes" / "inference.py",
+          "        if body.audio is not None and chat_contract.wants_audio(body)\n",
+          "        if False\n"),),
+    ),
+    Sabotage(
+        "a non-streamed answer drops its audio",
+        ((GATEWAY / "routes" / "inference.py",
+          "                    audio=_to_openai_audio(response),\n",
+          "                    audio=None,\n"),),
+    ),
+    Sabotage(
+        "a streamed audio fragment is not forwarded as delta.audio",
+        ((GATEWAY / "routes" / "inference.py",
+          "                if event.audio:\n",
+          "                if False:\n"),),
+    ),
+    Sabotage(
+        "the gateway reads no audio off the driver's stream",
+        ((GATEWAY / "driver_client.py",
+          "                if isinstance(audio, dict) and audio:\n",
+          "                if False:\n"),),
     ),
 ]
 

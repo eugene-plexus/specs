@@ -9,7 +9,9 @@
   well under a cent.
 - **`scripts/p2-sabotage.py`: 21 of 21 caught, and 1 escaped as the pass said
   it would** (below).
-- **Pins, both installers:** inference-driver `934d824`, gateway `ba25538`.
+- **Pins, both installers:** inference-driver `934d824`, gateway `ba25538`
+  (superseded the same day by P2b's `429d0d0` and `e44b88b`, which carry this;
+  [record](audio-output-run.md)).
   These are P2a plus the provider-key fix
   ([record](decision-run.md#hosted-jev-through-openrouter-2026-09-28)). Both
   archives were fetched from GitHub (HTTP 200).

@@ -5,7 +5,9 @@
 **P2a, attachments in, is built and pinned in both installers 2026-09-28**
 (record [`media-inputs-run.md`](../acceptance/media-inputs-run.md): 9 fixture
 checks and 5 live OpenRouter checks, 21 of 21 sabotages caught).
-**P2b, P2c and P3-P8 are not built.** §0 is measured, and §6's authenticated measurements
+**P2b, audio out, is built and pinned 2026-09-28** (record
+[`audio-output-run.md`](../acceptance/audio-output-run.md): 5 fixture and 3
+live checks, 19 of 19 new sabotages caught). **P2c and P3-P8 are not built.** §0 is measured, and §6's authenticated measurements
 are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
 recommended; #3 (replace `modelId`) and #8 (Eugene runs some
@@ -575,7 +577,10 @@ Troy took all three as recommended.
 
 - **Consequential settings route around a model that does not list them** (A2):
   `logit_bias`, `logprobs`/`top_logprobs`, `reasoning_effort`, `verbosity`,
-  `prediction`, `web_search_options`, and `modalities`/`audio`.
+  `prediction` and `web_search_options`. **`modalities`/`audio` were on this
+  list and came off it when measured (2026-09-28):** no audio-output model on
+  OpenRouter lists either as a parameter, so this rule would route them
+  nowhere. P2b routes them by `output_modalities` instead.
 - **Hints are carried where the backend takes them and dropped elsewhere**, as
   `metadata` and `safety_identifier` already are on chat: `prompt_cache_key`,
   `prompt_cache_retention`, `prompt_cache_options`, `safety_identifier` and
@@ -597,5 +602,5 @@ Troy took all three as recommended.
 | Part | Content | State |
 |---|---|---|
 | **P2a** | Attachments in: `input_audio` and `file` on chat, `input_file`/`input_audio` on Responses, `document` on Messages; routing by `audioInput`/`fileInput` | **Built 2026-09-28** (specs `6ac2761`, driver `e231aaf`, gateway `de7a65f`). Acceptance, live OpenRouter run and sabotage pass done; both installers pin driver `934d824` and gateway `ba25538`. |
-| **P2b** | Audio out: `modalities` and `audio` on chat; streamed pcm16 assembled for a batch answer, WAV-wrapped when `wav` was asked (P2-1); Lyria's mp3 labelled by its header (P2-2); routing by `outputModalities` | Not started |
+| **P2b** | Audio out: `modalities` and `audio` on chat; streamed pcm16 assembled for a batch answer, WAV-wrapped when `wav` was asked (P2-1); Lyria's mp3 labelled by its header (P2-2); routing by `outputModalities` | **Built 2026-09-28** (specs `060f516`, driver `429d0d0`, gateway `e44b88b`). Acceptance, live OpenRouter run and sabotage pass done; both installers pin driver `429d0d0` and gateway `e44b88b`. Routing keys on `output_modalities` because no audio model lists `modalities` or `audio` as a parameter (measured). |
 | **P2c** | The missing fields (the list above) and `/v1/responses/input_tokens` | Not started |

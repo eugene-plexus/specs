@@ -6,14 +6,14 @@ Compatibility means the features below, not every feature of a provider API.
 | Surface or feature | Status | Boundary |
 | --- | --- | --- |
 | `GET /v1/models` | Supported | Eugene's discovered models and routing aliases. |
-| `POST /v1/chat/completions` | Supported | Text messages, tools, structured-output forwarding, batch responses and SSE. Images, audio and PDFs as content parts (see [attachments](#attachments)). |
+| `POST /v1/chat/completions` | Supported | Text messages, tools, structured-output forwarding, batch responses and SSE. Images, audio and PDFs as content parts (see [attachments](#attachments)). A spoken answer with `modalities` and `audio` (see [audio output](#audio-output)). |
 | `POST /v1/messages` | Supported subset | Anthropic text, image, document and tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
 | `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
 | Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (speech, image, video, transcription) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
-| Audio output, speech, transcription, image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P2b-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
+| Speech, transcription, image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P3-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
 | Content-part input: images, audio, PDFs | Supported subset | Ordered text plus inline PNG/JPEG, WAV/MP3 and PDF on user messages, sent only to backends that confirm that input. See [attachments](#attachments). |
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
@@ -189,15 +189,48 @@ confirms either. With no confirming backend the request is refused before
 anything is sent or woken. `count_tokens` cannot count a request with an
 attachment and says so.
 
-Unverified: no live provider has answered through the gateway yet. The shapes
-were measured against OpenRouter directly on 2026-09-28
-([measurement](acceptance/provider-accounts-measurement.md)).
+Verified live through the gateway on 2026-09-28 against OpenRouter: an MP3
+transcribed and a PDF read through chat, a `document` block read through
+`/v1/messages`, and a slot whose first tier cannot hear answered from its
+second ([record](acceptance/media-inputs-run.md)).
 Initially verified capability discovery is the single-model llama.cpp server's
 `/props` vision modality plus matching `/v1/models` identity. Other engines and
 multi-model endpoints do not yet advertise image input, even if they could
 support it outside Eugene. Unknown capability is not a promise.
 
 See [application setup](application-workflows.md) for the named client paths.
+
+## Audio output
+
+Since 2026-09-28 (P2b), `modalities: ["text", "audio"]` with
+`audio: {"voice": ..., "format": ...}` asks for a spoken answer. It is
+`message.audio` on the answer (`delta.audio` when streamed): `data` is
+base64, `transcript` is what it says, and `format` is what the bytes are.
+The answer's text is the transcript, and `content` is null.
+
+- **Routed only to a model that speaks:** `x_eugene_plexus.audio_output` on
+  `GET /v1/models`, from `audio` in an OpenRouter model's output modalities.
+  Fallback tiers included; with none it is a 400 naming that field. No local
+  engine or CLI speaks.
+- **Formats.** Every audio-output model behind an account answers audio only
+  on a stream and only as 16-bit, 24 kHz mono `pcm16` (measured), so that is
+  what the backend is asked for. A non-streamed answer takes `wav` (that
+  stream with a header) or `pcm16`. A streamed answer takes `pcm16` only, as
+  OpenAI's does. `mp3`, `flac`, `opus` and `aac` are refused with a 400
+  naming the two that work; nothing transcodes.
+- **Labelled truthfully.** Lyria answers MP3 whatever it is asked, and its
+  audio comes back with `format: "mp3"`, not as the WAV that was asked for.
+  `format` is not an OpenAI field on `message.audio`; it is there because
+  OpenAI's shape cannot say this.
+- **Nothing stores it.** An assistant message sent back with `audio: {id}`
+  is refused; send the transcript as `content`.
+- `audio` without `"audio"` in `modalities`, and the reverse, are refused.
+- Not on `/v1/messages` or `/v1/responses`.
+
+Verified live on 2026-09-28 against OpenRouter: `openai/gpt-audio-mini`
+answered as a WAV that `google/gemini-2.5-flash-lite` then transcribed word
+for word, and `google/lyria-3-clip-preview` returned music, labelled `mp3`
+([record](acceptance/audio-output-run.md)).
 
 ## Typed decisions (B2)
 

@@ -1,4 +1,4 @@
-"""P2a: audio and PDF inputs at every door, through real signed processes.
+"""P2a and P2b: audio and PDFs in, and audio out, through real signed processes.
 
 A control root, an enrolled agent, a gateway and an OpenRouter-shaped
 inference-driver, all started here with isolated state and ports. The driver
@@ -8,10 +8,14 @@ listing reader decides what each model takes. The fixture lists three models:
 
 * `acme/text-only` -- text in;
 * `acme/hears` -- text and audio in;
-* `acme/reads` -- text and PDFs in.
+* `acme/reads` -- text and PDFs in;
+* `acme/speaks` -- audio out, streamed as `pcm16` the way `gpt-audio` is;
+* `acme/sings` -- audio out as one MP3, the way Lyria is.
 
 Like OpenRouter, the fixture refuses an attachment its listing does not
-confirm with a 404 *"No endpoints found that support input ..."*, and it
+confirm with a 404 *"No endpoints found that support input ..."*, a
+non-streamed audio answer with a 400 *"Audio output requires stream: true"*
+and a streamed one in any format but `pcm16` with OpenAI's 400, and it
 counts every request per model and keeps the bodies it was sent, so a check
 can say what reached the upstream and what did not.
 
@@ -21,7 +25,7 @@ passed, which adds a real OpenRouter account read with the key in
 That key is handed to its driver process only in `OPENAI_API_KEY`, which
 the engine already falls back to, so it is never written to a config file,
 a log or this script's output; the last live check scans the run's state
-for it. The live run costs a few thousandths of a dollar.
+for it. The live run costs about five cents, four of them Lyria's clip.
 
 Run in an environment containing all five Python components (on this box,
 `agent/.venv`). Logs and state stay in a temporary tree.
@@ -55,12 +59,25 @@ LISTING = {
     "acme/text-only": ["text"],
     "acme/hears": ["text", "audio"],
     "acme/reads": ["text", "file"],
+    "acme/speaks": ["text"],
+    "acme/sings": ["text"],
 }
+#: The fixture models that give audio back (`output_modalities`).
+SPEAKERS = {"acme/speaks", "acme/sings"}
+#: What `acme/speaks` streams, in two fragments, and `acme/sings` sends whole.
+#: The samples open with `FF FB 90 00`, a valid MPEG-1 Layer III header, and
+#: no second header where it says the frame ends -- so they are `pcm16`, and
+#: only a format check that trusts a lone frame sync would call them MP3.
+PCM = b"\xff\xfb\x90\x00" + bytes(range(256)) * 150
+SONG = b"ID3\x03\x00\x00\x00\x00\x00\x00" + bytes(range(256)) * 8
 #: The two models the live run uses, both measured against OpenRouter
 #: directly on 2026-09-28: the first answers the fox and the zebra, the
 #: second is refused audio by OpenRouter itself.
 LIVE_HEARS = "google/gemini-2.5-flash-lite"
 LIVE_TEXT = "mistralai/mistral-nemo"
+#: Audio out, measured 2026-09-28: `pcm16` streams only, and Lyria's MP3.
+LIVE_SPEAKS = "openai/gpt-audio-mini"
+LIVE_SINGS = "google/lyria-3-clip-preview"
 
 
 def _openrouter_key() -> str:
@@ -130,12 +147,58 @@ def serve(kind: str, directory: Path, port: int) -> None:
                         "id": model_id,
                         "name": model_id,
                         "context_length": 32768,
-                        "architecture": {"input_modalities": inputs, "output_modalities": ["text"]},
+                        "architecture": {
+                            "input_modalities": inputs,
+                            "output_modalities": ["text", "audio"] if model_id in SPEAKERS else ["text"],
+                        },
                         "supported_parameters": ["max_tokens", "temperature", "tools", "tool_choice"],
                     }
                     for model_id, inputs in LISTING.items()
                 ]
             }
+
+        def spoken(model, body):
+            """An audio answer, refused and shaped as measured 2026-09-28."""
+            if model not in SPEAKERS:
+                return JSONResponse(
+                    {"error": {"message": "No endpoints found that support output audio", "code": 404}},
+                    status_code=404,
+                )
+            if not body.get("stream"):
+                return JSONResponse(
+                    {"error": {"message": "Audio output requires stream: true", "code": 400}},
+                    status_code=400,
+                )
+            fmt = (body.get("audio") or {}).get("format")
+            if model == "acme/speaks" and fmt != "pcm16":
+                return JSONResponse(
+                    {"error": {"message": f"'audio.format' does not support '{fmt}' when stream=true. "
+                               "Supported values are: 'pcm16'.", "code": 400}},
+                    status_code=400,
+                )
+            if model == "acme/speaks":
+                half = len(PCM) // 2
+                deltas = [
+                    {"role": "assistant", "content": ""},
+                    {"audio": {"id": "audio_fixture", "transcript": "Hello"}},
+                    {"audio": {"transcript": " there", "data": base64.b64encode(PCM[:half]).decode(),
+                               "expires_at": 1790609721}},
+                    {"audio": {"data": base64.b64encode(PCM[half:]).decode()}},
+                ]
+            else:
+                deltas = [{"content": "[0.0:2.0] LA LA"}, {"audio": {"data": base64.b64encode(SONG).decode()}}]
+
+            async def stream():
+                for delta in deltas:
+                    yield "data: " + json.dumps(
+                        {"model": model, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+                    ) + "\n\n"
+                yield "data: " + json.dumps(
+                    {"model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+                ) + "\n\n"
+                yield "data: [DONE]\n\n"
+
+            return StreamingResponse(stream(), media_type="text/event-stream")
 
         @app.post("/v1/chat/completions")
         async def chat(request: Request):
@@ -157,6 +220,8 @@ def serve(kind: str, directory: Path, port: int) -> None:
                     {"error": {"message": f"No endpoints found that support input {refused[0]}", "code": 404}},
                     status_code=404,
                 )
+            if "audio" in (body.get("modalities") or []):
+                return spoken(model, body)
             text = f"answer from {model} with {'+'.join(sorted(kinds)) or 'text'}"
             usage = {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
             if body.get("stream"):
@@ -391,17 +456,23 @@ def exercise(directory: Path, *, live: bool) -> None:
         slots = [
             {"model": "assistant", "targets": ["router/acme/text-only", "router/acme/hears"]},
             {"model": "mixed", "targets": ["router/acme/hears", "router/acme/reads"]},
+            {"model": "speaker", "targets": ["router/acme/text-only", "router/acme/speaks"]},
         ]
         if live:
             write("openrouter", "bootstrap.json", bootstrap("inference-driver"))
             write("openrouter", "driver.yaml", {
-                "provider": "openrouter", "catalogueInclude": [LIVE_HEARS, LIVE_TEXT],
+                "provider": "openrouter",
+                "catalogueInclude": [LIVE_HEARS, LIVE_TEXT, LIVE_SPEAKS, LIVE_SINGS],
             })
             start("openrouter", {"OPENAI_API_KEY": live_key})
             declare("openrouter")
             slots.append({
                 "model": "live-assistant",
                 "targets": [f"openrouter/{LIVE_TEXT}", f"openrouter/{LIVE_HEARS}"],
+            })
+            slots.append({
+                "model": "live-speaker",
+                "targets": [f"openrouter/{LIVE_TEXT}", f"openrouter/{LIVE_SPEAKS}"],
             })
         write("gateway", "bootstrap.json", bootstrap("gateway"))
         write("gateway", "gateway.yaml", {"routingRefreshSeconds": 2, "modelSlots": slots})
@@ -419,7 +490,7 @@ def exercise(directory: Path, *, live: bool) -> None:
                 for m in call("gateway", "GET", "/v1/models", key).json().get("data", [])
             }
 
-        wanted = {f"router/{m}" for m in LISTING} | {"assistant", "mixed"}
+        wanted = {f"router/{m}" for m in LISTING} | {"assistant", "mixed", "speaker"}
         wait(lambda: wanted <= set(models()), "the fixture account's models are routable")
 
         # --- 1. what each model takes, from the listing -----------------------
@@ -427,6 +498,7 @@ def exercise(directory: Path, *, live: bool) -> None:
         takes = {m: (c.get("audioInput"), c.get("fileInput")) for m, c in info.items()}
         assert takes == {
             "acme/text-only": (False, False), "acme/hears": (True, False), "acme/reads": (False, True),
+            "acme/speaks": (False, False), "acme/sings": (False, False),
         }, takes
         listed = models()
         reported = {m: (listed[f"router/{m}"].get("audio_input"), listed[f"router/{m}"].get("file_input")) for m in LISTING}
@@ -619,6 +691,105 @@ def exercise(directory: Path, *, live: bool) -> None:
         ok("the driver called directly refuses audio or a PDF its model's listing does not confirm and MP3 bytes "
            "declared wav, sending nothing upstream, and sends a bare-base64 PDF on as the data URL")
 
+        # --- P2b. audio out ------------------------------------------------------
+        def speak(model, fmt="wav", *, stream=False, **extra):
+            return call("gateway", "POST", "/v1/chat/completions", key, json={
+                "model": model, "stream": stream, "max_tokens": 64,
+                "messages": [{"role": "user", "content": "Say hello."}],
+                "modalities": ["text", "audio"], "audio": {"voice": "alloy", "format": fmt}, **extra,
+            })
+
+        def wav_parts(raw):
+            """(sample rate, data) of a WAV, or fail."""
+            assert raw[:4] == b"RIFF" and raw[8:12] == b"WAVE", raw[:12]
+            rate = int.from_bytes(raw[24:28], "little")
+            assert raw[36:40] == b"data", raw[36:40]
+            return rate, raw[44:44 + int.from_bytes(raw[40:44], "little")]
+
+        info = {m["id"]: m["capabilities"] for m in call("router", "GET", "/v1/info", operator).json()["models"]}
+        speaks = {m for m, c in info.items() if c.get("audioOutput")}
+        assert speaks == SPEAKERS, speaks
+        listed = models()
+        assert {m for m in LISTING if listed[f"router/{m}"].get("audio_output")} == SPEAKERS, listed
+        assert listed["speaker"].get("audio_output") is True, listed["speaker"]
+        ok("audio output is read per model from what the listing says it gives back, and GET /v1/models reports it")
+
+        for fmt in ("wav", "pcm16"):
+            before = counts()
+            response = speak("speaker", fmt)
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["x_eugene_plexus"]["tier"] == 2 and body["x_eugene_plexus"]["attempts"] == 1, body["x_eugene_plexus"]
+            after = counts()
+            assert after.get("acme/text-only", 0) == before.get("acme/text-only", 0), (before, after)
+            assert after.get("acme/speaks", 0) == before.get("acme/speaks", 0) + 1, (before, after)
+            upstream = last_seen("acme/speaks")
+            assert upstream["stream"] is True and upstream["modalities"] == ["text", "audio"], upstream.get("modalities")
+            assert upstream["audio"] == {"voice": "alloy", "format": "pcm16"}, upstream["audio"]
+            message = body["choices"][0]["message"]
+            audio = message["audio"]
+            raw = base64.b64decode(audio["data"])
+            assert audio["format"] == fmt and audio["transcript"] == "Hello there", {k: audio[k] for k in ("format", "transcript")}
+            assert audio["id"] == "audio_fixture" and audio["expires_at"] == 1790609721
+            assert message["content"] is None, message["content"]
+            if fmt == "wav":
+                assert wav_parts(raw) == (24000, PCM)
+            else:
+                assert raw == PCM
+        ok("a spoken answer to speaker -> [text-only, speaks] comes from tier 2 in one attempt, the text model never "
+           "asked; the backend is asked for a pcm16 stream and the answer is WAV (24 kHz header) or the samples")
+
+        response = speak("speaker", "pcm16", stream=True)
+        assert response.status_code == 200, response.text
+        frames = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: {")]
+        fragments = [c["delta"]["audio"] for f in frames for c in f.get("choices") or [] if "audio" in (c.get("delta") or {})]
+        assert fragments[0] == {"id": "audio_fixture", "transcript": "Hello"}, fragments[0]
+        assert fragments[1].get("format") == "pcm16", fragments[1]
+        assert b"".join(base64.b64decode(f["data"]) for f in fragments if "data" in f) == PCM
+        assert "".join(f.get("transcript", "") for f in fragments) == "Hello there"
+        ok("streamed, each audio fragment arrives as delta.audio and they reassemble to the samples sent")
+
+        response = speak("router/acme/sings", "wav")
+        assert response.status_code == 200, response.text
+        message = response.json()["choices"][0]["message"]
+        assert message["audio"]["format"] == "mp3", message["audio"]["format"]
+        assert base64.b64decode(message["audio"]["data"]) == SONG
+        assert message["content"] == "[0.0:2.0] LA LA", message["content"]
+        ok("a Lyria-shaped model asked for WAV answers MP3, and it is returned as sent and labelled mp3")
+
+        before = counts()
+        hello = [{"role": "user", "content": "Say hello."}]
+        wav = {"voice": "alloy", "format": "wav"}
+        for body, param, words in (
+            ({"messages": hello, "modalities": ["text", "audio"], "audio": {"voice": "alloy", "format": "mp3"}},
+             "audio.format", "wav or pcm16"),
+            ({"messages": hello, "modalities": ["text", "audio"], "audio": wav, "stream": True},
+             "audio.format", "pcm16"),
+            ({"messages": hello, "modalities": ["text"], "audio": wav}, "audio", "modalities"),
+            ({"messages": [*hello, {"role": "assistant", "audio": {"id": "audio_x"}},
+                           {"role": "user", "content": "again"}]}, "messages[1].audio", "keeps none"),
+        ):
+            refused = call("gateway", "POST", "/v1/chat/completions", key, json={"model": "speaker", **body})
+            assert refused.status_code == 400, refused.text
+            error = refused.json()["error"]
+            assert error.get("param") == param and words in error["message"], error
+        refused = speak("router/acme/text-only")
+        assert refused.status_code == 400 and "x_eugene_plexus.audio_output" in refused.text, refused.text
+        direct = call("router", "POST", "/v1/generate", operator, json={
+            "model": "acme/text-only", "messages": [{"role": "user", "content": "hi"}],
+            "audioOutput": {"voice": "alloy", "format": "wav"},
+        })
+        assert direct.status_code == 400 and "Audio output not supported" in direct.text, direct.text
+        direct = call("router", "POST", "/v1/generate", operator, json={
+            "model": "acme/speaks", "messages": [{"role": "user", "content": "hi"}],
+            "audioOutput": {"voice": "alloy", "format": "mp3"},
+        })
+        assert direct.status_code == 400 and "#audio-format-unsupported" in direct.text, direct.text
+        assert counts() == before, (before, counts())
+        ok("MP3 asked non-streamed, WAV asked streamed, audio without modalities and an assistant's audio {id} are "
+           "refused by the gateway naming the field; a model that does not speak is a 400 naming audio_output; "
+           "the driver refuses both on its own; nothing reaches the upstream")
+
         # --- 9. live OpenRouter ---------------------------------------------------
         if live:
             hears, text_only = f"openrouter/{LIVE_HEARS}", f"openrouter/{LIVE_TEXT}"
@@ -674,6 +845,60 @@ def exercise(directory: Path, *, live: bool) -> None:
             assert "fox" in heard, answer
             ok(f"the slot live-assistant -> [{LIVE_TEXT}, {LIVE_HEARS}] answers text from tier 1 and the fox from "
                "tier 2 in one attempt: the model OpenRouter refuses audio for is never sent it")
+
+            speaks_live, sings_live = f"openrouter/{LIVE_SPEAKS}", f"openrouter/{LIVE_SINGS}"
+            wait(lambda: {speaks_live, sings_live, "live-speaker"} <= set(models()), "OpenRouter's audio models", 60)
+            listed = models()
+            assert listed[speaks_live].get("audio_output") is True and listed[sings_live].get("audio_output") is True
+            assert listed[text_only].get("audio_output") is False, listed[text_only]
+
+            response = call("gateway", "POST", "/v1/chat/completions", key, json={
+                "model": speaks_live, "max_tokens": 80,
+                "messages": [
+                    {"role": "system", "content": "Repeat the user's sentence aloud, word for word, and nothing else."},
+                    {"role": "user", "content": "The zebra is blue and the kettle is singing."},
+                ],
+                "modalities": ["text", "audio"], "audio": {"voice": "alloy", "format": "wav"},
+            })
+            assert response.status_code == 200, response.text[:400]
+            audio = response.json()["choices"][0]["message"]["audio"]
+            raw = base64.b64decode(audio["data"])
+            rate, samples = wav_parts(raw)
+            assert audio["format"] == "wav" and rate == 24000 and len(samples) > 24000, (audio["format"], rate, len(samples))
+            said = {w for w in "".join(c for c in (audio.get("transcript") or "").lower() if c.isalpha() or c.isspace()).split() if len(w) >= 4}
+            assert said, audio.get("transcript")
+            print(f"INFO speech: {len(samples) / 48000:.2f} s, transcript {audio.get('transcript')!r}", flush=True)
+            # The round trip: the WAV this gateway built, heard by another
+            # model. Whatever gpt-audio chose to say, a WAV with a wrong
+            # header plays at the wrong speed or not at all, and is not
+            # heard back as the same words.
+            heard, answer = words(chat(key, hears, [
+                {"type": "text", "text": "Transcribe this recording exactly. Reply with the transcript only."},
+                {"type": "input_audio", "input_audio": {"data": audio["data"], "format": "wav"}},
+            ]))
+            shared = said & set(heard)
+            assert len(shared) * 2 >= len(said), (sorted(said), answer)
+            print(f"INFO speech heard back by {LIVE_HEARS}: {answer.strip()!r} ({len(shared)} of {len(said)} words)", flush=True)
+            ok(f"through chat, {LIVE_SPEAKS} answers as a WAV this gateway assembled from its pcm16 stream, and "
+               f"{LIVE_HEARS} transcribes that WAV back, so the header is right")
+
+            response = speak("live-speaker", "pcm16")
+            assert response.status_code == 200, response.text[:400]
+            envelope = response.json()["x_eugene_plexus"]
+            assert envelope.get("tier") == 2 and envelope.get("attempts") == 1, envelope
+            ok(f"the slot live-speaker -> [{LIVE_TEXT}, {LIVE_SPEAKS}] answers a spoken request from tier 2 in one attempt")
+
+            response = call("gateway", "POST", "/v1/chat/completions", key, json={
+                "model": sings_live,
+                "messages": [{"role": "user", "content": "A five second cheerful ukulele jingle."}],
+                "modalities": ["text", "audio"], "audio": {"voice": "alloy", "format": "wav"},
+            }, timeout=120)
+            assert response.status_code == 200, response.text[:400]
+            audio = response.json()["choices"][0]["message"]["audio"]
+            raw = base64.b64decode(audio["data"])
+            assert audio["format"] == "mp3" and raw[:3] == b"ID3" and len(raw) > 100_000, (audio["format"], raw[:4], len(raw))
+            print(f"INFO music: {len(raw)} bytes of MP3 asked for as WAV", flush=True)
+            ok(f"through chat, {LIVE_SINGS} returns music: asked for WAV, it sent MP3, labelled mp3")
 
             # The key reached its driver in the environment only.
             leaked = [
