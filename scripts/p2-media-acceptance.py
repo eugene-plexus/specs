@@ -1,4 +1,5 @@
-"""P2a and P2b: audio and PDFs in, and audio out, through real signed processes.
+"""P2: audio and PDFs in, audio out, and the missing chat fields, through real
+signed processes.
 
 A control root, an enrolled agent, a gateway and an OpenRouter-shaped
 inference-driver, all started here with isolated state and ports. The driver
@@ -10,7 +11,17 @@ listing reader decides what each model takes. The fixture lists three models:
 * `acme/hears` -- text and audio in;
 * `acme/reads` -- text and PDFs in;
 * `acme/speaks` -- audio out, streamed as `pcm16` the way `gpt-audio` is;
-* `acme/sings` -- audio out as one MP3, the way Lyria is.
+* `acme/sings` -- audio out as one MP3, the way Lyria is;
+* `acme/thinks` -- lists every setting P2c carries (logprobs, logit_bias,
+  reasoning_effort, verbosity, prediction, web_search_options), answers with
+  logprobs and citations, and calls a tool when one is forced.
+
+A second fixture driver, `llama`, is a single-model `llama-server` (the
+fixture's `/llama` prefix), the one kind of backend that counts a prompt
+without generating (`/apply-template`, `/tokenize`).
+
+Like OpenRouter with `provider.require_parameters`, the fixture refuses a
+setting a model does not list with a 404.
 
 Like OpenRouter, the fixture refuses an attachment its listing does not
 confirm with a 404 *"No endpoints found that support input ..."*, a
@@ -61,9 +72,19 @@ LISTING = {
     "acme/reads": ["text", "file"],
     "acme/speaks": ["text"],
     "acme/sings": ["text"],
+    "acme/thinks": ["text"],
 }
 #: The fixture models that give audio back (`output_modalities`).
 SPEAKERS = {"acme/speaks", "acme/sings"}
+#: Every model lists these (`supported_parameters`); `acme/thinks` lists P2C too.
+BASE_PARAMS = ["max_tokens", "temperature", "tools", "tool_choice"]
+P2C = ["logprobs", "top_logprobs", "logit_bias", "reasoning_effort", "verbosity", "prediction",
+       "web_search_options"]
+#: What the OpenRouter-shaped fixture answers a web search with: one citation,
+#: and OpenRouter's own `file` note, which is not a citation.
+CITATION = {"type": "url_citation", "url_citation": {"url": "https://example.org/canberra",
+                                                     "title": "Canberra", "start_index": 0, "end_index": 0}}
+FILE_NOTE = {"type": "file", "file": {"hash": "h", "name": "a.pdf", "content": []}}
 #: What `acme/speaks` streams, in two fragments, and `acme/sings` sends whole.
 #: The samples open with `FF FB 90 00`, a valid MPEG-1 Layer III header, and
 #: no second header where it says the frame ends -- so they are `pcm16`, and
@@ -78,6 +99,13 @@ LIVE_TEXT = "mistralai/mistral-nemo"
 #: Audio out, measured 2026-09-28: `pcm16` streams only, and Lyria's MP3.
 LIVE_SPEAKS = "openai/gpt-audio-mini"
 LIVE_SINGS = "google/lyria-3-clip-preview"
+#: P2c: the listing names `reasoning_effort` for the first and
+#: `web_search_options` for the second (measured 2026-09-28).
+LIVE_THINKS = "openai/gpt-oss-20b"
+LIVE_SEARCHES = "perplexity/sonar"
+#: Forcing a named function: mistral-nemo lists `tool_choice` and its
+#: providers refuse a named one (measured 2026-09-28), so gpt-4o-mini.
+LIVE_CALLS = "openai/gpt-4o-mini"
 
 
 def _openrouter_key() -> str:
@@ -151,7 +179,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
                             "input_modalities": inputs,
                             "output_modalities": ["text", "audio"] if model_id in SPEAKERS else ["text"],
                         },
-                        "supported_parameters": ["max_tokens", "temperature", "tools", "tool_choice"],
+                        "supported_parameters": BASE_PARAMS + (P2C if model_id == "acme/thinks" else []),
                     }
                     for model_id, inputs in LISTING.items()
                 ]
@@ -200,6 +228,31 @@ def serve(kind: str, directory: Path, port: int) -> None:
 
             return StreamingResponse(stream(), media_type="text/event-stream")
 
+        @app.get("/llama/v1/models")
+        async def llama_models():
+            return {"data": [{"id": "local-llama", "object": "model"}]}
+
+        @app.post("/llama/apply-template")
+        async def llama_template(request: Request):
+            body = await request.json()
+            return {"prompt": " ".join(str(m.get("content")) for m in body.get("messages") or [])}
+
+        @app.post("/llama/tokenize")
+        async def llama_tokenize(request: Request):
+            body = await request.json()
+            return {"tokens": list(range(len(str(body.get("content") or "").split())))}
+
+        @app.post("/llama/v1/chat/completions")
+        async def llama_chat(request: Request):
+            return await chat(request)
+
+        def logprobs_for(words, top):
+            return {"content": [
+                {"token": w, "logprob": -0.25, "bytes": list(w.encode()),
+                 "top_logprobs": [{"token": w, "logprob": -0.25, "bytes": list(w.encode())}][:top]}
+                for w in words
+            ], "refusal": None}
+
         @app.post("/v1/chat/completions")
         async def chat(request: Request):
             body = await request.json()
@@ -222,28 +275,66 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 )
             if "audio" in (body.get("modalities") or []):
                 return spoken(model, body)
+            listed = BASE_PARAMS + (P2C if model == "acme/thinks" else [])
+            unlisted = sorted(k for k in P2C if k in body and k not in listed)
+            if unlisted and (body.get("provider") or {}).get("require_parameters"):
+                # OpenRouter's answer when no provider takes every parameter.
+                return JSONResponse(
+                    {"error": {"message": "No endpoints found that can handle the requested parameters.",
+                               "code": 404}},
+                    status_code=404,
+                )
+            choice_of = body.get("tool_choice")
+            if body.get("tools") and isinstance(choice_of, dict):
+                call = {"id": "call_fixture", "type": "function",
+                        "function": {"name": choice_of["function"]["name"], "arguments": '{"city": "Oslo"}'}}
+                if body.get("stream"):
+
+                    async def called():
+                        for fragment in ({**call, "index": 0, "function": {**call["function"], "arguments": '{"city": '}},
+                                         {"index": 0, "function": {"arguments": '"Oslo"}'}}):
+                            yield "data: " + json.dumps(
+                                {"model": model, "choices": [{"index": 0, "delta": {"tool_calls": [fragment]},
+                                                              "finish_reason": None}]}) + "\n\n"
+                        yield "data: " + json.dumps(
+                            {"model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}
+                        ) + "\n\n"
+                        yield "data: [DONE]\n\n"
+
+                    return StreamingResponse(called(), media_type="text/event-stream")
+                return {"model": model, "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {
+                    "role": "assistant", "content": None, "tool_calls": [call]}}]}
             text = f"answer from {model} with {'+'.join(sorted(kinds)) or 'text'}"
             usage = {"prompt_tokens": 5, "completion_tokens": 3, "total_tokens": 8}
+            top = int(body.get("top_logprobs") or 0)
+            cites = [CITATION, FILE_NOTE] if "web_search_options" in body else None
             if body.get("stream"):
 
                 async def stream():
                     for piece in (text[:6], text[6:]):
-                        yield "data: " + json.dumps(
-                            {"model": model, "choices": [{"index": 0, "delta": {"content": piece}, "finish_reason": None}]}
-                        ) + "\n\n"
+                        choice = {"index": 0, "delta": {"content": piece}, "finish_reason": None}
+                        if body.get("logprobs"):
+                            choice["logprobs"] = logprobs_for([piece], top)
+                        yield "data: " + json.dumps({"model": model, "choices": [choice]}) + "\n\n"
+                    if cites:
+                        for cite in cites:
+                            yield "data: " + json.dumps({"model": model, "choices": [
+                                {"index": 0, "delta": {"annotations": [cite]}, "finish_reason": None}]}) + "\n\n"
                     yield "data: " + json.dumps(
                         {"model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "usage": usage}
                     ) + "\n\n"
                     yield "data: [DONE]\n\n"
 
                 return StreamingResponse(stream(), media_type="text/event-stream")
-            return {
-                "model": model,
-                "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
-                "usage": usage,
-            }
+            message = {"role": "assistant", "content": text}
+            if cites:
+                message["annotations"] = cites
+            choice = {"index": 0, "message": message, "finish_reason": "stop"}
+            if body.get("logprobs"):
+                choice["logprobs"] = logprobs_for(text.split(), top)
+            return {"model": model, "choices": [choice], "usage": usage}
 
-    elif kind in ("router", "openrouter"):
+    elif kind in ("router", "openrouter", "llama"):
         from eugene_plexus_inference_driver.app import create_app
         from eugene_plexus_inference_driver.settings import Settings
 
@@ -282,7 +373,7 @@ def exercise(directory: Path, *, live: bool) -> None:
     from eugene_plexus_agent.node_identity import NodeIdentityStore
     from eugene_plexus_agent.trust import NodeTrust
 
-    names = ["control", "agent", "gateway", "fixture", "router"]
+    names = ["control", "agent", "gateway", "fixture", "router", "llama"]
     if live:
         names.append("openrouter")
     sockets = [socket.socket() for _ in names]
@@ -453,16 +544,24 @@ def exercise(directory: Path, *, live: bool) -> None:
         write("router", "driver.yaml", {"provider": "openrouter", "baseUrl": url("fixture")})
         start("router", {"OPENAI_API_KEY": "fixture-not-a-key"})
         declare("router")
+        write("llama", "bootstrap.json", bootstrap("inference-driver"))
+        write("llama", "driver.yaml", {
+            "provider": "openai_compat_custom", "baseUrl": url("fixture") + "/llama",
+            "modelId": "local-llama", "backendLocality": "local",
+        })
+        start("llama")
+        declare("llama")
         slots = [
             {"model": "assistant", "targets": ["router/acme/text-only", "router/acme/hears"]},
             {"model": "mixed", "targets": ["router/acme/hears", "router/acme/reads"]},
             {"model": "speaker", "targets": ["router/acme/text-only", "router/acme/speaks"]},
+            {"model": "careful", "targets": ["router/acme/text-only", "router/acme/thinks"]},
         ]
         if live:
             write("openrouter", "bootstrap.json", bootstrap("inference-driver"))
             write("openrouter", "driver.yaml", {
                 "provider": "openrouter",
-                "catalogueInclude": [LIVE_HEARS, LIVE_TEXT, LIVE_SPEAKS, LIVE_SINGS],
+                "catalogueInclude": [LIVE_HEARS, LIVE_TEXT, LIVE_SPEAKS, LIVE_SINGS, LIVE_THINKS, LIVE_SEARCHES, LIVE_CALLS],
             })
             start("openrouter", {"OPENAI_API_KEY": live_key})
             declare("openrouter")
@@ -473,6 +572,10 @@ def exercise(directory: Path, *, live: bool) -> None:
             slots.append({
                 "model": "live-speaker",
                 "targets": [f"openrouter/{LIVE_TEXT}", f"openrouter/{LIVE_SPEAKS}"],
+            })
+            slots.append({
+                "model": "live-careful",
+                "targets": [f"openrouter/{LIVE_HEARS}", f"openrouter/{LIVE_TEXT}"],
             })
         write("gateway", "bootstrap.json", bootstrap("gateway"))
         write("gateway", "gateway.yaml", {"routingRefreshSeconds": 2, "modelSlots": slots})
@@ -490,7 +593,7 @@ def exercise(directory: Path, *, live: bool) -> None:
                 for m in call("gateway", "GET", "/v1/models", key).json().get("data", [])
             }
 
-        wanted = {f"router/{m}" for m in LISTING} | {"assistant", "mixed", "speaker"}
+        wanted = {f"router/{m}" for m in LISTING} | {"assistant", "mixed", "speaker", "careful", "local-llama"}
         wait(lambda: wanted <= set(models()), "the fixture account's models are routable")
 
         # --- 1. what each model takes, from the listing -----------------------
@@ -498,7 +601,7 @@ def exercise(directory: Path, *, live: bool) -> None:
         takes = {m: (c.get("audioInput"), c.get("fileInput")) for m, c in info.items()}
         assert takes == {
             "acme/text-only": (False, False), "acme/hears": (True, False), "acme/reads": (False, True),
-            "acme/speaks": (False, False), "acme/sings": (False, False),
+            "acme/speaks": (False, False), "acme/sings": (False, False), "acme/thinks": (False, False),
         }, takes
         listed = models()
         reported = {m: (listed[f"router/{m}"].get("audio_input"), listed[f"router/{m}"].get("file_input")) for m in LISTING}
@@ -790,6 +893,118 @@ def exercise(directory: Path, *, live: bool) -> None:
            "refused by the gateway naming the field; a model that does not speak is a 400 naming audio_output; "
            "the driver refuses both on its own; nothing reaches the upstream")
 
+        # --- P2c. the missing chat fields ---------------------------------------
+        settings = {"logprobs": True, "top_logprobs": 1, "logit_bias": {"50256": -100},
+                    "reasoning_effort": "low", "verbosity": "low",
+                    "prediction": {"type": "content", "content": "answer"},
+                    "web_search_options": {"search_context_size": "low"}}
+        claimed = {m: set(c.get("supportedSettings") or [])
+                   for m, c in ((m["id"], m["capabilities"]) for m in call("router", "GET", "/v1/info", operator).json()["models"])}
+        mine = {"logprobs", "logitBias", "reasoningEffort", "verbosity", "prediction", "webSearchOptions"}
+        assert mine <= claimed["acme/thinks"] and not mine & claimed["acme/text-only"], claimed
+        local = call("llama", "GET", "/v1/info", operator).json()["models"][0]["capabilities"]
+        assert not mine & set(local.get("supportedSettings") or []), local.get("supportedSettings")
+        before = counts()
+        for stream in (False, True):
+            response = chat(key, "careful", "Name a colour.", stream=stream, **settings)
+            assert response.status_code == 200, response.text
+            if stream:
+                frames = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: {")]
+                choices = [c for f in frames for c in f.get("choices") or []]
+                tokens = [t["token"] for c in choices if c.get("logprobs") for t in c["logprobs"]["content"]]
+                cited = [a for c in choices for a in (c.get("delta") or {}).get("annotations") or []]
+                envelope = next(f["x_eugene_plexus"] for f in reversed(frames) if f.get("x_eugene_plexus"))
+            else:
+                body = response.json()
+                tokens = [t["token"] for t in body["choices"][0]["logprobs"]["content"]]
+                cited = body["choices"][0]["message"].get("annotations") or []
+                envelope = body["x_eugene_plexus"]
+            assert envelope["tier"] == 2 and envelope["attempts"] == 1, envelope
+            assert "".join(tokens).replace(" ", "") == "answerfromacme/thinkswithtext", tokens
+            assert cited == [CITATION], cited
+        after = counts()
+        assert after.get("acme/text-only", 0) == before.get("acme/text-only", 0), (before, after)
+        upstream = last_seen("acme/thinks")
+        for key_name in ("logprobs", "top_logprobs", "logit_bias", "reasoning_effort", "verbosity",
+                         "prediction", "web_search_options"):
+            assert upstream.get(key_name) == settings[key_name], (key_name, upstream.get(key_name))
+        assert upstream["provider"] == {"require_parameters": True}, upstream.get("provider")
+        ok("every P2c setting routes past a tier that does not list it to one that does, in OpenAI's names; "
+           "logprobs and citations come back streamed and not, OpenRouter's file note left out; the "
+           "text model never asked; a local engine and an unlisting model are claimed for none of them")
+
+        before = counts()
+        for name, value in (("logit_bias", {"1": 5}), ("reasoning_effort", "high"),
+                            ("web_search_options", {}), ("logprobs", True)):
+            refused = chat(key, "router/acme/text-only", "hi", **{name: value})
+            assert refused.status_code == 400, refused.text
+            error = refused.json()["error"]
+            assert error.get("param") == name and name in error["message"], error
+        refused = chat(key, "router/acme/thinks", "hi", top_logprobs=2)
+        assert refused.status_code == 400 and refused.json()["error"]["param"] == "top_logprobs", refused.text
+        assert counts() == before, (before, counts())
+        hints = {"prompt_cache_key": "k", "service_tier": "flex", "safety_identifier": "u",
+                 "prompt_cache_retention": "24h"}
+        response = chat(key, "router/acme/text-only", "hi", **hints)
+        assert response.status_code == 200, response.text
+        assert not set(hints) & set(last_seen("acme/text-only")), sorted(last_seen("acme/text-only"))
+        ok("a setting no backend lists is refused naming it and nothing is sent; top_logprobs needs logprobs; "
+           "hints never restrict routing and are dropped for a backend that does not take them")
+
+        weather = {"name": "get_weather", "description": "Weather.",
+                   "parameters": {"type": "object", "properties": {"city": {"type": "string"}}}}
+        for stream in (False, True):
+            response = call("gateway", "POST", "/v1/chat/completions", key, json={
+                "model": "router/acme/thinks", "stream": stream, "max_tokens": 32,
+                "messages": [{"role": "user", "content": "Weather in Oslo?"}],
+                "functions": [weather], "function_call": {"name": "get_weather"},
+            })
+            assert response.status_code == 200, response.text
+            upstream = last_seen("acme/thinks")
+            assert upstream["tools"] == [{"type": "function", "function": weather}], upstream["tools"]
+            assert upstream["tool_choice"] == {"type": "function", "function": {"name": "get_weather"}}
+            # Not sent: it would route only to the 12 of 455 models listing it.
+            assert "parallel_tool_calls" not in upstream, upstream.get("parallel_tool_calls")
+            if stream:
+                frames = [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: {")]
+                choices = [c for f in frames for c in f.get("choices") or []]
+                fragments = [c["delta"]["function_call"] for c in choices if (c.get("delta") or {}).get("function_call")]
+                assert fragments[0]["name"] == "get_weather", fragments
+                assert "".join(f.get("arguments") or "" for f in fragments) == '{"city": "Oslo"}', fragments
+                assert not any((c.get("delta") or {}).get("tool_calls") for c in choices)
+                assert choices[-1]["finish_reason"] == "function_call", choices[-1]
+            else:
+                choice = response.json()["choices"][0]
+                assert choice["finish_reason"] == "function_call", choice["finish_reason"]
+                assert choice["message"]["function_call"] == {"name": "get_weather", "arguments": '{"city": "Oslo"}'}
+                assert not choice["message"].get("tool_calls")
+        response = call("gateway", "POST", "/v1/chat/completions", key, json={
+            "model": "router/acme/thinks", "max_tokens": 32, "functions": [weather],
+            "messages": [
+                {"role": "user", "content": "Weather in Oslo?"},
+                {"role": "assistant", "content": None,
+                 "function_call": {"name": "get_weather", "arguments": '{"city": "Oslo"}'}},
+                {"role": "function", "name": "get_weather", "content": '{"temp": -3}'},
+            ],
+        })
+        assert response.status_code == 200, response.text
+        history = last_seen("acme/thinks")["messages"]
+        assert history[1]["tool_calls"][0]["id"] == history[2]["tool_call_id"], history
+        assert history[2]["role"] == "tool" and history[2]["content"] == '{"temp": -3}', history[2]
+        ok("the deprecated functions reach the backend as tools with the call forced and parallel_tool_calls unsent, "
+           "and come back as message.function_call and function_call fragments; a function history is "
+           "carried as a tool call and its result")
+
+        counted = call("gateway", "POST", "/v1/responses/input_tokens", key, json={
+            "model": "local-llama", "input": "one two three four"})
+        assert counted.status_code == 200, counted.text
+        assert counted.json() == {"object": "response.input_tokens", "input_tokens": 4}, counted.json()
+        cannot = call("gateway", "POST", "/v1/responses/input_tokens", key, json={
+            "model": "router/acme/thinks", "input": "one two"})
+        assert cannot.status_code == 400 and "without generating" in cannot.json()["error"]["message"], cannot.text
+        ok("/v1/responses/input_tokens is counted by the llama.cpp-like backend's own template and tokenizer, "
+           "and an OpenRouter model, which cannot count without generating, is a 400 saying so")
+
         # --- 9. live OpenRouter ---------------------------------------------------
         if live:
             hears, text_only = f"openrouter/{LIVE_HEARS}", f"openrouter/{LIVE_TEXT}"
@@ -899,6 +1114,51 @@ def exercise(directory: Path, *, live: bool) -> None:
             assert audio["format"] == "mp3" and raw[:3] == b"ID3" and len(raw) > 100_000, (audio["format"], raw[:4], len(raw))
             print(f"INFO music: {len(raw)} bytes of MP3 asked for as WAV", flush=True)
             ok(f"through chat, {LIVE_SINGS} returns music: asked for WAV, it sent MP3, labelled mp3")
+
+            thinks, searches = f"openrouter/{LIVE_THINKS}", f"openrouter/{LIVE_SEARCHES}"
+            wait(lambda: {thinks, searches, f"openrouter/{LIVE_CALLS}", "live-careful"} <= set(models()),
+                 "OpenRouter's P2c models", 60)
+            response = chat(key, "live-careful", "Name one primary colour. One word.", logprobs=True, top_logprobs=2)
+            assert response.status_code == 200, response.text[:400]
+            body = response.json()
+            assert body["x_eugene_plexus"]["tier"] == 2 and body["x_eugene_plexus"]["attempts"] == 1, body["x_eugene_plexus"]
+            entries = (body["choices"][0].get("logprobs") or {}).get("content") or []
+            assert entries and all("logprob" in e and len(e.get("top_logprobs") or []) == 2 for e in entries), entries[:2]
+            print(f"INFO logprobs: {[(e['token'], round(e['logprob'], 3)) for e in entries]}", flush=True)
+            ok(f"the slot live-careful -> [{LIVE_HEARS}, {LIVE_TEXT}] answers logprobs from tier 2, "
+               "the model that does not list them never asked, with two alternatives per token")
+
+            spent = {}
+            for effort in ("low", "high"):
+                response = chat(key, thinks, "Name one primary colour. One word.", max_tokens=600,
+                                reasoning_effort=effort)
+                assert response.status_code == 200, response.text[:400]
+                usage = response.json().get("usage") or {}
+                spent[effort] = ((usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+                                 or len(response.json()["choices"][0]["message"].get("reasoning_content") or ""))
+            assert spent["high"] > spent["low"], spent
+            print(f"INFO reasoning_effort: {spent}", flush=True)
+            response = chat(key, searches, "What is the capital of Australia? One sentence.",
+                            web_search_options={"search_context_size": "low"})
+            assert response.status_code == 200, response.text[:400]
+            cited = response.json()["choices"][0]["message"].get("annotations") or []
+            assert cited and all(a["type"] == "url_citation" and a["url_citation"]["url"].startswith("http")
+                                 for a in cited), cited
+            print(f"INFO web search: {len(cited)} citations, first {cited[0]['url_citation']['url']}", flush=True)
+            response = call("gateway", "POST", "/v1/chat/completions", key, json={
+                "model": f"openrouter/{LIVE_CALLS}", "max_tokens": 64,
+                "messages": [{"role": "user", "content": "What is the weather in Oslo?"}],
+                "functions": [{"name": "get_weather", "description": "The current weather in a city.",
+                               "parameters": {"type": "object", "properties": {"city": {"type": "string"}},
+                                              "required": ["city"]}}],
+                "function_call": {"name": "get_weather"},
+            })
+            assert response.status_code == 200, response.text[:400]
+            choice = response.json()["choices"][0]
+            assert choice["finish_reason"] == "function_call" and choice["message"]["function_call"]["name"] == "get_weather", choice
+            print(f"INFO function_call: {choice['message']['function_call']}", flush=True)
+            ok(f"live: {LIVE_THINKS} thinks more at reasoning_effort high than low, {LIVE_SEARCHES} cites the web, "
+               f"and {LIVE_CALLS} answers the deprecated functions as a function_call")
 
             # The key reached its driver in the environment only.
             leaked = [

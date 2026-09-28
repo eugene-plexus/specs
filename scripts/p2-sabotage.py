@@ -305,6 +305,151 @@ SABOTAGES: list[Sabotage] = [
           "                if isinstance(audio, dict) and audio:\n",
           "                if False:\n"),),
     ),
+    # --- P2c, the driver: the missing fields ---------------------------------------------
+    Sabotage(
+        "the listing's reasoning_effort is not read",
+        ((DRIVER / "engines" / "_catalogue.py",
+          '    ("reasoning_effort", "reasoningEffort"),\n',
+          ""),),
+    ),
+    Sabotage(
+        "a local engine is claimed for the hosted settings",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          "            unsupported |= _HOSTED_SETTINGS\n",
+          "            pass\n"),),
+    ),
+    Sabotage(
+        "logit_bias is not put on the wire",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          '            payload["logit_bias"] = dict(request.logitBias)\n',
+          "            pass\n"),),
+    ),
+    Sabotage(
+        "hints are sent to every backend",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          "            if _is_openai_endpoint(self._base_url):\n                payload[theirs]",
+          "            if True:\n                payload[theirs]"),),
+    ),
+    Sabotage(
+        "a batch answer's logprobs are not read",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          '            logprobs=_logprobs_of(first.get("logprobs")),\n',
+          "            logprobs=None,\n"),),
+    ),
+    Sabotage(
+        "a streamed token loses its logprobs",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          "                            yield Chunk(text=visible, logprobs=frame_logprobs)\n",
+          "                            yield Chunk(text=visible)\n"),),
+    ),
+    Sabotage(
+        "a streamed citation is not forwarded by the driver",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          "                            yield Chunk(annotations=cited)\n",
+          "                            pass\n"),),
+    ),
+    Sabotage(
+        "any annotation is taken for a citation",
+        ((DRIVER / "engines" / "openai_compat_http.py",
+          '        if isinstance(item, dict) and item.get("type") == "url_citation":\n',
+          "        if isinstance(item, dict):\n"),),
+        escapes="ChatAnnotation's type is const url_citation, so validating OpenRouter's file "
+        "note fails and it is dropped all the same; the filter says why before the schema does",
+    ),
+    # --- P2c, the gateway ----------------------------------------------------------------------
+    Sabotage(
+        "logit_bias is not named as an explicit setting",
+        ((GATEWAY / "routes" / "inference.py",
+          '                ("logit_bias", "logitBias"),\n',
+          ""),),
+    ),
+    Sabotage(
+        "web_search_options is not carried to the driver",
+        ((GATEWAY / "routes" / "inference.py",
+          "        webSearchOptions=DriverWebSearchOptions.model_validate(\n",
+          "        webSearchOptions=None and DriverWebSearchOptions.model_validate(\n"),),
+    ),
+    Sabotage(
+        "a batch answer drops its citations",
+        ((GATEWAY / "routes" / "inference.py",
+          "                    annotations=_to_openai_annotations(response.annotations),\n",
+          "                    annotations=None,\n"),),
+    ),
+    Sabotage(
+        "a batch answer drops its logprobs",
+        ((GATEWAY / "routes" / "inference.py",
+          "                logprobs=_to_openai_logprobs(response.logprobs),\n",
+          "                logprobs=None,\n"),),
+    ),
+    Sabotage(
+        "a streamed citation is not forwarded by the gateway",
+        ((GATEWAY / "routes" / "inference.py",
+          "                if event.annotations:\n",
+          "                if False:\n"),),
+    ),
+    Sabotage(
+        "the gateway reads no logprobs off the driver's stream",
+        ((GATEWAY / "driver_client.py",
+          "                        logprobs=logprobs if isinstance(logprobs, dict) else None,\n",
+          "                        logprobs=None,\n"),),
+    ),
+    Sabotage(
+        "top_logprobs is taken without logprobs",
+        ((GATEWAY / "chat_contract.py",
+          "    if parsed.top_logprobs is not None and parsed.logprobs is not True:\n",
+          "    if False:\n"),),
+    ),
+    Sabotage(
+        "a refused setting is not named",
+        ((GATEWAY / "admission.py",
+          "            if missing:\n",
+          "            if False:\n"),),
+    ),
+    Sabotage(
+        "functions are not carried as tools",
+        ((GATEWAY / "chat_contract.py",
+          '            body["tools"] = [{"type": "function", "function": f} for f in functions]\n',
+          "            pass\n"),),
+    ),
+    Sabotage(
+        "a legacy caller is answered with tool_calls",
+        ((GATEWAY / "routes" / "inference.py",
+          "                    tool_calls=None if legacy else _to_openai_tool_calls(response.toolCalls),\n"
+          "                    function_call=_to_legacy_function_call(response) if legacy else None,\n",
+          "                    tool_calls=_to_openai_tool_calls(response.toolCalls),\n"
+          "                    function_call=None,\n"),),
+    ),
+    Sabotage(
+        "a legacy caller's finish reason is tool_calls",
+        ((GATEWAY / "routes" / "inference.py",
+          "    return FinishReason.function_call if legacy and finish is FinishReason.tool_calls else finish\n",
+          "    return finish\n"),),
+    ),
+    Sabotage(
+        "a legacy caller's stream carries tool_calls fragments",
+        ((GATEWAY / "routes" / "inference.py",
+          "                    if legacy:\n                        # The deprecated shape",
+          "                    if False:\n                        # The deprecated shape"),),
+    ),
+    Sabotage(
+        "a function result is not paired with its call",
+        ((GATEWAY / "chat_contract.py",
+          '            message["tool_call_id"] = pending.pop(0)\n',
+          '            message["tool_call_id"] = "call_unpaired"\n            pending.pop(0)\n'),),
+    ),
+    Sabotage(
+        "the old shape sends parallel_tool_calls false again",
+        ((GATEWAY / "chat_contract.py",
+          '            body["tool_choice"] = {"type": "function", "function": {"name": choice.get("name")}}\n',
+          '            body["tool_choice"] = {"type": "function", "function": {"name": choice.get("name")}}\n'
+          '        body.setdefault("parallel_tool_calls", False)\n'),),
+    ),
+    Sabotage(
+        "input_tokens answers a count nobody made",
+        ((GATEWAY / "routes" / "inference.py",
+          '    return JSONResponse(content={"object": "response.input_tokens", "input_tokens": counted.tokens})\n',
+          '    return JSONResponse(content={"object": "response.input_tokens", "input_tokens": 0})\n'),),
+    ),
 ]
 
 

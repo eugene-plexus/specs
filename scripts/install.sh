@@ -58,11 +58,11 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=d9a99b4c0981231728812d715c08168b2ceda66f
-PIN_CONTROL=8874d480f3fc41e646241bc8da8699ae0e3e0afc
-PIN_GATEWAY=e44b88ba157d13e49fe8cc7577301f3d63c3e600
-PIN_DRIVER=429d0d0932add79644dd21bff3f9d852142a319b
-PIN_LIBRARY=cec7815d73bb3d64a2d82e93d4825491c41b3153
+PIN_AGENT=47d4e2ac978f3aa39f192ad9a74c7eb5fe93e571
+PIN_CONTROL=0608bacf457f5ceb99a8cf1bcd62734cbae85f1e
+PIN_GATEWAY=fa81fca9bb56c0ab6a18a18ec99054217051824f
+PIN_DRIVER=8390004c2b51f0c3a722fed8d85e70bac1d91ee3
+PIN_LIBRARY=70520659e932ba43df80860c7fa4eefe5b402406
 PIN_UI=323e3b5ca5f96a5d0c9a511b74e8165a1ce95391   # branch `dist`, not `main`
 
 PY_VERSION=3.12

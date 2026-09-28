@@ -204,9 +204,8 @@ from a byte copy).
 
 ## Still owed
 
-- **The other three consumers:** agent, control and library generate
-  `common.yaml`, so their models change. They are re-pinned regen-only once,
-  at P2's end, not three times.
+- ~~**The other three consumers**~~ re-pinned regen-only at P2's end
+  ([record](chat-fields-run.md)).
 - **`ui`** is re-pinned when a screen consumes `audio_input`/`file_input`. The
   playground cannot attach audio or a PDF yet.
 

@@ -10,7 +10,7 @@ Compatibility means the features below, not every feature of a provider API.
 | `POST /v1/messages` | Supported subset | Anthropic text, image, document and tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
-| `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
+| `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. `/v1/responses/input_tokens` counts (P2c). Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
 | Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (speech, image, video, transcription) is not listed on `GET /v1/models`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
 | Speech, transcription, image generation, video, uploaded files, batches, provider storage | Not implemented | Phases P3-P5 and the platform half of [the design](design/openai-inference-compatibility.md). |
@@ -18,7 +18,10 @@ Compatibility means the features below, not every feature of a provider API.
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
 | `frequency_penalty`, `presence_penalty`, `top_k`, `min_p`, `parallel_tool_calls`, the `developer` role | Carried | Refused with 400 before 2026-09-23. Backends that cannot take one are routed around; see [chat settings](#chat-settings). |
-| Reasoning effort, logit bias, log probabilities | Rejected on chat | Unsupported consequential settings return 400, including unknown nested message/tool/format fields. |
+| `logprobs`, `logit_bias`, `reasoning_effort`, `verbosity`, `prediction`, `web_search_options` | Carried (P2c, since 2026-09-28) | Routed only to a backend whose model lists the setting; with none, a 400 naming it. Log probabilities and web citations come back. See [chat settings](#chat-settings). |
+| The deprecated `functions` / `function_call` | Translated (P2c) | Carried as tools and answered in the old shape. |
+| `POST /v1/responses/input_tokens` | Supported (P2c) | Counted by a local `llama-server`'s own tokenizer; a hosted provider cannot count and says so. |
+| Unknown fields | Rejected | 400 naming the field, including unknown nested message/tool/format fields. |
 | All clients, providers and reasoning-token accounting | Unverified | Captured requests test transport semantics; they do not demonstrate every model's behavior. |
 
 ## Client authentication
@@ -55,10 +58,40 @@ A `developer` message is delivered to the backend as `system`, in place.
 `reasoning_content` is accepted on an `assistant` message and handed back to the
 backend (see [reasoning](#reasoning)); on any other role it is a 400.
 
-`n: 1`, `logprobs: false` and `store: false` are accepted neutral defaults; other
-non-null values are refused. `user`, string-valued `metadata` and
-`safety_identifier` are ignored annotations, neither stored nor forwarded nor
-used as authenticated identity. Unknown fields are refused even when null.
+`n: 1` and `store: false` are accepted neutral defaults; other non-null values
+are refused. `user` and string-valued `metadata` are ignored annotations,
+neither stored nor forwarded nor used as authenticated identity. Unknown fields
+are refused even when null.
+
+**Since P2c (2026-09-28)**, six more settings are carried, each routed only to
+a backend whose model is known to take it: `logprobs` (with `top_logprobs`, up
+to 20), `logit_bias`, `reasoning_effort`, `verbosity`, `prediction` and
+`web_search_options`.
+
+- An OpenRouter model takes the ones its listing names. On 2026-09-28 that was
+  186 models for `reasoning_effort`, 149 for `logprobs`, 141 for `logit_bias`
+  and far fewer for the rest.
+- OpenAI's own API takes all six. A local engine takes none yet: llama.cpp and
+  vLLM document `logprobs` and `logit_bias`, but they are not measured here.
+- With no backend that takes one, the answer is a 400 naming it; nothing is
+  sent. `logprobs: false` asks for nothing.
+- **Listed is not promised.** A provider can still refuse a listed setting
+  (OpenAI refuses `web_search_options` for `gpt-4o-mini`), and that is the
+  caller's 400 with the provider's words.
+- What comes back is OpenAI's shape: `choices[].logprobs`, on each streamed
+  frame's choice as well, and `message.annotations` (`delta.annotations` when
+  streamed) for a web search's `url_citation`s.
+
+`prompt_cache_key`, `prompt_cache_retention`, `service_tier` and
+`safety_identifier` are hints. They are carried to OpenAI's own API and dropped
+for every other backend, and never restrict routing.
+
+The deprecated `functions`, `function_call` and `function` role are carried as
+tools and answered in the old shape (`message.function_call`,
+`finish_reason: function_call`). They are refused together with `tools` or
+`tool_choice`. `parallel_tool_calls` is not sent for them, since that would
+route only to the few models that list it. If a model makes more than one call,
+the first is given.
 The gateway does not include prompt content or invalid values in validation errors.
 
 With `stream: true`, `stream_options.include_usage: true` produces a final

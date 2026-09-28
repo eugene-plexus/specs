@@ -154,10 +154,9 @@ check 14 calls the driver directly for its copy.
 
 ## Still owed
 
-- **P2c:** the missing fields and `/v1/responses/input_tokens`.
-- **At P2's end:** agent, control and library re-pin regen-only, since
-  `common.yaml` reaches them (`AudioOutputFormat` is new there). `ui` re-pins
-  when a screen consumes `audio_output` or plays `message.audio`.
+- `ui` re-pins when a screen consumes `audio_output` or plays `message.audio`.
+  P2c and the regen-only re-pins of agent, control and library came after this
+  ([record](chat-fields-run.md)), and superseded these pins.
 
 ## Not covered
 
