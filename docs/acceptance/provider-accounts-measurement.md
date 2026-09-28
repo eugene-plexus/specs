@@ -322,3 +322,95 @@ transcription model lists any `supported_parameters`.** `hexgrad/kokoro-82m`
 and the free `deepgram/flux-tts:free` are the cheapest to speak with.
 `openai/whisper-large-v3-turbo` transcribed the fox in 6.2 s, and
 `qwen/qwen3-asr-0.6b` in 0.6 s.
+
+## 9. For P4: images (2026-09-28)
+
+OpenRouter spend: **$0.139** (flux.2-klein-4b at $0.014 a megapixel,
+gpt-image-1-mini at low quality, one gemini flash-lite image).
+
+**What the OpenAI Python SDK sends** (openai 3.20.0, capture listener):
+
+- **Generation** is `POST /v1/images/generations`, JSON: `{prompt, model}`
+  plus whatever was set. **`Accept: application/json` even with `stream:
+  true`**; the SDK reads SSE whatever it asked for.
+- **An edit is always multipart**, never the JSON form OpenAI's spec also
+  allows. One image is a part named `image`; several are parts named
+  **`image[]`**; the mask is `mask`. **A `BytesIO` arrives as `filename:
+  upload`, `Content-Type: application/octet-stream`**, so an image's type
+  must be read from its bytes, not its part header.
+- **A variation** is multipart: `image`, `n`, `size`.
+- **The streamed answers the SDK parses** are `data:` lines typed
+  `image_generation.partial_image` / `.completed` (edits: `image_edit.*`).
+
+**OpenAI's own contract** (`openai-openapi` at `d983890`): generations take
+14 fields (`prompt` required; `n` 1-10; `size`; `quality`; `response_format`
+`url|b64_json`, dall-e only; `output_format`; `output_compression`;
+`background`; `moderation`; `style`, dall-e-3 only; `stream`;
+`partial_images`; `user`). Edits take `image` (one or up to 16), `mask`,
+`input_fidelity` and most of the same. Variations are **dall-e-2 only**. The
+answer is `{created, data: [{b64_json | url, revised_prompt}], background,
+output_format, size, quality, usage: {input_tokens, output_tokens,
+total_tokens, input_tokens_details}}`. A partial-image event requires
+`created_at`, `size`, `quality`, `background`, `output_format` and
+`partial_image_index`.
+
+**OpenRouter's routes:** `POST /images/generations` and its alias `POST
+/images` (the same answer). **`/images/edits` and `/images/variations` are
+404.** An edit is a generation with **`input_references`**, and those must be
+**objects** `{"type": "image_url", "image_url": {"url": "data:..."}}`; the
+plain strings its guide shows are a 400 (Zod: *expected object, received
+string*).
+
+**`GET /images/models`** (unauthenticated) lists **55**, the same set as the
+main listing's image-output models less `openrouter/auto`. **The main
+listing's `supported_parameters` for these is chat-style and says nothing
+about images**; only `/images/models` carries the image settings, as typed
+descriptors:
+
+- `input_references` on 53 (range, max 1-16). **Five require at least one**
+  (`recraft-v4-styles*`, `ming-image-...-design-layer`): they edit, they do
+  not generate.
+- `aspect_ratio` 52, `n` 51 (max 1 on 23, 6 on 18, 10 on 9), `resolution`
+  19, `output_format` 14 (six models are **svg only**), `seed` 12,
+  `background` 10, `quality` 9, `output_compression` 8. **No model lists
+  `size`.**
+- `supports_streaming` on **8**, every one OpenAI's (`gpt-image-*`,
+  `gpt-5*-image*`).
+- Per-provider records at each model's `endpoints` add
+  `allowed_passthrough_parameters` (`moderation` on OpenAI's; `steps`,
+  `guidance`, `safety_tolerance` on Black Forest Labs') and pricing by
+  billable unit (per output megapixel, per output-image token).
+
+**What OpenRouter does with each field:**
+
+- **`size` is translated**, although no model lists it: `1536x1024` gave a
+  1536×1024 JPEG from flux and `1024x1536` a 1024×1536 PNG from
+  gpt-image-1-mini.
+- **A listed setting outside its range is OpenRouter's own 400**, before any
+  provider (`failed_routing_step: "Filter by Image Capabilities"`): `n: 2` on
+  flux (max 1), `output_format: webp` on flux (png, jpeg), five references
+  on flux (max 4).
+- **An unlisted setting is silently ignored, or silently honoured.** flux
+  given `quality: high` or `background: transparent` answered an ordinary
+  opaque JPEG with a 200. gpt-image-1-mini, whose listing has no
+  `output_format`, gave the `webp` and `jpeg` asked for. So the listing is
+  exact where it names a setting and says nothing reliable where it does
+  not.
+- **`mask` and `response_format: url` are ignored**: a 200 with `b64_json`.
+  Every answer is `b64_json` with an extra `media_type`.
+- **The answer:** `{created, data: [{b64_json, media_type}], usage}`, where
+  `usage` is chat-shaped (`prompt_tokens`, `completion_tokens` with
+  `image_tokens`, `cost`), not OpenAI's `ImagesUsage`. **`created` is 0**
+  from flux and gemini and a real time from OpenAI's models. `n: 2` gives two
+  `data` items.
+- **gemini-3.1-flash-lite-image**, an image+text chat model, answers on this
+  route too: one 1408×768 JPEG, no text.
+
+**Streaming** (gpt-image-1-mini, `partial_images: 1`): `text/event-stream`,
+a **`: ` comment every ~0.42 s** as keepalive, then `data:` lines with **no
+`event:` line**. The partial event carries only `type`, `b64_json` and
+`partial_image_index` (none of the fields OpenAI's schema requires besides
+those). The completed event carries `type`, `b64_json`, `created`,
+`media_type` and chat-shaped `usage`. Partial at 3.6 s, completed at 6.2 s,
+then `[DONE]`. **flux, which does not stream, asked to stream answers plain
+`application/json`**: the flag is dropped, not refused.

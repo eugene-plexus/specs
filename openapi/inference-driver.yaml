@@ -589,6 +589,135 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/image:
+    post:
+      tags: [inference]
+      operationId: image
+      summary: Make or edit images on the configured backend.
+      description: |
+        The image counterpart of `POST /v1/generate` (P4, 2026-09-28):
+        normalised, so one request fronts OpenAI's `/v1/images/generations`
+        and `/v1/images/edits` and OpenRouter's `/images/generations`, each
+        translated here.
+
+        **An edit is a generation with `references`.** OpenRouter has no
+        edit route (404, measured) and takes the images as
+        `input_references` objects on `/images/generations`; OpenAI is asked
+        on `/v1/images/edits` in the multipart form its SDK uses. `mask`
+        reaches only OpenAI's API, which alone honours it; this driver
+        refuses it for any other backend rather than letting it be ignored
+        (OpenRouter ignores it, measured).
+
+        **The images travel as base64 in JSON**, at most 25 MiB decoded in
+        all, so this path's body limit is 36 MiB, as `/v1/transcribe`'s is.
+        Every image comes back base64 whatever the backend was asked, with
+        the media type its bytes carry (OpenRouter ignores
+        `response_format: url`, measured).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageRequest'
+      responses:
+        '200':
+          description: The images.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageResponse'
+        '400':
+          description: |
+            A setting this model does not take (`mask` off OpenAI's API,
+            more references than it reads), or the backend's own refusal
+            (OpenRouter's *"No provider ... supports the requested
+            parameter(s)"*, a provider's content filter), with its words.
+            Does not cascade.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/ModelNotServed'
+        '413':
+          description: The body is over this path's 36 MiB limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The backend failed, or refused this driver's own key.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: '`requestTimeoutSeconds` passed with no answer.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/image/stream:
+    post:
+      tags: [inference]
+      operationId: imageStream
+      summary: Make or edit images, with partial images streamed.
+      description: |
+        Same request as `POST /v1/image`, for a model whose
+        `capabilities.image.streaming` is true (P4-3: a streamed request is
+        routed only to one). The response is Server-Sent Events:
+
+        - `event: partial`: `data` is an `ImagePartial`, one partial render;
+        - `event: done`: `data` is the final `ImageResponse`;
+        - `event: error`: `data` is a `Problem`.
+
+        **A failure before the first event is a status code**, as for
+        `/v1/generate/stream`; after it, only an `error` event. A backend
+        that answers plain JSON although asked to stream (OpenRouter does,
+        for a model that cannot, measured) is the driver's 400: the model's
+        listing said it streams and the backend disagreed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageRequest'
+      responses:
+        '200':
+          description: SSE stream opened.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Newline-delimited SSE events; see operation description.
+        '400':
+          description: As `POST /v1/image`, plus a model that does not stream.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/ModelNotServed'
+        '413':
+          description: The body is over this path's 36 MiB limit.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: The backend failed before the stream opened.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: '`requestTimeoutSeconds` passed before the first event.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/embed:
     post:
       tags: [inference]
@@ -1580,6 +1709,182 @@ components:
         totalTokens:
           type: integer
 
+    ImageRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      description: |
+        One request for images (P4). Settings are strings here: the gateway
+        has already checked them against OpenAI's values and routed them to
+        a model whose listing takes them (A2); this driver carries them.
+      properties:
+        model:
+          $ref: '#/components/schemas/RequestModel'
+        localOnly:
+          type: boolean
+          default: false
+          description: |
+            As `GenerateRequest.localOnly`: refuse before forwarding the
+            prompt or any image unless the active engine is classified local.
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 32000
+          description: OpenAI's limit for its GPT image models.
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+        size:
+          type: string
+          maxLength: 32
+          description: |
+            `WIDTHxHEIGHT` or `auto`, carried as sent. No OpenRouter model
+            lists it and OpenRouter translates it (measured).
+        quality:
+          type: string
+          maxLength: 16
+        background:
+          type: string
+          maxLength: 16
+        outputFormat:
+          type: string
+          maxLength: 8
+          description: |
+            Carried where the model's listing does not name it, because
+            gpt-image-1-mini honours it unlisted (measured). The answer's
+            `mediaType` says what the image is.
+        outputCompression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          type: string
+          maxLength: 16
+        style:
+          type: string
+          maxLength: 16
+        user:
+          type: string
+          maxLength: 256
+        inputFidelity:
+          type: string
+          maxLength: 8
+        references:
+          type: array
+          maxItems: 16
+          items:
+            $ref: '#/components/schemas/ImageData'
+          description: |
+            The images to edit. Present makes this an edit; at most 25 MiB
+            decoded across these and `mask`.
+        mask:
+          $ref: '#/components/schemas/ImageData'
+        partialImages:
+          type: integer
+          minimum: 0
+          maximum: 3
+          description: For `/v1/image/stream`, how many partial renders to ask for.
+        requestId:
+          type: string
+          format: uuid
+
+    ImageData:
+      type: object
+      additionalProperties: false
+      required: [data, mediaType]
+      properties:
+        data:
+          type: string
+          minLength: 1
+          maxLength: 35000000
+          description: The image's bytes, base64, no `data:` prefix.
+        mediaType:
+          type: string
+          maxLength: 64
+          description: |
+            Read from the bytes by the gateway (`image/png`, `image/jpeg`,
+            `image/webp`, `image/gif`), never from an upload's part header:
+            the OpenAI SDK labels a `BytesIO` `application/octet-stream`
+            (measured).
+
+    ImageResponse:
+      type: object
+      additionalProperties: false
+      required: [images]
+      properties:
+        images:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeneratedImage'
+        created:
+          type: integer
+          description: |
+            The backend's own timestamp, when it gave a real one. Absent
+            where it sent 0 (flux and gemini on OpenRouter, measured).
+        size:
+          type: string
+          description: The backend's report of the size, when it gave one.
+        quality:
+          type: string
+        background:
+          type: string
+        usage:
+          $ref: '#/components/schemas/ImageUsage'
+        modelId:
+          type: string
+          description: The model the backend says answered.
+        latencyMs:
+          type: integer
+
+    GeneratedImage:
+      type: object
+      additionalProperties: false
+      required: [data, mediaType]
+      properties:
+        data:
+          type: string
+          description: Base64, no `data:` prefix.
+        mediaType:
+          type: string
+          description: |
+            What the bytes are, read from them (`image/png`, `image/jpeg`,
+            `image/webp`, `image/svg+xml`), whatever format was asked for.
+        revisedPrompt:
+          type: string
+          description: The prompt the backend actually used, where it says (`dall-e-3`).
+
+    ImagePartial:
+      type: object
+      additionalProperties: false
+      required: [image, index]
+      properties:
+        image:
+          $ref: '#/components/schemas/GeneratedImage'
+        index:
+          type: integer
+          minimum: 0
+          description: 0-based, as OpenAI's `partial_image_index`.
+
+    ImageUsage:
+      type: object
+      additionalProperties: false
+      description: |
+        What the backend counted. OpenAI counts `input_tokens` and
+        `output_tokens`; OpenRouter counts chat-style `prompt_tokens` and
+        `completion_tokens`, which are the same quantities under their chat
+        names, plus a `cost`.
+      properties:
+        inputTokens:
+          type: integer
+        outputTokens:
+          type: integer
+        totalTokens:
+          type: integer
+        cost:
+          type: number
+          description: The provider's charge in US dollars, where it says (OpenRouter).
+
     AudioOutputRequest:
       type: object
       additionalProperties: false
@@ -2210,11 +2515,15 @@ components:
             Which requests this model answers. The values so far:
 
             * `chat` (`/v1/generate`), `embeddings` (`/v1/embed`),
-              `decisions` (`/v1/decide`), `speech` (`/v1/speak`, P3a) and
-              `transcription` (`/v1/transcribe`, P3b), which have doors;
-            * `completion`, `image`, `video`, `moderation` and `rerank`,
-              which name OpenAI's and OpenRouter's doors Eugene has not
-              built yet.
+              `decisions` (`/v1/decide`), `speech` (`/v1/speak`, P3a),
+              `transcription` (`/v1/transcribe`, P3b) and `image`
+              (`/v1/image`, P4), which have doors;
+            * `completion`, `video`, `moderation` and `rerank`, which name
+              OpenAI's and OpenRouter's doors Eugene has not built yet.
+
+            An OpenRouter model whose output is image and text (Gemini's
+            image models) serves `image` beside `chat`: its images route
+            answers them too (measured).
 
             A single-model `llama-server` whose projector hears
             (`/props` `modalities.audio`) serves `transcription` beside
@@ -2457,6 +2766,75 @@ components:
             `gateway.yaml`.
         decision:
           $ref: '#/components/schemas/DecisionCapability'
+        image:
+          $ref: '#/components/schemas/ImageCapabilities'
+
+    ImageCapabilities:
+      type: object
+      additionalProperties: false
+      description: |
+        For an `image` model (P4): what its listing says it takes, which the
+        gateway routes on. **Absent or null means the backend checks its own
+        fields**, and its refusal is relayed: an OpenAI account's image
+        models, whose API is the reference and which lists nothing per
+        model. **An empty list means not taken**: OpenRouter ignores an
+        unlisted `quality` or `background` with a 200 (measured), so a model
+        whose listing does not name one is routed around for it.
+      properties:
+        streaming:
+          type: boolean
+          description: |
+            Whether `/v1/image/stream` gives partial renders. From
+            OpenRouter's `supports_streaming` (8 of 55, measured); for
+            OpenAI's API, its GPT image models and not `dall-e-*`.
+        maxImages:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          description: The largest `n`. Null when the backend checks it.
+        minReferences:
+          type: integer
+          minimum: 0
+          default: 0
+          description: |
+            At least this many reference images. One on a model that only
+            edits (five on OpenRouter, measured), which a generation routes
+            around.
+        maxReferences:
+          type:
+            - integer
+            - 'null'
+          minimum: 0
+          description: |
+            At most this many reference images; 0 cannot edit. Null when
+            the backend checks it.
+        mask:
+          type: boolean
+          description: Whether `mask` is honoured. OpenAI's API only (OpenRouter ignores it, measured).
+        qualities:
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+          description: The `quality` values taken; `[]` none, null the backend checks.
+        backgrounds:
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+          description: The `background` values taken; `[]` none, null the backend checks.
+        outputFormats:
+          type:
+            - array
+            - 'null'
+          items:
+            type: string
+          description: |
+            The `output_format` values taken. Null where the listing does
+            not say: carried, and the answer labelled by its bytes (P2-2).
 
     DriverInfo:
       type: object

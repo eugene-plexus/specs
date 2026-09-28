@@ -668,3 +668,69 @@ measurement:**
 |---|---|---|
 | **P3a** | `/v1/audio/speech`: OpenAI-shaped speech through accounts (OpenRouter's 21 models, OpenAI) and the new `elevenlabs_http` engine; binary streamed; voices on `/v1/models`; same-model failover | **Built and pinned 2026-09-28** ([record](../acceptance/speech-run.md)). ElevenLabs live waits on a key with `models_read` |
 | **P3b** | `/v1/audio/transcriptions`: multipart, through OpenRouter's 24 models and `llama-server`; `/v1/audio/translations` refused (P3-4); metrics units | **Built and pinned 2026-09-28** ([record](../acceptance/transcription-run.md)) |
+
+## 10. P4's own calls, 2026-09-28
+
+Measured first:
+[`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md)
+§9. Troy took two of four as recommended.
+
+| # | Question | Taken |
+|---|---|---|
+| P4-1 | `response_format: "url"`, with no store to host a URL | **Ignored, answered `b64_json`** (not as recommended, which was a 400). OpenRouter does the same, and OpenAI's GPT image models always answer base64. |
+| P4-2 | `/v1/images/variations`, which only OpenAI's `dall-e-2` serves, with no OpenAI key to verify it | **Refused**, as recommended and as translations are (P3-4): the door answers 400 saying no backend here makes variations. |
+| P4-3 | `stream: true` for a model that cannot stream (47 of OpenRouter's 55, which silently answer JSON) | **Routed only to a model that streams** (not as recommended, which was a single `completed` event built from the batch answer). A streamed request is A2's setting: the 8 that stream take it, and where none can, the 400 names `stream`. |
+| P4-4 | OpenRouter's own `aspect_ratio`, `resolution` and `seed` | **Not in P4**, as recommended; §3's survey decides extensions. OpenAI's `size` already reaches OpenRouter's models, which translate it (measured). |
+
+**Taken without a separate call, because each follows a held rule or a
+measurement:**
+
+- **An edit is a generation with reference images.** The driver-internal
+  contract is one `ImageRequest` (call #9, normalised) with `references` and
+  `mask`. OpenRouter is asked on `/images/generations` with
+  `input_references` objects (its only edit route, measured); OpenAI on
+  `/images/edits` in the multipart form its SDK uses.
+- **The door takes OpenAI's two edit forms:** multipart (`image`, `image[]`,
+  `mask`, which is all the SDK sends) and JSON (`images[].image_url`,
+  `mask.image_url`). **A URL is refused** (A4's rule), and so is a
+  `file_id`, which names a store Eugene does not have; a `data:` URL is
+  inline bytes and is taken.
+- **An image's type is read from its bytes** (PNG, JPEG, WebP, GIF), never
+  from its part header: the SDK labels a `BytesIO` `application/octet-stream`
+  (measured). Anything else is a 400 before any backend is asked.
+- **Settings are routed by the model's own listing, and the listing is read
+  where it exists** (OpenRouter's `/images/models`; the main listing says
+  nothing about images, measured):
+  - A setting the listing names is **enforced**: `n`, `quality`,
+    `background`, `output_format`, the number of reference images, and
+    `stream` (P4-3). A model whose listing names none of `quality` or
+    `background` does not take them: flux answered an opaque JPEG for
+    `background: transparent` with a 200 (measured), which is the silent
+    drop A2 forbids.
+  - **`output_format` where the listing does not name it is carried**,
+    because gpt-image-1-mini honours it unlisted (measured), and **the
+    answer is labelled by its bytes**, P2-2's rule: `output_format` in the
+    answer is what the image is.
+  - **`mask` routes only to OpenAI's own API**; OpenRouter ignores it
+    (measured).
+  - `size` is carried everywhere: no model lists it and OpenRouter translates
+    it.
+  - Hints are carried and dropped where not taken: `output_compression`,
+    `moderation`, `style`, `input_fidelity`, `partial_images`, `user`.
+  - **An OpenAI account's image models have no listing**; its API checks
+    its own fields, so they are carried and its refusal is relayed (P1-3's
+    inherited answer). Only `stream` is known per id: OpenAI streams GPT
+    image models, not `dall-e-*`.
+- **Five OpenRouter models require a reference image** (`min: 1`); a
+  generation routes around them.
+- **Image+text models answer on the images door too** (gemini flash-lite
+  image returned one image, measured), so they carry `image` beside `chat`.
+- **Failover: tiers, as chat** (§5, #4). **A streamed request's first event
+  is the commit point.**
+- **Uploads are at most 25 MiB decoded across all images**, the transcription
+  door's limit, and 16 images, OpenAI's.
+- **The answer is OpenAI's shape** whatever the backend: `created` is the
+  gateway's clock where the backend says 0 (flux and gemini, measured);
+  usage is `input_tokens`/`output_tokens`; stream events carry every field
+  OpenAI's schema requires, which OpenRouter's omit.
+- **Metrics units:** the image count beside tokens (schema v8).

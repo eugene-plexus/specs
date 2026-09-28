@@ -1645,6 +1645,201 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/images/generations:
+    post:
+      tags: [inference]
+      operationId: createImage
+      summary: OpenAI-compatible image generation.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `/v1/images/generations` (P4, 2026-09-28), in its shape: the
+        OpenAI SDK's `client.images.generate(...)` works unchanged, streamed
+        or not (captured). The model is any with the `image` surface on
+        `GET /v1/models`: an OpenRouter image model (Gemini's image+text ones
+        included, measured) or OpenAI's.
+
+        **Tiers, as chat** (§5, call #4), filtered at every tier to models
+        that take what the request asks. **A setting is routed by the model's
+        own listing** (A2): `n`, `quality`, `background` and `output_format`
+        go only where the listing names the value; an `output_format` the
+        listing does not mention is carried and the answer labelled by its
+        bytes (P2-2). **`stream: true` routes only to a model that streams**
+        (P4-3); where none can, the 400 names `stream`. A streamed request's
+        first event is the commit point.
+
+        **The answer is always `b64_json`.** `response_format: url` is
+        accepted and ignored (P4-1): there is no store to serve a URL from,
+        and OpenRouter and OpenAI's GPT image models answer base64 anyway.
+        `created` is this gateway's clock where a backend says 0, `usage` is
+        OpenAI's `input_tokens`/`output_tokens`, and every stream event
+        carries the fields OpenAI's schema requires (OpenRouter's omit them,
+        measured). OpenRouter's own `aspect_ratio`, `resolution` and `seed`
+        are refused by name (P4-4); `size` reaches every backend.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageGenerationRequest'
+      responses:
+        '200':
+          description: |
+            The images, or with `stream: true` an SSE stream of
+            `image_generation.partial_image` and `image_generation.completed`
+            events, one `completed` per image.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImagesResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ImageStreamEvent'
+        '400':
+          description: |
+            A field this door refuses, a model with no `image` surface, a
+            setting no model in the slot takes (named), or the backend's
+            refusal (a provider's content filter), with its words.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every backend failed, or a provider refused a driver's own key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The model is served but not ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/images/edits:
+    post:
+      tags: [inference]
+      operationId: createImageEdit
+      summary: OpenAI-compatible image editing.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `/v1/images/edits` (P4), in both of its forms:
+        **multipart**, which is all the OpenAI SDK sends (`image` for one
+        image, `image[]` for several, `mask`; captured), and **JSON**, with
+        `images[].image_url` and `mask.image_url`.
+
+        **Inline bytes only** (A4's rule): an `image_url` that is not a
+        `data:` URL is refused, and so is a `file_id`, which names a store
+        Eugene does not have. **An image's type is read from its bytes**
+        (PNG, JPEG, WebP, GIF), never from its part header, since the SDK
+        labels a `BytesIO` `application/octet-stream`. At most 16 images and
+        25 MiB decoded in all.
+
+        Routed as generations are, and further only to a model that takes
+        this many reference images; **`mask` only to OpenAI's API**, which
+        alone honours it (OpenRouter ignores it, measured). Stream events
+        are `image_edit.partial_image` and `image_edit.completed`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ImageEditForm'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageEditJsonRequest'
+      responses:
+        '200':
+          description: The edited images, or an SSE stream as for generations.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImagesResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/ImageStreamEvent'
+        '400':
+          description: |
+            A URL or `file_id` input, something that is not an image, a
+            field this door refuses, a model with no `image` surface, a
+            setting no model in the slot takes (named), or the backend's
+            refusal, with its words.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '413':
+          description: The images are over 25 MiB in all.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every backend failed, or a provider refused a driver's own key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The model is served but not ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/images/variations:
+    post:
+      tags: [inference]
+      operationId: createImageVariation
+      summary: 'Refused: no backend here makes variations (P4-2).'
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's variations door, which only OpenAI's `dall-e-2` serves
+        (OpenRouter answers 404, measured). Refused by Troy's call (P4-2), as
+        translations are (P3-4): a 400 saying no backend here makes
+        variations, rather than a 404 that reads as a typo. An edit with a
+        prompt describing the variation is the nearest door.
+      responses:
+        '400':
+          description: Always.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/embeddings:
     post:
       tags: [inference]
@@ -2655,13 +2850,14 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings, decisions, speech, transcription]
+            enum: [chat, embeddings, decisions, speech, transcription, image]
           description: |
             Which surfaces this model can be sent to. `decisions` means
             `POST /v1/systemone`; a decision-only model lists nothing
             else, and a chat request naming it is refused with the
             door's name. `speech` means `POST /v1/audio/speech` (P3a),
-            `transcription` `POST /v1/audio/transcriptions` (P3b).
+            `transcription` `POST /v1/audio/transcriptions` (P3b), `image`
+            `POST /v1/images/generations` and `/edits` (P4).
 
             OpenAI's own `/v1/models` does not say, which is why every
             RAG front-end makes you pick an embedding model from a
@@ -2711,6 +2907,22 @@ components:
           description: |
             For a `speech` model: the formats every backend serving it can
             give, `wav` included where it is made from `pcm`.
+        image_streaming:
+          type: boolean
+          description: |
+            For an `image` model: at least one backend streams partial
+            images. A request with `stream: true` routes only to those
+            (P4-3).
+        image_edits:
+          type: boolean
+          description: |
+            For an `image` model: at least one backend takes reference
+            images, so `/v1/images/edits` can reach it.
+        image_mask:
+          type: boolean
+          description: |
+            For an `image` model: at least one backend honours `mask`
+            (OpenAI's API only, measured).
         audio_output:
           type: boolean
           description: |
@@ -3227,6 +3439,292 @@ components:
           type: integer
         total_tokens:
           type: integer
+
+    ImageGenerationRequest:
+      type: object
+      additionalProperties: false
+      required: [model, prompt]
+      description: OpenAI's image generation request (P4). Unknown fields are refused naming them.
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+        size:
+          type: string
+          maxLength: 32
+          description: '`WIDTHxHEIGHT` or `auto`, carried as sent.'
+        quality:
+          $ref: '#/components/schemas/ImageQuality'
+        background:
+          $ref: '#/components/schemas/ImageBackground'
+        output_format:
+          $ref: '#/components/schemas/ImageOutputFormat'
+        output_compression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          $ref: '#/components/schemas/ImageModeration'
+        stream:
+          type: boolean
+          description: Routes only to a model that streams (P4-3).
+        partial_images:
+          type: integer
+          minimum: 0
+          maximum: 3
+        user:
+          type: string
+          maxLength: 256
+        response_format:
+          $ref: '#/components/schemas/ImageResponseFormat'
+        style:
+          $ref: '#/components/schemas/ImageStyle'
+
+    ImageEditJsonRequest:
+      type: object
+      additionalProperties: false
+      required: [model, prompt, images]
+      description: OpenAI's JSON edit form (P4). Unknown fields are refused naming them.
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        images:
+          type: array
+          minItems: 1
+          maxItems: 16
+          items:
+            $ref: '#/components/schemas/ImageRef'
+        mask:
+          $ref: '#/components/schemas/ImageRef'
+        input_fidelity:
+          $ref: '#/components/schemas/ImageInputFidelity'
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+        size:
+          type: string
+          maxLength: 32
+          description: '`WIDTHxHEIGHT` or `auto`, carried as sent.'
+        quality:
+          $ref: '#/components/schemas/ImageQuality'
+        background:
+          $ref: '#/components/schemas/ImageBackground'
+        output_format:
+          $ref: '#/components/schemas/ImageOutputFormat'
+        output_compression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          $ref: '#/components/schemas/ImageModeration'
+        stream:
+          type: boolean
+          description: Routes only to a model that streams (P4-3).
+        partial_images:
+          type: integer
+          minimum: 0
+          maximum: 3
+        user:
+          type: string
+          maxLength: 256
+
+    ImageRef:
+      type: object
+      additionalProperties: false
+      description: |
+        One input image. Only a `data:` URL is taken; any other URL, and a
+        `file_id`, are refused (A4; no store).
+      properties:
+        image_url:
+          type: string
+        file_id:
+          type: string
+
+    ImageEditForm:
+      type: object
+      required: [model, prompt]
+      description: |
+        OpenAI's multipart edit form, as its SDK sends it (P4). The images
+        are `image` (one) or `image[]` (several, once each). Fields this door
+        does not carry are refused naming them.
+      properties:
+        model:
+          type: string
+        prompt:
+          type: string
+        image:
+          type: string
+          format: binary
+        image[]:
+          type: array
+          items:
+            type: string
+            format: binary
+        mask:
+          type: string
+          format: binary
+        input_fidelity:
+          $ref: '#/components/schemas/ImageInputFidelity'
+        response_format:
+          $ref: '#/components/schemas/ImageResponseFormat'
+        n:
+          type: integer
+          minimum: 1
+          maximum: 10
+        size:
+          type: string
+          maxLength: 32
+          description: '`WIDTHxHEIGHT` or `auto`, carried as sent.'
+        quality:
+          $ref: '#/components/schemas/ImageQuality'
+        background:
+          $ref: '#/components/schemas/ImageBackground'
+        output_format:
+          $ref: '#/components/schemas/ImageOutputFormat'
+        output_compression:
+          type: integer
+          minimum: 0
+          maximum: 100
+        moderation:
+          $ref: '#/components/schemas/ImageModeration'
+        stream:
+          type: boolean
+          description: Routes only to a model that streams (P4-3).
+        partial_images:
+          type: integer
+          minimum: 0
+          maximum: 3
+        user:
+          type: string
+          maxLength: 256
+
+    ImageQuality:
+      type: string
+      enum: [standard, hd, low, medium, high, xhigh, max, auto]
+      description: OpenAI's values; each model's listing says which it takes.
+
+    ImageBackground:
+      type: string
+      enum: [transparent, opaque, auto]
+
+    ImageOutputFormat:
+      type: string
+      enum: [png, jpeg, webp]
+
+    ImageModeration:
+      type: string
+      enum: [low, auto]
+
+    ImageStyle:
+      type: string
+      enum: [vivid, natural]
+      description: '`dall-e-3` only; carried and dropped where not taken.'
+
+    ImageInputFidelity:
+      type: string
+      enum: [high, low]
+
+    ImageResponseFormat:
+      type: string
+      enum: [url, b64_json]
+      description: '`url` is accepted and ignored (P4-1): every answer is `b64_json`.'
+
+    ImageStreamEventType:
+      type: string
+      enum:
+        - image_generation.partial_image
+        - image_generation.completed
+        - image_edit.partial_image
+        - image_edit.completed
+
+    ImagesResponse:
+      type: object
+      required: [created, data]
+      properties:
+        created:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImageObject'
+        output_format:
+          type: string
+          description: |
+            What the first image is, read from its bytes (P2-2): `png`,
+            `jpeg`, `webp`, and `svg` from OpenRouter's vector models.
+        size:
+          type: string
+        quality:
+          type: string
+        background:
+          type: string
+        usage:
+          $ref: '#/components/schemas/ImagesUsage'
+        x_eugene_plexus:
+          $ref: '#/components/schemas/CompletionRoutingInfo'
+
+    ImageObject:
+      type: object
+      required: [b64_json]
+      properties:
+        b64_json:
+          type: string
+        revised_prompt:
+          type: string
+
+    ImagesUsage:
+      type: object
+      properties:
+        input_tokens:
+          type: integer
+        output_tokens:
+          type: integer
+        total_tokens:
+          type: integer
+        input_tokens_details:
+          type: object
+          additionalProperties: true
+
+    ImageStreamEvent:
+      type: object
+      required: [type, b64_json, created_at, size, quality, background, output_format]
+      description: |
+        One SSE `data:` event, with the fields OpenAI's schema requires
+        filled here where the backend sent none: `size`, `quality` and
+        `background` as asked (`auto` when not), `output_format` from the
+        bytes. A `partial_image` carries `partial_image_index`; a
+        `completed` carries `usage`.
+      properties:
+        type:
+          $ref: '#/components/schemas/ImageStreamEventType'
+        b64_json:
+          type: string
+        created_at:
+          type: integer
+        size:
+          type: string
+        quality:
+          type: string
+        background:
+          type: string
+        output_format:
+          type: string
+        partial_image_index:
+          type: integer
+        usage:
+          $ref: '#/components/schemas/ImagesUsage'
 
     ChatModality:
       type: string
@@ -5930,9 +6428,10 @@ components:
             - string
             - 'null'
           description: |
-            Which door the request came in by (P3b): `speech` or
-            `transcription`. Null on rows from before schema v7 and on every
-            other door, whose rows carry tokens.
+            Which door the request came in by (P3b): `speech`,
+            `transcription`, or `images` (P4, schema v8). Null on rows from
+            before schema v7 and on every other door, whose rows carry
+            tokens.
         characters:
           type:
             - integer
@@ -5943,6 +6442,11 @@ components:
             - number
             - 'null'
           description: For transcription, the seconds of audio heard, where the backend says.
+        images:
+          type:
+            - integer
+            - 'null'
+          description: For images, how many were returned (P4, schema v8). Tokens ride beside it.
         outcome:
           type: string
           enum: [served, error]
