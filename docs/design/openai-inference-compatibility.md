@@ -518,3 +518,39 @@ The ones that change this design: a driver reads
   captured.
 - **`llama-server` b11076's `/v1/audio/transcriptions`:** exercised, and
   with which models. §0.5 found the route string, not a response.
+
+## 7. P1's own calls, 2026-09-27
+
+Building P1 raised four questions the design had not answered. **Troy took
+all four as recommended:**
+
+| # | Question | Taken |
+|---|---|---|
+| P1-1 | Who applies the `<account>/` prefix? | **The gateway**, from the driver's name as it was added (its component name). A driver stays unaware of its own name. Names cannot be renamed, so "fixed once it exposes models" holds without a rule. **The same name on two machines is one account served from both**, a replica per model, as same-named local models already are. |
+| P1-2 | How a driver becomes an account, and which backends | **An OpenAI-compatible driver with no model set is an account** and exposes its catalogue, prefixed. A driver with a model set works exactly as before, with its bare id. In P1 for every OpenAI-compatible provider: OpenRouter, OpenAI, xAI, Ollama, LM Studio and custom (which covers `llama-server`'s router mode). The Claude and Codex subscriptions and System One stay single-model **for now**. |
+| P1-3 | Per-model capabilities where a provider's list says nothing | **The provider's own listing where it says it** (OpenRouter's catalogue; Ollama's and LM Studio's native model information). **Elsewhere each model inherits the driver-wide answer given today**, and image input stays re-checked per request. No shipped table, no per-model probes. |
+| P1-4 | Models whose only use has no door yet | **Listed on `GET /v1/models` once a door serves them.** Chat, embeddings and decision models appear now; speech, image, video and transcription models appear as P3-P5 add their doors. The driver reports them all, so no id changes later. |
+
+**Taken without a separate call, because each follows from a rule already
+held:**
+
+- **An older driver** (one reporting the single `modelId`) is listed with its
+  machine in the gateway's routing view, and an Issue says to update that
+  machine. The gateway never sends `model` to it: an older driver ignores
+  unknown fields and would answer with its one model.
+- **The catalogue** is read at start and then hourly (configurable). A failed
+  read keeps the last good list, saved beside the driver's config so a
+  restart with the upstream down still serves it, and the reason is on
+  `/v1/info` (R2.1's lesson).
+- **A model that leaves the catalogue** is deleted from nothing: slot tiers
+  and key scopes keep it, it reads *nothing serves this* as an unlaunched
+  model does, and an Issue names it.
+- **Cooldown is per model**, not per account.
+- **Globs in `allowedModels`:** `*` is the only wildcard and matches across
+  `/`. One matcher, in the gateway, the agent and the control root.
+- **Metrics:** each attempt records its model (schema v6).
+- **OpenRouter's `provider.require_parameters: true`** is sent whenever a
+  request carries settings, because §0.3's per-model parameter list is a
+  union over providers, and A2 forbids a setting being silently dropped.
+- **A new `string_list` config value type** carries the include/exclude
+  patterns, rather than a comma-separated string.
