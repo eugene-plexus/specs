@@ -1497,12 +1497,16 @@ components:
           type: array
           maxItems: 2
           items:
-            type: string
-            enum: [word, segment]
+            $ref: '#/components/schemas/TimestampGranularity'
           description: With `verbose` only, as OpenAI requires.
         requestId:
           type: string
           format: uuid
+
+    TimestampGranularity:
+      type: string
+      enum: [word, segment]
+      description: Named, so a later inline enum cannot renumber it.
 
     TranscribeAudio:
       type: object

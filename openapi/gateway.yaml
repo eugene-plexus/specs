@@ -3149,12 +3149,25 @@ components:
         timestamp_granularities:
           type: array
           items:
-            type: string
-            enum: [word, segment]
+            $ref: '#/components/schemas/TimestampGranularity'
           description: Sent as `timestamp_granularities[]`, once per value, as the SDK does.
         stream:
           type: boolean
           description: Refused when true.
+
+    TimestampGranularity:
+      type: string
+      enum: [word, segment]
+      description: |
+        Named, as every enum in this document should be: an inline one is
+        numbered by the generator, and the next one renumbers the rest
+        (S6's `Source1`, and P3b's first draft, which renamed nine `Type`
+        enums).
+
+    TranscriptionUsageType:
+      type: string
+      enum: [duration, tokens]
+      description: Which unit the backend counted in.
 
     TranscriptionResponseFormat:
       type: string
@@ -3205,8 +3218,7 @@ components:
       required: [type]
       properties:
         type:
-          type: string
-          enum: [duration, tokens]
+          $ref: '#/components/schemas/TranscriptionUsageType'
         seconds:
           type: number
         input_tokens:
