@@ -105,6 +105,10 @@ versions and restoring from a byte copy.
      OpenRouter refuses with *"No endpoints found that support input audio"*.
 3. **A sabotage pass** over the acceptance, restoring from byte copies.
 4. **Re-pin both installers** to driver `e231aaf`+ and gateway `de7a65f`+.
+   Since 2026-09-28 the heads are driver `934d824` and gateway `ba25538`: a
+   provider refusing a driver's own key is `upstream_auth_error` rather than
+   the caller's 400 ([record](decision-run.md#hosted-jev-through-openrouter-2026-09-28)).
+   It has its own sabotage pass and live run, and ships with this re-pin.
 5. **The other three consumers:** agent, control and library generate
    `common.yaml`, so their models change. They are re-pinned regen-only once,
    at P2's end, not three times. `ui` is re-pinned when a screen consumes

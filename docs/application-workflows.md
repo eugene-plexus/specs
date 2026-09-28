@@ -221,6 +221,7 @@ The run is [recorded here](acceptance/decision-run.md#hosted-jev-through-openrou
 Two things to know. The hosted service stalls in bursts: in one probe, 4 of 6
 calls failed after 20-30 s, while healthy calls take about 300 ms. Set the
 driver's request timeout to what your application can wait. And a key the
-provider refuses currently comes back as a 400 `invalid_request_error`
-naming the provider's 401, not as a credential error; check the driver's key
-first when you see one.
+provider refuses comes back as a 502 `upstream_auth_error` naming the driver
+and the provider's own words (fixed 2026-09-28; an install pinned before the
+fix ships reports it as a 400 `invalid_request_error` naming the provider's
+401 — check the driver's key first either way).

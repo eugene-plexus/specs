@@ -103,9 +103,10 @@ longer does: OpenRouter serves Jev at `https://openrouter.ai/api/v1/systemone`
 with the same pinned protocol, so the `typesafe` provider was pointed there
 (`baseUrl: https://openrouter.ai/api`, `upstreamModelId: typesafe/jev-1.13`,
 an OpenRouter key in the driver's `apiKey`). `scripts/b2-hosted-jev-check.py`
-builds a real control root, an enrolled agent, a real gateway and two
-`typesafe` drivers (one with a deliberately invalid key), run from the B2
-venv in WSL2:
+builds a real control root, an enrolled agent, a real gateway, two
+`typesafe` drivers (one with a deliberately invalid key) and, since the fix
+below, an `openrouter` chat driver with an invalid key, run from the B2 venv
+in WSL2:
 
 ```
 cd /mnt/d/py/eugene-plexus/specs/scripts && ~/b2/ep-venv/bin/python b2-hosted-jev-check.py
@@ -128,7 +129,8 @@ upstream, not by Eugene (see below).
 8. A key OpenRouter refuses comes back as a refusal, not a hang (see finding 2).
 9. The key appears in no process log and no response (32 responses scanned).
 
-**Findings, recorded and not fixed:**
+**Findings.** 2 and the doubled sentence in 3 were fixed the same day; 1 is
+recorded and not fixed.
 
 1. **The upstream revision is not surfaced.** `gateway.yaml`
    (`SystemOneResponse.model`) says the backend's own model revision is
@@ -144,13 +146,31 @@ upstream, not by Eugene (see below).
    a chat driver whose OpenAI, OpenRouter or xAI key is revoked says the same.
    R3.4 fixed the neighbouring case, where the driver refuses the gateway
    (502 `upstream_auth_error`); this is the provider refusing the driver.
+   **Fixed 2026-09-28** — contracts `b417855` (prose), inference-driver
+   `934d824`, gateway `ba25538`. A 401, a 402 (no credit), or a 403 whose
+   words are not about the content is the driver's 502
+   `#backend-credential-refused` and the gateway's 502 `upstream_auth_error`,
+   naming the driver, its URL, the provider's words and where the key is set.
+   It stays `terminal`: no cascade (the 4xx rule is unchanged) and no breaker
+   trip, which would have turned the cause into "backends cooling down". A
+   403 about flagged content stays the caller's 400.
+   `scripts/credential-refused-sabotage.py`: **15 of 15 caught** across both
+   repos. Live re-run: **ALL 10 CHECKS PASSED**, first attempt, with the
+   decision door and a new chat-door driver both reading *"The driver
+   'driver-badkey' at … could not use its provider: The backend refused this
+   driver's credential (its API key; HTTP 401): … User not found."* **Not in
+   an install yet:** both repos' `main` also carries P2a, which is owed its own
+   acceptance run before the re-pin
+   ([record](media-inputs-run.md#owed-before-an-install-gets-it)); this fix
+   ships with that re-pin.
 3. **The hosted service stalls in bursts.** The first attempt's opening
    decision took 22 s and the next was an OpenRouter 503 ("upstream connect
    error … connection timeout"). A direct probe minutes later saw 4 of 6
    calls fail after 20-30 s (read timeouts, 503, 520). Eugene reported it
    correctly as `upstream_error` with "outcome unknown, no automatic replay",
-   but that sentence appears twice in one message, once from the driver and
-   once from the gateway.
+   but that sentence appeared twice in one message, once from the driver and
+   once from the gateway. **The doubled sentence is fixed** (gateway
+   `ba25538`); the stalls are upstream's.
 
 ## Pending, named
 - **The documented SDK half is blocked on distribution, measured:**

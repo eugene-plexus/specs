@@ -93,7 +93,7 @@ def exercise(directory: Path) -> None:
         passed += 1
         print(f"PASS {passed:02d} {label}", flush=True)
 
-    names = ("control", "agent-a", "gateway", "driver-jev", "driver-badkey")
+    names = ("control", "agent-a", "gateway", "driver-jev", "driver-badkey", "driver-badchat")
     socks = [socket.socket() for _ in names]
     for s in socks:
         s.bind(("127.0.0.1", 0))
@@ -172,12 +172,13 @@ def exercise(directory: Path) -> None:
         operator = login("agent-a")
 
         # --- two drivers on the `typesafe` provider -------------------------
-        def driver(name: str, alias: str, api_key: str) -> None:
+        def driver(name: str, alias: str, api_key: str, provider: str = "typesafe",
+                   upstream: str = UPSTREAM_MODEL) -> None:
             w = directory / name
             w.mkdir(exist_ok=True)
             (w / "driver.yaml").write_text(yaml.safe_dump({
-                "provider": "typesafe", "baseUrl": "https://openrouter.ai/api", "apiKey": api_key,
-                "modelId": alias, "upstreamModelId": UPSTREAM_MODEL}), encoding="utf-8")
+                "provider": provider, "baseUrl": "https://openrouter.ai/api", "apiKey": api_key,
+                "modelId": alias, "upstreamModelId": upstream}), encoding="utf-8")
             (w / "bootstrap.json").write_text(json.dumps(
                 child_environment(directory / "agent-a", "inference-driver", url("agent-a"))), encoding="utf-8")
             start(name, "driver")
@@ -186,6 +187,9 @@ def exercise(directory: Path) -> None:
 
         driver("driver-jev", "jev", key)
         driver("driver-badkey", "jev-badkey", "sk-or-v1-" + "0" * 64)
+        # The chat door with the same kind of bad key: the commoner case.
+        driver("driver-badchat", "badchat", "sk-or-v1-" + "1" * 64, provider="openrouter",
+               upstream="openai/gpt-4o-mini")
         info = call("driver-jev", "GET", "/v1/info", operator).json()
         (model,) = info["models"]  # since P1, capabilities are per model
         assert info["provider"] == "typesafe" and info["locality"] == "external", info
@@ -209,7 +213,7 @@ def exercise(directory: Path) -> None:
                     return e
             return None
 
-        wait(lambda: entry("jev") is not None and entry("jev-badkey") is not None, "both routable", 45)
+        wait(lambda: all(entry(m) is not None for m in ("jev", "jev-badkey", "badchat")), "all routable", 45)
         e = entry("jev")
         assert e["x_eugene_plexus"]["surfaces"] == ["decisions"], e
         ok(f"the gateway lists `jev` as decisions-only ({json.dumps(e['x_eugene_plexus'])[:160]})")
@@ -279,22 +283,28 @@ def exercise(directory: Path) -> None:
         assert bad.status_code == 422 and "temperature" in bad.text, bad.text
         ok("an unknown question field is a 422 at the gateway")
 
-        # --- 8: a key the provider refuses ----------------------------------
-        # FOUND 2026-09-28 and not yet fixed: the driver's `_backend_error`
-        # turns every upstream 4xx but 408/409/425/429 into its own 400,
-        # so a provider refusing OUR key reaches the caller as
-        # `invalid_request_error` — the caller's fault, for a credential
-        # only the operator holds. R3.4 fixed the neighbouring case (the
-        # driver refusing the gateway). Reported until fixed; the refusal
-        # must at least arrive, fast and without a cascade into silence.
-        refused = decide(operator, "jev-badkey", {"refunded": MIXED["refunded"]})
-        assert 400 <= refused.status_code < 600 and "401" in refused.text, refused.text
-        if refused.status_code != 502 or "upstream_auth_error" not in refused.text:
-            print(f"     FINDING: a provider-refused key reaches the caller as HTTP {refused.status_code} "
-                  f"{refused.json()['error']['type']}: {refused.json()['error']['message'][:160]}", flush=True)
-        ok(f"a key OpenRouter refuses comes back as a refusal (HTTP {refused.status_code}), not a hang")
+        # --- 8 and 9: a key the provider refuses, on both doors -------------
+        # FOUND by this script's first run (2026-09-28): the refusal reached
+        # the caller as a 400 `invalid_request_error`, the caller's fault
+        # for a key only the operator holds. Fixed the same day (driver
+        # `#backend-credential-refused`, gateway `upstream_auth_error`).
+        def refused_as_ours(r: httpx.Response, driver_name: str) -> str:
+            assert r.status_code == 502, r.text
+            error = r.json()["error"]
+            assert error["type"] == "upstream_auth_error", error
+            assert driver_name in error["message"] and f"Config -> {driver_name}" in error["message"], error
+            assert "401" in error["message"] and "Nothing is wrong with the request" in error["message"], error
+            return error["message"]
 
-        # --- 9: the key never left the driver's config -----------------------
+        message = refused_as_ours(decide(operator, "jev-badkey", {"refunded": MIXED["refunded"]}), "driver-badkey")
+        print(f"     ({message[:230]})", flush=True)
+        ok("the decision door: a key OpenRouter refuses is our 502 upstream_auth_error, naming the driver")
+        chat = call("gateway", "POST", "/v1/chat/completions", operator,
+                    json={"model": "badchat", "messages": [{"role": "user", "content": "hi"}], "max_tokens": 8})
+        refused_as_ours(chat, "driver-badchat")
+        ok("the chat door: the same, for an OpenRouter chat driver with a bad key")
+
+        # --- 10: the key never left the driver's config ----------------------
         for f in logs:
             f.flush()
         leaks = sum(p.read_text(encoding="utf-8", errors="replace").count(key)
