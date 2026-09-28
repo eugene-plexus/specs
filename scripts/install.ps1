@@ -121,7 +121,7 @@ $PIN = @{
     "agent"            = "89358602ab96a5282ea74fcf16aba7befb2db138"
     "control"          = "847200f920949e2ef9762b28be9a413cbc319a39"
     "gateway"          = "3e54fbba51e727eb90e7cc0d4831622ed832ae53"
-    "inference-driver" = "e4849721b734698596b09df86786e41926618c65"
+    "inference-driver" = "a5e0f2aee093cf5d5a78e04041ab3e0442c6f7d9"
     "library"          = "f4e79794fad46e856d9ee6a36b1bc26ba8ae2166"
     "ui"               = "323e3b5ca5f96a5d0c9a511b74e8165a1ce95391"  # branch `dist`, not `main`
 }

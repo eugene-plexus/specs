@@ -1,7 +1,7 @@
 # P4: images at `/v1/images/*` — record
 
 **2026-09-28. Built, run and pinned in both installers** (inference-driver
-`e484972`, gateway `3e54fbb`). Design:
+`a5e0f2a`, gateway `3e54fbb`). Design:
 [`openai-inference-compatibility.md`](../design/openai-inference-compatibility.md)
 §10, calls P4-1 to P4-4. Measured first:
 [`provider-accounts-measurement.md`](provider-accounts-measurement.md) §9
@@ -10,7 +10,7 @@
 | Repo | Commit |
 |---|---|
 | specs (contract) | `8455ff2` |
-| inference-driver | `e484972` |
+| inference-driver | `e484972`, `a5e0f2a` |
 | gateway | `6be3f0a`, `3e54fbb` |
 
 - **`scripts/p4-images-acceptance.py`**: 15 fixture checks, in specs CI.
@@ -22,7 +22,7 @@
   `quality: high` with `n: 2`, and `n` alone rules flux out, so the quality
   rule was never isolated. The gate sends one setting per request now, and
   that sabotage is caught.
-- **Unit suites:** inference-driver 802 (20 new), gateway 925 (26 new, plus a
+- **Unit suites:** inference-driver 803 (21 new), gateway 925 (26 new, plus a
   v7 metrics migration test). The new test modules do not import against the
   previous source, which has no image schemas.
 
@@ -81,6 +81,17 @@ with a `data:` URL is served.
   (edits 36 MiB, for 25 MiB of images as base64 `data:` URLs).
 
 ## Found on the way
+
+- **The first pin broke the P2 and P3 gates in CI.** `e484972` read
+  OpenRouter's `/images/models` inside the catalogue refresh and let its
+  failure fail the whole refresh; the P2 and P3 fixtures play no images
+  listing, so on a first boot the account served nothing, chat included. A
+  real regression, not a fixture gap: any OpenRouter-shaped backend without
+  that listing would have gone dark. The listing is supplementary now: a
+  failed read is logged and image-only models are served without their listed
+  settings (`a5e0f2a`). Every CI acceptance script was then run locally
+  against the working trees before the re-pin, which should have happened
+  before the first one.
 
 - **OpenRouter's image guide is wrong about `input_references`.** It shows
   plain `data:` strings; OpenRouter answers them with a Zod 400 (*expected
