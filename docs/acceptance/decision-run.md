@@ -158,11 +158,9 @@ recorded and not fixed.
    repos. Live re-run: **ALL 10 CHECKS PASSED**, first attempt, with the
    decision door and a new chat-door driver both reading *"The driver
    'driver-badkey' at … could not use its provider: The backend refused this
-   driver's credential (its API key; HTTP 401): … User not found."* **Not in
-   an install yet:** both repos' `main` also carries P2a, which is owed its own
-   acceptance run before the re-pin
-   ([record](media-inputs-run.md#owed-before-an-install-gets-it)); this fix
-   ships with that re-pin.
+   driver's credential (its API key; HTTP 401): … User not found."* **Pinned in
+   both installers 2026-09-28, with P2a**, after P2a's own acceptance run and
+   sabotage pass ([record](media-inputs-run.md)).
 3. **The hosted service stalls in bursts.** The first attempt's opening
    decision took 22 s and the next was an OpenRouter 503 ("upstream connect
    error … connection timeout"). A direct probe minutes later saw 4 of 6

@@ -2,9 +2,10 @@
 
 **Status: P1 built 2026-09-27** (one driver per provider account; record
 [`provider-accounts-run.md`](../acceptance/provider-accounts-run.md)).
-**P2a, attachments in, is on main 2026-09-28 and not yet in an install**
-(record [`media-inputs-run.md`](../acceptance/media-inputs-run.md): unit
-tested, acceptance and live run owed). **P2b, P2c and P3-P8 are not built.** §0 is measured, and §6's authenticated measurements
+**P2a, attachments in, is built and pinned in both installers 2026-09-28**
+(record [`media-inputs-run.md`](../acceptance/media-inputs-run.md): 9 fixture
+checks and 5 live OpenRouter checks, 21 of 21 sabotages caught).
+**P2b, P2c and P3-P8 are not built.** §0 is measured, and §6's authenticated measurements
 are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
 recommended; #3 (replace `modelId`) and #8 (Eugene runs some
@@ -595,6 +596,6 @@ Troy took all three as recommended.
 
 | Part | Content | State |
 |---|---|---|
-| **P2a** | Attachments in: `input_audio` and `file` on chat, `input_file`/`input_audio` on Responses, `document` on Messages; routing by `audioInput`/`fileInput` | **On main 2026-09-28** (specs `6ac2761`, driver `e231aaf`, gateway `de7a65f`). Unit tested; the acceptance script, sabotage pass and live OpenRouter run are owed, and neither installer pins it yet. |
+| **P2a** | Attachments in: `input_audio` and `file` on chat, `input_file`/`input_audio` on Responses, `document` on Messages; routing by `audioInput`/`fileInput` | **Built 2026-09-28** (specs `6ac2761`, driver `e231aaf`, gateway `de7a65f`). Acceptance, live OpenRouter run and sabotage pass done; both installers pin driver `934d824` and gateway `ba25538`. |
 | **P2b** | Audio out: `modalities` and `audio` on chat; streamed pcm16 assembled for a batch answer, WAV-wrapped when `wav` was asked (P2-1); Lyria's mp3 labelled by its header (P2-2); routing by `outputModalities` | Not started |
 | **P2c** | The missing fields (the list above) and `/v1/responses/input_tokens` | Not started |
