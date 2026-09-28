@@ -132,6 +132,48 @@ P1-P5 are built against real shapes.
 - **So any SSE reader on the path must accept a ~1 MB line.**
 - **$0.04 per clip**, 9.7 s to `[DONE]`, first frame at 2.2 s.
 
+**Speech output through chat** (`openai/gpt-audio-mini`, measured 2026-09-28
+for P2b; about $0.0003 in all):
+
+- **The listing names no `modalities` or `audio` parameter** for any of the
+  four audio-output models (`gpt-audio`, `gpt-audio-mini`, both Lyria 3s).
+  Their `supported_parameters` are the ordinary sampling ones. So a request
+  asking for audio cannot be routed by the A2 setting list; it must be routed
+  by `architecture.output_modalities` containing `audio`, which all four have.
+- **Not streamed, it is refused:** 400 *"Audio output requires stream: true"*,
+  with `provider_name: null`, so OpenRouter refuses it before any provider.
+- **Streamed with `audio.format: "pcm16"` it works.** 17 frames, 15 carrying
+  `delta.audio`. The first has `id` and `transcript` only; later ones carry
+  `data` too, plus `expires_at`. `delta.content` is `""`. The spoken text is
+  only in `delta.audio.transcript`.
+  - The audio is raw little-endian 16-bit samples with no header. It came in
+    19,200-byte chunks (0.4 s each at OpenAI's documented 24 kHz mono; the rate
+    is not measured here). Each chunk's base64 decodes on its own.
+  - 108,000 bytes for a 60-token answer, with the first audio at 0.57 s.
+  - Usage arrives on a frame of its own after the last audio, with `cost`.
+- **Streamed with `wav` or `mp3` it is refused by OpenAI itself**, relayed as a
+  400: *"'audio.format' does not support 'wav' when stream=true. Supported
+  values are: 'pcm16'."* The same for `mp3`.
+
+So P2-1 holds as measured: a caller wanting a non-streamed answer gets it
+only by our streaming `pcm16` upstream and assembling it. `wav` is that plus
+a header; any other format would need a transcoder.
+
+**Lyria asked the way P2b asks** (`google/lyria-3-clip-preview`, streamed,
+2026-09-28, $0.04 per clip):
+
+- **Plain, with `modalities: ["text","audio"]`, and with `audio: {voice,
+  format: "pcm16"}` as well, all three answer the same way:** one
+  `delta.audio` carrying only `data`, an MP3 (`ID3`) of 653-745 KB, and
+  `finish_reason: stop`, in 9-11 s. **Asked for `pcm16`, it still sends
+  MP3**, which is P2-2's case.
+- `delta.content` carries timestamped lyrics (`[4.0:6.0] SUN IS SHINING IN
+  THE SKY`) where the 2026-09-27 run saw `<instrumental>`.
+- **The first call of the three failed** with a Google 500 relayed as
+  OpenRouter's 502 (*"Internal error encountered."*). The identical request
+  succeeded minutes later, after the two lighter shapes had, so it was
+  transient and not the parameters.
+
 **Image output through chat** (`google/gemini-3.1-flash-lite-image`,
 `modalities: ["image","text"]`):
 
