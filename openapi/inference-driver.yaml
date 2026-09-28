@@ -445,6 +445,87 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/speak:
+    post:
+      tags: [inference]
+      operationId: speak
+      summary: Speak text on the configured backend, streamed as audio bytes.
+      description: |
+        The speech counterpart of `POST /v1/generate` (P3a, 2026-09-28):
+        normalised, so one request fronts OpenAI's `/v1/audio/speech`,
+        OpenRouter's, a local OpenAI-shaped speech server, and ElevenLabs'
+        text-to-speech, each translated here.
+
+        **The answer is the audio itself, streamed** as the backend sends
+        it, with the format's media type. Nothing is buffered; the first
+        byte out is the commit point one layer up. A failure before it is a
+        status code with a `problem+json` body, as for chat.
+
+        **Formats are the model's.** A `format` the backend cannot make is
+        refused with 400 naming the ones it can (`SpeechFormat`); `wav` is
+        made from `pcm` where the backend has no WAV of its own. A voice
+        the backend does not know is its own 400, relayed with its words.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeakRequest'
+      responses:
+        '200':
+          description: The audio, streamed. `Content-Type` names the format.
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+            audio/aac:
+              schema:
+                type: string
+                format: binary
+            audio/flac:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/pcm:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: |
+            A format the model cannot make, a setting its backend cannot
+            carry (`instructions` on ElevenLabs), or the backend's own
+            refusal (an unknown voice). Does not cascade.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          $ref: '#/components/responses/ModelNotServed'
+        '502':
+          description: |
+            The backend failed, or refused this driver's own key --
+            `#backend-credential-refused`, naming the missing permission
+            where the backend does (ElevenLabs' scoped keys).
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: '`requestTimeoutSeconds` passed with no first byte.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/embed:
     post:
       tags: [inference]
@@ -1267,6 +1348,47 @@ components:
           items:
             $ref: 'components/common.yaml#/components/schemas/ChatAnnotation'
 
+    SpeakRequest:
+      type: object
+      additionalProperties: false
+      required: [input, voice]
+      properties:
+        model:
+          $ref: '#/components/schemas/RequestModel'
+        input:
+          type: string
+          minLength: 1
+          maxLength: 4096
+          description: The text to speak. OpenAI's limit, 4,096 characters.
+        voice:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: |
+            The backend's own voice id, passed through (P3-3): `alloy` on
+            OpenAI, `af_heart` on Kokoro, `21m00Tcm4TlvDq8ikWAM` on
+            ElevenLabs. `DriverModel.voices` lists them where the backend
+            says.
+        format:
+          $ref: 'components/common.yaml#/components/schemas/SpeechFormat'
+        speed:
+          type: number
+          minimum: 0.25
+          maximum: 4.0
+          description: |
+            1.0 is normal. ElevenLabs takes 0.7 to 1.2 and refuses the rest;
+            the refusal is relayed.
+        instructions:
+          type: string
+          maxLength: 4096
+          description: |
+            How to speak, for a backend that takes it (OpenAI's
+            `gpt-4o-mini-tts`). Refused with 400 by one that cannot
+            (ElevenLabs), never dropped.
+        requestId:
+          type: string
+          format: uuid
+
     AudioOutputRequest:
       type: object
       additionalProperties: false
@@ -2073,6 +2195,13 @@ components:
             The same rule as `audioInput`. From `file` in the account's
             `input_modalities`; no local engine reads one today, so a
             single-model driver reports false.
+        speechFormats:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/SpeechFormat'
+          description: |
+            For a `speech` model: the formats this driver can give it in,
+            `wav` included where it is made from `pcm` (P3a).
         audioOutput:
           type: boolean
           description: |

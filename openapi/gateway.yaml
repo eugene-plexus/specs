@@ -1429,6 +1429,103 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/audio/speech:
+    post:
+      tags: [inference]
+      operationId: createSpeech
+      summary: OpenAI-compatible text to speech, streamed as audio bytes.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `/v1/audio/speech` (P3a, 2026-09-28), in its shape exactly:
+        the OpenAI SDK's `client.audio.speech.create(...)` and its
+        `with_streaming_response` both work unchanged (captured). The model
+        is any with the `speech` surface on `GET /v1/models`: an OpenRouter
+        speech model, OpenAI's, a local OpenAI-shaped speech server, or
+        ElevenLabs through its own engine.
+
+        **Same model only** (§5, #4): replicas of one model balance and fail
+        over, and nothing else is tried. A voice-over whose voice changes
+        between two clips is embeddings' noise problem in another form, so a
+        slot's other targets are never used here.
+
+        **The body is the audio, streamed** with the format's media type,
+        and the first byte is the commit point. Before it, failures are
+        OpenAI-shaped errors; after it, a failure ends the stream.
+
+        **`response_format` defaults to `mp3` and is always sent**, because
+        OpenRouter's own default is `pcm` where OpenAI's is `mp3`
+        (measured). A format the model cannot make is a 400 naming the ones
+        it can (`x_eugene_plexus.speech_formats`). `stream_format: "sse"`
+        is refused: raw bytes are the stream.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpeechRequest'
+      responses:
+        '200':
+          description: The audio, streamed.
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/ogg:
+              schema:
+                type: string
+                format: binary
+            audio/aac:
+              schema:
+                type: string
+                format: binary
+            audio/flac:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/pcm:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: |
+            A field this door refuses, a model with no `speech` surface, a
+            format the model cannot make, or the backend's refusal (an
+            unknown voice), with its words.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every replica of the model failed, or a provider refused a driver's own key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The model is served but not ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/embeddings:
     post:
       tags: [inference]
@@ -2439,12 +2536,12 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings, decisions]
+            enum: [chat, embeddings, decisions, speech]
           description: |
             Which surfaces this model can be sent to. `decisions` means
             `POST /v1/systemone`; a decision-only model lists nothing
             else, and a chat request naming it is refused with the
-            door's name.
+            door's name. `speech` means `POST /v1/audio/speech` (P3a).
 
             OpenAI's own `/v1/models` does not say, which is why every
             RAG front-end makes you pick an embedding model from a
@@ -2478,6 +2575,22 @@ components:
           description: |
             At least one backend confirms file (PDF) input for this
             model, with the same routing rule. Added 2026-09-28 (P2).
+        voices:
+          type: array
+          items:
+            type: string
+          description: |
+            For a `speech` model: the voices its provider lists, in the
+            provider's own ids (P3a). Absent when the provider does not say,
+            which is not the same as having none -- any voice is passed
+            through and an unknown one is the provider's 400 (P3-3).
+        speech_formats:
+          type: array
+          items:
+            $ref: './components/common.yaml#/components/schemas/SpeechFormat'
+          description: |
+            For a `speech` model: the formats every backend serving it can
+            give, `wav` included where it is made from `pcm`.
         audio_output:
           type: boolean
           description: |
@@ -2855,6 +2968,40 @@ components:
           type: string
         arguments:
           type: string
+
+    SpeechRequest:
+      type: object
+      additionalProperties: false
+      required: [model, input, voice]
+      description: OpenAI's speech request (P3a). Unknown fields are refused naming them.
+      properties:
+        model:
+          type: string
+        input:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        voice:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The provider's own voice id, passed through (P3-3).
+        response_format:
+          $ref: './components/common.yaml#/components/schemas/SpeechFormat'
+        speed:
+          type: number
+          minimum: 0.25
+          maximum: 4.0
+        instructions:
+          type: string
+          maxLength: 4096
+        stream_format:
+          $ref: '#/components/schemas/SpeechStreamFormat'
+
+    SpeechStreamFormat:
+      type: string
+      enum: [audio, sse]
+      description: '`audio` is the raw bytes, streamed; `sse` is refused.'
 
     ChatModality:
       type: string
