@@ -557,3 +557,32 @@ held:**
   union over providers, and A2 forbids a setting being silently dropped.
 - **A new `string_list` config value type** carries the include/exclude
   patterns, rather than a comma-separated string.
+
+## 8. P2's own calls, 2026-09-28
+
+Troy took all three as recommended.
+
+| # | Question | Taken |
+|---|---|---|
+| P2-1 | A non-streamed answer asks for mp3, opus, flac or aac audio, but the backend streams audio only as pcm16 (every OpenRouter audio model, measured) | **Refused**, with a 400 naming `wav` and `pcm16`, which are served by streaming pcm16 upstream and wrapping a WAV header when `wav` was asked. No transcoder is added now; one can come with P3's speech door. |
+| P2-2 | Lyria answers mp3 whatever format was asked | **Returned, and labelled truthfully**: `message.audio` gains `format`, read from the audio's own header, so mp3 bytes are never presented as wav. |
+| P2-3 | Responses tool types other than `function` (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) | **Deferred together.** They need a driver that speaks the Responses API upstream, which becomes its own slice. P2 keeps refusing them by name. |
+
+**Taken without a separate call, because each follows a held rule:**
+
+- **Consequential settings route around a model that does not list them** (A2):
+  `logit_bias`, `logprobs`/`top_logprobs`, `reasoning_effort`, `verbosity`,
+  `prediction`, `web_search_options`, and `modalities`/`audio`.
+- **Hints are carried where the backend takes them and dropped elsewhere**, as
+  `metadata` and `safety_identifier` already are on chat: `prompt_cache_key`,
+  `prompt_cache_retention`, `prompt_cache_options`, `safety_identifier` and
+  `service_tier`.
+- **`functions`/`function_call`** are translated to tools and back again,
+  because a client that sends the deprecated shape reads the deprecated answer.
+- **Inline media stays inside the 16 MiB body:** at most 10 MiB for one audio
+  clip or file, and 12 MiB across all attachments, decoded. A `file_id`, a URL
+  and an assistant turn's `audio: {id}` are refused, since each names a store
+  Eugene does not have.
+- **`/v1/responses/input_tokens`** is counted by the backend, the way
+  `/v1/messages/count_tokens` already is. **`/v1/responses/compact` is
+  deferred:** OpenAI's compaction returns an item no other backend can read back.
