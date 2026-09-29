@@ -99,7 +99,9 @@ release tag"*). A full SHA passed.
 
 ## Website
 
-Website:
+Website `efa8a49`, [CI](https://github.com/eugene-plexus/website/actions/runs/36566915318)
+and the [Pages deployment](https://github.com/eugene-plexus/website/actions/runs/36567123014)
+passed:
 - selects the alpha.5 manifest, and moves alpha.4 into
   `archived-releases.json`;
 - **Install:** from alpha.4, update from the console; from alpha.3, run the
@@ -117,6 +119,15 @@ Checks:
 - **85 browser cases passed across five widths.**
 - The built site serves each release's recorded installer hash at
   `/releases/<version>/` (alpha.5 `e44c0675…`, alpha.4 `96a53b37…`).
+
+Anonymous requests to the live homepage, `/install/`, `/recovery/` and
+`/architecture/` returned 200, the live installers served those hashes, and the
+install page's commands name alpha.5. The Windows install command is
+`irm https://eugeneplexus.com/releases/v0.1.0-alpha.5/install.ps1 | iex`.
+
+**The updater sees it:** `updates.newest_release()` reads `v0.1.0-alpha.5` and
+all six pins from the published manifest, so an alpha.4 machine following
+`releases` offers the update under Nodes → Versions.
 
 ## Remaining limits
 
