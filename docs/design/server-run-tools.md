@@ -1,6 +1,6 @@
 # Server-run tools (P8): web search first
 
-**Status: DESIGN, 2026-09-29. Nothing built. The calls in §9 are Troy's.**
+**Status: DESIGN, 2026-09-29. Nothing built. All six calls in §9 TAKEN as recommended (Troy, 2026-09-29).**
 Slice P8 of [`openai-inference-compatibility.md`](openai-inference-compatibility.md)
 (§4 row P8, and call #8 there: *Eugene runs some tools itself, through a
 modular framework, starting with `image_generation` and `web_search`*).
@@ -97,6 +97,18 @@ exactly as P2c routes `web_search_options` today.
 server tool (messages) all become one internal request field, so the loop
 is written once.
 
+**Anthropic's tool is dated, so any date is accepted (Troy, 2026-09-29).**
+Claude Code sends `web_search_20250305` today, and a newer client will send
+a newer date. The door matches `web_search_` followed by eight digits, not
+one literal, because refusing an unknown date would break WebSearch on the
+day Claude Code updates (`output_config` 400'd every Claude Code request
+once, the same way). A newer date may also carry settings whose meaning we
+do not implement, so it is not assumed to mean the old one: the settings we
+know (`max_uses`, `allowed_domains`, `blocked_domains`, `user_location`) are
+honoured, any other is dropped **and named** on the ignored-settings header,
+and the version seen is recorded on the execution's metrics row so a new
+date is noticed rather than discovered.
+
 **Streaming:** each call is streamed as it runs (on Responses:
 `response.web_search_call.in_progress` → `.searching` → `.completed`),
 so a slow search reads as working, not hung.
@@ -153,6 +165,8 @@ lands, since the result is bytes in the conversation rather than text.
 6. **P8e, `image_generation`.**
 
 ## 9. Calls for Troy
+
+**All six taken as recommended, 2026-09-29 (Troy).**
 
 | # | Call | Recommendation | Main tradeoff |
 | --- | --- | --- | --- |
