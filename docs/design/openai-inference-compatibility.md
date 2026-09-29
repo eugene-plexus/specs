@@ -451,8 +451,10 @@ after it.
 | **P7** | Realtime | Its own design first. |
 | **P8** | Server-run tools, as a **modular framework**, starting with `image_generation` and `web_search`. May start once P4 lands; it is independent of P5–P7. | Its own design first (below). Then a local model on `/v1/responses` asks for a search and an image, Eugene runs both, and the model answers with them. The same model with `web_search` on an OpenAI account is forwarded, not run twice. |
 
-**P8 needs its own design before code.** Troy's brief: start with image
-generation and web search, and stay open to every future kind of tool.
+**P8 needs its own design before code** — written 2026-09-29 as
+[`server-run-tools.md`](server-run-tools.md), with six calls for Troy.
+Troy's brief: start with image generation and web search (web search
+first, 2026-09-28), and stay open to every future kind of tool.
 The questions it must answer:
 
 - **Where tools live.** The generative rule (new responsibility = new

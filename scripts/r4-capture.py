@@ -21,6 +21,8 @@ Modes
               tool, so the follow-up request carries a real `tool_result`
     imageread answer the first turn with a `Read` of `--read-path` (an
               image), so the follow-up carries the client's own image block
+    websearch answer the first turn with a `WebSearch` tool_use, so the
+              request the client makes to run the search is recorded (P8-0)
     <status>  answer /v1/messages with that HTTP status and an Anthropic-shaped
               error body, and record how many times the client tries again
 
@@ -92,6 +94,23 @@ class Recorder:
         with self._lock:
             self._messages += 1
             return self._messages
+
+
+def _offers_web_search(parsed: dict) -> bool:
+    return any(
+        isinstance(tool, dict) and tool.get("name") == "WebSearch" and not tool.get("type")
+        for tool in parsed.get("tools") or []
+    )
+
+
+def _has_result(parsed: dict) -> bool:
+    for message in parsed.get("messages") or []:
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list) and any(
+            isinstance(part, dict) and part.get("type") == "tool_result" for part in content
+        ):
+            return True
+    return False
 
 
 def _sse(events: list[tuple[str, dict]]) -> bytes:
@@ -381,6 +400,11 @@ def build_handler(rec: Recorder, mode: str):
                         )
                 tools = parsed.get("tools") or []
                 parts.append(f"TOOLS: {len(tools)} -> {[t.get('name') for t in tools]}\n")
+                # A server tool (one with a `type`) is recorded whole: its
+                # settings are what P8 has to honour, and a name says none.
+                for tool in tools:
+                    if isinstance(tool, dict) and tool.get("type"):
+                        parts.append(f"SERVER TOOL: {json.dumps(tool, ensure_ascii=False)}\n")
                 parts.append(
                     f"MESSAGES:\n{json.dumps(_trim(parsed), indent=2, ensure_ascii=False)}\n"
                 )
@@ -438,6 +462,15 @@ def build_handler(rec: Recorder, mode: str):
                 payload = _tool_use_turn(model)
             elif mode == "imageread" and turn == 1:
                 payload = _tool_use_turn(model, "Read", json.dumps({"file_path": READ_PATH}))
+            elif mode == "websearch" and _offers_web_search(parsed) and not _has_result(parsed):
+                # P8-0: the client's WebSearch tool, so the request it makes
+                # to run the search -- the server tool it asks for -- is
+                # recorded next. Keyed on the main loop's request (the one
+                # offering WebSearch), not on a turn number: the session
+                # title request comes first and has no tools.
+                payload = _tool_use_turn(
+                    model, "WebSearch", json.dumps({"query": "eugene plexus local inference"})
+                )
             else:
                 payload = _text_turn(model, f"{mode}-ok")
 
