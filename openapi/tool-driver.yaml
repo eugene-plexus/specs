@@ -321,7 +321,12 @@ components:
           type: integer
           minimum: 1
           maximum: 20
-          default: 5
+          description: |
+            How many results to return. Absent means the account's own
+            setting (5 unless the operator changed it) -- which is why this
+            has no default here: a default in the schema would be filled in
+            by every generated client and the account's setting would never
+            be read.
         allowedDomains:
           type: array
           maxItems: 100
