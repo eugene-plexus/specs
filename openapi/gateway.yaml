@@ -1472,6 +1472,92 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/completions:
+    post:
+      tags: [inference]
+      operationId: createCompletion
+      summary: OpenAI-compatible legacy completions, raw continuation and fill-in-the-middle.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's legacy `/v1/completions` (P6, 2026-09-28): the OpenAI
+        SDK's `client.completions.create(...)` works unchanged, streamed or
+        not. The model is any with the `completion` surface on
+        `GET /v1/models`: a local `llama-server`, vLLM or Ollama model,
+        which continue raw text (P6-4). Accounts over hosted APIs are not
+        offered: OpenRouter's completions answer a prompt as a chat turn
+        and ignore `suffix` (measured).
+
+        **`prompt` is continued as written**, special tokens included, so
+        an editor that renders its own fill-in-the-middle template
+        (Continue does, read in its source) is answered as it expects.
+
+        **`suffix` routes only to a model that fills in the middle**
+        (`x_eugene_plexus.fill_in_middle`), in every tier; with none, a 400
+        naming it. It is never dropped: `llama-server`'s own
+        `/v1/completions` would drop it, so its driver uses `/infill`.
+
+        **Tiers, as chat**: a fallback model's completion is still a
+        completion, and a stream commits at its first token.
+
+        **Refused with a 400 naming the field** in P6: `n` or `best_of`
+        above 1, `echo`, `logprobs`, a `prompt` that is an array of more
+        than one string or of token ids, and unknown fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompletionRequest'
+      responses:
+        '200':
+          description: 'The completion, or with `stream` an SSE stream of `CompletionChunk` frames ending with the `[DONE]` sentinel.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompletionResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/CompletionChunk'
+        '400':
+          description: |
+            A field this door refuses, a `suffix` no model here can fill,
+            a model with no `completion` surface, or the backend's refusal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: No model by that name.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every backend failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: The model is served but not ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '504':
+          description: No backend answered within `requestTimeoutSeconds`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/moderations:
     post:
       tags: [inference]
@@ -3218,7 +3304,7 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings, decisions, speech, transcription, translation, image, video, moderation]
+            enum: [chat, embeddings, decisions, speech, transcription, translation, image, video, moderation, completion]
           description: |
             Which surfaces this model can be sent to. `decisions` means
             `POST /v1/systemone`; a decision-only model lists nothing
@@ -3228,7 +3314,7 @@ components:
             `translation` `POST /v1/audio/translations` (P3-4), `image`
             `POST /v1/images/generations` and `/edits` (P4), `video`
             `POST /v1/videos` (P5), `moderation` `POST /v1/moderations`
-            (P6).
+            (P6), `completion` `POST /v1/completions` (P6).
 
             OpenAI's own `/v1/models` does not say, which is why every
             RAG front-end makes you pick an embedding model from a
@@ -3257,6 +3343,12 @@ components:
             At least one backend confirms audio input for this model. A
             request carrying `input_audio` routes only to those backends,
             including fallback. Added 2026-09-28 (P2).
+        fill_in_middle:
+          type: boolean
+          description: |
+            At least one backend fills in the middle for this model (P6): a
+            `/v1/completions` request with `suffix` routes only to those
+            backends, including fallback.
         file_input:
           type: boolean
           description: |
@@ -3804,6 +3896,154 @@ components:
             additionalProperties: true
         usage:
           $ref: '#/components/schemas/TranscriptionUsageOut'
+
+    CompletionRequest:
+      type: object
+      additionalProperties: false
+      required: [model, prompt]
+      description: |
+        OpenAI's legacy completion request (P6). Every piece is a named
+        schema: an inline `oneOf` in a document this size is renamed by
+        the next one.
+      properties:
+        model:
+          type: string
+        prompt:
+          oneOf:
+            - type: string
+            - $ref: '#/components/schemas/CompletionPrompts'
+        suffix:
+          type: string
+        max_tokens:
+          type: integer
+          minimum: 1
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+        top_p:
+          type: number
+          minimum: 0
+          maximum: 1
+        n:
+          type: integer
+          description: 1 only in P6.
+        stream:
+          type: boolean
+        stream_options:
+          $ref: '#/components/schemas/CompletionStreamOptions'
+        logprobs:
+          type: integer
+          description: Refused in P6.
+        echo:
+          type: boolean
+          description: Refused when true in P6.
+        stop:
+          $ref: '#/components/schemas/CompletionStop'
+        presence_penalty:
+          type: number
+          minimum: -2
+          maximum: 2
+        frequency_penalty:
+          type: number
+          minimum: -2
+          maximum: 2
+        best_of:
+          type: integer
+          description: 1 only in P6.
+        logit_bias:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: -100
+            maximum: 100
+        seed:
+          type: integer
+        user:
+          type: string
+          description: Accepted and not forwarded, as on chat.
+
+    CompletionPrompts:
+      type: array
+      minItems: 1
+      maxItems: 1
+      items:
+        type: string
+      description: One prompt only in P6.
+
+    CompletionStop:
+      oneOf:
+        - type: string
+        - type: array
+          maxItems: 4
+          items:
+            type: string
+
+    CompletionStreamOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        include_usage:
+          type: boolean
+
+    CompletionResponse:
+      type: object
+      required: [id, object, created, model, choices]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: text_completion
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompletionChoice'
+        usage:
+          $ref: '#/components/schemas/CompletionUsage'
+        x_eugene_plexus:
+          $ref: '#/components/schemas/CompletionRoutingInfo'
+
+    CompletionChoice:
+      type: object
+      required: [text, index, finish_reason]
+      properties:
+        text:
+          type: string
+        index:
+          type: integer
+        logprobs:
+          type: 'null'
+        finish_reason:
+          type:
+            - string
+            - 'null'
+          description: '`stop` or `length`; null on a chunk before the last.'
+
+    CompletionChunk:
+      type: object
+      required: [id, object, created, model, choices]
+      description: One SSE `data:` frame. With `include_usage`, a last frame has `choices` empty and `usage`.
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: text_completion
+        created:
+          type: integer
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompletionChoice'
+        usage:
+          $ref: '#/components/schemas/CompletionUsage'
 
     ModerationRequest:
       type: object
@@ -7060,7 +7300,8 @@ components:
           description: |
             Which door the request came in by (P3b): `speech`,
             `transcription`, `translation` (P3-4), `images` (P4, schema v8),
-            `videos` (P5, schema v9, the submit's row) or `moderation` (P6).
+            `videos` (P5, schema v9, the submit's row), `moderation` (P6)
+            or `completion` (P6, a row that carries tokens as chat's does).
             Null on rows from before schema v7 and on every other door,
             whose rows carry tokens.
         characters:

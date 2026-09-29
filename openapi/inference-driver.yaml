@@ -1377,12 +1377,14 @@ components:
             explicit setting with 400, rather than silently dropping it. Settings
             supplied only by profiles/defaults retain the adapter's default behavior.
             This field is internal and is not forwarded to upstream providers.
+        completion:
+          $ref: '#/components/schemas/CompletionPrompt'
         messages:
           type: array
           description: |
             Full prompt as an ordered conversation. Whatever system
             message the caller wants is already in here; the driver does
-            not modify, prepend to, or reorder it.
+            not modify, prepend to, or reorder it. Empty with `completion`.
           items:
             $ref: 'components/common.yaml#/components/schemas/Message'
         maxTokens:
@@ -2871,10 +2873,16 @@ components:
               `decisions` (`/v1/decide`), `speech` (`/v1/speak`, P3a),
               `transcription` (`/v1/transcribe`, P3b), `translation`
               (`/v1/transcribe` with `translate`, P3-4), `image`
-              (`/v1/image`, P4), `video` (`/v1/video`, P5) and
-              `moderation` (`/v1/moderate`, P6), which have doors;
-            * `completion` and `rerank`, which name OpenAI's and
-              OpenRouter's doors Eugene has not built yet.
+              (`/v1/image`, P4), `video` (`/v1/video`, P5),
+              `moderation` (`/v1/moderate`, P6) and `completion`
+              (`/v1/generate` with `completion`, P6), which have doors;
+            * `rerank`, which names a door Eugene has not built yet.
+
+            `completion` is reported for a local `llama-server`, a vLLM,
+            and an Ollama account's models with its `completion`
+            capability: engines that continue raw text (P6-4). An account
+            over a hosted API does not report it: OpenRouter's completions
+            answer the prompt as a chat turn (measured).
 
             An OpenRouter model whose output is image and text (Gemini's
             image models) serves `image` beside `chat`: its images route
@@ -3013,6 +3021,36 @@ components:
             failed read never empties the list: the previous one stays
             in force (R2.1's rule).
 
+    CompletionPrompt:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      description: |
+        P6: a raw text continuation instead of a conversation, OpenAI's
+        legacy `/v1/completions`. With it `messages` is empty and **no chat
+        template is applied**: the backend continues `prompt` as written,
+        special tokens parsed, so a client-rendered fill-in-the-middle
+        prompt works (measured on `llama-server` b11235). Only a model with
+        the `completion` surface is asked, and each engine is asked the way
+        it continues raw text: `llama-server` and vLLM at `/v1/completions`,
+        Ollama at `/api/generate` with `raw` (its `/v1/completions` wraps a
+        prompt in the chat template, read in its source).
+
+        **`suffix` asks for fill-in-the-middle** and only a model whose
+        `Capabilities.fillInMiddle` is true is asked. `llama-server`'s
+        `/v1/completions` ignores a suffix (measured), so it is sent to
+        `/infill` instead; Ollama takes it on `/api/generate` for a model
+        with its `insert` capability; vLLM refuses one for every model but
+        DeepSeek V4, so it is never sent there.
+      properties:
+        prompt:
+          type: string
+          maxLength: 4000000
+        suffix:
+          type: string
+          maxLength: 4000000
+          description: The text after the cursor, for fill-in-the-middle.
+
     Capabilities:
       type: object
       description: |
@@ -3035,6 +3073,13 @@ components:
         streaming:
           type: boolean
           description: Whether `/v1/generate/stream` emits true incremental tokens.
+        fillInMiddle:
+          type: boolean
+          description: |
+            P6: whether a `completion` with a `suffix` is filled in the
+            middle by this model: `llama-server` answering `/infill` (the
+            model carries fill-in-the-middle tokens), or an Ollama model
+            with the `insert` capability. Unknown is false.
         imageInput:
           type: boolean
           description: |
