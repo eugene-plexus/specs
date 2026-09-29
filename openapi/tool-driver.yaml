@@ -305,8 +305,20 @@ components:
         configured:
           type: boolean
           description: False until the provider's address (and key, where it has one) is set.
+        billing:
+          $ref: '#/components/schemas/ToolBilling'
         version:
           type: string
+
+    ToolBilling:
+      type: string
+      enum: [free, per_search]
+      description: |
+        Whether the provider bills each search (`per_search`: Brave) or not
+        (`free`: SearXNG). The gateway tries a free account before one that
+        bills, so an install with both pays only when the free one could not
+        answer. Absent is read as `per_search`: an account that does not say
+        is not assumed to cost nothing.
 
     WebSearchRequest:
       type: object
