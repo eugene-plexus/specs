@@ -64,7 +64,7 @@ PIN_GATEWAY=ec2ea142be402d6c5ffe2f3e46b3b2fc73519e8d
 PIN_DRIVER=02eea96d15dfc72bc6216833059afd5327f25f56
 PIN_LIBRARY=b4af12ffd290b8e18e0422d75ee03f7b74368eb2
 PIN_TOOL_DRIVER=7dc4794f92b41ee335d505c17737b4cb61a09844
-PIN_UI=ecf12f05f6a47b79ca668716df6755bf9ebe8d1c   # branch `dist`, not `main`
+PIN_UI=cdc2b8738d54708f241ffe4425e6bab5ef8dd8ec   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
