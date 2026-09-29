@@ -261,6 +261,25 @@ case $compare in
     *)      bad "6e. $compare" ;;
 esac
 
+# Every install before 2026-09-28 wrote the gateway's old default output cap,
+# 2048, into its config file, where it reads as the operator's choice. The
+# gateway clears it once on its first start after the update and leaves a
+# marker; without this an upgraded install keeps cutting reasoning models off.
+GW_CONFIG=$(find "$PREFIX" -maxdepth 3 -name gateway.yaml 2>/dev/null | head -1)
+if [ -n "$FROM" ] && [ -n "$GW_CONFIG" ]; then
+    for _ in $(seq 1 60); do
+        [ -f "$(dirname "$GW_CONFIG")/.default-max-tokens-cleared" ] && break
+        sleep 1
+    done
+    if [ ! -f "$(dirname "$GW_CONFIG")/.default-max-tokens-cleared" ]; then
+        bad "6f. the updated gateway never cleared the old output cap (no marker beside $GW_CONFIG)"
+    elif grep -q '^defaultMaxTokens: 2048' "$GW_CONFIG"; then
+        bad "6f. $GW_CONFIG still holds the old default output cap, 2048"
+    else
+        ok "6f. the old default output cap (2048) is gone from $GW_CONFIG, and the marker is written"
+    fi
+fi
+
 say "7. what the update left in the prefix"
 bad_owner=$(find "$PREFIX/update" -maxdepth 1 ! -user "$ACCOUNT" -printf '%p ' 2>/dev/null)
 [ -z "$bad_owner" ] && ok "7. every file in $PREFIX/update is $ACCOUNT's" || bad "7. not the account's: $bad_owner"
