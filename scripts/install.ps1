@@ -120,10 +120,10 @@ $PrefixGiven = [bool]$Prefix
 $PIN = @{
     "agent"            = "89358602ab96a5282ea74fcf16aba7befb2db138"
     "control"          = "847200f920949e2ef9762b28be9a413cbc319a39"
-    "gateway"          = "9ecd3c96a73e44e6d2ec2c098d9ce6668376ec68"
+    "gateway"          = "34194142a1d371500cd3400460c7b3641c175f22"
     "inference-driver" = "89770eacdca7f49342c1c3da3a01e0ee197ce3bc"
     "library"          = "f4e79794fad46e856d9ee6a36b1bc26ba8ae2166"
-    "ui"               = "323e3b5ca5f96a5d0c9a511b74e8165a1ce95391"  # branch `dist`, not `main`
+    "ui"               = "a81c8f43142dfcc1f4a1013789ac5350a84e64b9"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"

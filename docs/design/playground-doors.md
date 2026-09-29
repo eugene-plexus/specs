@@ -1,6 +1,6 @@
 # The playground's other doors: audio, PDFs, images, video and completions
 
-**2026-09-28. Designed; not built.** First item in Troy's order after P6
+**2026-09-28. Built, run in a real browser (11 of 11) and pinned** — [record](../acceptance/playground-doors-run.md). First item in Troy's order after P6
 (then P8, then P7). It pays a debt: every door P2–P6 added
 (`openai-inference-compatibility.md`) shipped with no screen, so none of
 them can be tried from the console.
