@@ -712,11 +712,16 @@ def exercise(directory: Path, *, clients: bool, searxng: str | None, browser: bo
         ok("SearXNG with JSON output off: its health names search.formats, and Brave answered the search")
 
         call("agent", "DELETE", "/v1/components/brave", operator).raise_for_status()
+        # Not "no Brave result": a removed account the gateway still lists
+        # fails with "could not be reached" and gives no result either, so
+        # that wait was met at once on a slow runner (CI, 2026-09-29). The
+        # account's name leaves the model's words only when the gateway has
+        # stopped asking it.
         wait(lambda: not any(
             m for m in [call("gateway", "POST", "/v1/chat/completions", key, json={
                 "model": MODEL, "messages": [{"role": "user", "content": "q"}],
                 "web_search_options": {}}).json()["choices"][0]["message"]["content"]]
-            if "brave.example" in m), "the gateway no longer uses the removed Brave account", 30)
+            if "brave" in m.lower()), "the gateway no longer uses the removed Brave account", 30)
         alone = call("gateway", "POST", "/v1/chat/completions", key, json={
             "model": MODEL, "messages": [{"role": "user", "content": "q"}], "web_search_options": {}})
         assert alone.status_code == 200, alone.text

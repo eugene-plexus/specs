@@ -133,7 +133,9 @@ run_case() {
     LABEL="$script $os/$architecture arm=$arm finishes"
     check test "$RC" = 0
     local expected_count=1
-    [ "$script" != bootstrap ] || expected_count=6
+    # One virtualenv per Python repo bootstrap sets up: seven since P8 added
+    # the tool-driver.
+    [ "$script" != bootstrap ] || expected_count=7
     LABEL="$script $os/$architecture requests $expected in every environment"
     check test "$(grep -c "^venv:$expected:" "$ROOT/trace" || true)" = "$expected_count"
     if [ "$os" = Linux ]; then

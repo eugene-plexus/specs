@@ -11,7 +11,7 @@ Operator guide: [`../deployment/web-search.md`](../deployment/web-search.md).
 |---|---|---|
 | specs (contracts) | `c641e0b`, `f39ffe7`, `a9fc9b9`, `e53a6d9`, `c4e2fe4` | `tool-driver.yaml`, `ComponentKind.tool-driver`, `ClientKeyLimits.allowedTools`, server-run tools on three doors, `MetricToolExecution`, `ToolDriverInfo.billing`, P8e |
 | tool-driver (new repo) | `7dc4794` | SearXNG and Brave, one process per search account |
-| gateway | `10567d4` | the loop, the three doors' records, P8e, metrics v10 |
+| gateway | `10567d4`, `ec2ea14` | the loop, the three doors' records, P8e, metrics v10 |
 | agent | `14f8047`, `8579764` | spawns and seals a tool-driver, proxies to it by name, `allowedTools`, the seventh package |
 | control | `2918b7e` | a union view that tolerates a kind it does not know; `allowedTools` |
 | inference-driver | `02eea96` | regen-only (a new `ComponentKind` member reaches every consumer) |
@@ -47,12 +47,12 @@ model got only words, batch and streamed (`in_progress` → `generating` →
 - **`scripts/p8-search-acceptance.py`: 15 fixture checks, in specs CI.**
   `--clients --browser --searxng URL` adds Claude Code, Codex, Chrome and a
   real SearXNG: **19 of 19 PASS** on the final pins.
-- **`scripts/p8-sabotage.py`: 45 of 45 caught, no declared escapes** — 32 for
+- **`scripts/p8-sabotage.py`: 46 of 46 caught, no declared escapes** — 33 for
   P8a-P8d, 13 for P8e. It restores from byte copies and opens with a
   baseline that every gate it uses passes unsabotaged.
 - **Every acceptance script specs CI runs passed locally against the working
   trees before the pin** (18 scripts plus `s10-checks` and `a8-summarize`).
-- **Unit suites:** gateway 1029 (28 P8 + 13 P8e in two new modules),
+- **Unit suites:** gateway 1030 (29 P8 + 13 P8e in two new modules),
   tool-driver 60, agent 1408, control 262, inference-driver 844, library
   534, ui 1438 (vitest; lint, types and format clean).
 
@@ -73,6 +73,29 @@ not a weak fix:
    the control root, whose identical copy decides. This is P1's measured
    finding (2026-09-27) again. The control root's copy is sabotaged against
    the acceptance run now, and the agent's against its own unit test.
+
+## What the first CI run found
+
+Specs CI on the pin commit went red in three jobs, none of them a defect the
+local runs could show:
+
+1. **The model was told only the last failing account's reason.** On the
+   slower Linux runner a removed Brave account was still in the gateway's
+   list for one routing refresh; SearXNG refused JSON, Brave could not be
+   reached, and the model read "could not be reached" — never the
+   `search.formats` line that says what to fix. Every account's reason now
+   reaches it, first tried first (gateway `ec2ea14`), with a unit test and a
+   sabotage. The acceptance's wait for "Brave is gone" had been satisfied by
+   Brave's own failure; it waits for the account's name to leave the
+   model's words now.
+2. **Two instruments counted six packages**: `r37-install-sh-checks.sh`
+   (one virtualenv per repo in `bootstrap`) and the root-helper update
+   acceptance, whose `PIN_([A-Z]+)` regex could not match `PIN_TOOL_DRIVER`.
+   It counts the pins of the installer that ran now, since `EP_FROM` starts
+   from the previous push, which pinned six. r37: 97 of 97 in WSL2.
+3. **The agent's CI** (before any of this) failed a 2026-09-27 test that
+   had been reaching the real GitHub: a monkeypatch of the shared release
+   list outlived its test. See agent `8579764`.
 
 ## What the acceptance runs found
 

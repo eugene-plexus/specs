@@ -165,6 +165,9 @@ SABOTAGES: list[Sabotage] = [
     Sabotage("the agent drops a key's allowedTools",
              ((AGENT / "client_admission.py", '        **({"allowedTools": tools} if tools is not None else {}),\n',
                ""),), gate="agent"),
+    Sabotage("only the last failing account's reason reaches the model",
+             ((SERVER_TOOLS, '            execution.error = last.detail if len(reasons) < 2 else "; ".join(reasons)\n',
+               "            execution.error = last.detail\n"),), gate="gateway"),
     # --- P8e: image_generation on /v1/responses ------------------------------------
     Sabotage("the model is handed the image's bytes",
              ((SERVER_TOOLS, '        "do not describe details you cannot see."\n',

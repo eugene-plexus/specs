@@ -18,12 +18,12 @@
 # Checks:
 #   1. a system install from this checkout's installer, as sudo runs it
 #   2. the helper, its units and its staging folder: root's, not the account's
-#   3. the agent reports six stamped commits and a system install
+#   3. the agent reports one stamped commit per pin, and a system install
 #   4. a request naming junk is refused, and what it named is not echoed
 #   5. a request that is a symlink to a root-only file reads nothing
 #   6. a real update: requested through the app's own route (or the request
 #      file), carried out by root, reported back by the agent that comes back,
-#      and running exactly the six commits the target pins (with EP_FROM, an
+#      and running exactly the seven commits the target pins (with EP_FROM, an
 #      earlier specs commit to install first, those can differ)
 #   7. what the update wrote into the prefix is the account's, not root's
 #   8. teardown: nothing of this run is left
@@ -165,9 +165,13 @@ states=$(printf '%s' "$NODE" | json '" ".join(c["state"] for c in d["install"]["
 mechanism=$(printf '%s' "$NODE" | json 'd["install"]["mechanism"]')
 agent_commit=$(printf '%s' "$NODE" | json 'next(c.get("commit","") for c in d["install"]["components"] if c["name"]=="agent")')
 pinned=$(sed -n 's/^PIN_AGENT=\([0-9a-f]*\).*/\1/p' "$WORK/install.sh")
-if [ "$states" = "stamped stamped stamped stamped stamped stamped" ] && [ "$mechanism" = systemd_system ] \
+# One stamped commit per pin the installer that ran carries: seven since P8
+# added the tool-driver, six from an EP_FROM that predates it.
+count=$(grep -cE '^PIN_[A-Z_]+=[0-9a-f]{40}' "$WORK/install.sh")
+expected=$(for _ in $(seq 1 "$count"); do printf 'stamped '; done | sed 's/ $//')
+if [ "$states" = "$expected" ] && [ "$mechanism" = systemd_system ] \
         && [ "$agent_commit" = "$pinned" ]; then
-    ok "3. six stamped commits, the agent's is the pin ($pinned), and it is a system install"
+    ok "3. $count stamped commits, the agent's is the pin ($pinned), and it is a system install"
 else
     bad "3. states '$states', mechanism '$mechanism', agent $agent_commit vs pin $pinned"
 fi
@@ -245,10 +249,11 @@ curl -fsSL "https://raw.githubusercontent.com/eugene-plexus/specs/$TARGET/script
     -o "$WORK/target-install.sh" 2>/dev/null || : >"$WORK/target-install.sh"
 compare=$(printf '%s' "$AFTER" | python3 -c '
 import json, re, sys
-pins = dict(re.findall(r"^PIN_([A-Z]+)=([0-9a-f]{40})", open(sys.argv[1]).read(), re.M))
-before = dict(re.findall(r"^PIN_([A-Z]+)=([0-9a-f]{40})", open(sys.argv[2]).read(), re.M))
+pins = dict(re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})", open(sys.argv[1]).read(), re.M))
+before = dict(re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})", open(sys.argv[2]).read(), re.M))
 names = {"agent": "AGENT", "control": "CONTROL", "gateway": "GATEWAY",
-         "inference-driver": "DRIVER", "library": "LIBRARY", "ui": "UI"}
+         "inference-driver": "DRIVER", "library": "LIBRARY", "ui": "UI",
+         "tool-driver": "TOOL_DRIVER"}
 now = {c["name"]: c.get("commit", "") for c in json.load(sys.stdin)["install"]["components"]}
 wrong = ["%s %s not %s" % (n, (now.get(n) or "-")[:7], pins.get(k, "?")[:7])
          for n, k in names.items() if now.get(n) != pins.get(k)]
@@ -256,8 +261,8 @@ moved = sum(1 for k in names.values() if pins.get(k) != before.get(k))
 print("; ".join(wrong) if wrong else f"ok {moved}")
 ' "$WORK/target-install.sh" "$WORK/install.sh")
 case $compare in
-    "ok 0") ok "6e. it runs all six commits $TARGET pins (the same six it had: no version changed)" ;;
-    ok\ *)  ok "6e. it runs all six commits $TARGET pins, ${compare#ok } of them new" ;;
+    "ok 0") ok "6e. it runs all seven commits $TARGET pins (the same seven it had: no version changed)" ;;
+    ok\ *)  ok "6e. it runs all seven commits $TARGET pins, ${compare#ok } of them new" ;;
     *)      bad "6e. $compare" ;;
 esac
 
