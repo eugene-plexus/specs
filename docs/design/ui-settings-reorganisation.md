@@ -270,7 +270,7 @@ that hides it, and marks it for a moment. The links that used to say
 
 **Built 2026-09-29, one session, in `ui` (38 files changed, three new).
 No contract change, no codegen, no Python consumer moved. Committed
-locally on `main` as `931833b`; not pushed, not packaged into `dist`, not pinned** —
+on `main` as `931833b`; **shipped to edge the same day at Troy's ask** — `dist` `1749216`, pinned in both installers** —
 the shape and the words are for Troy to look at first (§Decisions).
 Run record: [`../acceptance/ui-reorganisation-run.md`](../acceptance/ui-reorganisation-run.md).
 

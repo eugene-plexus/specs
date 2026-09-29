@@ -72,5 +72,4 @@ All three are caught now; the pass was re-run for each.
   a backend under a machine group in a browser (the unit fixtures do).
 - `uiTheme`, `uiFontSize` and `firstRunComplete` are hidden by the UI, not
   deleted from the agent's and the control root's schemas.
-- Nothing is pushed, packaged into `dist` or pinned: the tree's shape and
-  its words are for Troy to look at before an install sees them.
+- Shipped to edge at Troy's ask, the same day: `ui` `931833b` pushed, `dist` `1749216` (BUILD_INFO `installer-ref: main`), `PIN_UI` in both installers; the pinned archive was fetched and its chunks grepped for `data-topic` (1) and `Add a backend` (3), and `label:"Inference drivers"` is in none. Troy's first look at it on his live install is the feedback to collect.
