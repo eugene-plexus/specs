@@ -34,4 +34,4 @@ with tempfile.TemporaryDirectory(prefix="ep-release-check-") as work:
         pass
     else:
         raise AssertionError("overwrote existing release artifacts")
-print("PASS: exact committed bytes, checksums, six matching pins, no output overwrite")
+print("PASS: exact committed bytes, checksums, seven matching pins, no output overwrite")

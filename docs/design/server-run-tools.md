@@ -1,6 +1,11 @@
 # Server-run tools (P8): web search first
 
-**Status: DESIGN, 2026-09-29. Nothing built. All six calls in §9 TAKEN as recommended (Troy, 2026-09-29).**
+**Status: P8a-P8e BUILT AND ACCEPTED 2026-09-29** (Troy: *"implement P8 as written… as long as we
+don't code ourselves into a corner"*): web search through the new `tool-driver` component on all three
+doors, the console's search-account page, a key's tool scope and the playground's search switch.
+**P8e (`image_generation` on `/v1/responses`) is designed in §7 with four calls, built as
+recommended.** §12 is the
+implementation record, §13 the departures. All six calls in §9 TAKEN as recommended (Troy, 2026-09-29).
 Slice P8 of [`openai-inference-compatibility.md`](openai-inference-compatibility.md)
 (§4 row P8, and call #8 there: *Eugene runs some tools itself, through a
 modular framework, starting with `image_generation` and `web_search`*).
@@ -141,11 +146,43 @@ whether `false` means *strip it as today* (recommended: the user did not
 ask for live web access, and a search sends their prompt out) or *run it
 anyway*.
 
-## 7. `image_generation`, second
+## 7. `image_generation`, second (P8e)
 
 Same loop, same framework; the tool calls Eugene's own images door (P4),
-so no new provider account is needed. Its own small design section when P8a
-lands, since the result is bytes in the conversation rather than text.
+so no new provider account is needed. Written 2026-09-29 once P8a-P8d had
+landed, as the build order said.
+
+**Which door.** OpenAI defines `image_generation` for the Responses API
+only; chat completions has no such tool and Anthropic's API has none. So
+P8e is `/v1/responses` alone. Before it, the door refused the tool with a
+400 naming its type (§0's table of other server tools).
+
+**What runs.** The loop offers the model a function
+`image_generation(prompt, size?)`; each call is routed exactly as a
+`POST /v1/images/generations` would be (P4: the key's `allowedModels`, the
+model's listed image settings, tiers) and answered in-process -- no second
+HTTP hop, no second recording path. The model is told, in text, that an
+image was made for its prompt and is shown to the person; the caller gets
+the image as OpenAI returns it, an `image_generation_call` item whose
+`result` is the base64 image, streamed as
+`response.image_generation_call.in_progress` → `.generating` →
+`.completed`. The tool's `size`, `quality`, `background`,
+`output_format`, `output_compression` and `moderation` ride on the images
+request; `partial_images`, `input_image_mask`, `input_fidelity` and an
+`action` other than `generate`/`auto` are named as ignored. `size` is
+offered to the model only when the tool left it unset: a size the caller
+configured is the caller's, not the model's, to change.
+
+**The limits are one budget.** `max_tool_calls` bounds every built-in tool
+a response runs (OpenAI's own wording), so searches and images share it;
+failover ends at the first execution of either.
+
+| # | Call | Recommendation | Main tradeoff |
+| --- | --- | --- | --- |
+| P8e-1 | Which image model | **The tool's `model` when the install serves it; else the gateway's `imageToolModel` setting; else the one image model the install serves, when there is exactly one.** With none of those, the tool cannot run and the 400 says which to set. | An install with two image models and no setting must say which before the tool works. |
+| P8e-2 | What the model is given | **Text only**: that an image was made, its prompt and size. The bytes go to the caller, never back into the prompt. | A model that could look at its own image cannot here; nothing in this gateway carries an image in a tool result. |
+| P8e-3 | When it cannot run | **400 naming the reason**, as before P8 (no image model, the key's tool scope, a local-only key -- every image backend today is hosted). Not removed silently: a caller that offered image generation and got none would read the model's refusal as the model's. | Responses removes `web_search` when it cannot run and refuses this; the difference is Codex, which sends search on every request and never sends this. |
+| P8e-4 | Handed-back items | **Become history**: an `image_generation_call` in `input` is a line of the assistant's turn naming the prompt. The base64 is not re-sent to the model. | A long conversation of images is not carried to the model as images. |
 
 ## 8. Build order
 
@@ -176,3 +213,116 @@ lands, since the result is bytes in the conversation rather than text.
 | 4 | First search provider(s) | **SearXNG** (self-hosted, no key, testable in CI) **and Brave** (the first keyed one). Tavily later. | SearXNG must have its JSON output enabled, which is off by default. |
 | 5 | Default tool scope for a client key | **Allowed** when a search account exists, deniable per key. | A key minted before P8 gains search without anyone choosing it. |
 | 6 | `max_tool_calls` default | **5** per request. | Deep-research style prompts want more; the caller can raise it. |
+
+## 12. Implementation record (2026-09-29)
+
+**Pinned:** specs `a9fc9b9` (contracts: `tool-driver.yaml`,
+`ComponentKind.tool-driver`, `ClientKeyLimits.allowedTools`, "Server-run
+tools" in `gateway.yaml`, `MetricToolExecution`), `e53a6d9`
+(`ToolDriverInfo.billing`), `c4e2fe4` (P8e: `image_generation` on
+`/v1/responses`, `MetricRequest.imageGenerations`). New repo
+**`eugene-plexus/tool-driver`**.
+Components: see the record's table,
+[`../acceptance/server-tools-run.md`](../acceptance/server-tools-run.md).
+
+**What was built, by slice.**
+
+* **P8-0 (the owed half).** SearXNG's JSON answer measured against a real
+  instance (`searxng/searxng@4e2c1ea` in WSL2): JSON switched off is a
+  **403 with an HTML body**, there is no `number_of_results`, and engines
+  can be down inside a 200 (`unresponsive_engines`). Codex's rendering of
+  `web_search_call` items measured with a real Codex 0.130.0: it prints
+  `web search: <action.query>` once for the added item and once for the
+  done one -- and printed an empty line until the query rode on the added
+  item too.
+* **P8a.** As §2 says, with two departures in §13.
+* **P8b, `tool-driver`.** SearXNG and Brave providers; settings read per
+  search (no restart to fix an address); the Brave key sealed with the
+  agent's master key; filters applied after the provider, always; health
+  from the last search, with a free SearXNG also probed on a timer and a
+  paid provider never. The agent spawns it with its own
+  `EUGENE_PLEXUS_TOOL_DRIVER_` prefix and the master key; the agent's
+  proxy reaches it by name; the control root's union view tolerates a kind
+  it does not know; the installers install it as the seventh package; the
+  update checker treats its pin as optional in a target (every release to
+  alpha.5 predates it).
+* **P8c, the loop.** `gateway/server_tools.py`: the plan, `why_not`, the
+  runner with account fallback, `SearchingClient`. `TieredClient.pin`
+  ends failover at the first search. Metrics schema v10.
+* **P8d, the console.** *Backends → Add a search account*
+  (`/backends/search`): create, configure, run the Test search, say what to
+  change when it fails. Search accounts are leaves under Backends with a
+  Settings page. A key's permissions gain *Let apps using this key search
+  the web*. The playground gains *Search the web* on the chat door, the
+  sources under the answer and the searches on the routing bar.
+* **P8e, `image_generation`.** The loop grew a second tool rather than a
+  second loop: `ImagePlan`, `image_model` (P8e-1) and `ImageRunner`, which
+  routes each call through the images door's own `image_refusal` and
+  `pick_image` in-process. `SearchingClient` runs a search, an image or
+  both under one `max_tool_calls` budget; with an image asked for, no
+  candidate is sent a search natively, because the image is made only
+  here. The image backend's attempt rows are taken off the request's
+  (they are the model's) and summarised on a `tool_execution` row, read
+  back as `imageGenerations`. A new gateway setting, `imageToolModel`
+  (*Image model for tools*), and `maxToolCalls` is relabelled *Web
+  searches and images per request*. The UI needed no change: the setting
+  lands in its topic by category, and no screen reads the Responses door.
+
+**Found on the way, each fixed:**
+
+1. `prepare_candidate` rebuilt every candidate's request from the caller's
+   body, so the loop's appended turns were dropped whenever a profile
+   default applied -- nearly every request. It copies the three defaults
+   onto the request it is handed now.
+2. The key's limits are read by `admission.authorize` inside `_prepare`;
+   deciding whether a search may run before it read a local-only key and a
+   key denied search as unrestricted. The decision moved into `_prepare`.
+3. `ClientRequest` never read `allowedTools` at all -- a key denied search
+   still searched. Caught by the first unit test of the rule.
+4. Accounts were ordered by name, so with SearXNG and Brave both set up
+   every search went to Brave. Hence `ToolDriverInfo.billing` and free
+   first (the first acceptance run).
+5. A schema default of 5 on `WebSearchRequest.maxResults` would have been
+   filled in by every generated client, so the account's own setting could
+   never apply (found generating the tool-driver's models).
+6. An inline `outcome` enum generated as `Outcome1` (the S6 trap); named
+   `MetricToolOutcome`.
+7. The control root validated every placement strictly, so one component
+   of a kind it did not know made `GET /v1/components` a 500 for the whole
+   install.
+8. The update checker required every pin, so a new agent would have found
+   no release channel at all.
+9. The Anthropic door's `_tools` returned `[]` rather than `None` for a
+   request whose only tool is server-run, putting `tools` in
+   `callerSettings` with nothing in it.
+10. **Three checks could not fail, found by the sabotage pass.** Failover
+    after a search was tested with a `RuntimeError`, which cascades nowhere
+    whether or not the loop pins; a search called on the last turn (the one
+    that offers no search tool) was never tested reaching the caller; and
+    the tool-scope sabotage went into the agent's copy of
+    `client_admission.py`, which an enrolled node never consults -- P1's
+    measured finding again. Each has its check now: a `ConnectError` after
+    the search, a stream test at `max_tool_calls: 1`, and the sabotage on
+    the control root's copy against the acceptance run plus the agent's copy
+    against its own unit test.
+
+## 13. Departures
+
+* **Port 8190, not the 8086 first drafted**: the UI hands added drivers
+  8081-8089 and the agent hands companions 8090-8189.
+* **`ToolDriverInfo.billing`** was not in §2; the first acceptance run
+  showed an install with a free and a paid account paying for every search.
+* **A search that cannot run on `/v1/messages` is a 400** (as §5 said)
+  **decided after admission**, not at translation: the route cannot know a
+  key's scope before `admission.authorize` has read it.
+* **Search accounts sit under Backends in the tree** rather than a branch
+  of their own: they answer requests the way a backend does, and one
+  `driver:` selection reaches either through the proxy by name.
+* **P8e: a local-only key is refused by the image routing, not by a rule of
+  its own.** §7's table named "a local-only key" as a reason because every
+  image backend today is hosted; `image_model` asks for an image model the
+  key may use, local-only included, so the day a local image engine is
+  served the tool runs for that key with no change here.
+* **P8e: metrics gain `imageGenerations` beside `webSearches`** rather than
+  putting images into a list named for searches. Same row schema; the
+  `provider` of an image row is the image model that made it.

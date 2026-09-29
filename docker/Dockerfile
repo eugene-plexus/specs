@@ -31,7 +31,7 @@
 # AMD or Intel passthrough yet. And machines with their own GPUs still
 # run `install.sh` and `join` this — that topology is unchanged.
 #
-# The image is Path B's install run by Path B's own script. The six
+# The image is Path B's install run by Path B's own script. The seven
 # pinned commits live in exactly one file, `scripts/install.sh`, and a
 # version bump is one edit rather than three.
 #
@@ -152,6 +152,7 @@ ENV EUGENE_PLEXUS_AGENT_CONFIG_FILE=/data/agent.yaml \
     EUGENE_PLEXUS_GATEWAY_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_LIBRARY_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_DRIVER_BIND_HOST=0.0.0.0 \
+    EUGENE_PLEXUS_TOOL_DRIVER_BIND_HOST=0.0.0.0 \
     EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS=/models \
     PATH=/opt/eugene-plexus/venv/bin:/usr/local/bin:/usr/bin:/bin
 

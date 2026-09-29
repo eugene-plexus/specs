@@ -63,7 +63,7 @@ ROOT=$(CDPATH= cd -- "$ROOT" && pwd)
 # and the five training repos are retired — see
 # docs/maintenance/repository-audit-2026-09-10.md for the inventory.
 AGENT_REPO=agent
-COMPONENT_REPOS="control gateway inference-driver library"
+COMPONENT_REPOS="control gateway inference-driver library tool-driver"
 PYTHON_REPOS="$AGENT_REPO $COMPONENT_REPOS"
 # `website` is the project site (Astro, GitHub Pages, eugeneplexus.com).
 # Not part of the control plane, cloned anyway: a repo nobody clones is
@@ -274,6 +274,7 @@ for mod in (
     "eugene_plexus_gateway",
     "eugene_plexus_inference_driver",
     "eugene_plexus_library",
+    "eugene_plexus_tool_driver",
 ):
     if importlib.util.find_spec(mod) is None:
         bad.append(f"{mod} is not importable from {sys.executable}")

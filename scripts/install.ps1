@@ -8,7 +8,7 @@
 
     1. fetch `uv` into the install prefix and nowhere else,
     2. make a virtualenv there with a Python `uv` downloads itself,
-    3. install the six Eugene Plexus packages into it,
+    3. install the seven Eugene Plexus packages into it,
     4. check that what landed can actually serve -- see VERIFY below,
     5. register autostart (a service, or a per-user scheduled task),
     6. start it and wait for the agent to answer.
@@ -118,12 +118,13 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "89358602ab96a5282ea74fcf16aba7befb2db138"
-    "control"          = "847200f920949e2ef9762b28be9a413cbc319a39"
-    "gateway"          = "9d3dcd7003de7d4f36216dc196808cbe1c1a54f6"
-    "inference-driver" = "89770eacdca7f49342c1c3da3a01e0ee197ce3bc"
-    "library"          = "f4e79794fad46e856d9ee6a36b1bc26ba8ae2166"
-    "ui"               = "1749216a4624b565d9cac5c41551c4244ca97744"  # branch `dist`, not `main`
+    "agent"            = "14f8047ae6ddc8fde5d5e8d86427fe5013977dff"
+    "control"          = "2918b7edc78253e50395670daa5f1081ed019f7a"
+    "gateway"          = "10567d4ea3bffbfa60b350deed8cabb931a64d60"
+    "inference-driver" = "02eea96d15dfc72bc6216833059afd5327f25f56"
+    "library"          = "b4af12ffd290b8e18e0422d75ee03f7b74368eb2"
+    "tool-driver"      = "7dc4794f92b41ee335d505c17737b4cb61a09844"
+    "ui"               = "ecf12f05f6a47b79ca668716df6755bf9ebe8d1c"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -131,6 +132,7 @@ $DIST = @{
     "gateway"          = "eugene-plexus-gateway"
     "inference-driver" = "eugene-plexus-inference-driver"
     "library"          = "eugene-plexus-library"
+    "tool-driver"      = "eugene-plexus-tool-driver"
     "ui"               = "eugene-plexus-ui"
 }
 
@@ -1944,6 +1946,7 @@ for mod, what in [
     ("eugene_plexus_gateway", "the gateway"),
     ("eugene_plexus_inference_driver", "the inference driver"),
     ("eugene_plexus_library", "the model library"),
+    ("eugene_plexus_tool_driver", "the web-search tool driver"),
 ]:
     if importlib.util.find_spec(mod) is None:
         bad.append(f"{what} ({mod}) is not importable from {sys.executable}")
@@ -1973,7 +1976,7 @@ $checkRc = $LASTEXITCODE
 Remove-Item $checkFile -Force
 if ($checkRc -ne 0) { Die "the install is incomplete -- see above" }
 if (-not (Test-Path $AgentEx)) { Die "the eugene-plexus-agent command did not install" }
-Say "all six packages present, with a web UI"
+Say "all seven packages present, with a web UI"
 
 # --- 4c. what the engine needs from Windows ---------------------------
 # **llama.cpp's Windows build needs the Microsoft Visual C++ runtime and

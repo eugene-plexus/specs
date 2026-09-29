@@ -12,7 +12,7 @@ import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-COMPONENTS = {"agent", "control", "gateway", "inference-driver", "library", "ui"}
+COMPONENTS = {"agent", "control", "gateway", "inference-driver", "library", "tool-driver", "ui"}
 
 
 def pins(shell: bytes, powershell: bytes) -> dict[str, str]:
@@ -22,7 +22,7 @@ def pins(shell: bytes, powershell: bytes) -> dict[str, str]:
         posix["inference-driver"] = posix.pop("driver")
     windows = dict(re.findall(r'^\s*"([a-z-]+)"\s*=\s*"([0-9a-f]{40})"', powershell.decode(), re.M))
     if set(posix) != COMPONENTS or windows != posix:
-        raise ValueError("installers must pin the same six components to full commit IDs")
+        raise ValueError("installers must pin the same seven components to full commit IDs")
     return posix
 
 

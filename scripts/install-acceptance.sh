@@ -201,16 +201,20 @@ run_posix() {
   wait_gone "http://127.0.0.1:$PORT" 20 >/dev/null 2>&1
   local tailcmd="tail -n +$((mark + 1)) $prefix/logs/agent.log"
   local children=0 c
+  # A line may open with a timestamp, and the agent's own lines with
+  # `[agent]`: both arrived with the Logs page (2026-09-27), and an anchor
+  # at `^[` or `^INFO` then matched nothing on a stop that was perfectly
+  # graceful (found 2026-09-29, reading the log of a real stop).
   for k in control gateway library; do
-    c=$(r "$tailcmd | grep -c '^\[$k\] INFO:     Application shutdown complete'")
+    c=$(r "$tailcmd | grep -cE '^([0-9TZ:.-]+ )?\[$k\] INFO: +Application shutdown complete'")
     [ "${c:-0}" -ge 1 ] && children=$((children + 1))
   done
   [ "$children" = 3 ] && ok "12. all three children ran their ASGI lifespan shutdown" \
                       || bad "12. only $children/3 children shut down gracefully"
 
   local own
-  own=$(r "$tailcmd | grep -c '^INFO:     Application shutdown complete'")
-  [ "${own:-0}" -ge 1 ] && ok "13. the agent ran its own, read unprefixed" \
+  own=$(r "$tailcmd | grep -cE '^([0-9TZ:.-]+ )?(\[agent\] )?INFO: +Application shutdown complete'")
+  [ "${own:-0}" -ge 1 ] && ok "13. the agent ran its own (its [agent] lines, not a child's)" \
                         || bad "13. the agent's own shutdown line is absent"
 
   local left

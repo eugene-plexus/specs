@@ -28,8 +28,8 @@ MUTATIONS = [
     (
         "agent",
         "supervisor.py",
-        'kind_value in {"library", "inference-driver"}',
-        'kind_value in {"gateway", "library", "inference-driver"}',
+        'kind_value in {"library", "inference-driver", "tool-driver"}',
+        'kind_value in {"gateway", "library", "inference-driver", "tool-driver"}',
         "component_receives_only",
     ),
     (

@@ -39,7 +39,8 @@ Ollama if that is all you need, and powerful enough to sit at the centre
 of someone else's apps. That is why every component has its own repo,
 and why the training platform was archived rather than deleted.
 
-Three things were agreed on 2026-09-23 before this document was written:
+Three things were agreed on 2026-09-23 before this document was written, and a
+fourth on 2026-09-28:
 
 1. **Our spokes get no back doors.** An app we ship reaches the hub
    exactly the way Open WebUI, OpenCode or a stranger's script would. If
@@ -54,6 +55,16 @@ Three things were agreed on 2026-09-23 before this document was written:
    "hub" means the whole control plane, not the gateway alone: the
    gateway for inference traffic, the Library for models going in and
    out, and the agent for the machines.
+
+4. **Which tools the hub runs, and which an app runs** (P8, agreed
+   2026-09-28, built 2026-09-29). The hub runs the tools OpenAI's and
+   Anthropic's APIs define as *server-run* -- `web_search` now,
+   `image_generation` next -- in `tool-driver` components, one per
+   provider account, with the loop in the gateway
+   (`server-run-tools.md`). Anything that acts on the user's machine --
+   files, a shell, code execution, the user's own MCP servers -- stays in
+   an app or in the client, where the files are. A spoke never needs a
+   back door for search: it asks the gateway for it like any client.
 
 **An app** is an optional, separately installed program the agent
 supervises and the console shows. It uses the hub only through public

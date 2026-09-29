@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-REPOS = ("agent", "control", "gateway", "inference-driver", "library")
+REPOS = ("agent", "control", "gateway", "inference-driver", "library", "tool-driver")
 
 
 def check(documents: dict[str, str], sources: dict[str, str]) -> list[str]:

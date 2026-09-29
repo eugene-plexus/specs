@@ -91,7 +91,7 @@ function Invoke-Native {
 # and the five training repos are retired -- see
 # docs/maintenance/repository-audit-2026-09-10.md for the inventory.
 $agentRepo      = "agent"
-$componentRepos = @("control", "gateway", "inference-driver", "library")
+$componentRepos = @("control", "gateway", "inference-driver", "library", "tool-driver")
 $pythonRepos    = @($agentRepo) + $componentRepos
 # `website` is the project site (Astro, GitHub Pages, eugeneplexus.com).
 # Not part of the control plane, cloned anyway: a repo nobody clones is
@@ -251,6 +251,7 @@ for mod in (
     "eugene_plexus_gateway",
     "eugene_plexus_inference_driver",
     "eugene_plexus_library",
+    "eugene_plexus_tool_driver",
 ):
     if importlib.util.find_spec(mod) is None:
         bad.append(f"{mod} is not importable from {sys.executable}")

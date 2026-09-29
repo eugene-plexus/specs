@@ -28,7 +28,7 @@
 #      no package's build step ever runs as root,
 #   1. fetches `uv` into the install prefix and nowhere else,
 #   2. makes a virtualenv there with a Python `uv` downloads itself,
-#   3. installs the six Eugene Plexus packages into it,
+#   3. installs the seven Eugene Plexus packages into it,
 #   4. checks that what landed can actually serve — see VERIFY below,
 #   5. writes a systemd unit (Linux: a system unit, or a user unit with
 #      --user) or launchd agent (macOS),
@@ -51,19 +51,20 @@
 # that export is `next build` output, gitignored on `main`. Installing
 # from a `main` archive therefore *succeeds* and produces a package with
 # no UI inside it — verified 2026-09-11, `static_dir()` was not even a
-# directory. The `dist` branch carries the built export so that all six
+# directory. The `dist` branch carries the built export so that all seven
 # packages install by one mechanism. See install-paths §12, step 3.
 
 set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=89358602ab96a5282ea74fcf16aba7befb2db138
-PIN_CONTROL=847200f920949e2ef9762b28be9a413cbc319a39
-PIN_GATEWAY=9d3dcd7003de7d4f36216dc196808cbe1c1a54f6
-PIN_DRIVER=89770eacdca7f49342c1c3da3a01e0ee197ce3bc
-PIN_LIBRARY=f4e79794fad46e856d9ee6a36b1bc26ba8ae2166
-PIN_UI=1749216a4624b565d9cac5c41551c4244ca97744   # branch `dist`, not `main`
+PIN_AGENT=14f8047ae6ddc8fde5d5e8d86427fe5013977dff
+PIN_CONTROL=2918b7edc78253e50395670daa5f1081ed019f7a
+PIN_GATEWAY=10567d4ea3bffbfa60b350deed8cabb931a64d60
+PIN_DRIVER=02eea96d15dfc72bc6216833059afd5327f25f56
+PIN_LIBRARY=b4af12ffd290b8e18e0422d75ee03f7b74368eb2
+PIN_TOOL_DRIVER=7dc4794f92b41ee335d505c17737b4cb61a09844
+PIN_UI=ecf12f05f6a47b79ca668716df6755bf9ebe8d1c   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
@@ -940,13 +941,14 @@ fi
 gh_archive() { printf 'https://github.com/eugene-plexus/%s/archive/%s.tar.gz' "$1" "$2"; }
 
 say "installing Eugene Plexus"
-run_step "installing the six Eugene Plexus packages" \
+run_step "installing the seven Eugene Plexus packages" \
     in_prefix "$UV" pip install --python "$PYBIN" \
     "eugene-plexus-agent @ $(gh_archive agent "$PIN_AGENT")" \
     "eugene-plexus-control @ $(gh_archive control "$PIN_CONTROL")" \
     "eugene-plexus-gateway @ $(gh_archive gateway "$PIN_GATEWAY")" \
     "eugene-plexus-inference-driver @ $(gh_archive inference-driver "$PIN_DRIVER")" \
     "eugene-plexus-library @ $(gh_archive library "$PIN_LIBRARY")" \
+    "eugene-plexus-tool-driver @ $(gh_archive tool-driver "$PIN_TOOL_DRIVER")" \
     "eugene-plexus-ui @ $(gh_archive ui "$PIN_UI")"
 
 # --- 4. VERIFY --------------------------------------------------------
@@ -973,6 +975,7 @@ for mod, what in [
     ("eugene_plexus_gateway", "the gateway"),
     ("eugene_plexus_inference_driver", "the inference driver"),
     ("eugene_plexus_library", "the model library"),
+    ("eugene_plexus_tool_driver", "the web-search tool driver"),
 ]:
     if importlib.util.find_spec(mod) is None:
         bad.append(f"{what} ({mod}) is not importable from {sys.executable}")
@@ -994,7 +997,7 @@ raise SystemExit(1 if bad else 0)
 PYEOF
 
 in_prefix test -x "$VENV/bin/eugene-plexus-agent" || die "the eugene-plexus-agent command did not install"
-say "all six packages present, with a web UI"
+say "all seven packages present, with a web UI"
 
 # --- 4b. join, if this machine is a worker ----------------------------
 # **The installer owns the one onboarding question, because this is the

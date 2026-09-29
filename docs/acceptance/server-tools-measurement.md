@@ -100,8 +100,11 @@ The answer is kept as the tool-driver's test fixture
 
 ## 4. Owed
 
-- **What Codex does with `web_search_call` items** in a Responses stream
-  (needs a capture mode that answers with them).
+- ~~**What Codex does with `web_search_call` items** in a Responses stream~~
+  **Closed 2026-09-29** by the P8 acceptance's `--clients` leg against a real
+  Codex 0.130.0: it prints `web search: <action.query>` for the added item and
+  again for the done one, and an empty `web search:` line when the added item
+  carries no query. See [`server-tools-run.md`](server-tools-run.md).
 - **Brave, live**: no Brave key on this box. Built from its API
   documentation (`X-Subscription-Token`, `count` at most 20, `web.results[]`
   with `title`, `url`, `description`, `age`, `page_age`, `extra_snippets`;
