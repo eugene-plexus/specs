@@ -7491,6 +7491,15 @@ components:
           items:
             $ref: '#/components/schemas/MetricToolExecution'
 
+    MetricToolOutcome:
+      type: string
+      enum: [ok, error, over_limit]
+      description: |
+        `over_limit` is a call past the request's limit, answered without
+        running. Named rather than inline: an inline `outcome` enum here
+        generated as `Outcome1` beside the request's own `Outcome` (the S6
+        trap).
+
     MetricToolExecution:
       type: object
       required: [tool, outcome, elapsedMs]
@@ -7521,11 +7530,7 @@ components:
             `web_search`, or Anthropic's dated `web_search_20250305` -- kept
             so a new date is noticed rather than discovered.
         outcome:
-          type: string
-          enum: [ok, error, over_limit]
-          description: |
-            `over_limit` is a call past the request's limit, answered
-            without running.
+          $ref: '#/components/schemas/MetricToolOutcome'
         results:
           type:
             - integer
