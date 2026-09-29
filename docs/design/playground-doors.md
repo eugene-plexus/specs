@@ -41,9 +41,12 @@ of these can be tried from the UI:
 - **Each door lists only the models that serve it** and builds its form
   from that model's own listing: `voices` and `speech_formats` for
   speech; `video_durations`, `video_sizes` and `video_first_frame` for
-  video; `image_edits`, `image_mask` and `image_streaming` for images;
-  `fill_in_middle` decides whether completions show a suffix box. A field
-  the model does not list is not shown. Nothing is invented.
+  video; `image_edits`, `image_mask` and `image_streaming` for images.
+  A choice the model does not list is not offered, and nothing is
+  invented. **The one exception is free text a person may already have
+  typed** (the completions suffix): it stays on screen, and a model whose
+  listing says it cannot take it gets the warning below, because hiding
+  the box on a model switch would drop the text without a word.
 - **The diagnostic panel applies to every door.** Proxy or direct, base
   URL and key, exactly as chat: "works through the proxy, fails direct"
   must be answerable for a picture as it is for a sentence.
