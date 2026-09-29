@@ -138,6 +138,41 @@ info:
     reason, because Claude Code's WebSearch request exists only to search
     and answering it without one would invent results.
 
+    ### `image_generation` (P8e, 2026-09-29)
+
+    OpenAI defines `image_generation` for the Responses API only, so it
+    runs on `/v1/responses` alone. The same loop offers the model one
+    more function, `image_generation(prompt)` (plus `size` when the tool
+    left it unset), and answers each call **in-process through the
+    images door's own routing** (P4): the key's `allowedModels`, the
+    model's listed image settings and its tiers, exactly as a
+    `POST /v1/images/generations` would be -- no second HTTP hop. The
+    image model is the tool's `model` when this install serves it for the
+    key; else the gateway's `imageToolModel` setting; else the one image
+    model the key may use, when there is exactly one.
+
+    **The model is told in words, never shown the image**: that an image
+    was made for its prompt, at what size, and is shown to the person.
+    The caller gets it as OpenAI returns it, an `image_generation_call`
+    item whose `result` is the base64 image, streamed as
+    `response.image_generation_call.in_progress` → `.generating` →
+    `.completed`. The tool's `size`, `quality`, `background`,
+    `output_format`, `output_compression` and `moderation` ride on the
+    images request; `partial_images`, `input_image_mask`,
+    `input_fidelity` and an `action` other than `generate`/`auto` are
+    named on the ignored-settings header. One `max_tool_calls` budget
+    covers searches and images alike, and failover ends at the first
+    execution of either.
+
+    **When it cannot run** -- no image model for this key, a key whose
+    `allowedTools` does not include `image_generation`, or a model with
+    no backend that calls tools -- the request is a 400 naming the
+    reason, as the tool was refused before P8e. It is never removed
+    silently: a caller that offered image generation and got none would
+    read the model's refusal as the model's. An image that fails to be
+    made is told to the model, which answers without it, and its item is
+    `failed`.
+
     ## Where the routing table comes from
 
     The gateway does not store backend URLs. It reads the agent
@@ -1305,9 +1340,12 @@ paths:
         reason in `x-eugene-plexus-web-search`. Refusing it would refuse
         the first request of every session, as `/v1/messages` once did
         with `output_config`. `filters.allowed_domains`, `user_location`
-        and `search_context_size` are honoured. Every other server-side tool (file search,
-        code interpreter, computer use, image generation, MCP, a custom
-        or local-shell tool) is refused with a 400 naming its type.
+        and `search_context_size` are honoured. `image_generation` runs
+        through this install's image models (P8e, "Server-run tools"
+        above) or is refused with a 400 naming why. Every other
+        server-side tool (file search, code interpreter, computer use,
+        MCP, a custom or local-shell tool) is refused with a 400 naming
+        its type.
 
         ### Reasoning goes out as `reasoning_text` and comes back
 
@@ -6667,7 +6705,10 @@ components:
         of `input_text` / `input_image` parts), and `reasoning`
         (`content` of `reasoning_text` parts, `encrypted_content`), and a
         `web_search_call` handed back (P8), which becomes a line of the
-        assistant's history naming the search and its sources.
+        assistant's history naming the search and its sources, and an
+        `image_generation_call` handed back (P8e), which becomes a line
+        naming the prompt the image was made for -- its base64 is not
+        sent to the model.
         Codex drops `id` and `status` when it sends items back
         (measured), so neither is required. Refused: `item_reference` and
         any other type.
@@ -6703,7 +6744,9 @@ components:
         A `function` tool (`name`, `description`, `parameters`, `strict`)
         maps onto an OpenAI chat function. `web_search` runs on this
         install's search account, or is removed and named when it cannot
-        (see the endpoint); any other `type` is refused.
+        (see the endpoint); `image_generation` runs on this install's
+        image models, or is refused naming why (P8e); any other `type` is
+        refused.
       additionalProperties: true
       required:
         - type
@@ -6780,16 +6823,20 @@ components:
         `{"type": "message", "id", "role": "assistant", "status",
         "content": [{"type": "output_text", "text", "annotations": []}]}`,
         `{"type": "function_call", "id", "status", "call_id", "name",
-        "arguments"}`, or, for a search this install ran (P8),
+        "arguments"}`, for a search this install ran (P8),
         `{"type": "web_search_call", "id", "status", "action": {"type":
-        "search", "query", "sources": [{"type": "url", "url"}]}}`.
+        "search", "query", "sources": [{"type": "url", "url"}]}}`, or for
+        an image it made (P8e), `{"type": "image_generation_call", "id",
+        "status", "result", "revised_prompt", "size", "quality",
+        "background", "output_format", "action": "generate"}` -- `result`
+        the base64 image, null and `status: failed` when none was made.
       additionalProperties: true
       required:
         - type
       properties:
         type:
           type: string
-          enum: [reasoning, message, function_call, web_search_call]
+          enum: [reasoning, message, function_call, web_search_call, image_generation_call]
         id:
           type: string
 
@@ -7490,6 +7537,14 @@ components:
             is kept: a query is made from the prompt.
           items:
             $ref: '#/components/schemas/MetricToolExecution'
+        imageGenerations:
+          type: array
+          description: |
+            Each image the `image_generation` tool made or failed to make
+            for the request (P8e, schema v10), in order. No prompt text is
+            kept, for the same reason. Absent on rows written before P8e.
+          items:
+            $ref: '#/components/schemas/MetricToolExecution'
 
     MetricToolOutcome:
       type: string
@@ -7506,12 +7561,14 @@ components:
       properties:
         tool:
           type: string
-          description: The tool that ran -- `web_search`.
+          description: The tool that ran -- `web_search` or `image_generation`.
         driver:
           type:
             - string
             - 'null'
-          description: The tool-driver (search account) that ran it; null when none was asked.
+          description: |
+            The tool-driver (search account) that ran a search, or the
+            inference-driver that made an image; null when none was asked.
         node:
           type:
             - string
@@ -7520,7 +7577,9 @@ components:
           type:
             - string
             - 'null'
-          description: The account's provider, `searxng` or `brave`.
+          description: |
+            The search account's provider, `searxng` or `brave`; for an
+            image, the image model that made it.
         version:
           type:
             - string
@@ -7535,7 +7594,7 @@ components:
           type:
             - integer
             - 'null'
-          description: How many results the model was given.
+          description: How many results the model was given, or images made.
         elapsedMs:
           type: integer
           minimum: 0
