@@ -118,7 +118,7 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "14f8047ae6ddc8fde5d5e8d86427fe5013977dff"
+    "agent"            = "8579764d59a81dedb430b7498f6a45d3b4512010"
     "control"          = "2918b7edc78253e50395670daa5f1081ed019f7a"
     "gateway"          = "10567d4ea3bffbfa60b350deed8cabb931a64d60"
     "inference-driver" = "02eea96d15dfc72bc6216833059afd5327f25f56"

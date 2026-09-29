@@ -12,7 +12,7 @@ Operator guide: [`../deployment/web-search.md`](../deployment/web-search.md).
 | specs (contracts) | `c641e0b`, `f39ffe7`, `a9fc9b9`, `e53a6d9`, `c4e2fe4` | `tool-driver.yaml`, `ComponentKind.tool-driver`, `ClientKeyLimits.allowedTools`, server-run tools on three doors, `MetricToolExecution`, `ToolDriverInfo.billing`, P8e |
 | tool-driver (new repo) | `7dc4794` | SearXNG and Brave, one process per search account |
 | gateway | `10567d4` | the loop, the three doors' records, P8e, metrics v10 |
-| agent | `14f8047` | spawns and seals a tool-driver, proxies to it by name, `allowedTools`, the seventh package |
+| agent | `14f8047`, `8579764` | spawns and seals a tool-driver, proxies to it by name, `allowedTools`, the seventh package |
 | control | `2918b7e` | a union view that tolerates a kind it does not know; `allowedTools` |
 | inference-driver | `02eea96` | regen-only (a new `ComponentKind` member reaches every consumer) |
 | library | `b4af12f` | regen-only |
