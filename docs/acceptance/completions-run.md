@@ -1,7 +1,7 @@
 # P6b: `/v1/completions`, raw continuation and fill-in-the-middle — record
 
 **2026-09-28 (late). Built, run and pinned in both installers**
-(inference-driver `89770ea`, gateway `e7cdb07`). Design:
+(inference-driver `89770ea`, gateway `9ecd3c9`). Design:
 [`openai-inference-compatibility.md`](../design/openai-inference-compatibility.md)
 §12, calls P6-3 (no capture: the clients were read in their source) and P6-4
 (local engines first). Measured and read first:
@@ -12,7 +12,7 @@ and §12a.
 |---|---|
 | specs (contract) | `8657f60` |
 | inference-driver | `89770ea` |
-| gateway | `e7cdb07` |
+| gateway | `e7cdb07`, pinned at `9ecd3c9` (a flaky test fixed; same code) |
 
 - **`scripts/p6-acceptance.py`** is P6's one gate: 9 fixture checks in specs
   CI. `--llama-server DIR --fim-model FILE` adds a real `llama-server`, and

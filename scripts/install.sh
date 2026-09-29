@@ -60,7 +60,7 @@ set -eu
 # One commit per repo. Bump these to ship a new version.
 PIN_AGENT=89358602ab96a5282ea74fcf16aba7befb2db138
 PIN_CONTROL=847200f920949e2ef9762b28be9a413cbc319a39
-PIN_GATEWAY=e7cdb070e42b7c7ee2a04aa5850562a9aff55e9f
+PIN_GATEWAY=9ecd3c96a73e44e6d2ec2c098d9ce6668376ec68
 PIN_DRIVER=89770eacdca7f49342c1c3da3a01e0ee197ce3bc
 PIN_LIBRARY=f4e79794fad46e856d9ee6a36b1bc26ba8ae2166
 PIN_UI=323e3b5ca5f96a5d0c9a511b74e8165a1ce95391   # branch `dist`, not `main`
