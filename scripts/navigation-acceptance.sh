@@ -12,10 +12,10 @@
 #   2. agent + control + gateway + library up, initialized, the agent enrolled
 #   3. a driver declared, so the deepest path in the tree has something in it
 #   4. the agent serves the UI at / and every screen's route exists
-#   5. BROWSER: the install and its five branches
+#   5. BROWSER: the install and its four branches (Library, Backends, Gateway, Machines)
 #   6. BROWSER: every object selects and arrives, walking what the tree offers
 #   7. BROWSER: each object's page menu, and moving between one object's pages
-#   8. BROWSER: a driver under its machine; a legacy ?tab= link
+#   8. BROWSER: a backend under its machine and its Overview; Settings by topic; a legacy ?tab= link
 #   9. BROWSER: the layer colours; sign out everywhere; the phone drawer; the map
 #  10. teardown by pid
 #
@@ -158,8 +158,9 @@ if [ "$PW" = "0" ]; then
     "every object in the tree selects and arrives" \
     "the page menu lists the pages each object owns" \
     "moving between one object's pages keeps that object selected" \
-    "a driver sits under its machine once there are two, straight under its type with one, and opens its own settings" \
-    "a bare /config lands on this machine's agent" \
+    "a backend sits under its machine once there are two, straight under Backends with one, and opens its own row" \
+    "a bare /config is every setting on the install, by topic, with a search box" \
+    "a machine's own Settings is that machine's share of the same page" \
     "a legacy ?tab= link still lands on its subject" \
     "the layer colours are still the architecture page's" \
     "sign out is reachable from every page" \

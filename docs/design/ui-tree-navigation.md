@@ -7,6 +7,17 @@ this design's spine. Every claim marked *measured* was checked against a
 file or a running process on the day of writing; everything else is
 reasoning and marked as such. §13 is the implementation record.
 
+**▶ AMENDED 2026-09-29 by
+[`ui-settings-reorganisation.md`](ui-settings-reorganisation.md), which is
+the tree's shape from that day:** the branches are *Library · Backends ·
+Gateway · Machines* (§2.2's "reads down the architecture page" is the layer
+map's order now, not the tree's); the *Backends* branch is selectable and
+owns the Inference page; *Agents* and *Control root* are one branch,
+*Machines*, with the machine leaf shown on a one-box install too; every
+*Config* page is *Settings*, and the install root's is every setting by
+topic. §2.1 (the root is the install), §2.3 (machines under the kinds that
+multiply), §5 (Config not split into pages) and §7 (addressing) stand.
+
 **Troy's words, which are the brief:**
 
 > A tree going down the left side. Control is the root of the tree.

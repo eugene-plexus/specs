@@ -123,7 +123,7 @@ Correct, and reachable by nothing. The symptom is one-directional and easy to
 misread: the control host can reach every GPU machine, and no GPU machine's
 browser can reach the control host's gateway or library.
 
-Set it once, in the UI on the control host: **Config → Agent → Advertise
+Set it once, in the UI on the control host: **Machines → this machine → Settings → Access & security → Advertise
 address**, or over the API:
 
 ```sh
@@ -554,7 +554,7 @@ and downloads from Discover land there. The files are catalogued as they
 are; nothing is renamed, hashed or moved; delete the container and they
 are still where you put them.
 
-It is a *default*, not a lock. **Config → Library → Model directories**
+It is a *default*, not a lock. **Library → Settings → Models & downloads → Folders**
 shows `/models`, you can replace it with other directories, and clearing
 the list returns to it. It is never written into your config file, so a
 container that came up before this default existed — with an empty list
@@ -598,8 +598,8 @@ GPU box however you already mount things:
   - **A Windows install is a service.** It runs as LocalSystem: **a
     mapped drive letter does not exist**, and the share credential you
     once typed into File Explorer is in *your* profile and invisible to
-    it. **Use the UNC path**, and put the login in **Config → Agent →
-    Storage → Logins for file servers** — one row per server, which is
+    it. **Use the UNC path**, and put the login in **Machines → this machine → Settings →
+    Model storage → Logins for file servers** — one row per server, which is
     all Windows allows.
   - **A share with no password is not a share anything can open.**
     Measured on the live install: Windows 11 refuses an unauthenticated

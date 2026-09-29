@@ -1311,7 +1311,11 @@ that is what they are for.
   stops being true the folder proposal goes, not the rule.
 - **No tour, no tutorial overlay.** NN/g: they interrupt and do not
   transfer; contextual help on the field wins.
-- **No changes to the tree's model** beyond §6.4.
+- **No changes to the tree's model** beyond §6.4. *(Amended 2026-09-29:
+  `ui-settings-reorganisation.md` reshaped the branches — Library ·
+  Backends · Gateway · Machines — and folded Config into one Settings page
+  by topic; §6.4's one-machine rule still governs Backends and Library,
+  and Machines keeps its single row on purpose.)*
 - **Not in this plan:** a structured `model_slots` editor, a guided "add
   an external backend" form, image attachments, `role="tree"` semantics.
   Real, listed, later.

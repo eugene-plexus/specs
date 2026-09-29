@@ -398,8 +398,8 @@ OpenAI-compatible paths (`/v1/models`, `/v1/chat/completions`,
 `/v1/embeddings`) answer CORS for any origin by default — safe because
 the front door authenticates by an explicit bearer and never by a
 cookie, so a page cannot use a token it was not given. Narrow it with
-`corsAllowedOrigins` on the gateway's config (Config → Gateway →
-Browser clients), or turn it off with `corsEnabled`; both take effect on
+`corsAllowedOrigins` on the gateway's config (Gateway → Settings → Access & security →
+Allowed browser origins), or turn it off with `corsEnabled`; both take effect on
 the next request. Operator paths never answer browsers from another
 origin. A page served over `https` cannot call an `http` gateway
 (mixed content), so a tailnet that serves the UI over HTTPS needs the
