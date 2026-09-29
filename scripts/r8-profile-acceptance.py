@@ -103,7 +103,7 @@ def main() -> None:
             format="gguf", status="present", sizeBytes=0, files=[])], scanned_at=datetime.now(UTC))
         (root / "library.yaml").write_text("modelRoots: []\nscanOnStartup: false\n")
         (root / "gateway.yaml").write_text(yaml.safe_dump({"profileCacheSeconds": 0,
-            "routingRefreshSeconds": 3600, "defaultMaxTokens": 2048, "defaultTemperature": 0.7,
+            "routingRefreshSeconds": 3600, "defaultMaxTokens": 3000, "defaultTemperature": 0.7,
             "modelSlots": [{"model": "fallback-test", "targets": ["friendly-alias", "fallback-alias"]}]}))
         sockets = [socket.socket() for _ in range(2)]
         for sock in sockets:
@@ -302,7 +302,9 @@ def main() -> None:
                 time.sleep(1.1)
                 assert generate()["maxTokens"] == 222
                 time.sleep(5.1)
-                assert generate()["maxTokens"] == 2048
+                # An operator cap, not 2048: that is the old shipped default,
+                # cleared once from every older config file (gateway 9d3dcd7).
+                assert generate()["maxTokens"] == 3000
                 print("PASS edits, bounded stale reuse, and outage fallback", flush=True)
                 state["outage"] = False
                 time.sleep(5.1)  # finish the full backoff after the most recent failed read
@@ -315,7 +317,7 @@ def main() -> None:
                 client.delete(url + "/" + second.json()["id"]).raise_for_status()
                 assert generate()["maxTokens"] == 222
                 client.delete(url + "/" + profile_id).raise_for_status()
-                assert generate()["maxTokens"] == 2048
+                assert generate()["maxTokens"] == 3000
                 print("PASS recovery, default selection/promotion, and deletion", flush=True)
         except BaseException:
             for path in root.glob("*.log"):
