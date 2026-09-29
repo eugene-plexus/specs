@@ -563,3 +563,53 @@ code prompt to `mistralai/codestral-2508` and
 defining a..."*, a chat reply to the prompt as a user turn, and **`suffix`
 was silently ignored**: the answers with and without it were identical. No
 OpenRouter model lists `suffix` among its parameters.
+
+### 12a. For P6b: how raw text is continued, measured and read (2026-09-28, late)
+
+**`llama-server` b11235**, with `ggml-org/Qwen2.5-Coder-0.5B-Q8_0-GGUF` (a
+base coder model with fill-in-the-middle tokens) and Qwen3-ASR for contrast,
+both on this machine's CPU:
+
+- **`/v1/completions` continues a prompt as written, special tokens parsed**:
+  `<|fim_prefix|>def add(a, b):\n    return<|fim_suffix|>...<|fim_middle|>`
+  tokenises to 20 tokens with `<|fim_prefix|>` as id 151659 (37 with
+  `parse_special: false`), and the coder answers `" a + b"`.
+- **`/v1/completions` ignores `suffix`**: the answer with and without it is
+  byte-identical, on the coder model as on the ASR one.
+- **`/infill` fills the middle**: `input_prefix`, `input_suffix`, `n_predict`,
+  and the sampling fields; `" a + b"` again. It says why it stopped as
+  `stop_type` `limit`, `eos` or `word` (with `stopping_word`), and streams SSE
+  frames of `{content, stop}` ending with a `stop: true` frame and **no
+  `[DONE]`**. A zero-token probe (`n_predict: 0`) answers 200. It answered the
+  ASR model too, whose tokenizer carries the tokens; b10948 answered a model
+  without them 501 (M-era measurement).
+- **`echo` is silently ignored** (the prompt is not returned); `logprobs` and
+  `n` work; `best_of` is accepted with one choice; an array `prompt` answered
+  two choices on the coder and a 400 on the ASR model.
+- The stream is OpenAI's: `text_completion` frames, usage on the last with
+  `stream_options.include_usage`, then `[DONE]`.
+
+**Read in the clients' source** (P6-3: no capture), Continue `main@5522c6f`
+and llama.vscode `master@594c68c`:
+
+- **Continue's OpenAI provider renders the template itself** and posts
+  `/v1/completions` with `prompt`, never `suffix`, streaming, with its own stop
+  list and `temperature` 0.01 when unset. **A model id starting with `gpt` or
+  `o` goes to `/v1/chat/completions` instead**, the rendered string as a user
+  message (so an `openrouter/...` or `ollama/...` id takes the chat path).
+- **llama.vscode's default is `llama-server`'s native `/infill`**, not an
+  OpenAI route; its OpenAI mode is labelled experimental, *"avoid"*, and sends
+  a rendered prompt with no suffix.
+
+**Read in the engines' source**, Ollama `main@05a7a91` and vLLM `main@c68eb98`:
+
+- **Ollama's `/v1/completions` applies the model's template**: without a
+  suffix the prompt becomes a user message through the chat template; `raw`
+  cannot be set there. **`/api/generate` with `raw: true`** continues it as
+  written; with `suffix` the template's `.Suffix` fills the middle, and a model
+  without the `insert` capability is a 400 *"does not support insert"*.
+  `/api/show` lists `insert` among a model's capabilities.
+- **vLLM's `/v1/completions` passes the prompt untemplated** and refuses
+  `suffix` for every model whose renderer lacks fill-in-the-middle, which is
+  every model but DeepSeek V4 (*"suffix is only supported for models with FIM
+  completion rendering"*). It answers `/version`.

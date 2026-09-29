@@ -7,6 +7,7 @@ Compatibility means the features below, not every feature of a provider API.
 | --- | --- | --- |
 | `GET /v1/models` | Supported | Eugene's discovered models and routing aliases. |
 | `GET /v1/models/{model}` | Supported (P6, since 2026-09-28) | One model as the list shows it to this caller; the id takes the rest of the path, slashes included. A model the key may not use is a 404. |
+| `POST /v1/completions` | Supported (P6, since 2026-09-28) | OpenAI's legacy completions through local engines (llama-server, vLLM, Ollama): a prompt continued as written, `suffix` only to a model that fills in the middle. Streamed or not. See [completions](#completions). |
 | `POST /v1/moderations` | Supported (P6, since 2026-09-28) | OpenAI's shape through an OpenAI account's `omni-moderation-*`. `model` may be left out when the key can use exactly one moderation model. Same model only. See [moderations](#moderations). |
 | `POST /v1/chat/completions` | Supported | Text messages, tools, structured-output forwarding, batch responses and SSE. Images, audio and PDFs as content parts (see [attachments](#attachments)). A spoken answer with `modalities` and `audio` (see [audio output](#audio-output)). |
 | `POST /v1/messages` | Supported subset | Anthropic text, image, document and tool translation; measured Claude Code 2.1.207 shapes remain covered. |
@@ -442,6 +443,32 @@ SDK's `client.videos.create`, `create_and_poll`, `retrieve` and
 Verified on 2026-09-28: `x-ai/grok-imagine-video` made one second at 480p
 from text and one from a first frame through the OpenAI SDK, both polled to
 completion after a gateway restart ([record](acceptance/videos-run.md)).
+
+## Completions
+
+Since 2026-09-28 (P6), `POST /v1/completions` takes OpenAI's legacy request:
+the OpenAI SDK's `client.completions.create` works unchanged, streamed or not.
+
+- **Backends:** a local `llama-server`, vLLM, or an Ollama account's models,
+  which continue raw text (`x_eugene_plexus.surfaces` includes
+  `completion`). Hosted accounts are not offered: OpenRouter's completions
+  answer a prompt as a chat turn (measured).
+- **The prompt is continued as written**, special tokens included, so an
+  editor that renders its own fill-in-the-middle template (Continue) gets
+  what it expects. No chat template is applied; Ollama is asked through
+  `/api/generate` with `raw`, since its `/v1/completions` is templated.
+- **`suffix`** goes only to a model whose `x_eugene_plexus.fill_in_middle` is
+  true, in every tier, and is never dropped: `llama-server`'s `/v1/completions`
+  would drop it, so its driver uses `/infill`. With none, a 400 naming
+  `suffix`.
+- **Tiers, as chat**, holding only models that continue raw text; a stream
+  commits at its first token.
+- **Refused** with a 400 naming the field: `n` or `best_of` above 1, `echo`,
+  `logprobs`, several prompts or token ids, unknown fields.
+
+Verified on 2026-09-28: a real `llama-server` with Qwen2.5-Coder 0.5B filled
+`" a + b"` after `def add(a, b): return` on this machine's CPU, through the
+SDK, from a rendered prompt, a `suffix` and a stream.
 
 ## Moderations
 

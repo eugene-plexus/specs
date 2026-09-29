@@ -999,7 +999,7 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         fox_sha = hashlib.sha256(fox).hexdigest()
         listed = models()
         assert listed["router/acme/whisper"]["surfaces"] == ["transcription"], listed["router/acme/whisper"]
-        assert listed["local-asr"]["surfaces"] == ["chat", "transcription"], listed["local-asr"]
+        assert listed["local-asr"]["surfaces"] == ["chat", "transcription", "completion"], listed["local-asr"]
         assert "transcription" in listed["scribe"]["surfaces"], listed["scribe"]
         ok("an OpenRouter transcription model is listed as transcription, and a llama-server whose projector "
            "hears as chat and transcription")
@@ -1219,7 +1219,7 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
 
         if llama_dir is not None:
             wait(lambda: "qwen3-asr" in models(), "the real llama-server is routable", 60)
-            assert models()["qwen3-asr"]["surfaces"] == ["chat", "transcription"], models()["qwen3-asr"]
+            assert models()["qwen3-asr"]["surfaces"] == ["chat", "transcription", "completion"], models()["qwen3-asr"]
             started = time.perf_counter()
             [answer] = transcribe_by_sdk(key, [{"model": "qwen3-asr", "file": str(FOX)}])
             took = time.perf_counter() - started

@@ -35,6 +35,9 @@ DOOR = GATEWAY / "moderation_door.py"
 ROUTING = GATEWAY / "routing.py"
 ROUTE = GATEWAY / "routes" / "inference.py"
 ADMISSION = GATEWAY / "admission.py"
+RAW = DRIVER / "raw_completion.py"
+CATALOGUE = DRIVER / "engines" / "_catalogue.py"
+COMPLETION_DOOR = GATEWAY / "completion_door.py"
 
 _RETRIEVE_ALLOWED = (
     "    listed = (\n        table.as_model_list(\n"
@@ -144,6 +147,101 @@ SABOTAGES: list[Sabotage] = [
         "one model is serialised differently from the list",
         ((ROUTE, '    return JSONResponse(content=found.model_dump(mode="json"))\n',
           '    return JSONResponse(content=found.model_dump(mode="json", exclude_none=True))\n'),),
+    ),
+    # --- P6b: the driver ------------------------------------------------------------
+    Sabotage(
+        "a suffix is sent to llama-server's /v1/completions, which drops it",
+        ((COMPAT, "        if completion.suffix is not None:\n", "        if False:\n"),),
+    ),
+    Sabotage(
+        "the suffix is not carried to /infill",
+        ((RAW, '        "input_suffix": request.completion.suffix or "",\n', '        "input_suffix": "",\n'),),
+    ),
+    Sabotage(
+        "Ollama is asked without raw, so its template wraps the prompt",
+        ((RAW, '        payload["raw"] = True\n', "        pass\n"),),
+    ),
+    Sabotage(
+        "a llama-server that fills in the middle is not said to",
+        ((COMPAT, "                self._completion_caps = (True, infill.status_code == 200)\n",
+          "                self._completion_caps = (True, False)\n"),),
+    ),
+    Sabotage(
+        "vLLM is not recognised as continuing raw text",
+        ((COMPAT, '            if isinstance(body, dict) and isinstance(body.get("version"), str):\n',
+          "            if False:\n"),),
+    ),
+    Sabotage(
+        "a hosted endpoint is offered raw completion",
+        ((COMPAT, '        if getattr(self, "routing_locality", None) != "local":\n', "        if False:\n"),),
+    ),
+    Sabotage(
+        "Ollama's models are not said to continue raw text",
+        ((CATALOGUE, '            surfaces.append("completion")\n', "            pass\n"),),
+    ),
+    Sabotage(
+        "the driver completes with a model that does not continue raw text",
+        ((DRIVER / "routes" / "generate.py", "    if completes:\n", "    if True:\n"),),
+    ),
+    # --- P6b: the gateway -------------------------------------------------------------
+    Sabotage(
+        "a completion may reach a model that only chats",
+        ((ROUTING, "                if takes(b.caps, needs) and (surface is None or surface in b.surfaces)\n",
+          "                if takes(b.caps, needs)\n"),),
+    ),
+    Sabotage(
+        "a suffix is not routed as a need for fill-in-the-middle",
+        ((ROUTE,
+          '        needs = frozenset({"fill_in_middle"}) if completion.suffix is not None else frozenset()\n',
+          "        needs = frozenset()\n"),),
+    ),
+    Sabotage(
+        "the prompt is sent as the chat stand-in, not as a completion",
+        ((ROUTE, "        generate.completion = completion\n", "        pass\n"),),
+    ),
+    Sabotage(
+        "a request rebuilt with profile defaults loses its prompt",
+        ((ROUTE, "                prepared.completion = completion\n", "                pass\n"),),
+    ),
+    Sabotage(
+        "n above 1 is dropped rather than refused",
+        ((COMPLETION_DOOR, '    for field in ("n", "best_of"):\n', "    for field in ():\n"),),
+    ),
+    Sabotage(
+        "echo is dropped rather than refused",
+        ((COMPLETION_DOOR, "    if raw.get(\"echo\") not in (None, False):\n", "    if False:\n"),),
+    ),
+    Sabotage(
+        "a suffix no model can fill is refused under the wrong field",
+        ((ROUTE, '        param="suffix" if missing[0] == "fill_in_middle" else "messages",\n',
+          '        param="messages",\n'),),
+    ),
+    Sabotage(
+        "a completion row is filed with no door",
+        ((ROUTE, '            backend_ms=response.latencyMs,\n            door="completion",\n        )\n    content:',
+          '            backend_ms=response.latencyMs,\n            door=None,\n        )\n    content:'),),
+    ),
+    Sabotage(
+        "a stream's last frame carries no finish reason",
+        ((ROUTE,
+          '                        "logprobs": None,\n'
+          '                        "finish_reason": _completion_finish(response.finishReason),\n'
+          '                    }\n                ],\n            )\n        )\n',
+          '                        "logprobs": None,\n'
+          '                        "finish_reason": None,\n'
+          '                    }\n                ],\n            )\n        )\n'),),
+    ),
+    Sabotage(
+        "a stream asked for its usage sends none",
+        ((ROUTE, "        if include_usage and usage is not None:\n", "        if False:\n"),),
+    ),
+    Sabotage(
+        "a model that fills in the middle is not listed so",
+        ((ROUTING, "                        fill_in_middle=any(takes(b.caps, _FILLS) for b in backends),\n", ""),),
+    ),
+    Sabotage(
+        "the completions door is not under client admission",
+        ((ADMISSION, '        "/v1/completions",\n', ""),),
     ),
 ]
 

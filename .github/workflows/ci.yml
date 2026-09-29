@@ -122,7 +122,7 @@ jobs:
         run: python specs/scripts/p4-images-acceptance.py
       - name: Verify P5 video jobs through signed processes, a gateway restart and the unchanged OpenAI SDK
         run: python specs/scripts/p5-videos-acceptance.py
-      - name: Verify P6 moderations and model lookup through signed processes and the unchanged OpenAI SDK
+      - name: Verify P6 moderations, model lookup and completions through signed processes and the unchanged OpenAI SDK
         run: python specs/scripts/p6-acceptance.py
       - name: Verify A7 encrypted checkpoints and destructive restore refusals
         run: python specs/scripts/a7-recovery-checks.py

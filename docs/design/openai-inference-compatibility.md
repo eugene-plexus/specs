@@ -19,7 +19,7 @@ built and pinned 2026-09-28** (record [`images-run.md`](../acceptance/images-run
 15 fixture and 2 live checks, the OpenAI SDK unchanged). **P5, videos, is
 built and pinned 2026-09-28** (record [`videos-run.md`](../acceptance/videos-run.md):
 8 fixture and 2 live checks; OpenAI's own video API had shut down, so
-OpenRouter is the backend). **P6a (moderations, `GET /v1/models/{model}`) is built; P6b and P7-P8 are not.** §0 is measured, and §6's authenticated measurements
+OpenRouter is the backend). **P6 (moderations, `GET /v1/models/{model}`, `/v1/completions`) is built; P7-P8 are not.** §0 is measured, and §6's authenticated measurements
 are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
 recommended; #3 (replace `modelId`) and #8 (Eugene runs some
@@ -508,7 +508,7 @@ alone.
 | 3 | Keep `modelId` beside `models[]`? | Recommended keeping it. **TAKEN: replace it.** P1 moves driver, gateway and UI in one bump, and an older driver on another node is named as an Issue (§2.1). | Old drivers on not-yet-upgraded machines stop routing until upgraded. |
 | 4 | Failover for speech | **TAKEN: same model only**, like embeddings. | An outage of one TTS model is an outage, not a fallback. |
 | 5 | Video job state | **TAKEN: a signed handle, no store**: it survives a gateway restart and needs no database. | A handle is opaque and long, and revoking a key cannot recall one already issued, only refuse its next poll. |
-| 6 | `/v1/completions` | **TAKEN: in phase 1 (P6)**, under the new direction. This supersedes `responses-and-completions.md` §2's *not yet*. The capture of a real IDE client doing fill-in-the-middle is still owed before P6 starts. | Legacy upstream; OpenAI lists three models for it. |
+| 6 | `/v1/completions` | **TAKEN: in phase 1 (P6)**, under the new direction. This supersedes `responses-and-completions.md` §2's *not yet*. The capture of a real IDE client was skipped by Troy's call P6-3: Continue and llama.vscode were read in source (§12). | Legacy upstream; OpenAI lists three models for it. |
 | 7 | Realtime | **TAKEN: its own design, after P5.** It is WebSocket, WebRTC and SIP, and no gateway path here carries any of them. | The voice-agent use case waits longest. |
 | 8 | Server-run tools on responses (`web_search`, `file_search`, `code_interpreter`, `image_generation`, remote `mcp`) | Recommended forwarding only. **TAKEN: Eugene runs some itself**, through a modular framework, starting with `image_generation` and `web_search`, and open to every future kind of tool. Still forwarded where the backend runs one natively. This is slice P8, with its own design. | A tool executor inside the install is a new responsibility with side effects, egress and permissions of its own. |
 | 9 | Driver-internal contract for media | **TAKEN: normalised**, with the driver translating. | More contract than mirroring OpenAI, but mirroring cannot front ElevenLabs. |
@@ -827,4 +827,4 @@ measurement:**
 | Part | Content | State |
 |---|---|---|
 | **P6a** | `/v1/moderations` through OpenAI accounts; `GET /v1/models/{model}` | **Built 2026-09-28** ([record](../acceptance/moderations-run.md)) |
-| **P6b** | `/v1/completions` through local engines, `suffix` only to a model that does fill-in-the-middle | Next |
+| **P6b** | `/v1/completions` through local engines, `suffix` only to a model that does fill-in-the-middle | **Built 2026-09-28** ([record](../acceptance/completions-run.md)) |

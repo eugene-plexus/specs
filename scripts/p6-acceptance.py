@@ -1,4 +1,5 @@
-"""P6: moderations and `GET /v1/models/{model}`, through real signed processes.
+"""P6: moderations, `GET /v1/models/{model}` and `/v1/completions`, through real
+signed processes.
 
 A control root, an enrolled agent, a gateway and two inference-drivers, all
 started here with isolated state and ports:
@@ -13,8 +14,26 @@ started here with isolated state and ports:
   moderation model (OpenRouter has no moderation door: 404, measured), and
   whose ids carry slashes for `GET /v1/models/{model}`.
 
+P6b adds three engines a raw completion reaches (P6-4), each a single fixture
+playing what was measured or read in its source:
+
+* `coder` -- a single-model driver over a fixture playing `llama-server`
+  b11235: `/props`, `/infill` (fill-in-the-middle, answering a zero-token
+  probe), and `/v1/completions`, which continues a prompt as written and
+  **ignores a `suffix`** (measured), streaming SSE ending `[DONE]`.
+* `vllm` -- a single-model driver over a fixture playing vLLM: no `/props`,
+  `/version`, and `/v1/completions`.
+* `ollama` -- the real `ollama_local` provider over a fixture playing Ollama:
+  `/api/tags`, `/api/show` capabilities (`insert` on one model), and
+  `/api/generate`, raw or with a suffix, streaming NDJSON.
+
+`--llama-server DIR --fim-model FILE` adds a real `llama-server` (DIR holds
+`llama/llama-server[.exe]`) with a fill-in-the-middle model (on this box the
+scratchpad's `fim/qwen2.5-coder-0.5b-q8_0.gguf`), completing code on the CPU.
+
 **The OpenAI SDK makes the requests**, unchanged
-(`client.moderations.create`, `client.models.retrieve`, `client.models.list`),
+(`client.moderations.create`, `client.models.retrieve`, `client.models.list`,
+`client.completions.create`, streamed or not),
 from its own interpreter: this one if it has `openai`, else
 `$EP_SDK_PYTHON`.
 
@@ -54,6 +73,12 @@ KEYS_FILE = Path(os.environ.get("EP_KEYS", "C:/Users/troyc/.eugene-plexus-secret
 OAI_MODELS = ["omni-moderation-latest", "omni-moderation-2024-09-26", "gpt-4o"]
 OR_LISTING = {"acme/chat": {"input": ["text"], "output": ["text"]}}
 CATEGORIES = ["harassment", "harassment/threatening", "violence", "violence/graphic", "sexual"]
+PREFIX = "def add(a, b):\n    return"
+SUFFIX = "\n\nprint(add(1, 2))\n"
+#: What an editor sends when it renders the template itself (Continue does).
+RENDERED = f"<|fim_prefix|>{PREFIX}<|fim_suffix|>{SUFFIX}<|fim_middle|>"
+FILLED = " a + b"
+OLLAMA_MODELS = {"qwen2.5-coder:1.5b": ["completion", "insert"], "llama3:8b": ["completion", "tools"]}
 
 SDK_SNIPPET = """
 import json, sys, warnings
@@ -73,6 +98,20 @@ for job in args["jobs"]:
             out.append({"status": 200, "kind": type(model).__name__, "body": model.model_dump()})
         elif kind == "list":
             out.append({"status": 200, "ids": [m.id for m in client.models.list()]})
+        elif kind == "complete":
+            if job.get("stream"):
+                pieces, finish, usage = [], None, None
+                for chunk in client.completions.create(**job):
+                    for choice in chunk.choices:
+                        pieces.append(choice.text)
+                        finish = choice.finish_reason or finish
+                    if chunk.usage is not None:
+                        usage = chunk.usage.model_dump()
+                out.append({"status": 200, "text": "".join(pieces), "finish": finish,
+                            "usage": usage, "frames": len(pieces)})
+            else:
+                answer = client.completions.create(**job)
+                out.append({"status": 200, "kind": type(answer).__name__, "body": answer.model_dump()})
     except openai.APIStatusError as e:
         out.append({"status": e.status_code, "error": e.message, "kind": type(e).__name__})
 out.append({"sdk": openai.__version__})
@@ -187,6 +226,114 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 results = [verdict(str(t), False) for t in texts]
             return {"id": f"modr-{counts[model]}", "model": model, "results": results}
 
+        # --- llama-server (P6b), as measured on b11235 ---------------------------
+        def sse(frames):
+            return "".join(f"data: {f if isinstance(f, str) else json.dumps(f)}\n\n" for f in frames)
+
+        @app.get("/llama/props")
+        async def llama_props():
+            return {"modalities": {"vision": False, "audio": False},
+                    "default_generation_settings": {"n_ctx": 4096}}
+
+        @app.get("/llama/v1/models")
+        async def llama_models():
+            return {"data": [{"id": "coder", "object": "model"}]}
+
+        @app.post("/llama/infill")
+        async def llama_infill(request: Request):
+            from fastapi.responses import PlainTextResponse
+
+            body = await request.json()
+            if body.get("n_predict") == 0:
+                return {"content": "", "stop": True, "stop_type": "limit"}
+            counts["infill"] = counts.get("infill", 0) + 1
+            seen.setdefault("infill", []).append(body)
+            if body.get("stream"):
+                return PlainTextResponse(sse([
+                    {"content": " a", "stop": False}, {"content": " + b", "stop": False},
+                    {"content": "", "stop": True, "stop_type": "eos", "tokens_evaluated": 22,
+                     "tokens_predicted": 4},
+                ]), media_type="text/event-stream")
+            return {"content": FILLED, "stop": True, "stop_type": "eos", "tokens_evaluated": 22,
+                    "tokens_predicted": 4}
+
+        def continuation(body):
+            # A suffix is ignored here, as llama-server's /v1/completions does.
+            if body.get("prompt") == RENDERED:
+                return FILLED
+            return " a + b\n\ndef subtract(a, b):"
+
+        @app.post("/llama/v1/completions")
+        async def llama_complete(request: Request):
+            return await compat_complete(request, "llama")
+
+        @app.post("/vllm/v1/completions")
+        async def vllm_complete(request: Request):
+            return await compat_complete(request, "vllm")
+
+        async def compat_complete(request, who):
+            from fastapi.responses import PlainTextResponse
+
+            body = await request.json()
+            counts[who] = counts.get(who, 0) + 1
+            seen.setdefault(who, []).append(body)
+            text = continuation(body)
+            if body.get("stream"):
+                half = len(text) // 2
+                return PlainTextResponse(sse([
+                    {"choices": [{"text": text[:half], "index": 0, "finish_reason": None}]},
+                    {"choices": [{"text": text[half:], "index": 0, "finish_reason": "stop"}]},
+                    {"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 4}},
+                    "[DONE]",
+                ]), media_type="text/event-stream")
+            return {"object": "text_completion", "model": body.get("model"),
+                    "choices": [{"text": text, "index": 0, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 20, "completion_tokens": 4}}
+
+        # --- vLLM (P6b), read in its source ---------------------------------------
+        @app.get("/vllm/props")
+        async def vllm_props():
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+        @app.get("/vllm/version")
+        async def vllm_version():
+            return {"version": "0.29.0"}
+
+        @app.get("/vllm/v1/models")
+        async def vllm_models():
+            return {"data": [{"id": "vcoder", "object": "model"}]}
+
+        # --- Ollama (P6b), read in its source -------------------------------------
+        @app.get("/ollama/api/tags")
+        async def ollama_tags():
+            return {"models": [{"name": name} for name in OLLAMA_MODELS]}
+
+        @app.post("/ollama/api/show")
+        async def ollama_show(request: Request):
+            body = await request.json()
+            return {"capabilities": OLLAMA_MODELS.get(body.get("model"), [])}
+
+        @app.post("/ollama/api/generate")
+        async def ollama_generate(request: Request):
+            from fastapi.responses import PlainTextResponse
+
+            body = await request.json()
+            counts["ollama"] = counts.get("ollama", 0) + 1
+            seen.setdefault("ollama", []).append(body)
+            model = body.get("model")
+            if body.get("suffix") is not None and "insert" not in OLLAMA_MODELS.get(model, []):
+                return JSONResponse({"error": f"registry.ollama.ai/library/{model} does not support insert"},
+                                    status_code=400)
+            text = FILLED
+            if body.get("stream"):
+                return PlainTextResponse("\n".join(json.dumps(f) for f in (
+                    {"response": " a", "done": False}, {"response": " + b", "done": False},
+                    {"response": "", "done": True, "done_reason": "stop", "prompt_eval_count": 9,
+                     "eval_count": 4},
+                )), media_type="application/x-ndjson")
+            return {"response": text, "done": True, "done_reason": "stop", "prompt_eval_count": 9,
+                    "eval_count": 4}
+
         @app.get("/v1/models/user")
         async def or_listing():
             return {"data": [
@@ -204,7 +351,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
         async def or_videos():
             return {"data": []}
 
-    elif kind in ("router", "oai", "oai-live"):
+    elif kind in ("router", "oai", "oai-live", "coder", "vllm", "ollama", "hosted", "real-coder"):
         from eugene_plexus_inference_driver.app import create_app
         from eugene_plexus_inference_driver.settings import Settings
 
@@ -239,11 +386,14 @@ def serve(kind: str, directory: Path, port: int) -> None:
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
 
 
-def exercise(directory: Path, *, live: bool) -> None:
+def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None,
+             fim_model: Path | None = None) -> None:
     from eugene_plexus_agent.node_identity import NodeIdentityStore
     from eugene_plexus_agent.trust import NodeTrust
 
-    names = ["control", "agent", "gateway", "fixture", "router", "oai"]
+    names = ["control", "agent", "gateway", "fixture", "router", "oai", "coder", "vllm", "ollama", "hosted"]
+    if llama_dir is not None:
+        names += ["llama-server", "real-coder"]
     if live:
         names += ["oai-live"]
     sockets = [socket.socket() for _ in names]
@@ -396,7 +546,33 @@ def exercise(directory: Path, *, live: bool) -> None:
         driver("oai", {"provider": "openai", "baseUrl": url("fixture") + "/oai",
                        "catalogueInclude": ["omni-moderation-latest", "gpt-4o"]},
                {"OPENAI_API_KEY": "fixture-oai"})
-        slots = [{"model": "verdicts", "targets": ["oai/omni-moderation-latest", "oai/omni-moderation-2024-09-26"]}]
+        driver("coder", {"provider": "openai_compat_custom", "baseUrl": url("fixture") + "/llama",
+                         "modelId": "coder", "backendLocality": "local"}, {})
+        driver("vllm", {"provider": "openai_compat_custom", "baseUrl": url("fixture") + "/vllm",
+                        "modelId": "vcoder", "backendLocality": "local"}, {})
+        # The same llama-server shape declared as a hosted endpoint: not offered.
+        driver("hosted", {"provider": "openai_compat_custom", "baseUrl": url("fixture") + "/llama",
+                          "modelId": "hosted-coder", "backendLocality": "external"}, {})
+        driver("ollama", {"provider": "ollama_local", "baseUrl": url("fixture") + "/ollama",
+                          "backendLocality": "local"}, {})
+        if llama_dir is not None:
+            binary = llama_dir / "llama" / ("llama-server.exe" if os.name == "nt" else "llama-server")
+            output = (directory / "llama-server.log").open("ab")
+            logs.append(output)
+            processes["llama-server"] = subprocess.Popen(
+                [str(binary), "-m", str(fim_model), "--alias", "qwen-coder", "--host", "127.0.0.1",
+                 "--port", str(ports["llama-server"]), "-c", "2048"],
+                stdout=output, stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+            wait(lambda: call("llama-server", "GET", "/health").status_code == 200, "llama-server", 120)
+            driver("real-coder", {"provider": "openai_compat_custom", "baseUrl": url("llama-server"),
+                                  "modelId": "qwen-coder", "backendLocality": "local"}, {})
+        slots = [{"model": "verdicts", "targets": ["oai/omni-moderation-latest", "oai/omni-moderation-2024-09-26"]},
+                 # A model that cannot fill, then one that can (P6b).
+                 {"model": "autocomplete", "targets": ["vcoder", "coder"]},
+                 # A model that only chats, then one that continues raw text.
+                 {"model": "anything", "targets": ["router/acme/chat", "coder"]}]
         write("gateway", "bootstrap.json", bootstrap("gateway"))
         write("gateway", "gateway.yaml", {"routingRefreshSeconds": 2, "modelSlots": slots})
         start("gateway")
@@ -416,7 +592,9 @@ def exercise(directory: Path, *, live: bool) -> None:
                 for m in call("gateway", "GET", "/v1/models", token).json().get("data", [])
             }
 
-        wanted = {"oai/omni-moderation-latest", "oai/gpt-4o", "router/acme/chat"}
+        wanted = {"oai/omni-moderation-latest", "oai/gpt-4o", "router/acme/chat", "coder", "vcoder",
+                  "ollama/qwen2.5-coder:1.5b", "ollama/llama3:8b", "autocomplete", "anything",
+                  "hosted-coder"}
         wait(lambda: wanted <= set(models()), "the fixture accounts' models are routable")
 
         def recorded(request_id):
@@ -557,7 +735,140 @@ def exercise(directory: Path, *, live: bool) -> None:
            "model it may not use does not exist (while its own is found); a local-only key reaches no hosted "
            "moderator; nothing reaches OpenAI")
 
-        # --- 6. the live half ----------------------------------------------------------------
+        # --- 6. completions: what continues raw text, and what fills ---------------------------
+        listed = models()
+        assert listed["coder"]["surfaces"] == ["chat", "completion"], listed["coder"]
+        assert listed["coder"]["fill_in_middle"] is True, listed["coder"]
+        assert "completion" in listed["vcoder"]["surfaces"] and listed["vcoder"]["fill_in_middle"] is False
+        assert listed["ollama/qwen2.5-coder:1.5b"]["fill_in_middle"] is True, listed["ollama/qwen2.5-coder:1.5b"]
+        assert listed["ollama/llama3:8b"]["fill_in_middle"] is False, listed["ollama/llama3:8b"]
+        assert "completion" not in listed["router/acme/chat"]["surfaces"], listed["router/acme/chat"]
+        assert "completion" not in listed["oai/gpt-4o"]["surfaces"], listed["oai/gpt-4o"]
+        assert "completion" not in listed["hosted-coder"]["surfaces"], listed["hosted-coder"]
+        ok("a local llama-server continues raw text and fills in the middle; vLLM continues and fills nothing; "
+           "Ollama's models continue, and fill where it lists insert; no hosted account, nor the same server "
+           "declared hosted, is offered")
+
+        # --- 7. the SDK completes through each engine ----------------------------------------------
+        before = counts()
+        results = by_sdk(key, [
+            # All three sampling fields set, so no profile default is looked up
+            # and the request the route built is the one sent.
+            {"kind": "complete", "model": "coder", "prompt": RENDERED, "max_tokens": 16, "temperature": 0.01,
+             "top_p": 0.9, "stop": ["/src/"]},
+            {"kind": "complete", "model": "coder", "prompt": RENDERED, "stream": True,
+             "stream_options": {"include_usage": True}},
+            {"kind": "complete", "model": "coder", "prompt": PREFIX, "suffix": SUFFIX, "max_tokens": 16},
+            {"kind": "complete", "model": "vcoder", "prompt": PREFIX},
+            {"kind": "complete", "model": "ollama/qwen2.5-coder:1.5b", "prompt": RENDERED},
+            {"kind": "complete", "model": "ollama/qwen2.5-coder:1.5b", "prompt": PREFIX, "suffix": SUFFIX,
+             "stream": True},
+        ])
+        rendered, streamed, filled, vllm, ollama_raw, ollama_fill = results[:6]
+        assert rendered["status"] == 200 and rendered["kind"] == "Completion", rendered
+        assert rendered["body"]["choices"][0]["text"] == FILLED, rendered
+        assert rendered["body"]["object"] == "text_completion", rendered
+        assert streamed["text"] == FILLED and streamed["finish"] == "stop", streamed
+        assert streamed["usage"] and streamed["usage"]["completion_tokens"] == 4, streamed
+        assert filled["body"]["choices"][0]["text"] == FILLED, filled
+        assert vllm["status"] == 200, vllm
+        assert ollama_raw["body"]["choices"][0]["text"] == FILLED and ollama_fill["text"] == FILLED
+        llama_sent = seen("llama")[-2:]
+        assert llama_sent[0] == {"model": "coder", "prompt": RENDERED, "max_tokens": 16,
+                                 "temperature": 0.01, "top_p": 0.9, "stop": ["/src/"]}, llama_sent[0]
+        assert llama_sent[1]["stream"] is True and llama_sent[1]["prompt"] == RENDERED, llama_sent[1]
+        # The gateway owns every output setting: the install's default temperature
+        # is filled in where the caller left it out.
+        infill_sent = seen("infill")[-1]
+        assert {k: infill_sent.get(k) for k in ("input_prefix", "input_suffix", "n_predict")} == {
+            "input_prefix": PREFIX, "input_suffix": SUFFIX, "n_predict": 16}, infill_sent
+        assert "prompt" not in infill_sent and "temperature" in infill_sent, infill_sent
+        assert seen("vllm")[-1]["prompt"] == PREFIX and "suffix" not in seen("vllm")[-1], seen("vllm")[-1]
+        ollama_sent = seen("ollama")[-2:]
+        assert ollama_sent[0]["raw"] is True and ollama_sent[0]["prompt"] == RENDERED, ollama_sent[0]
+        assert ollama_sent[1]["suffix"] == SUFFIX and "raw" not in ollama_sent[1], ollama_sent[1]
+        after = counts()
+        assert after.get("infill", 0) == before.get("infill", 0) + 1, (before, after)
+        ok("the OpenAI SDK completes through llama-server (a rendered FIM prompt as written, streamed with "
+           "usage, and a suffix sent to /infill since its /v1/completions drops one), vLLM, and Ollama "
+           "(/api/generate raw, or with its suffix)")
+
+        # --- 8. refused before anything is sent ---------------------------------------------------
+        before = counts()
+
+        def completion(token, **body):
+            return call("gateway", "POST", "/v1/completions", token, json={"prompt": PREFIX, **body})
+
+        refusals = [
+            (completion(key, model="vcoder", suffix=SUFFIX), "suffix", "fills in the middle"),
+            (completion(key, model="ollama/llama3:8b", suffix=SUFFIX), "suffix", "fills in the middle"),
+            (completion(key, model="coder", n=2), "n", "one answer per request"),
+            (completion(key, model="coder", echo=True), "echo", "not carried"),
+            (completion(key, model="coder", logprobs=1), "logprobs", "not carried"),
+            (completion(key, model="coder", prompt=["a", "b"]), "prompt", "one string only"),
+            (completion(key, model="router/acme/chat"), None, "/v1/chat/completions"),
+        ]
+        for response, param, said in refusals:
+            assert response.status_code == 400, response.text[:300]
+            assert said in error_of(response).get("message", ""), response.text[:300]
+            if param is not None:
+                assert error_of(response).get("param") == param, response.text[:300]
+        response = call("vllm", "POST", "/v1/generate", operator, json={
+            "model": "vcoder", "messages": [], "completion": {"prompt": PREFIX, "suffix": SUFFIX}})
+        assert response.status_code == 400 and response.json()["detail"]["type"].endswith("#completion-refused")
+        response = call("router", "POST", "/v1/generate", operator, json={
+            "model": "acme/chat", "messages": [], "completion": {"prompt": PREFIX}})
+        assert response.status_code == 400, response.text[:300]
+        assert response.json()["detail"]["type"].endswith("#completion-unsupported"), response.text[:300]
+        assert counts() == before, (before, counts())
+        ok("a suffix for a model that cannot fill (vLLM, an Ollama model without insert), n and echo and "
+           "logprobs, two prompts, and a hosted chat model are 400s naming why; the drivers refuse the same "
+           "when asked directly; nothing reaches an engine")
+
+        # --- 9. a suffix skips a tier that cannot fill; keys ----------------------------------------
+        before = counts()
+        response = completion(key, model="autocomplete", suffix=SUFFIX, max_tokens=16)
+        assert response.status_code == 200 and response.json()["choices"][0]["text"] == FILLED, response.text
+        row = recorded(response.headers["x-request-id"])
+        assert (row["door"], row["servedModel"], row["tier"]) == ("completion", "coder", 2), row
+        assert counts().get("vllm", 0) == before.get("vllm", 0), (before, counts())
+        scoped = mint("Only chat, again", allowedModels=["router/acme/chat"])
+        assert completion(scoped, model="coder").status_code in (403, 404)
+        response = completion(key, model="anything")
+        assert response.status_code == 200, response.text[:300]
+        row = recorded(response.headers["x-request-id"])
+        assert (row["servedModel"], row["tier"]) == ("coder", 2), row
+        local = mint("Local only, again", localOnly=True)
+        response = completion(local, model="coder")
+        assert response.status_code == 200, response.text[:300]
+        ok("autocomplete -> [vcoder, coder] with a suffix skips vLLM, which cannot fill, and is served by "
+           "llama-server at tier 2 (row door completion); anything -> [a chat model, coder] never asks the chat "
+           "model; a key without the model is refused, and a local-only key completes on the local engine")
+
+        if llama_dir is not None:
+            wait(lambda: "qwen-coder" in models(), "the real llama-server is routable", 60)
+            assert models()["qwen-coder"]["fill_in_middle"] is True, models()["qwen-coder"]
+            started = time.perf_counter()
+            answers = by_sdk(key, [
+                {"kind": "complete", "model": "qwen-coder", "prompt": RENDERED, "max_tokens": 12,
+                 "temperature": 0},
+                {"kind": "complete", "model": "qwen-coder", "prompt": PREFIX, "suffix": SUFFIX,
+                 "max_tokens": 12, "temperature": 0},
+                {"kind": "complete", "model": "qwen-coder", "prompt": RENDERED, "max_tokens": 12,
+                 "temperature": 0, "stream": True},
+            ])
+            took = time.perf_counter() - started
+            for answer in answers[:3]:
+                assert answer["status"] == 200, answer
+            texts = [answers[0]["body"]["choices"][0]["text"], answers[1]["body"]["choices"][0]["text"],
+                     answers[2]["text"]]
+            assert all("a + b" in t for t in texts), texts
+            print(f"INFO real llama-server (CPU, Qwen2.5-Coder 0.5B): rendered {texts[0]!r}, suffix via /infill "
+                  f"{texts[1]!r}, streamed {texts[2]!r}; three completions in {took:.2f} s", flush=True)
+            ok(f"a real llama-server fills the middle on this machine's CPU through the SDK: a rendered prompt, "
+               f"a suffix (its /infill), and a stream all answer {texts[0].strip()!r}")
+
+        # --- 10. the live half ----------------------------------------------------------------
         if live:
             # Started only now: a second moderation model would make every
             # earlier `model` left out a 400 naming both, correctly.
@@ -604,10 +915,14 @@ if __name__ == "__main__":
     parser.add_argument("--directory", type=Path)
     parser.add_argument("--port", type=int)
     parser.add_argument("--live", action="store_true")
+    parser.add_argument("--llama-server", type=Path, dest="llama_dir")
+    parser.add_argument("--fim-model", type=Path)
     args = parser.parse_args()
     if args.serve:
         serve(args.serve, args.directory, args.port)
     else:
         directory = Path(tempfile.mkdtemp(prefix="ep-p6-acceptance-"))
         print(f"Isolated state and process logs: {directory}", flush=True)
-        exercise(directory, live=args.live)
+        if (args.llama_dir is None) != (args.fim_model is None):
+            raise SystemExit("--llama-server and --fim-model go together")
+        exercise(directory, live=args.live, llama_dir=args.llama_dir, fim_model=args.fim_model)
