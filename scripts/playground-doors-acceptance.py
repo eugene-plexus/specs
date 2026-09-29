@@ -37,6 +37,7 @@ import argparse
 import json
 import os
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -341,8 +342,34 @@ def main() -> None:
         directory = Path(tempfile.mkdtemp(prefix="playground-doors-"))
         print(f"INFO keeping {directory}", flush=True)
         sys.exit(exercise(directory))
-    with tempfile.TemporaryDirectory(prefix="playground-doors-") as tmp:
-        sys.exit(exercise(Path(tmp)))
+    directory = Path(tempfile.mkdtemp(prefix="playground-doors-"))
+    try:
+        code = exercise(directory)
+    finally:
+        remove_when_released(directory)
+    sys.exit(code)
+
+
+def remove_when_released(directory: Path, seconds: float = 15) -> None:
+    """Delete the throwaway install once Windows lets go of its files.
+
+    A process the agent started can outlive it by a moment and hold
+    `agent/process.log`, so a single delete raced it and turned 11 PASS
+    into a traceback (2026-09-29). Retry briefly; if the files are still
+    held, say where they are rather than failing a run that passed.
+    """
+    deadline = time.perf_counter() + seconds
+    while True:
+        try:
+            shutil.rmtree(directory)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as e:
+            if time.perf_counter() >= deadline:
+                print(f"WARN could not remove {directory}: {e}", flush=True)
+                return
+            time.sleep(0.5)
 
 
 if __name__ == "__main__":
