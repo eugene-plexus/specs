@@ -19,7 +19,7 @@ built and pinned 2026-09-28** (record [`images-run.md`](../acceptance/images-run
 15 fixture and 2 live checks, the OpenAI SDK unchanged). **P5, videos, is
 built and pinned 2026-09-28** (record [`videos-run.md`](../acceptance/videos-run.md):
 8 fixture and 2 live checks; OpenAI's own video API had shut down, so
-OpenRouter is the backend). **P6-P8 are not built.** §0 is measured, and §6's authenticated measurements
+OpenRouter is the backend). **P6a (moderations, `GET /v1/models/{model}`) is built; P6b and P7-P8 are not.** §0 is measured, and §6's authenticated measurements
 are in [`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md).
 **All nine calls in §5 were taken by Troy the same day.** Seven went as
 recommended; #3 (replace `modelId`) and #8 (Eugene runs some
@@ -795,3 +795,36 @@ measurement:**
 **P5 is built in one part** (specs `c09b264`, driver `c9e0dcb`, gateway
 `ccfaa7c`), pinned in both installers; record
 [`videos-run.md`](../acceptance/videos-run.md).
+
+## 12. P6's own calls, 2026-09-28
+
+Measured first:
+[`provider-accounts-measurement.md`](../acceptance/provider-accounts-measurement.md)
+§12. Troy took three of four as recommended.
+
+| # | Question | Taken |
+|---|---|---|
+| P6-1 | A moderation request leaves out `model` (the OpenAI SDK does; OpenAI then uses `omni-moderation-latest`) | **The only one**, as recommended: when exactly one model with the `moderation` surface is one this key may use, it answers; with none or several, a 400 names the choices. |
+| P6-2 | May a moderation fall back to a different model? | **Same model only**, as recommended, as embeddings and speech: categories and thresholds are the model's own, so another model's verdict is a different policy. Replicas of the one model balance and fail over. |
+| P6-3 | How to get the owed capture of a real IDE client doing fill-in-the-middle | **Skip the capture** (not as recommended, which was a throwaway VS Code instance). `/v1/completions` is built from Continue's and llama.vscode's source, and the client side is marked unverified. |
+| P6-4 | Which backends `/v1/completions` reaches first | **Local engines first**, as recommended: `llama-server`, vLLM and Ollama, which continue text raw, with `suffix` only to a model that does fill-in-the-middle. Accounts get no `completion` surface in P6: OpenRouter's is a chat reply in disguise (measured), and OpenAI's legacy models are gone. |
+
+**Taken without a separate call, because each follows a held rule or a
+measurement:**
+
+- **Moderation images are `data:` URLs only** (A4), though OpenAI would
+  fetch a remote one. OpenAI's own limit of one image is relayed in its
+  words rather than duplicated here.
+- **A slot alias is not another moderation model** when counting for P6-1
+  (found by the acceptance run: `verdicts -> [omni]` made one model look
+  like two).
+- **`GET /v1/models/{model}` is the list's own object** for this caller,
+  the id taking the rest of the path (ids carry slashes), and a model the
+  key may not use is the same 404 as one that does not exist.
+
+**P6 is built in two parts:**
+
+| Part | Content | State |
+|---|---|---|
+| **P6a** | `/v1/moderations` through OpenAI accounts; `GET /v1/models/{model}` | **Built 2026-09-28** ([record](../acceptance/moderations-run.md)) |
+| **P6b** | `/v1/completions` through local engines, `suffix` only to a model that does fill-in-the-middle | Next |

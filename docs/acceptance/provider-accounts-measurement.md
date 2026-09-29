@@ -524,3 +524,42 @@ return); `prompt` and `temperature` are taken. No usage is returned.
 came back French). `llama-server` b11235 answers `/v1/audio/translations` 404
 and transcribes French as French, with its preamble (`language
 French<asr_text>...`).
+
+## 12. For P6: moderations, one model by id, and completions (2026-09-28, late)
+
+Measured with the OpenAI and OpenRouter keys; moderation is free, and the
+completions calls cost well under a cent.
+
+**Moderations: an OpenAI account only.** OpenAI lists
+`omni-moderation-latest` and `omni-moderation-2024-09-26`; the
+`text-moderation-*` models are gone (a 400 *"Invalid value for 'model'"*),
+and a chat model is refused the same way. `model` left out answers as
+`omni-moderation-latest`. `input` is a string, an array of strings (one
+result each) or an array of parts (`text`, `image_url`), which is one input
+with one result; each result has `flagged`, `categories`, `category_scores`
+and `category_applied_input_types` (`["text"]`, or `["text", "image"]` when
+an image was read). **At most one image per request** (a 400
+`too_many_images`, *"Number of images (2) exceeds maximum of 1"*). A remote
+`https` image is fetched by OpenAI. An unknown field (`user`) is ignored. No
+usage is returned. **OpenRouter answers `/moderations` 404.**
+
+**One model by id.** OpenAI's `GET /v1/models/{model}` answers `{id,
+object, created, owned_by, shutdown_date}`, and an unknown id is a 404
+`code: model_not_found`, *"The model 'x' does not exist"*. **OpenRouter has
+no such route**: `GET /v1/models/openai/gpt-4o-mini` is a 404.
+
+**Completions: OpenAI's legacy models are gone.** `gpt-3.5-turbo-instruct`,
+`davinci-002` and `babbage-002` are listed and answer `/v1/completions` 404
+*"has been deprecated"*. **The door answers `gpt-4o-mini` and
+`gpt-4.1-nano`** as raw continuations (`object: "completion"`, not
+`text_completion`), streams them, and takes `n`; it refuses `gpt-5-nano`
+(*"This is a chat model and not supported"*), refuses `suffix` (*"Unrecognized
+request argument supplied: suffix"*), and answers `echo` with `logprobs`, and
+an array `prompt`, with a 500.
+
+**OpenRouter's completions are chat in disguise.** `/v1/completions` with a
+code prompt to `mistralai/codestral-2508` and
+`qwen/qwen-2.5-coder-32b-instruct` answered *"It looks like you've started
+defining a..."*, a chat reply to the prompt as a user turn, and **`suffix`
+was silently ignored**: the answers with and without it were identical. No
+OpenRouter model lists `suffix` among its parameters.

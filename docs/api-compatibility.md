@@ -6,13 +6,15 @@ Compatibility means the features below, not every feature of a provider API.
 | Surface or feature | Status | Boundary |
 | --- | --- | --- |
 | `GET /v1/models` | Supported | Eugene's discovered models and routing aliases. |
+| `GET /v1/models/{model}` | Supported (P6, since 2026-09-28) | One model as the list shows it to this caller; the id takes the rest of the path, slashes included. A model the key may not use is a 404. |
+| `POST /v1/moderations` | Supported (P6, since 2026-09-28) | OpenAI's shape through an OpenAI account's `omni-moderation-*`. `model` may be left out when the key can use exactly one moderation model. Same model only. See [moderations](#moderations). |
 | `POST /v1/chat/completions` | Supported | Text messages, tools, structured-output forwarding, batch responses and SSE. Images, audio and PDFs as content parts (see [attachments](#attachments)). A spoken answer with `modalities` and `audio` (see [audio output](#audio-output)). |
 | `POST /v1/messages` | Supported subset | Anthropic text, image, document and tool translation; measured Claude Code 2.1.207 shapes remain covered. |
 | `POST /v1/embeddings` | Supported | Text inputs; requires an embedding-capable backend. |
 | `POST /v1/audio/speech` | Supported (P3a, since 2026-09-28) | Text in, audio bytes out, streamed as made, through OpenRouter's speech models and ElevenLabs. Voices are the provider's own ids. See [speech](#speech). |
 | `POST /v1/systemone` | Experimental (B2, not in alpha.2) | TypeSafe System One typed decisions against decision-only backends. See [typed decisions](#typed-decisions-b2). |
 | `POST /v1/responses` | Supported subset (since 2026-09-23) | Stateless: text, images, inline PDFs and audio (since 2026-09-28), and function tools, streamed or not. `/v1/responses/input_tokens` counts (P2c). Other tool types (`custom`, `shell`, `local_shell`, `apply_patch`, `computer`) are refused by name. No stored responses (`store`, `previous_response_id`), no server-run tools. See [responses and completions](design/responses-and-completions.md). |
-| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (rerank, moderation) is not listed on `GET /v1/models`, nor is a model past its provider's `shutdown_date`. See [the design](design/openai-inference-compatibility.md). |
+| Provider accounts (P1, 2026-09-27) | Supported | An OpenAI-compatible connection with no model set serves every model its provider lists (OpenRouter, OpenAI, xAI, Ollama, LM Studio, a custom URL), each named `<connection>/<model id>`. A model whose only use has no door here yet (rerank, completion) is not listed on `GET /v1/models`, nor is a model past its provider's `shutdown_date`. See [the design](design/openai-inference-compatibility.md). |
 | Client-key model patterns | Supported | `allowedModels` entries may use `*`, which matches anything including `/`: `openrouter/*` allows one connection's models. |
 | `POST /v1/audio/transcriptions` | Supported (P3b, since 2026-09-28) | OpenAI's multipart form, through OpenRouter's transcription models, OpenAI's, ElevenLabs' `scribe_*` (P3-1) and a `llama-server` whose projector hears. Tiers as chat. See [transcription](#transcription). |
 | `POST /v1/audio/translations` | Supported (P3-4, since 2026-09-28) | The SDK's five fields, through OpenAI's `whisper-*`, the only model that translates. Tiers, holding only translators. See [transcription](#transcription). |
@@ -440,6 +442,32 @@ SDK's `client.videos.create`, `create_and_poll`, `retrieve` and
 Verified on 2026-09-28: `x-ai/grok-imagine-video` made one second at 480p
 from text and one from a first frame through the OpenAI SDK, both polled to
 completion after a gateway restart ([record](acceptance/videos-run.md)).
+
+## Moderations
+
+Since 2026-09-28 (P6), `POST /v1/moderations` takes OpenAI's request: the
+OpenAI SDK's `client.moderations.create` works unchanged.
+
+- **Backends:** an OpenAI account's `omni-moderation-latest` and
+  `omni-moderation-2024-09-26`. OpenRouter has no moderation door (404,
+  measured), and no local engine moderates.
+- **`model` may be left out**, as the SDK does: the one moderation model the
+  key may use answers. With none or several, a 400 names the choices. A slot
+  alias does not count as another model.
+- **Same model only.** A slot's other targets are never used, since a
+  verdict is its model's own categories and thresholds; replicas of the one
+  model balance and fail over.
+- **`input`** is a string, an array of strings (one result each), or an
+  array of parts, `text` and `image_url` (one result). Images are inline
+  `data:` URLs, as everywhere (A4); OpenAI moderates at most one per request
+  and its refusal of more is relayed. Unknown fields are refused naming them.
+- **The answer** is OpenAI's `{id, model, results}`, each result carrying
+  `flagged`, `categories`, `category_scores` and
+  `category_applied_input_types`. `model` is the public id of the model that
+  answered. Each request is retained with `door: moderation`.
+
+Verified live on 2026-09-28: `omni-moderation-latest` flagged *"I will hurt
+you."* (violence 0.87) and read an image beside text.
 
 ## Typed decisions (B2)
 
