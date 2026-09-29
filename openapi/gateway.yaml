@@ -4045,7 +4045,10 @@ components:
     CompletionChunk:
       type: object
       required: [id, object, created, model, choices]
-      description: One SSE `data:` frame. With `include_usage`, a last frame has `choices` empty and `usage`.
+      description: |
+        One SSE `data:` frame. The frame with `finish_reason` carries
+        `x_eugene_plexus`, as chat's final frame does. With
+        `include_usage`, a last frame has `choices` empty and `usage`.
       properties:
         id:
           type: string
@@ -4062,6 +4065,8 @@ components:
             $ref: '#/components/schemas/CompletionChoice'
         usage:
           $ref: '#/components/schemas/CompletionUsage'
+        x_eugene_plexus:
+          $ref: '#/components/schemas/CompletionRoutingInfo'
 
     ModerationRequest:
       type: object

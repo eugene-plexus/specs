@@ -768,6 +768,8 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None,
         assert rendered["status"] == 200 and rendered["kind"] == "Completion", rendered
         assert rendered["body"]["choices"][0]["text"] == FILLED, rendered
         assert rendered["body"]["object"] == "text_completion", rendered
+        # What served it, as chat's answer says (missing until U7's browser run).
+        assert rendered["body"]["x_eugene_plexus"]["driver"] == "coder", rendered["body"]
         assert streamed["text"] == FILLED and streamed["finish"] == "stop", streamed
         assert streamed["usage"] and streamed["usage"]["completion_tokens"] == 4, streamed
         assert filled["body"]["choices"][0]["text"] == FILLED, filled
