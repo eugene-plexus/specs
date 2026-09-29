@@ -249,8 +249,11 @@ info:
     default changed no browser outcome at all.
     A preflight is
     answered before auth (it carries no bearer by definition), every
-    response on those paths carries `Access-Control-Allow-Origin`, and
-    **no other path does**: `/v1/config`, `/v1/admin/*` and
+    response on those paths carries `Access-Control-Allow-Origin` and
+    `Access-Control-Expose-Headers` naming `Retry-After`, `X-Request-ID`
+    and every `x-eugene-plexus-*` header (U4, 2026-09-28: a browser hides
+    any header not named, so a page could not read what served its
+    request), and **no other path does**: `/v1/config`, `/v1/admin/*` and
     `/v1/metrics` stay same-origin, because a browser client needs the
     front door and nothing else.
 
@@ -1662,6 +1665,11 @@ paths:
         (measured). A format the model cannot make is a 400 naming the ones
         it can (`x_eugene_plexus.speech_formats`). `stream_format: "sse"`
         is refused: raw bytes are the stream.
+
+        **What served it rides response headers** (U4, 2026-09-28), as on
+        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-backend`,
+        `-latency-ms`, `-attempts`, `-tier` and the rest of
+        `x_eugene_plexus`, because the body is the audio and has nowhere to carry them.
       requestBody:
         required: true
         content:
@@ -1768,6 +1776,11 @@ paths:
         `timestamp_granularities[]` without `verbose_json`, as OpenAI
         requires. **The same caller settings route as chat's do** only in
         that a model without the surface is never asked.
+
+        **What served it rides response headers** (U4, 2026-09-28), as on
+        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-backend`,
+        `-latency-ms`, `-attempts`, `-tier` and the rest of
+        `x_eugene_plexus`, because `text` has no body to carry them; every format carries them alike.
       requestBody:
         required: true
         content:
@@ -1851,6 +1864,11 @@ paths:
         other than `en` (measured). `response_format` is as transcription's:
         `json`, `verbose_json` (with `task: translate`), `text` rendered
         here, and `srt`/`vtt` refused.
+
+        **What served it rides response headers** (U4, 2026-09-28), as on
+        `/v1/messages`: `x-eugene-plexus-driver`, `-runtime`, `-backend`,
+        `-latency-ms`, `-attempts`, `-tier` and the rest of
+        `x_eugene_plexus`, because `text` has no body to carry them; every format carries them alike.
       requestBody:
         required: true
         content:
