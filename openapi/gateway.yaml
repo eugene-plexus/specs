@@ -52,10 +52,97 @@ info:
     Neither measurement is a latency guarantee for another deployment.
     `GET /v1/metrics` exposes the spans so their cost remains observable.
 
+    ## Server-run tools (P8, 2026-09-29): web search
+
+    OpenAI's and Anthropic's APIs define `web_search` as a tool the
+    *provider* runs. On a local model nobody ran it: Codex's was removed
+    and Claude Code's WebSearch was refused (design
+    `docs/design/server-run-tools.md` §0). Now the hub runs it. A
+    **tool-driver** (`tool-driver.yaml`, `ComponentKind.tool-driver`, one
+    per search account -- SearXNG or Brave) executes one search; the
+    gateway runs the loop around it, and never holds a search key.
+
+    **One declaration across three doors.** `web_search_options` on
+    `/v1/chat/completions`, a `web_search` tool on `/v1/responses` and a
+    `web_search_<8 digits>` server tool on `/v1/messages` become one
+    request for a search. Anthropic's tool is dated and **any date is
+    accepted**: the settings this gateway knows (`max_uses`,
+    `allowed_domains`, `blocked_domains`, `user_location`) are honoured,
+    any other is dropped and named on the ignored-settings header, and
+    the version seen is kept on the execution's metrics row, so the day
+    Claude Code sends a new date is noticed rather than a 400.
+
+    **A search runs only when all four hold:** the request asked for one;
+    the install has a reachable tool-driver that runs `web_search`; the
+    client key's `allowedTools` permits it (null permits); and the key is
+    **not** `localOnly` -- a search sends a query made from the prompt to
+    the public internet, a SearXNG on the LAN included. On `/v1/responses`
+    `external_web_access: false` is also a no (design call #2): Codex
+    sends `false` unless its user chose live search, and that user did not
+    ask for their prompt to leave the machine.
+
+    **Where it runs.** A backend whose model lists `webSearchOptions` in
+    `supportedSettings` searches itself: the request is **forwarded, not
+    run twice**, and its citations come back as P2c's `annotations`. Any
+    other backend must call tools (`capabilities.toolCalling`). The
+    gateway offers it one function tool, `web_search(query)` (another
+    name when the caller already declared that one), and:
+
+      1. calls the model;
+      2. runs each `web_search` call the model made on a tool-driver and
+         hands the results back as a tool message -- titles, addresses,
+         excerpts and dates, with an instruction to cite what it uses as
+         markdown links;
+      3. calls the model again, up to `max_tool_calls` (Responses),
+         `max_uses` (Anthropic), else the gateway's `maxToolCalls`
+         setting (default 5, design call #6). A call past the limit is
+         answered *no more searches are available* rather than run.
+
+    A model turn that asks for a search **and** calls one of the caller's
+    own functions has its function calls dropped and is asked again with
+    the results: the caller only ever sees function calls from a turn
+    with no search pending, so nothing about a search has to survive
+    between two of the caller's requests. When search is the **only**
+    tool the caller offered -- `web_search_options` with no functions, or
+    Claude Code's WebSearch request, which offers exactly one tool -- the
+    first model call must call a tool, because the caller asked for a
+    search and not for an opinion about whether to search.
+
+    **Failover ends at the first search.** Every model call after the
+    first goes to the backend that answered the first, and a failure
+    after a search has run is reported, never retried elsewhere: the
+    search was a side effect with a cost, its results are now in the
+    conversation, and another model continuing it would be the seam M10
+    forbids for tokens. A search that fails is not a failed request:
+    the model is told the search failed and why, and answers without it,
+    as Anthropic's API does.
+
+    **What the caller gets back** is the answer plus each door's own
+    record of what ran: `url_citation` annotations on chat (one per
+    result address the answer cites) and `x_eugene_plexus.web_searches`;
+    on Responses a `web_search_call` item per search (`action.query`,
+    `action.sources`) before the message that used it, streamed as
+    `response.web_search_call.in_progress` → `.searching` → `.completed`
+    so a slow search reads as working, with `url_citation` annotations on
+    the text; on messages a `server_tool_use` block and a
+    `web_search_tool_result` block per search (an error block when it
+    failed) and `usage.server_tool_use.web_search_requests`. A client
+    that hands those items back on its next request is not refused: they
+    become the history the model reads.
+
+    **When a search cannot run** the door says why, in its own way. Chat
+    keeps P2c's routing (only a model that searches itself) and its 400
+    names the reason nothing else could. Responses removes the tool, as
+    it always has, names it on the ignored-settings header and gives the
+    reason in `x-eugene-plexus-web-search`. Messages answers 400 with the
+    reason, because Claude Code's WebSearch request exists only to search
+    and answering it without one would invent results.
+
     ## Where the routing table comes from
 
     The gateway does not store backend URLs. It reads the agent
-    topology (`GET /v1/components`, `kind: inference-driver`) and asks
+    topology (`GET /v1/components`, `kind: inference-driver`, and
+    `kind: tool-driver` for the search accounts, P8) and asks
     each driver's `/v1/info` which models it is serving, then builds
     model → drivers from the answers. Backend URLs live in exactly one
     place — the agent topology — and are never duplicated into the
@@ -877,9 +964,18 @@ paths:
         blocks, and a client that asked for them would read an answer
         with none as uncited.
 
+        ### Web search runs here (P8)
+
+        A `web_search_<8 digits>` server tool is run by this install's
+        search account, as "Server-run tools" above says, and answered
+        with `server_tool_use` and `web_search_tool_result` blocks.
+        Claude Code's WebSearch is its own request offering exactly this
+        tool (`web_search_20250305`, `max_uses: 8`, measured); when no
+        search can run for it, the 400 names why.
+
         ### What is refused, with a 400 naming the field
 
-        Server-side tool types, `mcp_servers`, more than four
+        Every other server-side tool type, `mcp_servers`, more than four
         `stop_sequences`, a missing `max_tokens`, and the image and
         document cases above. Each is refused rather than dropped
         because each changes what the answer would be: a model that
@@ -1014,7 +1110,8 @@ paths:
           description: |
             The request names something this gateway cannot carry —
             a document or image it cannot carry or no ready backend can
-            read, a server-side tool,
+            read, a server-side tool other than web search, a web search
+            that cannot run (the message says why),
             `mcp_servers`, more than four `stop_sequences`, a missing
             `max_tokens` — **or names a model nothing serves**, which is
             a 400 here rather than a 404 because Claude Code discards a
@@ -1201,11 +1298,14 @@ paths:
         that requires alternating roles would refuse them.
 
         `web_search` is on **every** Codex request as
-        `{"type": "web_search", "external_web_access": false}`. It is
-        accepted, removed, and named on the ignored-settings header:
-        this gateway has no search to run, and refusing it would refuse
+        `{"type": "web_search", "external_web_access": false}`. Since P8
+        it **runs** when a search can run here ("Server-run tools") and
+        `external_web_access` is not `false`; otherwise it is accepted,
+        removed, and named on the ignored-settings header, with the
+        reason in `x-eugene-plexus-web-search`. Refusing it would refuse
         the first request of every session, as `/v1/messages` once did
-        with `output_config`. Every other server-side tool (file search,
+        with `output_config`. `filters.allowed_domains`, `user_location`
+        and `search_context_size` are honoured. Every other server-side tool (file search,
         code interpreter, computer use, image generation, MCP, a custom
         or local-shell tool) is refused with a 400 naming its type.
 
@@ -1332,9 +1432,10 @@ paths:
         `service_tier`, `truncation: "auto"` (this gateway never drops
         input to make it fit; the engine refuses instead),
         `stream_options.include_obfuscation`, `text.verbosity`, and the
-        `include` values that ask for server-side tool output nothing
-        here produces. `max_tool_calls` bounds built-in tools, of which
-        none run here, and is accepted. Refused with a 400 naming the
+        `include` values that ask for server-side tool output
+        (`web_search_call.action.sources` is always included on a search
+        that ran). `max_tool_calls` bounds the searches one response may
+        run (P8). Refused with a 400 naming the
         field: every stateful field above, `top_logprobs` above 0 and the
         `message.output_text.logprobs` include, an `input_file` with a
         `file_id` or a `file_url`, `tool_choice` forcing a tool that is
@@ -5234,6 +5335,12 @@ components:
           description: |
             How many backends were tried. Greater than 1 means the
             priority-list cascade fired and an earlier backend failed.
+        web_searches:
+          type: integer
+          minimum: 0
+          description: |
+            How many web searches this install ran for the request (P8).
+            Absent when none ran, and when the backend searched itself.
         tier:
           type: integer
           minimum: 1
@@ -5986,7 +6093,12 @@ components:
         `signature`) -- returned ahead of the answer when the request
         enabled thinking, and read back on an assistant turn as that
         turn's reasoning. `redacted_thinking` is accepted on the way in
-        and dropped.
+        and dropped. `server_tool_use` and `web_search_tool_result` (P8)
+        are returned for a search this install ran and, handed back on
+        an assistant turn, become that turn's history: the query, and
+        each result's title, address and the excerpt the model read,
+        which `encrypted_content` carries (readable only here, as a
+        thinking block's `signature` is).
 
         `document` was refused with a 400 until 2026-09-28, and `image`
         until 2026-09-23, on one reasoning: a model that never received
@@ -6083,10 +6195,11 @@ components:
 
         A definition carrying a `type` naming a server-side tool —
         anything this gateway would have to execute itself, rather than
-        hand back to the caller — is refused with a 400. This control
-        plane routes to local engines; it has no web search to run and
-        no sandbox to run code in, and pretending otherwise would fail
-        at the moment the model chose to use one.
+        hand back to the caller — is refused with a 400, **except web
+        search** (`web_search_<date>`), which this install's search
+        account runs since P8. There is no sandbox to run code in, and
+        pretending otherwise would fail at the moment the model chose to
+        use one.
       additionalProperties: true
       required:
         - name
@@ -6241,6 +6354,15 @@ components:
         cache_read_input_tokens:
           type: integer
           default: 0
+        server_tool_use:
+          type: object
+          description: |
+            Present when this install ran searches for the request (P8):
+            `{"web_search_requests": N}`, as Anthropic reports its own.
+          properties:
+            web_search_requests:
+              type: integer
+              minimum: 0
 
     AnthropicStreamEvent:
       type: object
@@ -6543,7 +6665,9 @@ components:
         (`call_id`, `name`, `arguments` as a JSON string),
         `function_call_output` (`call_id`, `output` as a string or a list
         of `input_text` / `input_image` parts), and `reasoning`
-        (`content` of `reasoning_text` parts, `encrypted_content`).
+        (`content` of `reasoning_text` parts, `encrypted_content`), and a
+        `web_search_call` handed back (P8), which becomes a line of the
+        assistant's history naming the search and its sources.
         Codex drops `id` and `status` when it sends items back
         (measured), so neither is required. Refused: `item_reference` and
         any other type.
@@ -6577,8 +6701,9 @@ components:
       type: object
       description: |
         A `function` tool (`name`, `description`, `parameters`, `strict`)
-        maps onto an OpenAI chat function. `web_search` is accepted and
-        removed (see the endpoint); any other `type` is refused.
+        maps onto an OpenAI chat function. `web_search` runs on this
+        install's search account, or is removed and named when it cannot
+        (see the endpoint); any other `type` is refused.
       additionalProperties: true
       required:
         - type
@@ -6654,15 +6779,17 @@ components:
         [{"type": "reasoning_text", "text"}], "encrypted_content"?}`,
         `{"type": "message", "id", "role": "assistant", "status",
         "content": [{"type": "output_text", "text", "annotations": []}]}`,
-        or `{"type": "function_call", "id", "status", "call_id", "name",
-        "arguments"}`.
+        `{"type": "function_call", "id", "status", "call_id", "name",
+        "arguments"}`, or, for a search this install ran (P8),
+        `{"type": "web_search_call", "id", "status", "action": {"type":
+        "search", "query", "sources": [{"type": "url", "url"}]}}`.
       additionalProperties: true
       required:
         - type
       properties:
         type:
           type: string
-          enum: [reasoning, message, function_call]
+          enum: [reasoning, message, function_call, web_search_call]
         id:
           type: string
 
@@ -7355,6 +7482,58 @@ components:
           minItems: 0
           items:
             $ref: '#/components/schemas/MetricAttempt'
+        webSearches:
+          type: array
+          description: |
+            Each search this install ran for the request (P8, schema v10),
+            in order. **No query text is kept**, by A5's rule that no prompt
+            is kept: a query is made from the prompt.
+          items:
+            $ref: '#/components/schemas/MetricToolExecution'
+
+    MetricToolExecution:
+      type: object
+      required: [tool, outcome, elapsedMs]
+      properties:
+        tool:
+          type: string
+          description: The tool that ran -- `web_search`.
+        driver:
+          type:
+            - string
+            - 'null'
+          description: The tool-driver (search account) that ran it; null when none was asked.
+        node:
+          type:
+            - string
+            - 'null'
+        provider:
+          type:
+            - string
+            - 'null'
+          description: The account's provider, `searxng` or `brave`.
+        version:
+          type:
+            - string
+            - 'null'
+          description: |
+            How the caller named the tool: `web_search_options`,
+            `web_search`, or Anthropic's dated `web_search_20250305` -- kept
+            so a new date is noticed rather than discovered.
+        outcome:
+          type: string
+          enum: [ok, error, over_limit]
+          description: |
+            `over_limit` is a call past the request's limit, answered
+            without running.
+        results:
+          type:
+            - integer
+            - 'null'
+          description: How many results the model was given.
+        elapsedMs:
+          type: integer
+          minimum: 0
 
 
     MetricCandidate:

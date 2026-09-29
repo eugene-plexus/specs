@@ -1,0 +1,381 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — tool-driver
+  version: 0.1.0-draft
+  summary: Runs the tools the hub runs itself (P8), one process per tool provider account.
+  description: |
+    **What this component is.** OpenAI's and Anthropic's APIs define some
+    tools as *server-run*: the caller offers the tool, the provider runs
+    it, and the model answers with the result. On a local model nobody
+    ran them — Codex silently lost its search and Claude Code's WebSearch
+    failed with a 400 (`docs/design/server-run-tools.md` §0). A
+    tool-driver runs them, and the gateway runs the loop that offers the
+    tool to the model, executes the model's call here and hands the
+    result back (§3 of that design).
+
+    **One instance per tool provider account**, as an inference-driver is
+    one per backend: a SearXNG instance, a Brave Search subscription.
+    The account's secret (Brave's subscription token) lives here, sealed
+    as an inference-driver's `apiKey` is; the gateway never holds a
+    search key. The operator's name for the account lives in the agent
+    topology, not here.
+
+    **What it runs today: `web_search`.** Tools that act on the user's
+    machine — files, shell, code execution, the user's own MCP servers —
+    are not run in the hub at all; they stay in apps or in the client,
+    which is where the files are (`apps-and-spokes.md`).
+
+    **Egress is always `internet`.** Every search provider sends the
+    query to the public web, a SearXNG on the LAN included (it forwards
+    the query to public engines). The query is derived from the prompt,
+    which is why a local-only client key never reaches this component.
+
+    **A provider answers in one shape.** `WebSearchResponse` carries a
+    list of results and, optionally, `answer`: text the provider itself
+    wrote. SearXNG's instant answers fill it today; a later provider that
+    searches by asking a hosted model (OpenAI's and OpenRouter's search
+    exists only as a tool on a model call) answers with text and
+    citations, and fits the same shape without a contract change.
+
+    ## Auth
+
+    Every endpoint except `/healthz` requires a bearer token verified
+    against the install's trust bundle, exactly as the inference-driver
+    does (per-node token keys, 2026-09-25): the gateway presents its
+    service token, an operator session may read and edit config.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+servers:
+  - url: http://{host}:{port}
+    description: |
+      Default LAN deployment. 8190 and up, outside the inference-drivers'
+      8081-8089 and the companion drivers' 8090-8189, because the agent
+      and the UI hand out ports from those ranges and a second account
+      would otherwise collide with a driver added the same day.
+    variables:
+      host:
+        default: localhost
+      port:
+        default: '8190'
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: tools
+    description: Running a tool.
+  - name: config
+    description: |
+      Remote-editable configuration, the same trio every component
+      implements (`GET /v1/config`, `GET /v1/config/schema`,
+      `PATCH /v1/config`).
+  - name: admin
+    description: Inspect and manage the running process.
+  - name: meta
+    description: Metadata and health.
+
+paths:
+
+  /v1/tools/web_search:
+    post:
+      tags: [tools]
+      operationId: webSearch
+      summary: Search the web once and return what was found.
+      description: |
+        One search, one answer. The gateway calls this once per `web_search`
+        call a model makes, up to the request's `max_tool_calls`.
+
+        **Filters are applied here, to the results, always.** A provider
+        may be told about `allowedDomains` too (as a `site:` operator when
+        there is exactly one), but what it returns is filtered afterwards
+        whatever it did with the hint, so a result outside the allowed
+        list, or inside the blocked one, never reaches the model.
+
+        A setting the provider cannot honour is **named in `ignored`**,
+        never silently dropped: SearXNG has no location parameter, so
+        `userLocation` is ignored there and says so.
+
+        Failures are the provider's, reported with its cause: a
+        subscription token the provider refused is 502
+        `upstream_auth_error` (our credential, not the caller's request,
+        R3.4's rule); a provider that says it is busy is 429 with its
+        `Retry-After`; a SearXNG with JSON output switched off is 502
+        naming the setting (`search.formats` must include `json`), because
+        it answers 403 and nothing else; a provider that did not answer in
+        time is 504.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebSearchRequest'
+      responses:
+        '200':
+          description: The results, filtered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebSearchResponse'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '429':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '502':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '504':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/info:
+    get:
+      tags: [meta]
+      operationId: info
+      summary: Report which provider this process fronts and which tools it runs.
+      description: |
+        The gateway reads this to learn which tools an install can run
+        and where. A tool-driver reports only what it runs, never where it
+        sits.
+      responses:
+        '200':
+          description: Tool-driver metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolDriverInfo'
+
+  /v1/config:
+    get:
+      tags: [config]
+      operationId: getConfig
+      summary: Read the current effective configuration.
+      description: |
+        Every field's effective value. A `sensitive` field (Brave's
+        subscription token) reads as the literal `"<redacted>"`.
+      responses:
+        '200':
+          description: Current config.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigDocument'
+    patch:
+      tags: [config]
+      operationId: updateConfig
+      summary: Partial update of the configuration.
+      description: |
+        Each key is validated against its `ConfigField`; valid changes are
+        applied and invalid ones reported per key. A secret is accepted in
+        plaintext and sealed before it is written.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigUpdateRequest'
+      responses:
+        '200':
+          description: Update outcome (may include per-field rejections).
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigUpdateResult'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/config/schema:
+    get:
+      tags: [config]
+      operationId: getConfigSchema
+      summary: UI-renderable description of every editable config field.
+      responses:
+        '200':
+          description: Config schema.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigSchema'
+
+  /v1/config/test:
+    post:
+      tags: [config]
+      operationId: testConfig
+      summary: Run one real search with the saved config merged with overrides.
+      description: |
+        The UI's Test button: one search for a fixed query with the saved
+        config and the optional `overrides`, nothing persisted, reported as
+        success or the provider's own failure and how long it took. This is
+        how an operator learns that a SearXNG instance has JSON output off,
+        or that a Brave token was refused, before any model asks.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/ConfigTestRequest'
+      responses:
+        '200':
+          description: Test result, for success and failure alike.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/ConfigTestResult'
+
+  /v1/admin/restart:
+    post:
+      tags: [admin]
+      operationId: restart
+      summary: Schedule a process restart so `requiresRestart` config takes effect.
+      responses:
+        '202':
+          description: Restart scheduled.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/RestartResult'
+
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      summary: Liveness, and whether the provider answered its last query.
+      security: []
+      description: |
+        `ok` when the provider answered the most recent probe search,
+        `degraded` with the provider's own reason in `details.error` when
+        it did not, or when nothing is configured yet. The probe is a real
+        query, refreshed on a timer and cached, never one per health read:
+        a paid provider counts every search.
+      responses:
+        '200':
+          description: Running.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Health'
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A token signed by the install's authority and verified against the
+        trust bundle the agent threads at spawn.
+
+  schemas:
+
+    ToolName:
+      type: string
+      enum: [web_search]
+      description: |
+        A tool the hub runs itself. `web_search` only today; the gateway's
+        `image_generation` (P8e) runs through the install's own images door
+        and needs no tool-driver.
+
+    ToolDriverInfo:
+      type: object
+      required: [provider, tools, egress]
+      properties:
+        provider:
+          type: string
+          description: The provider key, `searxng` or `brave`.
+        label:
+          type: string
+          description: The provider's display name.
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolName'
+          description: The tools this process runs. Empty until it is configured.
+        egress:
+          type: string
+          enum: [internet]
+          description: |
+            Where a query goes. Always `internet`: even a SearXNG on the
+            LAN forwards the query to public engines.
+        configured:
+          type: boolean
+          description: False until the provider's address (and key, where it has one) is set.
+        version:
+          type: string
+
+    WebSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        maxResults:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+        allowedDomains:
+          type: array
+          maxItems: 100
+          items: {type: string, minLength: 1}
+          description: |
+            Only results from these domains (a domain matches itself and its
+            subdomains). Empty or absent allows every domain.
+        blockedDomains:
+          type: array
+          maxItems: 100
+          items: {type: string, minLength: 1}
+          description: Never results from these domains, or their subdomains.
+        userLocation:
+          $ref: 'components/common.yaml#/components/schemas/WebSearchUserLocation'
+        contextSize:
+          $ref: 'components/common.yaml#/components/schemas/WebSearchContextSize'
+          description: |
+            How much of each page to carry: `low` a short snippet, `medium`
+            (the default) a paragraph, `high` every excerpt the provider has.
+
+    WebSearchResponse:
+      type: object
+      required: [results, provider]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/WebSearchResult'
+        answer:
+          type: [string, 'null']
+          description: |
+            Text the provider itself wrote in answer to the query (SearXNG's
+            instant answers), or null. A provider that searches by asking a
+            hosted model answers here, with its citations in `results`.
+        provider:
+          type: string
+        latencyMs:
+          type: number
+        ignored:
+          type: array
+          items: {type: string}
+          description: Request settings this provider could not honour, by name.
+
+    WebSearchResult:
+      type: object
+      required: [url, title]
+      properties:
+        url:
+          type: string
+        title:
+          type: string
+        snippet:
+          type: string
+          description: What the page says about the query, as the provider excerpted it.
+        publishedAt:
+          type: [string, 'null']
+          description: When the page was published, as the provider reported it (ISO 8601 where it gave one).

@@ -34,7 +34,8 @@ info:
     Its jobs:
 
       1. **Supervise the control-plane components** declared in its
-         topology — the gateway, N inference-drivers, the library.
+         topology — the gateway, N inference-drivers, the library, and
+         any tool-drivers (a search account each, P8).
          These are Eugene Plexus processes, spawned as
          `<python> -m <module>`, and the agent respawns any that
          exit. Children marked `safeMode: true` launch with
@@ -51,7 +52,8 @@ info:
       3. **Serve the UI's static assets** at the root path so the
          operator's browser has one stable address to point at, and
          **proxy the browser's API calls** to the gateway, the library,
-         the control root and each inference-driver — see `/` and
+         the control root, each inference-driver and each tool-driver —
+         see `/` and
          `/api/proxy/{target}/{path}`. The assets ship in a separate
          Python distribution, `eugene-plexus-ui`; an install without it
          serves the API normally and says so at `/`, because a missing
@@ -2624,9 +2626,10 @@ paths:
           an install has exactly one of each. Not configuration: a
           second place recording a component's URL is a second place it
           can be wrong.
-        * anything else — an `inference-driver` **by name**, so a driver
-          added while the browser is open is reachable without a reload
-          and without a restart.
+        * anything else — an `inference-driver` or a `tool-driver` **by
+          name**, so a driver or a search account added while the browser
+          is open is reachable without a reload and without a restart.
+          Names are unique across both kinds in one agent's topology.
 
       A target that resolves to nothing answers `503` naming what was
       looked for, rather than falling back to a default address that
@@ -2652,7 +2655,7 @@ paths:
           type: string
         description: |
           `agent`, `gateway`, `library`, `control`, or the name of an
-          inference-driver in this agent's topology.
+          inference-driver or a tool-driver in this agent's topology.
       - name: path
         in: path
         required: true
@@ -3142,7 +3145,7 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/InstalledComponent"
-          description: The six packages, in the installers' order.
+          description: The seven packages, in the installers' order.
         mechanism:
           $ref: "#/components/schemas/InstallMechanism"
         development:
@@ -3169,9 +3172,10 @@ components:
 
     ComponentName:
       type: string
-      enum: [agent, control, gateway, inference-driver, library, ui]
+      enum: [agent, control, gateway, inference-driver, library, tool-driver, ui]
       description: |
-        One of the six packages an install is made of. Named rather than
+        One of the seven packages an install is made of (`tool-driver`
+        since P8, 2026-09-29). Named rather than
         inline: an inline enum here renamed the engine install's `State`
         to `State1` in the agent's generated models (the S6 trap again).
 

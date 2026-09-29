@@ -72,6 +72,25 @@ components:
             Without it, scoping a key to one account means typing out
             hundreds of names. The same matcher runs in the gateway, the
             agent and the control root.
+        allowedTools:
+          type: [array, 'null']
+          maxItems: 100
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 64}
+          description: |
+            The tools the hub runs itself (P8) that this key may have run
+            on its behalf -- `web_search` today. **Null permits every tool
+            the install runs** (design call #5: a key is allowed search once
+            a search account exists, and can be denied it here). Empty
+            permits none. An entry is a tool name or a pattern with `*`,
+            matched by the same matcher as `allowedModels`.
+
+            A key denied a tool is not refused for asking: the door says
+            why the search did not run, as it does for an install with no
+            search account (`gateway.yaml`, "Server-run tools"). A
+            `localOnly` key never has a tool run whatever this says,
+            because a search sends a query derived from the prompt to the
+            public internet.
         maxConcurrentRequests: {type: integer, minimum: 1, maximum: 64, default: 2}
         requestsPerMinute: {type: integer, minimum: 1, maximum: 10000, default: 60}
     ClientKeyUpdateRequest:
