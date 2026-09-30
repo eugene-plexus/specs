@@ -1,0 +1,82 @@
+name: A4 macOS runner probe
+
+# Throwaway measurement for A4 (audience-roadmap): does a GitHub-hosted
+# macOS runner expose Metal to MLX, and if not, does MLX run on its CPU?
+
+on:
+  push:
+    branches: [a4-macos]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15, macos-26, macos-latest]
+    steps:
+      - name: Host facts
+        run: |
+          set -x
+          sw_vers || true
+          uname -a
+          uname -m
+          sysctl -n hw.memsize hw.ncpu hw.optional.arm64 machdep.cpu.brand_string || true
+          sysctl iogpu.wired_limit_mb || true
+          sysctl kern.hv_vmm_present || true
+          system_profiler SPDisplaysDataType || true
+          system_profiler SPHardwareDataType || true
+          vm_stat || true
+          whoami; id -u
+          launchctl print "gui/$(id -u)" | head -20 || true
+          arch -x86_64 /usr/bin/true && echo ROSETTA=yes || echo ROSETTA=no
+          which uv python3 || true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install mlx-lm 0.31.3 in its own venv
+        run: |
+          python -c "import platform; print('python machine', platform.machine())"
+          python -m venv ~/eugene-mlx
+          ~/eugene-mlx/bin/python -m pip install -q "mlx-lm==0.31.3"
+          ~/eugene-mlx/bin/python -m pip list | grep -i -E "mlx|transformers|numpy"
+          ls ~/eugene-mlx/bin | grep mlx_lm
+      - name: Does MLX see Metal?
+        continue-on-error: true
+        run: |
+          ~/eugene-mlx/bin/python - <<'PY'
+          import time
+          import mlx.core as mx
+          print("mlx", mx.__version__)
+          try:
+              print("metal available:", mx.metal.is_available())
+          except Exception as e:
+              print("metal.is_available raised:", repr(e))
+          print("default device:", mx.default_device())
+          try:
+              print("device_info:", mx.metal.device_info())
+          except Exception as e:
+              print("device_info raised:", repr(e))
+          for dev in (mx.cpu, mx.gpu):
+              try:
+                  a = mx.random.normal((1024, 1024))
+                  t = time.perf_counter()
+                  b = mx.matmul(a, a, stream=dev)
+                  mx.eval(b)
+                  print(dev, "matmul ok", round((time.perf_counter() - t) * 1000, 1), "ms")
+              except Exception as e:
+                  print(dev, "matmul raised:", repr(e))
+          PY
+      - name: One generation with a tiny model
+        continue-on-error: true
+        run: |
+          time ~/eugene-mlx/bin/mlx_lm.generate --model mlx-community/Qwen3-0.6B-4bit \
+            --prompt "Say ok." --max-tokens 8 2>&1 | tail -20
+      - name: mlx_lm.server help (flags, and no --served-model-name)
+        run: ~/eugene-mlx/bin/mlx_lm.server --help
