@@ -2038,6 +2038,21 @@ components:
             explains the scan cost: the tokenizer lives in the KV block,
             so a 248k-token vocab means ~10.9 MB of metadata to walk
             past before the quant can be read.
+        expertBytes:
+          type: [integer, "null"]
+          minimum: 0
+          description: |
+            Bytes of mixture-of-experts expert tensors (names carrying
+            `_exps`), summed from the tensor table that follows the KV
+            block: names, shapes and offsets, never a weight. 0 for a
+            dense model. Null when the table was not read (a scan from
+            before 2026-09-30, or a header cut short).
+
+            The number that tells a MoE model from a dense one of the
+            same size: on Qwen3-30B-A3B Q4_K_M it is 16.35 GiB of 17.28,
+            and everything else is 0.93 GiB, so a small card holds all of
+            that plus the cache and llama.cpp moves only experts to system
+            memory (`docs/design/moe-aware-fit.md` §0).
         projectorPath:
           type: string
           description: |
@@ -3637,6 +3652,15 @@ components:
             should hang a "check this file" affordance off.
         budget:
           $ref: '#/components/schemas/MemoryBudget'
+        expertBytes:
+          type: [integer, "null"]
+          minimum: 0
+          description: The part of `weightsBytes` that is MoE expert tensors; null when unknown, 0 for a dense model.
+        offload:
+          description: Null for `fits`, `no` and `unknown`, and when expert sizes are not known.
+          anyOf:
+            - $ref: '#/components/schemas/FitOffload'
+            - type: 'null'
         notes:
           type: array
           items:
@@ -3646,6 +3670,22 @@ components:
             count assumed to be attention count, the overhead allowance
             used. Guidance that does not state its assumptions cannot be
             argued with, and this one will sometimes be wrong.
+
+    FitOffload:
+      type: string
+      enum: [experts, layers]
+      description: |
+        How a verdict of `tight` or `split` would run, because the two
+        differ by an order of magnitude and one word covered both
+        (`docs/design/moe-aware-fit.md` §0 M2-M3):
+        * `experts` — a MoE model whose non-expert weights, cache and
+          overhead fit in free VRAM. llama.cpp keeps every layer on the
+          card and moves only expert weights to system memory: measured
+          at 46.5 tok/s for a 30B-A3B on an 8 GB budget.
+        * `layers` — whole layers move to system memory: measured at 4.9
+          tok/s for a dense 27B on the same budget.
+        It describes placement, never a predicted speed; the profile
+        builder measures that.
 
     FitVerdict:
       type: string
@@ -3662,8 +3702,9 @@ components:
           an idle GPU; something is holding memory right now, and
           closing it is the operator's call.
         * `split` — needs host memory as well. Runnable with partial
-          offload, materially slower, and a decision rather than a
-          failure.
+          offload, and a decision rather than a failure. How much slower
+          depends on what moves, which `Fit.offload` says: experts (a
+          MoE model, little slower) or whole layers (much slower).
         * `no` — larger than VRAM and RAM together.
         * `unknown` — there is a GPU here and we could not read how much
           memory it has, so no comparison against it can be made. Added
@@ -3795,6 +3836,17 @@ components:
             are frequently far apart — a current 27B declares 262144 and
             almost nobody can hold that — and showing only the model's
             number is the comfortable lie M2 named.
+        maxContextExpertsInRam:
+          type: [integer, "null"]
+          minimum: 0
+          description: |
+            For a MoE model: the largest context whose non-expert
+            weights, cache and overhead fit in free VRAM with every expert
+            in system memory (which must hold them). The number for a card
+            smaller than the file, where `maxContextLength` is absent or
+            small: it is how long a conversation can be while llama.cpp
+            keeps every layer on the card. Null for a dense model, or when
+            expert sizes or system memory do not allow it.
 
     HostHardware:
       type: object
