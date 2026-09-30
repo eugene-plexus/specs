@@ -537,17 +537,17 @@ def library_model(ctx: dict, repo: str, pick=None) -> dict | None:
     """Download `repo` through the library, as Discover does; return the model entry."""
     status, detail = api("GET", f"{ctx['library']}/v1/catalogue/model?repo={repo}", ctx["token"], timeout=120)
     if status != 200:
-        return {"error": f"catalogue {status}: {str(detail)[:300]}"}
+        return {"harnessError": f"catalogue {status}: {str(detail)[:300]}"}
     candidates = detail.get("candidates") or []
     candidate = pick(candidates) if pick else (candidates[0] if candidates else None)
     if not candidate:
-        return {"error": f"no candidate in {[c.get('label') for c in candidates]}"}
+        return {"harnessError": f"no candidate in {[c.get('label') for c in candidates]}"}
     # Exactly the candidate's files, as Discover sends them: a safetensors
     # candidate must carry its own sidecars or the model will not load.
     files = [f.get("path") if isinstance(f, dict) else f for f in candidate.get("files") or []]
     status, record = api("POST", f"{ctx['library']}/v1/downloads", ctx["token"], {"repo": repo, "files": files})
     if status not in (200, 201, 202):
-        return {"error": f"download {status}: {str(record)[:300]}"}
+        return {"harnessError": f"download {status}: {str(record)[:300]}"}
     download = record["id"]
 
     def finished():
@@ -558,9 +558,9 @@ def library_model(ctx: dict, repo: str, pick=None) -> dict | None:
 
     record = wait_for(finished, 900, 2)
     if not record or record.get("state") != "done":
-        return {"error": f"download ended {record}"}
+        return {"harnessError": f"download ended {record}"}
     status, model = api("GET", f"{ctx['library']}/v1/models/{record['modelId']}", ctx["token"])
-    return model if status == 200 else {"error": f"model {status}: {model}"}
+    return model if status == 200 else {"harnessError": f"model {status}: {model}"}
 
 
 def phase_models(ctx: dict) -> None:
@@ -571,14 +571,14 @@ def phase_models(ctx: dict) -> None:
     started = time.perf_counter()
     qwen = library_model(ctx, MLX_REPO)
     fact("download seconds (mlx model)", round(time.perf_counter() - started, 1))
-    must("34", f"{MLX_REPO} downloads through the library", bool(qwen) and "error" not in qwen, qwen)
+    must("34", f"{MLX_REPO} downloads through the library", bool(qwen) and "harnessError" not in qwen, qwen.get("harnessError") or qwen.get("path"))
     detail = qwen.get("safetensors") or {}
     check("35", "it is catalogued as safetensors with the MLX quantization marker",
           qwen.get("format") == "safetensors" and bool(detail.get("mlxQuantization")),
           {"format": qwen.get("format"), "mlxQuantization": detail.get("mlxQuantization")})
     smol = library_model(ctx, VANILLA_REPO)
     must("36", f"{VANILLA_REPO} (vanilla, not converted) downloads through the library",
-         bool(smol) and "error" not in smol, smol)
+         bool(smol) and "harnessError" not in smol, smol.get("harnessError") or smol.get("path"))
     check("37", "...and carries no MLX marker", not (smol.get("safetensors") or {}).get("mlxQuantization"),
           (smol.get("safetensors") or {}).get("mlxQuantization"))
     ctx["qwen"], ctx["smol"] = qwen, smol
@@ -839,7 +839,7 @@ def phase_llama_cpp(ctx: dict) -> None:
     check("66", "the installed build lists the Metal device", "MTL" in listed or "Metal" in listed, "")
     gguf = library_model(ctx, GGUF_REPO, pick=lambda cs: next(
         (c for c in cs if GGUF_QUANT in (c.get("label") or "") and c.get("format") == "gguf"), None))
-    must("67", f"{GGUF_REPO} {GGUF_QUANT} downloads through the library", bool(gguf) and "error" not in gguf, gguf)
+    must("67", f"{GGUF_REPO} {GGUF_QUANT} downloads through the library", bool(gguf) and "harnessError" not in gguf, gguf.get("harnessError") or gguf.get("path"))
     spec = {"name": "qwen-gguf", "engine": "llama_cpp", "modelPath": gguf["path"],
             "modelAlias": "qwen3-0.6b-gguf", "autoStart": True}
     status, body = api("POST", f"{ctx['base']}/v1/runtimes", ctx["token"], spec, timeout=120)
