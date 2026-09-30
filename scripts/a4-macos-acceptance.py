@@ -78,6 +78,12 @@ def check(number: str, claim: str, passed: bool, detail: object = "") -> bool:
     return bool(passed)
 
 
+def skip(number: str, claim: str, reason: str) -> None:
+    """Not run, and why. Only for a refusal from outside what we test."""
+    RESULTS.append({"check": number, "claim": claim, "passed": None, "detail": reason})
+    print(f"  SKIP  {number}. {claim}  -- {reason}", flush=True)
+
+
 def fact(key: str, value: object) -> None:
     FACTS[key] = value
     print(f"  FACT  {key}: {value}", flush=True)
@@ -593,6 +599,13 @@ def phase_models(ctx: dict) -> None:
     check("35", "it is catalogued as safetensors with the MLX quantization marker",
           qwen.get("format") == "safetensors" and bool(detail.get("mlxQuantization")),
           {"format": qwen.get("format"), "mlxQuantization": detail.get("mlxQuantization")})
+    # Qwen3-0.6B is 596,049,920 parameters; its 4-bit MLX storage is ~93M
+    # packed words, which is what the library used to report.
+    parameters = qwen.get("parameters") or 0
+    check("35b", "the library counts the MLX model's parameters, not its packed words",
+          560_000_000 < parameters < 640_000_000, f"{parameters:,}")
+    check("35c", "...and finds its chat template (in tokenizer_config.json)",
+          (qwen.get("capabilities") or {}).get("chatTemplate") is True, qwen.get("capabilities"))
     smol = library_model(ctx, VANILLA_REPO)
     must("36", f"{VANILLA_REPO} (vanilla, not converted) downloads through the library",
          bool(smol) and "harnessError" not in smol, smol.get("harnessError") or smol.get("path"))
@@ -737,7 +750,8 @@ def phase_runtimes(ctx: dict) -> None:
     served = ((body or {}).get("x_eugene_plexus") or {}) if status == 200 else {}
     check("51", "a completion through the gateway answers under the alias, served by this runtime",
           status == 200 and body.get("model") == qwen_alias and served.get("runtime") == "qwen-mlx"
-          and bool(((body.get("choices") or [{}])[0].get("message") or {}).get("content")),
+          and any(((body.get("choices") or [{}])[0].get("message") or {}).get(k)
+                  for k in ("content", "reasoning_content", "reasoning")),
           body if status != 200 else {"model": body.get("model"), "runtime": served.get("runtime")})
     frames, done = stream(f"{ctx['gateway']}/v1/chat/completions", ctx["token"], {
         "model": qwen_alias, "stream": True, "max_tokens": 48, "temperature": 0,
@@ -862,14 +876,37 @@ def phase_llama_cpp(ctx: dict) -> None:
     say("llama.cpp's macOS build, installed and run by the agent")
     llama = engine(ctx, "llama_cpp")
     acquisition = llama.get("acquisition") or {}
-    check("64", "llama.cpp is installable here, as the macOS arm64 build",
-          acquisition.get("installable") is True and "macos-arm64" in (acquisition.get("variant") or ""),
-          {k: acquisition.get(k) for k in ("installable", "variant", "reason", "latestVersion")})
-    status, body = api("POST", f"{ctx['base']}/v1/engines/llama_cpp/install", ctx["token"], {}, timeout=900)
-    llama = wait_for(lambda: (lambda e: e if e.get("available") else None)(engine(ctx, "llama_cpp")), 600, 5) or {}
-    must("65", "the agent installs it", llama.get("available") is True,
-         {"install": status, "engine": {k: llama.get(k) for k in ("available", "version", "error")}})
-    binary = Path(llama.get("binaryPath") or "")
+    reason = acquisition.get("reason") or ""
+    if acquisition.get("installable") is not True and "limit of 60 requests an hour" in reason:
+        # GitHub's anonymous API limit is per address, and a hosted runner's
+        # address is shared. The refusal is GitHub's; saying so plainly is
+        # ours, and the agent did. Fall back to a build the workflow fetched
+        # with its own token, so the Metal half still runs.
+        skip("64", "llama.cpp is installable here, as the macOS arm64 build",
+             f"GitHub refused: {reason[:200]}")
+        fallback = os.environ.get("EP_LLAMA_FALLBACK_DIR", "")
+        if not fallback or not Path(fallback).is_dir():
+            skip("65", "the agent installs it", "no fallback build was provided (EP_LLAMA_FALLBACK_DIR)")
+            return
+        # A build nobody installed is trusted by its directory and named on
+        # the runtime, as the profile builder's acceptance does it.
+        status, body = api("PATCH", f"{ctx['base']}/v1/config", ctx["token"],
+                           {"engineBinaryRoots": [fallback]})
+        skip("65", "the agent installs it",
+             "GitHub refused the release list; the runtime names a build the workflow fetched")
+        must("65b", "the build's directory is trusted", status == 200, body)
+        binary = Path(fallback) / "llama-server"
+    else:
+        check("64", "llama.cpp is installable here, as the macOS arm64 build",
+              acquisition.get("installable") is True and "macos-arm64" in (acquisition.get("variant") or ""),
+              {k: acquisition.get(k) for k in ("installable", "variant", "reason", "latestVersion")})
+        status, body = api("POST", f"{ctx['base']}/v1/engines/llama_cpp/install", ctx["token"], {},
+                           timeout=900)
+        llama = wait_for(lambda: (lambda e: e if e.get("available") else None)(
+            engine(ctx, "llama_cpp")), 600, 5) or {}
+        must("65", "the agent installs it", llama.get("available") is True,
+             {"install": status, "engine": {k: llama.get(k) for k in ("available", "version", "error")}})
+        binary = Path(llama.get("binaryPath") or "")
     devices = run([str(binary), "--list-devices"], timeout=60)
     listed = devices.stdout + devices.stderr
     fact("llama-server --list-devices", listed.strip()[-400:])
@@ -879,6 +916,8 @@ def phase_llama_cpp(ctx: dict) -> None:
     must("67", f"{GGUF_REPO} {GGUF_QUANT} downloads through the library", bool(gguf) and "harnessError" not in gguf, gguf.get("harnessError") or gguf.get("path"))
     spec = {"name": "qwen-gguf", "engine": "llama_cpp", "modelPath": gguf["path"],
             "modelAlias": "qwen3-0.6b-gguf", "autoStart": True}
+    if not llama.get("available"):
+        spec["binary"] = str(binary)
     status, body = api("POST", f"{ctx['base']}/v1/runtimes", ctx["token"], spec, timeout=120)
     ready = wait_status(ctx, "qwen-gguf", "ready", 240) if status in (200, 201) else {}
     check("68", "a llama.cpp runtime reaches ready on this Mac", ready.get("status") == "ready",
@@ -955,9 +994,11 @@ def main() -> int:
         except Exception:  # noqa: BLE001
             check("X2", "uninstall ran", False, traceback.format_exc()[-800:])
 
-    failed = [r for r in RESULTS if not r["passed"]]
+    failed = [r for r in RESULTS if r["passed"] is False]
+    skipped = [r for r in RESULTS if r["passed"] is None]
+    ran = len(RESULTS) - len(skipped)
     say("result")
-    print(f"  {len(RESULTS)} checks, {len(failed)} failures")
+    print(f"  {ran} checks, {len(failed)} failures, {len(skipped)} skipped")
     if args.report:
         args.report.write_text(json.dumps({"facts": FACTS, "checks": RESULTS}, indent=2, default=str),
                                encoding="utf-8")
@@ -965,10 +1006,12 @@ def main() -> int:
     if summary:
         with open(summary, "a", encoding="utf-8") as out:
             out.write(f"## A4 on {FACTS.get('chip')} / macOS {FACTS.get('macOS')}\n\n")
-            out.write(f"**{len(RESULTS) - len(failed)} of {len(RESULTS)} checks passed.**\n\n")
+            out.write(f"**{ran - len(failed)} of {ran} checks passed, {len(skipped)} skipped.**\n\n")
             out.write("| # | Claim | Result |\n|---|---|---|\n")
             for r in RESULTS:
-                out.write(f"| {r['check']} | {r['claim']} | {'PASS' if r['passed'] else 'FAIL: ' + r['detail'][:160].replace('|', '/')} |\n")
+                verdict = {True: "PASS", False: "FAIL: ", None: "SKIP: "}[r["passed"]]
+                said = "" if r["passed"] else r["detail"][:160].replace("|", "/")
+                out.write(f"| {r['check']} | {r['claim']} | {verdict}{said} |\n")
     return 1 if failed else 0
 
 

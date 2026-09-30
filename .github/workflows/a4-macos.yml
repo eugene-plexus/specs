@@ -52,7 +52,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15]
+        # Three macOS releases people run; each image's machine is a
+        # virtual M1 or M2 with 7 or 14 GB, and every one exposes Metal.
+        os: [macos-14, macos-15, macos-26]
     steps:
       - uses: actions/checkout@v6
       # For the harness alone, which is stdlib only. The install brings its
@@ -60,10 +62,38 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      # The agent asks GitHub's API for llama.cpp's releases anonymously,
+      # and a hosted runner's address is shared, so its sixty an hour are
+      # often gone before this job starts. The harness uses this build,
+      # fetched with the job's own token, only when GitHub refuses the agent.
+      - name: A llama.cpp macOS build, in case GitHub refuses the agent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dest="$RUNNER_TEMP/llama"
+          mkdir -p "$dest"
+          for tag in $(gh release list --repo ggml-org/llama.cpp --limit 8 --json tagName --jq '.[].tagName'); do
+            if gh release download "$tag" --repo ggml-org/llama.cpp --pattern '*bin-macos-arm64*' --dir "$dest"; then
+              echo "fetched $tag"
+              break
+            fi
+          done
+          cd "$dest"
+          for archive in *; do
+            case "$archive" in
+              *.zip) unzip -q "$archive" ;;
+              *.tar.gz) tar xzf "$archive" ;;
+            esac
+          done
+          server=$(find "$dest" -name llama-server -type f | head -1)
+          if [ -n "$server" ]; then
+            echo "EP_LLAMA_FALLBACK_DIR=$(dirname "$server")" >> "$GITHUB_ENV"
+            "$server" --version || true
+          fi
       - name: Eugene on this Mac, end to end
         env:
           EP_PIN_AGENT: ${{ inputs.agent_ref || 'c51418d7cfd6f0d8d7b948dd66d939952bc2372c' }}
-          EP_PIN_LIBRARY: ${{ inputs.library_ref || '3e67b0955cff698760905485f9e10fa12103250a' }}
+          EP_PIN_LIBRARY: ${{ inputs.library_ref || 'ff7efaae6d78360e7c1cdd41f5383d0aec12239e' }}
           EP_PIN_GATEWAY: ${{ inputs.gateway_ref || 'e050c15eb3bca6d9bbb48832df071e015945a37c' }}
           EP_PIN_DRIVER: ${{ inputs.driver_ref }}
         run: python scripts/a4-macos-acceptance.py --report a4-report.json
