@@ -132,11 +132,41 @@ carries the MLX `quantization` block the library records as
 the one positive marker of MLX conversion; its absence means unknown,
 not incompatible (an unquantized MLX conversion has none).
 
+## A4: what GitHub's macOS runners settled (2026-09-30)
+
+The runners expose Metal (an *Apple Paravirtual device*), so A4 ran the
+real `mlx_lm.server` there: [`../acceptance/a4-macos-runner-run.md`](../acceptance/a4-macos-runner-run.md),
+on macos-14, -15 and -26. Against the list below, as it stood:
+
+1. **Settled, except the second machine.** Fresh install through
+   `install.sh` and launchd, the agent's own recipe run verbatim, model
+   acquisition through the library, first reply, streaming, an early
+   close, stop, start, and an agent restart under launchd that comes back
+   unlocked through the keychain. The second machine is on the
+   rented-Mac list.
+2. **Settled: a vanilla HF safetensors model loads.** SmolLM2-135M-Instruct,
+   unconverted, reached ready and answered, with nine curated flags.
+3. **Settled, and it was wrong.** The budget was 75% of RAM; Metal allows
+   two thirds on every runner, and a set `iogpu.wired_limit_mb` moves it.
+   The agent and library now read both live. Admission still answers
+   `unknown`, because Apple gives no system-wide free figure.
+4. **Settled for the installer and the recipe.** Both, run from a Rosetta
+   shell, give a native arm64 Python.
+5. **Settled: there is no source.** Neither `/v1/models` nor a completion
+   states a context length. And `/v1/models` crashes on a machine with no
+   Hugging Face cache, which nothing of ours reads.
+
+**Still owed, and needing a rented Mac (Troy's OK):** a bare-metal GPU at
+a real size, a model near the working set on real memory, a reboot and a
+login, and a second device reaching the Mac through its firewall. The
+acceptance record has the list. MLX stays marked experimental until Troy
+decides otherwise, because the UI uses that flag to hide MLX on machines
+that cannot run it.
+
 ## What a physical Apple silicon run must still settle
 
-Everything below is pending, and the support matrix says experimental
-until it is recorded. Fixture results in the acceptance record are
-labeled simulated.
+As written on 2026-09-22; see the A4 section above for what is settled.
+Fixture results in the acceptance record are labeled simulated.
 
 1. Fresh install → model acquisition → first reply → streaming and
    cancellation → stop with memory observations → restart → agent

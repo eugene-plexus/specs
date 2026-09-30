@@ -23,15 +23,19 @@
   [record](../acceptance/a3d-smaller-file-run.md)): after a build at Low, a
   smaller file of the same model when the one on disk does not fit
   entirely. **A1, A2 and A3 are complete.**
-- **Pickup: A4 on GitHub's macOS runners** (Troy, 2026-09-30). They are
-  free for our public repos. **We own the integration, not MLX**: the
-  agent launches `mlx_lm.server` right, detects readiness, routes by the
-  right model id, installs on macOS, and scores unified memory. Whether MLX
-  generates good tokens is upstream's. A tiny model on the runner, even on
-  its CPU, proves our side. A Mac is rented (AWS EC2 Mac or Scaleway, 24 h
-  minimum) only for what the runner cannot show, so that day is spent on a
-  known short list.
-- **Then A5, which starts with a measurement**, per model: the starter set
+- **A4 is built on GitHub's macOS runners and pinned** (agent `d197a7a`,
+  library `6e22230`, gateway `e050c15`;
+  [record](../acceptance/a4-macos-runner-run.md)). The runners expose
+  Metal, so the real `mlx_lm.server` ran there on macos-14, -15 and -26.
+  Seven defects were found and fixed: the Mac budget (75% where Metal
+  allows two thirds, and blind to a changed wired limit), the device's
+  name, an MLX recipe that could not run, a sealed root making engines
+  routable on faith, and an MLX model's parameter count and chat template.
+  **Owed, and each needs Troy's OK to rent a Mac:** a bare-metal GPU at a
+  real size, a model near the working set, a reboot and a login, a second
+  device through the firewall. MLX's `experimental` flag stays until Troy
+  decides, because the UI hides MLX by it.
+- **Pickup: A5, which starts with a measurement**, per model: the starter set
   and popular local models against failure kind (the engine's parsing, the
   model's broken or cut-off JSON, a wrong tool or argument). Each kind has
   a different answer, and the table decides what, if anything, is built.
@@ -83,7 +87,7 @@ first:**
 | **A1** | **Profile builder, PB1: the job** (specs, agent) | [`profile-builder.md`](profile-builder.md) | Calls 1–4 are taken. Includes the shared ask-stop-restart step and moves R6.1's Benchmark onto it |
 | A2 | Profile builder, PB2: the page (ui, library `builtBy`, admission) | same | **Built 2026-09-30.** Call 6 taken (the profile page); call 5 became moe-aware-fit call A, taken |
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
-| A4 | Mac / MLX out of experimental | [`mlx-engine-unverified.md`](mlx-engine-unverified.md), B1 | **GitHub macOS runners first** (Troy, 2026-09-30); rent a Mac only for what they cannot show |
+| A4 | Mac / MLX out of experimental | [`mlx-engine.md`](mlx-engine.md) (A4 section), B1 | **Built on GitHub's macOS runners 2026-09-30**; the rented-Mac list is in the record, and dropping the `experimental` flag is Troy's call |
 | A5 | Tool-call repair for local models | to write | **Measure first:** how often a local model's tool call fails to parse. The failover thread warns that a truncated call can be valid JSON with a 200 |
 | A6 | A chat screen beginners stay in, or a one-click Open WebUI through the apps registry | [`apps-and-spokes.md`](apps-and-spokes.md) | "Adequate", per the 2026-09-11 call. The chat spoke was restarted from Troy's 2026-09-24 brief |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
