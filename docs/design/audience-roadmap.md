@@ -19,12 +19,15 @@
   Troy took call 6: the button is on the model's profile page first. A
   browser built, saved and launched a profile, and the launched runtime's
   flags were the saved profile's.
-- **Pickup, in order:**
-  1. A3d, Low's smaller file offered after a build
-     ([`moe-aware-fit.md`](moe-aware-fit.md) §1.5).
-  2. PB2's remainder, not scheduled: the model's row saying so when fit
-     places a built profile differently at launch (agent log capture plus a
-     `Runtime` field), and Home's "make it faster" (call 6, later).
+- **A3d is built and pinned** (ui `f3bd294` / dist `e062f0c`;
+  [record](../acceptance/a3d-smaller-file-run.md)): after a build at Low, a
+  smaller file of the same model when the one on disk does not fit
+  entirely. **A1, A2 and A3 are complete.**
+- **Pickup:** A4 (Mac / MLX) is blocked on a physical Mac, so the next
+  workable slice is **A5, which starts with a measurement**: how often a
+  local model's tool calls fail to parse. Not scheduled without Troy: PB2's
+  remainder (the model's row saying so when fit places a built profile
+  differently at launch; Home's "make it faster", call 6, later).
 
 This replaces [`adoption-roadmap.md`](adoption-roadmap.md) as the pickup
 point. Its open physical and moderated checks still stand and are carried
@@ -69,7 +72,7 @@ first:**
 |---|---|---|---|
 | **A1** | **Profile builder, PB1: the job** (specs, agent) | [`profile-builder.md`](profile-builder.md) | Calls 1–4 are taken. Includes the shared ask-stop-restart step and moves R6.1's Benchmark onto it |
 | A2 | Profile builder, PB2: the page (ui, library `builtBy`, admission) | same | **Built 2026-09-30.** Call 6 taken (the profile page); call 5 became moe-aware-fit call A, taken |
-| A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; A3a and A3b built) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
+| A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine-unverified.md`](mlx-engine-unverified.md), B1 | **Blocked on a physical Mac** |
 | A5 | Tool-call repair for local models | to write | **Measure first:** how often a local model's tool call fails to parse. The failover thread warns that a truncated call can be valid JSON with a 200 |
 | A6 | A chat screen beginners stay in, or a one-click Open WebUI through the apps registry | [`apps-and-spokes.md`](apps-and-spokes.md) | "Adequate", per the 2026-09-11 call. The chat spoke was restarted from Troy's 2026-09-24 brief |

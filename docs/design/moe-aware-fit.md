@@ -9,8 +9,10 @@ on 2026-09-30. **A3c's UI half is built and pinned** ([record](../acceptance/a3c
 ui `f185a85` / dist `f943f3b`, library `dc08842`): a split says *experts in
 RAM*, *partial offload* or *needs RAM too*, and a MoE model's new profile
 starts at its experts-in-RAM context. PB2, the builder's page, is built
-([record](../acceptance/pb2-profile-builder-page-run.md)). **Next: A3d.** §0 is
-measured. Roadmap: [`audience-roadmap.md`](audience-roadmap.md) A3,
+([record](../acceptance/pb2-profile-builder-page-run.md)). **A3d is built and
+pinned** ([record](../acceptance/a3d-smaller-file-run.md), ui `f3bd294` / dist
+`e062f0c`): Low offers a smaller file after a build, from the file's own
+arithmetic (§6). **A3 is complete.** §0 is measured. Roadmap: [`audience-roadmap.md`](audience-roadmap.md) A3,
 a separate slice from the profile builder by Troy's call.
 
 ## §0 Measurements
@@ -132,7 +134,7 @@ because call A is logic.
 | **A3a** Admission reads unset as "llama.cpp places it" | agent | no, so it can go before PB2 |
 | **A3b** Tensor table, `expertBytes`, `offload`, `maxContextExpertsInRam` | specs, library | no |
 | **A3c** The starter set's MoE class and Discover's words for the two kinds of split | library, ui | yes, after the theme. **Built** |
-| **A3d** Low: a smaller file, offered after a build | ui, library catalogue | yes, with PB2 |
+| **A3d** Low: a smaller file, offered after a build | ui, library catalogue | yes, with PB2. **Built** |
 
 ## §4 Calls for Troy
 
@@ -180,3 +182,49 @@ Taken inside call B, and Troy's to overturn:
   is shipped there. The release gate refuses that until a person accepts
   an entry, which is the gate working. The shipped list is not changed by
   this slice.
+
+## §6 A3d: Low's smaller file (decided while building, 2026-09-30)
+
+Call C gave Low its second lever: a smaller file of the same model, offered
+after a build. How, decided here and Troy's to overturn:
+
+- **When.** On the builder's result, only after a build at **Low**, the
+  level this lever belongs to.
+- **Only if the file does not fit entirely.** The library's fit for the
+  model on disk, at the chosen stop's context and against the node the page
+  looks at, must say anything but `fits`. A file that already fits has
+  nothing to gain from a smaller one.
+- **Where "the same model" comes from.** The model's own download record:
+  a finished download names the model entry it produced (`Download.modelId`)
+  and the repository (`Download.repo`). No contract change. A file copied
+  in by hand has no record, and the page says so in one sentence with a
+  link to Discover rather than guessing a repository from the name.
+- **Which file, from the file on disk's own arithmetic.** Quants of one
+  model share its shape, so they share its cache: only the weights differ.
+  The room a smaller file has is the node's free graphics memory less the
+  file on disk's own cache and overhead, from the library's fit at the
+  chosen context **and cache type** (a 4-bit cache at 64k is 1.7 GiB of
+  Qwen3-30B-A3B where full precision is 6.0). The offer is the largest
+  candidate in the repository that is smaller than the file on disk and
+  whose weights fit in that room. A candidate already on disk links to its
+  own page instead of offering a download. None fits: the page says so.
+- **Measured 2026-09-30, why not the catalogue's own verdicts.** A
+  candidate nobody has read is scored from its size alone, and at a long
+  context that guess is far off: for an 8 GB card at 64k the library's
+  catalogue called the 18.56 GB Q4_K_M "no", the file PB1 had just run
+  there with its experts in system memory, and every quant from 8 GB up
+  "no" or "split". From the file's real shape, with a full-precision cache: on a
+  24 GB card at 64k the offer is IQ4_XS (16.4 GB) beside the Q4_K_M, on a
+  16 GB card at 16k UD-IQ3_XXS (12.9 GB), and on an 8 GB card nothing, because the cache and
+  overhead alone leave under 5 GB. So the MoE model on a small card, whose
+  split is the graceful kind, is rarely offered a smaller file, and a dense
+  spill, where the whole model on the card is the difference, is the case
+  this serves.
+- **The words** say what it is and where it sits, and that a smaller file
+  changes answers more than any memory setting, which the builder does not
+  measure. No speed is predicted, and no quality number is invented for a
+  file nobody measured.
+- **No automatic rebuild.** The builder runs on demand only and is never
+  forced (Troy, 2026-09-30). So it is **Download it**, and once the file
+  lands, **Build settings for it** on that model's page. That is the
+  design's "download and rebuild" as two presses a person makes.
