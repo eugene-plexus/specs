@@ -1,5 +1,9 @@
 # Adoption roadmap
 
+**Superseded as the pickup point on 2026-09-30 by
+[`audience-roadmap.md`](audience-roadmap.md).** The physical and moderated
+checks below remain open and carry forward.
+
 **Status: implementation slices complete; next roadmap planned, 2026-09-22.** Troy accepted the new adversarial
 review and asked to defer further release work in favor of this roadmap.
 The previous [release roadmap](release-roadmap.md) is historical: its scheduled

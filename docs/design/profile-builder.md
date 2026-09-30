@@ -1,7 +1,8 @@
 # Profile builder: automatic load tuning
 
-**Status: designed 2026-09-30, not built.** §0 holds the measurements, §1–§8
-the design, and §9 the calls for Troy. Nothing is committed or pinned.
+**Status: designed 2026-09-30; PB1 in progress.** §0 holds the measurements,
+§1–§8 the design, and §9 the calls. Calls 1–4 are taken; calls 5 and 6 are
+PB2's. The order of work is [`audience-roadmap.md`](audience-roadmap.md).
 
 This is the first item on the next roadmap. It came out of the Unsloth
 comparison, filtered through the saved Reddit threads (T2's largest group of
@@ -315,7 +316,7 @@ measured. So **a preset is a quality threshold measured on this model**:
 | **Max** | f16 cache only. Nothing is measured, because nothing changes. | Answers exactly as this file allows (today's behaviour). |
 | **High** | Any cache whose measured same-top-token rate is **≥ 96.5%** against Max | "Picks the same next word as Max at least 96 times in 100, on this model." |
 | **Medium** | ≥ 92% | "…at least 92 times in 100." |
-| **Low** | Deferred (§9, call 1) | — |
+| **Low** | Not in this slice. It arrives with the MoE/Discover slice (§9, call 1) | — |
 
 - **Boundary rule:** a type passes only if its measured value **minus one
   standard error** clears the threshold, so a borderline model can't flip
@@ -331,8 +332,8 @@ evidence, and an expert sees it in the hint.
 **How it's measured:**
 - `llama-perplexity` with `--kl-divergence-base` on the f16 cache, then
   `--kl-divergence` for each lower type the preset could allow.
-- It runs over a bundled evaluation text: 4 chunks at 4096, so 8,192 scored
-  tokens (§9, call 4).
+- It runs over a bundled evaluation text, or the person's own (§9, call 4):
+  4 chunks at 4096, so 8,192 scored tokens.
 - High measures q8_0 only. Medium measures q8_0 and q4_0.
 - The baseline file is about **2.5 GB** of temporary disk (tokens × vocab ×
   2 bytes) and is deleted afterwards. The job refuses to start without twice
@@ -463,7 +464,7 @@ triangle.
 - It is also a 2-D drag target, which is hard at phone width (S9).
 
 **Defaults:**
-- **Accuracy:** High (§9, call 3).
+- **Accuracy: Max** (§9, call 3, Troy).
 - **Slider:** the **longest memory that keeps at least 80% of the fastest
   speed** measured at the 8k depth. For scale, M4's 512-token-prompt
   figures at the 8 GB budget put 64k with q8 at 40.7 against 50.6 tok/s
@@ -521,7 +522,8 @@ narrow bridge; the MoE-aware estimate itself remains the separate slice.
   missing tool.
 - `ProfileBuildRequest`: `modelId`, `profileId?`, `runtime` (a
   RuntimeSpec), `accuracy`, `memoryMarginMiB?`, `stopRuntimes[]`,
-  `restartAfter` (default true).
+  `restartAfter` (default true), `evaluationText?` (the person's own, ≤ 2 MB;
+  absent means the bundled text).
 - `ProfileBuild` records which models it stopped and whether each one came
   back.
 - `ProfileBuild`: `state`, `phase`, `progress`, `detail`, `quality[]`,
@@ -581,11 +583,31 @@ and the starter set.
 
 ## §9 Calls for Troy
 
+**Calls 1–4 were TAKEN by Troy on 2026-09-30.**
+1. **Three presets now: Max, High, Medium.** Low arrives with the
+   MoE/Discover slice, where its lever (a smaller file) exists. A Low that
+   did what Medium does would break settings-never-lie.
+2. **Thresholds: High ≥ 96.5% and Medium ≥ 92% same top token.** They are
+   re-checked on more models in PB1's acceptance.
+3. **The default accuracy is Max** (Troy). The recommendation was High and
+   was not taken. The builder starts on "nothing changes answers", and the
+   person moves it down.
+4. **The evaluation text is a bundled text we own, and the person may
+   supply their own** (Troy).
+   - Their own text is **pasted or chosen as a text file in the page and
+     sent in the request**, not read from a path. That keeps it inside the
+     one-console rule, with no file permissions on the node.
+   - It is capped at 2 MB.
+   - It must yield **at least 8,192 tokens** (two 4,096-token chunks,
+     `llama-perplexity`'s own minimum at that context). A shorter text is
+     refused with its token count and what is needed; a longer one is used
+     up to four chunks.
+   - The build record says which text was used. A custom text's quality
+     numbers are labelled as measured on the person's own text.
+
+**Still open (PB2):**
+
 | # | Call | Recommendation | Against it |
 |---|---|---|---|
-| 1 | Four presets or three | **Three now (Max, High, Medium). Low arrives with the MoE/Discover slice**, where its lever, a smaller file, exists | A Low that did what Medium does would break settings-never-lie. The cost is not matching the JPEG list on day one |
-| 2 | Thresholds | **High ≥ 96.5%, Medium ≥ 92% same top token**, re-checked on more models in PB1's acceptance | Calibrated on two models |
-| 3 | Default accuracy | **High.** 8-bit cache passes it on both models and buys speed at long context | Max is today's behaviour and changes nothing |
-| 4 | Evaluation text | **A bundled text we own** (prose, code and chat), so it works offline with no licence question | wikitext-2 is the field's standard for comparison, but it is CC BY-SA and needs a download |
 | 5 | Admission trusts a built profile's measured memory | **Yes, for the same file, engine and node** | It is a second rule in admission until the MoE-aware estimate lands |
 | 6 | Where the button lives | **The model's profile page first.** Home's Run could offer "make it faster" later | Home is where beginners are |
