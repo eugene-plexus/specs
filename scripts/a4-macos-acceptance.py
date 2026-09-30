@@ -931,6 +931,40 @@ def phase_llama_cpp(ctx: dict) -> None:
     del offload
 
 
+def phase_wired_limit(ctx: dict) -> None:
+    """Does a raised `iogpu.wired_limit_mb` reach Metal's figure, and ours?
+
+    People raise it to load a bigger model. If Metal's working set follows
+    it, the agent's budget does too, because the agent reads Metal. Needs
+    passwordless sudo, which a hosted runner has; skipped elsewhere.
+    """
+    say("a raised wired limit (sudo sysctl iogpu.wired_limit_mb)")
+    before = (ctx.get("metal") or {}).get("recommendedMaxWorkingSetSize")
+    if not before or run(["sudo", "-n", "true"], timeout=20).returncode != 0:
+        skip("73", "a raised wired limit shows in the agent's budget", "no passwordless sudo here")
+        return
+    ram = int(run(["sysctl", "-n", "hw.memsize"]).stdout.strip() or 0)
+    target_mb = int((before + (ram - before) // 2) // (1024 * 1024))
+    out = run(["sudo", "-n", "sysctl", f"iogpu.wired_limit_mb={target_mb}"], timeout=30)
+    fact("sysctl iogpu.wired_limit_mb set", (target_mb, out.returncode, (out.stdout + out.stderr).strip()[-200:]))
+    try:
+        probe = run([sys.executable, __file__, "--metal-only"], timeout=60).stdout.strip()
+        fresh = json.loads(probe) if probe.startswith("{") else {}
+        fact("metal after the raise (a fresh process)", fresh)
+        _, node = api("GET", f"{ctx['base']}/v1/node", ctx["token"])
+        gpu = next((d for d in (node or {}).get("devices") or [] if d.get("kind") == "metal"), {})
+        fact("agent metal budget after the raise", gpu.get("memoryTotalBytes"))
+        raised = fresh.get("recommendedMaxWorkingSetSize")
+        if raised and raised != before:
+            check("73", "a raised wired limit shows in Metal's figure, and so in the agent's budget",
+                  gpu.get("memoryTotalBytes") == raised, f"metal {before} -> {raised}, agent {gpu.get('memoryTotalBytes')}")
+        else:
+            skip("73", "a raised wired limit shows in the agent's budget",
+                 f"Metal's figure did not move in this VM ({before} -> {raised}); a real Mac must say")
+    finally:
+        run(["sudo", "-n", "sysctl", "iogpu.wired_limit_mb=0"], timeout=30)
+
+
 # --------------------------------------------------------------------------- #
 # leaving
 # --------------------------------------------------------------------------- #
@@ -958,7 +992,11 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8079)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--skip-llama", action="store_true")
+    parser.add_argument("--metal-only", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.metal_only:
+        print(json.dumps(metal_device()))
+        return 0
     if sys.platform != "darwin" or platform.machine() != "arm64":
         print("this run is for macOS on Apple silicon (a disposable one)", file=sys.stderr)
         return 2
@@ -980,6 +1018,7 @@ def main() -> int:
         phase_runtimes(ctx)
         if not args.skip_llama:
             phase_llama_cpp(ctx)
+        phase_wired_limit(ctx)
     except Abort as e:
         print(f"\n  ABORT  {e}", flush=True)
     except Exception:  # noqa: BLE001 - the report must still be written

@@ -92,9 +92,9 @@ jobs:
           fi
       - name: Eugene on this Mac, end to end
         env:
-          EP_PIN_AGENT: ${{ inputs.agent_ref || 'c51418d7cfd6f0d8d7b948dd66d939952bc2372c' }}
-          EP_PIN_LIBRARY: ${{ inputs.library_ref || 'ff7efaae6d78360e7c1cdd41f5383d0aec12239e' }}
-          EP_PIN_GATEWAY: ${{ inputs.gateway_ref || 'e050c15eb3bca6d9bbb48832df071e015945a37c' }}
+          EP_PIN_AGENT: ${{ inputs.agent_ref }}
+          EP_PIN_LIBRARY: ${{ inputs.library_ref }}
+          EP_PIN_GATEWAY: ${{ inputs.gateway_ref }}
           EP_PIN_DRIVER: ${{ inputs.driver_ref }}
         run: python scripts/a4-macos-acceptance.py --report a4-report.json
       - name: Keep the report and the agent log
