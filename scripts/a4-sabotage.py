@@ -39,6 +39,7 @@ TESTS = {
 
 A_DEV = AGENT / "src/eugene_plexus_agent/engines/devices.py"
 A_MLX = AGENT / "src/eugene_plexus_agent/engines/mlx.py"
+A_PROBE = AGENT / "src/eugene_plexus_agent/engines/gpu_probe.py"
 L_HW = LIBRARY / "src/eugene_plexus_library/hardware.py"
 L_SCAN = LIBRARY / "src/eugene_plexus_library/scanner.py"
 L_ST = LIBRARY / "src/eugene_plexus_library/formats/safetensors.py"
@@ -67,6 +68,13 @@ SABOTAGES: list[tuple[str, Path, Path, str, str]] = [
         A_DEV,
         '        name = device.name or _apple_chip() or "Apple silicon"\n',
         '        name = platform.processor() or "Apple silicon"\n',
+    ),
+    (
+        "agent: a wired limit someone set is ignored (a running agent keeps Metal's old figure)",
+        AGENT,
+        A_PROBE,
+        "    if wired_limit_mb and wired_limit_mb > 0:\n",
+        "    if False:\n",
     ),
     (
         "agent: the MLX recipe names a bare uv, not the install's own",

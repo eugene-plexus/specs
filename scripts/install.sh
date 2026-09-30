@@ -58,11 +58,11 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=c51418d7cfd6f0d8d7b948dd66d939952bc2372c
+PIN_AGENT=d197a7a11b126e77b02a75a6d2b32e0d99baabf5
 PIN_CONTROL=919157644755ef08233bdbc09afd3fe525342cdd
 PIN_GATEWAY=e050c15eb3bca6d9bbb48832df071e015945a37c
 PIN_DRIVER=f5cf2e07261675627d1d9cff9bf49722158c456f
-PIN_LIBRARY=ff7efaae6d78360e7c1cdd41f5383d0aec12239e
+PIN_LIBRARY=6e22230b163c7e82aed578c738a02d4058bbb548
 PIN_TOOL_DRIVER=49c289fdaba3703a50d362801b1a9e682ad4d954
 PIN_UI=e062f0c65bcab3e51909dc56cf20846fdde2d87e   # branch `dist`, not `main`
 

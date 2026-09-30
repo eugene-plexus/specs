@@ -938,29 +938,36 @@ def phase_wired_limit(ctx: dict) -> None:
     it, the agent's budget does too, because the agent reads Metal. Needs
     passwordless sudo, which a hosted runner has; skipped elsewhere.
     """
-    say("a raised wired limit (sudo sysctl iogpu.wired_limit_mb)")
+    say("a changed wired limit (sudo sysctl iogpu.wired_limit_mb)")
     before = (ctx.get("metal") or {}).get("recommendedMaxWorkingSetSize")
     if not before or run(["sudo", "-n", "true"], timeout=20).returncode != 0:
-        skip("73", "a raised wired limit shows in the agent's budget", "no passwordless sudo here")
+        skip("73", "a changed wired limit shows in the agent's budget", "no passwordless sudo here")
         return
     ram = int(run(["sysctl", "-n", "hw.memsize"]).stdout.strip() or 0)
-    target_mb = int((before + (ram - before) // 2) // (1024 * 1024))
-    out = run(["sudo", "-n", "sysctl", f"iogpu.wired_limit_mb={target_mb}"], timeout=30)
-    fact("sysctl iogpu.wired_limit_mb set", (target_mb, out.returncode, (out.stdout + out.stderr).strip()[-200:]))
-    try:
+    mib = 1024 * 1024
+
+    def budgets(label: str, limit_mb: int) -> tuple[int | None, int | None, int | None]:
+        out = run(["sudo", "-n", "sysctl", f"iogpu.wired_limit_mb={limit_mb}"], timeout=30)
         probe = run([sys.executable, __file__, "--metal-only"], timeout=60).stdout.strip()
-        fresh = json.loads(probe) if probe.startswith("{") else {}
-        fact("metal after the raise (a fresh process)", fresh)
+        fresh = (json.loads(probe) if probe.startswith("{") else {}).get("recommendedMaxWorkingSetSize")
         _, node = api("GET", f"{ctx['base']}/v1/node", ctx["token"])
-        gpu = next((d for d in (node or {}).get("devices") or [] if d.get("kind") == "metal"), {})
-        fact("agent metal budget after the raise", gpu.get("memoryTotalBytes"))
-        raised = fresh.get("recommendedMaxWorkingSetSize")
-        if raised and raised != before:
-            check("73", "a raised wired limit shows in Metal's figure, and so in the agent's budget",
-                  gpu.get("memoryTotalBytes") == raised, f"metal {before} -> {raised}, agent {gpu.get('memoryTotalBytes')}")
-        else:
-            skip("73", "a raised wired limit shows in the agent's budget",
-                 f"Metal's figure did not move in this VM ({before} -> {raised}); a real Mac must say")
+        agent = next((d for d in (node or {}).get("devices") or [] if d.get("kind") == "metal"), {})
+        _, hardware = api("GET", f"{ctx['library']}/v1/hardware", ctx["token"])
+        library = ((hardware or {}).get("gpus") or [{}])[0].get("vramTotalBytes")
+        fact(f"wired limit {label} ({limit_mb} MiB, sysctl rc {out.returncode}): metal (new process), agent, library",
+             (fresh, agent.get("memoryTotalBytes"), library))
+        return fresh, agent.get("memoryTotalBytes"), library
+
+    try:
+        raised = budgets("raised", int((before + (ram - before) // 2) // mib))
+        check("73", "a raised wired limit reaches Metal, and the running agent and library follow it",
+              raised[0] not in (None, before) and raised[0] == raised[1] == raised[2], raised)
+        lowered = budgets("lowered", int(before // mib) - 1024)
+        check("74", "...and a lowered one", lowered[0] not in (None, before)
+              and lowered[0] == lowered[1] == lowered[2], lowered)
+        restored = budgets("back at its default", 0)
+        check("75", "...and back at 0 it is Metal's own figure again", restored == (before, before, before),
+              restored)
     finally:
         run(["sudo", "-n", "sysctl", "iogpu.wired_limit_mb=0"], timeout=30)
 
