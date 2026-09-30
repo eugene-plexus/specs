@@ -544,7 +544,7 @@ def library_model(ctx: dict, repo: str, pick=None) -> dict | None:
         return {"error": f"no candidate in {[c.get('label') for c in candidates]}"}
     # Exactly the candidate's files, as Discover sends them: a safetensors
     # candidate must carry its own sidecars or the model will not load.
-    files = list(candidate.get("files") or [])
+    files = [f.get("path") if isinstance(f, dict) else f for f in candidate.get("files") or []]
     status, record = api("POST", f"{ctx['library']}/v1/downloads", ctx["token"], {"repo": repo, "files": files})
     if status not in (200, 201, 202):
         return {"error": f"download {status}: {str(record)[:300]}"}
