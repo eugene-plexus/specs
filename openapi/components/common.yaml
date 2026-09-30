@@ -1100,10 +1100,18 @@ components:
       required: [level, text]
       properties:
         level:
-          type: string
-          enum: [info, warning]
+          $ref: '#/components/schemas/ConfigFieldStatusLevel'
         text:
           type: string
+
+    ConfigFieldStatusLevel:
+      type: string
+      enum: [info, warning]
+      description: |
+        Named rather than inline: an inline enum here generates a class
+        called `Level`, and the next inline `level` anywhere in these
+        documents would rename it `Level1` under every caller (the S6
+        `Source` -> `Source1` trap).
 
     ConfigFieldShowWhen:
       type: object
