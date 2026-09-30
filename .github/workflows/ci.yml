@@ -27,8 +27,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Check shared bandwidth cap and installer isolation guards
@@ -47,10 +47,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           path: specs
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Read the installer consumer pins
@@ -65,32 +65,32 @@ jobs:
                   pin = re.search(rf"^PIN_{name}=([0-9a-f]{{40}})$", text, re.M)
                   assert pin, name
                   out.write(f"{name.lower()}={pin.group(1)}\n")
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: ${{ steps.pins.outputs.agent }}
           path: agent
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/control
           ref: ${{ inputs.control_ref || steps.pins.outputs.control }}
           path: control
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/gateway
           ref: ${{ steps.pins.outputs.gateway }}
           path: gateway
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/library
           ref: ${{ inputs.library_ref || steps.pins.outputs.library }}
           path: library
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/inference-driver
           ref: ${{ steps.pins.outputs.driver }}
           path: inference-driver
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/tool-driver
           ref: ${{ steps.pins.outputs.tool_driver }}
@@ -145,10 +145,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           path: specs
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Read the installer consumer pins
@@ -163,12 +163,12 @@ jobs:
                   pin = re.search(rf"^PIN_{name}=([0-9a-f]{{40}})$", text, re.M)
                   assert pin, name
                   out.write(f"{name.lower()}={pin.group(1)}\n")
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: ${{ steps.pins.outputs.agent }}
           path: agent
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/inference-driver
           ref: ${{ steps.pins.outputs.driver }}
@@ -195,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Exercise native, translated, and existing Python environments
         run: bash scripts/r37-install-sh-checks.sh
       - name: Verify the regressions detect broken architecture selection
@@ -209,7 +209,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install, request an update to this commit, and check what root did
         # This commit's own installer is what the helper downloads, so the
         # target must be one raw.githubusercontent.com can serve: a pull
@@ -229,8 +229,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
       - name: Check task ownership and topology health
@@ -248,7 +248,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Run gitleaks
         run: |
@@ -259,9 +259,9 @@ jobs:
     name: Validate (openapi-spec-validator)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -290,9 +290,9 @@ jobs:
     name: Lint (Redocly)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
 
@@ -318,7 +318,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Check the actual PR commits, not the synthetic merge ref.
