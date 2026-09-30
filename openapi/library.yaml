@@ -3090,9 +3090,12 @@ components:
           type: string
           description: |
             The bucket this entry fills, by total parameter count:
-            `4B`, `8B`, `14B`, `30B`, `70B`. Total, not active -- a
-            mixture-of-experts model holds every expert in memory, so
-            30B-A3B is a 30B for the only purpose this number serves.
+            `4B`, `8B`, `14B`, `30B`, `70B`, and `30B MoE`. Total, not
+            active -- a mixture-of-experts model holds every expert in
+            memory, so 30B-A3B is a 30B. It has a class of its own
+            because where those bytes can go differs: its experts can sit
+            in system memory while the rest runs on the card, which is
+            how a small card reaches a 30B (`fit.offload` is `experts`).
         baseModel:
           type: string
           description: |
@@ -3151,6 +3154,15 @@ components:
             at, on the scored machine. The number a profile takes, and
             the reason a client can say *fits at 75,520* rather than
             just *fits*.
+        maxContextExpertsInRam:
+          type: [integer, "null"]
+          minimum: 0
+          description: |
+            For a mixture-of-experts entry: the largest context with its
+            experts in system memory and everything else on the card,
+            the same number `ModelFit.maxContextExpertsInRam` gives for a
+            model on disk. Null for a dense entry, or where the experts do
+            not fit in system memory.
         alreadyOwned:
           $ref: '#/components/schemas/AlreadyOwned'
 
@@ -3174,6 +3186,14 @@ components:
             `CatalogueRecommendation` follows: the largest of the set
             that runs entirely on this GPU with room for the scored
             context, said with the sizes that make it checkable.
+
+            A mixture-of-experts entry may be recommended where it runs
+            with its experts in system memory: the card holds the rest
+            and the cache, and system memory holds the experts. It wins
+            only over a dense entry of a smaller size class; between two
+            entries of one class that both fit, the dense one is
+            recommended. The prose names what goes where. No speed is
+            predicted.
 
     CatalogueCard:
       type: object

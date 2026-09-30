@@ -1,7 +1,9 @@
 # MoE-aware fit: the library, admission, the starter set, and Low
 
-**Status: designed 2026-09-30, not built. §0 is measured; §4 holds the
-calls for Troy.** Roadmap: [`audience-roadmap.md`](audience-roadmap.md) A3,
+**Status: designed 2026-09-30; calls A-C taken the same day. A3a and A3b
+are built and pinned** ([A3a record](../acceptance/a3a-admission-run.md),
+agent `9ac7b7e`; [A3b record](../acceptance/a3b-moe-fit-run.md), library
+`025847e`). **A3c and A3d wait on `ui`.** §0 is measured. Roadmap: [`audience-roadmap.md`](audience-roadmap.md) A3,
 a separate slice from the profile builder by Troy's call.
 
 ## §0 Measurements
@@ -140,3 +142,34 @@ The table below is the record of what was weighed.
 | A | Treat unset `gpuLayers` as "llama.cpp places it" in admission | **Yes.** It is what the engine does, and PB2 cannot ship without it. `no` still refuses | A dense model too big for the card now launches and runs slowly (4.9 tok/s on 8 GB) instead of being refused. The verdict's words and the builder are what say so |
 | B | The starter set may suggest a MoE model with experts in RAM to a small card | **Yes, when RAM allows.** On 8 GB it is the difference between a 4-8B model and a 30B one at a similar speed | It changes starter decision #4 ("runs entirely in GPU memory") and makes the recommendation depend on RAM too |
 | C | What Low allows | **A smaller file of the same model, offered after a build, plus the 4-bit cache at ≥ 88% same top token** | Two levers in one level; Low could be the file only |
+
+## §5 Decided while building A3c (library half)
+
+Taken inside call B, and Troy's to overturn:
+
+- **One MoE class, `30B MoE`** (20-40B total parameters). That is where a
+  small card gains most: call B's own words are "the difference between a
+  4-8B model and a 30B one". A 70B-class MoE is not offered as a first
+  model, because the download would be 40 GB or more.
+- **How the pick works:**
+  - A MoE entry is a candidate when it fits entirely, or when it runs with
+    its experts in system memory (`offload: experts`).
+  - It wins only over a dense entry of a smaller size class. Between two
+    entries of one class that both fit, the dense one is picked. On a
+    24 GB card the dense 27B stays; on 8-16 GB the 30B-A3B replaces the
+    8B or 14B.
+  - `no` is never a candidate, so "when RAM allows" is the verdict itself.
+- **No speed is predicted in the words.** They say what sits on the card
+  and what sits in system memory.
+- **The machine with no graphics card is unchanged.** The smallest entry is
+  still picked, although a 3B-active MoE model would decode faster there
+  than a dense 8B. That is a separate rule change, not made here.
+- **How the review spots a MoE candidate.**
+  - A name with an active-parameter suffix (`-A3B`), or an architecture id
+    containing `moe`, makes a candidate. Neither is proof.
+  - The proof is the file itself: the entry is built only if the tensor
+    table gives `expertBytes` greater than zero.
+- **Adding the class makes the next review REPLACE for it**, because nothing
+  is shipped there. The release gate refuses that until a person accepts
+  an entry, which is the gate working. The shipped list is not changed by
+  this slice.
