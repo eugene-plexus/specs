@@ -4,8 +4,11 @@
 - **A1 (PB1) is built and accepted the same day**:
   [record](../acceptance/profile-builder-run.md), agent `2fcebf9`, control
   `7920bf9`.
-- **Pickup: A2 (PB2), once the UI theme work in `ui` has landed.** Until
-  then, A3 does not depend on `ui`.
+- **A3a and A3b are built and pinned** (admission, and the library's
+  MoE-aware fit): agent `9ac7b7e`, library `025847e`.
+- **Pickup: A2 (PB2), A3c and A3d, once the UI theme work in `ui` has
+  landed.** A3c's library half (the starter set's MoE class) does not wait
+  for the theme.
 
 This replaces [`adoption-roadmap.md`](adoption-roadmap.md) as the pickup
 point. Its open physical and moderated checks still stand and are carried
@@ -49,8 +52,8 @@ first:**
 | # | Slice | Design | Notes |
 |---|---|---|---|
 | **A1** | **Profile builder, PB1: the job** (specs, agent) | [`profile-builder.md`](profile-builder.md) | Calls 1–4 are taken. Includes the shared ask-stop-restart step and moves R6.1's Benchmark onto it |
-| A2 | Profile builder, PB2: the page (ui, library `builtBy`, admission) | same | **After the UI theme work lands** (another assistant, 2026-09-30). Calls 5 and 6 are open |
-| A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (designed 2026-09-30, calls A-C open) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
+| A2 | Profile builder, PB2: the page (ui, library `builtBy`, admission) | same | **After the UI theme work lands** (another assistant, 2026-09-30). Call 6 is open; call 5 became moe-aware-fit call A, taken |
+| A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; A3a and A3b built) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine-unverified.md`](mlx-engine-unverified.md), B1 | **Blocked on a physical Mac** |
 | A5 | Tool-call repair for local models | to write | **Measure first:** how often a local model's tool call fails to parse. The failover thread warns that a truncated call can be valid JSON with a 200 |
 | A6 | A chat screen beginners stay in, or a one-click Open WebUI through the apps registry | [`apps-and-spokes.md`](apps-and-spokes.md) | "Adequate", per the 2026-09-11 call. The chat spoke was restarted from Troy's 2026-09-24 brief |
