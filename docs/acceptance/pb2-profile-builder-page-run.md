@@ -1,8 +1,8 @@
 # PB2 acceptance: the settings builder's page
 
 **2026-09-30.** Contract specs `dc2f35d` (`ModelProfile.builtBy`); library
-`0d9f1f2`; ui (see the pin commit) with dist rebuilt; both installers
-pinned. Browser run `scripts/pb2-browser-acceptance.py` with
+`0d9f1f2`; ui `f487c74`, dist `694b134`; both installers pinned at specs
+`afb89f1`. Browser run `scripts/pb2-browser-acceptance.py` with
 `ui/e2e/profile-builder.spec.ts`; sabotage `scripts/pb2-sabotage.py`.
 Design: [`../design/profile-builder.md`](../design/profile-builder.md) §1,
 §5, §6 and §8. Roadmap: A2.
@@ -129,8 +129,9 @@ discovery, so the build now goes into the run's managed store; and the
 Unlock button stays disabled until a passphrase is typed, so the sign-in
 fills until it enables rather than waiting for it first.
 
-**Every script specs CI runs** passed locally before the pin (see the pin
-commit).
+**Every script specs CI runs** (23) passed locally in Python 3.12 before
+the pin, and the pinned `dist` archive, fetched from GitHub, carries the
+builder's words.
 
 ## Not done
 
