@@ -638,6 +638,10 @@ and the starter set.
    did what Medium does would break settings-never-lie.
 2. **Thresholds: High ≥ 96.5% and Medium ≥ 92% same top token.** They are
    re-checked on more models in PB1's acceptance.
+   - **High lowered to ≥ 96% (Troy, 2026-09-30)**, after the finding
+     below: on the bundled text the MoE model's 8-bit cache scored 96.32%
+     ± 0.21, just under 96.5%.
+   - **Low (≥ 88%) added** by moe-aware-fit call C.
    - **Found by PB1's acceptance, for Troy: the bundled text is harder than
      wikitext.**
    - The MoE model's 8-bit cache scored 96.32% ± 0.21 on it, against

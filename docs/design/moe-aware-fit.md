@@ -127,6 +127,14 @@ because call A is logic.
 
 ## §4 Calls for Troy
 
+**All three TAKEN by Troy on 2026-09-30, as recommended:**
+- **A:** yes, unset `gpuLayers` means llama.cpp places it.
+- **B:** yes, the starter set may suggest a MoE model when RAM allows.
+- **C:** Low offers a smaller file of the same model after a build, and
+  allows the 4-bit cache at ≥ 88% same top token.
+
+The table below is the record of what was weighed.
+
 | # | Call | Recommendation | Against it |
 |---|---|---|---|
 | A | Treat unset `gpuLayers` as "llama.cpp places it" in admission | **Yes.** It is what the engine does, and PB2 cannot ship without it. `no` still refuses | A dense model too big for the card now launches and runs slowly (4.9 tok/s on 8 GB) instead of being refused. The verdict's words and the builder are what say so |
