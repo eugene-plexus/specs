@@ -412,6 +412,23 @@ def phase_onboard(ctx: dict) -> None:
           and f"gui/{UID}/{LABEL}" in (restart.get("command") or ""), restart)
     ctx["node"] = node
 
+    # What the wizard's first screen does: the keyring where this host has
+    # one (S0), written to both, then the sign-in that also unlocks the root.
+    _, auth = api("GET", f"{base}/v1/auth/status")
+    keyring = bool((auth or {}).get("keyringAvailable"))
+    fact("keyring available to the launchd agent", keyring)
+    _, clogin = api("POST", f"{control}/v1/auth/login", body={"passphrase": PASSPHRASE})
+    ctoken = (clogin or {}).get("sessionToken")
+    if keyring:
+        a, _ = api("PATCH", f"{base}/v1/config", ctx["token"], {"securityMode": "os_keyring"})
+        c, _ = api("PATCH", f"{control}/v1/config", ctoken, {"securityMode": "os_keyring"})
+        check("17b", "the keyring is chosen on both, as the wizard chooses it", a == 200 and c == 200,
+              f"agent={a} control={c}")
+        api("POST", f"{control}/v1/auth/login", body={"passphrase": PASSPHRASE})
+    _, cstatus = api("GET", f"{control}/v1/auth/status")
+    check("17c", "the control root is unlocked after sign-in", (cstatus or {}).get("unlocked") is True, cstatus)
+    ctx["keyring"], ctx["control"] = keyring, control
+
 
 # --------------------------------------------------------------------------- #
 # unified memory
@@ -620,10 +637,15 @@ def phase_upstream_claims(ctx: dict) -> None:
               first_health is not None and first_token is not None and health_only >= 1,
               f"{health_only} polls with /health ok and no token")
         status, models = api("GET", f"{base}/v1/models")
-        fact("raw /v1/models", models)
-        ids = [m.get("id") for m in (models or {}).get("data", [])] if status == 200 else []
-        check("39", "its model list names the path, never a name we chose",
-              ctx["qwen"]["path"] in " ".join(map(str, ids)) or any(str(i).startswith("/") for i in ids), ids)
+        fact("raw /v1/models", (status, models))
+        ids = [m.get("id") for m in (models or {}).get("data", [])] if isinstance(models, dict) else []
+        log.flush()
+        if status != 200 or not ids:
+            fact("raw server log tail", Path(log.name).read_text(errors="replace")[-1500:])
+        # Recorded, not required: nothing of ours reads this list, which is
+        # the point -- whatever it says is not a name we chose.
+        check("39", "its model list offers no name we chose, so nothing may route by it",
+              "a4-public-alias" not in ids and "qwen3-0.6b-mlx" not in ids, f"status={status} ids={ids}")
         body = ctx.get("raw_completion") or {}
         check("40", "`default_model` resolves to --model, and nothing in the answer states a context length",
               body.get("model") == "default_model"
@@ -694,8 +716,10 @@ def phase_runtimes(ctx: dict) -> None:
           qwen.get("argv") == expected, qwen.get("argv"))
     pid = qwen.get("pid")
     live = command_of(pid) if pid else ""
-    check("46", "...and that is the command line of the live process", bool(pid) and live == " ".join(expected),
-          live)
+    # ps shows the console script's interpreter first (its shebang), then
+    # the argv the agent built.
+    check("46", "...and that is the command line of the live process",
+          bool(pid) and live.endswith(" ".join(expected)), live)
     at_ready = Log.engine_posts(log.since(mark), "qwen-mlx")
     check("47", "readiness was proved with exactly one generated token", at_ready == 1, f"{at_ready} completions")
     time.sleep(20)
@@ -716,10 +740,12 @@ def phase_runtimes(ctx: dict) -> None:
           and bool(((body.get("choices") or [{}])[0].get("message") or {}).get("content")),
           body if status != 200 else {"model": body.get("model"), "runtime": served.get("runtime")})
     frames, done = stream(f"{ctx['gateway']}/v1/chat/completions", ctx["token"], {
-        "model": qwen_alias, "stream": True, "max_tokens": 24, "temperature": 0,
+        "model": qwen_alias, "stream": True, "max_tokens": 48, "temperature": 0,
         "messages": [{"role": "user", "content": "Count to five."}]})
-    content = [f for f in frames if isinstance(f, dict)
-               and ((f.get("choices") or [{}])[0].get("delta") or {}).get("content")]
+    # Qwen3 thinks first, and its thinking streams as reasoning, not content.
+    content = [f for f in frames if isinstance(f, dict) and any(
+        ((f.get("choices") or [{}])[0].get("delta") or {}).get(k)
+        for k in ("content", "reasoning_content", "reasoning"))]
     models = {f.get("model") for f in frames if isinstance(f, dict) and f.get("model")}
     check("52", "a streamed completion arrives as many frames, every one under the alias, then [DONE]",
           len(content) >= 2 and models == {qwen_alias} and done, f"{len(content)} content frames, models={models}")
@@ -800,6 +826,17 @@ def phase_runtimes(ctx: dict) -> None:
           f"old={agent_before} new={new_agent} rc={out.returncode} {out.stderr.strip()}")
     ctx["agent_pid"] = new_agent or agent_before
     wait_for(lambda: api("GET", f"{ctx['base']}/healthz")[0] == 200, 120)
+    # Nobody signs in: this is the restart nobody is watching.
+    control = ctx["control"]
+    wait_for(lambda: api("GET", f"{control}/healthz")[0] == 200, 120)
+    _, cstatus = api("GET", f"{control}/v1/auth/status")
+    unlocked = (cstatus or {}).get("unlocked")
+    fact("control root after an unattended restart", cstatus)
+    if ctx.get("keyring"):
+        check("61b", "with the keyring chosen, the root comes back unlocked with nobody signing in",
+              unlocked is True, cstatus)
+    else:
+        check("61b", "with no keyring, the root comes back sealed and says so", unlocked is False, cstatus)
     _, login = api("POST", f"{ctx['base']}/v1/auth/login", body={"passphrase": PASSPHRASE})
     ctx["token"] = (login or {}).get("sessionToken", ctx["token"])
     back = [wait_status(ctx, n, "ready", 300).get("status") for n in ("qwen-mlx", "smol-mlx")]
