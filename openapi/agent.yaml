@@ -3088,7 +3088,8 @@ components:
             uses the text bundled with the agent. It must yield at least
             8,192 tokens for this model (two 4,096-token chunks); a
             shorter text is refused with its token count. Not stored: the
-            build keeps its SHA-256 and token count.
+            build keeps its SHA-256, and its token count when
+            llama-perplexity reports one (it does when it refuses a text).
         stopRuntimes:
           type: array
           items:
@@ -3147,7 +3148,11 @@ components:
         deepDepth:
           type: [integer, "null"]
           minimum: 0
-          description: The context depth of the second decode measurement, `min(contextSize / 2, 8192)`.
+          description: |
+            The context depth of the second decode measurement: 2,048 for
+            every candidate, so candidates are compared at one depth. A
+            candidate measured at half its own context reads slower for
+            being deeper, not for its settings.
         deepDecodeTokensPerSecond:
           type: [number, "null"]
           exclusiveMinimum: 0
@@ -3221,8 +3226,10 @@ components:
           minimum: 0
           description: |
             Index into `candidates` of the default choice: the longest
-            context on the frontier whose deep decode speed is at least
-            80% of the fastest measured. Null when nothing was measured.
+            context on the frontier whose decode speed at the common depth
+            is at least 80% of the fastest measured. Speeds within 3% of
+            each other count as equal, so where every context places alike
+            the longest wins. Null when nothing was measured.
         engineVersion:
           type: [string, "null"]
         localPath:

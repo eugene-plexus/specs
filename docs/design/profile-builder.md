@@ -1,6 +1,7 @@
 # Profile builder: automatic load tuning
 
-**Status: designed 2026-09-30; PB1 in progress.** §0 holds the measurements,
+**Status: designed 2026-09-30; PB1 built and accepted 2026-09-30**
+([record](../acceptance/profile-builder-run.md)). §0 holds the measurements,
 §1–§8 the design, and §9 the calls. Calls 1–4 are taken; calls 5 and 6 are
 PB2's. The order of work is [`audience-roadmap.md`](audience-roadmap.md).
 
@@ -398,7 +399,10 @@ evidence, and an expert sees it in the hint.
    `-ngl`, `-ot` (fit's commas become `;`), `-ctk/-ctv`, `-fa`.
    - **Never `-fitc`.** That is M3's trap: it measures the same placement
      every time.
-   - Use `-p 512 -n 128 -r 3` at depth 0 and at depth `min(N/2, 8192)`.
+   - Use `-p 512 -n 128 -r 3` at depth 0 and at **one common depth of 2,048
+     tokens**. Every candidate can reach it, so candidates are compared at
+     the same depth. (Measuring each at half its own context was tried
+     first and was wrong; see "Decided while building" below.)
    - Decode is the reported speed. Prefill is shown only relative to the
      other candidates (M3).
 4. **Confirm.**
@@ -412,6 +416,50 @@ evidence, and an expert sees it in the hint.
 
 **The Pareto set.** Drop every candidate that is both slower and shorter
 than another. What remains is what the person chooses from.
+
+**Decided while building PB1 (2026-09-30):**
+- **A build asks no memory admission, at preflight or at start.**
+  Admission refuses a launch predicted to exceed free graphics memory, but
+  fit places such a model partly in system memory, and that placement is
+  exactly what a build measures (M6). Fit reports a model it cannot place
+  at any context, and the build fails with that sentence. Other launches
+  are held by the launch lock for the whole run, so nothing else can take
+  the memory meanwhile.
+- **The confirm step tries at most two candidates:** the recommended one,
+  then the fastest remaining one on the frontier. A candidate llama-server
+  cannot load is marked `confirmed: false` with its reason, and if neither
+  loads the build fails with every reason kept.
+- **The trained context comes from the library's model entry; failing
+  that, from the file's own GGUF header** (`agent/gguf_context.py`, which
+  reads the key-value header and stops at `<arch>.context_length`: 0.1 to
+  38 ms on four real models). Without one of the two, a build would try
+  contexts the model was never trained for.
+- **The bundled evaluation text** is `agent/…/data/evaluation_text.txt`,
+  112,864 bytes: specs' `README.md` and `docs/deployment/tailnet.md` plus
+  the agent's `admission.py`, as committed at specs `32bb1e8` / agent
+  `ebf8947`, so it is prose and code we own. It is 26,766 tokens for
+  Qwen3-30B-A3B and 27,823 for Qwen3.6-27B, which is six chunks where four
+  are used. It changes only deliberately, because a change makes new
+  quality numbers incomparable with old ones.
+- **A custom text's token count is recorded only when llama-perplexity
+  reports it**, which it does when it refuses a text as too short. A text
+  long enough to use is identified by its SHA-256.
+- **Candidates are compared at one common depth (2,048 tokens), and speeds
+  within 3% are equal.**
+  - The first CPU acceptance run measured each candidate at half its own
+    context, up to 8k. The 4k and 8k rungs read 23.5 and 20.8 tok/s and
+    every rung from 16k up read 16.7. That looked like a speed/context
+    trade, and the build suggested 8k.
+  - On that node all five rungs placed identically, so a longer context
+    costs nothing until it is filled. The numbers measured depth, not
+    settings.
+  - Real trades appear only where a longer context changes the placement,
+    as it does on the 8 GB MoE run (M4).
+  - Speed within one candidate at increasing depth is R6.1's Benchmark's
+    job.
+- **At the same context and speed, the more precise cache wins.** The
+  third GPU run kept f16 and q8_0 at 8k both (48.4 against 48.8 tok/s),
+  where the smaller cache bought nothing but a quality cost.
 
 **Time:** about 27 s per measured candidate here (M5), plus 1–2 minutes of
 quality measurement, so **about 4–8 minutes on this machine**, and more
@@ -466,7 +514,8 @@ triangle.
 **Defaults:**
 - **Accuracy: Max** (§9, call 3, Troy).
 - **Slider:** the **longest memory that keeps at least 80% of the fastest
-  speed** measured at the 8k depth. For scale, M4's 512-token-prompt
+  speed** measured at the common depth, with speeds within 3% counted as
+  equal. For scale, M4's 512-token-prompt
   figures at the 8 GB budget put 64k with q8 at 40.7 against 50.6 tok/s
   for 4k, which is 80%.
 - The person moves it. The default is stated, never silent.
@@ -589,6 +638,16 @@ and the starter set.
    did what Medium does would break settings-never-lie.
 2. **Thresholds: High ≥ 96.5% and Medium ≥ 92% same top token.** They are
    re-checked on more models in PB1's acceptance.
+   - **Found by PB1's acceptance, for Troy: the bundled text is harder than
+     wikitext.**
+   - The MoE model's 8-bit cache scored 96.32% ± 0.21 on it, against
+     97.29% on wikitext, and 4-bit scored 88.4% against 93.1%.
+   - So High refused the 8-bit cache that §0 had it passing, and that model
+     at High gets f16 only (32k suggested, where Medium gives 64k with the
+     8-bit cache).
+   - The rule is working as specified, and the threshold is unchanged. It
+     is worth a look before PB2 puts it in front of people:
+     `docs/acceptance/profile-builder-run.md`, runs 2 and 3.
 3. **The default accuracy is Max** (Troy). The recommendation was High and
    was not taken. The builder starts on "nothing changes answers", and the
    person moves it down.
