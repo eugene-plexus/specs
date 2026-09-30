@@ -2,6 +2,11 @@
 
 This is a capacity fixture, not evidence from a physical 8 GB card. Include
 decimal and binary units explicitly rather than silently treating GB as GiB.
+
+The pick either fits entirely on the card, or is a mixture-of-experts entry
+whose experts sit in system memory while everything else fits on the card
+(moe-aware-fit call B, 2026-09-30). A dense model split across the card and
+RAM is never a first model.
 """
 import json
 from eugene_plexus_library import starter
@@ -16,11 +21,21 @@ for label, unit in (("GB (decimal)", 10**9), ("GiB (binary)", 1024**3)):
     scored = starter.build(starter.load(), budget=budget, context_length=8192, kv_cache_type=KvCacheType.f16)
     assert scored.recommended and scored.recommended.sizeClass
     selected = next(m for m in scored.models if m.sizeClass == scored.recommended.sizeClass)
-    assert selected.fit.verdict.value == "fits"
-    assert selected.fit.requiredBytes <= 8 * unit
+    on_card = selected.fit.requiredBytes
+    if selected.fit.verdict.value == "fits":
+        assert selected.fit.offload is None
+    else:
+        assert selected.fit.verdict.value in ("tight", "split"), selected.fit.verdict
+        assert selected.fit.offload is not None and selected.fit.offload.value == "experts"
+        assert selected.fit.expertBytes and selected.fit.requiredBytes <= 24 * unit
+        on_card -= selected.fit.expertBytes
+    assert on_card <= 8 * unit
     results.append({"capacityUnits": label, "contextTokens": 8192,
                     "recommendedClass": scored.recommended.sizeClass,
                     "model": selected.baseModel, "requiredBytes": selected.fit.requiredBytes,
+                    "verdict": selected.fit.verdict.value,
+                    "offload": selected.fit.offload.value if selected.fit.offload else None,
+                    "onCardBytes": on_card,
                     "reviewed": str(scored.reviewed),
                     "candidates": [{"class": m.sizeClass, "verdict": m.fit.verdict.value,
                                     "requiredBytes": m.fit.requiredBytes} for m in scored.models]})

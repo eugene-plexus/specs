@@ -6,13 +6,17 @@
   `7920bf9`.
 - **A3a and A3b are built and pinned** (admission, and the library's
   MoE-aware fit): agent `9ac7b7e`, library `025847e`.
-- **A3c's library half is built** (the starter set's MoE class), library
-  `55b30db`, not yet pinned. **Waiting on Troy:** accept or reject the
-  review's proposed entry, Qwen3.6-35B-A3B
-  ([record](../acceptance/a3c-starter-moe-run.md)). Shipping it is a library
-  data edit, an update to `s10-starter-check.py`, and a pin.
-- **Pickup: A2 (PB2), A3c's Discover words and A3d, once the UI theme work
-  in `ui` has landed.**
+- **A3c's library half is built and shipped** (the starter set's MoE class):
+  library `d6f4e6f`, pinned in both installers. Troy accepted the review's
+  entry, Qwen3.6-35B-A3B, on 2026-09-30
+  ([record](../acceptance/a3c-starter-moe-run.md)).
+- **The UI theme work has landed (ui `1ef3b22`), so `ui` is clear.**
+- **Pickup, in order:**
+  1. A3c's UI words. Today the UI labels a pick with its experts in RAM
+     "partial offload", the dense-spill wording.
+  2. A2, which is PB2. Call 6, where the builder's button lives, is still
+     open; the recommendation is the model's profile page first.
+  3. A3d, Low's smaller file, which goes with PB2.
 
 This replaces [`adoption-roadmap.md`](adoption-roadmap.md) as the pickup
 point. Its open physical and moderated checks still stand and are carried

@@ -23,9 +23,9 @@ for a dense 27B spilled by whole layers.
 - The review has a `30B MoE` class. A name ending `-A3B` or a `moe`
   architecture id makes a candidate, and the file's expert tensors are the
   proof: a MoE entry is not built without them.
-- **The shipped list is unchanged.** Nothing is shipped in the new class, so
-  the review now says REPLACE for it, and the release gate refuses that until
-  a person accepts an entry.
+- Library `55b30db` shipped the code with the list unchanged, so the review
+  said REPLACE for the empty class until a person accepted an entry. Troy
+  accepted one the same day (below).
 
 **The review against the live hub, 2026-09-30.** 5 KEEP (every current
 entry), 1 REPLACE:
@@ -97,15 +97,19 @@ clean. **Sabotage: 18 of 18 caught.** The first pass caught 15 of 19:
 - One named a redundant guard: `no` never carries `offload`. It was deleted,
   not kept as a second mechanism.
 
+**Accepted and shipped, 2026-09-30.** Troy accepted the whole review,
+explicitly **without** a test load first. Library `d6f4e6f` carries it:
+- every existing class is kept, with its streak moved to 2;
+- the `30B MoE` class holds the entry above;
+- `reviewed:` is 2026-09-30.
+
+Both installers pin it. `scripts/s10-starter-check.py` now accepts a pick
+that is `split` with `offload: experts`, as long as the part left on the
+card fits it (3.81 GB of 8). On that fixture the pick is the 35B-A3B.
+
 **Not done.**
-- The proposed entry is **not shipped**. It is Troy's to accept, by copying
-  it into `library/src/eugene_plexus_library/starter_models.yaml`, which then
-  needs a library commit and a pin.
-- The pinned engine's own build has not loaded the file.
-- **Accepting the entry breaks `scripts/s10-starter-check.py`**, which runs in
-  specs CI and asserts that the 8 GB / 16 GB pick fits entirely. With the
-  entry, that pick is the 35B-A3B, split with its experts in RAM. This is
-  call B changing starter decision #4, as the design said it would. The check
-  must accept a `split` pick with `offload: experts`, in the same change that
-  ships the entry.
-- Discover's words for the two kinds of split wait for the theme work in `ui`.
+- No engine has loaded the file. Troy's call was to ship without that.
+- **The UI says "partial offload at 8k"** for this pick. That is true, but it
+  reads like the warning a dense spill deserves. Words for a pick with its
+  experts in RAM are A3c's UI half, which is first in line now that the
+  theme work has landed.
