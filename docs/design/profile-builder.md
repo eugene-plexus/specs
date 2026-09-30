@@ -668,5 +668,5 @@ and the starter set.
 
 | # | Call | Recommendation | Against it |
 |---|---|---|---|
-| 5 | Admission trusts a built profile's measured memory | **Yes, for the same file, engine and node** | It is a second rule in admission until the MoE-aware estimate lands |
+| 5 | Admission trusts a built profile's measured memory | **Replaced (2026-09-30) by [`moe-aware-fit.md`](moe-aware-fit.md) call A.** Admission refuses any `split` whose `gpuLayers` is unset, and a built profile leaves it unset, so a general rule is needed ("unset means llama.cpp places it"), not an exception for built profiles | — |
 | 6 | Where the button lives | **The model's profile page first.** Home's Run could offer "make it faster" later | Home is where beginners are |
