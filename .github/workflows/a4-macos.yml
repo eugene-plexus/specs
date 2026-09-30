@@ -1,0 +1,78 @@
+# A4 (audience roadmap): Eugene on a Mac, on GitHub's own macOS runners.
+#
+# The arm64 runners expose Metal to MLX as an "Apple Paravirtual device"
+# (measured 2026-09-30 on macos-14, macos-15 and macos-26), so this runs the
+# real mlx_lm.server on a real, if virtual, Apple GPU: the installer and
+# launchd, onboarding, the agent's own MLX recipe, unified-memory scoring,
+# two MLX runtimes routed by alias, restarts, llama.cpp's macOS build, a
+# Rosetta shell and uninstall. It tests our integration, not MLX.
+#
+# What a runner cannot show is listed in
+# docs/acceptance/a4-macos-runner-run.md; that list is what a rented Mac is for.
+#
+# Try a candidate before pinning it: dispatch with the component SHAs, and the
+# run installs those instead of install.sh's pins.
+
+name: A4 macOS
+
+on:
+  push:
+    branches: [main, a4-macos]
+    paths:
+      - scripts/install.sh
+      - scripts/a4-macos-acceptance.py
+      - .github/workflows/a4-macos.yml
+  workflow_dispatch:
+    inputs:
+      agent_ref:
+        description: "Candidate agent SHA (40 chars); empty = install.sh's pin"
+        required: false
+        type: string
+      library_ref:
+        description: "Candidate library SHA (40 chars); empty = install.sh's pin"
+        required: false
+        type: string
+      gateway_ref:
+        description: "Candidate gateway SHA (40 chars); empty = install.sh's pin"
+        required: false
+        type: string
+      driver_ref:
+        description: "Candidate inference-driver SHA (40 chars); empty = install.sh's pin"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apple-silicon:
+    name: A4 on ${{ matrix.os }} (Apple silicon)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15]
+    steps:
+      - uses: actions/checkout@v6
+      # For the harness alone, which is stdlib only. The install brings its
+      # own Python through uv, and the MLX recipe brings another.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Eugene on this Mac, end to end
+        env:
+          EP_PIN_AGENT: ${{ inputs.agent_ref }}
+          EP_PIN_LIBRARY: ${{ inputs.library_ref }}
+          EP_PIN_GATEWAY: ${{ inputs.gateway_ref }}
+          EP_PIN_DRIVER: ${{ inputs.driver_ref }}
+        run: python scripts/a4-macos-acceptance.py --report a4-report.json
+      - name: Keep the report and the agent log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: a4-${{ matrix.os }}
+          path: |
+            a4-report.json
+            agent-log-tail.txt
+          if-no-files-found: warn
