@@ -1483,9 +1483,14 @@ paths:
       description: |
         Operator-only. Uses the installed llama-bench beside the selected
         llama.cpp server, with the saved profile copied into the request.
-        Requires every runtime on the node to be stopped. Does not stop models,
-        install engines, download files, change profiles or change fit estimates.
-        While active, runtime create/update/start/restart requests return 409.
+        Every runtime on the node must be stopped, or listed in
+        `stopRuntimes` — the operator's agreement, as the preflight asked
+        for it — in which case the job stops exactly those (reason
+        `measurement`) and, with `restartAfter`, starts them again when it
+        ends. A running runtime that is not listed refuses the job with
+        409; nothing is stopped implicitly. Does not install engines,
+        download files, change profiles or change fit estimates. While
+        active, runtime create/update/start/restart requests return 409.
         Depths are zero, half of the available context, and context minus
         generated tokens. Results exclude tokenization and sampling. Unsupported
         settings are refused rather than silently ignored. One job per node;
@@ -1531,6 +1536,124 @@ paths:
                 $ref: "#/components/schemas/Benchmark"
         "404":
           description: Job not found on this node.
+
+  /v1/benchmarks/preflight:
+    post:
+      tags: [runtimes]
+      operationId: preflightBenchmark
+      summary: What starting this benchmark would do, without starting it.
+      description: |
+        Operator-only. Lists the runtimes the job would have to stop (the
+        question to ask before Start) and every reason it would be
+        refused. Changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BenchmarkRequest"
+      responses:
+        "200":
+          description: The answer; `problems` is empty when the job can start.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeasurementPreflight"
+
+  /v1/profile-builds:
+    get:
+      tags: [runtimes]
+      operationId: listProfileBuilds
+      summary: Recent profile builds on this node.
+      description: Operator-only. Retains the latest 20 builds across agent restarts.
+      responses:
+        "200":
+          description: Newest first, including the active build.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileBuildList"
+    post:
+      tags: [runtimes]
+      operationId: startProfileBuild
+      summary: Measure settings for this model on this node, for the operator to save as a profile.
+      description: |
+        Operator-only; `docs/design/profile-builder.md` is the design.
+        Measures the quality cost of each lower cache precision the
+        accuracy level could allow (none at `max`), asks llama.cpp's fit
+        where each context and allowed cache type would be placed,
+        measures each placement with llama-bench, and confirms the
+        recommended one in llama-server. Placement is always fit's; the
+        build chooses context, cache precision and the memory margin.
+        Writes no profile: the result is for the operator to save.
+        Runtimes follow `BenchmarkRequest.stopRuntimes` and
+        `restartAfter`. One measurement job per node, benchmark or build;
+        thirty-minute time limit; agent restart marks an unfinished build
+        failed; cancellation keeps partial results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileBuildRequest"
+      responses:
+        "202":
+          description: Accepted; poll the node's build list for progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileBuild"
+        "409":
+          description: A measurement job is active, or a runtime is running that `stopRuntimes` does not list.
+        "422":
+          description: Unsupported profile or engine, a missing llama.cpp tool, too little disk, too short an evaluation text, or the model unavailable.
+
+  /v1/profile-builds/preflight:
+    post:
+      tags: [runtimes]
+      operationId: preflightProfileBuild
+      summary: What starting this build would do, without starting it.
+      description: |
+        Operator-only. The runtimes it would stop, every reason it would
+        be refused (missing tools, disk for the quality step, an
+        evaluation text that is too short), and a time estimate from the
+        model's size, where it is read from, and the number of
+        measurements the accuracy level implies. Changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileBuildRequest"
+      responses:
+        "200":
+          description: The answer; `problems` is empty when the build can start.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeasurementPreflight"
+
+  /v1/profile-builds/{id}/cancel:
+    post:
+      tags: [runtimes]
+      operationId: cancelProfileBuild
+      summary: Stop an active build, keep what it measured, and restart what it stopped.
+      description: Operator-only. Idempotent for a finished build. Releases the node only after its children exit.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stopped or already finished.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProfileBuild"
+        "404":
+          description: Build not found on this node.
 
   /v1/runtimes:
     get:
@@ -2719,6 +2842,75 @@ components:
           minimum: 16
           maximum: 256
           default: 128
+        stopRuntimes:
+          type: array
+          items:
+            type: string
+          default: []
+          description: |
+            The runtimes the operator agreed to stop for this job, as the
+            preflight listed them. The job stops exactly these. A runtime
+            running on the node that is NOT in this list refuses the job
+            with 409, so a model started between the question and the
+            click is never stopped without being asked about. Names in
+            the list that are already stopped are ignored.
+        restartAfter:
+          type: boolean
+          default: true
+          description: |
+            Start the runtimes this job stopped again when it ends —
+            completed, failed, cancelled or timed out. Each restart goes
+            through admission like an operator's Start and is reported on
+            the job's `restarts`; a refused or failed one is reported by
+            name, never forced.
+
+    MeasurementPreflight:
+      type: object
+      description: |
+        What starting a benchmark or a profile build with this request
+        would do, without doing it: the runtimes it would need to stop
+        (the question the page asks), anything that would refuse it, and
+        the time it would take where that can be estimated.
+      required: [runningRuntimes, problems]
+      properties:
+        runningRuntimes:
+          type: array
+          items:
+            type: string
+          description: Runtimes on this node that are not stopped. Pass them as `stopRuntimes` to agree to stopping them.
+        problems:
+          type: array
+          items:
+            type: string
+          description: Plain sentences, one per reason the job would be refused. Empty when it can start.
+        estimateSeconds:
+          type: [integer, "null"]
+          minimum: 0
+          description: Roughly how long the job would take here; null when it cannot be estimated.
+        detail:
+          type: string
+          description: How the estimate was reached, in words.
+
+    MeasurementRestartState:
+      type: string
+      enum: [pending, restarted, refused, failed, skipped]
+      description: |
+        * `pending` — stopped for the job; the job has not ended.
+        * `restarted` — started again after the job.
+        * `refused` — admission refused the restart (the reason is in `detail`); it was not forced.
+        * `failed` — the start was attempted and did not happen.
+        * `skipped` — the request set `restartAfter: false`.
+
+    MeasurementRestart:
+      type: object
+      required: [name, state]
+      properties:
+        name:
+          type: string
+        state:
+          $ref: "#/components/schemas/MeasurementRestartState"
+        detail:
+          type: string
 
     BenchmarkPoint:
       type: object
@@ -2797,6 +2989,11 @@ components:
           additionalProperties:
             type: string
           description: CPU/GPU/backend identity reported by the benchmark executable.
+        restarts:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeasurementRestart"
+          description: The runtimes this job stopped, and what became of each afterwards.
 
     BenchmarkList:
       type: object
@@ -2806,6 +3003,250 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Benchmark"
+
+    ProfileBuildAccuracy:
+      type: string
+      enum: [max, high, medium]
+      description: |
+        A promise about quality, measured on this model rather than
+        assumed (`docs/design/profile-builder.md` §3):
+        * `max` — the f16 cache only; nothing that changes answers, so
+          no quality measurement is made.
+        * `high` — a cache type is allowed when it picks the same next
+          token as `max` at least 96.5% of the time on the evaluation
+          text, counting its measured rate minus one standard error.
+        * `medium` — the same test at 92%.
+
+    CacheType:
+      type: string
+      enum: [f16, q8_0, q4_0]
+      description: |
+        llama.cpp's KV-cache precision, always set for K and V together:
+        the flash-attention kernels of the builds measured handle
+        matching pairs only.
+
+    ProfileBuildPhase:
+      type: string
+      enum: [quality, candidates, measuring, confirming, finished]
+      description: |
+        * `quality` — measuring what each lower cache precision the
+          accuracy level could allow costs on this model.
+        * `candidates` — asking llama.cpp's fit where each context and
+          cache type would be placed (nothing loads).
+        * `measuring` — llama-bench on each candidate, with fit's
+          placement passed explicitly.
+        * `confirming` — loading the recommended candidate once in
+          llama-server and checking it serves.
+        * `finished` — the job has ended; `state` says how.
+
+    EvaluationTextSource:
+      type: string
+      enum: [bundled, custom]
+
+    ProfileBuildEvaluation:
+      type: object
+      description: Which text the quality measurement used. A custom text is identified, never stored.
+      required: [source]
+      properties:
+        source:
+          $ref: "#/components/schemas/EvaluationTextSource"
+        sha256:
+          type: [string, "null"]
+        tokens:
+          type: [integer, "null"]
+          minimum: 0
+
+    ProfileBuildRequest:
+      type: object
+      additionalProperties: false
+      required: [modelId, runtime, accuracy]
+      properties:
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 256
+        profileId:
+          type: [string, "null"]
+          maxLength: 256
+          description: The profile the build started from, if any. The build never writes a profile; the UI saves its result.
+        runtime:
+          $ref: "#/components/schemas/RuntimeSpec"
+        accuracy:
+          $ref: "#/components/schemas/ProfileBuildAccuracy"
+        memoryMarginMiB:
+          type: [integer, "null"]
+          minimum: 0
+          maximum: 65536
+          description: |
+            Graphics memory to leave free on every device, passed to fit
+            as `--fit-target`. Null is llama.cpp's own default (1024 MiB).
+        evaluationText:
+          type: [string, "null"]
+          maxLength: 2097152
+          description: |
+            The operator's own text for the quality measurement. Null
+            uses the text bundled with the agent. It must yield at least
+            8,192 tokens for this model (two 4,096-token chunks); a
+            shorter text is refused with its token count. Not stored: the
+            build keeps its SHA-256 and token count.
+        stopRuntimes:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Same rule as `BenchmarkRequest.stopRuntimes`.
+        restartAfter:
+          type: boolean
+          default: true
+          description: Same rule as `BenchmarkRequest.restartAfter`.
+
+    CacheQuality:
+      type: object
+      required: [cacheType, sameTopTokenPercent, standardError, meanKld, tokensScored, passes]
+      properties:
+        cacheType:
+          $ref: "#/components/schemas/CacheType"
+        sameTopTokenPercent:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: How often this cache picks the same next token as the f16 cache, on the evaluation text.
+        standardError:
+          type: number
+          minimum: 0
+          description: The standard error of `sameTopTokenPercent`, in percentage points.
+        meanKld:
+          type: number
+          minimum: 0
+          description: Mean KL divergence from the f16 cache's token distribution. Evidence for experts; the accuracy level is decided on `sameTopTokenPercent`.
+        tokensScored:
+          type: integer
+          minimum: 1
+        passes:
+          type: boolean
+          description: Whether `sameTopTokenPercent - standardError` clears the requested accuracy level's threshold.
+
+    BuildCandidate:
+      type: object
+      required: [contextSize, cacheType, placement]
+      properties:
+        contextSize:
+          type: integer
+          minimum: 256
+        cacheType:
+          $ref: "#/components/schemas/CacheType"
+        placement:
+          type: array
+          items:
+            type: string
+          description: The arguments llama.cpp's fit chose for this context and cache (for example `-ngl -1 -ot …`), exactly as measured.
+        decodeTokensPerSecond:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+          description: llama-bench decode speed with an empty context. Null until measured.
+        deepDepth:
+          type: [integer, "null"]
+          minimum: 0
+          description: The context depth of the second decode measurement, `min(contextSize / 2, 8192)`.
+        deepDecodeTokensPerSecond:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        prefillTokensPerSecond:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+          description: Relative only. llama-bench reads prefill 6–30% above what llama-server reports.
+        onFrontier:
+          type: boolean
+          description: Not both slower and shorter than another measured candidate.
+        confirmed:
+          type: [boolean, "null"]
+          description: Whether llama-server loaded and served this candidate in the confirm phase; null when it was not the one confirmed.
+        graphicsMemoryBytes:
+          type: [integer, "null"]
+          minimum: 0
+          description: Graphics memory used while confirming, where the node can measure it.
+        detail:
+          type: string
+
+    ProfileBuild:
+      type: object
+      required: [id, node, modelId, runtime, accuracy, evaluation, state, phase, startedAt, progress, detail, quality, candidates, restarts]
+      properties:
+        id:
+          type: string
+        node:
+          type: string
+        modelId:
+          type: string
+        profileId:
+          type: [string, "null"]
+        runtime:
+          $ref: "#/components/schemas/RuntimeSpec"
+        accuracy:
+          $ref: "#/components/schemas/ProfileBuildAccuracy"
+        memoryMarginMiB:
+          type: [integer, "null"]
+        evaluation:
+          $ref: "#/components/schemas/ProfileBuildEvaluation"
+        state:
+          $ref: "#/components/schemas/BenchmarkState"
+        phase:
+          $ref: "#/components/schemas/ProfileBuildPhase"
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        detail:
+          type: string
+        quality:
+          type: array
+          items:
+            $ref: "#/components/schemas/CacheQuality"
+        allowedCacheTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CacheType"
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/BuildCandidate"
+        recommended:
+          type: [integer, "null"]
+          minimum: 0
+          description: |
+            Index into `candidates` of the default choice: the longest
+            context on the frontier whose deep decode speed is at least
+            80% of the fastest measured. Null when nothing was measured.
+        engineVersion:
+          type: [string, "null"]
+        localPath:
+          type: [string, "null"]
+        modelSizeBytes:
+          type: [integer, "null"]
+          minimum: 0
+        hardware:
+          type: object
+          additionalProperties:
+            type: string
+        restarts:
+          type: array
+          items:
+            $ref: "#/components/schemas/MeasurementRestart"
+
+    ProfileBuildList:
+      type: object
+      required: [builds]
+      properties:
+        builds:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProfileBuild"
 
     ComponentList:
       type: object
@@ -5356,6 +5797,7 @@ components:
         - operator
         - idle
         - autoStart
+        - measurement
       description: |
         * `operator` — an explicit stop, from the UI or the API.
         * `idle` — the gateway unloaded it after `idleUnloadSeconds`
@@ -5363,6 +5805,11 @@ components:
           next request if `startOnDemand` is set.
         * `autoStart` — declared with `autoStart: false` and never
           started in this agent's lifetime.
+        * `measurement` — stopped, with the operator's agreement, so a
+          benchmark or a profile build could measure this node. It
+          starts again when that job ends unless the request asked
+          otherwise, and while the job runs a start or a gateway wake is
+          refused with 409.
 
         A reason beside `status: stopped` rather than three new members
         of `RuntimeStatus`, because the state is the same state — the
