@@ -6,9 +6,13 @@
   `7920bf9`.
 - **A3a and A3b are built and pinned** (admission, and the library's
   MoE-aware fit): agent `9ac7b7e`, library `025847e`.
-- **Pickup: A2 (PB2), A3c and A3d, once the UI theme work in `ui` has
-  landed.** A3c's library half (the starter set's MoE class) does not wait
-  for the theme.
+- **A3c's library half is built** (the starter set's MoE class), library
+  `55b30db`, not yet pinned. **Waiting on Troy:** accept or reject the
+  review's proposed entry, Qwen3.6-35B-A3B
+  ([record](../acceptance/a3c-starter-moe-run.md)). Shipping it is a library
+  data edit, an update to `s10-starter-check.py`, and a pin.
+- **Pickup: A2 (PB2), A3c's Discover words and A3d, once the UI theme work
+  in `ui` has landed.**
 
 This replaces [`adoption-roadmap.md`](adoption-roadmap.md) as the pickup
 point. Its open physical and moderated checks still stand and are carried

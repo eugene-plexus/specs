@@ -3,7 +3,10 @@
 **Status: designed 2026-09-30; calls A-C taken the same day. A3a and A3b
 are built and pinned** ([A3a record](../acceptance/a3a-admission-run.md),
 agent `9ac7b7e`; [A3b record](../acceptance/a3b-moe-fit-run.md), library
-`025847e`). **A3c and A3d wait on `ui`.** §0 is measured. Roadmap: [`audience-roadmap.md`](audience-roadmap.md) A3,
+`025847e`). **A3c's library half is built** ([record](../acceptance/a3c-starter-moe-run.md),
+library `55b30db`, not yet pinned). Its proposed entry, Qwen3.6-35B-A3B, is
+Troy's to accept. **A3c's Discover words and A3d wait on `ui`.** §0 is
+measured. Roadmap: [`audience-roadmap.md`](audience-roadmap.md) A3,
 a separate slice from the profile builder by Troy's call.
 
 ## §0 Measurements
