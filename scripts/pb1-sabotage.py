@@ -22,6 +22,7 @@ TESTS = [
     "tests/test_benchmark_routes.py",
     "tests/test_benchmarks.py",
     "tests/test_engines.py",
+    "tests/test_engine_places.py",
 ]
 
 # (name, file, original, sabotaged)
@@ -152,6 +153,43 @@ SABOTAGES = [
         SRC + "gguf_context.py",
         "stream.seek(_FIXED[inner] * count, 1)",
         "stream.seek(0, 1)",
+    ),
+    # moe-aware-fit call A and the thresholds Troy set, 2026-09-30.
+    (
+        "an unset gpuLayers is full offload whatever the build can do",
+        SRC + "admission.py",
+        "return not (engine_places and not fit_disabled(spec))",
+        "return True",
+    ),
+    (
+        "a profile's own --fit off is ignored",
+        SRC + "admission.py",
+        "return not (engine_places and not fit_disabled(spec))",
+        "return not engine_places",
+    ),
+    (
+        "any llama-server is taken to place models, help unread",
+        SRC + "engines/llama_cpp.py",
+        'return flags is not None and "--fit" in flags',
+        "return True",
+    ),
+    (
+        "admission never learns whether the engine places the model",
+        SRC + "routes/runtimes.py",
+        "engine_places=await asyncio.to_thread(engine_places, spec, state.get_config),",
+        "",
+    ),
+    (
+        "High back at 96.5%",
+        SRC + "profile_builds.py",
+        "ProfileBuildAccuracy.high: 96.0,",
+        "ProfileBuildAccuracy.high: 96.5,",
+    ),
+    (
+        "Low no looser than Medium",
+        SRC + "profile_builds.py",
+        "ProfileBuildAccuracy.low: 88.0,",
+        "ProfileBuildAccuracy.low: 92.0,",
     ),
 ]
 
