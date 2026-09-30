@@ -5,7 +5,10 @@ are built and pinned** ([A3a record](../acceptance/a3a-admission-run.md),
 agent `9ac7b7e`; [A3b record](../acceptance/a3b-moe-fit-run.md), library
 `025847e`). **A3c's library half is built and shipped** ([record](../acceptance/a3c-starter-moe-run.md),
 library `d6f4e6f`, pinned). Troy accepted the review's entry, Qwen3.6-35B-A3B,
-on 2026-09-30. **Next: A3c's UI words, then A3d.** §0 is
+on 2026-09-30. **A3c's UI half is built and pinned** ([record](../acceptance/a3c-ui-words-run.md),
+ui `f185a85` / dist `f943f3b`, library `dc08842`): a split says *experts in
+RAM*, *partial offload* or *needs RAM too*, and a MoE model's new profile
+starts at its experts-in-RAM context. **Next: A3d, with PB2.** §0 is
 measured. Roadmap: [`audience-roadmap.md`](audience-roadmap.md) A3,
 a separate slice from the profile builder by Troy's call.
 
@@ -127,7 +130,7 @@ because call A is logic.
 |---|---|---|
 | **A3a** Admission reads unset as "llama.cpp places it" | agent | no, so it can go before PB2 |
 | **A3b** Tensor table, `expertBytes`, `offload`, `maxContextExpertsInRam` | specs, library | no |
-| **A3c** The starter set's MoE class and Discover's words for the two kinds of split | library, ui | yes, after the theme |
+| **A3c** The starter set's MoE class and Discover's words for the two kinds of split | library, ui | yes, after the theme. **Built** |
 | **A3d** Low: a smaller file, offered after a build | ui, library catalogue | yes, with PB2 |
 
 ## §4 Calls for Troy

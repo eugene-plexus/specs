@@ -10,13 +10,15 @@
   library `d6f4e6f`, pinned in both installers. Troy accepted the review's
   entry, Qwen3.6-35B-A3B, on 2026-09-30
   ([record](../acceptance/a3c-starter-moe-run.md)).
-- **The UI theme work has landed (ui `1ef3b22`), so `ui` is clear.**
+- **A3c's UI half is built and pinned** (ui `f185a85` / dist `f943f3b`,
+  library `dc08842`; [record](../acceptance/a3c-ui-words-run.md)). A split
+  says what sits where, and a MoE model's new profile starts at its
+  experts-in-RAM context instead of llama.cpp's 4,096 floor.
 - **Pickup, in order:**
-  1. A3c's UI words. Today the UI labels a pick with its experts in RAM
-     "partial offload", the dense-spill wording.
-  2. A2, which is PB2. Call 6, where the builder's button lives, is still
-     open; the recommendation is the model's profile page first.
-  3. A3d, Low's smaller file, which goes with PB2.
+  1. A2, which is PB2. **Call 6, where the builder's button lives, is still
+     open and must be asked before building**; the recommendation is the
+     model's profile page first.
+  2. A3d, Low's smaller file, which goes with PB2.
 
 This replaces [`adoption-roadmap.md`](adoption-roadmap.md) as the pickup
 point. Its open physical and moderated checks still stand and are carried
