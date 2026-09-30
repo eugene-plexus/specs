@@ -3229,12 +3229,25 @@ components:
         Checked when the agent starts and every six hours, and on
         `POST /v1/node/update/check`. Off with `updateChecks: false` on
         this agent's config.
-      required: [enabled, channel, channelSource, available, behind, apply]
+
+        **Only a newer version is offered** (2026-09-30). Each component
+        whose installed commit differs from the one `newest` pins is
+        placed by its commit's date: older is `behind`, newer is `ahead`.
+        `available` is true only when something is behind and nothing is
+        ahead, so a machine that runs a newer build than its channel's
+        newest -- installed from `main` while it follows `releases`, or
+        from a commit whose checks are still running -- is never told an
+        older one is an update.
+      required: [enabled, channelSource, available, behind, apply]
       properties:
         enabled:
           type: boolean
         channel:
           $ref: "#/components/schemas/UpdateChannel"
+          description: |
+            The channel this machine follows. Absent only while
+            `channelSource` is `pending`: which one it follows has not been
+            decided yet, and a value here would be a guess.
         channelSource:
           $ref: "#/components/schemas/UpdateChannelSource"
         checkedAt:
@@ -3248,13 +3261,27 @@ components:
         available:
           type: boolean
           description: |
-            `newest` differs from what is installed. Never true for a
-            development checkout.
+            `newest` is newer than what is installed: `behind` is not
+            empty and `ahead` is. Never true for a development checkout.
+            Agents before 2026-09-30 send no `ahead`, and for them this
+            means only that `newest` differs.
         behind:
           type: array
           items:
             type: string
-          description: The components whose installed commit is not the one in `newest`.
+          description: |
+            The components whose installed commit is older than the one in
+            `newest`, or that are missing or were installed before commits
+            were recorded.
+        ahead:
+          type: array
+          items:
+            type: string
+          description: |
+            The components whose installed commit is newer than the one in
+            `newest` (or that `newest` predates entirely, as every release
+            before P8 predates the tool-driver). Not empty means updating
+            to `newest` would move them back, so it is not offered.
         apply:
           $ref: "#/components/schemas/UpdateApply"
         running:
@@ -3350,11 +3377,24 @@ components:
 
     UpdateChannelSource:
       type: string
-      enum: [setting, inferred]
+      enum: [setting, default, pending, inferred]
       description: |
-        `setting`: `updateChannel` on this agent's config.
-        `inferred`: not set, so `releases` when the installed commits
-        are exactly one of the recent releases, and `edge` otherwise.
+        `setting`: `updateChannel` is saved on this agent's config.
+
+        `default`: not saved, so the default: `releases`, or what this
+        install's environment names (`EUGENE_PLEXUS_AGENT_DEFAULT_UPDATE_CHANNEL`,
+        which the `:edge` container image sets to `edge`).
+
+        `pending`: an install from before 2026-09-30 that never saved a
+        channel, whose first update check since has not yet read the
+        release list. That check saves the channel the machine followed
+        until then -- `releases` when its commits are exactly one of the
+        recent releases, `edge` otherwise -- so updating the agent never
+        moves a machine to another channel. `channel` is absent meanwhile.
+
+        `inferred`: sent only by agents before 2026-09-30, which worked an
+        unset channel out afresh at every check. Kept so a console can
+        still read one.
 
     UpdateOutcome:
       type: string
