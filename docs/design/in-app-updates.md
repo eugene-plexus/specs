@@ -83,9 +83,14 @@ The agent reads all six from its own venv, as text rather than by importing.
   read from the release's own `manifest.json`, and the installer is checked
   against the checksums that manifest publishes.
 
-An unset `updateChannel` follows what the machine was installed from:
-- `releases` when its six commits are exactly one of the five newest
-  releases;
+**Superseded 2026-09-30** ([`settings-accuracy.md`](settings-accuracy.md),
+decisions 1-6): `updateChannel` has a default, `releases` (the `:edge` image's
+environment says `edge`), and is never inferred. An install that never saved
+one keeps, once, the channel this rule gave it, and only a **newer** version is
+ever offered — each part placed by commit date. The rule it replaced, kept for
+that one settling (`updates.channel_before_default`): an unset `updateChannel`
+followed what the machine was installed from:
+- `releases` when its commits are exactly one of the five newest releases;
 - a container's own image tag;
 - `edge` otherwise.
 

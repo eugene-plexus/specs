@@ -592,6 +592,25 @@ else
 fi
 
 # ---------------------------------------------------------------------
+# 28. The image names the update channel it follows by default, and it is
+# the one its tag says (settings never lie, 2026-09-30): `edge` for the
+# `:edge` image, `releases` for a release tag. The agent shows it as the
+# default, with this image as its source, and never writes it to the file
+# -- so the check is on what the built image's environment holds.
+# ---------------------------------------------------------------------
+channel_env=$($CT run --rm --entrypoint /opt/eugene-plexus/venv/bin/python \
+  eugene-plexus/control-plane:0.1 -c "import os; print(os.environ.get('EUGENE_PLEXUS_AGENT_DEFAULT_UPDATE_CHANNEL', ''), os.environ.get('EUGENE_PLEXUS_CONTAINER_IMAGE', ''))" 2>/dev/null)
+channel_default=${channel_env%% *}
+channel_image=${channel_env#* }
+case "${channel_image##*:}" in
+  v[0-9]*) channel_want=releases ;;
+  *) channel_want=edge ;;
+esac
+[ -n "$channel_default" ] && [ "$channel_default" = "$channel_want" ] \
+  && ok "28. the image follows $channel_default by default, as its tag ($channel_image) says" \
+  || bad "28. the image's default update channel is '$channel_default' for $channel_image (expected $channel_want)"
+
+# ---------------------------------------------------------------------
 # 20. The UnRAID case: a uid the image has never heard of.
 #
 # `unraid/eugene-plexus.xml` ships `--user 99:100` because that is what a

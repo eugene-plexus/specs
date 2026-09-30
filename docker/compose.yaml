@@ -40,6 +40,9 @@ services:
         # The name this image is published as, which it reports so an
         # update can say which tag to pull. CI sets it for a release.
         EP_IMAGE: ${EP_IMAGE:-ghcr.io/eugene-plexus/control-plane:edge}
+        # The update channel the image follows unless one is saved: edge
+        # here, releases for a release image. CI sets both together.
+        EP_UPDATE_CHANNEL: ${EP_UPDATE_CHANNEL:-edge}
     image: eugene-plexus/control-plane:0.1
     container_name: eugene-plexus-control-plane
 

@@ -118,13 +118,13 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "8579764d59a81dedb430b7498f6a45d3b4512010"
-    "control"          = "2918b7edc78253e50395670daa5f1081ed019f7a"
-    "gateway"          = "ec2ea142be402d6c5ffe2f3e46b3b2fc73519e8d"
-    "inference-driver" = "02eea96d15dfc72bc6216833059afd5327f25f56"
-    "library"          = "b4af12ffd290b8e18e0422d75ee03f7b74368eb2"
-    "tool-driver"      = "7dc4794f92b41ee335d505c17737b4cb61a09844"
-    "ui"               = "cdc2b8738d54708f241ffe4425e6bab5ef8dd8ec"  # branch `dist`, not `main`
+    "agent"            = "ebf89477d1b1d0d61c38dd61360ff0bc4a5549f4"
+    "control"          = "2e80343dc6ec197b2aab311fe830cd590dc987b6"
+    "gateway"          = "744964c5118c30a894c2f08886206a713569afca"
+    "inference-driver" = "f5cf2e07261675627d1d9cff9bf49722158c456f"
+    "library"          = "812201750e908b7fc2452c18458417459903f535"
+    "tool-driver"      = "49c289fdaba3703a50d362801b1a9e682ad4d954"
+    "ui"               = "b93bbde7bd7faddd5627ac86af30167d26335936"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"

@@ -141,6 +141,14 @@ RUN sh /tmp/install.sh --prefix /opt/eugene-plexus --no-service --no-start \
 # image to pull. `edge` unless the release workflow says otherwise.
 ARG EP_IMAGE=ghcr.io/eugene-plexus/control-plane:edge
 ENV EUGENE_PLEXUS_CONTAINER_IMAGE=$EP_IMAGE
+# **Which update channel this image follows by default** (2026-09-30):
+# `edge` for the `:edge` image, `releases` for a release tag, which the
+# release workflow passes. A default from the environment, the way the
+# library's roots are: shown in the UI as the default and where it comes
+# from, never written to the config file -- so pulling a release image over
+# an edge one changes the default with it, and a saved choice still wins.
+ARG EP_UPDATE_CHANNEL=edge
+ENV EUGENE_PLEXUS_AGENT_DEFAULT_UPDATE_CHANNEL=$EP_UPDATE_CHANNEL
 
 ENV EUGENE_PLEXUS_AGENT_CONFIG_FILE=/data/agent.yaml \
     EUGENE_PLEXUS_AGENT_ENGINE_ROOT=/data/engines \
