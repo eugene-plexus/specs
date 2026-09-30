@@ -1,6 +1,11 @@
 # Audience roadmap
 
-**Status: the order of work from 2026-09-30. Pickup: A1, PB1.**
+**Status: the order of work from 2026-09-30.**
+- **A1 (PB1) is built and accepted the same day**:
+  [record](../acceptance/profile-builder-run.md), agent `2fcebf9`, control
+  `7920bf9`.
+- **Pickup: A2 (PB2), once the UI theme work in `ui` has landed.** Until
+  then, A3 does not depend on `ui`.
 
 This replaces [`adoption-roadmap.md`](adoption-roadmap.md) as the pickup
 point. Its open physical and moderated checks still stand and are carried

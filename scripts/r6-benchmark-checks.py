@@ -39,9 +39,13 @@ def main() -> None:
              "if False:", "tests/test_benchmark_jobs.py::test_bad_child_output_never_becomes_success"),
             ("credential-leak", "benchmarks.py", "env = child_environment()", "env = __import__('os').environ.copy()",
              "tests/test_benchmark_jobs.py::test_real_child_results_persist_and_snapshot_is_independent"),
-            ("launch-exclusion", "node_work.py", "if manager is not None and manager.active:",
-             "if False:", "tests/test_benchmark_routes.py::test_active_benchmark_excludes_launch_mutations"),
-            ("busy-node", "routes/benchmarks.py", "if busy:", "if False:",
+            # PB1 (2026-09-30) moved both guards: launches are held by any
+            # measurement job, and a busy node refuses unless the operator
+            # agreed to stop what runs (measurement_node.unlisted).
+            ("launch-exclusion", "node_work.py", "if kind := active_measurement(request.app):",
+             "if kind := None:", "tests/test_benchmark_routes.py::test_active_benchmark_excludes_launch_mutations"),
+            ("busy-node", "routes/benchmarks.py",
+             "if missing := unlisted(running, body.stopRuntimes or []):", "if missing := []:",
              "tests/test_benchmark_routes.py::test_busy_runtime_refuses_without_stopping"),
             ("context-tail", "benchmarks.py", "context - tokens", "context",
              "tests/test_benchmarks.py::test_depth_sweep_preserves_profile_and_leaves_generation_room"),
