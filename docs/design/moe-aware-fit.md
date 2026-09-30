@@ -8,7 +8,8 @@ library `d6f4e6f`, pinned). Troy accepted the review's entry, Qwen3.6-35B-A3B,
 on 2026-09-30. **A3c's UI half is built and pinned** ([record](../acceptance/a3c-ui-words-run.md),
 ui `f185a85` / dist `f943f3b`, library `dc08842`): a split says *experts in
 RAM*, *partial offload* or *needs RAM too*, and a MoE model's new profile
-starts at its experts-in-RAM context. **Next: A3d, with PB2.** §0 is
+starts at its experts-in-RAM context. PB2, the builder's page, is built
+([record](../acceptance/pb2-profile-builder-page-run.md)). **Next: A3d.** §0 is
 measured. Roadmap: [`audience-roadmap.md`](audience-roadmap.md) A3,
 a separate slice from the profile builder by Troy's call.
 

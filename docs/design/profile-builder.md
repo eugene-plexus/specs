@@ -1,7 +1,11 @@
 # Profile builder: automatic load tuning
 
 **Status: designed 2026-09-30; PB1 built and accepted 2026-09-30**
-([record](../acceptance/profile-builder-run.md)). §0 holds the measurements,
+([record](../acceptance/profile-builder-run.md)); **PB2 built and pinned the
+same day** ([record](../acceptance/pb2-profile-builder-page-run.md): ui
+`f487c74` / dist `694b134`, library `0d9f1f2`, contract `dc2f35d`). Not yet
+built from §6: the model's row saying so when fit places it differently at
+launch from build time. §0 holds the measurements,
 §1–§8 the design, and §9 the calls. Calls 1–4 and 6 are taken (6, the
 button on the model's profile page, on 2026-09-30); call 5 became
 moe-aware-fit call A. The order of work is [`audience-roadmap.md`](audience-roadmap.md).

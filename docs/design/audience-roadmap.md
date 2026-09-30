@@ -14,11 +14,17 @@
   library `dc08842`; [record](../acceptance/a3c-ui-words-run.md)). A split
   says what sits where, and a MoE model's new profile starts at its
   experts-in-RAM context instead of llama.cpp's 4,096 floor.
+- **A2 (PB2) is built and pinned** (ui `f487c74` / dist `694b134`, library
+  `0d9f1f2`, contract `dc2f35d`; [record](../acceptance/pb2-profile-builder-page-run.md)).
+  Troy took call 6: the button is on the model's profile page first. A
+  browser built, saved and launched a profile, and the launched runtime's
+  flags were the saved profile's.
 - **Pickup, in order:**
-  1. A2, which is PB2. **Call 6, where the builder's button lives, is still
-     open and must be asked before building**; the recommendation is the
-     model's profile page first.
-  2. A3d, Low's smaller file, which goes with PB2.
+  1. A3d, Low's smaller file offered after a build
+     ([`moe-aware-fit.md`](moe-aware-fit.md) §1.5).
+  2. PB2's remainder, not scheduled: the model's row saying so when fit
+     places a built profile differently at launch (agent log capture plus a
+     `Runtime` field), and Home's "make it faster" (call 6, later).
 
 This replaces [`adoption-roadmap.md`](adoption-roadmap.md) as the pickup
 point. Its open physical and moderated checks still stand and are carried
@@ -62,7 +68,7 @@ first:**
 | # | Slice | Design | Notes |
 |---|---|---|---|
 | **A1** | **Profile builder, PB1: the job** (specs, agent) | [`profile-builder.md`](profile-builder.md) | Calls 1–4 are taken. Includes the shared ask-stop-restart step and moves R6.1's Benchmark onto it |
-| A2 | Profile builder, PB2: the page (ui, library `builtBy`, admission) | same | **After the UI theme work lands** (another assistant, 2026-09-30). Call 6 is open; call 5 became moe-aware-fit call A, taken |
+| A2 | Profile builder, PB2: the page (ui, library `builtBy`, admission) | same | **Built 2026-09-30.** Call 6 taken (the profile page); call 5 became moe-aware-fit call A, taken |
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; A3a and A3b built) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine-unverified.md`](mlx-engine-unverified.md), B1 | **Blocked on a physical Mac** |
 | A5 | Tool-call repair for local models | to write | **Measure first:** how often a local model's tool call fails to parse. The failover thread warns that a truncated call can be valid JSON with a 200 |
