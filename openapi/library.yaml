@@ -405,6 +405,10 @@ paths:
         semantics there is no way to express *removing* a flag, and
         "why is `--n-gpu-layers` still on the command line after I
         deleted it" is a bug report nobody should have to file.
+
+        One exception, `builtBy`: omitting it keeps the stored record
+        and `null` clears it, because it records a past measurement
+        rather than a setting (`ModelProfileSpec.builtBy`).
       requestBody:
         required: true
         content:
@@ -2302,6 +2306,93 @@ components:
             Free text from the operator. Tuning a model is empirical and
             the reasoning evaporates — "OOMs above 24 layers on the
             3090" is worth more later than the flag value it explains.
+        builtBy:
+          description: |
+            The settings builder's record, for a profile it wrote
+            (`docs/design/profile-builder.md` §6). **The one field a
+            replace does not replace by omission:** absent from a `PUT`
+            body keeps the stored record, and only an explicit `null`
+            clears it. It is a record of a past measurement rather than
+            a setting, and every edit path that writes a whole profile
+            would otherwise drop it on the first edit -- where the
+            design says an edited profile's numbers are labelled, not
+            deleted.
+          anyOf:
+            - $ref: '#/components/schemas/ProfileBuiltBy'
+            - type: 'null'
+
+    ProfileBuiltBy:
+      type: object
+      description: |
+        What the settings builder set on a profile, and what it measured,
+        on which machine. The UI compares `flags` with the profile's own
+        flags to say which settings the builder set and whether any has
+        been edited since; once one has, the measured numbers no longer
+        describe the profile and are labelled so.
+      required: [buildId, node, accuracy, builtAt, flags]
+      properties:
+        buildId:
+          type: string
+          minLength: 1
+          description: The agent's `ProfileBuild.id`.
+        node:
+          type: string
+          minLength: 1
+          description: The machine it was measured on.
+        accuracy:
+          $ref: '#/components/schemas/ProfileBuiltAccuracy'
+        builtAt:
+          type: string
+          format: date-time
+        engineVersion:
+          type: [string, "null"]
+          description: The llama.cpp build it was measured with.
+        flags:
+          type: object
+          additionalProperties: true
+          description: |
+            The flags the builder set, as it set them: `contextSize`,
+            `cacheType`, `flashAttention` when the cache is quantised,
+            and `memoryMargin` when a margin was asked for. `gpuLayers`
+            is never among them: placement is llama.cpp's at every launch.
+        decodeTokensPerSecond:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+          description: Measured decode speed with an empty context.
+        deepDepth:
+          type: [integer, "null"]
+          minimum: 0
+          description: The context depth of the second measurement (2,048 for every candidate).
+        deepDecodeTokensPerSecond:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        graphicsMemoryBytes:
+          type: [integer, "null"]
+          minimum: 0
+          description: Graphics memory used when the result was loaded to confirm it, where the machine can measure it.
+        sameTopTokenPercent:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 100
+          description: |
+            How often the chosen cache picks the same next token as the
+            f16 cache on the evaluation text. Null when the f16 cache was
+            chosen, since nothing that changes answers was set.
+        evaluationSource:
+          description: Which text the quality measurement used; null when none was made.
+          anyOf:
+            - $ref: '#/components/schemas/ProfileBuiltEvaluationSource'
+            - type: 'null'
+
+    ProfileBuiltAccuracy:
+      type: string
+      enum: [max, high, medium, low]
+      description: The accuracy level the build was asked for; the agent's `ProfileBuildAccuracy`.
+
+    ProfileBuiltEvaluationSource:
+      type: string
+      enum: [bundled, custom]
+      description: The agent's `EvaluationTextSource`. A custom text is identified by the build, never stored.
 
     ModelProfile:
       type: object
@@ -2347,6 +2438,11 @@ components:
             type: string
         notes:
           type: string
+        builtBy:
+          description: The settings builder's record, when it wrote this profile. Kept by a replace that omits it.
+          anyOf:
+            - $ref: '#/components/schemas/ProfileBuiltBy'
+            - type: 'null'
         createdAt:
           type: string
           format: date-time

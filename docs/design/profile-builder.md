@@ -2,8 +2,9 @@
 
 **Status: designed 2026-09-30; PB1 built and accepted 2026-09-30**
 ([record](../acceptance/profile-builder-run.md)). §0 holds the measurements,
-§1–§8 the design, and §9 the calls. Calls 1–4 are taken; calls 5 and 6 are
-PB2's. The order of work is [`audience-roadmap.md`](audience-roadmap.md).
+§1–§8 the design, and §9 the calls. Calls 1–4 and 6 are taken (6, the
+button on the model's profile page, on 2026-09-30); call 5 became
+moe-aware-fit call A. The order of work is [`audience-roadmap.md`](audience-roadmap.md).
 
 This is the first item on the next roadmap. It came out of the Unsloth
 comparison, filtered through the saved Reddit threads (T2's largest group of
@@ -673,4 +674,4 @@ and the starter set.
 | # | Call | Recommendation | Against it |
 |---|---|---|---|
 | 5 | Admission trusts a built profile's measured memory | **Replaced (2026-09-30) by [`moe-aware-fit.md`](moe-aware-fit.md) call A.** Admission refuses any `split` whose `gpuLayers` is unset, and a built profile leaves it unset, so a general rule is needed ("unset means llama.cpp places it"), not an exception for built profiles | — |
-| 6 | Where the button lives | **The model's profile page first.** Home's Run could offer "make it faster" later | Home is where beginners are |
+| 6 | Where the button lives | **TAKEN by Troy, 2026-09-30, as recommended: the model's profile page first.** Home's Run could offer "make it faster" later | Home is where beginners are |
