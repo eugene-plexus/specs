@@ -54,7 +54,7 @@ CONTROL = "http://127.0.0.1:8083"
 AGENT_ACCOUNT = "nt authority\\system" if WINDOWS else "eugene-plexus"
 APPS = ("probe-a", "probe-b")
 #: Trees an app is meant to read: interpreters and code, nothing secret.
-SHARED_TREES = ("venv/", "pythons/", "bin/", "ui/")
+SHARED_TREES = ("venv/", "pythons/", "bin/", "ui/", "apps/pythons/", "apps/launcher/")
 
 PINS_SH = {
     "AGENT": "AGENT",
@@ -335,6 +335,57 @@ def phase_probe(apps: dict[str, dict]) -> None:
               [p for p in readable if p.startswith(own)][:10])
 
 
+def phase_service(token: str, apps: dict[str, dict]) -> None:
+    say("what the install says about it, and the ingress")
+    _, catalogue = api("GET", f"{AGENT}/v1/app-catalogue", token)
+    check("30", "the catalogue says this install gives apps their own accounts",
+          (catalogue or {}).get("ownAccounts") is True, (catalogue or {}).get("ownAccountsReason"))
+    for app_id in apps:
+        _, app = api("GET", f"{AGENT}/v1/apps/{app_id}", token)
+        fact(f"{app_id} account (as the agent reports it)", (app or {}).get("account"))
+        check(f"31{app_id[-1]}", f"{app_id} reports isolation own_account",
+              (app or {}).get("isolation") == "own_account", (app or {}).get("isolation"))
+
+    # The fixture prints one line at start; it reaches the Logs page only
+    # through the launcher and POST /v1/logs, under the app's own name.
+    def logged(app_id: str):
+        status, page = api("GET", f"{AGENT}/v1/logs?source=app:%20{app_id}&tail=50", token)
+        lines = (page or {}).get("lines") or [] if status == 200 else []
+        return lines if any("fixture app on" in str(l.get("text")) for l in lines) else None
+
+    for app_id in apps:
+        found = wait_for(lambda app_id=app_id: logged(app_id), 60, 2)
+        check(f"32{app_id[-1]}", f"what {app_id} printed is on the Logs page, as source 'app: {app_id}'",
+              bool(found), api("GET", f"{AGENT}/v1/logs?contains=fixture&tail=20", token)[1])
+
+    say("stop and start through the service manager")
+    app_id = APPS[0]
+    status, app = api("POST", f"{AGENT}/v1/apps/{app_id}/stop", token, timeout=120)
+    gone = wait_for(lambda: api("GET", f"http://127.0.0.1:{apps[app_id]['port']}/healthz", timeout=3)[0] is None, 60, 2)
+    check("33", f"stopping {app_id} stops its process", status == 200 and bool(gone), app)
+    status, _ = api("POST", f"{AGENT}/v1/apps/{app_id}/start", token, timeout=120)
+
+    def running():
+        _, app = api("GET", f"{AGENT}/v1/apps/{app_id}", token)
+        return app if (app or {}).get("status") == "running" else None
+
+    check("34", f"starting {app_id} again brings it back", status == 200 and bool(wait_for(running, 120, 2)))
+
+    say("uninstall removes the app's service")
+    other = APPS[1]
+    status, _ = api("DELETE", f"{AGENT}/v1/apps/{other}?purge=true", token, timeout=120)
+    if WINDOWS:
+        out = subprocess.run(["sc.exe", "query", f"EugenePlexusApp-{other}"], capture_output=True, text=True)
+        removed = "1060" in (out.stdout + out.stderr)
+        detail = (out.stdout + out.stderr).strip()[-200:]
+    else:
+        out = subprocess.run(["systemctl", "show", f"eugene-plexus-app@{other}.service", "--property=ActiveState"],
+                             capture_output=True, text=True)
+        removed = "ActiveState=active" not in out.stdout
+        detail = out.stdout.strip()
+    check("35", f"uninstalling {other} leaves no service running it", status == 204 and removed, detail)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--report", type=Path)
@@ -347,6 +398,7 @@ def main() -> int:
         token = phase_onboard()
         apps = phase_apps(token, fixture_source(workdir))
         phase_probe(apps)
+        phase_service(token, apps)
     except Abort as exc:
         print(f"\nABORTED at {exc}", flush=True)
     failed = [r for r in RESULTS if r["passed"] is False]

@@ -407,6 +407,122 @@ EOF
         || warn "could not enable eugene-plexus-update.path, so this install cannot update itself from the app"
 }
 
+# --- apps in accounts of their own (C1) -------------------------------
+# An app the agent installs runs as a systemd dynamic user, never as
+# eugene-plexus: in that account it could read node.yaml, agent.yaml, the
+# passphrase file and every other app's key (measured on a runner,
+# docs/design/workbench.md §1). The template unit below runs one app per
+# instance in a namespace where this prefix is an empty, read-only tmpfs
+# with only the app interpreters, the launcher and the app's own folder
+# bound back in; its key and admin token arrive as credentials, which
+# systemd reads as root, so they stay 0600 to eugene-plexus on disk.
+#
+# The agent cannot start a system unit itself: it is unprivileged and its
+# unit sets NoNewPrivileges, which rules out sudo. It writes a request into
+# $PREFIX/apps/ctl and this root helper, triggered by a path unit, carries
+# it out -- the shape the in-app updater uses. The helper reads and writes
+# that folder only as eugene-plexus, and takes nothing but start, stop,
+# restart or clean, of an eugene-plexus-app@ unit, for an id the registry
+# could have issued.
+APPS_HELPER=/usr/local/lib/eugene-plexus/apps-ctl
+APPS_TEMPLATE=/etc/systemd/system/eugene-plexus-app@.service
+APPS_CTL_SERVICE=/etc/systemd/system/eugene-plexus-apps-ctl.service
+APPS_CTL_PATH=/etc/systemd/system/eugene-plexus-apps-ctl.path
+
+write_app_units() {
+    as_root install -d -m 0755 "$(dirname "$APPS_HELPER")"
+    in_prefix mkdir -p "$PREFIX/apps/ctl"
+    {
+        printf '#!/bin/sh\n'
+        printf "DIR='%s'\n" "$PREFIX/apps/ctl"
+        printf "ACCOUNT='%s'\n" "$SYSTEM_ACCOUNT"
+        cat <<'HELPER'
+# Installed by Eugene Plexus's install.sh; see "apps in accounts of their
+# own" there. Run as root by eugene-plexus-apps-ctl.service.
+set -u
+as_account() { (cd / && runuser -u "$ACCOUNT" -- "$@"); }
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037'; }
+# Listed, read and removed as Eugene's account: a path it controls could
+# point anywhere root can read.
+for NAME in $(as_account find "$DIR" -maxdepth 1 -type f -name '*.req' -printf '%f\n' 2>/dev/null); do
+    ID=${NAME%.req}
+    case "$ID" in ''|*[!0-9a-f]*) as_account rm -f "$DIR/$NAME"; continue ;; esac
+    LINE=$(as_account head -c 100 "$DIR/$NAME" 2>/dev/null | head -n 1)
+    as_account rm -f "$DIR/$NAME"
+    VERB=${LINE%% *}
+    APP=${LINE#* }
+    case "$VERB" in start|stop|restart|clean) ;; *) VERB= ;; esac
+    printf '%s' "$APP" | grep -Eq '^[a-z][a-z0-9-]{1,39}$' || VERB=
+    if [ -z "$VERB" ]; then
+        CODE=2
+        OUT="refused: this helper starts, stops, restarts or cleans one eugene-plexus-app@ unit"
+    elif [ "$VERB" = clean ]; then
+        OUT=$(systemctl clean --what=state "eugene-plexus-app@$APP.service" 2>&1)
+        CODE=$?
+    else
+        OUT=$(systemctl "$VERB" "eugene-plexus-app@$APP.service" 2>&1)
+        CODE=$?
+    fi
+    printf '{"code":%s,"output":"%s"}' "$CODE" "$(esc "$OUT")" \
+        | as_account tee "$DIR/.$ID.res" >/dev/null
+    as_account mv -f "$DIR/.$ID.res" "$DIR/$ID.res"
+done
+HELPER
+    } | as_root tee "$APPS_HELPER.new" >/dev/null
+    as_root chown root:root "$APPS_HELPER.new"
+    as_root chmod 0755 "$APPS_HELPER.new"
+    as_root mv -f "$APPS_HELPER.new" "$APPS_HELPER"
+    as_root tee "$APPS_TEMPLATE" >/dev/null <<EOF
+[Unit]
+Description=Eugene Plexus app %i, in an account of its own
+Documentation=https://github.com/eugene-plexus/specs/blob/main/docs/design/workbench.md
+After=network-online.target $SERVICE_LABEL.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+# A user made for this unit, never eugene-plexus. DynamicUser also makes
+# the system read-only to it and gives it a private /tmp.
+DynamicUser=yes
+StateDirectory=eugene-plexus-apps/%i
+ProtectHome=yes
+# This prefix as the app sees it: empty and read-only, with the app
+# interpreters, the launcher and the app's own folder put back.
+TemporaryFileSystem=$PREFIX:ro
+BindReadOnlyPaths=-$PREFIX/apps/pythons $PREFIX/apps/launcher $PREFIX/apps/%i
+LoadCredential=client_key:$PREFIX/apps/%i/data/client_key
+LoadCredential=admin_token:$PREFIX/apps/%i/admin_token
+ExecStart=$PREFIX/apps/%i/python -I -u $PREFIX/apps/launcher/app_launcher.py $PREFIX/apps/%i/launch.json
+Restart=on-failure
+RestartSec=5
+# The launcher stops the app itself; anything left is killed with the cgroup.
+KillMode=mixed
+TimeoutStopSec=45
+EOF
+    as_root tee "$APPS_CTL_SERVICE" >/dev/null <<EOF
+[Unit]
+Description=Eugene Plexus apps: start and stop, asked for by the agent
+
+[Service]
+Type=oneshot
+ExecStart=$APPS_HELPER
+EOF
+    as_root tee "$APPS_CTL_PATH" >/dev/null <<EOF
+[Unit]
+Description=Eugene Plexus app requests
+
+[Path]
+PathExistsGlob=$PREFIX/apps/ctl/*.req
+Unit=eugene-plexus-apps-ctl.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    as_root systemctl daemon-reload
+    as_root systemctl enable --now eugene-plexus-apps-ctl.path >/dev/null 2>&1 \
+        || warn "could not enable eugene-plexus-apps-ctl.path, so apps will run as eugene-plexus"
+}
+
 # --- service plumbing -------------------------------------------------
 # A *user* service in the per-user layout: it reads the user's own model
 # directories and writes to the user's own keyring, and the cost is
@@ -535,6 +651,11 @@ if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
     say "stopping the service"
     service_stop
     as_root systemctl disable --now eugene-plexus-update.path >/dev/null 2>&1 || true
+    # Apps are the service manager's, not the agent's: stopped here, or
+    # they would outlive the install that started them.
+    as_root systemctl disable --now eugene-plexus-apps-ctl.path >/dev/null 2>&1 || true
+    as_root systemctl stop 'eugene-plexus-app@*.service' >/dev/null 2>&1 || true
+    as_root rm -f "$APPS_TEMPLATE" "$APPS_CTL_SERVICE" "$APPS_CTL_PATH" "$APPS_HELPER"
     as_root rm -f "$SYSTEM_UNIT" "$UPDATE_SERVICE" "$UPDATE_PATH" "$UPDATE_HELPER"
     as_root rm -rf "$UPDATE_STAGE"
     as_root systemctl daemon-reload >/dev/null 2>&1 || true
@@ -1298,7 +1419,7 @@ EOF
 if [ "$UPDATE" = 1 ]; then
     # The unit stays as it was written; the update helper is this
     # version's, since a newer installer may carry a newer one.
-    if [ "$MODE" = system ]; then write_update_helper; fi
+    if [ "$MODE" = system ]; then write_update_helper; write_app_units; fi
 elif [ "$MODE" = system ]; then
     prepare_models_dir
     say "writing $SYSTEM_UNIT"
@@ -1306,6 +1427,7 @@ elif [ "$MODE" = system ]; then
     as_root systemctl daemon-reload
     as_root systemctl enable "$SERVICE_LABEL" >/dev/null 2>&1 || true
     write_update_helper
+    write_app_units
 elif [ "$DO_SERVICE" = 1 ] && [ "$PLATFORM" = linux ]; then
     if ! command -v systemctl >/dev/null 2>&1 || [ ! -d "${XDG_RUNTIME_DIR:-/nonexistent}" ]; then
         warn "no systemd user session here — skipping the service. Start the agent with:

@@ -29,6 +29,10 @@ on:
         description: "Candidate control SHA (40 chars); empty = the installer's pin"
         required: false
         type: string
+      gateway_ref:
+        description: "Candidate gateway SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -53,6 +57,7 @@ jobs:
         env:
           EP_PIN_AGENT: ${{ inputs.agent_ref }}
           EP_PIN_CONTROL: ${{ inputs.control_ref }}
+          EP_PIN_GATEWAY: ${{ inputs.gateway_ref }}
         run: python scripts/c1-app-accounts-acceptance.py --report c1-report.json
       - name: Keep the report
         if: always()

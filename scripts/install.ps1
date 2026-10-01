@@ -1010,6 +1010,20 @@ function Remove-Autostart {
             & sc.exe delete $ServiceName | Out-Null
         }
     }
+    # Apps run as services of their own (C1, docs/design/workbench.md),
+    # each as its virtual account. They are Windows', not the agent's, so
+    # they would outlive this install if nothing removed them here. Only
+    # services whose program is this install's launcher go.
+    if ($IsElevated) {
+        $launcher = Join-Path $Prefix "apps\launcher\app_launcher.py"
+        Get-CimInstance Win32_Service -Filter "Name LIKE 'EugenePlexusApp-%'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.PathName -and $_.PathName.Contains($launcher) } |
+            ForEach-Object {
+                Say "removing the app service $($_.Name)"
+                Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue
+                & sc.exe delete $_.Name | Out-Null
+            }
+    }
     if (Get-AgentTask) {
         Say "removing the scheduled task"
         Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
