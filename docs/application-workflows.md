@@ -206,16 +206,23 @@ in the client request. It is always external: local-only keys are refused before
 any state leaves the machine, and it is never used as a fallback for a local
 model.
 
-**Through OpenRouter (verified 2026-09-28).** OpenRouter serves Jev with the
-same protocol, so the same provider works with an OpenRouter key:
+**Through OpenRouter.** OpenRouter serves Jev with the same protocol at
+`https://openrouter.ai/api/v1/systemone`. Provider **OpenRouter (hosted Jev)**
+(`openrouter_systemone`) goes there by default, with an OpenRouter key:
 
 | Driver field | Value |
 | --- | --- |
-| Provider | `typesafe` |
-| `baseUrl` | `https://openrouter.ai/api` |
+| Provider | `openrouter_systemone` |
 | `apiKey` | your OpenRouter key |
 | `modelId` | the name your clients use, for example `jev` |
 | `upstreamModelId` | `typesafe/jev-1.13`, or `jev-latest` (OpenRouter refuses `typesafe/jev-latest`) |
+
+Every decision asks OpenRouter for `provider: {"allow_fallbacks": false}`, so
+that it does not hand the decision to another host. Whether it honours that is
+OpenRouter's responsibility. OpenRouter also counts as another party handling
+your `state`. A driver set up before 2026-10-01 as provider `typesafe` with
+`baseUrl: https://openrouter.ai/api` still works, but it reports itself as
+TypeSafe and sends no `allow_fallbacks`.
 
 The run is [recorded here](acceptance/decision-run.md#hosted-jev-through-openrouter-2026-09-28).
 Two things to know. The hosted service stalls in bursts: in one probe, 4 of 6

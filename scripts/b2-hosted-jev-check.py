@@ -1,16 +1,20 @@
-"""B2 hosted Jev: the driver's `typesafe` provider against a REAL hosted Jev.
+"""B2 hosted Jev: the driver's `openrouter_systemone` provider against a REAL hosted Jev.
 
 B2 shipped hosted Jev fixture-only, "pending TypeSafe credentials". Since
 then OpenRouter serves Jev at `https://openrouter.ai/api/v1/systemone`,
-the same pinned protocol, with an OpenRouter key — so the provider can be
-exercised for real by pointing its `baseUrl` at OpenRouter. Nothing else
-in the chain changes: a real control root, an enrolled agent, a real
-gateway routing `POST /v1/systemone`, and two drivers on the `typesafe`
+the same pinned protocol, with an OpenRouter key. The first run
+(2026-09-28) pointed the `typesafe` provider's `baseUrl` there; since
+2026-10-01 the driver has its own `openrouter_systemone` provider, which
+defaults to that address and asks OpenRouter for `allow_fallbacks: false`,
+so this script sets no `baseUrl` at all. Nothing else in the chain
+changes: a real control root, an enrolled agent, a real gateway routing
+`POST /v1/systemone`, and two drivers on the `openrouter_systemone`
 provider — one with the key, one with a deliberately invalid key, to see
 what a real provider's 401 looks like at the gateway.
 
 The key is read from `EP_KEYS` (default: the provider-keys file this
-machine keeps) and written only into the throwaway driver's own config,
+machine keeps, `~/.eugene-plexus-secrets/provider-keys.env`) and written
+only into the throwaway driver's own config,
 which is where the provider reads `apiKey`; the directory is deleted at
 teardown. It is never printed, and check 9 scans every process log and
 every response body for it.
@@ -42,7 +46,8 @@ import yaml
 HERE = Path(__file__).resolve().parent
 LAUNCHER = HERE / "b2-decision-acceptance.py"  # its `--serve <kind>` starts each process
 UPSTREAM_MODEL = os.environ.get("EP_JEV_MODEL", "typesafe/jev-1.13")
-KEY_FILES = [os.environ.get("EP_KEYS", ""), "/mnt/c/Users/troyc/.eugene-plexus-secrets/provider-keys.env",
+KEY_FILES = [os.environ.get("EP_KEYS", ""), str(Path.home() / ".eugene-plexus-secrets" / "provider-keys.env"),
+             "/mnt/c/Users/troyc/.eugene-plexus-secrets/provider-keys.env",
              "C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env"]
 
 TICKET = (
@@ -171,13 +176,14 @@ def exercise(directory: Path) -> None:
         assert enrolled.status_code == 200, enrolled.text
         operator = login("agent-a")
 
-        # --- two drivers on the `typesafe` provider -------------------------
-        def driver(name: str, alias: str, api_key: str, provider: str = "typesafe",
+        # --- two drivers on the `openrouter_systemone` provider -------------
+        # No `baseUrl`: both providers below default to OpenRouter's own.
+        def driver(name: str, alias: str, api_key: str, provider: str = "openrouter_systemone",
                    upstream: str = UPSTREAM_MODEL) -> None:
             w = directory / name
             w.mkdir(exist_ok=True)
             (w / "driver.yaml").write_text(yaml.safe_dump({
-                "provider": provider, "baseUrl": "https://openrouter.ai/api", "apiKey": api_key,
+                "provider": provider, "apiKey": api_key,
                 "modelId": alias, "upstreamModelId": upstream}), encoding="utf-8")
             (w / "bootstrap.json").write_text(json.dumps(
                 child_environment(directory / "agent-a", "inference-driver", url("agent-a"))), encoding="utf-8")
@@ -192,13 +198,13 @@ def exercise(directory: Path) -> None:
                upstream="openai/gpt-4o-mini")
         info = call("driver-jev", "GET", "/v1/info", operator).json()
         (model,) = info["models"]  # since P1, capabilities are per model
-        assert info["provider"] == "typesafe" and info["locality"] == "external", info
+        assert info["provider"] == "openrouter_systemone" and info["locality"] == "external", info
         assert model["id"] == "jev" and model["upstreamId"] == UPSTREAM_MODEL, model
         assert model["surfaces"] == ["decisions"], model
         kinds = model["capabilities"]["decision"]["kinds"]
         assert set(kinds) == {"noul", "choice", "score"}, model
-        ok(f"the typesafe provider starts against OpenRouter: locality external, `jev` -> "
-           f"{model['upstreamId']}, decisions only ({', '.join(kinds)})")
+        ok(f"the openrouter_systemone provider starts on its default address: locality external, "
+           f"`jev` -> {model['upstreamId']}, decisions only ({', '.join(kinds)})")
 
         w = directory / "gateway"
         w.mkdir(exist_ok=True)
@@ -229,7 +235,11 @@ def exercise(directory: Path) -> None:
         assert abs(sum(a["route"]["probabilities"].values()) - 1.0) < 0.06, a
         assert 0 <= a["urgency"]["score"] <= 2, a
         assert body["usage"]["input_tokens"] > 0, body
-        ok(f"real hosted Jev through gateway and driver: refund {a['refunded']['noul']:.2f} yes, routed "
+        # The driver sends `provider: {allow_fallbacks: false}` on every
+        # call (unit-tested in the driver); a 200 here is OpenRouter
+        # accepting the request that carries it.
+        ok(f"real hosted Jev through gateway and driver, allow_fallbacks false accepted: "
+           f"refund {a['refunded']['noul']:.2f} yes, routed "
            f"{a['route']['choice']}, urgency {a['urgency']['score']:.2f}, "
            f"{body['usage']['input_tokens']} input tokens")
         # gateway.yaml (SystemOneResponse.model) says the backend's revision

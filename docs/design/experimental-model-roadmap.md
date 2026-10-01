@@ -33,8 +33,9 @@ admission path set has NO client admission — is fixed and pinned by
 test. User docs: the Kev and BYO-server recipe with its contract checks
 in [`application-workflows.md`](../application-workflows.md#typed-decisions-with-kev-experimental-b2),
 the boundaries in [`api-compatibility.md`](../api-compatibility.md#typed-decisions-b2),
-and the Kev environment in the [recovery inventory](../recovery.md). **Owed:** hosted Jev needs one real credentialed request (Troy's;
-fixture-covered and labeled unverified until then); the TypeSafe SDK
+and the Kev environment in the [recovery inventory](../recovery.md). **Owed:** hosted Jev through TypeSafe's own endpoint (the
+OpenRouter route was measured 2026-09-28, [record](../acceptance/decision-run.md#hosted-jev-through-openrouter-2026-09-28),
+and has its own `openrouter_systemone` provider since 2026-10-01); the TypeSafe SDK
 half is blocked on distribution (PyPI's `typesafe` is an unrelated
 package, measured); Kev on CUDA/ROCm/Metal each need their own
 evidence. No release is published from this work; alpha.2 stands and
