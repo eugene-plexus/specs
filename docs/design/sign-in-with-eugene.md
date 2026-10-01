@@ -1,7 +1,8 @@
 # C2: signing in with Eugene
 
 **Status: designed 2026-10-01; Troy took the four calls in §9 the same day.
-Not built.** Slice C2 of
+Built the same day** ([record](../acceptance/c2-sign-in-run.md)); §10 says
+where the build departed from this. Slice C2 of
 [`workbench.md`](workbench.md) §4. Troy's calls so far: sign-in comes from
 Eugene; a solo install signs in with the Eugene passphrase and no second
 one; a small business gets real accounts, each revocable without touching
@@ -262,3 +263,24 @@ Plain words here; the workshop names are Workbench's.
 | 2 | How a forgotten password is reset | **The owner sets a new one** on the console (D10) |
 | 3 | Whether a sign-in is remembered across apps | **No: every app asks** (D5) |
 | 4 | Browser-only and phone apps | **Not in this slice** (D2) |
+## 10. Where the build departed (2026-10-01)
+
+Record: [`../acceptance/c2-sign-in-run.md`](../acceptance/c2-sign-in-run.md).
+
+- **The sign-in key is not rotated yet (D3).** It is made at first need,
+  sealed and replicated, and the log keeps the two newest, so a rotation
+  has somewhere to put the old key while its tokens live. Nothing triggers
+  one: the root token key's rotation does not touch it. A follow-up.
+- **Eugene's own passphrase is never changed on the sign-in page (D10).**
+  A person changes theirs there; an owner who tries is told it cannot be
+  changed here. Nothing changes the passphrase anywhere yet, so the page
+  says no more than that.
+- **A pending request is good until it succeeds (D4)**, not for one post:
+  a wrong password shows the page again with the same request, inside its
+  10 minutes, and the limiter is what bounds the guesses.
+- **The issuer trusts a forwarded host only beside an agent's own service
+  token (D11)**, so a caller reaching the root's port directly cannot pick
+  the issuer or a fresh limiter bucket. A gateway's token, which a node with
+  the gateway grant can send the root, is refused for this.
+- **A password's length is the contract's rule**, `minLength: 12` on both
+  requests; the routes add none of their own.

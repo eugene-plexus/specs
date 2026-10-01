@@ -3,8 +3,10 @@
 **Status: designed 2026-10-01, revised the same day on Troy's answers.
 C1 is built the same day** ([record](../acceptance/c1-app-accounts-run.md):
 42 of 42 on GitHub's Windows and Ubuntu runners, where the same run failed
-14 checks before). §3.1 says where the build departed from §2-§3. C2-C4
-are not built. Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
+14 checks before). §3.1 says where the build departed from §2-§3. **C2 is
+built the same day**, designed in
+[`sign-in-with-eugene.md`](sign-in-with-eugene.md) ([record](../acceptance/c2-sign-in-run.md)).
+C3 and C4 are not built. Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
 draft of this file was deleted on purpose, and nothing in it binds. This is
 roadmap A6. It builds on the apps registry
 ([`apps-and-spokes.md`](apps-and-spokes.md), built 2026-09-23). Where this
@@ -249,6 +251,10 @@ ingress.
 ---
 
 ## 4. C2: signing in with Eugene
+
+**Built 2026-10-01.** The detailed design and what the build departed from
+are [`sign-in-with-eugene.md`](sign-in-with-eugene.md) (§10); this section
+is the outline it started from.
 
 **The two cases, one mechanism.** Eugene becomes the sign-in provider for
 apps, over **OpenID Connect** (the authorization code flow with PKCE). It
