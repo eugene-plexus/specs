@@ -371,6 +371,13 @@ paths:
         `state`. A wrong name or password answers the page again with the
         same sentence for both. Five failures a minute per address, or per
         name, is 429.
+
+        A person may also send `new_password` and `new_password_again`
+        (D10): once their password checks, it is replaced, and every
+        earlier sign-in of theirs ends at its next refresh. Two that differ,
+        or one under 12 characters, answer the page again and change
+        nothing; the owner's passphrase is changed on the console, and
+        sending one for `operator` is 400.
       requestBody:
         required: true
         content:
@@ -383,8 +390,17 @@ paths:
           content:
             text/html:
               schema: {type: string}
+        '400':
+          description: |
+            The request expired or its app is gone, or a new passphrase was
+            sent for the owner; the page says which.
+          content:
+            text/html:
+              schema: {type: string}
         '403':
-          description: This person may not use this app; the page says so.
+          description: |
+            This person is turned off, or may not use this app; the page
+            says which.
           content:
             text/html:
               schema: {type: string}

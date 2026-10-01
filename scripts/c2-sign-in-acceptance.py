@@ -94,7 +94,8 @@ def form_fields(page: str) -> dict[str, str]:
     return fields
 
 
-def sign_in(browser: httpx.Client, authorize_url: str, *, password: str, name: str | None = None):
+def sign_in(browser: httpx.Client, authorize_url: str, *, password: str, name: str | None = None,
+            new_password: str | None = None):
     """Open the page, post the form. Returns (status, location or page text)."""
     page = browser.get(authorize_url)
     if page.status_code != 200:
@@ -102,6 +103,10 @@ def sign_in(browser: httpx.Client, authorize_url: str, *, password: str, name: s
     fields = form_fields(page.text)
     data = {k: v for k, v in fields.items() if not k.startswith("__") and k not in ("name", "password")}
     data["password"] = password
+    if new_password is not None:
+        if 'name="new_password"' not in page.text:
+            return 0, "the page offers no way to change a password"
+        data["new_password"] = data["new_password_again"] = new_password
     if name is not None:
         data["name"] = name
     answer = browser.post(urlsplit(authorize_url)._replace(query="").geturl(), data=data)
@@ -362,8 +367,9 @@ def exercise(directory: Path) -> None:
         check("63", "the owner disables Ada", disabled.status_code == 200, disabled.text[:120])
         check("64", "her app's next refresh is refused",
               _refresh(meta, app_id, app_secret, tokens["refresh_token"]) == "invalid_grant")
-        status, _ = sign_in(browser, begin(rp())[0], name="Ada", password="second-password-ada")
-        check("65", "and she cannot sign in", status == 200, status)
+        status, page_text = sign_in(browser, begin(rp())[0], name="Ada", password="second-password-ada")
+        check("65", "and she cannot sign in: no code, and the page says signing in is off for her",
+              status == 403 and "turned off" in _message(page_text), (status, _message(page_text)))
         call("control", "PATCH", f"/v1/people/{ada['id']}", root, json={"disabled": False})
 
         session = rp()
@@ -376,6 +382,22 @@ def exercise(directory: Path) -> None:
               revoked.status_code)
         check("67", "a revoked sign-in does not refresh",
               _refresh(meta, app_id, app_secret, tokens["refresh_token"]) == "invalid_grant")
+
+        session = rp()
+        authorize, state, verifier, nonce = begin(session)
+        _, location = sign_in(browser, authorize, name="Ada", password="second-password-ada")
+        earlier = session.fetch_token(meta["token_endpoint"], code=code_from(location)[0], code_verifier=verifier)
+        session = rp()
+        authorize, state, verifier, nonce = begin(session)
+        status, location = sign_in(browser, authorize, name="Ada", password="second-password-ada",
+                                   new_password="a-password-ada-chose")
+        changed = session.fetch_token(meta["token_endpoint"], code=code_from(location)[0],
+                                      code_verifier=verifier) if status in (302, 303) else {}
+        check("68", "Ada makes her password her own on the sign-in page, and is signed in",
+              bool(changed.get("id_token")), (status, location[:120]))
+        check("69", "her sign-in from before the change does not refresh; the new one does",
+              _refresh(meta, app_id, app_secret, earlier["refresh_token"]) == "invalid_grant"
+              and _refresh(meta, app_id, app_secret, changed.get("refresh_token", "")) == "ok")
 
         print("\n== a sign-in is not a console session", flush=True)
         check("70", "the owner's console session still works beside it",
