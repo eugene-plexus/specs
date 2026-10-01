@@ -258,7 +258,9 @@ paths:
     post:
       operationId: createClientKey
       summary: Create an install-wide client key
-      description: Operator only; active, unlocked root. Persist the record before returning the token.
+      description: Operator only, or a member node acting for the operator on its own app's key (`SubjectToken`); active, unlocked root. Persist the record before returning the token.
+      parameters:
+        - $ref: '#/components/parameters/SubjectToken'
       requestBody:
         required: true
         content:
@@ -270,6 +272,8 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ClientKeyCreated'}
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
   /v1/auth/client-keys/policy:
     get:
       operationId: getClientKeyPolicy
@@ -289,9 +293,13 @@ paths:
     delete:
       operationId: revokeClientKey
       summary: Revoke a key throughout the install
-      description: Operator only; active root. Durable and idempotent. Healthy gateways observe the change within 20 seconds by default; stale policy expires after 60 seconds plus five seconds clock tolerance.
+      description: Operator only, or a member node acting for the operator on its own app's key (`SubjectToken`); active root. Durable and idempotent. Healthy gateways observe the change within 20 seconds by default; stale policy expires after 60 seconds plus five seconds clock tolerance.
+      parameters:
+        - $ref: '#/components/parameters/SubjectToken'
       responses:
         '204': {description: Revocation durably recorded.}
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
@@ -566,10 +574,13 @@ paths:
       operationId: createOidcClient
       summary: Register an app that signs in with Eugene
       description: |
-        Operator only; active, unlocked root. Redirect URIs are matched
-        exactly (RFC 9700 §4.1); plain `http` is allowed, because a home
-        network has no certificates. The secret is in this answer and
-        nowhere else.
+        Operator only, or a member node acting for the operator on its
+        own app (`SubjectToken`, with `owner` `app:<id>@<node>`); active,
+        unlocked root. Redirect URIs are matched exactly (RFC 9700 §4.1);
+        plain `http` is allowed, because a home network has no
+        certificates. The secret is in this answer and nowhere else.
+      parameters:
+        - $ref: '#/components/parameters/SubjectToken'
       requestBody:
         required: true
         content:
@@ -581,6 +592,8 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OidcClientCreated'}
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
         '422':
           $ref: 'components/common.yaml#/components/responses/Problem'
   /v1/oidc/clients/{clientId}:
@@ -589,9 +602,13 @@ paths:
     delete:
       operationId: deleteOidcClient
       summary: Stop an app signing in with Eugene
-      description: Operator only. Its sign-ins stop at its next refresh.
+      description: Operator only, or a member node acting for the operator on its own app (`SubjectToken`). Its sign-ins stop at its next refresh.
+      parameters:
+        - $ref: '#/components/parameters/SubjectToken'
       responses:
         '204': {description: Removed.}
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
@@ -1599,6 +1616,31 @@ components:
         and signed by a key in the trust bundle (`common.yaml`,
         `TrustBundle`). Mutations take a session; the reads that say
         so also take an `agent` or `gateway` service token.
+
+  parameters:
+    SubjectToken:
+      name: X-Eugene-Plexus-Subject-Token
+      in: header
+      required: false
+      schema: {type: string}
+      description: |
+        **A member node acting for an operator who is acting on it**
+        (2026-10-01). The console reaches another machine with a
+        five-minute token addressed to that machine alone (`POST
+        /v1/auth/token`), and installing an app there needs its key and
+        its sign-in registration from this root -- which that token, not
+        being addressed here, cannot ask for. So the machine sends its
+        own `agent` service token as the bearer (the actor) and the
+        operator's token, addressed to that same machine, here (the
+        subject; RFC 8693's roles).
+
+        Taken only by the operations that reference it, and only for
+        things named for the acting node: a client key named
+        `app:<id>@<node>`, a sign-in registration whose `owner` is. Any
+        other name is a 403. A subject addressed to another machine, an
+        actor that is not an agent speaking for itself, or a signed-out
+        session is a 401. A node's own token without a subject opens
+        none of these.
 
   schemas:
     ClientKeyLimits:

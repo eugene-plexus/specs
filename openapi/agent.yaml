@@ -775,6 +775,9 @@ paths:
 
         Any enrolled agent forwards management to the active control root using
         the caller's operator credential. Records and revocations are install-wide.
+        A credential the root refuses is reported as a 502 naming the root's
+        reason, not passed on as a 401 (2026-10-01): the caller's session was
+        good here.
         An unenrolled agent owns a standalone registry, and its keys are
         signed by that machine alone: they stop working if it joins an
         install, and are not carried over (per-node token keys, 2026-09-25).
@@ -1322,9 +1325,10 @@ paths:
         uninstall followed by a reinstall picks up where it left off.
 
         The key is revoked at whoever holds the registry — the control
-        root on an enrolled node — with the caller's own credential. If
-        that revocation fails the uninstall stops with the authority's
-        answer and nothing has been removed.
+        root on an enrolled node — on the caller's authority, carried as
+        `installApp` says. If that revocation fails the uninstall stops
+        with the authority's answer and nothing has been removed; a
+        refusal of the credential itself is a 502.
       parameters:
         - in: query
           name: purge
@@ -1339,6 +1343,8 @@ paths:
         "401":
           $ref: "components/common.yaml#/components/responses/Problem"
         "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "502":
           $ref: "components/common.yaml#/components/responses/Problem"
         "503":
           $ref: "components/common.yaml#/components/responses/Problem"
@@ -1362,10 +1368,22 @@ paths:
         place while the old one keeps running, then the app restarts on
         the new one. The previous environment is kept for rollback.
 
-        On a first install the agent mints the app's client key with the
-        **caller's** credential, named `app:<id>@<node>`, so it appears in
+        On a first install the agent mints the app's client key on the
+        **caller's** authority, named `app:<id>@<node>`, so it appears in
         the install's key list like any other and can be narrowed or
-        revoked there.
+        revoked there. An app that signs people in is registered at the
+        root the same way.
+
+        **On the caller's authority, not always with the caller's token**
+        (2026-10-01). A session made by signing in on this machine is
+        addressed to the root as well and goes on unchanged. A console on
+        another machine reaches this one with a token addressed here
+        alone, and the root would refuse it; this agent then sends its
+        own `agent` token with the caller's beside it as the subject
+        (control.yaml, `SubjectToken`), which the root takes only for
+        this node's own apps. A refusal at the root is a **502** naming
+        it, never a 401: the caller's session was good here, and a 401
+        tells a console to sign out.
 
         403 for a custom entry while `allowCustomApps` is off; 409 when an
         install is in flight or that version is already installed; 422
@@ -1386,6 +1404,8 @@ paths:
         "409":
           $ref: "components/common.yaml#/components/responses/Problem"
         "422":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "502":
           $ref: "components/common.yaml#/components/responses/Problem"
     get:
       tags: [apps]
