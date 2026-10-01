@@ -412,7 +412,20 @@ def main() -> int:
         _, page = api("GET", f"{AGENT}/v1/logs?tail=150", token)
         print("\n--- the agent's log (tail)", flush=True)
         for line in (page or {}).get("lines") or []:
+            if "/healthz" in str(line.get("text")):
+                continue  # the health polls drown everything else
             print(f"  {line.get('time')} [{line.get('source')}] {line.get('text')}", flush=True)
+    if failed and not WINDOWS:
+        # The root helper that starts and stops apps, which the agent's log
+        # can only see from the outside.
+        for argv in (
+            ["sudo", "systemctl", "status", "--no-pager", "eugene-plexus-apps-ctl.path",
+             "eugene-plexus-apps-ctl.service"],
+            ["sudo", "journalctl", "--no-pager", "-n", "60", "-u", "eugene-plexus-apps-ctl.service",
+             "-u", "eugene-plexus-apps-ctl.path"],
+        ):
+            out = subprocess.run(argv, capture_output=True, text=True, check=False)
+            print(f"\n--- {' '.join(argv[1:])}\n{out.stdout}{out.stderr}", flush=True)
     passed = [r for r in RESULTS if r["passed"]]
     print(f"\n{len(passed)} passed, {len(failed)} failed", flush=True)
     if args.report:

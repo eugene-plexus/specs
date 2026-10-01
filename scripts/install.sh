@@ -443,8 +443,12 @@ set -u
 as_account() { (cd / && runuser -u "$ACCOUNT" -- "$@"); }
 esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\000-\037'; }
 # Listed, read and removed as Eugene's account: a path it controls could
-# point anywhere root can read.
-for NAME in $(as_account find "$DIR" -maxdepth 1 -type f -name '*.req' -printf '%f\n' 2>/dev/null); do
+# point anywhere root can read. Listed again until none is left, so a
+# request written while this runs is answered by this run.
+while :; do
+NAMES=$(as_account find "$DIR" -maxdepth 1 -type f -name '*.req' -printf '%f\n' 2>/dev/null)
+[ -n "$NAMES" ] || break
+for NAME in $NAMES; do
     ID=${NAME%.req}
     case "$ID" in ''|*[!0-9a-f]*) as_account rm -f "$DIR/$NAME"; continue ;; esac
     LINE=$(as_account head -c 100 "$DIR/$NAME" 2>/dev/null | head -n 1)
@@ -478,6 +482,7 @@ User=eapp-$(printf '%s' "$APP" | sha256sum | cut -c1-12)"
     printf '{"code":%s,"output":"%s"}' "$CODE" "$(esc "$OUT")" \
         | as_account tee "$DIR/.$ID.res" >/dev/null
     as_account mv -f "$DIR/.$ID.res" "$DIR/$ID.res"
+done
 done
 HELPER
     } | as_root tee "$APPS_HELPER.new" >/dev/null
@@ -514,6 +519,10 @@ EOF
     as_root tee "$APPS_CTL_SERVICE" >/dev/null <<EOF
 [Unit]
 Description=Eugene Plexus apps: start and stop, asked for by the agent
+# Every start, stop and restart of every app is one run of this: systemd's
+# default of five runs in ten seconds would refuse a boot with several apps,
+# and a refused run leaves the path unit that triggers it failed.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
