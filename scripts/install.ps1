@@ -112,20 +112,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# **Windows PowerShell started from PowerShell 7 inherits PowerShell 7's
-# module folders** (found 2026-10-01, C1's Windows runner run). PSModulePath
-# names them first, so 5.1 autoloads modules built for 7 and fails to load
-# them: uv's installer died on "Get-ExecutionPolicy ... the module could
-# not be loaded". Dropping those folders from this process's path keeps
-# 5.1 on its own modules, and every child it starts inherits the fix.
-# Only 7's folders go: `\PowerShell\Modules` and `\PowerShell\7*\Modules`,
-# never `\WindowsPowerShell\Modules`.
-if ($PSVersionTable.PSEdition -ne "Core" -and $env:PSModulePath) {
-    $env:PSModulePath = (($env:PSModulePath -split ';') | Where-Object {
-            $_ -and $_ -notmatch '(?i)\\PowerShell\\(?:7[^\\]*\\)?Modules\\?$'
-        }) -join ';'
-}
-
 # Read before `$Prefix` is given its default below: -Uninstall with no
 # -Prefix finds the install wherever it is.
 $PrefixGiven = [bool]$Prefix
@@ -133,13 +119,13 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "05d88f82d97c8b320a040e21faa836877e5d78d7"
-    "control"          = "919157644755ef08233bdbc09afd3fe525342cdd"
-    "gateway"          = "e050c15eb3bca6d9bbb48832df071e015945a37c"
+    "agent"            = "bd4f4e8a21bc67e825000728360e0e618aaa74c3"
+    "control"          = "71aa23ad5944e20bad643d5427fe787656d65ba2"
+    "gateway"          = "33d9c0e90f4f0ceb9f3bde6d34cb06fc6bad86a5"
     "inference-driver" = "53412d5c34ad15ad393bad3ab36c09e7c7312ab4"
     "library"          = "6e22230b163c7e82aed578c738a02d4058bbb548"
     "tool-driver"      = "49c289fdaba3703a50d362801b1a9e682ad4d954"
-    "ui"               = "e404b6b56188937abae5736879e16a0a1322064d"  # branch `dist`, not `main`
+    "ui"               = "b521b5dd72b19b6cde049697ec5456436a88bfd1"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -198,6 +184,20 @@ if ($Isolated) {
     if (Test-Path -LiteralPath $Prefix) {
         Die "-Isolated requires a new prefix; the target already exists"
     }
+}
+
+# **Windows PowerShell started from PowerShell 7 inherits PowerShell 7's
+# module folders** (found 2026-10-01, C1's Windows runner run). PSModulePath
+# names them first, so 5.1 autoloads modules built for 7 and fails to load
+# them: uv's installer died on "Get-ExecutionPolicy ... the module could
+# not be loaded". Dropping those folders from this process's path keeps
+# 5.1 on its own modules, and every child it starts inherits the fix.
+# Only 7's folders go: `\PowerShell\Modules` and `\PowerShell\7*\Modules`,
+# never `\WindowsPowerShell\Modules`.
+if ($PSVersionTable.PSEdition -ne "Core" -and $env:PSModulePath) {
+    $env:PSModulePath = (($env:PSModulePath -split ';') | Where-Object {
+            $_ -and $_ -notmatch '(?i)\\PowerShell\\(?:7[^\\]*\\)?Modules\\?$'
+        }) -join ';'
 }
 
 # And every early return below is `return`, never `exit` -- measured,

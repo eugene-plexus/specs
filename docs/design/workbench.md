@@ -1,7 +1,10 @@
 # Workbench: our first app
 
-**Status: designed 2026-10-01, revised the same day on Troy's answers;
-nothing built.** Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
+**Status: designed 2026-10-01, revised the same day on Troy's answers.
+C1 is built the same day** ([record](../acceptance/c1-app-accounts-run.md):
+42 of 42 on GitHub's Windows and Ubuntu runners, where the same run failed
+14 checks before). §3.1 says where the build departed from §2-§3. C2-C4
+are not built. Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
 draft of this file was deleted on purpose, and nothing in it binds. This is
 roadmap A6. It builds on the apps registry
 ([`apps-and-spokes.md`](apps-and-spokes.md), built 2026-09-23). Where this
@@ -210,6 +213,38 @@ nowhere else. Reading logs stays operator-only.
 
 So an app is given two addresses: the gateway, and its own node's
 ingress.
+
+### 3.1 C1 as built: where it departed
+
+- **The launcher is standard library only, with no pywin32.** It is one
+  file for both systems, copied to `<apps>/launcher/` and run with the app's
+  own interpreter: an app's account must not need the agent's environment,
+  which on Linux it cannot even see. On Windows it is a service through
+  ctypes, and it gives the app a console so a stop can be a console break.
+- **Linux: the agent asks a root helper.** The agent is unprivileged and
+  its unit sets `NoNewPrivileges`, which rules out sudo, and polkit is not
+  on every system. So it writes a request that a root path unit carries
+  out, the in-app updater's shape. The helper takes start, stop, restart or
+  clean, of one `eugene-plexus-app@` unit, for an id the registry could
+  have issued.
+- **Linux: one dynamic user per app, named by a hash.** A template unit's
+  dynamic user is named after the template, so every app shared one uid
+  until the helper wrote a drop-in per instance (`User=eapp-<hash>`;
+  systemd takes 31 characters and an id may be 40).
+- **Every app's key may send logs; there is no `uses: [logs]`.** The
+  launcher forwards for every app, so every registry app's key has
+  `writeLogs`. A key outside the registry gets it from the operator.
+- **A record's own time is not used.** Lines are stamped when they arrive,
+  as every line in the log is.
+- **App interpreters live in `<apps>/pythons`, copied, not linked.** An
+  app's account is granted those and never the agent's, and a grant on a
+  venv's files touches nothing that shares their inode in uv's cache.
+- **An app keeps running when the agent stops.** It is the service
+  manager's, and the agent coming back finds it running and takes back the
+  admin token it was started with.
+- **A stop or removal the service manager refuses fails out loud.** The
+  first Windows run's uninstall reported success while the service lived
+  on.
 
 ---
 
@@ -521,7 +556,7 @@ Not a model-chosen action, but late too: **the working animation**
 ## 9. Order
 
 1. **C1, an account per app,** with the launcher and the log ingress (§2,
-   §3).
+   §3). **Built 2026-10-01.**
 2. **C2, signing in with Eugene** (§4).
 3. **C3, Workbench's version 1,** in `eugene-plexus/workbench`.
 4. **C4, Open WebUI.** It needs C1, and C2 for sign-in. It can move ahead
