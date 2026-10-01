@@ -49,6 +49,19 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      # install.ps1 runs uv's own installer with its output silenced; on the
+      # first run it ended there with exit 1 and no words. This shows them.
+      - name: uv's installer, visibly (diagnostic)
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: powershell
+        run: |
+          $env:UV_UNMANAGED_INSTALL = Join-Path $env:RUNNER_TEMP "uv-probe"
+          $PSVersionTable.PSVersion
+          Get-ExecutionPolicy -List
+          & ([scriptblock]::Create((Invoke-RestMethod https://astral.sh/uv/install.ps1)))
+          "exit: $LASTEXITCODE"
+          Get-ChildItem $env:UV_UNMANAGED_INSTALL -ErrorAction SilentlyContinue
       - name: An app cannot read the install's keys
         env:
           EP_PIN_AGENT: ${{ inputs.agent_ref }}
