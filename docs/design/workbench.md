@@ -6,7 +6,8 @@ C1 is built the same day** ([record](../acceptance/c1-app-accounts-run.md):
 14 checks before). §3.1 says where the build departed from §2-§3. **C2 is
 built the same day**, designed in
 [`sign-in-with-eugene.md`](sign-in-with-eugene.md) ([record](../acceptance/c2-sign-in-run.md)).
-C3 and C4 are not built. Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
+**C3 is built the same day**, designed in [`workbench-v1.md`](workbench-v1.md)
+([record](../acceptance/c3-workbench-run.md)). C4 is not built. Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
 draft of this file was deleted on purpose, and nothing in it binds. This is
 roadmap A6. It builds on the apps registry
 ([`apps-and-spokes.md`](apps-and-spokes.md), built 2026-09-23). Where this
@@ -299,6 +300,10 @@ revoked person's access only when that session expires.
 
 ## 5. C3: Workbench, version 1
 
+**Built 2026-10-01**: the detailed design, its calls and where the build
+departed are [`workbench-v1.md`](workbench-v1.md). Version 1 uses plain
+words (its call 1), so the names in §6 wait for a second tool.
+
 **What it is.** A browser app on its own port, served by its own process:
 
 - a conversation list;
@@ -563,8 +568,9 @@ Not a model-chosen action, but late too: **the working animation**
 
 1. **C1, an account per app,** with the launcher and the log ingress (§2,
    §3). **Built 2026-10-01.**
-2. **C2, signing in with Eugene** (§4).
-3. **C3, Workbench's version 1,** in `eugene-plexus/workbench`.
+2. **C2, signing in with Eugene** (§4). **Built 2026-10-01.**
+3. **C3, Workbench's version 1,** in `eugene-plexus/workbench`. **Built
+   2026-10-01.**
 4. **C4, Open WebUI.** It needs C1, and C2 for sign-in. It can move ahead
    of C3 if Troy wants the choice first.
 5. MCP servers, filesystem tools and local media models, each designed
@@ -582,6 +588,6 @@ an installer pin, a sabotage pass, and both installers re-pinned.
 | # | The call | Recommendation | Counter-argument |
 | --- | --- | --- | --- |
 | 1 | ~~The app's name~~ | **Taken 2026-10-01: Workbench**, with workshop names in its menus and parts (§6) | — |
-| 2 | Workbench's vocabulary | **The table in §6** | Each workshop name is one more word a beginner must learn |
+| 2 | ~~Workbench's vocabulary~~ | **Taken 2026-10-01 for version 1: plain words** (*Tools*, not *Toolbox*). The §6 table starts when there is more than one tool ([`workbench-v1.md`](workbench-v1.md) §9) | Each workshop name is one more word a beginner must learn |
 | 3 | ~~What C2 builds first~~ | **Taken 2026-10-01: both cases in one slice.** The protocol is the same, and per-person revocation is the reason the business case exists | The solo case alone ships sooner and is the whole of today's audience |
 | 4 | ~~The animation's format~~ | **Taken 2026-10-01: animated SVG, made with an LLM** against a text gate (§6.1) | — |

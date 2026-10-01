@@ -1,7 +1,9 @@
 # C3: Workbench, version 1
 
-**Status: designed 2026-10-01.** Slice C3 of [`workbench.md`](workbench.md)
-§5, after C1 (an OS account per app) and C2
+**Status: designed 2026-10-01, and built the same day**
+([record](../acceptance/c3-workbench-run.md)); §10 says where the build
+departed from this. Slice C3 of [`workbench.md`](workbench.md) §5, after C1
+(an OS account per app) and C2
 ([`sign-in-with-eugene.md`](sign-in-with-eugene.md)). Troy took the three
 calls in §9 the same day. Repo: `eugene-plexus/workbench`.
 
@@ -164,7 +166,11 @@ holds both. W5 is what keeps one out.
 - **The picker says which models take each.** A model that does not
   confirm one is not offered with it, and the gateway's refusal is shown
   when it happens anyway.
-- **A size limit per file**, 20 MB by default (a setting).
+- **The size limits are the gateway's**, said before upload rather than
+  after a refusal: an image at most 5 MiB, audio or a PDF at most 10 MiB,
+  and every attachment in a chat together at most 11 MiB, because the
+  whole conversation travels in each request (`MessageContent`). A chat
+  that is full says to start a new one.
 
 ### W8. Storage behind one interface
 
@@ -206,12 +212,10 @@ the agent's own supervisor collects it where there is no apps account.
 ### W13. Settings
 
 Workbench serves the config trio the registry expects of apps we ship
-(`configTrio`), with the admin token the agent hands it:
-
-- `ownerReadsChats` (W4), off by default;
-- `maxFileMegabytes` (W7), 20 by default.
-
-Both take effect at once.
+(`configTrio`), with the admin token the agent hands it. It has one
+setting, `ownerReadsChats` (W4), off by default, which takes effect at
+once. A file-size setting would have to stay under the gateway's own
+limits, so there is none (W7).
 
 ## 3. The contract change: can a search run here?
 
@@ -286,3 +290,33 @@ and the WSL SearXNG.
 | 1 | The workshop names in version 1 | **Plain words.** *Tools*, not *Toolbox*; the workshop names start when there is more than one tool |
 | 2 | An answer with no tab open | **Keeps going and is saved** (W1) |
 | 3 | Whether the owner may read people's chats | **A setting, so each business decides** (W4), off by default |
+
+## 10. Where the build departed (2026-10-01)
+
+Record: [`../acceptance/c3-workbench-run.md`](../acceptance/c3-workbench-run.md).
+
+- **Each piece of an answer says where it goes (W1).** A tab loads the chat
+  and opens its stream at once, and the two race. So every streamed piece
+  carries its offset, counted in the page's own string length (UTF-16
+  units, so an emoji is two). A piece already there is skipped; one that
+  would leave a gap makes the tab load the chat again.
+- **A searched answer that links nothing says it searched (W6).** It shows
+  how many searches ran and that it links none of the pages found, so it
+  never looks like an answer that did not search. Found writing the live
+  check, where a small model searched and cited nothing.
+- **The switch and the model picker change at once.** The chat on the
+  server follows, and a refusal puts them back with the reason. Found in
+  Chrome, where the switch waited for the server.
+- **Eugene unreachable at a refresh is not a sign-out (W2).** It is a 503
+  that says so; the session works again when Eugene answers. Nobody can be
+  turned off while Eugene cannot be asked either.
+- **The return address is the address the browser used.** Workbench sends
+  Eugene `<the page's own origin>/oidc/callback`, one of the addresses the
+  agent registered. An address it did not register (a host name the
+  operator added later) is refused by Eugene's page, which says so.
+- **No file-size setting (W7, W13).** The limits are the gateway's, said
+  before an upload.
+- **`dist` is built from a `git archive` of `main`, and that stamps
+  `_build.py`.** The stamp must stay a placeholder on `dist`, so that an
+  archive of `dist` names its own commit; the first rebuild got this wrong
+  and a follow-up commit put it back. `BUILD_INFO` names the `main` commit.

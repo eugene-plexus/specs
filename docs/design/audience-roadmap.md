@@ -72,7 +72,22 @@
   people in is registered at install and handed its secret; the console has
   a People page. 42 of 42 with a real OIDC client, 6 of 6 in Chrome,
   sabotage 46 of 46. The sign-in key is not rotated yet (design §10).
-  **Pickup: C3**, Workbench itself: chat and web search, with workshop names.
+- **C3 is built and pinned** ([record](../acceptance/c3-workbench-run.md),
+  [design](workbench-v1.md)). Workbench is the first app in the catalogue,
+  a new repo, `eugene-plexus/workbench`. It reaches the hub only through
+  the gateway's public doors with one key, and signs people in with Eugene.
+  Version 1 is chat and web search, in plain words (Troy's call 1: *Tools*,
+  not *Toolbox*):
+  - an answer keeps going with no tab open (call 2);
+  - whether the owner may read people's chats is a setting each business
+    decides (call 3);
+  - a session is a cookie plus a per-origin secret, because cookies cross
+    ports;
+  - an image an answer names is never fetched.
+  `GET /v1/models` now says whether a search can run for the key, and
+  why not. Results: 36 of 36 with Chrome, 34 of 34 live (a real 0.6B and
+  the WSL SearXNG), sabotage 46 of 46. **Pickup: C4**, Open WebUI in the
+  registry.
 - Not scheduled without Troy: PB2's remainder (the model's row saying so
   when fit places a built profile differently at launch; Home's "make it
   faster", call 6, later).
@@ -123,7 +138,7 @@ first:**
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine.md`](mlx-engine.md) (A4 section), B1 | **Built on GitHub's macOS runners 2026-09-30**; the rented-Mac list is in the record, and dropping the `experimental` flag is Troy's call |
 | A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured and built 2026-09-30.** Almost nothing to repair. The one repair, a named `tool_choice` answered by structured output on llama-server, is pinned |
-| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **Designed 2026-10-01; C1 and C2 built.** C1 an account per app (the OS service manager, one log ingress over OTLP); C2 sign-in with Eugene (OpenID Connect; the passphrase solo, people's accounts for a business); C3 Workbench, chat and web search, with workshop names (§6); C4 Open WebUI. Next: C3 |
+| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **Designed 2026-10-01; C1, C2 and C3 built.** C1 an account per app (the OS service manager, one log ingress over OTLP); C2 sign-in with Eugene (OpenID Connect; the passphrase solo, people's accounts for a business); C3 Workbench, chat and web search, with workshop names (§6); C4 Open WebUI. Next: C4 |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 
 ## Not scheduled without Troy
