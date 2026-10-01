@@ -15,6 +15,8 @@ the catalogue entry. Gateway `a8fbc6c` carries the contract change, specs
 | Workbench's own suites | 52 Python tests (Windows and Ubuntu in its CI), 28 page tests |
 | Every script specs CI runs, locally, before the pin, in a venv shaped like CI's | **25 of 25** |
 | specs CI on the pin (`643062d`), C3 included, on GitHub's Ubuntu and Windows runners | **green**; A4 failed once on macos-26 and passed on the re-run (below) |
+| After the live install found the console loop (below): the harness with a second machine as the console, installing through its hop, with Chrome | **37 of 37**; before the fix it stops at check 4 |
+| `scripts/c3-sabotage.py` with the fix's 14 sabotages | **60 of 60 caught** |
 
 ## Before: the failing check
 
@@ -196,6 +198,66 @@ passed on all three Macs. The cause was a race in A4's harness:
 
 The harness now waits until the gateway reports a ready backend
 (`ready_backends`) before each completion.
+
+## Found on the live install, after the pin
+
+**Installing Workbench from another machine's console signed the
+operator out, every time** (Troy, 2026-10-01, the NAS console installing
+on `Amish_Station`).
+
+What happened:
+
+1. The console reaches another machine with a five-minute token
+   addressed to that machine alone (per-node token keys, D7).
+2. The install there needs two things only the root can do: the app's
+   key and its sign-in registration. It sent the token it had been
+   handed on to the root. That is a bearer forwarded past its audience,
+   which D7 forbids.
+3. The root refused it: *the token is addressed to ['node:c3-node'], not
+   to 'control'*. The 401 came back through both proxies to a browser
+   that reads any 401 as its session ending.
+
+The run above never went this way. It installed on the enrolled agent
+directly, with a session made there, and that session is addressed to
+the root as well.
+
+**Before the fix** (agent `409bd01`, control `b9f55d7`): the harness now
+has a second machine that is only a console, and installs through its
+`node:` hop. It stops at check 4 with exactly that 401.
+
+**The fix** (contract `a76f7ae`; design: per-node-token-keys D5 and D7):
+
+- **The worker acts for the operator.** It sends its own `agent` token,
+  with the operator's token beside it as the subject. A session already
+  addressed to the root still goes unchanged.
+- **The root takes that pair on four operations only**: making and
+  revoking an app's key, and registering and removing its sign-in. Each
+  is only for names `app:<id>@<that node>`.
+- **A refusal at the root is a 502 from the worker**, naming the root's
+  reason, so it can no longer sign anyone out. The worker's own calls
+  keep the root's 401, because admission says "revoked" that way.
+
+**After:**
+
+- The harness runs every check through the console where the console is
+  what a person would use: the install, the settings switch, and a new
+  check 27, uninstalling from the console. **37 of 37**, with Chrome.
+  The two agents advertise this host's routable address and bind every
+  interface, because a console will not hop to a loopback address.
+- New tests: 10 at the root (`test_acting_node.py`) and 4 at the agent
+  (`test_acting_for_operator.py`).
+- `c3-sabotage.py` gains 14 sabotages, including both over-corrections:
+  - every caller's token sent as a subject, a session addressed to the
+    root included;
+  - every root 401 turned into a 502, a revoked client key's included.
+
+  **60 of 60 caught**, on the first pass.
+
+Pinned: agent `5c456fe`, control `28ea3e3`.
+
+**On the live install, both have to update.** With only the agent
+updated, the install fails with a 502 that names the root's refusal, and
+no longer signs anyone out. It works once the root is updated too.
 
 ## What this does not show
 

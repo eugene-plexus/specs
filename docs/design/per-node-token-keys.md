@@ -216,6 +216,7 @@ from the workload's own claim.
 | control: reads | a session; `sub: agent` or `sub: gateway` from any member |
 | control: client-key policy and admission | a session; `sub: agent` or `sub: gateway` |
 | control: replication log and snapshot | a session only |
+| control: an app's client key and sign-in registration (make, revoke, remove) | a session; or a member node's `agent` token **with** an operator token addressed to that node, for keys and registrations named `app:<id>@<that node>` only (added 2026-10-01, see D7) |
 | control: everything else | a session only |
 
 **Exact kinds, finally.** "Any `service:*`" is gone. That is the
@@ -286,6 +287,35 @@ component that lives elsewhere):
 *Practice:* RFC 8693 token exchange, with `act` for delegation. RFC 8707
 and RFC 8725 §3.9 for audience-restricted tokens. Never forward a bearer
 beyond its audience.
+
+**What this missed, found on the live install (2026-10-01).** Some work a
+console asks of another machine needs the root as well: installing an app
+mints its key and registers its sign-in there. The worker forwarded the
+exchanged token it had been handed -- past its audience, which this
+section forbids -- the root refused it, and the 401 travelled back to a
+browser that reads any 401 as its session ending. Installing Workbench on
+`Amish_Station` from the NAS console signed Troy out on every click.
+
+- **The worker acts for the operator, not as them.** It sends its own
+  `agent` token as the bearer (the actor) and the exchanged token in
+  `X-Eugene-Plexus-Subject-Token` (the subject). A token already addressed
+  to the root -- a session made by signing in on the worker -- still goes
+  unchanged.
+- **The root takes the pair on four operations only**: making or revoking
+  an app's client key, registering or removing an app's sign-in. Each
+  confines the node to names `app:<id>@<that node>`; any other name is a
+  403. The subject must be a session addressed to the presenting node, so
+  a bystander that captured it cannot spend it, a token the node minted
+  for itself is not one, and a sign-out ends it by `sid`.
+- **A refusal at the root is a 502 from the worker**, naming the root's
+  reason. The caller's credential was good at the worker, so a 401 there
+  would sign out a session nothing was wrong with. On the worker's own
+  calls a root 401 still passes as a 401, because admission says
+  "revoked" that way and the gateway reads it so.
+
+What a stolen worker key buys is unchanged: alone it opens none of these.
+While an operator is acting on that worker it can make that worker's own
+app keys, which is what the operator was asking it to do.
 
 ### D8. Machine-to-machine calls use short-lived per-recipient tokens from the caller's own agent
 

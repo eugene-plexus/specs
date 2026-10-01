@@ -18,6 +18,12 @@ on, nothing asked whether another *member* could open a person's chat; and
 a streamed piece the page already had was tested only as the last one, so
 cutting off what followed it went unseen. Both are tests now.
 
+The third pass added the live install's finding (2026-10-01): installing
+from another machine's console sent the console's token past its
+audience to the root, and the root's 401 signed the operator out. Fourteen
+sabotages guard the fix at the agent and the root, the two
+over-corrections among them; all 60 caught on the first run.
+
 The whole flow, with real processes and the system Chrome, is
 `c3-workbench-acceptance.py`; this pass is what makes each guard in
 Workbench, the gateway and the agent answer for itself.
@@ -57,6 +63,12 @@ MESSAGE = WEB / "src/components/MessageView.tsx"
 ROUTES = G / "routes/inference.py"
 ROUTING = G / "routing.py"
 CATALOGUE = AGENT / "src/eugene_plexus_agent/apps_catalogue.yaml"
+CONTROL = ROOT / "control"
+C = CONTROL / "src/eugene_plexus_control"
+ACTING = C / "dependencies.py"
+ROOT_KEYS = C / "routes/client_keys.py"
+ROOT_PEOPLE = C / "routes/people.py"
+REGISTRY = AGENT / "src/eugene_plexus_agent/client_key_registry.py"
 
 
 def python(repo: Path) -> Path:
@@ -74,7 +86,9 @@ RUNNERS = {
     WEB: lambda: ["npx", "vitest", "run"],
     GATEWAY: pytest(GATEWAY, "tests/test_server_tools.py", "tests/test_admission.py",
                     "tests/test_safe_mode.py"),
-    AGENT: pytest(AGENT, "tests/test_apps.py"),
+    AGENT: pytest(AGENT, "tests/test_apps.py", "tests/test_acting_for_operator.py"),
+    CONTROL: pytest(CONTROL, "tests/test_acting_node.py", "tests/test_client_keys.py",
+                    "tests/test_oidc.py"),
 }
 
 SABOTAGES: list[tuple[str, Path, Path, str, str]] = [
@@ -379,6 +393,103 @@ SABOTAGES: list[tuple[str, Path, Path, str, str]] = [
         AGENT, CATALOGUE,
         "  localActions: false\n",
         "  localActions: true\n",
+    ),
+    # --- installing from another machine's console (2026-10-01) ------------
+    # The live install's loop: the worker sent the console's token, addressed
+    # to the worker alone, on to the root, and the root's 401 signed the
+    # operator out. The worker now acts for the operator; the root takes that
+    # only for the worker's own apps.
+    (
+        "the worker sends the console's token on to the root as it is",
+        AGENT, REGISTRY,
+        "        return {\"Authorization\": own, SUBJECT_TOKEN_HEADER: token}\n",
+        "        return {\"Authorization\": authorization}\n",
+    ),
+    (
+        "every caller rides as a subject, a session addressed to the root included",
+        AGENT, REGISTRY,
+        "                    recipient=tokens.RECIPIENT_CONTROL,\n"
+        "                    classes=(tokens.TYP_SESSION,),\n",
+        "                    recipient=\"nowhere\",\n"
+        "                    classes=(tokens.TYP_SESSION,),\n",
+    ),
+    (
+        "a refusal at the root reaches the console as a 401",
+        AGENT, REGISTRY,
+        "            if exc.response.status_code == 401 and authorization is not None:\n",
+        "            if False:\n",
+    ),
+    (
+        "every 401 from the root becomes a 502, a revoked client key's included",
+        AGENT, REGISTRY,
+        "            if exc.response.status_code == 401 and authorization is not None:\n",
+        "            if exc.response.status_code == 401:\n",
+    ),
+    (
+        "the root ignores the subject",
+        CONTROL, ACTING,
+        "    subject = request.headers.get(SUBJECT_TOKEN_HEADER)\n",
+        "    subject = None\n",
+    ),
+    (
+        "the subject may be addressed to any machine, not the one presenting it",
+        CONTROL, ACTING,
+        "            recipient=tokens.node_recipient(node),\n",
+        "            recipient=__import__(\"jwt\").decode(subject.strip(), "
+        "options={\"verify_signature\": False})[\"aud\"][0],\n",
+    ),
+    (
+        "the subject may be a token the machine minted for itself",
+        CONTROL, ACTING,
+        "            recipient=tokens.node_recipient(node),\n"
+        "            classes=(tokens.TYP_SESSION,),\n",
+        "            recipient=tokens.node_recipient(node),\n"
+        "            classes=(tokens.TYP_SESSION, tokens.TYP_SERVICE),\n",
+    ),
+    (
+        "any service token may act, not only an agent speaking for itself",
+        CONTROL, ACTING,
+        "    actor = require_node_actor(request, creds)\n",
+        "    actor = verify_bearer(request, _bearer(request, creds), classes=(tokens.TYP_SERVICE,))\n",
+    ),
+    (
+        "a machine acting for the operator may name anything",
+        CONTROL, ACTING,
+        "        return self.node is None or named_for_node(name, self.node)\n",
+        "        return True\n",
+    ),
+    (
+        "a name that only begins with the machine's own counts as its own",
+        CONTROL, ACTING,
+        "re.fullmatch(rf\"app:[^@\\s]+@{re.escape(node)}\", str(name))",
+        "re.match(rf\"app:[^@\\s]+@{re.escape(node)}\", str(name))",
+    ),
+    (
+        "a machine acting for the operator may revoke any key",
+        CONTROL, ROOT_KEYS,
+        "    if not op.may_name(record.get(\"name\")):\n",
+        "    if False:\n",
+    ),
+    (
+        "a machine acting for the operator may register sign-in for anything",
+        CONTROL, ROOT_PEOPLE,
+        "    if not op.may_name(body.owner):\n",
+        "    if False:\n",
+    ),
+    (
+        "a machine acting for the operator may remove any app's sign-in",
+        CONTROL, ROOT_PEOPLE,
+        "    if not op.may_name(record.get(\"owner\")):\n",
+        "    if False:\n",
+    ),
+    (
+        "the pair also lists every key",
+        CONTROL, ROOT_KEYS,
+        "    dependencies=[Depends(require_operator)],\n"
+        ")\n"
+        "async def list_keys(request: Request) -> ClientKeyList:\n",
+        ")\n"
+        "async def list_keys(request: Request, op: ActingOperator) -> ClientKeyList:\n",
     ),
 ]
 

@@ -1,18 +1,26 @@
 """C3 acceptance: Workbench, installed from Eugene's app catalogue.
 
-Design: `docs/design/workbench-v1.md` §5. Real processes on free loopback
-ports: a control root, an enrolled agent that supervises a gateway, a
-model's inference-driver and a SearXNG search account, and a fixture that
-plays the engine (it calls tools), SearXNG, and a page that records any
-fetch made of it. **Workbench is installed through the registry** -- by
-default from the agent's own catalogue entry, at its pinned `dist`
-archive, which is what an install does -- and everything after that is
+Design: `docs/design/workbench-v1.md` §5. Real processes on free ports: a
+control root, an enrolled agent that supervises a gateway, a model's
+inference-driver and a SearXNG search account, a second enrolled agent
+that is only a console, and a fixture that plays the engine (it calls
+tools), SearXNG, and a page that records any fetch made of it.
+**Workbench is installed through the registry** -- by default from the
+agent's own catalogue entry, at its pinned `dist` archive, which is what
+an install does -- **from the console on the other machine**, through its
+`node:` hop, as the console's Apps page does it. Everything after that is
 done the way a person's browser does it, against the real sign-in page.
+
+The two agents advertise this host's routable address and bind every
+interface, because a console refuses to hop to a loopback address.
 
 What it proves, in order:
 
-- the catalogue offers Workbench and the install runs it, from the
-  pinned archive, with its page;
+- the catalogue offers Workbench and an install started from another
+  machine's console runs it, from the pinned archive, with its page
+  (before 2026-10-01 that install signed the operator out: the worker
+  sent the console's token, addressed to the worker alone, on to the
+  root, and the root's 401 came back to the browser);
 - the switch is off with the gateway's own reason before a search account
   exists, and on once one does;
 - the owner signs in with Eugene's passphrase; a chat streams, Stop keeps
@@ -27,7 +35,9 @@ What it proves, in order:
 - a key whose tools leave out search turns the switch off and refuses a
   searched turn with the gateway's reason;
 - Workbench's own log lines reach the agent's Logs page;
-- revoking the app's key stops the next answer with a sentence saying so.
+- revoking the app's key stops the next answer with a sentence saying so;
+- uninstalling from the console removes its sign-in at the root, and the
+  console stays signed in.
 
 `--browser` adds the system Chrome driving Workbench's page itself
 (`c3-workbench-browser.mjs`, Playwright from `ui/node_modules`).
@@ -69,6 +79,7 @@ ROOT = HERE.parents[1]
 FIXTURES = HERE / "fixtures"
 SEARXNG_ANSWER = FIXTURES / "searxng-answer.json"
 NODE = "c3-node"
+CONSOLE = "c3-console"
 MODEL = "c3-local"
 ANSWER = "C3-ANSWER: Hello from the fixture model."
 SAW_IMAGE = "C3-SAW-IMAGE"
@@ -231,6 +242,12 @@ def fixture_app(state_file: Path):
 def serve(kind: str, directory: Path, port: int) -> None:
     import uvicorn
 
+    host = "127.0.0.1"
+    if kind in ("agent", "console"):
+        # A console hops to another node at the address that node
+        # advertises, and refuses a loopback one; see the docstring.
+        host = "0.0.0.0"
+        kind = "agent"
     if kind == "fixture":
         app = fixture_app(directory / "fixture.json")
     elif kind == "control":
@@ -251,7 +268,22 @@ def serve(kind: str, directory: Path, port: int) -> None:
                                            bind_port=port))
     else:
         raise SystemExit(f"unknown kind {kind!r}")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
+    uvicorn.run(app, host=host, port=port, log_level="error", access_log=False)
+
+
+def routable_address() -> str:
+    """The address this host would use to reach another; no packet is sent."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        probe.connect(("192.0.2.1", 9))
+        return str(probe.getsockname()[0])
+    except OSError as exc:
+        raise SystemExit(
+            f"this host has no routable address ({exc}), and a console will not hop to a "
+            "loopback one; connect a network and run again"
+        ) from exc
+    finally:
+        probe.close()
 
 
 # --------------------------------------------------------------------------- #
@@ -348,8 +380,10 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
     live = engine is not None
     for name in [k for k in os.environ if k.startswith("EUGENE_PLEXUS_")]:
         del os.environ[name]
-    ports = free_ports(["control", "agent", "fixture", "gateway", "model", "searx", "engine"])
+    ports = free_ports(["control", "agent", "console", "fixture", "gateway", "model", "searx",
+                        "engine"])
     url = {k: f"http://127.0.0.1:{v}" for k, v in ports.items()}
+    lan = routable_address()
     client = httpx.Client(timeout=120, trust_env=False)
     processes: list[subprocess.Popen] = []
     passphrase = secrets.token_urlsafe(24)
@@ -416,7 +450,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         (agent_dir / "searx.yaml").write_text("{}\n", encoding="utf-8")
         (agent_dir / "agent.yaml").write_text(yaml.safe_dump({
             "firstRunComplete": True,
-            "advertiseUrl": url["agent"],
+            "advertiseUrl": f"http://{lan}:{ports['agent']}",
             "securityMode": "prompt_on_startup",
             "uvBinary": uv_binary(),
             "allowCustomApps": source is not None,
@@ -435,9 +469,34 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
                     json={"nodeName": NODE, "grants": ["gateway"]}).json()["token"]
         enrolled = call("agent", "POST", "/v1/node/enroll", local, timeout=90,
                         json={"controlUrl": url["control"], "token": join, "name": NODE})
-        must("1", "the agent enrolls with the root", enrolled.status_code == 200, enrolled.text[:200])
+        # A second machine that runs nothing: the console the operator is
+        # at, as the NAS is on the live install, acting on c3-node.
+        console_dir = work / "console"
+        console_dir.mkdir()
+        (console_dir / "agent.yaml").write_text(yaml.safe_dump({
+            "firstRunComplete": True,
+            "advertiseUrl": f"http://{lan}:{ports['console']}",
+            "securityMode": "prompt_on_startup",
+            "components": [],
+        }), encoding="utf-8")
+        start("console")
+        console_local = call("console", "POST", "/v1/auth/initialize",
+                             json={"passphrase": passphrase}).json()["sessionToken"]
+        console_join = call("control", "POST", "/v1/nodes/join-token", root,
+                            json={"nodeName": CONSOLE}).json()["token"]
+        console_enrolled = call("console", "POST", "/v1/node/enroll", console_local, timeout=90,
+                                json={"controlUrl": url["control"], "token": console_join,
+                                      "name": CONSOLE})
+        must("1", "the agent, and a second machine that is only a console, enroll with the root",
+             enrolled.status_code == 200 and console_enrolled.status_code == 200,
+             (enrolled.text[:200], console_enrolled.text[:200]))
         wait(lambda: call("agent", "GET", "/healthz").status_code == 200, "agent after enrolment")
+        wait(lambda: call("console", "GET", "/healthz").status_code == 200, "console after enrolment")
         operator = call("agent", "POST", "/v1/auth/login", json={"passphrase": passphrase}).json()["sessionToken"]
+        # Signed in at the console, as the operator was on the live install;
+        # it reaches c3-node only through its proxy's `node:` hop.
+        console = call("console", "POST", "/v1/auth/login", json={"passphrase": passphrase}).json()["sessionToken"]
+        hop = f"/api/proxy/node:{NODE}"
 
         def component_running(name: str) -> bool:
             listed = call("agent", "GET", "/v1/components", operator).json()["components"]
@@ -465,11 +524,12 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
             added = call("agent", "POST", "/v1/app-catalogue/custom", operator, json=manifest)
             must("2", "DEVELOPMENT RUN: Workbench added as a custom entry from a working tree "
                  "(this is not the acceptance)", added.status_code == 201, added.text[:300])
-        began = call("agent", "POST", "/v1/apps/workbench/install", operator)
-        must("4", "the install starts", began.status_code == 202, began.text[:300])
+        began = call("console", "POST", hop + "/v1/apps/workbench/install", console)
+        must("4", "the install starts, from the console on another machine",
+             began.status_code == 202, f"{began.status_code} {began.text[:300]}")
 
         def installed() -> bool:
-            progress = call("agent", "GET", "/v1/apps/workbench/install", operator).json()
+            progress = call("console", "GET", hop + "/v1/apps/workbench/install", console).json()
             if progress["state"] == "failed":
                 raise Abort("the install failed: " + str(progress.get("error"))[-1500:])
             return progress["state"] == "done"
@@ -597,7 +657,8 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
               theirs.status_code == 404 and bo.get("/api/chats").json()["chats"] == []
               and [c["id"] for c in ada.get("/api/chats").json()["chats"]] == [mine])
 
-        reads = call("agent", "PATCH", "/v1/apps/workbench/config", operator, json={"ownerReadsChats": True})
+        reads = call("console", "PATCH", hop + "/v1/apps/workbench/config", console,
+                     json={"ownerReadsChats": True})
         told = ada.get("/api/me").json().get("ownerReadsChats")
         read = owner.get(f"/api/chats/{mine}")
         check("20", "with ownerReadsChats set from the console, the owner reads Ada's chat, "
@@ -606,7 +667,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
               and read.json()["chat"]["readOnly"] is True
               and owner.post(f"/api/chats/{mine}/messages", json={"content": "x"}).status_code == 404,
               reads.text[:200])
-        call("agent", "PATCH", "/v1/apps/workbench/config", operator, json={"ownerReadsChats": None})
+        call("console", "PATCH", hop + "/v1/apps/workbench/config", console, json={"ownerReadsChats": None})
         check("21", "turned back off, the owner cannot", owner.get(f"/api/chats/{mine}").status_code == 404)
 
         person_id = made["ada"]["id"]
@@ -661,6 +722,16 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         check("26", "with the app's key revoked, the next answer says the key was refused",
               after["status"] == "failed" and "refused the key" in (after.get("error") or ""),
               after.get("error"))
+
+        say("uninstalled from the console")
+        gone = call("console", "DELETE", hop + "/v1/apps/workbench", console)
+        clients = call("control", "GET", "/v1/oidc/clients", root).json()["clients"]
+        still = call("console", "GET", "/v1/auth/client-keys", console)
+        check("27", "uninstalled from the console, its sign-in is gone at the root, and the "
+              "console is still signed in",
+              gone.status_code == 204 and app["oidcClientId"] not in {c["clientId"] for c in clients}
+              and still.status_code == 200,
+              {"uninstall": f"{gone.status_code} {gone.text[:200]}", "console": still.status_code})
     except Abort as exc:
         print(f"\nABORTED: {exc}", flush=True)
     finally:
@@ -726,7 +797,7 @@ def main() -> None:
             shutil.rmtree(work, ignore_errors=True)
     failed = [r for r in RESULTS if not r[2]]
     print(f"\n{len(RESULTS) - len(failed)} of {len(RESULTS)} passed")
-    finished = any(r[0] == "26" for r in RESULTS)
+    finished = any(r[0] == "27" for r in RESULTS)
     sys.exit(1 if failed or not finished else 0)
 
 

@@ -86,8 +86,16 @@
   - an image an answer names is never fetched.
   `GET /v1/models` now says whether a search can run for the key, and
   why not. Results: 36 of 36 with Chrome, 34 of 34 live (a real 0.6B and
-  the WSL SearXNG), sabotage 46 of 46. **Pickup: C4**, Open WebUI in the
-  registry.
+  the WSL SearXNG), sabotage 46 of 46.
+  - **The live install found one defect after the pin**, fixed and pinned
+    the same day (agent `5c456fe`, control `28ea3e3`). Installing an app
+    from another machine's console signed the operator out: the worker
+    sent the console's token past its audience to the root. Now the
+    worker acts for the operator, and the root takes that only for the
+    worker's own apps. The harness installs through a console hop now:
+    37 of 37, sabotage 60 of 60.
+
+  **Pickup: C4**, Open WebUI in the registry.
 - Not scheduled without Troy: PB2's remainder (the model's row saying so
   when fit places a built profile differently at launch; Home's "make it
   faster", call 6, later).
