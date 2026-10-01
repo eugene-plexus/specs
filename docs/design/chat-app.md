@@ -1,21 +1,43 @@
-# The chat app: our first spoke
+# Our first app (working name: the chat app)
 
-**Status: designed 2026-10-01, nothing built.** Written fresh from Troy's
-2026-09-24 brief. The 2026-09-23 draft of this file was deleted on purpose,
-and nothing in it binds. This is roadmap A6. It builds on the apps registry
-([`apps-and-spokes.md`](apps-and-spokes.md), built 2026-09-23), which is
-unchanged except where §3 says so.
+**Status: designed 2026-10-01, revised the same day on Troy's answers;
+nothing built.** Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
+draft of this file was deleted on purpose, and nothing in it binds. This is
+roadmap A6. It builds on the apps registry
+([`apps-and-spokes.md`](apps-and-spokes.md), built 2026-09-23). Where this
+document changes the registry, it says so.
 
-Three calls were taken on 2026-10-01 (Troy):
+**The name is open** (§9). "Chat" undersells it: the app is meant to grow
+into tool calls on the person's machine, image, speech and video work, and
+use by a whole small business. Until it has a name, it is "the app".
+
+## Calls taken (Troy, 2026-10-01)
 
 1. **Version 1 is chat and web search.** Web search goes through P8's
    tool-driver, which runs in the hub. MCP servers and filesystem tools
    come later, each with its own design.
-2. **Apps get an OS account of their own first, before chat v1** (§2).
-3. **Open WebUI goes into the registry, after the apps account** (§5).
+2. **Apps get an OS account of their own first** (C1, §2), before the app.
+3. **Open WebUI goes into the registry, after the apps account** (C4, §6).
+4. **No measurement before C1.** This is an old problem with known
+   answers: the OS service manager runs each app in an account of its own.
+   **The two log paths that would create become one:** a log ingress in
+   Eugene that any tool can send to, ours or not (§3).
+5. **Installs that cannot have an apps account:** Troy left this call to
+   Claude. An app may install there only if it runs nothing the model
+   chooses (§2).
+6. **The app uses the same doors as everyone else.** That means the
+   gateway's public endpoints, each for its own job.
+7. **Sign-in comes from Eugene** (C2, §4), for two cases:
+   - **The solo enthusiast** signs in with the Eugene passphrase. There is
+     no second passphrase.
+   - **A small business** has real user accounts, so a fired employee is
+     revoked without touching anyone else.
 
-The calls still open are in §7. Each has a recommendation, and none is
-taken.
+   This replaces apps call #6 ("the app's own sign-in") for any app that
+   uses it.
+8. **The stack is built for what comes later** (§5): image, speech and
+   video work through this app (Stable Diffusion- and ElevenLabs-style),
+   and many people connected at once in a small business.
 
 ---
 
@@ -33,14 +55,14 @@ taken.
 > if you don't.
 
 The playground stays as it is: a diagnostic with no tool execution
-([`playground-diagnostic.md`](playground-diagnostic.md)). The chat app is a
+([`playground-diagnostic.md`](playground-diagnostic.md)). The app is a
 separate, optional install.
 
 **What the audience asks for** (the A6 row): a chat screen beginners stay
 in. The bar is low. Several T1 commenters call llama-server's own web UI
-enough, and the 2026-09-11 call was "adequate". One counter-signal (62
-points) asks for "a simple built in agent harness". The brief aims past
-both, one slice at a time.
+enough, and one counter-signal (62 points) asks for "a simple built in
+agent harness". The threads recorded no demand for multi-user accounts.
+The small-business case is Troy's.
 
 ---
 
@@ -72,17 +94,15 @@ The three rows of the key-exposure work each closed something else:
 
 So anything the model chooses that runs in an app's process can reach the
 install. A file tool pointed at `node.yaml` is enough, and web search is a
-way to send it out. Chat v1 runs nothing the model chooses, so it would be
-safe without the account. Troy's call puts the account first anyway: every
-later slice needs it, and Open WebUI needs it on day one (§5).
+way to send it out.
 
 ---
 
-## 2. C1: an OS account for apps
+## 2. C1: an OS account for each app
 
-**The goal:** a process in an app's account can read its own
-`apps/<id>/` directory and its key file, and reach the gateway over HTTP.
-It cannot open:
+**The goal:** a process in an app's account can read its own app
+directory and its key file, reach the gateway, and send to the log ingress
+(§3). It cannot open:
 
 - `node.yaml` or `agent.yaml`;
 - the passphrase file;
@@ -90,43 +110,59 @@ It cannot open:
 - the install's keyring entry;
 - another app's directory.
 
-**Where it can exist.** A second account needs administrator rights at
-install time:
+**The shape: the OS service manager runs each app in an account of its
+own.** Neither OS needs a password kept for it:
 
-- **The Windows service install:** yes. The installer is elevated, and the
-  agent runs as LocalSystem.
-- **The Linux system install:** yes. The installer runs with `sudo`.
-- **Windows per-user, Linux `--user` and macOS:** no. Nothing there may
-  create an account, and macOS cannot yet run Eugene under its own account
-  either (A4's record). §7 call 2 says what an app may do on those
-  installs.
+- **Windows service install:** one service per app,
+  `EugenePlexusApp-<id>`, under its virtual account
+  `NT SERVICE\EugenePlexusApp-<id>`. The agent runs as LocalSystem and may
+  create, start and stop services. The service's program is our
+  **launcher**, a small service host using `pywin32` (already the
+  `[service]` extra).
+- **Linux system install:** a template unit
+  `eugene-plexus-app@<id>.service` with `DynamicUser=yes`, running the
+  same launcher. `install.sh` (under `sudo`) installs the unit and one
+  polkit rule. The rule lets `eugene-plexus` start, stop and query
+  `eugene-plexus-app@*` and nothing else.
 
-**Two shapes, and C1 starts by measuring them** (§7 call 1):
+**What the launcher does,** inside the app's account and with none of the
+hub's credentials:
 
-- **The OS service manager runs each app in an account of its own.**
-  Windows creates a virtual service account per service
-  (`NT SERVICE\<name>`), and systemd gives a template unit `DynamicUser=`.
-  Neither has a password to keep. Apps are also kept apart from each
-  other. The cost is that supervision moves out of the agent: start, stop,
-  back-off and log capture become requests to the service manager, where
-  today they are the supervisor's own (Job Object, graceful stop with
-  escalation, piped stdout).
-- **The agent starts every app in one apps account.** On Windows,
-  LocalSystem can log a local account on without a password (S4U) and
-  create the process with that token. On Linux, the installer would grant
-  the agent one narrow rule to start processes as `eugene-plexus-apps`.
-  Supervision is unchanged. Apps can read each other's files unless each
-  directory is locked to its own app, which one shared account cannot do.
+- it starts the app's command;
+- it forwards the app's stdout and stderr to the log ingress, tagged with
+  the app's key;
+- on Windows, it turns the service manager's stop into the graceful stop
+  the supervisor uses today (the console break event, then escalation).
+
+The service manager restarts an app that crashes, with its own back-off.
+The agent asks it for status. A GPU app later (§5) still takes its
+admission reservation from the agent before the agent asks the service
+manager to start it.
 
 **What stays the same:** the client key, the per-app environment, the
-app's own port and origin, and no back doors. The key file and the app's
-directory are made readable by the app's account and nobody else. The
-registry's code paths are the same for every account.
+app's own port and origin, and no back doors. The app's directory and key
+file are made readable by its own account and nobody else.
+
+**Installs that cannot have an apps account** (Windows per-user, Linux
+`--user`, macOS; Claude's call, delegated by Troy). Creating an account
+needs administrator rights, and these installs have none:
+
+- **Each catalogue entry declares `localActions`**: whether it runs
+  anything the model chooses on the machine.
+- **There, an app with `localActions: false` installs** and runs as the
+  agent's account under today's supervisor. The only code running there
+  is the app's own, which the operator chose to install. Its logs go
+  through the same ingress.
+- **An app with `localActions: true` is refused** there. The reason names
+  the install that would allow it.
+- **A custom entry that does not say is treated as `true`.**
+
+App v1 declares `false`. Open WebUI declares `true` (§6).
 
 **The failing check, first.** An app that tries to open each file in the
-goal list. Today every open succeeds, on both installs that can have the
-account. After C1, each is refused, and the same app still answers a chat
-request through the gateway with its key. It runs:
+goal list. Today every open succeeds. After C1, each is refused, and the
+same app still answers a chat request through the gateway with its key. It
+runs:
 
 - **Windows service install:** on a GitHub Windows runner, whose account is
   an administrator, as A4 used the macOS runners. Troy's box needs his word
@@ -139,41 +175,135 @@ with a baseline that passes.
 
 ---
 
-## 3. C2: chat v1
+## 3. One log path: an ingress any tool can send to
 
-**What it is.** A browser chat on the app's own port, served by its own
-Python process:
+**What it fixes.** Moving apps out to the service manager would give
+Eugene two ways to collect a child's output. Instead every app's output
+reaches the same place, the Logs page (`GET /v1/logs`, built 2026-09-27).
+And a third-party app gets the same path ours does.
+
+**The standard, not our own format: OpenTelemetry's OTLP over HTTP**, at
+`POST /v1/logs` on the app's own node's agent. That is OTLP's own logs
+path, beside the existing `GET /v1/logs` read. So:
+
+- **A tool that already exports OpenTelemetry** needs only an address and
+  a key, given in OpenTelemetry's own environment variables.
+- **A tool that only prints** is forwarded by the launcher.
+
+**Who may send.** Any client key granted a `logs` scope, beside A5's model
+and tool scopes:
+
+- The registry grants it to its apps through `uses: [logs]`.
+- An operator may grant it to any key, so a tool outside the registry can
+  send too.
+- The agent stamps every line with the key's name, so one sender cannot
+  pass as another. Each key has a size and rate limit.
+- Lines are masked on the way out, as today.
+
+**The one exception, named:** the agent refuses client keys everywhere
+today, by construction. This path accepts one, for writing only. That
+mirrors the gateway, which accepts client keys on its OpenAI paths and
+nowhere else. Reading logs stays operator-only.
+
+So an app is given two addresses: the gateway, and its own node's
+ingress.
+
+---
+
+## 4. C2: signing in with Eugene
+
+**The two cases, one mechanism.** Eugene becomes the sign-in provider for
+apps, over **OpenID Connect** (the authorization code flow with PKCE). It
+is issued by the control root, which already issues every session since
+row 3.
+
+- **Solo:** the operator signs in to the app with the Eugene passphrase.
+  The app sends them to Eugene's sign-in page and gets them back signed in.
+  There is no second passphrase.
+- **Small business:** the root also holds **people's accounts**, each with
+  its own password. The operator adds and revokes a person on the console.
+  Revoking one person ends their sign-in everywhere and touches nobody
+  else.
+
+**Why OpenID Connect and not our own protocol: fairness.** Any app that
+speaks it can sign in with Eugene the same way ours does. The operator
+registers it as a client. The registry registers its own entries at
+install. Open WebUI already accepts a generic OpenID Connect provider,
+which C4 confirms against its pinned version.
+
+**Accounts are not operators.** A person may use the apps the operator
+gives them. They cannot open the console or change the install. The
+operator's own account is the existing one, so a solo install has exactly
+one account and nothing new to set up.
+
+**Where it lives.** People's accounts go in the control root's replicated
+log beside nodes and keys, so a standby keeps them. Passwords are stored
+the way the passphrase is (Argon2id).
+
+**Revocation, stated honestly.** Our app checks a person's standing every
+time its short-lived tokens are refreshed, so a revoked person is out
+within minutes. An app that keeps its own session after signing in ends a
+revoked person's access only when that session expires.
+
+**Not decided here** (C2's build decides, or Troy does):
+
+- whether the gateway sees each person, for per-person limits and usage,
+  or keeps seeing the app's one key;
+- password reset for a person who forgets one.
+
+---
+
+## 5. C3: the app, version 1
+
+**What it is.** A browser app on its own port, served by its own process:
 
 - a conversation list;
 - streaming answers with Stop, Try again and editing a message;
 - Markdown and code;
 - reasoning shown collapsed;
 - a model picker;
-- attachments (images, PDFs and audio, which the gateway already carries,
-  P2a);
+- attachments: images, PDFs and audio, which the gateway already carries
+  (P2a);
 - sampling settings;
 - a **Search the web** switch.
 
-That is roughly llama-server's own web UI, plus search. Conversations live
-in SQLite in the app's data directory.
+That is roughly llama-server's own web UI, plus search and sign-in.
 
-**How it reaches the hub: only as any client does.**
+**How it reaches the hub: through the same doors as everyone else.**
 
-- **Its key** is `app:chat@<node>`, minted at install as the registry does
-  today. Revoking it cuts the app off.
-- **Models** come from `GET /v1/models` on the gateway.
-- **Answers** come from the gateway's OpenAI-compatible door (§7 call 4).
-- **Web search** goes through P8, asked for in the request the way any
-  client asks. The key's tool scope decides, as for any key. With no search
-  account in the install, the switch is off and says why, naming *Backends
-  → Add a search account*.
+- **Its key** is `app:<id>@<node>`, minted at install. Revoking it cuts
+  the app off.
+- **Models** come from `GET /v1/models`.
+- **Chat** goes through `/v1/chat/completions`.
+- **Web search** goes through P8, asked for in the request as any client
+  asks. The key's tool scope decides. With no search account in the
+  install, the switch is off and says why, naming *Backends → Add a search
+  account*.
+- **Later work uses the doors that already exist:** images (P4), speech
+  (P3), transcription (P3b) and video (P5).
 
-If chat v1 needs something the public contract does not offer, that is a
-gap in the contract, fixed there for every client (apps call #1 in
-`apps-and-spokes.md`).
+If the app needs something the public contract does not offer, that is a
+gap in the contract, fixed there for every client (apps call #1).
 
-**Its own sign-in** (apps call #6, already taken). How it is set is §7
-call 5.
+**The stack, for what comes later:**
+
+- **A Python server (FastAPI)**, as every Eugene process is:
+  - It holds the key, so no browser ever sees it.
+  - It knows who each person is, and keeps each person's conversations and
+    files apart.
+  - It streams to many browsers at once: many people in a small business,
+    and several tabs each.
+- **Storage behind one interface:**
+  - SQLite by default, so a solo install needs nothing.
+  - A Postgres option for a business that outgrows it, added when one
+    does.
+- **Media as files** in the app's data directory, referred to by id and
+  streamed, never kept in the database. A long job (video) is a tracked
+  job the browser can leave and return to, as P5's handles are.
+- **A React and TypeScript front end, built to static files** and served
+  by the app's server: the console's stack, with the Plexus tokens copied
+  (no shared code across repos). React is where the editors image and
+  audio work will need already exist: canvases, masks and waveforms.
 
 **Model output is untrusted.** Search results and answers render as
 Markdown with no raw HTML. The app's own origin already keeps a bad answer
@@ -182,38 +312,27 @@ away from the console's session; sanitizing keeps it away from the app's.
 **One trap known in advance.** The registry installs an app from a GitHub
 archive at a pinned commit, and an archive carries no gitignored build
 output. That is how the console's wheel installed with no UI in it until
-`ui` grew its `dist` branch. Chat's built front end needs the same
+`ui` grew its `dist` branch. The app's built front end needs the same
 treatment, and its acceptance run installs from the pinned archive, never
 from a working tree.
 
 **The checks:**
 
-- Chrome drives the app against a real local model: a conversation,
-  streaming, Stop, an attachment, a searched answer (through a fixture
-  SearXNG, and the WSL one).
-- The gateway's records show only `app:chat@<node>`.
-- Revoking the key stops the app, with a sentence saying so.
-- The app is given exactly one URL, the gateway's, and talks to nothing
-  else.
-- A turn with search, on a key whose tool scope denies it, is refused with
-  the reason shown.
+- Chrome drives the app against a real local model: sign in with the
+  Eugene passphrase, a conversation, streaming, Stop, an attachment, a
+  searched answer (through a fixture SearXNG, and the WSL one).
+- **Two people, one app.** Each sees only their own conversations.
+  Revoking one ends that person's sign-in, and the other keeps working.
+- The gateway's records show only the app's key. Revoking the key stops
+  the app, with a sentence saying so.
+- The app talks to two addresses only, the gateway and its node's
+  ingress, and its logs appear on the Logs page under its key's name.
+- A searched turn on a key whose tool scope denies search is refused, and
+  the reason is shown.
 
 ---
 
-## 4. Later, each with its own design
-
-Both run model-chosen actions in the app's process, so both need C1:
-
-- **MCP servers the person adds.** They are processes the app starts, in
-  the app's account.
-- **Filesystem tools.** These need one more decision first: which folders
-  an app may reach, and how a person grants it.
-
-Neither is designed here.
-
----
-
-## 5. C3: Open WebUI in the registry
+## 6. C4: Open WebUI in the registry
 
 Troy rejected wrapping Open WebUI *instead of* building our own (memory,
 2026-09-23). Offering it *beside* ours is a different thing: it is the
@@ -221,50 +340,61 @@ Troy rejected wrapping Open WebUI *instead of* building our own (memory,
 write.
 
 **Why it waits for C1:** Open WebUI runs Python tools and functions,
-installed by its admin, in its own server process. In the agent's account,
-on the Windows service install, that is code as LocalSystem.
+installed by its admin, in its own server process. So it declares
+`localActions: true`. In the agent's account, on the Windows service
+install, that would be code running as LocalSystem.
 
-**What the entry has to settle, measured at the build:**
+**What the entry has to settle at the build:**
 
 - **It does not start the way the registry expects.** The manifest runs
   `python -m <entry>` and passes `EUGENE_PLEXUS_APP_*` variables. Open
   WebUI starts with `open-webui serve`. It reads its own variables for its
   data directory, its backend URL and its key, and wants the key as a
-  variable, not a file. So a catalogue entry may need the manifest to grow
-  a start command and an environment mapping. That is a registry change,
-  made once and reused by later third-party entries.
+  variable, not a file. So the manifest grows a start command and an
+  environment mapping. That is a registry change, made once and reused by
+  later third-party entries.
+- **Sign-in** through C2's OpenID Connect, and log export through C3's
+  ingress where its OpenTelemetry support reaches. Otherwise the launcher
+  forwards what it prints.
 - **Its supported Python version**, which the entry pins.
 - **Its licence.** It has carried a branding clause since 2025. We install
   it unmodified from PyPI, and the entry's text is read against the pinned
   version's licence before it ships.
-- **Its own sign-in,** first account and all. That fits apps call #6
-  as it is.
 
 ---
 
-## 6. Order
+## 7. Later, each with its own design
 
-1. **C1, the apps account:** the measurement (§7 call 1), then the build,
-   with the failing check first.
-2. **C2, chat v1,** in its own repo.
-3. **C3, Open WebUI.** It depends on C1 only, so it can move ahead of C2 if
-   Troy wants the choice first.
-4. MCP servers, then filesystem tools, each designed first.
+These run model-chosen actions in the app's process, so each needs C1:
+
+- **MCP servers the person adds.** They are processes the app starts, in
+  the app's account.
+- **Filesystem tools.** These need one more decision first: which folders
+  an app may reach, and how a person grants it.
+- **Local image, speech and video models.** A GPU app, admitted by the
+  agent's ledger (apps §8 reserved `resources: gpu` for this).
+
+---
+
+## 8. Order
+
+1. **C1, an account per app,** with the launcher and the log ingress (§2,
+   §3).
+2. **C2, signing in with Eugene** (§4).
+3. **C3, the app's version 1,** in its own repo once it has a name.
+4. **C4, Open WebUI.** It needs C1, and C2 for sign-in. It can move ahead
+   of C3 if Troy wants the choice first.
+5. MCP servers, filesystem tools and local media models, each designed
+   first.
 
 Each slice ends the project's way: every specs CI script run locally before
 an installer pin, a sabotage pass, and both installers re-pinned.
 
 ---
 
-## 7. Calls for Troy
-
-None of these is taken. Each has a recommendation so a build could start.
+## 9. Calls for Troy
 
 | # | The call | Recommendation | Counter-argument |
 | --- | --- | --- | --- |
-| 1 | Who runs an app's process (§2) | **Measure both on a GitHub Windows runner and in WSL first, then decide.** Leaning: the OS service manager with an account per app, because it also keeps apps apart and has no password to keep | Supervision moves out of the agent for apps only: two ways to run a child, two log paths, two back-off rules |
-| 2 | What an app may do on installs that cannot have an apps account (Windows per-user, Linux `--user`, macOS) | **Install an app there only if its manifest says it runs nothing the model chooses.** Chat v1 says so; Open WebUI does not. Anything else is refused, with the reason and the install that would allow it | Refusing Open WebUI on a Mac sends the Mac user to install it by hand, where it runs as them anyway |
-| 3 | The chat app's repo and catalogue id | **`eugene-plexus/chat`, id `chat`** | A product name, if one is wanted before the first release that ships it |
-| 4 | Which door the app uses | **`/v1/chat/completions`**, the door every OpenAI-compatible backend and client speaks, so our app exercises the commonest path | `/v1/responses` carries server tools natively and is where Codex lives |
-| 5 | How the app's sign-in is first set | **A passphrase set on first open, and only from a browser on the same machine (loopback)**, so a stranger on the LAN cannot claim it first | A beginner opening it from their phone first gets "open this on the computer"; the console's passphrase would need single sign-on, which apps call #6 deferred |
-| 6 | The app's front-end stack | **The console's: a Next static export with the Plexus tokens copied** (no shared code across repos), served by the app's Python process | A smaller stack builds faster and carries no `dist` branch |
+| 1 | The app's name, its repo and catalogue id | **Brainstorm together, or in another session** (Troy). "Chat" is too narrow | — |
+| 2 | What C2 builds first | **Both cases in one slice.** The protocol is the same, and per-person revocation is the reason the business case exists | The solo case alone ships sooner and is the whole of today's audience |
