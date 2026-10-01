@@ -58,13 +58,13 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=bd4f4e8a21bc67e825000728360e0e618aaa74c3
-PIN_CONTROL=71aa23ad5944e20bad643d5427fe787656d65ba2
+PIN_AGENT=8da2fb4a84275d54d8f58933e21c29f3785f4c17
+PIN_CONTROL=dc1b76bd04fc23fec3e574b6d35be43f9cf003cc
 PIN_GATEWAY=33d9c0e90f4f0ceb9f3bde6d34cb06fc6bad86a5
 PIN_DRIVER=53412d5c34ad15ad393bad3ab36c09e7c7312ab4
 PIN_LIBRARY=6e22230b163c7e82aed578c738a02d4058bbb548
 PIN_TOOL_DRIVER=49c289fdaba3703a50d362801b1a9e682ad4d954
-PIN_UI=b521b5dd72b19b6cde049697ec5456436a88bfd1   # branch `dist`, not `main`
+PIN_UI=fa89cf1474d38df7c8ab3ed0078863a02493a906   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 SERVICE_LABEL=eugene-plexus-agent
@@ -509,6 +509,8 @@ TemporaryFileSystem=$PREFIX:ro
 BindReadOnlyPaths=-$PREFIX/apps/pythons $PREFIX/apps/launcher $PREFIX/apps/%i
 LoadCredential=client_key:$PREFIX/apps/%i/data/client_key
 LoadCredential=admin_token:$PREFIX/apps/%i/admin_token
+# Its sign-in secret (C2); empty for an app that signs nobody in.
+LoadCredential=oidc_secret:$PREFIX/apps/%i/data/oidc_secret
 ExecStart=$PREFIX/apps/%i/python -I -u $PREFIX/apps/launcher/app_launcher.py $PREFIX/apps/%i/launch.json
 Restart=on-failure
 RestartSec=5
