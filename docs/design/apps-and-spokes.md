@@ -4,7 +4,7 @@
 (contract, agent, UI) BUILT and live-verified the same day** —
 [`../acceptance/apps-run.md`](../acceptance/apps-run.md), 58 PASS. The
 first harness (step 4) has its own design, written 2026-10-01 from
-Troy's 2026-09-24 brief below: [`chat-app.md`](chat-app.md). Troy took calls #1-#7 and
+Troy's 2026-09-24 brief below: [`workbench.md`](workbench.md). Troy took calls #1-#7 and
 #9 as recommended and **deferred #8: no deposit endpoint until a training
 module exists to deposit something.** §11 records where the build departed
 from what follows, and why. It came out of a
@@ -86,7 +86,7 @@ his to overturn.
 | 3 | How an app's web UI reaches the browser | **On its own port, i.e. its own origin, linked from the console and never embedded or proxied** (§5) | A second port to open, a second sign-in, and one more thing for Reach to cover |
 | 4 | What credential an app holds | **A client key minted at install**, named after the app, listed and revocable like any other (§4) | A per-spawn service token never expires on disk and needs no registry |
 | 5 | Whether an operator may install an app that is not in the catalogue | **Yes, by repo URL and commit, operator-only, with a plain warning that it runs as this user** (§3.1) | A curated list alone is safer, and a registry of arbitrary code is a supply-chain surface |
-| 6 | How a person signs in to an app's own UI | **The app's own sign-in for now**; single sign-on with the console later, if ever (§5.2). **Superseded 2026-10-01 (Troy):** apps sign people in with Eugene over OpenID Connect, with the passphrase for a solo install and people's accounts for a business ([`chat-app.md`](chat-app.md) §4) | Two passwords on one install is exactly the friction the hobbyist plan removed |
+| 6 | How a person signs in to an app's own UI | **The app's own sign-in for now**; single sign-on with the console later, if ever (§5.2). **Superseded 2026-10-01 (Troy):** apps sign people in with Eugene over OpenID Connect, with the passphrase for a solo install and people's accounts for a business ([`workbench.md`](workbench.md) §4) | Two passwords on one install is exactly the friction the hobbyist plan removed |
 | 7 | Whether the config trio is required of apps | **Required for apps we ship, optional for third-party entries** (§6) | Requiring it of everyone keeps the Config page uniform |
 | 8 | How a trainer gets a model into the Library | **A new public deposit endpoint, reached with a client key carrying a `library:deposit` scope** (§8) — **DEFERRED by Troy 2026-09-23: not built until a training module exists to use it** | An internal service call is less work, and it would be a back door |
 | 9 | Whether apps become a ninth layer on the architecture page and in the UI registry | **Yes: "Apps", above the front door** (§7) | The eight layers are the site's vocabulary, and a ninth changes the website too |

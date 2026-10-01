@@ -50,13 +50,13 @@
   llama.cpp report himself: their policy forbids AI-written posts, and
   the evidence notes are in `docs/private/llama-cpp-report-notes.md`.
   **No rented Mac** (Troy, 2026-09-30).
-- **A6 is designed** ([design](chat-app.md), 2026-10-01). An app runs as
+- **A6 is designed** ([design](workbench.md), 2026-10-01). An app runs as
   the agent's OS account, which on a one-machine install reaches the root
   token key, so apps get an account of their own first (C1, with one log
   ingress any tool can send to). Then sign-in with Eugene (C2), the app's
   version 1, chat and web search (C3), and Open WebUI in the registry
-  (C4). **Pickup: C1.** The app's name and C2's first cut are Troy's
-  (§9 of the design).
+  (C4). The app is **Workbench**. **Pickup: C1.** C2's first cut is Troy's
+  (§10 of the design).
 - Not scheduled without Troy: PB2's remainder (the model's row saying so
   when fit places a built profile differently at launch; Home's "make it
   faster", call 6, later).
@@ -107,7 +107,7 @@ first:**
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine.md`](mlx-engine.md) (A4 section), B1 | **Built on GitHub's macOS runners 2026-09-30**; the rented-Mac list is in the record, and dropping the `experimental` flag is Troy's call |
 | A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured and built 2026-09-30.** Almost nothing to repair. The one repair, a named `tool_choice` answered by structured output on llama-server, is pinned |
-| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`chat-app.md`](chat-app.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **Designed 2026-10-01.** C1 an account per app (the OS service manager, one log ingress over OTLP); C2 sign-in with Eugene (OpenID Connect; the passphrase solo, people's accounts for a business); C3 the app, chat and web search; C4 Open WebUI. Open: the name, and C2's first cut |
+| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **Designed 2026-10-01.** C1 an account per app (the OS service manager, one log ingress over OTLP); C2 sign-in with Eugene (OpenID Connect; the passphrase solo, people's accounts for a business); C3 Workbench, chat and web search, with workshop names (§6); C4 Open WebUI. Open: C2's first cut |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 
 ## Not scheduled without Troy

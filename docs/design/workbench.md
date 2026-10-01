@@ -1,4 +1,4 @@
-# Our first app (working name: the chat app)
+# Workbench: our first app
 
 **Status: designed 2026-10-01, revised the same day on Troy's answers;
 nothing built.** Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
@@ -7,9 +7,12 @@ roadmap A6. It builds on the apps registry
 ([`apps-and-spokes.md`](apps-and-spokes.md), built 2026-09-23). Where this
 document changes the registry, it says so.
 
-**The name is open** (§9). "Chat" undersells it: the app is meant to grow
-into tool calls on the person's machine, image, speech and video work, and
-use by a whole small business. Until it has a name, it is "the app".
+**Its name is Workbench** (Troy, 2026-10-01): repo
+`eugene-plexus/workbench`, catalogue id `workbench`, key
+`app:workbench@<node>`. "Chat" undersold it: it is meant to grow into tool
+calls on the person's machine, image, speech and video work, and use by a
+whole small business. The name sets a tone that runs through its menus and
+parts (§6).
 
 ## Calls taken (Troy, 2026-10-01)
 
@@ -17,7 +20,7 @@ use by a whole small business. Until it has a name, it is "the app".
    tool-driver, which runs in the hub. MCP servers and filesystem tools
    come later, each with its own design.
 2. **Apps get an OS account of their own first** (C1, §2), before the app.
-3. **Open WebUI goes into the registry, after the apps account** (C4, §6).
+3. **Open WebUI goes into the registry, after the apps account** (C4, §7).
 4. **No measurement before C1.** This is an old problem with known
    answers: the OS service manager runs each app in an account of its own.
    **The two log paths that would create become one:** a log ingress in
@@ -135,7 +138,7 @@ hub's credentials:
   the supervisor uses today (the console break event, then escalation).
 
 The service manager restarts an app that crashes, with its own back-off.
-The agent asks it for status. A GPU app later (§5) still takes its
+The agent asks it for status. A GPU app later (§8) still takes its
 admission reservation from the agent before the agent asks the service
 manager to start it.
 
@@ -157,7 +160,7 @@ needs administrator rights, and these installs have none:
   the install that would allow it.
 - **A custom entry that does not say is treated as `true`.**
 
-App v1 declares `false`. Open WebUI declares `true` (§6).
+App v1 declares `false`. Open WebUI declares `true` (§7).
 
 **The failing check, first.** An app that tries to open each file in the
 goal list. Today every open succeeds. After C1, each is refused, and the
@@ -253,7 +256,7 @@ revoked person's access only when that session expires.
 
 ---
 
-## 5. C3: the app, version 1
+## 5. C3: Workbench, version 1
 
 **What it is.** A browser app on its own port, served by its own process:
 
@@ -271,7 +274,7 @@ That is roughly llama-server's own web UI, plus search and sign-in.
 
 **How it reaches the hub: through the same doors as everyone else.**
 
-- **Its key** is `app:<id>@<node>`, minted at install. Revoking it cuts
+- **Its key** is `app:workbench@<node>`, minted at install. Revoking it cuts
   the app off.
 - **Models** come from `GET /v1/models`.
 - **Chat** goes through `/v1/chat/completions`.
@@ -332,7 +335,63 @@ from a working tree.
 
 ---
 
-## 6. C4: Open WebUI in the registry
+## 6. Names and faces
+
+**Workshop names with plain words beside them** (Troy, 2026-10-01).
+Workbench's menus and parts take names from a workshop, but a hint never
+replaces the plain word:
+
+- **Every workshop name carries its plain meaning** where a person first
+  meets it, as a subtitle or a tooltip.
+- **The console's copy rules still apply:** plain words, the glossary,
+  and the Grade 6 gate (S8).
+- **Eugene's own terms keep Eugene's words:** model, key and gateway. So a
+  person moving between the console and Workbench meets one vocabulary for
+  the hub.
+
+**Proposed vocabulary, Troy's to change:**
+
+| Workbench says | It means | Where |
+| --- | --- | --- |
+| **Toolbox** | the tools a model may use: web search now, MCP servers and file tools later | a menu, and a switch in each chat |
+| **Jigs** | saved setups (a model, its settings and its instructions), reused so a job comes out the same every time | a menu |
+| **Work orders** | long jobs that run without anyone watching: a video, a batch of images | a list with progress |
+| **Bins** | the files a person brought in, and the media Workbench made | a menu |
+| **Crew** | the people who may use this Workbench, a business's accounts (C2) | the owner's menu |
+| **The shop** | the owner's settings: the crew, and who may use which models and tools | the operator's menu only |
+| **Chats** | conversations, kept plain because a conversation is not a job | the side list |
+
+**The same names inside the code, where they fit,** so a contributor reading
+the source finds the same map: `toolbox/`, `jigs/`, `work_orders/`,
+`bins/`, `crew/`. Two parts have no menu of their own:
+
+- **Dispatch:** sends each answer to every browser watching it.
+- **Foreman:** starts, watches and resumes work orders.
+
+**Eugene's logo and mascot make it friendlier.** They are copied from the
+website, byte for byte, the way `gpu_probe.py` is copied between the agent
+and the library:
+
+- **The logo** marks the header and the browser tab. The tab should differ
+  from the console's, which uses `eugene-icon.svg`, so the two tabs can be
+  told apart; `eugene-face.svg` is the candidate.
+- **The four mascot poses,** at the moments the website uses them:
+  - *welcome* (`eugene-welcome.svg`): sign-in and the first open;
+  - *guide*: an empty Workbench and its first steps, such as no chats
+    yet or no search account;
+  - *working*: a work order running, or a model loading;
+  - *curious*: nothing found, a page that is gone, or a failed answer.
+    It sits beside the sentence naming the cause, and never stands in for
+    it.
+
+**Decoration, never information.** A pose carries no meaning a screen
+reader would miss (`alt=""`, as on the website), does not move, and stays
+off the chat itself. The bench is for the work. The colours are the
+console's Plexus tokens, whose apricot is the mascot's shirt.
+
+---
+
+## 7. C4: Open WebUI in the registry
 
 Troy rejected wrapping Open WebUI *instead of* building our own (memory,
 2026-09-23). Offering it *beside* ours is a different thing: it is the
@@ -353,7 +412,7 @@ install, that would be code running as LocalSystem.
   variable, not a file. So the manifest grows a start command and an
   environment mapping. That is a registry change, made once and reused by
   later third-party entries.
-- **Sign-in** through C2's OpenID Connect, and log export through C3's
+- **Sign-in** through C2's OpenID Connect, and log export through C1's
   ingress where its OpenTelemetry support reaches. Otherwise the launcher
   forwards what it prints.
 - **Its supported Python version**, which the entry pins.
@@ -363,7 +422,7 @@ install, that would be code running as LocalSystem.
 
 ---
 
-## 7. Later, each with its own design
+## 8. Later, each with its own design
 
 These run model-chosen actions in the app's process, so each needs C1:
 
@@ -376,12 +435,12 @@ These run model-chosen actions in the app's process, so each needs C1:
 
 ---
 
-## 8. Order
+## 9. Order
 
 1. **C1, an account per app,** with the launcher and the log ingress (§2,
    §3).
 2. **C2, signing in with Eugene** (§4).
-3. **C3, the app's version 1,** in its own repo once it has a name.
+3. **C3, Workbench's version 1,** in `eugene-plexus/workbench`.
 4. **C4, Open WebUI.** It needs C1, and C2 for sign-in. It can move ahead
    of C3 if Troy wants the choice first.
 5. MCP servers, filesystem tools and local media models, each designed
@@ -392,9 +451,10 @@ an installer pin, a sabotage pass, and both installers re-pinned.
 
 ---
 
-## 9. Calls for Troy
+## 10. Calls for Troy
 
 | # | The call | Recommendation | Counter-argument |
 | --- | --- | --- | --- |
-| 1 | The app's name, its repo and catalogue id | **Brainstorm together, or in another session** (Troy). "Chat" is too narrow | — |
-| 2 | What C2 builds first | **Both cases in one slice.** The protocol is the same, and per-person revocation is the reason the business case exists | The solo case alone ships sooner and is the whole of today's audience |
+| 1 | ~~The app's name~~ | **Taken 2026-10-01: Workbench**, with workshop names in its menus and parts (§6) | — |
+| 2 | Workbench's vocabulary | **The table in §6** | Each workshop name is one more word a beginner must learn |
+| 3 | What C2 builds first | **Both cases in one slice.** The protocol is the same, and per-person revocation is the reason the business case exists | The solo case alone ships sooner and is the whole of today's audience |
