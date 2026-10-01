@@ -10,3 +10,5 @@ openai==3.20.0
 anthropic==1.9.0
 # C2: the sign-in acceptance signs in through Authlib, the library Open WebUI uses.
 authlib==1.8.0
+# C3: the agent installs Workbench from its catalogue with uv, as an install does.
+uv==0.12.18
