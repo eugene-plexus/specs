@@ -306,6 +306,10 @@ def probe(app: dict) -> dict:
 
 def phase_probe(apps: dict[str, dict]) -> None:
     say("what each app can open, asked from inside it")
+    users = {app_id: str(probe(app)["user"]).lower() for app_id, app in apps.items()}
+    # One account each: two apps in one account can reach each other's
+    # processes, whatever the files say (C1's first Linux run shared a uid).
+    check("28", "the two apps run as two different accounts", len(set(users.values())) == len(users), users)
     for app_id, app in apps.items():
         other = next(a for a in APPS if a != app_id)
         found = probe(app)
@@ -393,6 +397,7 @@ def main() -> int:
     fact("platform", f"{platform.system()} {platform.release()} {platform.machine()}")
     fact("prefix", PREFIX)
     workdir = Path(tempfile.mkdtemp(prefix="ep-c1-"))
+    token: str | None = None
     try:
         phase_install(installer_copy(workdir))
         token = phase_onboard()
@@ -402,6 +407,12 @@ def main() -> int:
     except Abort as exc:
         print(f"\nABORTED at {exc}", flush=True)
     failed = [r for r in RESULTS if r["passed"] is False]
+    if failed and token:
+        # The agent's own words, read the way an operator would.
+        _, page = api("GET", f"{AGENT}/v1/logs?tail=150", token)
+        print("\n--- the agent's log (tail)", flush=True)
+        for line in (page or {}).get("lines") or []:
+            print(f"  {line.get('time')} [{line.get('source')}] {line.get('text')}", flush=True)
     passed = [r for r in RESULTS if r["passed"]]
     print(f"\n{len(passed)} passed, {len(failed)} failed", flush=True)
     if args.report:

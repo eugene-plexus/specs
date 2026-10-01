@@ -460,6 +460,18 @@ for NAME in $(as_account find "$DIR" -maxdepth 1 -type f -name '*.req' -printf '
         OUT=$(systemctl clean --what=state "eugene-plexus-app@$APP.service" 2>&1)
         CODE=$?
     else
+        # A dynamic user per app, never one shared by every instance of the
+        # template (which systemd names after the template: C1's first run
+        # put two apps in one uid, able to see each other's processes).
+        # systemd takes names of 31 characters at most and an id may be 40,
+        # so the name is a hash of the id.
+        DROPIN=/etc/systemd/system/eugene-plexus-app@$APP.service.d
+        WANT="[Service]
+User=eapp-$(printf '%s' "$APP" | sha256sum | cut -c1-12)"
+        if [ "$(cat "$DROPIN/10-user.conf" 2>/dev/null)" != "$WANT" ]; then
+            mkdir -p "$DROPIN" && printf '%s\n' "$WANT" >"$DROPIN/10-user.conf" \
+                && systemctl daemon-reload
+        fi
         OUT=$(systemctl "$VERB" "eugene-plexus-app@$APP.service" 2>&1)
         CODE=$?
     fi
@@ -656,6 +668,7 @@ if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
     as_root systemctl disable --now eugene-plexus-apps-ctl.path >/dev/null 2>&1 || true
     as_root systemctl stop 'eugene-plexus-app@*.service' >/dev/null 2>&1 || true
     as_root rm -f "$APPS_TEMPLATE" "$APPS_CTL_SERVICE" "$APPS_CTL_PATH" "$APPS_HELPER"
+    as_root sh -c 'rm -rf /etc/systemd/system/eugene-plexus-app@*.service.d'
     as_root rm -f "$SYSTEM_UNIT" "$UPDATE_SERVICE" "$UPDATE_PATH" "$UPDATE_HELPER"
     as_root rm -rf "$UPDATE_STAGE"
     as_root systemctl daemon-reload >/dev/null 2>&1 || true
