@@ -345,6 +345,77 @@ paths:
                 $ref: "#/components/schemas/LogPage"
         "401":
           $ref: "components/common.yaml#/components/responses/Problem"
+    post:
+      tags: [logs]
+      operationId: sendLogs
+      summary: Send log records to this machine's log (the log ingress).
+      description: |
+        OpenTelemetry's logs endpoint, OTLP over HTTP, on OTLP's own path
+        (C1, `workbench.md` §3). A tool that already exports
+        OpenTelemetry needs only this address and a key. The body is an
+        `ExportLogsServiceRequest` in OTLP's JSON encoding or its protobuf
+        encoding, and the answer comes back in the encoding it was sent in.
+
+        Every app the agent runs in an account of its own reaches the Logs
+        page this way: the launcher that runs it forwards what it prints.
+        So does any other tool given a key that may send.
+
+        **Who may send:** a client key whose limits carry `writeLogs:
+        true` (`ClientKeyLimits`). This is the one path on the agent that
+        accepts a client key, for writing only. Reading stays
+        operator-only, as `GET /v1/logs` says.
+
+        **Every line is stamped with the key, never with what the sender
+        claims.** A registry app's key (`app:<id>@<node>`) writes as source
+        `app: <id>`, the name the supervisor gives an app it runs itself,
+        so the Logs page reads the same either way. Any other key writes
+        as `key: <name>`.
+
+        **Limits:**
+        - a body of at most 1 MiB;
+        - a record's text is cut at 8 KiB;
+        - 600 records a minute per key. Past that the answer is 429, with
+          `Retry-After`.
+
+        A record with no text in its body is counted in
+        `partialSuccess.rejectedLogRecords`, as OTLP specifies.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OtlpLogsRequest"
+          application/x-protobuf:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: Accepted. Records the agent could not place are counted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OtlpLogsResponse"
+            application/x-protobuf:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          description: The key may not send logs (`writeLogs` is off), or it is revoked.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "413":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "415":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "429":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/logs/stream:
     get:
@@ -6381,6 +6452,20 @@ components:
             $ref: "#/components/schemas/AppHubSurface"
           default: [inference]
           description: The hub surfaces the app's key is scoped to.
+        localActions:
+          type: boolean
+          default: true
+          description: |
+            Whether the app runs anything a model chooses on this machine:
+            a file or shell tool, an MCP server, its own plugins. In the
+            agent's own account such an action could reach the install's
+            keys (`workbench.md` §1), so an app that declares `true` is
+            installed only where the agent can give apps an OS account of
+            their own (`AppCatalogue.ownAccounts`). Elsewhere the install
+            is refused with the reason.
+
+            Defaults to `true`: an entry that does not say is treated as
+            one that does.
 
     AppHubSurface:
       type: string
@@ -6396,6 +6481,59 @@ components:
         One member today on purpose. A trainer depositing models into the
         Library would add a second, together with the Library endpoint it
         names, when a trainer exists to use it — not before.
+
+    AppIsolation:
+      type: string
+      enum:
+        - own_account
+        - agent_account
+      description: |
+        Which OS account an app runs as (C1, `workbench.md` §2).
+
+        * `own_account` -- one of its own, created for it, that cannot
+          open the install's keys, the control root's files or another
+          app's directory. The OS service manager runs it, and a launcher
+          inside that account forwards what it prints to `POST /v1/logs`.
+        * `agent_account` -- the agent's, on an install that cannot create
+          accounts (per-user Windows, Linux `--user`, macOS). Only an app
+          with `localActions: false` is installed there.
+
+    OtlpLogsRequest:
+      type: object
+      description: |
+        OTLP's `ExportLogsServiceRequest` in its JSON encoding
+        (opentelemetry-proto, `collector/logs/v1`). What the agent reads:
+        `resourceLogs[].scopeLogs[].logRecords[]`, and in each record
+        `severityText` (else `severityNumber`) and `body`. A body that is
+        a string is the text, one log line per line of it; any other value
+        is written as JSON. Lines are stamped when they arrive, as every
+        line in the log is; a record's own time is not used. The source is
+        the sending key, never anything in the record. Everything else
+        OTLP defines is accepted and ignored.
+      additionalProperties: true
+      properties:
+        resourceLogs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    OtlpLogsResponse:
+      type: object
+      description: |
+        OTLP's `ExportLogsServiceResponse`. Empty when every record was
+        written; otherwise `partialSuccess` says how many were not and why.
+      properties:
+        partialSuccess:
+          type: object
+          properties:
+            rejectedLogRecords:
+              description: |
+                As OTLP's JSON encoding writes an int64: a decimal string.
+              type: string
+              pattern: "^[0-9]+$"
+            errorMessage:
+              type: string
 
     AppOrigin:
       type: string
@@ -6434,6 +6572,20 @@ components:
         reason:
           type: string
           description: "Why not, and what to do. Present when `installable: false`."
+        ownAccounts:
+          type: boolean
+          description: |
+            Whether this node runs each app in an OS account of its own
+            (C1): a virtual service account on the Windows service install,
+            a systemd dynamic user on the Linux system install. Where it
+            does not, apps run as the agent's account, and only an app with
+            `localActions: false` may be installed. Absent from an agent
+            that predates the field.
+        ownAccountsReason:
+          type: string
+          description: |
+            Why this node cannot give apps their own accounts, and which
+            install would. Present when `ownAccounts` is false.
 
     AppInstall:
       type: object
@@ -6562,6 +6714,17 @@ components:
             off from the hub; uninstalling revokes it.
         keyName:
           type: string
+        isolation:
+          $ref: "#/components/schemas/AppIsolation"
+        account:
+          type: string
+          description: |
+            The OS account it runs as, as the OS names it:
+            `NT SERVICE\EugenePlexusApp-<id>`, the dynamic user of
+            `eugene-plexus-app@<id>.service`, or the agent's own.
+        localActions:
+          type: boolean
+          description: What its manifest declares (`AppManifest.localActions`).
         installedAt:
           type: string
           format: date-time

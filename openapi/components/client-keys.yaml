@@ -91,6 +91,19 @@ components:
             `localOnly` key never has a tool run whatever this says,
             because a search sends a query derived from the prompt to the
             public internet.
+        writeLogs:
+          type: boolean
+          default: false
+          description: |
+            Whether this key may send log records to an agent's log ingress
+            (`POST /v1/logs` on `agent.yaml`, C1 in `workbench.md`). It
+            grants nothing else: reading logs stays operator-only.
+
+            Every app the registry installs gets a key with this on,
+            because the launcher that runs an app in its own account
+            forwards what the app prints. Any other key gets it when the
+            operator turns it on, so a tool outside the registry sends its
+            logs the same way ours do.
         maxConcurrentRequests: {type: integer, minimum: 1, maximum: 64, default: 2}
         requestsPerMinute: {type: integer, minimum: 1, maximum: 10000, default: 60}
     ClientKeyUpdateRequest:
