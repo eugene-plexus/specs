@@ -111,6 +111,21 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# **Windows PowerShell started from PowerShell 7 inherits PowerShell 7's
+# module folders** (found 2026-10-01, C1's Windows runner run). PSModulePath
+# names them first, so 5.1 autoloads modules built for 7 and fails to load
+# them: uv's installer died on "Get-ExecutionPolicy ... the module could
+# not be loaded". Dropping those folders from this process's path keeps
+# 5.1 on its own modules, and every child it starts inherits the fix.
+# Only 7's folders go: `\PowerShell\Modules` and `\PowerShell\7*\Modules`,
+# never `\WindowsPowerShell\Modules`.
+if ($PSVersionTable.PSEdition -ne "Core" -and $env:PSModulePath) {
+    $env:PSModulePath = (($env:PSModulePath -split ';') | Where-Object {
+            $_ -and $_ -notmatch '(?i)\\PowerShell\\(?:7[^\\]*\\)?Modules\\?$'
+        }) -join ';'
+}
+
 # Read before `$Prefix` is given its default below: -Uninstall with no
 # -Prefix finds the install wherever it is.
 $PrefixGiven = [bool]$Prefix
