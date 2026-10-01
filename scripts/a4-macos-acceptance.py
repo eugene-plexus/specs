@@ -698,6 +698,22 @@ def gateway_models(ctx: dict) -> list[str]:
     return [m.get("id") for m in (body or {}).get("data", [])] if status == 200 else []
 
 
+def gateway_ready(ctx: dict, alias: str) -> bool:
+    """Whether the gateway would route to `alias` now: listed is not ready.
+
+    A model is listed while its runtime loads (so a client can name it to
+    wake it), and the gateway learns of readiness at its next routing
+    refresh. Asking the moment the agent said ready raced that refresh on
+    macos-26 (2026-10-01: a 503 *still coming up*, 20 ms after ready)."""
+    status, body = api("GET", f"{ctx['gateway']}/v1/models", ctx["token"])
+    if status != 200:
+        return False
+    for model in (body or {}).get("data", []):
+        if model.get("id") == alias:
+            return (model.get("x_eugene_plexus") or {}).get("ready_backends", 0) > 0
+    return False
+
+
 def complete(ctx: dict, alias: str, prompt: str = "Reply with one word: ok", tokens: int = 12):
     return api("POST", f"{ctx['gateway']}/v1/chat/completions", ctx["token"], {
         "model": alias, "max_tokens": tokens, "temperature": 0,
@@ -784,7 +800,7 @@ def phase_runtimes(ctx: dict) -> None:
     check("55", "...each rendered on its command line as upstream spells it",
           all(r in argv for r in rendered), [r for r in rendered if r not in argv])
 
-    wait_for(lambda: smol_alias in gateway_models(ctx), 90, 2)
+    wait_for(lambda: gateway_ready(ctx, smol_alias), 90, 2)
     mark = log.mark()
     answers = [complete(ctx, qwen_alias)[0] for _ in range(3)] + [complete(ctx, smol_alias)[0] for _ in range(2)]
     window = log.since(mark)
@@ -861,7 +877,7 @@ def phase_runtimes(ctx: dict) -> None:
     check("62", "both MLX runtimes come back after the agent restart, each proved once, none orphaned",
           back == ["ready", "ready"] and proofs == (1, 1) and not orphans,
           f"status={back} proofs={proofs} orphans={orphans}")
-    wait_for(lambda: qwen_alias in gateway_models(ctx), 120, 2)
+    wait_for(lambda: gateway_ready(ctx, qwen_alias), 120, 2)
     status, _ = complete(ctx, qwen_alias)
     check("63", "...and the gateway serves the alias again", status == 200, status)
     for name in ("qwen-mlx", "smol-mlx"):
@@ -923,7 +939,7 @@ def phase_llama_cpp(ctx: dict) -> None:
     ready = wait_status(ctx, "qwen-gguf", "ready", 240) if status in (200, 201) else {}
     check("68", "a llama.cpp runtime reaches ready on this Mac", ready.get("status") == "ready",
           {k: ready.get(k) for k in ("status", "lastError")} or body)
-    wait_for(lambda: "qwen3-0.6b-gguf" in gateway_models(ctx), 90, 2)
+    wait_for(lambda: gateway_ready(ctx, "qwen3-0.6b-gguf"), 90, 2)
     status, reply = complete(ctx, "qwen3-0.6b-gguf")
     check("69", "...and answers through the gateway", status == 200, reply if status != 200 else "")
     offload = (ready.get("flags") or {}).get("gpuLayers")

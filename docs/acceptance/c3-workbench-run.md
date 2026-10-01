@@ -3,7 +3,7 @@
 **2026-10-01.** Design: [`../design/workbench-v1.md`](../design/workbench-v1.md).
 The repo is new: [`eugene-plexus/workbench`](https://github.com/eugene-plexus/workbench).
 Installed from `dist` `736e1ce`, which is `main` `ac56025` plus the built
-page; `main` is at `caf6582`, which only adds tests. Agent `409bd01` adds
+page; `main` is at `718c126`, which adds only tests and the README. Agent `409bd01` adds
 the catalogue entry. Gateway `a8fbc6c` carries the contract change, specs
 `dcb0a5d`.
 
@@ -14,6 +14,7 @@ the catalogue entry. Gateway `a8fbc6c` carries the contract change, specs
 | `scripts/c3-sabotage.py` across Workbench, the gateway and the agent | **46 of 46 caught**, after two passes; the escapes are below |
 | Workbench's own suites | 52 Python tests (Windows and Ubuntu in its CI), 28 page tests |
 | Every script specs CI runs, locally, before the pin, in a venv shaped like CI's | **25 of 25** |
+| specs CI on the pin (`643062d`), C3 included, on GitHub's Ubuntu and Windows runners | **green**; A4 failed once on macos-26 and passed on the re-run (below) |
 
 ## Before: the failing check
 
@@ -181,6 +182,20 @@ real model:
   so cutting off what followed it went unseen.
 
 Both are tests now, and both sabotages are caught (46 of 46).
+
+## Found in CI, not in C3
+
+A4's macOS run failed once on macos-26 at its check 69, and the re-run
+passed on all three Macs. The cause was a race in A4's harness:
+
+- it waited until the gateway *listed* the llama.cpp model;
+- a listed model can still be loading, and the gateway learns it is ready
+  at its next routing refresh;
+- so the completion 20 ms after the agent said *ready* got the gateway's
+  honest 503, *still coming up*.
+
+The harness now waits until the gateway reports a ready backend
+(`ready_backends`) before each completion.
 
 ## What this does not show
 
