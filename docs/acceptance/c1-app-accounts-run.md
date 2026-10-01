@@ -117,3 +117,12 @@ On both platforms, on the candidates:
   `s10-checks` failed the first time: its guard expects `if ($Isolated)`
   in `install.ps1`'s first 180 lines, and the module-path fix had pushed it
   down. The fix now sits below that guard.
+
+## After the pin
+
+- The C1 run on the pins themselves, no candidate overrides (run
+  36870493798): 42 of 42 on each runner.
+- specs CI green on `ca61b76`. The container image's acceptance failed
+  once on check 18 (on stop, only one of the three children logged its
+  shutdown). The rerun passed 29 of 29, so it is a timing flake, like
+  p3-audio's 503 in A4.
