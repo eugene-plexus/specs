@@ -405,20 +405,50 @@ square, hammers a nail, and so on. A workshop phrase sits beside each:
 - *Checking the level…*
 - *Clamping…*
 
-**It is commissioned from an artist,** so it is a late slice. The four
-still poses carry Workbench until it arrives. The brief for the artist:
+**It is made with an LLM, as Eugene's SVG was** (Troy, 2026-10-01: *"if
+it's not acceptable in an AI platform, we shouldn't be building a
+platform"*). It is a late slice. The four still poses carry Workbench
+until it arrives.
 
-- **Each loop** is 2-4 seconds and seamless, in the style of the
-  website's four poses, apricot shirt included.
+**So the format is the one an LLM writes well: animated SVG** (call 4,
+taken). It is plain text, needs no player library, and Eugene already
+exists in it. Lottie was the animator's format, and its JSON of keyframe
+curves is the wrong thing to ask a language model for.
+
+**The brief, written to be handed to the model:**
+
+- **Start from Eugene's existing figure** (`website/public/mascots/`,
+  about 14 KB each: 8 groups, 27 paths). Ask for it to be regrouped into
+  named `<g>` parts, then add the bench and the tool. The style stays his
+  because the drawing is his.
+- **One file per scene,** self-contained: an inline `<style>` with CSS
+  `@keyframes`, no `<script>`, no external reference, no raster image.
+- **Animate only `transform` and `opacity`, on named groups,** with
+  `transform-box: fill-box` and an explicit `transform-origin`. Without
+  those two, SVG rotates a part about the drawing's corner, which is the
+  mistake models most often make with an arm and a hammer.
+- **Each loop** is 2-4 seconds, and seamless: the `0%` and `100%`
+  keyframes are identical.
+- **The file is its own still.** It carries
+  `@media (prefers-reduced-motion: reduce)` turning its animation off,
+  and its first frame is a good pose.
 - **A transparent background,** legible from 48 to 160 px, on both the
   dark and the light theme.
-- **One scene per tool,** so loops can be added later without the others
-  being redrawn.
-- **Delivered as Lottie** (After Effects' usual export), with a still
-  first frame for each loop. That is call 4 in §10.
-- **The rights are written into the commission.** It ships in an
-  Apache-2.0 repo, so the artist assigns it, or licenses it under terms
-  that allow that.
+- **About the poses' size,** and under 32 KB.
+
+**A gate makes the model's output trustworthy, as everywhere else here.**
+A test in Workbench reads every animation file as text. It fails on:
+
+- a `<script>` or an external reference;
+- a missing reduced-motion rule;
+- `0%` and `100%` keyframes that differ;
+- a file over the budget.
+
+Then a browser check renders each scene at both themes and both sizes.
+Adding a scene is a new file the gate already covers.
+
+**The rights are the existing SVGs' rights.** It ships the way Eugene's
+mascot already does, under the repo's Apache-2.0 licence.
 
 **Where it runs:**
 
@@ -484,7 +514,7 @@ These run model-chosen actions in the app's process, so each needs C1:
   agent's ledger (apps §8 reserved `resources: gpu` for this).
 
 Not a model-chosen action, but late too: **the working animation**
-(§6.1), once the commission is delivered.
+(§6.1), made with an LLM against the gate there.
 
 ---
 
@@ -498,8 +528,8 @@ Not a model-chosen action, but late too: **the working animation**
    of C3 if Troy wants the choice first.
 5. MCP servers, filesystem tools and local media models, each designed
    first.
-6. **The working animation** (§6.1), whenever the commissioned loops
-   arrive. The still poses stand in until then.
+6. **The working animation** (§6.1): the gate first, then the scenes. The
+   still poses stand in until then.
 
 Each slice ends the project's way: every specs CI script run locally before
 an installer pin, a sabotage pass, and both installers re-pinned.
@@ -513,4 +543,4 @@ an installer pin, a sabotage pass, and both installers re-pinned.
 | 1 | ~~The app's name~~ | **Taken 2026-10-01: Workbench**, with workshop names in its menus and parts (§6) | — |
 | 2 | Workbench's vocabulary | **The table in §6** | Each workshop name is one more word a beginner must learn |
 | 3 | What C2 builds first | **Both cases in one slice.** The protocol is the same, and per-person revocation is the reason the business case exists | The solo case alone ships sooner and is the whole of today's audience |
-| 4 | The animation's format (§6.1) | **Lottie**, because it is what animators deliver, played by a small library, with each loop's first frame as the still | An animated SVG needs no player and takes the theme's colours, but few animators work in it |
+| 4 | ~~The animation's format~~ | **Taken 2026-10-01: animated SVG, made with an LLM** against a text gate (§6.1) | — |
