@@ -36,7 +36,7 @@
   and a login, a second device through the firewall. MLX's `experimental`
   label is off on Troy's call; the UI now lists an engine where it can
   run instead of by that flag.
-- **A5 is measured; nothing is built**
+- **A5 is measured, and its one repair built**
   ([record](../acceptance/a5-tool-calls-measurement.md),
   [design](tool-call-repair.md)). Ten models, 314 answers, through
   llama.cpp, streamed and not. There was no broken JSON, no call left in
@@ -49,8 +49,12 @@
   label is off (agent `05d88f8`, UI dist `e404b6b`). Troy writes the
   llama.cpp report himself: their policy forbids AI-written posts, and
   the evidence notes are in `docs/private/llama-cpp-report-notes.md`.
-  **No rented Mac** (Troy, 2026-09-30). **Pickup: A6**, a chat screen
-  beginners stay in.
+  **No rented Mac** (Troy, 2026-09-30).
+- **A6 is designed** ([design](chat-app.md), 2026-10-01). An app runs as
+  the agent's OS account, which on a one-machine install reaches the root
+  token key, so apps get an account of their own first (C1). Then chat v1,
+  which is chat and web search (C2), and Open WebUI in the registry (C3).
+  **Pickup: §7 of the design**, six calls for Troy, then C1's measurement.
 - Not scheduled without Troy: PB2's remainder (the model's row saying so
   when fit places a built profile differently at launch; Home's "make it
   faster", call 6, later).
@@ -101,7 +105,7 @@ first:**
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine.md`](mlx-engine.md) (A4 section), B1 | **Built on GitHub's macOS runners 2026-09-30**; the rented-Mac list is in the record, and dropping the `experimental` flag is Troy's call |
 | A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured and built 2026-09-30.** Almost nothing to repair. The one repair, a named `tool_choice` answered by structured output on llama-server, is pinned |
-| A6 | A chat screen beginners stay in, or a one-click Open WebUI through the apps registry | [`apps-and-spokes.md`](apps-and-spokes.md) | "Adequate", per the 2026-09-11 call. The chat spoke was restarted from Troy's 2026-09-24 brief |
+| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`chat-app.md`](chat-app.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **Designed 2026-10-01.** Three calls taken: v1 is chat and web search; apps get an OS account of their own first (C1); Open WebUI after it (C3). Six calls open in §7 |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 
 ## Not scheduled without Troy

@@ -3,8 +3,8 @@
 **Status: designed 2026-09-23; calls taken the same day; §10 steps 1-3
 (contract, agent, UI) BUILT and live-verified the same day** —
 [`../acceptance/apps-run.md`](../acceptance/apps-run.md), 58 PASS. The
-first harness (step 4) is next and gets its own design, starting from
-Troy's 2026-09-24 brief below. Troy took calls #1-#7 and
+first harness (step 4) has its own design, written 2026-10-01 from
+Troy's 2026-09-24 brief below: [`chat-app.md`](chat-app.md). Troy took calls #1-#7 and
 #9 as recommended and **deferred #8: no deposit endpoint until a training
 module exists to deposit something.** §11 records where the build departed
 from what follows, and why. It came out of a
