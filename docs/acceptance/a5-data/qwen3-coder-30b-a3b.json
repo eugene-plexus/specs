@@ -1,0 +1,455 @@
+{
+  "model": "qwen3-coder-30b-a3b",
+  "file": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "repeat_penalty": 1.05
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 4.5,
+      "completion_tokens": 34,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.2,
+      "completion_tokens": 34,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "single",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.2,
+      "completion_tokens": 34,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.8,
+      "completion_tokens": 23,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.2,
+      "completion_tokens": 23,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "choose",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.2,
+      "completion_tokens": 23,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 4.3,
+      "completion_tokens": 59,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.7,
+      "completion_tokens": 57,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "escaping",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.7,
+      "completion_tokens": 57,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.0,
+      "completion_tokens": 93,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.3,
+      "completion_tokens": 93,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "nested",
+      "seed": 3,
+      "status": 200,
+      "seconds": 4.4,
+      "completion_tokens": 93,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.3,
+      "completion_tokens": 67,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 3.1,
+      "completion_tokens": 67,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "parallel",
+      "seed": 3,
+      "status": 200,
+      "seconds": 3.2,
+      "completion_tokens": 67,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.8,
+      "completion_tokens": 25,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.2,
+      "completion_tokens": 25,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "chain",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.2,
+      "completion_tokens": 25,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.8,
+      "completion_tokens": 32,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.5,
+      "completion_tokens": 32,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "types",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.5,
+      "completion_tokens": 32,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.9,
+      "completion_tokens": 12,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 0.6,
+      "completion_tokens": 12,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "no_params",
+      "seed": 3,
+      "status": 200,
+      "seconds": 0.6,
+      "completion_tokens": 12,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.6,
+      "completion_tokens": 11,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 0.5,
+      "completion_tokens": 11,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "no_call_needed",
+      "seed": 3,
+      "status": 200,
+      "seconds": 0.5,
+      "completion_tokens": 11,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 5.7,
+      "completion_tokens": 25,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.5,
+      "completion_tokens": 25,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "many_tools",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.4,
+      "completion_tokens": 25,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.9,
+      "completion_tokens": 168,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 8.1,
+      "completion_tokens": 151,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 11.5,
+      "completion_tokens": 240,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.4,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\":\"notes.md\",\"content\":\"Tea has a rich and fascinating history that spans thousands of years, originating in ancient China. The legend attributes the discovery of tea to Emperor Shen Nong around 2737 BCE, who is said to have accidentally dropped leaves into boiling water. From this humble begi",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"notes.md\",\"content\":\"Tea has a rich and fascinating history that spans thousands of years, originating in ancient China. The legend attributes the discovery of tea to Emperor Shen Nong around 2737 BCE, who is said to have accidentally dropped leaves into boiling water. From this humble beginning, tea cultivation and consumption evolved into a sophisticated practice.\\n\\nBy the Tang Dynasty (618-907 CE), tea had become deeply embedded in Chinese culture, with the first comprehensive book on tea, \\\"The"
+            },
+            "id": "h4YfEcW4VXgnPZIiEOwBKY7nBm4MMaNf"
+          }
+        ]
+      }
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 5.5,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\":\"notes.md\",\"content\":\"Tea, one of the world's most beloved beverages, has a rich and fascinating history that spans thousands of years. Originating in China, tea cultivation is believed to have started around 2737 BCE, attributed to Emperor Shen Nung. Initially used for medicinal purposes, t",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"notes.md\",\"content\":\"Tea, one of the world's most beloved beverages, has a rich and fascinating history that spans thousands of years. Originating in China, tea cultivation is believed to have started around 2737 BCE, attributed to Emperor Shen Nung. Initially used for medicinal purposes, tea gradually became a staple drink across various cultures.\\n\\nFrom China, tea spread to other parts of Asia, including Japan and Korea, where it developed unique ceremonial practices such as the Japanese tea ceremony. During"
+            },
+            "id": "8NQ7d04Ff2ECA7Su8DjNyHk5a1lpOkZN"
+          }
+        ]
+      }
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "truncated",
+      "seed": 3,
+      "status": 200,
+      "seconds": 5.6,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\":\"notes.md\",\"content\":\"Tea, one of the world's most beloved beverages, has a rich and fascinating history that spans thousands of years. Originating in China, tea was first discovered around 2737 BCE by Emperor Shen Nung, who accidentally dropped tea leaves into boiling water. From there, tea",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"notes.md\",\"content\":\"Tea, one of the world's most beloved beverages, has a rich and fascinating history that spans thousands of years. Originating in China, tea was first discovered around 2737 BCE by Emperor Shen Nung, who accidentally dropped tea leaves into boiling water. From there, tea cultivation spread throughout Asia, becoming deeply embedded in cultures from Japan to India.\\n\\nDuring the Tang Dynasty (618\u2013907 CE), tea culture flourished in China, with the"
+            },
+            "id": "TlKDiLcAqFKXBjCeFncK2g1ZpaQCM5PU"
+          }
+        ]
+      }
+    }
+  ]
+}

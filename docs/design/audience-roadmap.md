@@ -35,10 +35,16 @@
   real size, a model near the working set, a reboot and a login, a second
   device through the firewall. MLX's `experimental` flag stays until Troy
   decides, because the UI hides MLX by it.
-- **Pickup: A5, which starts with a measurement**, per model: the starter set
-  and popular local models against failure kind (the engine's parsing, the
-  model's broken or cut-off JSON, a wrong tool or argument). Each kind has
-  a different answer, and the table decides what, if anything, is built.
+- **A5 is measured; nothing is built**
+  ([record](../acceptance/a5-tool-calls-measurement.md),
+  [design](tool-call-repair.md)). Ten models, 314 answers, through
+  llama.cpp, streamed and not. There was no broken JSON, no call left in
+  text, and no cut-off call that looked whole. The starter set made no
+  mistake of its own. The failure every client meets is the engine
+  ignoring a named `tool_choice`; structured output answers it where
+  `"required"` does not. **Pickup: Troy's calls in the design's §2**:
+  build that repair and longer tool-call ids, and whether to file the
+  named-choice bug upstream.
 - Not scheduled without Troy: PB2's remainder (the model's row saying so
   when fit places a built profile differently at launch; Home's "make it
   faster", call 6, later).
@@ -88,7 +94,7 @@ first:**
 | A2 | Profile builder, PB2: the page (ui, library `builtBy`, admission) | same | **Built 2026-09-30.** Call 6 taken (the profile page); call 5 became moe-aware-fit call A, taken |
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine.md`](mlx-engine.md) (A4 section), B1 | **Built on GitHub's macOS runners 2026-09-30**; the rented-Mac list is in the record, and dropping the `experimental` flag is Troy's call |
-| A5 | Tool-call repair for local models | to write | **Measure first:** how often a local model's tool call fails to parse. The failover thread warns that a truncated call can be valid JSON with a 200 |
+| A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured 2026-09-30.** Almost nothing to repair. A named `tool_choice` is ignored by llama.cpp, and structured output answers it; §2 holds the calls |
 | A6 | A chat screen beginners stay in, or a one-click Open WebUI through the apps registry | [`apps-and-spokes.md`](apps-and-spokes.md) | "Adequate", per the 2026-09-11 call. The chat spoke was restarted from Troy's 2026-09-24 brief |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 

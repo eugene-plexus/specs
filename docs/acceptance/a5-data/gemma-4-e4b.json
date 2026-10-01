@@ -1,0 +1,442 @@
+{
+  "model": "gemma-4-e4b",
+  "file": "gemma-4-E4B-it-Q4_K_M.gguf",
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 64
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.8,
+      "completion_tokens": 23,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 14.8,
+      "completion_tokens": 231,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "single",
+      "seed": 3,
+      "status": 200,
+      "seconds": 15.8,
+      "completion_tokens": 245,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.7,
+      "completion_tokens": 19,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 24.3,
+      "completion_tokens": 373,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "choose",
+      "seed": 3,
+      "status": 200,
+      "seconds": 20.9,
+      "completion_tokens": 321,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 11.6,
+      "completion_tokens": 173,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 13.0,
+      "completion_tokens": 203,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "escaping",
+      "seed": 3,
+      "status": 200,
+      "seconds": 12.8,
+      "completion_tokens": 188,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 5.8,
+      "completion_tokens": 79,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 28.4,
+      "completion_tokens": 434,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "nested",
+      "seed": 3,
+      "status": 200,
+      "seconds": 29.7,
+      "completion_tokens": 460,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 9.4,
+      "completion_tokens": 144,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 15.6,
+      "completion_tokens": 243,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "parallel",
+      "seed": 3,
+      "status": 200,
+      "seconds": 20.4,
+      "completion_tokens": 318,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.2,
+      "completion_tokens": 89,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 6.5,
+      "completion_tokens": 99,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "chain",
+      "seed": 3,
+      "status": 200,
+      "seconds": 6.1,
+      "completion_tokens": 95,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.2,
+      "completion_tokens": 125,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.3,
+      "completion_tokens": 20,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "types",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.4,
+      "completion_tokens": 20,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.0,
+      "completion_tokens": 9,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 9.9,
+      "completion_tokens": 154,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_params",
+      "seed": 3,
+      "status": 200,
+      "seconds": 8.9,
+      "completion_tokens": 139,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 0.4,
+      "completion_tokens": 3,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 10.8,
+      "completion_tokens": 169,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_call_needed",
+      "seed": 3,
+      "status": 200,
+      "seconds": 11.7,
+      "completion_tokens": 180,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 22.9,
+      "completion_tokens": 304,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 31.8,
+      "completion_tokens": 475,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "many_tools",
+      "seed": 3,
+      "status": 200,
+      "seconds": 19.5,
+      "completion_tokens": 298,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 22.6,
+      "completion_tokens": 349,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "I can give you the current weather in Oslo, or tell you the current time there, but I don't have general knowledge about the city to tell you facts or history.\n\nWould you like to know the weather or t",
+      "message": {
+        "role": "assistant",
+        "content": "I can give you the current weather in Oslo, or tell you the current time there, but I don't have general knowledge about the city to tell you facts or history.\n\nWould you like to know the weather or the time in Oslo?",
+        "reasoning_content": "The user is asking for information about \"Oslo\".\nThe available tools are `get_weather` (which requires a city) and `get_time`.\n\n1.  **Analyze the request:** \"Tell me about Oslo.\"\n2.  **Determine tool applicability:**\n    *   `get_weather`: This tool can provide weather information for Oslo if the user wanted the weather.\n    *   `get_time`: This tool provides the current time, which is generally not what the user is asking for when they ask \"Tell me about X\".\n3.  **Identify the limitation:** None of the available tools are designed to provide general descriptive information, history, facts, or general knowledge about a city like Oslo. They are restricted to weather and time.\n4.  **Formulate the response:** Since the model lacks a general knowledge retrieval tool, it must inform the user that it cannot fulfill the request for general information, but it can offer to use its available tools (weather or time) if that is what the user actually needs.\n\n*Self-Correction/Refinement:* Although I cannot give a comprehensive answer about Oslo, I should still be helpful. I should state what I *can* do with the given tools (weather/time) related to Oslo, while acknowledging the general nature of the request.\n\n5.  **Final Output Generation:** A conversational response explaining the limitation and offering the available functionality."
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 40.4,
+      "completion_tokens": 627,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway, situated on the Oslofjord. It's a city with a fascinating blend of history, modern architecture, and beautiful natural surroundings.\n\nHere is a general ",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway, situated on the Oslofjord. It's a city with a fascinating blend of history, modern architecture, and beautiful natural surroundings.\n\nHere is a general overview:\n\n### History and Culture\n* **Viking Roots:** The area has deep historical roots, and you can find remnants of Viking history throughout the city.\n* **Evolution:** Oslo has grown from a small trading settlement into a modern, cosmopolitan capital.\n* **Art and Design:** It is known for its vibrant culture, excellent museums, and commitment to design.\n\n### Things to See\n* **The Waterfront:** The waterfront is a major highlight, offering scenic views and numerous recreational areas.\n* **The Opera House:** The Oslo Opera House is an iconic piece of modern architecture and is a major cultural landmark.\n* **Vigeland Sculpture Park:** This park features a massive collection of sculptures by Gustav Vigeland, depicting the human life cycle.\n* **Museums:** Oslo boasts several world-class museums, including the Viking Ship Museum and the Munch Museum (dedicated to Edvard Munch).\n\n### Nature and Lifestyle\n* **Green Spaces:** Despite being a large city, Oslo is very green. It's surrounded by fjords and has numerous parks (like Frogner Park) where residents love to walk, cycle, and relax.\n* **Sustainability:** The city is generally known for its focus on sustainability and a high quality of life.\n\n**If you are planning a trip, are you interested in its history, its nightlife, or maybe the current weather?**",
+        "reasoning_content": "1. **Analyze the Request:** The user asked, \"Tell me about Oslo.\"\n\n2. **Examine Available Tools:**\n    * `get_weather(city, unit)`: Used to get weather information for a specific city.\n    * `get_time()`: Used to get the current local time.\n\n3. **Determine Tool Applicability:**\n    * The request \"Tell me about Oslo\" is a general informational query. It asks for descriptive text, history, facts, etc., about a place.\n    * Neither `get_weather` nor `get_time` can fulfill this request. These tools are for real-time data (weather, time).\n\n4. **Formulate the Response:** Since the available tools are insufficient to answer a general knowledge query, the model must respond conversationally, drawing on its internal knowledge base. The response should provide interesting and general information about Oslo.\n\n5. **Draft Content (Internal Knowledge Retrieval):**\n    * What is Oslo? The capital of Norway.\n    * Key facts: Beautiful waterfront, modern culture, history, nature.\n    * Points to mention: Opera House, Viking history, fjord setting, general atmosphere.\n\n6. **Refine the Response:** Structure the information in a helpful, engaging, and informative manner. (Self-Correction: Ensure the tone is helpful and conversational.)\n\n7. **Final Output Generation:** (This matches the desired conversational output.)"
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 45.5,
+      "completion_tokens": 709,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway. It's a beautiful and modern city known for its stunning natural setting, vibrant culture, and strong commitment to sustainability and design.\n\nHere is a",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway. It's a beautiful and modern city known for its stunning natural setting, vibrant culture, and strong commitment to sustainability and design.\n\nHere is a general overview of what you might want to know about Oslo:\n\n### \ud83c\udfde\ufe0f Natural Setting and Vibe\nOslo is situated between the Oslofjord and the Oslofjorden. The city is surrounded by nature, making it easy for residents and visitors to escape into parks, woods, and waterfront areas. The atmosphere is generally clean, modern, and quite green.\n\n### \ud83c\udfdb\ufe0f Key Attractions and Culture\n* **Viking History:** Oslo has a deep connection to its Viking heritage. You can learn about this history at several museums.\n* **Opera House:** The Oslo Opera House is an iconic, modern architectural landmark situated right on the water.\n* **Aker Brygge and Tjuvholmen:** These waterfront areas are popular for dining, walking, and enjoying the views, blending modern development with historical waterfront charm.\n* **Museums:** It boasts world-class museums, including the **Viking Ship Museum** (though note that the main museum complex has undergone changes, it remains a center for cultural history), the **National Museum**, and various art galleries.\n* **Vippa:** The city has a great emphasis on outdoor activities, from walking along the waterfront to exploring the many local parks.\n\n### \ud83c\udfa8 Lifestyle and Modern Appeal\nOslo is often praised for its high quality of life. It's known for:\n* **Design:** A strong appreciation for minimalist, functional Scandinavian design.\n* **Cycling:** It is a very bike-friendly city.\n* **Sustainability:** It is a leader in environmental efforts and urban planning.\n\n### \ud83c\udf74 Food Scene\nThe culinary scene is diverse, ranging from traditional Norwegian fare (like *f\u00e5rik\u00e5l*, or mutton and cabbage stew) to high-end international dining. The waterfront areas are excellent spots to sample local seafood.\n\n**In short:** If you love a blend of history, modern architecture, stunning waterfront views, and a connection to nature, Oslo is a wonderful place to visit!\n\n***\n\n*If you are planning a trip, let me know if you'd like more specific information, such as recommendations for activities, museums, or even the current weather!*",
+        "reasoning_content": "1. **Analyze the Request:** The user asked, \"Tell me about Oslo.\"\n\n2. **Analyze Available Tools:**\n    * `get_weather`: Gets weather for a specific city. Requires `city` (and optionally `unit`).\n    * `get_time`: Gets the current local time.\n\n3. **Determine Tool Relevance:**\n    * Neither tool is designed to provide general information, history, or descriptions about a city. They are specialized for weather and time retrieval.\n\n4. **Formulate the Response Strategy:** Since the available tools cannot fulfill the request (\"Tell me about Oslo\" requires general knowledge, not API calls), the model must respond conversationally using its internal knowledge base.\n\n5. **Generate the Content (Internal Knowledge):** Access general knowledge about Oslo (Norway) to provide a helpful, informative, and engaging summary.\n\n6. **Final Output Generation:** Construct the natural language response. (Self-Correction/Refinement: Ensure the tone is informative and the content is broad enough to satisfy the open-ended nature of the query.)"
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.0,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user wants me to create a file named `notes.md` and populate it with an essay about the history of tea, with a target length of approximately 300 words.\n\nI need to use the `write_file` tool.\n\nThe content should be an essay:\n1.  **Topic:** History of tea.\n2.  **Length:** Around 300 words.\n3.  **Format:** Markdown (`notes.md`).\n\nI will structure the essay chronologically, covering its origins (China), its spread (Japan,"
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 7.7,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user wants me to write a file named `notes.md` and populate it with a 300-word essay about the history of tea.\n\nI need to:\n1.  Draft the essay content (approximately 300 words).\n2.  Use the `write_file` tool to save this content to `notes.md`.\n\n**Plan:**\n1.  Write the essay content focusing on the major historical milestones (China origin, Emperor Shen Nung, spread to Japan, Europe, and global tea culture).\n2.  "
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "truncated",
+      "seed": 3,
+      "status": 200,
+      "seconds": 7.8,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user wants me to write a file named `notes.md`.\nThe content of this file must be a 300-word essay about the history of tea.\nI need to use the `write_file` tool for this task.\n\nPlan:\n1. Draft a 300-word essay on the history of tea.\n2. Call the `write_file` tool with `path: \"notes.md\"` and the drafted content.\n\nDrafting the essay (aiming for approximately 300 words):\n\n*   "
+      }
+    }
+  ]
+}

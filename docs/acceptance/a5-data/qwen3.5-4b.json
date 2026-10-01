@@ -1,0 +1,464 @@
+{
+  "model": "qwen3.5-4b",
+  "file": "Qwen3.5-4B-Q4_K_M.gguf",
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.3,
+      "completion_tokens": 114,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 9.4,
+      "completion_tokens": 144,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "single",
+      "seed": 3,
+      "status": 200,
+      "seconds": 5.9,
+      "completion_tokens": 91,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.8,
+      "completion_tokens": 67,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.5,
+      "completion_tokens": 68,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "choose",
+      "seed": 3,
+      "status": 200,
+      "seconds": 4.5,
+      "completion_tokens": 69,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 11.7,
+      "completion_tokens": 165,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 11.9,
+      "completion_tokens": 183,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "escaping",
+      "seed": 3,
+      "status": 200,
+      "seconds": 11.1,
+      "completion_tokens": 172,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 18.5,
+      "completion_tokens": 270,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 19.2,
+      "completion_tokens": 299,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "nested",
+      "seed": 3,
+      "status": 200,
+      "seconds": 17.4,
+      "completion_tokens": 270,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 9.8,
+      "completion_tokens": 151,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 10.1,
+      "completion_tokens": 157,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "parallel",
+      "seed": 3,
+      "status": 200,
+      "seconds": 9.6,
+      "completion_tokens": 150,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 7.1,
+      "completion_tokens": 93,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.0,
+      "completion_tokens": 62,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "chain",
+      "seed": 3,
+      "status": 200,
+      "seconds": 4.7,
+      "completion_tokens": 73,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 7.8,
+      "completion_tokens": 108,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 6.0,
+      "completion_tokens": 93,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "types",
+      "seed": 3,
+      "status": 200,
+      "seconds": 5.6,
+      "completion_tokens": 87,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 4.7,
+      "completion_tokens": 58,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 3.7,
+      "completion_tokens": 58,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "no_params",
+      "seed": 3,
+      "status": 200,
+      "seconds": 3.8,
+      "completion_tokens": 58,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 10.4,
+      "completion_tokens": 146,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.3,
+      "completion_tokens": 66,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "no_call_needed",
+      "seed": 3,
+      "status": 200,
+      "seconds": 5.2,
+      "completion_tokens": 80,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.6,
+      "completion_tokens": 83,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 7.4,
+      "completion_tokens": 112,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "many_tools",
+      "seed": 3,
+      "status": 200,
+      "seconds": 5.8,
+      "completion_tokens": 88,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 66.1,
+      "completion_tokens": 1013,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway, located on the southeastern coast along the Oslofjord. Here are some key details:\n\n- **Population**: Approximately 680,000 in the city proper, with over",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway, located on the southeastern coast along the Oslofjord. Here are some key details:\n\n- **Population**: Approximately 680,000 in the city proper, with over 1 million in the metropolitan area.\n- **History**: Founded in 1040 AD, it was historically a trading hub and the seat of the Norwegian monarchy.\n- **Landmarks**:\n  - **Oslo Opera House**: A modern architectural marvel designed by Sn\u00f8hetta.\n  - **Royal Palace**: A symbol of Norway's monarchy.\n  - **Viking Ship Museum**: Showcases Norse heritage and artifacts.\n- **Culture**: A vibrant hub for arts, music, and technology, hosting the Nobel Peace Prize ceremony annually.\n- **Climate**: Mild, temperate with cool summers and cold winters, influenced by its coastal location.\n- **Transport**: Well-connected public transport system, including trams, buses, and the metro.\n- **Tourism**: Popular for its blend of historical sites, museums, and urban attractions.\n\nLet me know if you'd like more details on a specific aspect!",
+        "reasoning_content": "Okay, the user is asking about Oslo. Let me think. Oslo is the capital of Norway. I should provide some general information about it. Let me recall what I know.\n\nFirst, Oslo is the capital and largest city in Norway. It's located in the southeast part of the country, on the Oslofjord. The population is around 1 million, making it one of the largest cities in Scandinavia. It has a rich history, being founded around the 11th century. The city is known for its modern architecture, museums, and cultural scene. There's the Oslo Opera House, which is a prominent landmark. Also, the city has a lot of museums, like the Viking Ship Museum.\n\nWait, but the user might want more specific details. Maybe mention its climate, which is generally mild due to its coastal location. The city has a mix of old and new buildings, with the Royal Palace being a notable historical site. Also, it's a hub for arts, music, and technology. Maybe mention the Nobel Prize, as it's awarded in Oslo. Oh, the Nobel Peace Prize is awarded in Oslo, and the Nobel Assembly is held there.\n\nWait, but I should check if there's any recent updates. But since I don't have access to real-time data, I'll stick to general knowledge. Also, maybe mention the transportation, like the public transport system, and that it's a popular tourist destination.\n\nWait, but the user might be asking for current information. Let me check if there's any need to use the tools. The user didn't specify weather or time, so maybe they just want general info. But the tools available are get_weather and get_time. But the user didn't ask for weather or time. So I should answer based on general knowledge.\n\nWait, but the initial instruction says to use the tools if needed. But the user's question is about Oslo, not weather or time. So perhaps I don't need to call any tools here. Let me confirm. The user said \"Tell me about Oslo.\" So general information. The tools are for weather and time, but unless specified, maybe not needed. So I can provide general info without calling tools.\n\nWait, but sometimes users might expect weather or current time. But they didn't specify. So I should proceed with general info. Let me structure the answer.\n\nStart with Oslo being the capital of Norway, population, location. Then history, landmarks, culture, economy, etc. Maybe mention the Nobel Prize, museums, public transport, and climate.\n\nWait, but need to make sure the information is accurate. Let me recall: Oslo was founded in 1040 AD. The city is known for its modern architecture, with the Oslo Opera House designed by Sn\u00f8hetta. The Royal Palace is a key historical site. The city has a strong tech scene, and it's a hub for innovation. Also, the Oslo Fjord is a major feature. The climate is temperate, with mild summers and cold winters.\n\nWait, but I need to ensure that the information is correct. Let me think again. Oslo is indeed the capital and largest city. The population is around 680,000 in the city proper, but over 1 million in the metro area. The city is on the Oslofjord. The Royal Palace is a symbol of the monarchy. The Nobel Peace Prize is awarded in Oslo. The city has many museums, like the Norwegian Museum of Cultural History, the Viking Ship Museum, etc.\n\nOkay, I think that's enough. Now, structure the answer clearly. Maybe bullet points or paragraphs. Since the user might want a concise overview, I'll present it in a structured way.\n"
+      }
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 12.0,
+      "completion_tokens": 187,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "I don't have access to general information about cities and countries, but I can provide weather information for Oslo if you're interested! Would you like to know the current weather in Oslo? I can gi",
+      "message": {
+        "role": "assistant",
+        "content": "I don't have access to general information about cities and countries, but I can provide weather information for Oslo if you're interested! Would you like to know the current weather in Oslo? I can give you that in either Celsius or Fahrenheit.\n\nAlso, if you'd like to know the current time in Oslo, I can help with that as well.",
+        "reasoning_content": "The user is asking about Oslo, which is a city in Norway. I don't have any tools that can provide general information about cities or countries - I only have tools for getting weather information and current time.\n\nSince I don't have a tool to fetch general information about Oslo, I should let the user know what I can help them with. I could offer to provide weather information for Oslo if that's what they're looking for, or I could just acknowledge their question and explain my limitations.\n\nLet me be helpful and offer what I can do.\n"
+      }
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 16.8,
+      "completion_tokens": 263,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "I don't have specific information about Oslo in my available tools, so I can't provide detailed information about the city itself. However, I can help you with weather information if you're interested",
+      "message": {
+        "role": "assistant",
+        "content": "I don't have specific information about Oslo in my available tools, so I can't provide detailed information about the city itself. However, I can help you with weather information if you're interested! Just let me know and I can tell you the current weather conditions in Oslo.\n\nWould you like to know about the weather in Oslo, or is there something else I can help you with?",
+        "reasoning_content": "The user is asking about Oslo. This is a general knowledge question about a city, and I don't have any tools that can provide general information about cities, countries, or places. My available tools are:\n\n1. get_weather - to get current weather for a city\n2. get_time - to get current local time\n\nNeither of these tools can provide general information about Oslo. Since I don't have access to tools that can answer general knowledge questions about cities, I should let the user know that I don't have information about Oslo in my available tools, but I can help with weather or time information if they want.\n\nActually, looking at this more carefully, I should be honest that I don't have specific information about Oslo in my tools. I should not make up information or pretend I know something I don't. I can offer to help with weather information if they're interested.\n"
+      }
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.5,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a file named `notes.md`.\n    *   Content: A 300-word essay about the history of tea.\n    *   Format: Markdown file (`.md`).\n\n2.  **Determine Content Requirements:**\n    *   Topic: History of tea.\n    *   Length: Approximately 300 words.\n    *   Tone: Informative, essay-style.\n\n3.  **Drafting the Content:**\n    *   *Introduction:*"
+      }
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 7.7,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\":\"notes.md\",\"content\":\"# The History of Tea\\n\\nTea, one of the world's most beloved beverages, has a rich history",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user wants me to write a file called \"notes.md\" containing a 300-word essay about the history of tea. I need to write content that's approximately 300 words about tea's history and save it to a file named \"notes.md\".\n\nLet me create a concise but informative essay about tea history.\n",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"notes.md\",\"content\":\"# The History of Tea\\n\\nTea, one of the world's most beloved beverages, has a rich history"
+            },
+            "id": "vBZNdxjwLj2EtzmhYto00SosqE7eBQZO"
+          }
+        ]
+      }
+    },
+    {
+      "model": "qwen3.5-4b",
+      "scenario": "truncated",
+      "seed": 3,
+      "status": 200,
+      "seconds": 7.7,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\":\"notes.md\",\"content\":\"# The History of Tea\\n\\nTea, one of the world's most beloved and widely consumed",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user wants me to write a file called \"notes.md\" containing a 300-word essay about the history of tea. I need to write this content and save it to the file using the write_file function.\n\nLet me compose a 300-word essay about the history of tea in English, then write it to the file.\n",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"notes.md\",\"content\":\"# The History of Tea\\n\\nTea, one of the world's most beloved and widely consumed"
+            },
+            "id": "atVHULkWJNKshtOM7G5SZHiYxnE1uNge"
+          }
+        ]
+      }
+    }
+  ]
+}

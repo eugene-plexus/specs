@@ -1,0 +1,47 @@
+{
+  "model": "gemma-4-e4b",
+  "file": "gemma-4-E4B-it-Q4_K_M.gguf",
+  "streamed": false,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 64
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced_as_required",
+      "seed": 1,
+      "status": 200,
+      "seconds": 18.4,
+      "completion_tokens": 276,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced_as_required",
+      "seed": 2,
+      "status": 200,
+      "seconds": 21.3,
+      "completion_tokens": 326,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced_as_required",
+      "seed": 3,
+      "status": 200,
+      "seconds": 21.3,
+      "completion_tokens": 326,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    }
+  ]
+}

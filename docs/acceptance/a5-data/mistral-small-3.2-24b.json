@@ -1,0 +1,348 @@
+{
+  "model": "mistral-small-3.2-24b",
+  "file": "Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf",
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.15
+  },
+  "samples": 2,
+  "records": [
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 11.7,
+      "completion_tokens": 21,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 5.7,
+      "completion_tokens": 21,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 10.5,
+      "completion_tokens": 14,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 3.8,
+      "completion_tokens": 14,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 16.8,
+      "completion_tokens": 56,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "wrong_args",
+      "detail": "[[\"write_file\", {\"path\": \"hello.py\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"!)\\npath = \\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\nprint(f\\\"Saving to {path}\\\")\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"hello.py\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"!)\\npath = \\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\nprint(f\\\"Saving to {path}\\\")\"}"
+            },
+            "id": "PNxaxuNhsAzpZ6gPgrn7BlYbwgEg1opb"
+          }
+        ]
+      }
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 15.1,
+      "completion_tokens": 56,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "wrong_args",
+      "detail": "[[\"write_file\", {\"path\": \"hello.py\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"!)\\npath = \\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\nprint(f\\\"Saving to {path}\\\")\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"hello.py\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"!)\\npath = \\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\nprint(f\\\"Saving to {path}\\\")\"}"
+            },
+            "id": "VmS7IjSPXdYjLusbDxD9lJwJnA2WeyI4"
+          }
+        ]
+      }
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 23.1,
+      "completion_tokens": 79,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 21.4,
+      "completion_tokens": 79,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 7.8,
+      "completion_tokens": 26,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 7.1,
+      "completion_tokens": 26,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.2,
+      "completion_tokens": 19,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 5.1,
+      "completion_tokens": 19,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.1,
+      "completion_tokens": 7,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.9,
+      "completion_tokens": 7,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.1,
+      "completion_tokens": 3,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 0.8,
+      "completion_tokens": 3,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 17.9,
+      "completion_tokens": 16,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.5,
+      "completion_tokens": 16,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 164.5,
+      "completion_tokens": 607,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo, the capital of Norway, is a vibrant city known for its stunning natural beauty, rich cultural heritage, and modern architecture. Here are some key aspects of Oslo:\n\n### Geography and Climate\n- *",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo, the capital of Norway, is a vibrant city known for its stunning natural beauty, rich cultural heritage, and modern architecture. Here are some key aspects of Oslo:\n\n### Geography and Climate\n- **Location**: Oslo is located at the head of the Oslofjord, a deep inlet of the Atlantic Ocean, and is surrounded by hills and forests.\n- **Climate**: The city experiences a temperate climate with cold winters and mild summers. Snow is common in the winter, making it a great place for winter sports.\n\n### History\n- **Founding**: Oslo was founded around 1000 AD and has been the capital of Norway since 1300.\n- **Name Change**: The city was renamed Christiania in 1624 after a fire destroyed much of the city, and then changed to Kristiania in 1877. It reverted to Oslo in 1925.\n- **World War II**: Oslo was occupied by Germany during World War II, and the city played a significant role in the resistance movement.\n\n### Culture and Attractions\n- **Museums**: Oslo is home to world-class museums such as the Viking Ship Museum, the Norwegian Museum of Cultural History, and the Munch Museum, which houses works by Edvard Munch, including \"The Scream.\"\n- **Opera House**: The Oslo Opera House is a stunning example of modern architecture and a popular tourist attraction.\n- **Vigeland Sculpture Park**: This unique park features over 200 sculptures by Gustav Vigeland and is a must-visit for art lovers.\n- **Akershus Fortress**: A medieval fortress that offers panoramic views of the city and the fjord.\n\n### Economy\n- **Industries**: Oslo is the economic hub of Norway, with industries ranging from shipping and seafood to technology and finance.\n- **Oil and Gas**: The city is also a center for the oil and gas industry, with many international companies having offices here.\n\n### Transportation\n- **Public Transport**: Oslo has an efficient public transportation system that includes buses, trams, metro, and trains.\n- **Airport**: Oslo Airport (Gardermoen) is the main international airport, located about 47 kilometers northeast of the city center.\n\n### Quality of Life\n- **Green City**: Oslo is known for its green spaces and commitment to environmental sustainability.\n- **High Standard of Living**: The city consistently ranks high in quality of life indices, offering excellent healthcare, education, and social services.\n\n### Food and Drink\n- **Cuisine**: Norwegian cuisine features seafood, game, and traditional dishes like lutefisk and raspeball. Oslo has a vibrant food scene with many restaurants and cafes.\n- **Nightlife**: The city offers a diverse nightlife with bars, clubs, and live music venues.\n\nOslo is a city that beautifully blends its rich history with modern innovation, making it a fascinating place to visit or live."
+      }
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 149.1,
+      "completion_tokens": 551,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo, the capital of Norway, is a vibrant city known for its stunning natural beauty, rich cultural heritage, and modern architecture. Here are some key aspects of Oslo:\n\n### Geography and Climate\n- *",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo, the capital of Norway, is a vibrant city known for its stunning natural beauty, rich cultural heritage, and modern architecture. Here are some key aspects of Oslo:\n\n### Geography and Climate\n- **Location**: Oslo is located at the head of the Oslofjord, a deep inlet of the Atlantic Ocean, and is surrounded by hills and forests.\n- **Climate**: The city experiences a temperate climate with cold winters and mild summers. Snow is common in the winter, making it a great place for winter sports.\n\n### History\n- **Founding**: Oslo was founded around 1000 AD and has been the capital of Norway since 1300.\n- **Name Change**: The city was renamed Christiania in 1624 in honor of King Christian IV, and later changed to Kristiania in 1877. It reverted to Oslo in 1925.\n\n### Culture and Attractions\n- **Museums**: Oslo is home to world-class museums such as the Viking Ship Museum, the Norwegian Museum of Cultural History, and the Munch Museum, which houses works by Edvard Munch, including \"The Scream.\"\n- **Opera House**: The Oslo Opera House is a stunning example of modern architecture and a popular tourist attraction.\n- **Parks and Nature**: The city has numerous parks and green spaces, including Vigelandsparken, which features the sculptures of Gustav Vigeland, and the Royal Palace Park.\n\n### Economy\n- **Industries**: Oslo is the economic hub of Norway, with a strong focus on industries such as shipping, finance, and technology.\n- **Quality of Life**: The city consistently ranks high in quality of life indices, offering a high standard of living, excellent public services, and a clean environment.\n\n### Transportation\n- **Public Transport**: Oslo has an efficient public transportation system that includes buses, trams, metro lines, and trains.\n- **Airport**: Oslo Airport (Gardermoen) is the main international airport, located about 50 kilometers northeast of the city center.\n\n### Cuisine\n- **Traditional Dishes**: Oslo offers a variety of traditional Norwegian dishes, such as brunost (brown cheese), lutefisk, and smoked salmon.\n- **Modern Cuisine**: The city also has a thriving modern culinary scene with numerous restaurants offering innovative and international cuisine.\n\n### Events and Festivals\n- **Oslo Festival**: A major music festival held annually in the summer.\n- **Christmas Market**: A popular winter event featuring traditional Norwegian crafts, food, and decorations.\n\nOslo is a city that beautifully blends its rich history with modern innovation, offering visitors a unique and memorable experience."
+      }
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 33.4,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\": \"notes.md\", \"content\": \"Tea, one of the world's most beloved beverages, has a rich and fascinating history that spans thousands of years. Originating in China, tea has played a significant role in the cultural, economic, and social development of numerous civilizations. The story of tea beg",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"notes.md\", \"content\": \"Tea, one of the world's most beloved beverages, has a rich and fascinating history that spans thousands of years. Originating in China, tea has played a significant role in the cultural, economic, and social development of numerous civilizations. The story of tea begins in ancient China, where it was first used for medicinal purposes. According to legend, tea was discovered by Emperor Shen Nong around 2737 BCE. The emperor, a skilled herbalist, reportedly tasted various plants to identify their medicinal properties"
+            },
+            "id": "ui1sKyCcRBtgq1Xj0GeVqekAFfK9JREb"
+          }
+        ]
+      }
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 32.4,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\": \"notes.md\", \"content\": \"Tea, one of the world's most beloved beverages, has a rich and fascinating history that spans thousands of years. Originating in China, tea has played a significant role in the cultural, economic, and social development of numerous civilizations. The story of tea beg",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"notes.md\", \"content\": \"Tea, one of the world's most beloved beverages, has a rich and fascinating history that spans thousands of years. Originating in China, tea has played a significant role in the cultural, economic, and social development of numerous civilizations. The story of tea begins in ancient China, where it was first used for medicinal purposes. According to legend, tea was discovered by Emperor Shen Nong around 2737 BCE. The emperor, a skilled herbalist, reportedly tasted various plants to identify their medicinal properties"
+            },
+            "id": "kLVsM6Omadu3e5jQEPj4TUkeExM6tz87"
+          }
+        ]
+      }
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 12.4,
+      "completion_tokens": 16,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok",
+      "rerun": "the first run's id, call_1, is under 9 characters, which this model's template refuses"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.4,
+      "completion_tokens": 16,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok",
+      "rerun": "the first run's id, call_1, is under 9 characters, which this model's template refuses"
+    }
+  ],
+  "note": "chain rerun with a realistic tool-call id; see docs/design/tool-call-repair.md"
+}

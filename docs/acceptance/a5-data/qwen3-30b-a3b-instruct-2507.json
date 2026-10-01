@@ -1,0 +1,469 @@
+{
+  "model": "qwen3-30b-a3b-instruct-2507",
+  "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.4,
+      "completion_tokens": 28,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.9,
+      "completion_tokens": 28,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "single",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.8,
+      "completion_tokens": 28,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 5.6,
+      "completion_tokens": 22,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.5,
+      "completion_tokens": 22,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "choose",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.5,
+      "completion_tokens": 22,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 5.3,
+      "completion_tokens": 62,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.0,
+      "completion_tokens": 62,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "escaping",
+      "seed": 3,
+      "status": 200,
+      "seconds": 4.0,
+      "completion_tokens": 62,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.8,
+      "completion_tokens": 83,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 5.3,
+      "completion_tokens": 83,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "nested",
+      "seed": 3,
+      "status": 200,
+      "seconds": 5.3,
+      "completion_tokens": 83,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.5,
+      "completion_tokens": 41,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 3.5,
+      "completion_tokens": 55,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "parallel",
+      "seed": 3,
+      "status": 200,
+      "seconds": 3.5,
+      "completion_tokens": 55,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.9,
+      "completion_tokens": 24,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.5,
+      "completion_tokens": 24,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "chain",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.6,
+      "completion_tokens": 24,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.7,
+      "completion_tokens": 27,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.7,
+      "completion_tokens": 27,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "types",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.7,
+      "completion_tokens": 27,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.1,
+      "completion_tokens": 16,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.1,
+      "completion_tokens": 16,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "no_params",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.0,
+      "completion_tokens": 16,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.1,
+      "completion_tokens": 3,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 0.2,
+      "completion_tokens": 3,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "no_call_needed",
+      "seed": 3,
+      "status": 200,
+      "seconds": 0.2,
+      "completion_tokens": 3,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 9.7,
+      "completion_tokens": 23,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.8,
+      "completion_tokens": 23,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "many_tools",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.7,
+      "completion_tokens": 23,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.7,
+      "completion_tokens": 31,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "I currently don't have information about Oslo. Let me know if you'd like help with something else, such as the weather or time in Oslo!",
+      "message": {
+        "role": "assistant",
+        "content": "I currently don't have information about Oslo. Let me know if you'd like help with something else, such as the weather or time in Oslo!"
+      }
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 18.1,
+      "completion_tokens": 282,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway. It is located on the southeastern coast of the country, nestled between the Oslofjord and the forests of Akershus. Known for its blend of modern archite",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway. It is located on the southeastern coast of the country, nestled between the Oslofjord and the forests of Akershus. Known for its blend of modern architecture and historical charm, Oslo offers a unique mix of urban life and natural beauty.\n\nKey highlights of Oslo include:\n\n1. **Viking Ship Museum**: Houses three well-preserved Viking ships from the 9th century, offering a fascinating glimpse into Norway\u2019s maritime history.\n2. **Aker Brygge**: A vibrant waterfront district with restaurants, shops, and a lively atmosphere, perfect for a stroll or a meal.\n3. **Holmenkollen Ski Museum and Tower**: A world-renowned ski museum located in a scenic hilltop, featuring exhibitions on skiing history and offering panoramic views of the city.\n4. **The Opera House**: A striking architectural masterpiece, known for its sloping roof that visitors can walk on, providing a unique experience and stunning city views.\n5. **Natural Surroundings**: Oslo is surrounded by forests and mountains, making it ideal for hiking, biking, and outdoor activities year-round.\n\nOslo is also known for its sustainability efforts, with a strong focus on green transportation and eco-friendly urban planning. It is consistently ranked among the most livable cities in the world.\n\nWould you like information about the weather in Oslo or the current time there?"
+      }
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 10.6,
+      "completion_tokens": 165,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway. It is located on the southeastern coast of the country, nestled between the Oslofjord and the forests of Akershus. Oslo is known for its blend of modern",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway. It is located on the southeastern coast of the country, nestled between the Oslofjord and the forests of Akershus. Oslo is known for its blend of modern architecture and historical charm, with landmarks such as the Oslo Opera House, the Nobel Peace Center, and the Viking Ship Museum. The city is also renowned for its commitment to sustainability, with extensive green spaces, bike-friendly infrastructure, and a strong emphasis on public transportation.\n\nOslo has a rich cultural scene, hosting numerous museums, galleries, and music venues. It's also a hub for innovation and technology. The city has a temperate climate with four distinct seasons\u2014mild summers and cold, snowy winters.\n\nWould you like to know more about Oslo's weather, time, or something specific?"
+      }
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.2,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\": \"notes.md\", \"content\": \"# The History of Tea\\n\\nTea, one of the most widely consumed beverages in the world, boasts a rich and ancient history that spans over 5,000 years. Its origins trace back to ancient China, where legend attributes its discovery to Emperor Shen Nong in 2737 BCE. Accord",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"notes.md\", \"content\": \"# The History of Tea\\n\\nTea, one of the most widely consumed beverages in the world, boasts a rich and ancient history that spans over 5,000 years. Its origins trace back to ancient China, where legend attributes its discovery to Emperor Shen Nong in 2737 BCE. According to the tale, leaves from a wild tea tree blew into a pot of boiling water, creating a fragrant and invigorating drink. While this story is likely"
+            },
+            "id": "FyFDxQypEXUCRlYTi7oO2vjfrn1yAmaQ"
+          }
+        ]
+      }
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 7.6,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\": \"notes.md\", \"content\": \"# The History of Tea\\n\\nTea, one of the most widely consumed beverages in the world, boasts a rich and storied history that spans thousands of years. Its origins can be traced back to ancient China, where legend attributes its discovery to Emperor Shen Nong in 2737 B",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"notes.md\", \"content\": \"# The History of Tea\\n\\nTea, one of the most widely consumed beverages in the world, boasts a rich and storied history that spans thousands of years. Its origins can be traced back to ancient China, where legend attributes its discovery to Emperor Shen Nong in 2737 BCE. According to the tale, leaves from a wild tea tree blew into a pot of boiling water, creating a fragrant and invigorating drink. This serendipitous event is"
+            },
+            "id": "xTLeRByKJUMsjW543WSHLG6G86jpcseu"
+          }
+        ]
+      }
+    },
+    {
+      "model": "qwen3-30b-a3b-instruct-2507",
+      "scenario": "truncated",
+      "seed": 3,
+      "status": 200,
+      "seconds": 7.5,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\": \"notes.md\", \"content\": \"# The History of Tea\\n\\nTea, one of the most widely consumed beverages in the world, boasts a rich and fascinating history that spans thousands of years. Its origins trace back to ancient China, where legend attributes its discovery to Emperor Shen Nong in 2737 BCE. ",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"notes.md\", \"content\": \"# The History of Tea\\n\\nTea, one of the most widely consumed beverages in the world, boasts a rich and fascinating history that spans thousands of years. Its origins trace back to ancient China, where legend attributes its discovery to Emperor Shen Nong in 2737 BCE. According to the tale, leaves from a wild tea tree blew into a pot of boiling water, creating a fragrant and invigorating drink. This serendipitous event is considered the birth"
+            },
+            "id": "HVrNAM9yqvUBiEvOJgBsDWDDGBuadii1"
+          }
+        ]
+      }
+    }
+  ]
+}

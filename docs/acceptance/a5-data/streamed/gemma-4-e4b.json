@@ -1,0 +1,443 @@
+{
+  "model": "gemma-4-e4b",
+  "file": "gemma-4-E4B-it-Q4_K_M.gguf",
+  "streamed": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 64
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.8,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 14.9,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "single",
+      "seed": 3,
+      "status": 200,
+      "seconds": 15.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 24.8,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "choose",
+      "seed": 3,
+      "status": 200,
+      "seconds": 21.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 11.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 13.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "escaping",
+      "seed": 3,
+      "status": 200,
+      "seconds": 12.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 5.5,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 28.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "nested",
+      "seed": 3,
+      "status": 200,
+      "seconds": 29.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 9.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 15.6,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "parallel",
+      "seed": 3,
+      "status": 200,
+      "seconds": 22.4,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 6.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "chain",
+      "seed": 3,
+      "status": 200,
+      "seconds": 5.9,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "types",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 0.9,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 9.6,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_params",
+      "seed": 3,
+      "status": 200,
+      "seconds": 8.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 0.4,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 10.5,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "no_call_needed",
+      "seed": 3,
+      "status": 200,
+      "seconds": 11.3,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 21.8,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 30.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "many_tools",
+      "seed": 3,
+      "status": 200,
+      "seconds": 19.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 22.2,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "I can give you the current weather in Oslo, or tell you the current time there, but I don't have general knowledge about the city to tell you facts or history.\n\nWould you like to know the weather or t",
+      "message": {
+        "role": "assistant",
+        "content": "I can give you the current weather in Oslo, or tell you the current time there, but I don't have general knowledge about the city to tell you facts or history.\n\nWould you like to know the weather or the time in Oslo?",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 39.5,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway, situated on the Oslofjord. It's a city with a fascinating blend of history, modern architecture, and beautiful natural surroundings.\n\nHere is a general ",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway, situated on the Oslofjord. It's a city with a fascinating blend of history, modern architecture, and beautiful natural surroundings.\n\nHere is a general overview:\n\n### History and Culture\n* **Viking Roots:** The area has deep historical roots, and you can find remnants of Viking history throughout the city.\n* **Evolution:** Oslo has grown from a small trading settlement into a modern, cosmopolitan capital.\n* **Art and Design:** It is known for its vibrant culture, excellent museums, and commitment to design.\n\n### Things to See\n* **The Waterfront:** The waterfront is a major highlight, offering scenic views and numerous recreational areas.\n* **The Opera House:** The Oslo Opera House is an iconic piece of modern architecture and is a major cultural landmark.\n* **Vigeland Sculpture Park:** This park features a massive collection of sculptures by Gustav Vigeland, depicting the human life cycle.\n* **Museums:** Oslo boasts several world-class museums, including the Viking Ship Museum and the Munch Museum (dedicated to Edvard Munch).\n\n### Nature and Lifestyle\n* **Green Spaces:** Despite being a large city, Oslo is very green. It's surrounded by fjords and has numerous parks (like Frogner Park) where residents love to walk, cycle, and relax.\n* **Sustainability:** The city is generally known for its focus on sustainability and a high quality of life.\n\n**If you are planning a trip, are you interested in its history, its nightlife, or maybe the current weather?**",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 45.2,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway. It's a beautiful and modern city known for its stunning natural setting, vibrant culture, and strong commitment to sustainability and design.\n\nHere is a",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway. It's a beautiful and modern city known for its stunning natural setting, vibrant culture, and strong commitment to sustainability and design.\n\nHere is a general overview of what you might want to know about Oslo:\n\n### \ud83c\udfde\ufe0f Natural Setting and Vibe\nOslo is situated between the Oslofjord and the Oslofjorden. The city is surrounded by nature, making it easy for residents and visitors to escape into parks, woods, and waterfront areas. The atmosphere is generally clean, modern, and quite green.\n\n### \ud83c\udfdb\ufe0f Key Attractions and Culture\n* **Viking History:** Oslo has a deep connection to its Viking heritage. You can learn about this history at several museums.\n* **Opera House:** The Oslo Opera House is an iconic, modern architectural landmark situated right on the water.\n* **Aker Brygge and Tjuvholmen:** These waterfront areas are popular for dining, walking, and enjoying the views, blending modern development with historical waterfront charm.\n* **Museums:** It boasts world-class museums, including the **Viking Ship Museum** (though note that the main museum complex has undergone changes, it remains a center for cultural history), the **National Museum**, and various art galleries.\n* **Vippa:** The city has a great emphasis on outdoor activities, from walking along the waterfront to exploring the many local parks.\n\n### \ud83c\udfa8 Lifestyle and Modern Appeal\nOslo is often praised for its high quality of life. It's known for:\n* **Design:** A strong appreciation for minimalist, functional Scandinavian design.\n* **Cycling:** It is a very bike-friendly city.\n* **Sustainability:** It is a leader in environmental efforts and urban planning.\n\n### \ud83c\udf74 Food Scene\nThe culinary scene is diverse, ranging from traditional Norwegian fare (like *f\u00e5rik\u00e5l*, or mutton and cabbage stew) to high-end international dining. The waterfront areas are excellent spots to sample local seafood.\n\n**In short:** If you love a blend of history, modern architecture, stunning waterfront views, and a connection to nature, Oslo is a wonderful place to visit!\n\n***\n\n*If you are planning a trip, let me know if you'd like more specific information, such as recommendations for activities, museums, or even the current weather!*",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 7.7,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 7.5,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "gemma-4-e4b",
+      "scenario": "truncated",
+      "seed": 3,
+      "status": 200,
+      "seconds": 7.6,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": null
+      }
+    }
+  ]
+}

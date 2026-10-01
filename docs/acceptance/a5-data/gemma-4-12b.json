@@ -1,0 +1,458 @@
+{
+  "model": "gemma-4-12b",
+  "file": "gemma-4-12b-it-Q4_K_M.gguf",
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 64
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "gemma-4-12b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 17.5,
+      "completion_tokens": 117,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 18.1,
+      "completion_tokens": 124,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "single",
+      "seed": 3,
+      "status": 200,
+      "seconds": 19.2,
+      "completion_tokens": 132,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 11.6,
+      "completion_tokens": 54,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 8.4,
+      "completion_tokens": 54,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "choose",
+      "seed": 3,
+      "status": 200,
+      "seconds": 8.1,
+      "completion_tokens": 53,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 21.9,
+      "completion_tokens": 139,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 19.6,
+      "completion_tokens": 132,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "escaping",
+      "seed": 3,
+      "status": 200,
+      "seconds": 19.5,
+      "completion_tokens": 132,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 34.5,
+      "completion_tokens": 226,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 45.8,
+      "completion_tokens": 261,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "nested",
+      "seed": 3,
+      "status": 200,
+      "seconds": 43.8,
+      "completion_tokens": 247,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 21.8,
+      "completion_tokens": 122,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 18.1,
+      "completion_tokens": 102,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "parallel",
+      "seed": 3,
+      "status": 200,
+      "seconds": 15.8,
+      "completion_tokens": 90,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "partial",
+      "detail": "[[\"get_weather\", {\"city\": \"Oslo\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user is asking for the weather in two different cities: Oslo and Paris. I should call the `get_weather` tool twice, once for each city.\n\n1.  **First call**: `get_weather(city=\"Oslo\")`\n2.  **Second call**: `get_weather(city=\"Paris\")`",
+        "tool_calls": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Oslo\"}"
+            },
+            "id": "tQtbiXcJ3xIK4uNjznnLwKnLRknkEqcC"
+          }
+        ]
+      }
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 15.1,
+      "completion_tokens": 78,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 15.3,
+      "completion_tokens": 86,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "chain",
+      "seed": 3,
+      "status": 200,
+      "seconds": 14.1,
+      "completion_tokens": 79,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 20.8,
+      "completion_tokens": 114,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 26.9,
+      "completion_tokens": 153,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "types",
+      "seed": 3,
+      "status": 200,
+      "seconds": 24.1,
+      "completion_tokens": 137,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.5,
+      "completion_tokens": 13,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 10.9,
+      "completion_tokens": 61,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "no_params",
+      "seed": 3,
+      "status": 200,
+      "seconds": 9.4,
+      "completion_tokens": 53,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 9.1,
+      "completion_tokens": 44,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 10.1,
+      "completion_tokens": 57,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "no_call_needed",
+      "seed": 3,
+      "status": 200,
+      "seconds": 9.7,
+      "completion_tokens": 54,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 26.0,
+      "completion_tokens": 95,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 16.5,
+      "completion_tokens": 89,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "many_tools",
+      "seed": 3,
+      "status": 200,
+      "seconds": 20.6,
+      "completion_tokens": 112,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 132.1,
+      "completion_tokens": 719,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and most populous city of Norway. Located at the head of the Oslofjord, it serves as the country's political, economic, and cultural center. It is a city that beautifully blends mo",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and most populous city of Norway. Located at the head of the Oslofjord, it serves as the country's political, economic, and cultural center. It is a city that beautifully blends modern urban life with stunning natural landscapes, making it a popular destination for both residents and tourists.\n\nHere is an overview of what makes Oslo notable:\n\n### 1. Geography and Nature\nOslo is known for its proximity to nature. You can find forests, lakes, and the sea within the city limits. The **Oslofjord** provides a scenic backdrop and is popular for boating, swimming, and hiking. The city is also surrounded by the **Nordmarka** and **\u00d8stmarka** forests, which are favorites for skiing in the winter and hiking in the summer.\n\n### 2. Culture and History\nOslo has a rich history, dating back to the Viking Age. It was a major trading hub and has seen significant architectural development over centuries.\n*   **The Viking Ship Museum:** (Currently undergoing renovation, but the history remains a core part of the city's identity).\n*   **The Munch Museum:** Home to a vast collection of works by Edvard Munch, including his famous painting *The Scream*.\n*   **National Gallery:** Houses a collection of Norwegian and international art.\n\n### 3. Landmarks and Architecture\nThe city features a mix of historic buildings and contemporary design:\n*   **Oslo Opera House:** An iconic piece of modern architecture where the roof is designed to be walked upon, offering views over the fjord.\n*   **Aker Brygge:** A vibrant waterfront area with many restaurants, cafes, and shops.\n*   **The Royal Palace:** The official residence of the Norwegian monarch.\n*   **Frogner Park:** A large, beautiful park featuring the Royal Residence and various palaces.\n\n### 4. Lifestyle and Sustainability\nNorway is a leader in sustainability, and Oslo is no exception. The city is heavily invested in:\n*   **Green Transport:** Extensive public transport, extensive bike lanes, and a growing number of electric vehicles.\n*   **Outdoor Life:** The concept of *friluftsliv* (open-air life) is central to the Norwegian lifestyle. Even in the city, people frequently engage in hiking, cycling, and swimming.\n*   **Food Scene:** Oslo has a thriving culinary scene, ranging from high-end Nordic cuisine to cozy cafes and \"street food\" markets.\n\n### 5. Economy\nOslo is a major hub for finance, shipping, and energy. It is also a growing center for technology and research, particularly in fields like renewable energy and maritime technology.\n\n### Quick Facts:\n*   **Population:** Approximately 700,000 (city) and 1.5 million (metropolitan area).\n*   **Currency:** Norwegian Krone (NOK).\n*   **Official Language:** Norwegian.\n*   **Best time to visit:** Summer (June\u2013August) for the \"Midnight Sun\" effect and warm weather, or winter (December\u2013March) for a snowy, festive atmosphere and world-class skiing.",
+        "reasoning_content": "I will first search for general information about Oslo, including its location, history, culture, and landmarks.\nThen, I will look for specific details about its geography, economy, and popular tourist attractions.\nFinally, I will answer the user's request by providing a comprehensive overview of Oslo."
+      }
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 157.0,
+      "completion_tokens": 798,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway, known for its stunning blend of urban life, rich history, and breathtaking natural beauty. Located on the Oslofjord, it serves as the country's politica",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway, known for its stunning blend of urban life, rich history, and breathtaking natural beauty. Located on the Oslofjord, it serves as the country's political, cultural, and economic hub.\n\nHere is an overview of what makes Oslo special:\n\n### 1. Geography and Nature\nOne of Oslo's most defining features is its proximity to nature. It is often called the \"City of Parks and Fjords.\"\n*   **The Oslofjord:** This provides easy access to the sea, offering opportunities for boating, swimming, and coastal hiking.\n*   **The Forests:** The city is surrounded by lush forests (Marka), where residents can go skiing in the winter and hiking in the summer.\n*   **The Waterfront:** Recent urban development has transformed the waterfront into a vibrant area for recreation, dining, and public events.\n\n### 2. Culture and Art\nOslo is a major cultural center with a wealth of museums and galleries:\n*   **The Munch Museum:** Houses the world\u2019s largest collection of works by Edvard Munch, including his famous painting *The Scream*.\n*   **The National Museum:** Norway\u2019s national gallery, featuring a vast collection of Norwegian and international art.\n*   **The Vigeland Sculpture Park:** Located in Frogner Park, this is one of the world\u2019s largest sculpture parks designed by Gustav Vigeland, featuring over 200 sculptures depicting the human experience.\n\n### 3. Architecture and Urban Planning\nOslo is a city of contrasts, where modern architecture sits alongside historical buildings:\n*   **The Opera House:** A famous piece of modern architecture, its white marble roof is designed to be walkable, allowing people to literally walk on top of the building to take in the views.\n*   **Aker Brygge:** A popular waterfront area with colorful buildings, cafes, and restaurants.\n*   **Sustainability:** Oslo is a world leader in green urban planning, aiming to become a carbon-neutral city. It heavily invests in electric public transport and cycling infrastructure.\n\n### 4. Economy and Lifestyle\n*   **Economy:** It is a hub for shipping, energy, and technology. It also hosts many international organizations and businesses.\n*   **Work-Life Balance:** Like much of Norway, Oslo is known for a high quality of life, prioritizing family time, outdoor activities, and \"friluftsliv\" (the Norwegian concept of open-air life).\n*   **Culinary Scene:** The city offers everything from traditional Norwegian \"husmanskost\" (home-cooked food) to world-class fine dining and a vibrant street food scene.\n\n### 5. Key Landmarks to Visit\n*   **Akershus Fortress:** A medieval castle and fortress that has guarded the city for centuries.\n*   **Holmenkollen:** Famous for its iconic ski jump, it is a central site for Norwegian winter sports history.\n*   **The Nobel Peace Prize:** Oslo is the home of the Nobel Peace Prize, which is awarded annually in the city.\n\nWhether you are looking for a sophisticated urban experience, world-class art, or a peaceful escape into the mountains and sea, Oslo offers a unique and high-quality experience.",
+        "reasoning_content": "The user is asking for information about Oslo. This is a general knowledge question.\nI should provide a comprehensive overview of Oslo, covering its geography, culture, landmarks, and economy.\n\nPlan:\n1.  Introduction: What is Oslo? (Capital of Norway, location).\n2.  Geography and Nature: Fjords, forests, proximity to the sea.\n3.  Culture and Architecture: Museums, art, architecture.\n4.  Economy and Lifestyle: Modern city, work-life balance, sustainability.\n5.  Tourism/Highlights: Specific places to visit."
+      }
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 171.4,
+      "completion_tokens": 877,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and most populous city of Norway. Located at the head of the Oslofjord, it is a city that perfectly balances modern urban life with breathtaking natural beauty.\n\nHere is an overvie",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and most populous city of Norway. Located at the head of the Oslofjord, it is a city that perfectly balances modern urban life with breathtaking natural beauty.\n\nHere is an overview of what makes Oslo a unique and vibrant place:\n\n### 1. Geography and Nature\nOne of Oslo's defining features is its accessibility to nature. You can be in the middle of a bustling downtown area and be within minutes of a forest or a fjord.\n*   **The Oslofjord:** The city borders this stunning body of water, which is popular for boating, swimming, and kayaking.\n*   **The \"Marka\":** These are the forested hills surrounding the city, where locals go hiking, skiing, and cross-country biking.\n\n### 2. Architecture and Landmarks\nOslo has a mix of historic buildings and cutting-edge modern architecture:\n*   **The Oslo Opera House:** A famous landmark known for its white marble roof that resembles an iceberg rising from the fjord. You can actually walk on the roof.\n*   **The Munch Museum:** A major art gallery housing the world\u2019s largest collection of works by Edvard Munch (famous for *The Scream*).\n*   **Vigeland Sculpture Park:** Located in Frogner Park, this is one of the world's largest sculpture parks dedicated to a single artist, featuring over 200 sculptures depicting human figures in various stages of life.\n*   **Aker Brygge:** A vibrant waterfront area with shops, restaurants, and a lively atmosphere.\n\n### 3. Culture and Lifestyle\nOslo is known for its high quality of life and commitment to sustainability.\n*   **The \"Friluftsliv\" Philosophy:** Norwegians practice *friluftsliv* (open-air life), a cultural concept that encourages spending time outdoors regardless of the weather.\n*   **Culinary Scene:** The city has a thriving food scene, ranging from traditional Norwegian seafood and \"new Nordic\" cuisine to a diverse array of international flavors.\n*   **Sustainability:** Oslo is a leader in green urban planning, with a heavy focus on electric transport, cycling infrastructure, and waste reduction.\n\n### 4. History\nOslo has a rich history dating back centuries. While it was once a small trading port, it grew into a political and cultural hub. Many of the city\u2019s oldest districts still retain their traditional wooden architecture, providing a contrast to the sleek glass and steel of the modern business district.\n\n### 5. Practical Information for Visitors\n*   **Transportation:** The city is very easy to navigate using public transport (trams, buses, and the metro/T-bane).\n*   **Seasonality:** In winter, the city transforms into a snowy wonderland, great for winter sports. In summer, the \"Midnight Sun\" effect (long daylight hours) makes it perfect for outdoor exploration.\n\nWhether you are interested in world-class art, outdoor adventures, or simply want to experience a peaceful, high-functioning Nordic city, Oslo offers a bit of everything.",
+        "reasoning_content": "The user is asking for information about \"Oslo\". This is a general request for information about a city.\n\nI should provide a comprehensive overview of Oslo, covering aspects like:\n1.  **Location & Geography**: Where it is (Norway), its setting (fjords, forests).\n2.  **Culture & History**: Brief historical context, cultural significance.\n3.  **Tourism & Landmarks**: Famous places to visit (Vigeland Park, Munch Museum, Opera House, etc.).\n4.  **Economy & Lifestyle**: Key industries, vibe of the city.\n5.  **Nature**: Proximity to mountains/forests.\n\nI don't need to call any tools for this general knowledge request, but I can use them if I wanted to provide current weather or time (though the user didn't ask). Since the prompt is \"Tell me about Oslo\", a descriptive summary is best.\n\nPlan:\n- Introduce Oslo as the capital of Norway.\n- Mention its geography (fjord and forest).\n- Highlight key tourist attractions.\n- Mention the cultural scene.\n- Briefly mention its status as a modern, sustainable city."
+      }
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 24.1,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user wants a file named `notes.md` containing a 300-word essay about the history of tea.\n\n    *   Origin: China (Shennong, legend of the wild tea plant).\n    *   Early use: Medicinal, brewing in pots.\n    *   Spread: Silk Road, Japan, Europe.\n    *   Colonialism/Trade: British East India Company, tea plantations in India and Sri Lanka.\n    *   Modern day: Global popularity, variety of types (green, black, oolong).\n    "
+      }
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 23.2,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "*   Task: Write a file `notes.md`.\n    *   Content: A 300-word essay about the history of tea.\n    *   Action: Use `write_file` tool.\n\n    *   *Introduction:* Origin of tea (China), legend (Shen Nong).\n    *   *Expansion:* Silk Road, trade with the Middle East and Europe.\n    *   *European Era:* Rise of tea houses, British dominance, the East India Company.\n    *   *Global impact:* Cultural significance, types of tea"
+      }
+    },
+    {
+      "model": "gemma-4-12b",
+      "scenario": "truncated",
+      "seed": 3,
+      "status": 200,
+      "seconds": 23.1,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "*   Task: Write a file named `notes.md`.\n    *   Content: A 300-word essay about the history of tea.\n    *   Tool: `write_file` function.\n\n    *   Introduction: Origin of tea (China), legendary beginnings (Shen Nong).\n    *   Expansion: Silk Road, trade with Japan and Europe.\n    *   British influence: East India Company, colonial influence.\n    *   Modern era: Global popularity, cultural significance.\n    *   Word count target: ~30"
+      }
+    }
+  ]
+}

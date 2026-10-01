@@ -1,0 +1,679 @@
+{
+  "model": "llama-3.1-8b",
+  "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+  "streamed": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.6,
+    "top_p": 0.9
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.5,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "single",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.5,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 5.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "choose",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 500,
+      "seconds": 8.1,
+      "completion_tokens": null,
+      "class": "engine_error",
+      "detail": "{'error': {'code': 500, 'message': 'The model produced output that does not match the expected peg-native format', 'type': 'server_error'}}",
+      "message": "{'error': {'code': 500, 'message': 'The model produced output that does not match the expected peg-native format', 'type': 'server_error'}}"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 6.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "wrong_args",
+      "detail": "[[\"write_file\", {\"path\": \"hello.py\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"!\\npath = \\\"\\\"\\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\\"\\\"\\nprint(f\\\"Saving to {path}\\\")\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "uGS7F5s5bsPW4FtopP7psUeCvvExqkJQ",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"hello.py\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"!\\npath = \\\"\\\"\\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\\"\\\"\\nprint(f\\\"Saving to {path}\\\")\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "escaping",
+      "seed": 3,
+      "status": 200,
+      "seconds": 6.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "wrong_args",
+      "detail": "[[\"write_file\", {\"path\": \"C:\\\\Users\\\\me\\\\notes.txt\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"!\\npath = \\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\\\nprint(f\\\"Saving to {path}\\\")\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "I3zqlz8299V8QsAeSLMCJWR3r1FuuVfn",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"C:\\\\Users\\\\me\\\\notes.txt\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"!\\npath = \\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\\\nprint(f\\\"Saving to {path}\\\")\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 8.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.attendees: expected array, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "GDxVZNzIpaK2RpVcUZ8hLz9oNvFIkd9D",
+            "function": {
+              "name": "create_event",
+              "arguments": "{\"title\": \"Design review\", \"start\": {\"date\": \"2026-10-05\", \"time\": \"14:00\"}, \"attendees\": \"[{\\\"name\\\": \\\"Ana\\\", \\\"email\\\": \\\"ana@example.com\\\"}, {\\\"name\\\": \\\"Ben\\\", \\\"email\\\": \\\"ben@example.com\\\"}]\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 7.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.attendees: expected array, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "bTSD779Dnq7eo6QANoUaSZJ0G07FCr8w",
+            "function": {
+              "name": "create_event",
+              "arguments": "{\"title\": \"Design review\", \"start\": {\"date\": \"2026-10-05\", \"time\": \"14:00\"}, \"attendees\": \"[{\\\"name\\\": \\\"Ana\\\", \\\"email\\\": \\\"ana@example.com\\\"}, {\\\"name\\\": \\\"Ben\\\", \\\"email\\\": \\\"ben@example.com\\\"}]\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "nested",
+      "seed": 3,
+      "status": 200,
+      "seconds": 7.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.attendees: expected array, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "EqfqcfrOxg1Qwx6VNB66T9cdaJujtToX",
+            "function": {
+              "name": "create_event",
+              "arguments": "{\"title\": \"Design review\", \"start\": {\"date\": \"2026-10-05\", \"time\": \"14:00\"}, \"attendees\": \"[{\\\"name\\\": \\\"Ana\\\", \\\"email\\\": \\\"ana@example.com\\\"}, {\\\"name\\\": \\\"Ben\\\", \\\"email\\\": \\\"ben@example.com\\\"}]\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 500,
+      "seconds": 4.9,
+      "completion_tokens": null,
+      "class": "engine_error",
+      "detail": "{'error': {'code': 500, 'message': 'The model produced output that does not match the expected peg-native format', 'type': 'server_error'}}",
+      "message": "{'error': {'code': 500, 'message': 'The model produced output that does not match the expected peg-native format', 'type': 'server_error'}}"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 500,
+      "seconds": 4.6,
+      "completion_tokens": null,
+      "class": "engine_error",
+      "detail": "{'error': {'code': 500, 'message': 'The model produced output that does not match the expected peg-native format', 'type': 'server_error'}}",
+      "message": "{'error': {'code': 500, 'message': 'The model produced output that does not match the expected peg-native format', 'type': 'server_error'}}"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "parallel",
+      "seed": 3,
+      "status": 500,
+      "seconds": 4.6,
+      "completion_tokens": null,
+      "class": "engine_error",
+      "detail": "{'error': {'code': 500, 'message': 'The model produced output that does not match the expected peg-native format', 'type': 'server_error'}}",
+      "message": "{'error': {'code': 500, 'message': 'The model produced output that does not match the expected peg-native format', 'type': 'server_error'}}"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 6.3,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "In this response, the function `search_files` is called with the pattern `\"def main\"`, which is used to search for the file that defines the `main` function. The result is a JSON object that contains ",
+      "message": {
+        "role": "assistant",
+        "content": "In this response, the function `search_files` is called with the pattern `\"def main\"`, which is used to search for the file that defines the `main` function. The result is a JSON object that contains the path and line number of the file that defines the `main` function.",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.6,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "This response indicates that the function `main` is defined in the file `src/app/entry.py` on line 12.",
+      "message": {
+        "role": "assistant",
+        "content": "This response indicates that the function `main` is defined in the file `src/app/entry.py` on line 12.",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "chain",
+      "seed": 3,
+      "status": 200,
+      "seconds": 8.9,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "This response assumes that the function `main` is defined in a file named \"entry.py\" in the \"src/app\" directory. The output is a JSON object with the function name and its parameters. The function `se",
+      "message": {
+        "role": "assistant",
+        "content": "This response assumes that the function `main` is defined in a file named \"entry.py\" in the \"src/app\" directory. The output is a JSON object with the function name and its parameters. The function `search_files` is called with the pattern \"def main\" to search for the function definition in the files. The output of the function call is a string representing the file path and line number where the function is defined, followed by the function definition itself.",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.minutes: expected integer, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "1kY4r3Wcu7JAzDi7uTUsPEUJoS2DV2w6",
+            "function": {
+              "name": "set_timer",
+              "arguments": "{\"minutes\": \"15\", \"label\": \"tea\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.minutes: expected integer, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "jzm0ioTCkr4QZipf8X7W5KvgYA3nuxjc",
+            "function": {
+              "name": "set_timer",
+              "arguments": "{\"minutes\": \"15\", \"label\": \"tea\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "types",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.minutes: expected integer, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "YRdqI8lCKrnL44QLulMyvoAMuJSDSzJW",
+            "function": {
+              "name": "set_timer",
+              "arguments": "{\"minutes\": \"15\", \"label\": \"tea\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.8,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "no_params",
+      "seed": 3,
+      "status": 200,
+      "seconds": 1.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "unneeded_call",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "bNB00q21d13vjakvmJuM31U51URX7OUp",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"path\": \"17_times_3.txt\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "unneeded_call",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "fNm3lmTv5U0GTn9QS8fM2azfzCVmpdop",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"path\": \"17_times_3.txt\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "no_call_needed",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "unneeded_call",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "SPMGdYxPzbKvEnwQqbzudH7qMfk0y1G0",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"path\": \"17_times_3.txt\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 9.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.amend: expected boolean, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "q3U4evl8OCxa0sxT5CDHuu2b4bzCFovV",
+            "function": {
+              "name": "git_commit",
+              "arguments": "{\"message\": \"fix typo in README\", \"amend\": \"False\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.8,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.amend: expected boolean, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "AgC0xWUIGd9odhH46My8PrvMR20qRWuc",
+            "function": {
+              "name": "git_commit",
+              "arguments": "{\"message\": \"fix typo in README\", \"amend\": \"False\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "many_tools",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.8,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "bad_args",
+      "detail": "$.amend: expected boolean, got str",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "vfScG7g4GwinEnJkJHIRtnlMkBhdQZbS",
+            "function": {
+              "name": "git_commit",
+              "arguments": "{\"message\": \"fix typo in README\", \"amend\": \"False\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.6,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.4,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.4,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 11.1,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\": \"notes.md\", \"content\": \"Tea has a rich history that spans over 4,000 years. Originating in China, tea was first consumed as a medicinal drink before becoming a popular beverage among the population. The history of tea is a story of cultural exchange, trade, and colonization, with tea leaves",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "nhMo5jkXJfVhJYF0CV0v7FN5XJsXfyOU",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"notes.md\", \"content\": \"Tea has a rich history that spans over 4,000 years. Originating in China, tea was first consumed as a medicinal drink before becoming a popular beverage among the population. The history of tea is a story of cultural exchange, trade, and colonization, with tea leaves being transported along the Silk Road and other trade routes. Tea was introduced to Japan in the 9th century and became an integral part of the country's culture, with the traditional Japanese tea ceremony being a highly"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 11.0,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\": \"notes.md\", \"content\": \"Tea has a rich history that spans over 4,000 years. Originating in China, tea was first consumed as a medicinal drink before becoming a popular beverage. The history of tea is a story of trade, colonization, and cultural exchange. Tea was introduced to Japan in the 9",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "sCAmMfPc2VBvHUbf1I90MnuwfpQgBbFV",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"notes.md\", \"content\": \"Tea has a rich history that spans over 4,000 years. Originating in China, tea was first consumed as a medicinal drink before becoming a popular beverage. The history of tea is a story of trade, colonization, and cultural exchange. Tea was introduced to Japan in the 9th century and became an integral part of the country's culture. The Japanese tea ceremony, also known as Chanoyu, Sado or Ocha, is a highly ritualized ceremony in which"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "truncated",
+      "seed": 3,
+      "status": 200,
+      "seconds": 11.0,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\": \"notes.md\", \"content\": \"Tea has a rich history that spans over 4,000 years. Originating in China, tea was first consumed as a medicinal drink before becoming a popular beverage among the masses. From China, tea spread to Japan, Korea, and eventually Europe, where it became a staple in many ",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "eaiB8E4ocuhfUnX9Ln7lJtT6DCCxYnUV",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\": \"notes.md\", \"content\": \"Tea has a rich history that spans over 4,000 years. Originating in China, tea was first consumed as a medicinal drink before becoming a popular beverage among the masses. From China, tea spread to Japan, Korea, and eventually Europe, where it became a staple in many cultures. Tea played a significant role in the development of many civilizations, including the British Empire, which relied heavily on tea imports. Today, tea is enjoyed by people all over the world, with various"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

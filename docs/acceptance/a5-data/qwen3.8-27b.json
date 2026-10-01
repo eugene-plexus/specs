@@ -1,0 +1,299 @@
+{
+  "model": "qwen3.8-27b",
+  "file": "Qwen3.8-27B-UD-Q4_K_M.gguf",
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20
+  },
+  "samples": 2,
+  "records": [
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 28.9,
+      "completion_tokens": 75,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 24.9,
+      "completion_tokens": 75,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 28.4,
+      "completion_tokens": 51,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 17.2,
+      "completion_tokens": 51,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 101.6,
+      "completion_tokens": 290,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 386.0,
+      "completion_tokens": 1160,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 102.2,
+      "completion_tokens": 249,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 102.9,
+      "completion_tokens": 261,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 48.9,
+      "completion_tokens": 145,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 27.8,
+      "completion_tokens": 82,
+      "finish": "tool_calls",
+      "calls": 2,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 35.5,
+      "completion_tokens": 82,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 14.0,
+      "completion_tokens": 42,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 29.6,
+      "completion_tokens": 76,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 26.6,
+      "completion_tokens": 80,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 16.0,
+      "completion_tokens": 34,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 11.6,
+      "completion_tokens": 34,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 14.0,
+      "completion_tokens": 27,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 16.1,
+      "completion_tokens": 48,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 34.4,
+      "completion_tokens": 59,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 19.3,
+      "completion_tokens": 57,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 138.7,
+      "completion_tokens": 393,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "Oslo is the capital and largest city of Norway. It\u2019s a modern Nordic capital with a mix of history, culture, nature, and design.\n\nKey facts:\n\n- **Location:** On the Oslofjord, on Norway\u2019s southeastern",
+      "message": {
+        "role": "assistant",
+        "content": "Oslo is the capital and largest city of Norway. It\u2019s a modern Nordic capital with a mix of history, culture, nature, and design.\n\nKey facts:\n\n- **Location:** On the Oslofjord, on Norway\u2019s southeastern coast.\n- **Population:** Around 700,000 in the city, with over 1.5 million in the greater metropolitan area.\n- **History:** Originally called Christiania, later Christiania, and now Oslo. It has royal, Viking, and medieval roots.\n- **Culture:** Known for museums, architecture, music, and a vibrant caf\u00e9 scene.\n- **Famous attractions:**\n  - **Vigeland Park**, with its famous sculpture installations\n  - **The Oslo Opera House**\n  - **Akershus Fortress**\n  - **The Royal Palace**\n  - **Fram Museum**, dedicated to polar exploration\n  - **The Munch Museum**, home to works by Edvard Munch\n  - **Holmenkollen Ski Jump**, a major winter sports landmark\n- **Climate:** Cool and maritime, with cold winters and mild summers.\n- **Vibe:** Oslo is often described as stylish, green, walkable, and family-friendly, with easy access to forests, fjords, and islands.\n\nIt\u2019s a great base for exploring both urban culture and outdoor nature, including day trips to places like B\u00e6rumsbukta, Ekeberg, or the islands in the Oslofjord.",
+        "reasoning_content": "We need answer user: \"Tell me about Oslo.\" Need likely no tools? Could provide general info. But maybe weather? They didn't ask weather. Could mention current weather? No need. Need final in English. Need maybe concise but informative. Let's craft about Oslo: capital Norway, population, fjord, history, culture, attractions, climate, transport. No tool needed.\n"
+      }
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 236.5,
+      "completion_tokens": 698,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "# Oslo, Norway\n\nOslo is the capital and largest city of Norway, located on the southeastern coast along the Oslofjord. It's a compact, walkable city that blends medieval history with modern Scandinavi",
+      "message": {
+        "role": "assistant",
+        "content": "# Oslo, Norway\n\nOslo is the capital and largest city of Norway, located on the southeastern coast along the Oslofjord. It's a compact, walkable city that blends medieval history with modern Scandinavian design.\n\n## Key Facts\n- **Population:** ~700,000 in the city proper; ~1.4 million in the greater metropolitan area\n- **Founded:** 1040, originally as *Akershus*\n- **Name history:** Renamed *Christiania* in 1624 after King Christian IV, then *Kristiania* in 1877, before returning to *Oslo* in 1925\n- **Language:** Norwegian (Bokm\u00e5l and Nynorsk)\n\n## Notable Sites\n- **Akershus Fortress** \u2013 a medieval fortress overlooking the harbor, dating to the 13th century\n- **The Vigeland Sculpture Park** \u2013 the world's largest sculpture park, featuring over 200 works by Gustav Vigeland\n- **The Royal Palace** \u2013 the official residence of the Norwegian royal family\n- **The Munch Museum** \u2013 home to Edvard Munch's works, including *The Scream*\n- **The Norwegian Opera and Ballet House** \u2013 a striking white building whose roof is designed to be walked on\n- **Frogner Park and the Botanical Garden** \u2013 popular green spaces in the city\n\n## Culture & Significance\n- **The Nobel Peace Prize** is awarded in Oslo each December (unlike the other Nobel Prizes, which are given in Stockholm)\n- Oslo is a hub for Scandinavian design, architecture, and music\n- It's a major center for technology and startups in the Nordics\n\n## Climate\nOslo has a continental climate with cold, snowy winters and mild summers. Average January temperatures hover around -4\u00b0C (25\u00b0F), while July averages about 17\u00b0C (63\u00b0F).\n\n## Getting Around\nThe city is well connected by a metro, tram, and bus network, and it's a short flight from major European cities. The airport, Oslo Gardermoen, is about 35 km from the city center.\n\nWould you like more detail on any particular aspect \u2014 travel tips, history, or something else?",
+        "reasoning_content": "The user is asking about Oslo. This is a general knowledge question about the capital city of Norway. I don't need to use any tools for this \u2014 it's not a question about the weather or the time, just a general question about a city. I should provide a helpful, informative response about Oslo.\n\nLet me think about what to include:\n- Capital of Norway\n- Location (southeastern Norway, along the Oslofjord)\n- Population (roughly 700,000 in the city, about 1.4 million in the metropolitan area)\n- History (founded in 1040, formerly called Christiania, renamed Oslo in 1925)\n- Culture (Norwegian Opera House, Munch Museum, Vigeland Park, Nidaros\u2026 no, that's in Trondheim)\n- The Nobel Peace Prize is awarded there\n- Economy, transportation\n- Weather/climate\n- Tourism\n\nI should make it a well-organized, informative response. No tools needed.\n"
+      }
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 44.7,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user is requesting a 300-word essay about the history of tea, to be written in a file called notes.md.\n\nLet me think about what to include in the essay:\n- Legend of the origin of tea in China (Shennong, around 2737 BC)\n- Tea as a medicine\n- The Tang Dynasty and Lu Yu's \"The Classic of Tea\"\n- The spread to Japan (Zen Buddhism)\n- The Song Dynasty\n- The Ming Dynasty and loose-leaf tea\n- The spread to Europe via the Portuguese and Dutch\n"
+      }
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 40.7,
+      "completion_tokens": 120,
+      "finish": "length",
+      "calls": 0,
+      "class": "cut_off",
+      "message": {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": "The user wants me to write a file called notes.md containing a 300-word essay on the history of tea. Let me think about this.\n\nThe request is simple and clear: create a file notes.md with a 300-word essay on the history of tea. I should write a well-crafted essay of about 300 words. Let me draft it and count the words carefully.\n\nLet me draft the essay:\n\nTitle: The History of Tea\n\nParagraph 1: Origins in China, legend of Emperor Shen Nong (2737 BCE),"
+      }
+    }
+  ]
+}

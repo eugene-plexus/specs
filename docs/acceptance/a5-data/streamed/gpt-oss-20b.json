@@ -1,0 +1,532 @@
+{
+  "model": "gpt-oss-20b",
+  "file": "gpt-oss-20b-MXFP4.gguf",
+  "streamed": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 1.0
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "single",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.8,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "single",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.5,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "single",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "choose",
+      "seed": 1,
+      "status": 200,
+      "seconds": 4.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "choose",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "choose",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "escaping",
+      "seed": 1,
+      "status": 200,
+      "seconds": 17.7,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "escaping",
+      "seed": 2,
+      "status": 200,
+      "seconds": 22.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "escaping",
+      "seed": 3,
+      "status": 200,
+      "seconds": 38.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "wrong_args",
+      "detail": "[[\"write_file\", {\"path\": \"hello.py\", \"content\": \"print(\\\"Hello, \\\\\\\"world\\\\\\\"\\\")\\npath = \\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\nprint(f\\\"Saving to {path}\\\")\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "x5RjtPCSyiSa6XkVGLRE8cBJt26R0BEv",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"hello.py\",\"content\":\"print(\\\"Hello, \\\\\\\"world\\\\\\\"\\\")\\npath = \\\"C:\\\\\\\\Users\\\\\\\\me\\\\\\\\notes.txt\\\"\\nprint(f\\\"Saving to {path}\\\")\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "nested",
+      "seed": 1,
+      "status": 200,
+      "seconds": 9.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "nested",
+      "seed": 2,
+      "status": 200,
+      "seconds": 6.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "nested",
+      "seed": 3,
+      "status": 200,
+      "seconds": 9.9,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "parallel",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "partial",
+      "detail": "[[\"get_weather\", {\"city\": \"Oslo\", \"unit\": \"celsius\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "w2pYUlVL5Tu4KD3Om4ognUFXQnxM8be7",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Oslo\",\"unit\":\"celsius\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "parallel",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "partial",
+      "detail": "[[\"get_weather\", {\"city\": \"Oslo\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "IomR8DqEEdBZ9U6xvoqHcRpUEz81uuEJ",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Oslo\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "parallel",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.5,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "partial",
+      "detail": "[[\"get_weather\", {\"city\": \"Oslo\", \"unit\": \"celsius\"}]]",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "IosDxVFTzukkCU0IHwmrIXOfm76SgBS8",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Oslo\",\"unit\":\"celsius\"}"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "chain",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.4,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "chain",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.8,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "chain",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "types",
+      "seed": 1,
+      "status": 200,
+      "seconds": 3.5,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "types",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.4,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "types",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "no_params",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.3,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "no_params",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "no_params",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "no_call_needed",
+      "seed": 1,
+      "status": 200,
+      "seconds": 2.0,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "no_call_needed",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.4,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "no_call_needed",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.0,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "many_tools",
+      "seed": 1,
+      "status": 200,
+      "seconds": 5.2,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "many_tools",
+      "seed": 2,
+      "status": 200,
+      "seconds": 2.0,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "many_tools",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.1,
+      "completion_tokens": null,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 46.4,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "**Oslo** \u2013 the vibrant capital of Norway \u2013 is a city that blends natural beauty, modern design, and rich history. Here\u2019s a quick snapshot:\n\n| Topic | Highlights |\n|-------|------------|\n| **Location &",
+      "message": {
+        "role": "assistant",
+        "content": "**Oslo** \u2013 the vibrant capital of Norway \u2013 is a city that blends natural beauty, modern design, and rich history. Here\u2019s a quick snapshot:\n\n| Topic | Highlights |\n|-------|------------|\n| **Location & Geography** | Situated on the southern coast of Norway, Oslo lies on a shallow inlet of the Oslofjord, surrounded by forested hills and a coastline that gives the city a dramatic waterfront. |\n| **Population** | About 1.5\u202fmillion people live in the greater Oslo metropolitan area, making it the most populous city in Norway. |\n| **History** | Founded in the 11th\u202fcentury, Oslo has grown from a small fishing village into a modern metropolis. Key historical moments include the 1814 constitution, the 1952 Winter Olympics, and the recent revitalization of the Oslofjord. |\n| **Culture & Arts** | Oslo is a cultural hub with numerous museums (e.g., the Viking Ship Museum, Munch Museum, and the Nobel Peace Center), theaters, and music venues. The city is known for its contemporary art scene and design, especially in architecture and fashion. |\n| **Landmarks & Attractions** |  \u2022 **Royal Palace** \u2013 the official residence of the Norwegian monarch.  <br>\u2022 **Akershus Fortress** \u2013 a medieval castle overlooking the fjord.  <br>\u2022 **Vigeland Park** \u2013 the world\u2019s largest sculpture park made entirely from bronze and granite by Gustav Vigeland.  <br>\u2022 **Oslo Opera House** \u2013 a striking modern building you can walk on its roof.  <br>\u2022 **Akershus** \u2013 a 13th\u2011century castle that offers panoramic city views. |\n| **Outdoor Life** | Oslo\u2019s city planning integrates nature with urban life.  Parks (like Frogner and Nordmarka) provide hiking, biking, and skiing opportunities right in or near the city. The waterfront has revitalized promenades and is great for cycling, kayaking, and beach activities in summer. |\n| **Transportation** | Efficient public transit: trams, buses, ferries, and a metro system (T-bane). Oslo\u2019s bicycle infrastructure is extensive, and the city promotes walking and cycling. |\n| **Climate** | Oslo experiences a temperate oceanic climate. Summers are mild (average 17\u201320\u202f\u00b0C), while winters can drop to \u20135\u202f\u00b0C or lower. Snowfall is common in winter, making the city a good spot for winter sports. |\n| **Cuisine** | Norwegian staples include fresh seafood, reindeer, brown cheese, and the popular \u201crakfisk\u201d (fermented fish). The city also hosts a vibrant caf\u00e9 and food scene, with international restaurants, pop\u2011ups, and a growing emphasis on sustainable, local ingredients. |\n| **Economy & Innovation** | Oslo is a growing tech and green\u2011energy center, home to many startups and established firms. The city has a strong focus on sustainability and is a leader in maritime technology and clean energy solutions. |\n| **Events** |  \u2022 **Oslo Jazz Festival** (annual, July)  <br>\u2022 **Norwegian Wood** (music & arts, August)  <br>\u2022 **Winter Festival** (multicultural and art, December)  <br>\u2022 **Nobel Prize Award Ceremonies** (October). |\n\n**Why visit Oslo?**  \n- **Scenic beauty:** Fjords, parks, and an elegant waterfront.  \n- **Cultural depth:** Museums, theaters, and a thriving arts scene.  \n- **Active lifestyle:** Outdoor activities year\u2011round, from hiking to skiing.  \n- **Modern living:** Sustainable urban design, excellent public transport, and a high quality of life.  \n\nWhether you\u2019re exploring historic castles, sampling local seafood, or simply walking along the Oslofjord with the city skyline in the distance, Oslo offers a blend of tradition and contemporary life that\u2019s hard to find elsewhere.",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 82.5,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "**Oslo \u2013 a quick snapshot**\n\n| Category | Highlights |\n|----------|------------|\n| **Location** | Southern Norway, on the Oslofjord\u2019s inner coast; about 300\u202fkm (190\u202fmi) southeast of Trondheim and 50\u202fk",
+      "message": {
+        "role": "assistant",
+        "content": "**Oslo \u2013 a quick snapshot**\n\n| Category | Highlights |\n|----------|------------|\n| **Location** | Southern Norway, on the Oslofjord\u2019s inner coast; about 300\u202fkm (190\u202fmi) southeast of Trondheim and 50\u202fkm (30\u202fmi) east of the Norwegian Sea. |\n| **Population** | ~1.5\u202fmillion residents in the metropolitan area (\u2248700\u202fk in the city proper). |\n| **Climate** | Temperate\u2011oceanic: mild, wet summers (average 15\u201320\u202f\u00b0C/59\u201368\u202f\u00b0F) and cool, snowy winters (average \u20131\u20132\u202f\u00b0C/30\u201330\u202f\u00b0F). |\n| **Governance** | Capital of Norway; the city council (byr\u00e5d) and mayor (borgermester) handle local affairs. |\n| **Economy** | Service\u2011heavy, with strong maritime, shipping, oil & gas, tech, and creative sectors. Key employers: Equinor, Statoil, DNB, the University of Oslo, and the Norwegian Institute of Technology. |\n\n---\n\n### Quick History\n\n| Era | Key Events |\n|-----|------------|\n| **Early 11th\u202fcentury** | First settled as a trading post; the area called *Os* after the river. |\n| **1048** | King Harald Hardr\u00e5de declared Oslo a city. |\n| **1624** | City burned in the Swedish\u2013Norwegian war; King Christian\u202fIV of Denmark\u2013Norway moved the capital to Christiania (now Oslo) to protect the new royal fortress. |\n| **1814** | Norway\u2019s constitution drafted in Eidsvoll; Oslo remained the capital through union with Sweden (1814\u20131905). |\n| **1905** | Norway\u2019s independence from Sweden; Christiania renamed Oslo (the city had been called Oslo since 1925). |\n| **20th\u201121st\u202fcentury** | Rapid expansion, modern architecture (Oslo Opera House, Barcode Project), and emphasis on sustainability. |\n\n---\n\n### Culture & Attractions\n\n| Category | Top Spots & Facts |\n|----------|------------------|\n| **Landmarks** | \u2022 **Akershus Fortress** \u2013 13th\u2011century castle overlooking the fjord.<br>\u2022 **Oslo Opera House** \u2013 modern architecture, walk onto the roof.<br>\u2022 **Nobel Peace Center** \u2013 exhibits on the Nobel Peace Prize. |\n| **Museums** | \u2022 **Viking Ship Museum** \u2013 well\u2011preserved 9th\u2011century ships.<br>\u2022 **Munch Museum** \u2013 works by Edvard Munch, including *The Scream*. |\n| **Parks & Nature** | \u2022 **Vigeland Park** \u2013 200+ bronze and granite sculptures.<br>\u2022 **Bygd\u00f8y Peninsula** \u2013 beaches, military fort, and several museums.<br>\u2022 **Oslofjord** \u2013 kayaking, sailing, and the nearby islands of Hoved\u00f8ya and Gressholmen. |\n| **Events** | \u2022 **Oslo Jazz Festival** (May/June).<br>\u2022 **\u00d8ya Festival** (summer, music, film, theater).<br>\u2022 **Christmas in Oslo** \u2013 festive markets, ice skating in Spikersuppa. |\n| **Cuisine** | \u2022 Fresh seafood (cod, salmon, shrimp), Norwegian cured meats, the famous \u201ckoldtbord\u201d (cold buffet). |\n| **Design & Fashion** | \u2022 Oslo is known for modern Scandinavian design\u2014home to brands like *Ikea* (though Swedish), *Aksel B\u00f8rglum*, *Mads N\u00f8rgaard*, and many design schools. |\n\n---\n\n### Transportation\n\n| Mode | Details |\n|------|---------|\n| **Metro (T-bane)** | 4 lines covering city center and suburbs; \u201cUlriken\u201d is the deepest metro station in Europe. |\n| **Buses & Trams** | Extensive network; trams run along Karl Johans gate, Oslo's main boulevard. |\n| **Ferries** | Connect Oslo with islands (Hoved\u00f8ya, Gressholmen) and fjord towns. |\n| **Bikes** | City has thousands of bike lanes and public bike\u2011sharing (*BikeShare Oslo*). |\n| **Airports** | **Oslo Airport, Gardermoen** \u2013 35\u202fkm north of the city; **Oslo Airport, Fornebu** \u2013 closer to city center but limited service. |\n| **Sustainable Focus** | Oslo leads Europe in electric\u2011vehicle charging stations and has set a target to ban all internal combustion vehicles by 2025. |\n\n---\n\n### Education & Research\n\n* **University of Oslo (UiO)** \u2013 oldest and largest university in Norway.  \n* **Norwegian University of Science and Technology (NTNU)** \u2013 strong engineering & technology programs (main campus in Trondheim; Oslo campus offers business and engineering courses).  \n* **Oslo School of Architecture & Design** \u2013 renowned for modernist architectural education.  \n\n---\n\n### Quick Trivia\n\n* **Name origin** \u2013 *Oslo* comes from the Old Norse word *\u00f3ss* (river).  \n* **Sculpture park** \u2013 Vigeland Park has the largest collection of a single artist\u2019s work in the world.  \n* **Electric future** \u2013 Oslo plans to be the first carbon\u2011neutral capital in 2030.  \n* **Fjord** \u2013 The Oslofjord is approximately 100\u202fkm long; its inner part is where the city sits.  \n\n---\n\n#### Bottom line\n\nOslo blends a rich maritime past with forward\u2011thinking modernity. It\u2019s a city of fjords, parks, and cultural landmarks, all wrapped in a commitment to sustainability and high quality of life. Whether you\u2019re interested in Viking history, contemporary design, outdoor adventures, or just a vibrant Scandinavian capital, Oslo offers it all.",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 78.4,
+      "completion_tokens": null,
+      "finish": "stop",
+      "calls": 0,
+      "class": "no_call",
+      "text": "**Oslo** \u2013 the capital and largest city of Norway \u2013 is a vibrant, green, and forward\u2011thinking metropolis that blends natural beauty with modern culture. Below is a concise guide covering its key facet",
+      "message": {
+        "role": "assistant",
+        "content": "**Oslo** \u2013 the capital and largest city of Norway \u2013 is a vibrant, green, and forward\u2011thinking metropolis that blends natural beauty with modern culture. Below is a concise guide covering its key facets:\n\n---\n\n## 1. Quick Facts\n\n| Item | Detail |\n|------|--------|\n| **Location** | Southern Norway, along the Oslofjord |\n| **Population** | \u2248 1.1\u202fmillion (city proper); \u2248 1.5\u202fmillion in the greater metropolitan area |\n| **Area** | 454\u202fkm\u00b2 (city proper) |\n| **Mayor** | As of 2024: **Kari Elisabeth T\u00f8nnesen** (Norwegian Labour Party) |\n| **Time zone** | UTC+1 (CET), UTC+2 in summer (CEST) |\n\n---\n\n## 2. Geography & Climate\n\n- **Topography**: Oslo sits on a series of hills, with the city center lying between the **Oslofjord** and the **Bygd\u00f8y Peninsula**. The fjord provides a dramatic backdrop and excellent waterfront.\n- **Climate**: Mild, relatively temperate for Norway. Summers average 15\u201320\u202f\u00b0C, winters drop to -2\u202f\u00b0C to -5\u202f\u00b0C. Precipitation is fairly evenly distributed throughout the year.\n- **Green Spaces**: Over 40\u202f% of the city is covered by parks and forests, including the popular **Sognsvann** and the expansive **Munch Museum\u2019s \u00d8stensj\u00f8vannet** nature reserve.\n\n---\n\n## 3. History Highlights\n\n| Era | Key Events |\n|-----|------------|\n| **Pre\u2011400\u202fAD** | Settled by the Norse; known as *Hafrsfjord* in sagas |\n| **1299\u20131814** | Danish rule; Oslo (then Christiania) grew as a trading hub |\n| **1814** | Norway\u2019s constitution drafted in the city, following the Treaty of Kiel |\n| **1914\u20111940** | Modernization surge: rail links, the Holmenkollen ski jump, and the Nobel Peace Center (opened 2005) |\n| **Post\u2011WWII** | Rapid expansion, architectural boom (e.g., the Oslo Opera House, 1998) |\n| **21st Century** | Focus on sustainability: Oslo was named the 2019 World\u2019s Greenest Capital by the UN |\n\n---\n\n## 4. Culture & Lifestyle\n\n- **Museums & Arts**: *Munch Museum* (Vincent van Gogh\u2019s \u201cThe Scream\u201d), *Nasjonalmuseet* (national museum of art, architecture, and design), *Akershus Fortress*, and the modern *Astrup Fearnley Museet*.\n- **Music & Festivals**: Annual *Oslo Jazz Festival*, *Oslo Freedom Festival*, *Oslo Pride*, and *\u00d8ya Festival* (summer music and arts).\n- **Culinary Scene**: Emphasis on fresh seafood, local cheeses, and Arctic cuisine. Popular eateries include *Mathallen Food Hall*, *Noma* (world-renowned restaurant), and traditional *kro* (inns) offering Norwegian classics.\n- **Languages**: Norwegian (Bokm\u00e5l/DK) is the main language; English proficiency is high\u2014over 90% of residents speak it fluently.\n\n---\n\n## 5. Economy & Innovation\n\n- **Sectors**: Shipping, maritime technology, oil & gas, renewable energy, and a growing tech hub (\u201cTech Oslo\u201d).\n- **Key Companies**: Aker ASA, Telenor, Equinor (formerly Statoil), and numerous start\u2011ups in the Oslo Innovation Week ecosystem.\n- **Public Services**: Strong welfare state; free public healthcare, education, and extensive public transportation.\n\n---\n\n## 6. Transportation\n\n| Mode | Highlights |\n|------|------------|\n| **Metro (T-bane)** | 5 lines; connects city center to suburbs and the airport. |\n| **Trams & Buses** | Dense network; fare integrated via the **Ruter** system. |\n| **Airport** | **Oslo Airport, Gardermoen** (\u224850\u202fkm north); daily flights to Europe and beyond. |\n| **Cycling** | 1.5\u202fkm of dedicated bike lanes in central Oslo; many rental services (e.g., BYKLO). |\n| **Ferry** | Water taxis to Bygd\u00f8y, Grefsen, and the fjord. |\n\n---\n\n## 7. Must\u2011See Attractions\n\n| Attraction | Why Visit |\n|------------|-----------|\n| **Oslo Opera House** | Iconic architecture; walk on the roof for panoramic views. |\n| **Akershus Fortress** | Medieval castle with harbor views and guided tours. |\n| **Vigeland Park** | 200+ bronze and granite sculptures by Gustav Vigeland. |\n| **Holmenkollen Ski Museum & Tower** | Ski heritage plus city\u2011wide vistas. |\n| **The Nobel Peace Center** | Interactive exhibits on global peace initiatives. |\n| **The Viking Ship Museum** | Original 9th\u2011century Viking ships; world heritage. |\n\n---\n\n## 8. Practical Tips for Visitors\n\n1. **Best Time to Visit**: Late spring (May) to early autumn (September) for mild weather and daylight. Winter (December\u2013March) is great for the Christmas markets and ski trips in nearby areas.\n2. **Currency**: Norwegian krone (NOK). Credit cards accepted citywide; cash preferred for smaller vendors.\n3. **Getting Around**: Purchase a **Oslo Pass** (unlimited travel + free entry to many attractions) or use the **Ruter travel card**.\n4. **Dress**: Layered clothing is key due to variable weather. Waterproof outerwear is useful in winter.\n5. **Safety**: Oslo is among the safest capitals worldwide; keep usual travel precautions in mind.\n\n---\n\n## 9. Quick Trivia\n\n- **Oslo\u2019s nickname**: \u201cThe City of Water\u201d because of its fjord, canals, and water bodies.\n- **Population Growth**: Over the past decade, the city has welcomed more than 50,000 migrants, making it a multicultural hub.\n- **Environmental Goals**: Oslo aims to become the world\u2019s first fossil\u2011fuel\u2011free city by 2030.\n\n---\n\n**Oslo** is more than a capital; it\u2019s a living laboratory where tradition and cutting\u2011edge sustainability converge. Whether you\u2019re interested in Viking history, contemporary art, outdoor adventures, or Scandinavian design, Oslo offers a rich, welcoming experience. Enjoy exploring!",
+        "tool_calls": null
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "truncated",
+      "seed": 1,
+      "status": 200,
+      "seconds": 7.4,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\":\"notes.md\",\"content\":\"**The History of Tea: A 300-Word Essay**\\n\\nTea, one of the world\u2019s most beloved beverages, has a history that spans millennia and continents.",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "9fJjzJuXY9hE3tE6NSu86k1NkFJqplqO",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"notes.md\",\"content\":\"**The History of Tea: A 300-Word Essay**\\n\\nTea, one of the world\u2019s most beloved beverages, has a history that spans millennia and continents."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "truncated",
+      "seed": 2,
+      "status": 200,
+      "seconds": 6.3,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\":\"notes.md\",\"content\":\"**The History of Tea: A 300-Word Essay**\\n\\nTea, one of the world\u2019s",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "ZOn6egG9kavxHfRlMZqozbYHDnbtoZDn",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"notes.md\",\"content\":\"**The History of Tea: A 300-Word Essay**\\n\\nTea, one of the world\u2019s"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "truncated",
+      "seed": 3,
+      "status": 200,
+      "seconds": 6.5,
+      "completion_tokens": null,
+      "finish": "length",
+      "calls": 1,
+      "class": "cut_off",
+      "detail": "{\"path\":\"notes.md\",\"content\":\"Tea has a storied past that dates back over 5,000 years, intertwining with the rise of civilizations, trade routes, and cultural rituals",
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "type": "function",
+            "id": "1MCR4T67ZazdQX376LbHxahSRRExY2Of",
+            "function": {
+              "name": "write_file",
+              "arguments": "{\"path\":\"notes.md\",\"content\":\"Tea has a storied past that dates back over 5,000 years, intertwining with the rise of civilizations, trade routes, and cultural rituals"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
