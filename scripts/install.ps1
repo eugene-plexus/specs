@@ -1837,11 +1837,27 @@ else {
     # profile. The installer owns its own copy, so nothing the user
     # already has is touched and removing the prefix is complete.
     $env:UV_UNMANAGED_INSTALL = Join-Path $Prefix "bin"
+    # **In a child process, never in this one** (found 2026-10-01, C1's
+    # first Windows runner run). uv's installer catches any error of its
+    # own, writes the reason to the information stream and calls
+    # `exit 1`. Run here, that exit ended THIS installer, and the
+    # silencing it needed took the reason with it: the run stopped after
+    # "fetching uv" with exit code 1 and no words. A child's exit is its
+    # own, and Invoke-Native prints what it said when it fails.
+    $uvScript = Join-Path ([IO.Path]::GetTempPath()) "eugene-plexus-uv-install-$PID.ps1"
     try {
-        & ([scriptblock]::Create((Invoke-RestMethod https://astral.sh/uv/install.ps1))) *>&1 | Out-Null
+        Invoke-RestMethod https://astral.sh/uv/install.ps1 -OutFile $uvScript
     }
     catch {
-        Die "could not install uv from https://astral.sh/uv/install.ps1 -- $($_.Exception.Message)"
+        Die "could not download https://astral.sh/uv/install.ps1 -- $($_.Exception.Message)"
+    }
+    try {
+        Invoke-Native -Exe (Get-Process -Id $PID).Path `
+            -Arguments @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $uvScript) `
+            -FailMessage "uv's installer (https://astral.sh/uv/install.ps1) failed; its words are above"
+    }
+    finally {
+        Remove-Item -LiteralPath $uvScript -Force -ErrorAction SilentlyContinue
     }
     if (-not (Test-Path $UvExe)) { Die "uv did not land at $UvExe" }
     Say "uv $((& $UvExe --version) -replace '^uv ')"
