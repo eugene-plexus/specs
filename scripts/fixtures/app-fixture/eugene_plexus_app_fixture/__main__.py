@@ -14,13 +14,19 @@ index. It is the smallest honest spoke:
 * `GET /env` lists the NAMES of the `EUGENE_PLEXUS_*` variables it was
   started with -- never a value -- so the acceptance run can assert that
   no hub credential reached it;
-* `GET /` is a page, so there is something for Open to open.
+* `GET /` is a page, so there is something for Open to open;
+* `GET /probe?root=<dir>` (C1, `workbench.md` §2) says who the app runs
+  as and which files under `root` it can open -- names only, never a byte
+  of what they hold -- plus, on Windows, which of its account's stored
+  credentials mention Eugene. It is how the acceptance run proves an app
+  cannot read the install's keys, rather than assuming it.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -72,6 +78,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, sorted(k for k in os.environ if k.startswith("EUGENE_PLEXUS_")))
         elif url.path == "/ask":
             self._ask(parse_qs(url.query).get("model", [""])[0])
+        elif url.path == "/probe":
+            self._send(200, _probe(parse_qs(url.query).get("root", [""])[0]))
         elif url.path in ("/v1/config", "/v1/config/schema"):
             if not self._authorized():
                 self._send(401, {"detail": "this app accepts only its admin token"})
@@ -137,6 +145,121 @@ class _Handler(BaseHTTPRequestHandler):
 
     def log_message(self, *_args: object) -> None:
         return None
+
+
+_PROBE_LIMIT = 20000
+
+
+def _whoami() -> str:
+    if sys.platform == "win32":
+        import subprocess
+
+        # `whoami` names LocalSystem `nt authority\system` and a virtual
+        # service account `nt service\<name>`, which is the distinction
+        # the run asserts; the API calls name LocalSystem after the machine.
+        system = os.environ.get("SystemRoot", r"C:\Windows")
+        try:
+            out = subprocess.run(
+                [os.path.join(system, "System32", "whoami.exe")],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return out.stdout.strip() or "?"
+        except OSError:
+            return os.environ.get("USERNAME", "?")
+    import pwd
+
+    uid = os.getuid()
+    try:
+        return f"{pwd.getpwuid(uid).pw_name} (uid {uid})"
+    except KeyError:
+        return f"uid {uid}"
+
+
+def _readable(path: str) -> bool:
+    try:
+        with open(path, "rb") as handle:
+            handle.read(1)
+        return True
+    except OSError:
+        return False
+
+
+def _credentials() -> list[str] | None:
+    """Target names of this account's stored credentials that mention
+    Eugene -- what an app could read from the keyring. Windows only."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    class _Credential(ctypes.Structure):
+        _fields_ = [
+            ("Flags", wintypes.DWORD),
+            ("Type", wintypes.DWORD),
+            ("TargetName", wintypes.LPWSTR),
+            ("Comment", wintypes.LPWSTR),
+            ("LastWritten", wintypes.FILETIME),
+            ("CredentialBlobSize", wintypes.DWORD),
+            ("CredentialBlob", ctypes.c_void_p),
+            ("Persist", wintypes.DWORD),
+            ("AttributeCount", wintypes.DWORD),
+            ("Attributes", ctypes.c_void_p),
+            ("TargetAlias", wintypes.LPWSTR),
+            ("UserName", wintypes.LPWSTR),
+        ]
+
+    advapi = ctypes.windll.advapi32
+    count = wintypes.DWORD()
+    found = ctypes.POINTER(ctypes.POINTER(_Credential))()
+    if not advapi.CredEnumerateW(None, 0, ctypes.byref(count), ctypes.byref(found)):
+        return []  # ERROR_NOT_FOUND: this account has none
+    try:
+        names = [found[i].contents.TargetName or "" for i in range(count.value)]
+    finally:
+        advapi.CredFree(found)
+    return sorted(n for n in names if "eugene" in n.lower())
+
+
+def _probe(root: str) -> dict:
+    readable: list[str] = []
+    unlistable: list[str] = []
+    walked = 0
+    base = Path(root) if root else None
+    if base is not None and base.is_dir():
+        for directory, dirnames, filenames in os.walk(
+            base, onerror=lambda e: unlistable.append(str(e.filename))
+        ):
+            for name in filenames:
+                walked += 1
+                if walked > _PROBE_LIMIT:
+                    break
+                path = os.path.join(directory, name)
+                if not os.path.islink(path) and _readable(path):
+                    readable.append(os.path.relpath(path, base).replace(os.sep, "/"))
+            dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(directory, d))]
+    return {
+        "user": _whoami(),
+        "root": root,
+        "rootListable": bool(base is not None and _listable(base)),
+        "readable": sorted(readable),
+        "unlistable": sorted(
+            os.path.relpath(p, base).replace(os.sep, "/") if base else p for p in unlistable
+        ),
+        "walkedFiles": walked,
+        "truncated": walked > _PROBE_LIMIT,
+        "credentials": _credentials(),
+        "keyFileReadable": _readable(os.environ.get("EUGENE_PLEXUS_APP_KEY_FILE") or "\0"),
+    }
+
+
+def _listable(path: Path) -> bool:
+    try:
+        next(iter(os.scandir(path)), None)
+        return True
+    except OSError:
+        return False
 
 
 def main() -> None:

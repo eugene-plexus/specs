@@ -1,0 +1,63 @@
+# C1 (docs/design/workbench.md §2): an app cannot read the install's keys.
+#
+# Installs Eugene as the machine's service on a GitHub runner -- elevated
+# install.ps1 on Windows (LocalSystem), sudo install.sh on Ubuntu (the
+# eugene-plexus account) -- onboards it, installs two copies of the app
+# fixture and asks each, from inside its own process, what it can open.
+#
+# Before C1 this fails by design: an app runs as the agent's own account.
+#
+# Try a candidate before pinning it: dispatch with the component SHAs, and
+# the run installs those instead of the installer's pins.
+
+name: C1 app accounts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/c1-app-accounts-acceptance.py
+      - scripts/fixtures/app-fixture/**
+      - .github/workflows/c1-app-accounts.yml
+  workflow_dispatch:
+    inputs:
+      agent_ref:
+        description: "Candidate agent SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
+      control_ref:
+        description: "Candidate control SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  service-install:
+    name: C1 on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v6
+      # For the harness alone, which is stdlib only; the install brings its
+      # own Python through uv.
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: An app cannot read the install's keys
+        env:
+          EP_PIN_AGENT: ${{ inputs.agent_ref }}
+          EP_PIN_CONTROL: ${{ inputs.control_ref }}
+        run: python scripts/c1-app-accounts-acceptance.py --report c1-report.json
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: c1-${{ matrix.os }}
+          path: c1-report.json
+          if-no-files-found: warn

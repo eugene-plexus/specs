@@ -542,5 +542,5 @@ an installer pin, a sabotage pass, and both installers re-pinned.
 | --- | --- | --- | --- |
 | 1 | ~~The app's name~~ | **Taken 2026-10-01: Workbench**, with workshop names in its menus and parts (§6) | — |
 | 2 | Workbench's vocabulary | **The table in §6** | Each workshop name is one more word a beginner must learn |
-| 3 | What C2 builds first | **Both cases in one slice.** The protocol is the same, and per-person revocation is the reason the business case exists | The solo case alone ships sooner and is the whole of today's audience |
+| 3 | ~~What C2 builds first~~ | **Taken 2026-10-01: both cases in one slice.** The protocol is the same, and per-person revocation is the reason the business case exists | The solo case alone ships sooner and is the whole of today's audience |
 | 4 | ~~The animation's format~~ | **Taken 2026-10-01: animated SVG, made with an LLM** against a text gate (§6.1) | — |
