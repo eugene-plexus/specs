@@ -8,3 +8,5 @@ pytest-asyncio==0.26.0
 openai==3.20.0
 # P8: Claude Code's WebSearch request, made by the Anthropic SDK, unchanged.
 anthropic==1.9.0
+# C2: the sign-in acceptance signs in through Authlib, the library Open WebUI uses.
+authlib==1.8.0

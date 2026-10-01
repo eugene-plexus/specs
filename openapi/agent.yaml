@@ -417,6 +417,36 @@ paths:
         "429":
           $ref: "components/common.yaml#/components/responses/Problem"
 
+  /oidc/{path}:
+    parameters:
+      - {name: path, in: path, required: true, schema: {type: string}}
+    get:
+      operationId: forwardOidcGet
+      summary: Signing in with Eugene, through this machine
+      description: |
+        Forwards to the control root's `/oidc/*` (`control.yaml`), the
+        OpenID Connect provider (C2, `sign-in-with-eugene.md`). Public:
+        it is the sign-in page and the provider's endpoints, and the root
+        authenticates what needs it. So the issuer an app is configured
+        with is this machine's address and `/oidc`.
+
+        This agent passes the host and scheme it served, after its host
+        allowlist has accepted them, and the caller's address for the
+        sign-in limiter, with a token of its own the root checks: the
+        root trusts those three from an agent and from nothing else.
+      responses:
+        '200': {description: "The provider's answer, passed through."}
+        '503':
+          $ref: "components/common.yaml#/components/responses/Problem"
+    post:
+      operationId: forwardOidcPost
+      summary: Signing in with Eugene, through this machine
+      description: As GET.
+      responses:
+        '200': {description: "The provider's answer, passed through."}
+        '503':
+          $ref: "components/common.yaml#/components/responses/Problem"
+
   /v1/logs/stream:
     get:
       tags: [logs]
@@ -6367,7 +6397,10 @@ components:
         `EUGENE_PLEXUS_APP_GATEWAY_URL` (absent when none could be
         found), keeps its state under `EUGENE_PLEXUS_APP_DATA_DIR`, and —
         with `configTrio` — requires `EUGENE_PLEXUS_APP_ADMIN_TOKEN` as
-        the bearer on its config trio.
+        the bearer on its config trio. With `signIn`, it signs people in
+        with Eugene (C2) using `EUGENE_PLEXUS_APP_OIDC_ISSUER`,
+        `EUGENE_PLEXUS_APP_OIDC_CLIENT_ID` and the secret in the file
+        named by `EUGENE_PLEXUS_APP_OIDC_SECRET_FILE`.
       required: [id, name, source, version, package, entry]
       properties:
         id:
@@ -6452,6 +6485,19 @@ components:
             $ref: "#/components/schemas/AppHubSurface"
           default: [inference]
           description: The hub surfaces the app's key is scoped to.
+        signIn:
+          type: boolean
+          default: false
+          description: |
+            Whether the app signs people in with Eugene (C2). At install
+            the agent registers it as an app that signs in with Eugene,
+            with `signInCallbackPath` on each address it is opened at, and
+            hands it the client's id and secret. Uninstall removes it.
+        signInCallbackPath:
+          type: string
+          default: /oidc/callback
+          pattern: "^/[A-Za-z0-9._~/-]*$"
+          description: Where on the app's own origin Eugene sends a person back after signing in.
         localActions:
           type: boolean
           default: true
@@ -6725,6 +6771,16 @@ components:
         localActions:
           type: boolean
           description: What its manifest declares (`AppManifest.localActions`).
+        signIn:
+          type: boolean
+          description: Whether it signs people in with Eugene (`AppManifest.signIn`).
+        oidcClientId:
+          type: string
+          description: |
+            The id it signs people in with, as an app registered with the
+            control root (`/v1/oidc/clients` on `control.yaml`). Absent when
+            it does not sign people in, or its registration failed (`detail`
+            says why).
         installedAt:
           type: string
           format: date-time

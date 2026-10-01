@@ -295,6 +295,289 @@ paths:
         '404':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
+  # -------- signing in with Eugene: OpenID Connect (C2) --------
+  #
+  # Design: docs/design/sign-in-with-eugene.md. The root is the provider;
+  # browsers and apps reach it through an agent's `/oidc/*`, which forwards
+  # here. These paths are OIDC's, not Eugene's API: the answers are
+  # OAuth's (`error`, `error_description`), not Problem documents.
+
+  /oidc/.well-known/openid-configuration:
+    get:
+      operationId: oidcDiscovery
+      summary: OpenID Provider metadata (OIDC Discovery 1.0)
+      description: |
+        Public. The issuer is `oidcIssuer` when the operator has set one,
+        otherwise the address the request arrived at through an agent
+        (D11). Offers the code flow only, PKCE `S256`, RS256 ID tokens and
+        `client_secret_basic`.
+      responses:
+        '200':
+          description: Provider metadata.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OidcDiscovery'}
+  /oidc/jwks:
+    get:
+      operationId: oidcJwks
+      summary: The provider's public keys (JWK Set)
+      description: Public. The RSA key every sign-in token is signed with, by `kid`; during a rotation, the old one too.
+      responses:
+        '200':
+          description: The JWK Set.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JsonWebKeySet'}
+  /oidc/authorize:
+    get:
+      operationId: oidcAuthorize
+      summary: The sign-in page
+      description: |
+        Public. Validates the request and shows the sign-in form: the
+        passphrase alone on an install with no people, a name and a
+        password once there are people (D4). A `client_id` or
+        `redirect_uri` that does not match a registered app is an error
+        page and never a redirect; anything else wrong goes back to the app
+        as `error=` (RFC 6749 §4.1.2.1). `code_challenge` with `S256`,
+        `state` and `nonce` are required.
+      parameters:
+        - {name: response_type, in: query, required: true, schema: {type: string, enum: [code]}}
+        - {name: client_id, in: query, required: true, schema: {type: string}}
+        - {name: redirect_uri, in: query, required: true, schema: {type: string}}
+        - {name: scope, in: query, required: true, schema: {type: string}}
+        - {name: state, in: query, required: true, schema: {type: string}}
+        - {name: nonce, in: query, required: true, schema: {type: string}}
+        - {name: code_challenge, in: query, required: true, schema: {type: string}}
+        - {name: code_challenge_method, in: query, required: true, schema: {type: string, enum: [S256]}}
+      responses:
+        '200':
+          description: The sign-in page.
+          content:
+            text/html:
+              schema: {type: string}
+        '302': {description: Back to the app with `error=`.}
+        '400':
+          description: An unknown app or redirect URI, as a page.
+          content:
+            text/html:
+              schema: {type: string}
+    post:
+      operationId: oidcSignIn
+      summary: Submit the sign-in form
+      description: |
+        Form fields: `request` (the pending request the page was rendered
+        for, good once, for 10 minutes), `password`, and `name` once the
+        install has people. Success redirects to the app with `code` and
+        `state`. A wrong name or password answers the page again with the
+        same sentence for both. Five failures a minute per address, or per
+        name, is 429.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: {type: object, additionalProperties: {type: string}}
+      responses:
+        '302': {description: Back to the app with `code` and `state`.}
+        '200':
+          description: The page again, with why.
+          content:
+            text/html:
+              schema: {type: string}
+        '403':
+          description: This person may not use this app; the page says so.
+          content:
+            text/html:
+              schema: {type: string}
+        '429':
+          description: Too many failed sign-ins; the page says when to try again.
+          content:
+            text/html:
+              schema: {type: string}
+  /oidc/token:
+    post:
+      operationId: oidcToken
+      summary: Trade a code, or a refresh token, for tokens
+      description: |
+        `client_secret_basic`. `grant_type` is `authorization_code` (with
+        `code`, `code_verifier`, `redirect_uri`) or `refresh_token`. A
+        refresh is refused when the person has been disabled or deleted,
+        their password changed after the sign-in, or the sign-in was
+        revoked (D6).
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: {type: object, additionalProperties: {type: string}}
+      responses:
+        '200':
+          description: Tokens.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OidcTokenResponse'}
+        '400':
+          description: OAuth error (`invalid_grant`, `invalid_request`, `unsupported_grant_type`).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '401':
+          description: '`invalid_client`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+  /oidc/userinfo:
+    get:
+      operationId: oidcUserinfo
+      summary: Who the access token was issued for
+      description: A bearer access token from `/oidc/token`. The same claims as the ID token's, less the token ones.
+      responses:
+        '200':
+          description: Claims.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401':
+          description: Missing, expired or revoked access token.
+  /oidc/revoke:
+    post:
+      operationId: oidcRevoke
+      summary: Sign out by revoking a refresh token (RFC 7009)
+      description: '`client_secret_basic`. Revokes the sign-in the token belongs to. 200 for a token already invalid, as RFC 7009 requires.'
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: {type: object, additionalProperties: {type: string}}
+      responses:
+        '200': {description: 'Revoked, or nothing to revoke.'}
+        '401':
+          description: '`invalid_client`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+
+  /v1/people:
+    get:
+      operationId: listPeople
+      summary: The people who may sign in to apps
+      description: Operator only. Never a password or its verifier.
+      responses:
+        '200':
+          description: The people.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PersonList'}
+    post:
+      operationId: createPerson
+      summary: Add a person
+      description: Operator only; active, unlocked root. A name is unique, compared case-folded, and `operator` is the owner's.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PersonCreateRequest'}
+      responses:
+        '201':
+          description: The person.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Person'}
+        '409':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '422':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+  /v1/people/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    patch:
+      operationId: updatePerson
+      summary: Change a person's name, apps, or whether they are disabled
+      description: Operator only. Disabling refuses their next sign-in and their apps' next refresh.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PersonUpdateRequest'}
+      responses:
+        '200':
+          description: The person.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Person'}
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      operationId: deletePerson
+      summary: Remove a person
+      description: Operator only. Their sign-ins stop at their apps' next refresh.
+      responses:
+        '204': {description: Removed.}
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+  /v1/people/{id}/password:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    put:
+      operationId: setPersonPassword
+      summary: Set a person's password
+      description: |
+        Operator only: how a forgotten password is reset (D10, Troy). A
+        sign-in from before the new password does not refresh. At least
+        12 characters, as the passphrase.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PersonPasswordRequest'}
+      responses:
+        '204': {description: Set.}
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '422':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+  /v1/oidc/clients:
+    get:
+      operationId: listOidcClients
+      summary: The apps that sign in with Eugene
+      description: Operator only. Never a secret.
+      responses:
+        '200':
+          description: The apps.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OidcClientList'}
+    post:
+      operationId: createOidcClient
+      summary: Register an app that signs in with Eugene
+      description: |
+        Operator only; active, unlocked root. Redirect URIs are matched
+        exactly (RFC 9700 §4.1); plain `http` is allowed, because a home
+        network has no certificates. The secret is in this answer and
+        nowhere else.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OidcClientCreateRequest'}
+      responses:
+        '201':
+          description: The app and its one-time secret.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OidcClientCreated'}
+        '422':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+  /v1/oidc/clients/{clientId}:
+    parameters:
+      - {name: clientId, in: path, required: true, schema: {type: string}}
+    delete:
+      operationId: deleteOidcClient
+      summary: Stop an app signing in with Eugene
+      description: Operator only. Its sign-ins stop at its next refresh.
+      responses:
+        '204': {description: Removed.}
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
   # -------- nodes: the hosts this install spans --------
 
   /v1/nodes:
@@ -1949,7 +2232,19 @@ components:
         - rotateSigningKey
         - revokeSession
         - promote
+        - putPerson
+        - setPersonPassword
+        - deletePerson
+        - putOidcClient
+        - deleteOidcClient
+        - putOidcKey
+        - revokeSignIn
       description: |
+        **The seven sign-in operations (C2, 2026-10-01)** replicate people,
+        the apps that sign in, the provider's sealed RSA key and revoked
+        sign-ins, so a promoted standby signs people in as the old root
+        did and keeps refusing what it refused.
+
         The complete set of control-state mutations. Closed on purpose:
         **every change goes through one writer and one ordered path**, and
         an operation that is not in this list is an operation that would
@@ -2120,6 +2415,217 @@ components:
             The public half of the above, carried in the clear so a
             standby can report the identity it would assume without
             holding the passphrase.
+        people:
+          type: array
+          items: {$ref: '#/components/schemas/SnapshotPerson'}
+          description: |
+            The people who may sign in to apps, as `putPerson`,
+            `setPersonPassword` and `deletePerson` left them, with their
+            Argon2id verifiers: as `passphraseVerifier` is here, and for the
+            same reason (a promoted standby signs people in).
+        oidcClients:
+          type: array
+          items: {$ref: '#/components/schemas/SnapshotOidcClient'}
+        oidcKeys:
+          type: array
+          items: {$ref: '#/components/schemas/SnapshotOidcKey'}
+          description: |
+            The provider's RSA keys, newest first, each sealed under the
+            passphrase-derived key as `sealedSigningKey` is.
+        revokedSignIns:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/RevokedSession'
+          description: Sign-ins revoked at `/oidc/revoke` and not yet expired, by their `jti`.
+
+    SnapshotPerson:
+      type: object
+      required: [id, name, passwordVerifier, disabled, createdAt, passwordChangedAt]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        displayName: {type: string}
+        passwordVerifier: {type: string, description: 'Argon2id, the passphrase''s parameters.'}
+        apps:
+          type: [array, 'null']
+          items: {type: string}
+        disabled: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        passwordChangedAt: {type: string, format: date-time}
+
+    SnapshotOidcClient:
+      type: object
+      required: [clientId, name, secretVerifier, redirectUris, createdAt]
+      properties:
+        clientId: {type: string}
+        name: {type: string}
+        secretVerifier: {type: string, description: 'SHA-256 of the 32 random bytes of the secret, hex.'}
+        redirectUris:
+          type: array
+          items: {type: string}
+        owner: {type: string}
+        createdAt: {type: string, format: date-time}
+
+    SnapshotOidcKey:
+      type: object
+      required: [kid, sealedKey, publicJwk, createdAt]
+      properties:
+        kid: {type: string}
+        sealedKey: {type: string}
+        publicJwk: {type: object, additionalProperties: true}
+        createdAt: {type: string, format: date-time}
+
+    Person:
+      type: object
+      description: |
+        Someone the operator lets sign in to apps (C2). Not an operator:
+        a person's sign-in opens their apps and nothing in the hub.
+      required: [id, name, disabled, createdAt, passwordChangedAt]
+      properties:
+        id: {type: string, description: 'Stable; the `sub` in their ID tokens.'}
+        name: {type: string, description: 'What they sign in with. Unique, compared case-folded.'}
+        displayName: {type: string}
+        apps:
+          type: [array, 'null']
+          items: {type: string}
+          description: The `clientId`s they may sign in to. Null is every app on the install.
+        disabled: {type: boolean}
+        createdAt: {type: string, format: date-time}
+        passwordChangedAt: {type: string, format: date-time}
+
+    PersonList:
+      type: object
+      required: [people]
+      properties:
+        people:
+          type: array
+          items: {$ref: '#/components/schemas/Person'}
+        operatorName:
+          type: string
+          description: The name the owner signs in with, once the install has people.
+
+    PersonCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, password]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 64, pattern: "^[^\\s@][^@]*[^\\s@]$|^[^\\s@]$"}
+        displayName: {type: string, maxLength: 120}
+        password: {type: string, minLength: 12, maxLength: 1024}
+        apps:
+          type: [array, 'null']
+          items: {type: string}
+
+    PersonUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        displayName: {type: string, maxLength: 120}
+        apps:
+          type: [array, 'null']
+          items: {type: string}
+        disabled: {type: boolean}
+
+    PersonPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
+        password: {type: string, minLength: 12, maxLength: 1024}
+
+    OidcClient:
+      type: object
+      required: [clientId, name, redirectUris, createdAt]
+      properties:
+        clientId: {type: string}
+        name: {type: string}
+        redirectUris:
+          type: array
+          items: {type: string}
+        owner:
+          type: string
+          description: '`app:<id>@<node>` for an app the registry installed; absent for one the operator added.'
+        createdAt: {type: string, format: date-time}
+
+    OidcClientList:
+      type: object
+      required: [clients]
+      properties:
+        clients:
+          type: array
+          items: {$ref: '#/components/schemas/OidcClient'}
+        issuer:
+          type: string
+          description: '`oidcIssuer` when the operator set one; otherwise absent, and an app uses the address it reaches Eugene at, with `/oidc`.'
+
+    OidcClientCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, redirectUris]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80}
+        redirectUris:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: {type: string, minLength: 1, maxLength: 2048}
+        owner: {type: string, maxLength: 120}
+
+    OidcClientCreated:
+      type: object
+      required: [client, clientSecret]
+      properties:
+        client: {$ref: '#/components/schemas/OidcClient'}
+        clientSecret:
+          type: string
+          description: In this answer only.
+
+    OidcDiscovery:
+      type: object
+      additionalProperties: true
+      required: [issuer, authorization_endpoint, token_endpoint, jwks_uri]
+      properties:
+        issuer: {type: string}
+        authorization_endpoint: {type: string}
+        token_endpoint: {type: string}
+        userinfo_endpoint: {type: string}
+        revocation_endpoint: {type: string}
+        jwks_uri: {type: string}
+        response_types_supported:
+          type: array
+          items: {type: string}
+        id_token_signing_alg_values_supported:
+          type: array
+          items: {type: string}
+        code_challenge_methods_supported:
+          type: array
+          items: {type: string}
+
+    JsonWebKeySet:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items: {type: object, additionalProperties: true}
+
+    OidcTokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in, id_token]
+      properties:
+        access_token: {type: string}
+        token_type: {type: string, enum: [Bearer]}
+        expires_in: {type: integer}
+        id_token: {type: string}
+        refresh_token: {type: string}
+        scope: {type: string}
+
+    OAuthError:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+        error_description: {type: string}
 
     PromoteRequest:
       type: object

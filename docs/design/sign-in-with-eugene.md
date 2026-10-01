@@ -165,8 +165,29 @@ issued. The operator may use every app.
 - **An app that keeps its own session after sign-in** (Open WebUI does)
   loses them only when that session ends. The console says so beside the
   Disable button.
-- **Sign-out at the provider** (`/oidc/logout`, RP-Initiated Logout 1.0)
-  ends the refresh tokens from that sign-in.
+- **Sign-out** is the app revoking its refresh token at `/oidc/revoke`
+  (RFC 7009). With no session at the provider (D5) there is nothing else to
+  end, so RP-Initiated Logout is not offered.
+
+### D11. The issuer is the address the app reaches Eugene at
+
+An operator sets `oidcIssuer` on the control root when one address should
+be the only one. Unset, the issuer is the address the request arrived at
+through the control host's agent, so an app configured with
+`http://192.168.1.5:8079/oidc` gets that issuer in discovery and in its
+tokens, and an app on the same machine at `127.0.0.1` gets that one. The
+agent passes the host and scheme it served, after its host allowlist (the
+DNS-rebinding defence) has accepted them. The root trusts that header only
+from loopback, where its own agent is. A code remembers the issuer it was
+asked under, and its tokens carry it.
+
+### D12. Every sign-in token is signed with the sign-in key
+
+ID tokens, access tokens and refresh tokens are all RS256 JWTs under the
+root's RSA key, each with its own `typ` (`JWT`, `at+jwt`, `rt+jwt`). Hub
+verifiers accept EdDSA `ep-*` classes only, so none of the three opens
+anything in the hub. A refresh token names its sign-in, and a revoked
+sign-in is a replicated entry, as a revoked session is.
 
 ### D10. Forgotten passwords (§9 call 2)
 
@@ -191,7 +212,7 @@ Plain words here; the workshop names are Workbench's.
 
 - **`control.yaml`:**
   - the OIDC endpoints: discovery, JWKS, authorize, token, userinfo,
-    logout;
+    revoke;
   - `/v1/people` and `/v1/oidc/clients`, operator-only;
   - `LogOp` gains the person and client operations;
   - `Person`, `OidcClient`, and their requests.
