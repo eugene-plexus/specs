@@ -385,9 +385,59 @@ and the library:
     it.
 
 **Decoration, never information.** A pose carries no meaning a screen
-reader would miss (`alt=""`, as on the website), does not move, and stays
-off the chat itself. The bench is for the work. The colours are the
-console's Plexus tokens, whose apricot is the mascot's shirt.
+reader would miss (`alt=""`, as on the website), stands still, and stays
+off the chat itself. The bench is for the work. The one exception is §6.1.
+The colours are the console's Plexus tokens, whose apricot is the mascot's
+shirt.
+
+### 6.1 The working animation (Troy, 2026-10-01; a late slice)
+
+Every major LLM app shows that the model is working. Claude's is an
+animated logo with funny words. **Workbench's is Eugene at the bench:** a
+series of short loops in which he measures a board, checks it with a
+square, hammers a nail, and so on. A workshop phrase sits beside each:
+
+- *Measuring twice…*
+- *Squaring up…*
+- *Hammering it out…*
+- *Sawing…*
+- *Sanding the edges…*
+- *Checking the level…*
+- *Clamping…*
+
+**It is commissioned from an artist,** so it is a late slice. The four
+still poses carry Workbench until it arrives. The brief for the artist:
+
+- **Each loop** is 2-4 seconds and seamless, in the style of the
+  website's four poses, apricot shirt included.
+- **A transparent background,** legible from 48 to 160 px, on both the
+  dark and the light theme.
+- **One scene per tool,** so loops can be added later without the others
+  being redrawn.
+- **Delivered as Lottie** (After Effects' usual export), with a still
+  first frame for each loop. That is call 4 in §10.
+- **The rights are written into the commission.** It ships in an
+  Apache-2.0 repo, so the artist assigns it, or licenses it under terms
+  that allow that.
+
+**Where it runs:**
+
+- **On a turn,** from the moment it is sent until the first token
+  arrives.
+- **On a work order,** for as long as it runs.
+- **Not on a stream that is already flowing.** By then the words arriving
+  are the sign of work.
+- **Never for an error.** A failure gets the still *curious* pose and the
+  sentence naming its cause.
+
+**The joke never stands in for the state:**
+
+- **The real progress shows beside it, in plain words,** wherever there is
+  some: a model loading, a long prompt being read (the progress built
+  2026-09-27), or a work order's percentage.
+- **A screen reader hears the plain state,** not the phrase.
+- **With reduced motion requested** (S9), the loop is replaced by the still
+  *working* pose. The phrase stays.
 
 ---
 
@@ -433,6 +483,9 @@ These run model-chosen actions in the app's process, so each needs C1:
 - **Local image, speech and video models.** A GPU app, admitted by the
   agent's ledger (apps §8 reserved `resources: gpu` for this).
 
+Not a model-chosen action, but late too: **the working animation**
+(§6.1), once the commission is delivered.
+
 ---
 
 ## 9. Order
@@ -445,6 +498,8 @@ These run model-chosen actions in the app's process, so each needs C1:
    of C3 if Troy wants the choice first.
 5. MCP servers, filesystem tools and local media models, each designed
    first.
+6. **The working animation** (§6.1), whenever the commissioned loops
+   arrive. The still poses stand in until then.
 
 Each slice ends the project's way: every specs CI script run locally before
 an installer pin, a sabotage pass, and both installers re-pinned.
@@ -458,3 +513,4 @@ an installer pin, a sabotage pass, and both installers re-pinned.
 | 1 | ~~The app's name~~ | **Taken 2026-10-01: Workbench**, with workshop names in its menus and parts (§6) | — |
 | 2 | Workbench's vocabulary | **The table in §6** | Each workshop name is one more word a beginner must learn |
 | 3 | What C2 builds first | **Both cases in one slice.** The protocol is the same, and per-person revocation is the reason the business case exists | The solo case alone ships sooner and is the whole of today's audience |
+| 4 | The animation's format (§6.1) | **Lottie**, because it is what animators deliver, played by a small library, with each loop's first frame as the still | An animated SVG needs no player and takes the theme's colours, but few animators work in it |
