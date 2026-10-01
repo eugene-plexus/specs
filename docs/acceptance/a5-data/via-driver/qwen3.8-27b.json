@@ -1,0 +1,37 @@
+{
+  "model": "qwen3.8-27b",
+  "file": "Qwen3.8-27B-UD-Q4_K_M.gguf",
+  "streamed": false,
+  "via_driver": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20
+  },
+  "samples": 2,
+  "records": [
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 51.1,
+      "completion_tokens": 153,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.8-27b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 39.9,
+      "completion_tokens": 121,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    }
+  ]
+}

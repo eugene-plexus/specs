@@ -1,6 +1,6 @@
-# MLX — the third engine, experimental until a Mac says otherwise
+# MLX — the third engine (experimental until A4, 2026-09-30)
 
-**Status: integrated on `main` 2026-09-22 (roadmap B1), physical Apple
+**Status: integrated on `main` 2026-09-22 (roadmap B1); verified on GitHub's virtual Macs and no longer experimental (A4, 2026-09-30). Earlier text: physical Apple
 silicon checks pending.** Supersedes the branch-only
 `feat/mlx-engine` work (`specs 60cc15e` / `agent 0a4da70`, 2026-09-11)
 and its design record `mlx-engine-unverified.md`, which stays on that
@@ -156,12 +156,12 @@ on macos-14, -15 and -26. Against the list below, as it stood:
    states a context length. And `/v1/models` crashes on a machine with no
    Hugging Face cache, which nothing of ours reads.
 
-**Still owed, and needing a rented Mac (Troy's OK):** a bare-metal GPU at
-a real size, a model near the working set on real memory, a reboot and a
-login, and a second device reaching the Mac through its firewall. The
-acceptance record has the list. MLX stays marked experimental until Troy
-decides otherwise, because the UI uses that flag to hide MLX on machines
-that cannot run it.
+**Untested, and no Mac will be rented for now (Troy, 2026-09-30):** a
+bare-metal GPU at a real size, a model near the working set on real
+memory, a reboot and a login, and a second device reaching the Mac through
+its firewall. **MLX is no longer experimental**, on Troy's call on this
+evidence (agent `05d88f8`). The UI now lists an engine where it can run
+rather than by the flag (ui `130306d`).
 
 ## What a physical Apple silicon run must still settle
 

@@ -1,0 +1,49 @@
+{
+  "model": "qwen3-coder-30b-a3b",
+  "file": "Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf",
+  "streamed": false,
+  "via_driver": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.7,
+    "top_p": 0.8,
+    "top_k": 20,
+    "repeat_penalty": 1.05
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.1,
+      "completion_tokens": 11,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 0.5,
+      "completion_tokens": 11,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3-coder-30b-a3b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 0.5,
+      "completion_tokens": 11,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    }
+  ]
+}

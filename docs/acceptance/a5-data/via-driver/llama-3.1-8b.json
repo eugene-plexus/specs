@@ -1,0 +1,47 @@
+{
+  "model": "llama-3.1-8b",
+  "file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+  "streamed": false,
+  "via_driver": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.6,
+    "top_p": 0.9
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 1.1,
+      "completion_tokens": 10,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 1.8,
+      "completion_tokens": 17,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "llama-3.1-8b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 2.1,
+      "completion_tokens": 21,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    }
+  ]
+}

@@ -31,20 +31,26 @@
   allows two thirds, and blind to a changed wired limit), the device's
   name, an MLX recipe that could not run, a sealed root making engines
   routable on faith, and an MLX model's parameter count and chat template.
-  **Owed, and each needs Troy's OK to rent a Mac:** a bare-metal GPU at a
-  real size, a model near the working set, a reboot and a login, a second
-  device through the firewall. MLX's `experimental` flag stays until Troy
-  decides, because the UI hides MLX by it.
+  **Untested, and no Mac will be rented for now (Troy, 2026-09-30):** a
+  bare-metal GPU at a real size, a model near the working set, a reboot
+  and a login, a second device through the firewall. MLX's `experimental`
+  label is off on Troy's call; the UI now lists an engine where it can
+  run instead of by that flag.
 - **A5 is measured; nothing is built**
   ([record](../acceptance/a5-tool-calls-measurement.md),
   [design](tool-call-repair.md)). Ten models, 314 answers, through
   llama.cpp, streamed and not. There was no broken JSON, no call left in
   text, and no cut-off call that looked whole. The starter set made no
   mistake of its own. The failure every client meets is the engine
-  ignoring a named `tool_choice`; structured output answers it where
-  `"required"` does not. **Pickup: Troy's calls in the design's §2**:
-  build that repair and longer tool-call ids, and whether to file the
-  named-choice bug upstream.
+  ignoring a named `tool_choice`. **The repair is built and pinned**
+  (driver `53412d5`): structured output, where `"required"` does not
+  work. A forced call through the driver went from 0 of 6 to 28 of 28
+  across ten models, and tool-call ids are long now. MLX's `experimental`
+  label is off (agent `05d88f8`, UI dist `e404b6b`). Troy writes the
+  llama.cpp report himself: their policy forbids AI-written posts, and
+  the evidence notes are in `docs/private/llama-cpp-report-notes.md`.
+  **No rented Mac** (Troy, 2026-09-30). **Pickup: A6**, a chat screen
+  beginners stay in.
 - Not scheduled without Troy: PB2's remainder (the model's row saying so
   when fit places a built profile differently at launch; Home's "make it
   faster", call 6, later).
@@ -94,7 +100,7 @@ first:**
 | A2 | Profile builder, PB2: the page (ui, library `builtBy`, admission) | same | **Built 2026-09-30.** Call 6 taken (the profile page); call 5 became moe-aware-fit call A, taken |
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine.md`](mlx-engine.md) (A4 section), B1 | **Built on GitHub's macOS runners 2026-09-30**; the rented-Mac list is in the record, and dropping the `experimental` flag is Troy's call |
-| A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured 2026-09-30.** Almost nothing to repair. A named `tool_choice` is ignored by llama.cpp, and structured output answers it; §2 holds the calls |
+| A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured and built 2026-09-30.** Almost nothing to repair. The one repair, a named `tool_choice` answered by structured output on llama-server, is pinned |
 | A6 | A chat screen beginners stay in, or a one-click Open WebUI through the apps registry | [`apps-and-spokes.md`](apps-and-spokes.md) | "Adequate", per the 2026-09-11 call. The chat spoke was restarted from Troy's 2026-09-24 brief |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 

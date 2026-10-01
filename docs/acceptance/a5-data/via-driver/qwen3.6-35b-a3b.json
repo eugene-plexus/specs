@@ -1,0 +1,48 @@
+{
+  "model": "qwen3.6-35b-a3b",
+  "file": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+  "streamed": false,
+  "via_driver": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.6,
+    "top_p": 0.95,
+    "top_k": 20
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "qwen3.6-35b-a3b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 16.3,
+      "completion_tokens": 222,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.6-35b-a3b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 62.1,
+      "completion_tokens": 911,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "qwen3.6-35b-a3b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 49.1,
+      "completion_tokens": 709,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    }
+  ]
+}

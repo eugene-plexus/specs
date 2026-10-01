@@ -181,7 +181,8 @@ and named on the runtime.
 
 ## What the runner cannot show: the rented-Mac list
 
-Each item needs Troy's OK to rent (AWS EC2 Mac or Scaleway, 24 h minimum).
+**Troy, 2026-09-30: no Mac will be rented at this time.** These stay
+untested, and the support matrix says so.
 
 1. **A bare-metal Apple GPU at a real size.** Every runner is a VM with a
    paravirtual device at 7 or 14 GB, and two thirds on each. Our budget
@@ -210,11 +211,13 @@ built yet.
 
 ## Not done
 
-- **MLX is still marked experimental.** The runner's evidence meets the
-  bar of the 2026-09-30 rule. But the UI uses `experimental` to hide MLX
-  on machines that cannot run it (`offeredOnThisNode`), so clearing the
-  flag puts *"mlx: not installed"* on every Windows and Linux box. It
-  needs a UI change and a dist rebuild. Troy's call.
+- **MLX is no longer experimental** (Troy, 2026-09-30; agent `05d88f8`).
+  The UI used `experimental` to hide MLX on machines that cannot run it.
+  `offeredOnThisNode` now lists an engine Eugene installs itself always,
+  and a hand-installed one where it is installed or the agent wrote an
+  install command for the host (ui `130306d`, dist `e404b6b`). So MLX stays
+  off Windows and Linux, and vLLM now leaves the list on Windows and Macs,
+  where it has no build. Check 23 asserts the flag is off.
 - The Rosetta check proves the installer and the recipe. It does not
   prove what an Intel Homebrew environment on a real Mac would leave on
   PATH.

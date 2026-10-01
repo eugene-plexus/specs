@@ -491,8 +491,9 @@ def phase_mlx_install(ctx: dict) -> None:
     mlx = engine(ctx, "mlx")
     acquisition = mlx.get("acquisition") or {}
     manual = acquisition.get("manualInstall") or {}
-    check("23", "the agent lists MLX as experimental, manual, not yet available",
-          mlx.get("experimental") is True and acquisition.get("policy") == "manual"
+    # Not experimental since A4 (Troy, 2026-09-30, on this run's evidence).
+    check("23", "the agent lists MLX as manual, not yet available, and not experimental",
+          mlx.get("experimental") is False and acquisition.get("policy") == "manual"
           and mlx.get("available") is False, {k: mlx.get(k) for k in ("experimental", "available")})
     command = manual.get("command")
     fact("mlx install command", command)

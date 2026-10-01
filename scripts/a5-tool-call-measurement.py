@@ -579,6 +579,70 @@ def serve(server: Path, model: Path, port: int, log: Path, args: argparse.Namesp
     raise SystemExit("llama-server did not become healthy")
 
 
+def serve_driver(python: str, llama_port: int, name: str, workdir: Path) -> tuple[subprocess.Popen, int]:
+    """A real inference-driver in front of llama-server, as Eugene runs one.
+
+    No trust bundle, so it verifies nothing (its dev path), on a port of its
+    own; its config is what the agent writes for a companion driver.
+    """
+    port = free_port()
+    workdir.mkdir(parents=True, exist_ok=True)
+    (workdir / "driver.yaml").write_text(json.dumps({
+        "provider": "openai_compat_custom",
+        "baseUrl": f"http://127.0.0.1:{llama_port}",
+        "modelId": name,
+        "backendLocality": "local",
+    }), encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
+    env.update({
+        "EUGENE_PLEXUS_DRIVER_CONFIG_FILE": str(workdir / "driver.yaml"),
+        "EUGENE_PLEXUS_DRIVER_BIND_PORT": str(port),
+        "EUGENE_PLEXUS_DRIVER_BIND_HOST": "127.0.0.1",
+    })
+    log = (workdir / "driver.log").open("w")
+    process = subprocess.Popen([python, "-m", "eugene_plexus_inference_driver"], env=env,
+                               stdout=log, stderr=subprocess.STDOUT)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    for _ in range(120):
+        try:
+            with opener.open(f"http://127.0.0.1:{port}/healthz", timeout=2) as r:
+                if r.status == 200:
+                    return process, port
+        except (urllib.error.URLError, OSError):
+            time.sleep(0.5)
+    process.kill()
+    raise SystemExit(f"the driver did not start; see {workdir / 'driver.log'}")
+
+
+def via_driver(url: str, body: dict, timeout: float):
+    """One request in the driver's own contract, the answer back in OpenAI's.
+
+    Messages here are plain user turns or carry OpenAI's tool fields, which
+    the driver spells `toolCalls` and `toolCallId`.
+    """
+    messages = []
+    for m in body["messages"]:
+        out = {"role": m["role"], "content": m.get("content")}
+        if m.get("tool_calls"):
+            out["toolCalls"] = m["tool_calls"]
+        if m.get("tool_call_id"):
+            out["toolCallId"] = m["tool_call_id"]
+        messages.append(out)
+    request = {"messages": messages, "tools": body.get("tools"), "maxTokens": body.get("max_tokens"),
+               "seed": body.get("seed")}
+    for theirs, ours in (("temperature", "temperature"), ("top_p", "topP"), ("top_k", "topK"),
+                         ("tool_choice", "toolChoice"), ("parallel_tool_calls", "parallelToolCalls")):
+        if theirs in body:
+            request[ours] = body[theirs]
+    status, answer = post(url, {k: v for k, v in request.items() if v is not None}, timeout)
+    if status != 200 or not isinstance(answer, dict):
+        return status, answer
+    return 200, {"choices": [{"message": {"content": answer.get("content"),
+                                          "tool_calls": answer.get("toolCalls")},
+                              "finish_reason": answer.get("finishReason")}],
+                 "usage": {"completion_tokens": (answer.get("usage") or {}).get("completionTokens")}}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--server", type=Path, required=True)
@@ -591,6 +655,8 @@ def main() -> int:
     parser.add_argument("--threads", type=int, default=0)
     parser.add_argument("--only", help="comma-separated scenario ids")
     parser.add_argument("--stream", action="store_true", help="stream every request, as harnesses do")
+    parser.add_argument("--via-driver", metavar="PYTHON",
+                        help="send every request through a real inference-driver, run by this interpreter")
     parser.add_argument("--out", type=Path, default=Path(__file__).resolve().parents[1] / "docs/acceptance/a5-data")
     args = parser.parse_args()
 
@@ -603,6 +669,12 @@ def main() -> int:
     version = subprocess.run([str(args.server), "--version"], capture_output=True, text=True).stderr.strip()
     print(f"{name}: {version.splitlines()[0] if version else '?'}; sampling {sampling}", flush=True)
     process = serve(args.server, args.model, port, log, args)
+    driver = None
+    if args.via_driver:
+        if args.stream:
+            raise SystemExit("--via-driver measures the non-streamed path; the driver's stream is unit-tested")
+        driver, driver_port = serve_driver(args.via_driver, port, name,
+                                           Path(tempfile.gettempdir()) / f"a5-driver-{name}")
     records: list[dict] = []
     try:
         for scenario in scenarios:
@@ -617,8 +689,11 @@ def main() -> int:
                     **scenario.get("extra", {}),
                 }
                 started = time.perf_counter()
-                send = post_streamed if args.stream else post
-                status, answer = send(f"http://127.0.0.1:{port}/v1/chat/completions", body, timeout=1800)
+                if driver is not None:
+                    status, answer = via_driver(f"http://127.0.0.1:{driver_port}/v1/generate", body, 1800)
+                else:
+                    send = post_streamed if args.stream else post
+                    status, answer = send(f"http://127.0.0.1:{port}/v1/chat/completions", body, timeout=1800)
                 seconds = round(time.perf_counter() - started, 1)
                 verdict = classify(scenario, status, answer)
                 usage = answer.get("usage", {}) if isinstance(answer, dict) else {}
@@ -633,9 +708,12 @@ def main() -> int:
                 print(f"  {scenario['id']:>15} #{seed}  {verdict['class']:<15} {seconds:>6}s  "
                       f"{verdict.get('detail', '')[:90]}", flush=True)
     finally:
-        process.kill()
-        process.wait()
+        for running in (driver, process):
+            if running is not None:
+                running.kill()
+                running.wait()
     result = {"model": name, "file": args.model.name, "streamed": args.stream,
+              "via_driver": bool(args.via_driver),
               "engine": version.splitlines()[0] if version else None,
               "sampling": sampling, "samples": args.samples, "records": records}
     (args.out / f"{name}.json").write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")

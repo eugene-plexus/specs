@@ -1,0 +1,35 @@
+{
+  "model": "mistral-small-3.2-24b",
+  "file": "Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf",
+  "streamed": false,
+  "via_driver": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 0.15
+  },
+  "samples": 2,
+  "records": [
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 4.6,
+      "completion_tokens": 15,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "mistral-small-3.2-24b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 4.1,
+      "completion_tokens": 15,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    }
+  ]
+}

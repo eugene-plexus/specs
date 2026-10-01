@@ -1,0 +1,47 @@
+{
+  "model": "gpt-oss-20b",
+  "file": "gpt-oss-20b-MXFP4.gguf",
+  "streamed": false,
+  "via_driver": true,
+  "engine": "version: 0.5.0-dev (build 11303, commit 60e9cf7a7)",
+  "sampling": {
+    "temperature": 1.0,
+    "top_p": 1.0
+  },
+  "samples": 3,
+  "records": [
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "forced",
+      "seed": 1,
+      "status": 200,
+      "seconds": 7.2,
+      "completion_tokens": 122,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "forced",
+      "seed": 2,
+      "status": 200,
+      "seconds": 40.6,
+      "completion_tokens": 515,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    },
+    {
+      "model": "gpt-oss-20b",
+      "scenario": "forced",
+      "seed": 3,
+      "status": 200,
+      "seconds": 12.0,
+      "completion_tokens": 222,
+      "finish": "tool_calls",
+      "calls": 1,
+      "class": "ok"
+    }
+  ]
+}

@@ -124,6 +124,30 @@ of the design. In short: `"required"` was honoured 22 of 28 times and
 never on Qwen3.6-35B-A3B. Structured output gave a valid call 5 of 6
 times on the two Qwen models tried; the miss ran out of budget thinking.
 
+## The repair, built (Troy, 2026-09-30)
+
+The driver now answers a named `tool_choice` on llama-server with
+structured output (inference-driver `b35bc54` + `53412d5`, pinned in both
+installers). `--via-driver` measures it through a real inference-driver
+process in front of llama-server, as Eugene serves it (data in
+`a5-data/via-driver/`):
+
+| `forced`, through Eugene's driver | Calls |
+|---|---|
+| Before the fix (driver at its previous HEAD), Qwen3.5-4B and Gemma 4 E4B | **0 of 6** |
+| After, all ten models (3 samples, 2 for the dense 24-27B) | **28 of 28** |
+
+Every one is a `get_weather` call with `{"city": "Oslo"}`. That includes
+Qwen3.6-35B-A3B (3 of 3) and Mistral Small 3.2 (2 of 2), where
+`"required"` had degenerated. Unit tests: 8 cases in
+`inference-driver/tests/test_named_tool_choice.py`. Sabotage
+`scripts/a5-sabotage.py`: 8 of 8. The first pass let one escape (a cut-off
+answer that is not JSON cannot show the `length` rule), so a cut-off answer
+that *does* parse is now a test of its own.
+
+Also built: a call the backend sends without an id is named `call_` plus
+24 hex digits, not `call_0`.
+
 ## Not measured
 
 - **Through Eugene.** The gateway and driver carry tool calls (P-series

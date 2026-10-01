@@ -1,6 +1,10 @@
 # A5: tool calls that work with local models
 
-**Status: measured 2026-09-30; nothing built. §2's calls are Troy's.**
+**Status: measured 2026-09-30; §2 items 1 and 2 built the same day on
+Troy's call** (inference-driver `b35bc54`, `53412d5`; through the driver a
+forced call went from 0 of 6 to 28 of 28 across ten models, see the
+record). Upstream reporting is Troy's to write: llama.cpp forbids
+AI-written bug reports.
 The audience roadmap's A5 is *"measure first: how often a local model's
 tool call fails, and whose failure it is"*. This document holds the
 method, then the table, then what the table says to build, if anything.
