@@ -190,8 +190,18 @@ def phase_install(installer: Path) -> None:
     out = subprocess.run(argv, capture_output=True, text=True, timeout=1800, env=env)
     fact("install seconds", round(time.perf_counter() - started, 1))
     text = out.stdout + out.stderr
-    must("1", "the installer completes and says Eugene is running",
-         out.returncode == 0 and "Eugene Plexus is running" in text, text[-1200:])
+    ok = out.returncode == 0 and "Eugene Plexus is running" in text
+    if not ok:
+        fact("installer exit code", out.returncode)
+        print(text[-4000:], flush=True)
+        # install.ps1 keeps a transcript of every run; it holds what the
+        # console capture can lose when a child script exits the host.
+        logs = sorted(Path(tempfile.gettempdir()).glob("eugene-plexus-install-*.log"),
+                      key=lambda p: p.stat().st_mtime)
+        if logs:
+            print(f"--- {logs[-1]} (tail)", flush=True)
+            print(logs[-1].read_text(encoding="utf-8", errors="replace")[-6000:], flush=True)
+    must("1", "the installer completes and says Eugene is running", ok, text[-1200:])
     must("2", "the agent answers on 8079", bool(wait_for(healthy(AGENT), 120)))
 
 
