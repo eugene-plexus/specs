@@ -183,6 +183,11 @@ def phase_install(installer: Path) -> None:
     say("the service install, as a person runs it")
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
     if WINDOWS:
+        # A runner step's shell is PowerShell 7, whose PSModulePath names
+        # its own modules first; Windows PowerShell 5.1 started under it
+        # loads those and fails inside uv's installer, which install.ps1
+        # runs silenced. Without the variable, 5.1 builds its own default.
+        env.pop("PSModulePath", None)
         argv = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(installer), "-NoTray"]
     else:
         argv = ["sudo", "-E", "sh", str(installer)]
