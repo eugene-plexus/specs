@@ -270,6 +270,26 @@ A real Mac is what timing on Apple silicon needs (A4's list).
   count llama-server's default 8 GiB of host RAM for its prompt cache.
 - Idle unload is opt-in and nothing in the UI sets it.
 
+## 11. After the fixes (PC1-PC5, built the same day)
+
+The same instruments, against the built code (RTX 5090):
+
+| Slice | Before | After |
+|---|---|---|
+| PC1, the header off (Llama 3.1 8B, four Claude Code sessions) | direct 75.3% reused, 16.9 s; new sessions read ~19,717 tokens | through Eugene **86.7%, 9.3 s**; new sessions read ~1,860 |
+| PC2, Qwen 3.x (Qwen3.5-4B, four sessions each) | Claude Code 0 of 20 answered (502) | **Claude Code 20 of 20, 86.0% reused; Codex 20 of 20, 93.5%**. Direct to llama-server, the same 40 requests: 0 answered |
+| PC3, a template refusal (Qwen3.5-4B, `inConversationSystem: system`) | Codex 503 "cooling down" after one Claude Code request | Claude Code 400, **Codex 5 of 5 answered after it** |
+| PC4, two replicas, one session | Claude Code 52.8%, 6.0 s; Codex 59.1%, 2.7 s | **75.3%, 3.2 s; 79.4%, 1.6 s**, as pinned; no session split |
+| PC4, two replicas, three sessions | 65.9%, 14.5 s; 83.8%, 4.6 s | **70.7%, 11.9 s; 84.5%, 4.0 s**, as pinned |
+| PC5, vLLM 0.29.0 on chat completions | `prompt_tokens_details: None` | `cached_tokens: 5136` with the flag the agent now passes |
+
+PC2's folded shape was accepted by all eight template families tried
+(Qwen3.5-4B, Qwen3.6-35B-A3B, Qwen3.8-27B, Qwen3-Coder-30B-A3B, Llama 3.1
+8B, Mistral Small 3.2 24B, gemma-4-12B, gpt-oss-20b). Only the Qwen 3.5+
+line refuses the unfolded one. Sabotage: PC1 4/4, PC2 7/7, PC3 2/2 (after
+deleting a guard no check could observe), PC4 8/8, PC5 6/6 + 1/1 (agent) +
+3/3 (UI).
+
 ## Not measured
 
 - Concurrency: every replay is one request at a time.

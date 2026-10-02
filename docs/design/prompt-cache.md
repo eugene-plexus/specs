@@ -1,7 +1,10 @@
 # Keeping the engine's prompt cache warm
 
-**Status: measured 2026-10-02; PC1 built the same day (gateway working
-tree, not yet pinned); PC2-PC7 designed, waiting on the calls in §5.**
+**Status: measured 2026-10-02; the four calls in §5 taken by Troy the same
+day; PC1-PC5 BUILT AND PINNED in both installers the same day** (gateway
+`3e00869`, inference-driver `d776e81`, agent `da6fc54`, control `6281913`,
+ui `ef67426` / dist `c280cc1`; the after-the-fix numbers are the record's
+§11). **PC6 and PC7 are next, after the release.**
 Troy's brief: *"this is at the core of what Eugene is: managing multiple
 backends efficiently. So resolving this caching issue is high priority
 before we go public."* The measurement, with every number below, is

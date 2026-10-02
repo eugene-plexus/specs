@@ -251,7 +251,11 @@ class Bench:
         self.trust = NodeTrust(store, self.dir / "agent" / "trust_bundle.json")
         self.trust.load()
         self.write("gateway", "bootstrap.json", self.bootstrap("gateway"))
-        self.write("gateway", "gateway.yaml", {"routingRefreshSeconds": 2, "loadBalancing": self.args.balancing})
+        gateway_config = {"routingRefreshSeconds": 2, "loadBalancing": self.args.balancing}
+        for item in self.args.gateway_set:
+            key, _, value = item.partition("=")
+            gateway_config[key] = yaml.safe_load(value)
+        self.write("gateway", "gateway.yaml", gateway_config)
         self.start("gateway")
         r = self.call("agent", "POST", "/v1/auth/client-keys", self.operator, json={
             "name": "measure", "limits": {"allowedModels": None, "requestsPerMinute": 1000}})
@@ -431,6 +435,8 @@ def main() -> None:
     ap.add_argument("--ctx", type=int, default=40960)
     ap.add_argument("--balancing", default="least_busy")
     ap.add_argument("--max-sessions", type=int, default=4)
+    ap.add_argument("--gateway-set", action="append", default=[],
+                    help="KEY=VALUE into the gateway's config file, repeatable")
     ap.add_argument("--fold-system", action="store_true",
                     help="family: Claude Code's in-conversation system messages as user turns")
     ap.add_argument("--normalize", action="store_true",
