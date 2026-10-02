@@ -1,0 +1,74 @@
+# The prompt-cache measurement's Apple-silicon half (2026-10-02).
+#
+# Does mlx_lm.server (the version the agent's MLX recipe pins) reuse a
+# growing conversation, and how does llama.cpp's Metal build compare on the
+# same sessions? A measurement, run by hand; it gates nothing.
+# Record: docs/acceptance/prompt-cache-measurement.md.
+
+name: Prompt cache on macOS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Prompt cache on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: mlx-lm at the agent's pin
+        run: |
+          python -m venv "$RUNNER_TEMP/mlx"
+          "$RUNNER_TEMP/mlx/bin/pip" install --quiet "mlx-lm==0.31.3"
+      - name: llama.cpp's macOS build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dest="$RUNNER_TEMP/llama"
+          mkdir -p "$dest"
+          for tag in $(gh release list --repo ggml-org/llama.cpp --limit 8 --json tagName --jq '.[].tagName'); do
+            if gh release download "$tag" --repo ggml-org/llama.cpp --pattern '*bin-macos-arm64*' --dir "$dest"; then
+              echo "fetched $tag"; break
+            fi
+          done
+          cd "$dest"
+          for a in *; do case "$a" in *.zip) unzip -q "$a" ;; *.tar.gz) tar xzf "$a" ;; esac; done
+          echo "LLAMA_SERVER=$(find "$dest" -name llama-server -type f | head -1)" >> "$GITHUB_ENV"
+      - name: mlx_lm.server
+        run: |
+          "$RUNNER_TEMP/mlx/bin/python" -m mlx_lm.server --model mlx-community/Qwen3-0.6B-4bit \
+            --host 127.0.0.1 --port 19601 > mlx.log 2>&1 &
+          for i in $(seq 1 180); do curl -fs http://127.0.0.1:19601/v1/models >/dev/null && break; sleep 2; done
+          python scripts/prompt-cache-mac.py --url http://127.0.0.1:19601 --label mlx-0.31.3 \
+            --model mlx-community/Qwen3-0.6B-4bit --report mlx.json
+          kill %1 || true
+      - name: llama-server (Metal)
+        run: |
+          "$LLAMA_SERVER" --version || true
+          "$LLAMA_SERVER" -hf ggml-org/Qwen3-0.6B-GGUF:Q8_0 --alias probe --host 127.0.0.1 --port 19602 \
+            -c 40960 --metrics --jinja > llama.log 2>&1 &
+          for i in $(seq 1 180); do curl -fs http://127.0.0.1:19602/health >/dev/null && break; sleep 2; done
+          python scripts/prompt-cache-mac.py --url http://127.0.0.1:19602 --label llama-metal --report llama.json
+          kill %1 || true
+      - name: Keep the readings and the engine logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-cache-${{ matrix.os }}
+          path: |
+            mlx.json
+            llama.json
+            mlx.log
+            llama.log
+          if-no-files-found: warn
