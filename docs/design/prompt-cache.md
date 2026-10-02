@@ -95,7 +95,9 @@ contract sentence in `gateway.yaml`'s Anthropic door section, and the pin.
 
 Each `system` message after the first becomes a `user` turn, in place, its
 text wrapped `<system-reminder>…</system-reminder>` (the form Claude Code
-itself uses for reminders in user turns). Measured as a replay transform:
+itself uses for reminders in user turns). **The operator chooses** (call 3):
+the gateway setting `inConversationSystem` is `user_turn` by default and
+`system` to send them as the client did. Measured as a replay transform:
 all three Qwen 3.x starters answer, and reuse matches the full-attention
 models (84.8% with PC1). **Not** merged into the first system message:
 that changes the prompt's start every turn and would miss the cache on
@@ -150,12 +152,12 @@ carry an explicit key (one line in `conversation.request_for`).
 
 ### PC6. Hosted backends get their breakpoints
 
-1. **Carry the client's.** When a request carried any `cache_control` (Claude
-   Code marks every request), the driver asks OpenRouter's `anthropic/*`
-   models for request-level `cache_control`, which places the breakpoint
-   after the last message and so caches each earlier turn. One field in
-   `GenerateRequest` (a contract change): the client asked for caching.
-2. **Add one for a client that sent none** (§5 call 4).
+**Carry the client's, add none** (§5 call 4). When a request carried any
+`cache_control` (Claude Code marks every request), the driver asks
+OpenRouter's `anthropic/*` models for request-level `cache_control`, which
+places the breakpoint after the last message and so caches each earlier
+turn. One field in `GenerateRequest` (a contract change): the client asked
+for caching. A client that marked nothing pays what it would pay upstream.
 
 Check: a two-turn Claude conversation through Eugene via OpenRouter reports
 `cached_tokens` on turn 2.
@@ -179,11 +181,11 @@ already exposed.
 - **`CLAUDE_CODE_ATTRIBUTION_HEADER=0` in the Claude Code recipe**: PC1
   makes it unnecessary through Eugene, and an easy default needs no setting.
 
-## 5. Calls for Troy
+## 5. Calls — all taken by Troy, 2026-10-02
 
-| # | Call | Recommendation | Against it |
-|---|---|---|---|
-| 1 | Which slices go before going public | **PC1-PC5**: two are outright breakage (Claude Code on three starters; one client 503ing the rest), one is the core claim (many backends, efficiently), and PC5 is how anyone sees the rest. PC6-PC7 right after | PC6 is money for anyone using Claude through OpenRouter today |
-| 2 | Is `conversation` the default balancing | **Yes.** It reduces to least-busy when no key repeats, and agent and chat traffic is conversations | A default that changes routing on upgrade; the old two stay selectable |
-| 3 | Fold Claude Code's in-conversation system messages always, or only for a backend whose template refused | **Always.** Same prompt on every backend, no retry, no per-template knowledge | Templates that accept a mid-conversation system message lose the role, not the text |
-| 4 | Add a breakpoint for a client that sent none (Anthropic models via OpenRouter) | **Only from a conversation's second turn on** (a request with an earlier assistant turn): never dearer for a one-off, caches from turn 3 | Always adding caches from turn 2 and makes every one-off 25% dearer |
+| # | Call | Taken |
+|---|---|---|
+| 1 | Which slices go before going public | **PC1-PC5**, as recommended. PC6 and PC7 after |
+| 2 | Is `conversation` the default balancing | **Yes**, as recommended; `least_busy` and `round_robin` stay selectable |
+| 3 | Fold Claude Code's in-conversation system messages always, or only for a backend whose template refused | **A setting the operator chooses** (Troy: *"make this a user configurable option"*). Built as the gateway's `inConversationSystem`: `user_turn` (the default, because it is the one every backend accepts) or `system` (as the client sent it) |
+| 4 | Add a breakpoint for a client that sent none | **Never**: PC6 carries the client's own breakpoints and adds nothing |
