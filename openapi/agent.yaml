@@ -6437,9 +6437,11 @@ components:
 
         **What an app owes the agent** is small: bind the port in
         `EUGENE_PLEXUS_APP_BIND_PORT` (on `EUGENE_PLEXUS_APP_BIND_HOST`
-        when set, loopback otherwise) and answer `GET /healthz` with a
-        2xx once it is serving — an app that never does reads `starting`
-        for as long as it runs. It finds its key in the file named by
+        when set, loopback otherwise) and answer `GET /healthz` (or its
+        `healthPath`) with a 2xx once it is serving — an app that never
+        does reads `starting` for as long as it runs. An app that reads
+        names of its own is told the same things through `environment`
+        and `args`. It finds its key in the file named by
         `EUGENE_PLEXUS_APP_KEY_FILE`, the gateway at
         `EUGENE_PLEXUS_APP_GATEWAY_URL` (absent when none could be
         found), keeps its state under `EUGENE_PLEXUS_APP_DATA_DIR`, and —
@@ -6481,6 +6483,12 @@ components:
             package (a developer's own checkout). The shipped catalogue
             uses archive URLs at pinned commits, the way the installers
             pin the hub's own packages.
+
+            **`pypi`** installs `<package>==<version>` from the Python
+            Package Index instead, for an app published there by its own
+            project (C4, Open WebUI). `version` must then be an exact
+            release; what it depends on is resolved as the installers
+            resolve the hub's own dependencies.
         version:
           type: string
           minLength: 1
@@ -6496,12 +6504,17 @@ components:
           description: The distribution name, e.g. `eugene-plexus-chat`.
         entry:
           type: string
-          pattern: "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+          pattern: "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*(:[A-Za-z_][A-Za-z0-9_]*)?$"
           description: |
             The module run as `python -m <entry>` with the app's own
             interpreter. The install imports it once before it counts as
             installed, so a package that installs and cannot start is a
             failed install rather than a crash loop later.
+
+            **`module:attribute`** names a console-script function instead,
+            called the way its own script calls it, with `args` as its
+            arguments: an app that starts as `open-webui serve` and has no
+            `python -m` form (C4). The install checks the attribute exists.
         python:
           type: string
           default: "3.12"
@@ -6545,6 +6558,62 @@ components:
           default: /oidc/callback
           pattern: "^/[A-Za-z0-9._~/-]*$"
           description: Where on the app's own origin Eugene sends a person back after signing in.
+        args:
+          type: array
+          items: {type: string, maxLength: 512}
+          maxItems: 32
+          description: |
+            Arguments after the entry, with the placeholders `environment`
+            describes. Empty for an app that reads `EUGENE_PLEXUS_APP_*`.
+        environment:
+          type: object
+          maxProperties: 64
+          propertyNames:
+            pattern: "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          additionalProperties: {type: string, maxLength: 2048}
+          description: |
+            The app's own variables, for an app that is not ours and reads
+            its settings from names of its own (C4). Each value is literal
+            text with placeholders filled in at every start:
+
+            * `{bindHost}`, `{port}` — where to listen;
+            * `{dataDir}` — its private data directory;
+            * `{gatewayUrl}` — the gateway, as `EUGENE_PLEXUS_APP_GATEWAY_URL`;
+            * `{appUrl}` — the address the console opens it at;
+            * `{oidcIssuer}`, `{oidcClientId}` — with `signIn`;
+            * `{clientKey}`, `{oidcClientSecret}`, `{appSecret}` — secrets.
+              `{appSecret}` is a random value made at its first start and
+              kept in its data directory.
+
+            **Secrets are filled in by the launcher inside the app's own
+            account**, from the files it is given, so they never appear in
+            the spec the agent writes, its logs or the service definition.
+            They are in the app's process environment, as a program that
+            reads no files needs them. A name beginning `EUGENE_PLEXUS_` is
+            refused: those are ours.
+        healthPath:
+          type: string
+          default: /healthz
+          pattern: "^/[A-Za-z0-9._~/-]*$"
+          description: Where the app answers 2xx once it is serving.
+        resetOnConnectionChange:
+          type: string
+          pattern: "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+          description: |
+            A variable set to `true` for one start, when the gateway's
+            address or the app's key differs from the last start's. For an
+            app that copies its settings into its own database at its first
+            start and ignores the environment afterwards (Open WebUI's
+            `RESET_CONFIG_ON_START`), so a rotated key is not silently
+            ignored. That start also clears what its admin set in it, and
+            the agent's log says why.
+        licenseUrl:
+          type: string
+          format: uri
+          description: |
+            Where the app's own licence is read, for an app under a licence
+            of its own. Shown on the catalogue card beside the homepage.
+            Display only.
         localActions:
           type: boolean
           default: true

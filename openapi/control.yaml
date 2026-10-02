@@ -347,7 +347,10 @@ paths:
         `redirect_uri` that does not match a registered app is an error
         page and never a redirect; anything else wrong goes back to the app
         as `error=` (RFC 6749 §4.1.2.1). `code_challenge` with `S256`,
-        `state` and `nonce` are required.
+        `state` and `nonce` are required. `scope` must include `openid`;
+        `profile` and `email` are honoured and anything else is ignored.
+        With `email`, a person who has an address gets `email` and
+        `email_verified: false` (C4).
       parameters:
         - {name: response_type, in: query, required: true, schema: {type: string, enum: [code]}}
         - {name: client_id, in: query, required: true, schema: {type: string}}
@@ -2504,6 +2507,7 @@ components:
         id: {type: string}
         name: {type: string}
         displayName: {type: string}
+        email: {type: string}
         passwordVerifier: {type: string, description: 'Argon2id, the passphrase''s parameters.'}
         apps:
           type: [array, 'null']
@@ -2544,6 +2548,13 @@ components:
         id: {type: string, description: 'Stable; the `sub` in their ID tokens.'}
         name: {type: string, description: 'What they sign in with. Unique, compared case-folded.'}
         displayName: {type: string}
+        email:
+          type: string
+          description: |
+            Optional, and unique compared case-folded. Given to an app that
+            asks for the `email` scope, with `email_verified: false`: Eugene
+            sends no mail and has proved nothing about it. Some apps (Open
+            WebUI) identify people by it (C4).
         apps:
           type: [array, 'null']
           items: {type: string}
@@ -2570,6 +2581,7 @@ components:
       properties:
         name: {type: string, minLength: 1, maxLength: 64, pattern: "^[^\\s@][^@]*[^\\s@]$|^[^\\s@]$"}
         displayName: {type: string, maxLength: 120}
+        email: {type: string, maxLength: 254, pattern: "^[^@\\s]+@[^@\\s]+$"}
         password: {type: string, minLength: 12, maxLength: 1024}
         apps:
           type: [array, 'null']
@@ -2580,6 +2592,11 @@ components:
       additionalProperties: false
       properties:
         displayName: {type: string, maxLength: 120}
+        email:
+          type: [string, 'null']
+          maxLength: 254
+          pattern: "^[^@\\s]+@[^@\\s]+$"
+          description: A new address, or `null` to clear it.
         apps:
           type: [array, 'null']
           items: {type: string}
