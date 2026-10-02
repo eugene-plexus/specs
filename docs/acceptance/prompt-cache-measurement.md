@@ -233,8 +233,26 @@ then `5136`. So Eugene shows no vLLM cache today, and one flag fixes it.
 (Its `/v1/messages` refused Claude Code's tools without
 `--enable-auto-tool-choice`; not a caching matter.)
 
-*Apple silicon pending: mlx_lm.server 0.31.3 and llama.cpp's Metal build on
-GitHub's macOS runner.*
+**Apple silicon**, GitHub's `macos-15` runner (virtual Apple GPU), run
+37017557408 via `prompt-cache-mac.yml`, synthetic agent-shaped sessions
+built from this repository's text (a ~6k-token system prompt, a file per
+turn):
+
+- **mlx_lm.server 0.31.3** (the agent's pin), `mlx-community/Qwen3-0.6B-4bit`:
+  **reuses and says so.** Every turn reported the whole previous prompt as
+  `cached_tokens` (7,455 → 5,911 cached, and so on); a second session's
+  first turn reused 5,898 of 5,911 tokens of the shared system prompt; three
+  sessions taking turns kept full reuse (its LRU of prompt caches holds 10
+  by default, `--prompt-cache-size`, which the agent already exposes).
+  Its times are not usable: a turn with 13 new tokens took 11 s on the
+  virtual GPU.
+- **llama.cpp's macOS build** ran flash attention on the CPU there
+  (`Flash Attention is assigned to device CPU (usually due to missing
+  support)`), read prompts at 35-47 tokens/s and hit the job's 45-minute
+  limit. Its log still shows the cache working: the second turn of a session
+  read 1,544 new tokens of 7,455.
+
+A real Mac is what timing on Apple silicon needs (A4's list).
 
 ## 10. What Eugene does today, from the code
 
