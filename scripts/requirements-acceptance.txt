@@ -2,8 +2,8 @@
 # alongside this file; keep each repository's [dev] toolchain in its own venv.
 # These match the existing acceptance runner; component tooling can now update
 # independently without changing the integration test environment.
-pytest==8.4.2
-pytest-asyncio==0.26.0
+pytest==9.1.1
+pytest-asyncio==1.4.0
 # P3a: the done-when is the OpenAI SDK, unchanged, at /v1/audio/speech.
 openai==3.20.0
 # P8: Claude Code's WebSearch request, made by the Anthropic SDK, unchanged.
@@ -11,4 +11,4 @@ anthropic==1.9.0
 # C2: the sign-in acceptance signs in through Authlib, the library Open WebUI uses.
 authlib==1.8.0
 # C3: the agent installs Workbench from its catalogue with uv, as an install does.
-uv==0.12.18
+uv==0.12.20
