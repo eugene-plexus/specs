@@ -83,6 +83,39 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   checks.push("Library selection and details stack and remain reachable at 390px");
 
+  // ui#14: a confirmation in a row's nowrap action cell widened the table
+  // until its own buttons needed a sideways scroll to reach.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${url}/inference/`);
+  const remove = page.getByTestId("remove-row").first();
+  await expect(remove).toBeVisible({ timeout: 30000 });
+  const table = page.locator("main .overflow-x-auto").filter({ has: page.getByTestId("remove-row") });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const before = await table.evaluate(el => el.scrollWidth);
+    await remove.click();
+    const confirm = page.getByTestId("remove-row-confirm");
+    const cancel = page.getByTestId("remove-row-cancel");
+    await expect(confirm).toBeVisible();
+    const after = await table.evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    if (width === 1440) {
+      assert(after.scroll <= after.client + 1, `desktop table scrolls sideways when asking: ${JSON.stringify(after)}`);
+    } else {
+      assert(after.scroll <= before + 1, `phone table widened from ${before} to ${after.scroll} when asking`);
+    }
+    await confirm.scrollIntoViewIfNeeded();
+    const view = await table.boundingBox();
+    for (const [button, label] of [[confirm, "Remove"], [cancel, "Keep"]]) {
+      const box = await button.boundingBox();
+      assert(box.x >= view.x - 1 && box.x + box.width <= view.x + view.width + 1,
+        `${label} cut off at ${width}: ${JSON.stringify({ box, view })}`);
+    }
+    await noOverflow(`Inference ${width} while asking`);
+    await page.screenshot({ path: join(output, `inference-confirm-${width}.png`) });
+    await cancel.click();
+  }
+  checks.push("A confirmation in a table row keeps the table its width and both answers in view (ui#14)");
+
   await page.goto(`${url}/config/?sel=install`);
   await page.getByLabel("Font size", { exact: true }).selectOption("xlarge");
   for (const path of ["/", "/playground/", "/library/?sel=library"]) {

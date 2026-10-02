@@ -91,6 +91,12 @@ def check(root: Path, engine: Path, model: Path, *, browser: Path | None = None,
             wait(urls["library"] + "/healthz")
             scan = client.post(urls["library"] + "/v1/scan", headers=headers, json={"full": False})
             assert scan.status_code in (200, 202, 409), scan.text
+            # A stopped runtime, so Inference has the row whose remove asked
+            # in a nowrap cell and widened the table (ui#14). Never started.
+            declared = client.post(urls["agent"] + "/v1/runtimes", headers=headers, json={
+                "name": "s9-row", "engine": "llama_cpp", "modelPath": str(model),
+                "autoStart": False, "autoDriver": False})
+            assert declared.status_code in (200, 201), declared.text
             session = root / "session.json"
             session.write_text(json.dumps({"url": urls["agent"], "token": token}), encoding="utf-8")
         script = browser or Path(__file__).with_name("s9-browser-acceptance.mjs")
