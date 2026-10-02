@@ -280,6 +280,31 @@ That covers, in one sitting, three things no person had done before:
 This is a report, not a capture: nothing recorded which account served
 the search or the exact model.
 
+**Captured afterwards (the same evening).** Troy exported the chat from
+Workbench's own API. A plain browser visit to that API is refused, because
+every call also needs the request secret (W3), so the export ran from the
+signed-in tab's console. Workbench has no export button.
+
+- **Model:** `Huihui-Qwen3.8-27B-abliterated-Q6_K_L` on llama-server, on
+  the 5090. **Search account:** Brave.
+- **Three questions, three replies:** 21 s with 3 searches, 46 s with 2,
+  39 s with 1. Every source the searches returned was this project's own:
+  eugeneplexus.com and its GitHub repositories.
+- It found three defects, all filed:
+  - [workbench #1](https://github.com/eugene-plexus/workbench/issues/1):
+    two of the three replies hold two complete answers. Text written
+    before a search is stored, shown and sent back as part of the answer.
+  - [gateway #4](https://github.com/eugene-plexus/gateway/issues/4): the
+    chat door forces a search on turn 0 (`tool_choice: required`), and
+    llama-server does not enforce it. The last reply reasoned "No tools
+    needed", answered, then searched. Design §3 says the caller gets only
+    the final answer; the chat door returns every turn's text.
+  - [tool-driver #3](https://github.com/eugene-plexus/tool-driver/issues/3):
+    two searches in one turn sent the second to Brave straight after the
+    first, and the free plan refused it with 429. Nothing paces requests
+    or retries. The model said the search failed, as the gateway told it
+    to.
+
 ## What this does not show
 
 - **Workbench in an account of its own.** These runs are not a service
