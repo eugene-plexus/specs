@@ -84,6 +84,9 @@ MODEL = "c3-local"
 ANSWER = "C3-ANSWER: Hello from the fixture model."
 SAW_IMAGE = "C3-SAW-IMAGE"
 CITED = "C3-CITED"
+# What a local model under a forced first search can do: answer, then search,
+# then answer again (gateway#4, workbench#1).
+DRAFTED = "C3-DRAFT: an answer written before searching."
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 )
@@ -192,7 +195,8 @@ def fixture_app(state_file: Path):
             first = urls[0].rstrip(").,") if urls else "https://example.org"
             return f"{CITED}: the fixture read the results. Source: [the page]({first}).", None
         if "web_search" in tools and last.get("role") == "user":
-            return None, [{"name": "web_search", "arguments": {"query": _text(last)[:60]}}]
+            calls = [{"name": "web_search", "arguments": {"query": _text(last)[:60]}}]
+            return (DRAFTED if state["mode"] == "draft" else None), calls
         # Only the turn being answered: an image earlier in the chat travels
         # in every later request too, and is not what they are about.
         if _has_image(last):
@@ -205,6 +209,8 @@ def fixture_app(state_file: Path):
     async def complete(request: Request):
         body = await request.json()
         count("model", {"roles": [m.get("role") for m in body.get("messages") or []],
+                        "assistants": [_text(m) for m in body.get("messages") or []
+                                       if m.get("role") == "assistant"],
                         "images": sum(_has_image(m) for m in body.get("messages") or []),
                         "tools": [t.get("function", {}).get("name") for t in body.get("tools") or []]})
         text, calls = turn(body)
@@ -600,6 +606,26 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
                    if not live else bool(searched["content"].strip())),
               {"sources": searched.get("sources"), "searches": searched.get("searches"),
                "answer": searched["content"][:120]})
+
+        if not live:
+            # The model answers, then searches, then answers again, through the
+            # real gateway: the reply keeps both, marks where the answer after
+            # the search begins, and only that answer goes back as history.
+            call("fixture", "POST", "/mode?value=draft")
+            drafted_chat = owner.post("/api/chats", json={"model": MODEL}).json()["id"]
+            drafted = owner.ask(drafted_chat, "What is Eugene Plexus?", search=True)
+            call("fixture", "POST", "/mode?value=plain")
+            at = drafted.get("answerFrom")
+            after = drafted["content"][at:].lstrip() if isinstance(at, int) else ""
+            owner.ask(drafted_chat, "Thanks.", search=False)
+            history = call("fixture", "GET", "/seen?name=model").json()[-1]["assistants"]
+            check("13b", "text written before a search is marked as a draft, and only the "
+                  "answer after it goes back as history",
+                  drafted["status"] == "done" and drafted["content"].startswith(DRAFTED)
+                  and isinstance(at, int) and at > 0 and after.startswith(CITED)
+                  and len(history) == 1 and history[0].startswith(CITED)
+                  and DRAFTED not in history[0],
+                  {"answerFrom": at, "content": drafted["content"][:160], "history": history})
 
         call("fixture", "POST", "/mode?value=slow")
         slow = owner.post("/api/chats", json={"model": MODEL}).json()["id"]

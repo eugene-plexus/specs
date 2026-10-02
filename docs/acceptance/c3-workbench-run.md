@@ -305,6 +305,30 @@ signed-in tab's console. Workbench has no export button.
     or retries. The model said the search failed, as the gateway told it
     to.
 
+## The three fixed, for alpha.6 (2026-10-01)
+
+Troy chose to fix all three before alpha.6, and to keep the forced first
+search (gateway #4), adding a signal for when a search finishes.
+
+| Fix | Commit | Tests | Sabotage |
+| --- | --- | --- | --- |
+| Contract: `StreamProgress.phase` (`started`, `finished`), and the chat door's departure recorded in `server-run-tools.md` §13 | specs `ff82875` | Redocly, the validator, r38 11/11 | — |
+| Gateway: the chat door reports both phases; a failed search's reason ends in one full stop | gateway `05efc88` | 1,046 pass | `scripts/gw4-sabotage.py` **6 of 6** |
+| Workbench: each search's progress marks where the answer after it begins (schema 2, migrated on open); the page folds what came before under *Written before searching*, Copy takes the answer, and only the answer goes back as history | workbench `576ec85`, `dist` `5ed0001`; agent catalogue `cd34826` | 61 Python, 34 page | `scripts/wb1-sabotage.py` **15 of 15** |
+| Tool-driver: an account's searches take turns, `searchIntervalSeconds` apart (Brave 1 s from its documentation, SearXNG 0); a short 429 is retried once inside the timeout; a used-up monthly quota is `quota_exhausted` and not retried | tool-driver `df23d92` | 87 pass | `scripts/td3-sabotage.py` **25 of 25** |
+
+**Check 13b**, added to `scripts/c3-workbench-acceptance.py`: the fixture
+model answers, then searches, then answers again, through the real gateway
+and Workbench. The reply must keep both, mark where the answer after the
+search begins, and send only that answer back as history.
+- Against Workbench `736e1ce` (before): **27 of 28**, 13b fails with
+  `answerFrom: None` and both answers in the reply.
+- Against `5ed0001`, installed from the catalogue's archive, with Chrome:
+  **38 of 38**.
+
+**Not shown:** a live Brave account. Its rate-limit headers are parsed as
+Brave documents them and have not been seen from a real key here.
+
 ## What this does not show
 
 - **Workbench in an account of its own.** These runs are not a service
