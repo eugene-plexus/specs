@@ -3083,11 +3083,19 @@ paths:
           benchmarking**, where a tool repeating one prompt would land on
           one replica every time.
         * **`loadBalancing`** (`enum`) — where a **new** conversation
-          goes, whatever `conversationAffinity` says. `least_busy` (the
-          default) picks the eligible driver with the fewest in-flight
-          requests per slot of capacity, ties round-robin; `round_robin`
-          alternates strictly, which is worth having when comparing two
-          replicas. **`conversation` is no longer a value** (it was PC4's
+          goes, whatever `conversationAffinity` says. **`spread` (the
+          default since CB2, 2026-10-02)** picks the replica holding the
+          fewest conversations per slot — every conversation it served
+          inside the affinity table's 30 minutes, whether or not a
+          request is in flight — ties to the fewest in flight, then in
+          turn. Measured with 32 agent sessions on eight replicas: 80.2%
+          of prompt tokens reused against 60.4%, the median first token
+          1.05 s against 4.00 s, because a replica whose agents are all
+          thinking between turns looks empty to a count of requests in
+          flight; within noise on three replicas. `least_busy` picks the
+          eligible driver with the fewest in-flight requests per slot of
+          capacity, ties round-robin; `round_robin` alternates strictly,
+          which is worth having when comparing two replicas. **`conversation` is no longer a value** (it was PC4's
           default, from 2026-10-02 until CB1 the same day, and kept
           conversations on their replicas, which affinity now does under
           every value): a file holding it, or holding the default because
@@ -7630,8 +7638,8 @@ components:
             Where a new conversation went when this request was routed:
             the `loadBalancing` value in effect, or its default when it is
             unset. Recorded per request because the config can change
-            between them, and `least_busy` and `round_robin` explain
-            different orderings. Rows from before CB1 (2026-10-02) may say
+            between them, and `spread`, `least_busy` and `round_robin`
+            explain different orderings. Rows from before CB1 (2026-10-02) may say
             `conversation`, PC4's value, which placed new conversations by
             least busy and kept the rest on their replicas. Whether this
             request went back to its replica is `affinity`.
