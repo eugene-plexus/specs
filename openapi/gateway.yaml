@@ -7341,6 +7341,21 @@ components:
             gateway-side time minus the driver's measurement of its
             backend call. Null when no request in the group had a
             backend that reported its own latency.
+        promptCache:
+          oneOf:
+            - $ref: '#/components/schemas/MetricsPromptCache'
+            - type: 'null'
+          description: |
+            How much of the prompt the engines did not have to read
+            again (PC5), over the requests whose backend reported a
+            cached count. Null when none did.
+        affinity:
+          oneOf:
+            - $ref: '#/components/schemas/MetricsAffinity'
+            - type: 'null'
+          description: |
+            What `conversation` balancing did (PC4). Null when it never
+            had a choice to make in this group.
         tierCounts:
           type: object
           additionalProperties:
@@ -7350,6 +7365,27 @@ components:
             Requests served, keyed by the 1-based tier that answered. A
             slot whose tier 2 answers everything has a primary that is
             not working, and this is where that becomes visible.
+
+    MetricsPromptCache:
+      type: object
+      description: |
+        Prompt tokens and the part of them served from an engine's
+        prompt cache, summed over `requests` (the ones that reported).
+        `cachedTokens / promptTokens` is the share reused.
+      required: [requests, promptTokens, cachedTokens]
+      properties:
+        requests: {type: integer, minimum: 0}
+        promptTokens: {type: integer, minimum: 0}
+        cachedTokens: {type: integer, minimum: 0}
+
+    MetricsAffinity:
+      type: object
+      description: Requests by what `conversation` balancing did with them.
+      required: [hit, new, moved]
+      properties:
+        hit: {type: integer, minimum: 0}
+        new: {type: integer, minimum: 0}
+        moved: {type: integer, minimum: 0}
 
     MetricsSummary:
       type: object
@@ -7412,6 +7448,15 @@ components:
           type: boolean
           description: Whether token usage is known for this attempt; false is not zero cost.
         promptTokens: {type: integer, minimum: 0}
+        cachedTokens:
+          type: integer
+          minimum: 0
+          description: |
+            Of `promptTokens`, those the backend served from its prompt
+            cache (PC5, schema v11). Absent when the backend did not say,
+            never guessed: llama.cpp, vLLM (with
+            `--enable-prompt-tokens-details`), MLX and hosted OpenAI and
+            Anthropic report it.
         completionTokens: {type: integer, minimum: 0}
         driver:
           type: string
@@ -7586,6 +7631,23 @@ components:
           type:
             - integer
             - 'null'
+        cachedTokens:
+          type:
+            - integer
+            - 'null'
+          description: |
+            Of `promptTokens`, those the serving backend took from its
+            prompt cache (PC5, schema v11). Null when it did not say.
+        affinity:
+          type:
+            - string
+            - 'null'
+          description: |
+            What `conversation` balancing did with this request (PC4):
+            `hit`, sent back to the replica its conversation used before;
+            `new`, a conversation not seen before; `moved`, its replica
+            was full or gone and it went elsewhere. Null when there was
+            no choice to make or another strategy was in effect.
         door:
           type:
             - string
