@@ -3087,7 +3087,23 @@ paths:
         * **`swapWaitSeconds`** (`duration`) — how long a request waits
           for a `startOnDemand` runtime to reach `ready` before the next
           tier is tried. Engine-dependent: llama.cpp loads a small
-          model in seconds; vLLM's silent load is minutes.
+          model in seconds; vLLM's silent load is minutes. **Since
+          2026-10-02 (CB3) also how long a chat turn waits for room in a
+          runtime's shared context.** A runtime whose agent reports
+          `capabilities.contextPoolTokens` gets no more prompt tokens in
+          flight than 90% of it: each turn counted as its conversation's
+          last prompt tokens, plus its new text at ~3.5 characters a
+          token (the whole request's, for a new conversation), plus its
+          `max_tokens`. A turn that does not fit waits — on the replica
+          that holds its conversation while it holds one, else on any
+          replica of the tier with room — and after this long is sent
+          in the usual order. A request bigger than the whole pool is
+          sent at once, and the engine's own refusal is the answer.
+          Measured on an 8B at 64k with four agents a replica: 158 of
+          204 turns failed before, when a few prompts overflowed a pool
+          and the engine's refusal was counted as a broken backend. That
+          refusal (the driver's `#backend-capacity`) now cascades and is
+          not counted by a backend's circuit.
         * **`idleCheckSeconds`** (`duration`) — how often the gateway
           checks each runtime's idle timeout.
         * **`controlUrl`** (`url`, optional) — the control root, when
