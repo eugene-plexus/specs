@@ -1,7 +1,7 @@
 # Cache-aware balancing, v2: many conversations, many replicas
 
-**Status: measured 2026-10-02 (late); the calls in §6 are Troy's and not
-taken.** Follows [`prompt-cache.md`](prompt-cache.md) (PC1-PC7). Every
+**Status: measured 2026-10-02 (late); all six calls in §6 taken by Troy the
+same day, as recommended. Next: build, in §7's order (CB3 first).** Follows [`prompt-cache.md`](prompt-cache.md) (PC1-PC7). Every
 number below is in
 [`docs/acceptance/cache-aware-balancing-measurement.md`](../acceptance/cache-aware-balancing-measurement.md).
 
@@ -118,10 +118,14 @@ request there finishes; a request bigger than the pool alone is sent anyway
 and the engine's own refusal is the honest answer. The wait is bounded like
 a swap wait, after which the normal cascade runs.
 
-**The pool size** comes from the agent: `/props` gives `n_ctx`,
-`total_slots` and whether the pool is unified (one pool of `n_ctx`) or
-divided (`n_ctx` per slot). A field on the runtime's capabilities, so a
-contract change on `agent.yaml` (read by the gateway).
+**The pool size** comes from the agent: `/props` gives the per-slot
+`n_ctx` and `total_slots` but not whether the pool is unified (b11211's props
+builder has no such field), and the agent knows from the argv it launched:
+`parallelSlots` unset is llama-server's automatic slots, one unified pool of
+`n_ctx`; an explicit `--parallel N` divides it (`n_ctx` per slot) unless
+`--kv-unified` is passed too. A field on the runtime's capabilities, so a
+contract change on `agent.yaml` (read by the gateway); an engine the agent
+did not launch reports none, and the gateway does not budget it.
 
 **A pool refusal under load is load, not a broken backend.** llama-server's
 `500 Context size has been exceeded`, and a stream it cut for the same
@@ -198,9 +202,14 @@ family (known: #22083), `id_slot` is dropped on `/v1/messages` (known:
 upstream; `get_available_slot` runs its cache update on the busy slot;
 master `bed0a8566` unchanged; a two-request repro did not reproduce it).
 
-## 6. Calls — Troy's
+## 6. Calls — all taken by Troy, 2026-10-02, as recommended
 
-| # | Call | Recommendation | The trade-off, measured |
+Troy, asked whether these are the fastest defaults for one user and for many: calls 1-3 are
+the fastest measured for many users and neutral or better for one; call 3 trades the median
+in overload for no failures and a quarter of the tail; call 4 off is the safe default, not the
+fastest for one user running several agents on a roomy pool. Taken as recommended.
+
+| # | Call | Taken | The trade-off, measured |
 |---|---|---|---|
 | 1 | Affinity always on, with an off switch only for benchmarking | **Yes** | +13 points over `least_busy` and half the TTFT at 12 at once; without the switch a benchmark repeating one prompt lands on one replica |
 | 2 | `spread` as the default for new conversations | **Yes** | Noise on 3 replicas (+0.5), +20 points and TTFT p50 4.00 → 1.05 s on 8, +26 points and 15.0 → 3.0 s in overload. Costs nothing measurable |
@@ -209,7 +218,7 @@ master `bed0a8566` unchanged; a two-request repro did not reproduce it).
 | 5 | Record evictions and show them per backend | **Yes** | No routing change |
 | 6 | Leave prefix placement, rendezvous and multi-gateway unbuilt | **Yes** | Each measured at or below the simpler choice (§4) |
 
-## 7. Slices, once the calls are taken
+## 7. Slices, in build order
 
 | Slice | What | Where |
 |---|---|---|
