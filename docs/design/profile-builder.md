@@ -502,10 +502,14 @@ triangle.
    because it changes *what* gets measured.
 2. **Faster ↔ Longer memory, after the run.** One slider that **snaps to
    the measured options** (the Pareto set). Each stop shows its
-   consequence, the way Photoshop shows file size, for example: *"About 35
-   words a second · holds about 100 pages"*.
-   - Exact tokens per second, context and cache type sit in the expert
-     hint (`expertHint`, per S8).
+   consequence, the way Photoshop shows file size, for example: *"48
+   tok/s · 80,128 tokens of context"*.
+   - The decimal speed, the depth it was measured at and the cache type
+     sit in the expert hint (`expertHint`, per S8).
+   - **Changed 2026-10-01 (Troy, at the first build a person ran):** it
+     read *"About 35 words a second · holds about 100 pages"*. *"I'm not
+     sure about 'Holds n pages' as a metric. The use of tokens and tok/s
+     has hit mainstream media. We don't need to sugar coat it."*
    - The slider only moves over results that already exist, so it answers
      instantly (NN/g's 0.1 s), and it never starts work.
 
@@ -528,9 +532,10 @@ triangle.
 **Copy:**
 - The golden-path gate (`vocabulary.ts`) bans implementation nouns, and
   every sentence stays under 25 words.
-- "Words a second" is tokens × 0.75, and "pages" is 650 tokens a page.
-  Both are labelled "about", because they are approximations, and the hint
-  carries the exact figure.
+- Speeds are tok/s and memory is tokens of context, the units they are
+  measured in, so no figure on the page is an approximation of another.
+  The quality promise says "next token" for the same reason. (Until
+  2026-10-01: words, at tokens × 0.75, and pages, at 650 tokens a page.)
 
 ## §6 What it saves, and settings that never lie
 

@@ -147,3 +147,53 @@ builder's words.
 - **A3d**, Low's offer of a smaller file of the same model after a build,
   is next.
 - Home's "make it faster" offer (call 6, later).
+
+## The first build a person ran (2026-10-01)
+
+Troy ran the builder on the live install's 5090 (`Amish_Station`),
+saved the result, and launched it. It found four things. All four are
+fixed and pinned: agent `72908dd`, control `6a3c24b`, ui `2c6e5e5` /
+`dist` `014b656`, contract `a172557`.
+
+1. **The built profile crashed at launch.** The engine's log said:
+   *error while handling argument "--flash-attn": unknown value for
+   --flash-attn: '--cache-type-k'*.
+   - The build chose a quantised cache, so the profile set
+     `flashAttention: true`.
+   - The agent wrote that as a bare `--flash-attn`. `-fa` takes
+     on|off|auto, so llama-server read the next flag as its value.
+   - The builder's own trials always passed `on`. So the build
+     succeeded, and the launch of what it built did not.
+   - **A test required the broken shape**: it asserted that nothing but
+     another flag follows `--flash-attn`. Any profile with Flash
+     attention ticked would have crashed, builder or not. That test is
+     now `test_flash_attention_takes_a_value`, asserted with a flag after
+     the switch.
+   - The browser run above built at Max on CPU. Max keeps a
+     full-precision cache and never sets flash attention, and nothing had
+     launched a built profile that turned it on.
+2. **Two runtimes of the model could not be told apart.** One came from
+   each profile, and both read the same. A runtime's name is the model's
+   and the profile's, cut to 60 characters, so *Built for Amish_Station*
+   came out as `-built-for-amish-statio`.
+   - Launch now records the profile on the runtime
+     (`RuntimeSpec.profile`), and the row says it.
+3. **The crashed runtime's driver stood on a row of its own**, as an
+   *external backend · runs on its own*. A driver reports which runtime
+   it follows, and one whose engine is down reports nothing.
+   - The row now joins it to its runtime by the agent's own naming,
+     `<runtime>-driver`, on the same machine only.
+4. **Words and pages → tokens and tok/s**, at Troy's call (design §5).
+
+`scripts/builder-launch-sabotage.py` has 10 sabotages, including the
+over-correction of sending `off` for an unticked box; **10 of 10
+caught**. Tests: agent, 2 new and the one that locked the defect
+rewritten; ui, 5 new. The suites: agent 1,555, ui 1,608.
+
+**Not changed, and worth a decision:** *Flash attention* is a checkbox
+whose unticked state is shown as off. The engine's own default is
+`auto`, which turns it on where supported. An unticked box therefore
+does not mean off, which is what "settings never lie" forbids. A
+three-way setting (on, off, the engine decides) would fix it. It is
+left as it was, because changing what an unticked box sends would
+change every existing profile.
