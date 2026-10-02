@@ -179,20 +179,28 @@ def _r_results(body: dict) -> int:
     return sum(1 for i in items if isinstance(i, dict) and i.get("type") == "function_call_output")
 
 
-def _r_shell(body: dict, command: str) -> tuple[str, dict]:
-    """Whatever shell tool this client version offers, called with `command`."""
+def _r_shell(body: dict, argv: list[str]) -> tuple[str, dict]:
+    """Whatever shell tool this client version offers, running `argv`.
+
+    The `shell` tool takes an argv list and quotes each element itself, so
+    a command handed to it as one pre-quoted string reaches cmd.exe quoted
+    twice and fails ("The filename, directory name, or volume label syntax
+    is incorrect"): every Codex tool result captured before 2026-10-02
+    (late) was that error or a sandbox refusal, not a file.
+    """
     names = {t.get("name") for t in body.get("tools") or [] if isinstance(t, dict)}
+    line = " ".join(f'"{a}"' if " " in a else a for a in argv)
     if "shell_command" in names:
-        return "shell_command", {"command": command}
+        return "shell_command", {"command": line}
     if "exec_command" in names:
-        return "exec_command", {"cmd": command}
-    return "shell", {"command": ["cmd", "/c", command]}
+        return "exec_command", {"cmd": line}
+    return "shell", {"command": ["cmd", "/c", *argv]}
 
 
-def _r_script(read_dir: Path, turns: int) -> list[str]:
+def _r_script(read_dir: Path, turns: int) -> list[list[str]]:
     files = sorted(p for p in read_dir.iterdir() if p.is_file())
-    steps = [f'dir /b "{read_dir}"'] + [f'type "{p}"' for p in files]
-    steps.append(f'findstr /n "def " "{read_dir}\\*"')
+    steps = [["dir", "/b", str(read_dir)]] + [["type", str(p)] for p in files]
+    steps.append(["findstr", "/n", "def", str(read_dir / "*")])
     return steps[:turns]
 
 

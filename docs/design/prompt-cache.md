@@ -4,7 +4,9 @@
 day; PC1-PC5 BUILT AND PINNED in both installers the same day** (gateway
 `3e00869`, inference-driver `d776e81`, agent `da6fc54`, control `6281913`,
 ui `ef67426` / dist `c280cc1`; the after-the-fix numbers are the record's
-§11). **PC6 and PC7 are next, after the release.**
+§11). **PC6 and PC7 are next, after the release.** Balancing at scale (many
+conversations on many replicas) is measured and designed in
+[`cache-aware-balancing.md`](cache-aware-balancing.md), calls open.
 Troy's brief: *"this is at the core of what Eugene is: managing multiple
 backends efficiently. So resolving this caching issue is high priority
 before we go public."* The measurement, with every number below, is
@@ -69,7 +71,11 @@ not. What Eugene decides is everything around the cache:
   alone). More `--cache-ram` changed nothing; a stricter slot similarity
   made it worse, because the saved state would not fit back into the pool.
   The remedy is a pool sized for the sessions, or more replicas with
-  affinity, not a flag.
+  affinity, not a flag. **Corrected 2026-10-02 (late):** with a pool that
+  had room for every session, five sessions still reread their histories,
+  because llama-server sends every session sharing a prefix to one slot;
+  pinning slots by `id_slot` from Eugene is the remedy, done safely
+  ([`cache-aware-balancing.md`](cache-aware-balancing.md) CB2).
 - **Restoring a saved slot after a restart.** Works on full attention (8B:
   0.85 s against 1.84 s to re-read, for 2.5 GB of disk) and **reuses nothing
   on hybrid or sliding-window models**, which are three of the five starter
@@ -178,9 +184,12 @@ already exposed.
 
 - **Saving slots across an idle unload** (§2): helps full-attention models
   only, until upstream persists context checkpoints. Revisit then.
-- **Per-slot routing inside one llama-server** (`id_slot`): it would fight
+- ~~**Per-slot routing inside one llama-server** (`id_slot`): it would fight
   the engine's own slot choice, and the eight-session reading says the
-  limit is the pool, not the choice.
+  limit is the pool, not the choice.~~ **Wrong, measured 2026-10-02 (late):**
+  the choice wastes a pool that has room, and pinning (never to a busy slot)
+  adds ~3.5 points on top of affinity. Now CB2 of
+  [`cache-aware-balancing.md`](cache-aware-balancing.md).
 - **`CLAUDE_CODE_ATTRIBUTION_HEADER=0` in the Claude Code recipe**: PC1
   makes it unnecessary through Eugene, and an easy default needs no setting.
 

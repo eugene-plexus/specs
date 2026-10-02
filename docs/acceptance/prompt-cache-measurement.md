@@ -135,7 +135,12 @@ error loading state: failed to restore kv cache`, after which turn 5 read
 that other slots hold (related upstream: ggml-org/llama.cpp #17527, closed).
 So on one replica the engine's own multi-session caching is bounded by its
 KV pool, and no flag Eugene could set fixes that; more replicas with
-affinity, or a pool sized for the sessions, does.
+affinity, or a pool sized for the sessions, does. **Corrected 2026-10-02
+(late)** ([`cache-aware-balancing-measurement.md`](cache-aware-balancing-measurement.md)
+§1): with a 131,072-token pool and five sessions, every session still
+reread its history, because llama-server puts every session sharing a
+prefix in the one most similar slot; it is the choice, not the pool, and
+Eugene can fix it by naming the slot (`id_slot`), never a busy one.
 
 ## 5. Claude Code and the Qwen 3.x templates (not caching, found here)
 
