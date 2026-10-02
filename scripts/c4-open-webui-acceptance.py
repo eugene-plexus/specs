@@ -56,6 +56,8 @@ MODEL = "c4-local"
 ANSWER = "C4-ANSWER: hello from the fixture model."
 FIXTURE_PORT = 18990
 PERSON_PASSWORD = "a-person-password-1"
+#: What the owner signs in with once the install has people (C2, D4).
+OWNER_NAME = "operator"
 #: The words the launcher prints when it resets an app's settings for one start.
 RESET_WORDS = "connection%20details%20changed"
 
@@ -334,17 +336,17 @@ def main() -> int:
         time.sleep(3)
         wait_for(lambda: api("GET", f"{AGENT}/v1/apps/{APP}", token)[1].get("status") == "running" or None,
                  300, 3)
-        owner = sign_in(app_url, PASSPHRASE)
+        owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
         _, banners = api("GET", f"{app_url}/api/v1/configs/banners", owner.get("token"))
         check("61", "a restart with nothing changed keeps it",
               "C4 banner" in json.dumps(banners), banners)
-        old_key = app.get("keyName")
+        old_key = app.get("keyId")
         status, _ = api("DELETE", f"{AGENT}/v1/apps/{APP}", token)
         must("62", "uninstalled, keeping its data", status == 204, status)
         app = install_app(token)
         port = int(app.get("port") or port)
         app_url = f"http://127.0.0.1:{port}"
-        owner = sign_in(app_url, PASSPHRASE)
+        owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
         status, answer = chat(app_url, owner.get("token") or "")
         check("63", "reinstalled with a new key, it chats on the new key (a one-start reset)",
               status == 200 and "C4-ANSWER" in json.dumps(answer), json.dumps(answer)[:300])
@@ -352,7 +354,8 @@ def main() -> int:
         said = json.dumps(logs)
         check("64", "and its log says why its settings were reset",
               RESET_WORDS.replace("%20", " ") in said, said[-400:])
-        fact("key before and after", [old_key, app.get("keyName")])
+        check("65", "the reinstall minted a different key", bool(old_key) and old_key != app.get("keyId"),
+              [old_key, app.get("keyId")])
 
         say("uninstall takes it away")
         status, _ = api("DELETE", f"{AGENT}/v1/apps/{APP}?purge=true", token)
