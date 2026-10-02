@@ -128,7 +128,7 @@ contract change on `agent.yaml` (read by the gateway).
 reason, become a capacity outcome in the driver: cascade-eligible, and not
 counted by the circuit (PC3's rule, one case further). Measured on the 8B,
 this is most of the damage: 115-131 of a run's failures were the circuit
-refusing healthy replicas after 22-42 real overflows.
+refusing healthy replicas after 22-42 real overflows (gateway#8).
 
 **A margin on the estimate.** The budget's estimate (characters ÷ 3.5) let
 two overflows through on a pool that holds two prompts; the budget keeps

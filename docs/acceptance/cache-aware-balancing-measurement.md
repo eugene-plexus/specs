@@ -391,7 +391,8 @@ pool (refused, or cut mid-stream: 22-42 a run); the driver reports each as a
 502, the gateway's circuit counts it as a broken backend, and every request
 to that replica is then refused as "cooling down" (115-131 a run) while it
 is perfectly healthy. With every replica of the model tripped, nothing
-answers. **The circuit turns a capacity problem into an outage.**
+answers. **The circuit turns a capacity problem into an outage** (filed as
+eugene-plexus/gateway#8).
 
 - **The budget alone** answers 166 of 204, and 35 of its 38 failures are
   still the circuit, tripped by the two overflows its estimate let through
