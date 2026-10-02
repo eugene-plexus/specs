@@ -196,4 +196,5 @@ whose unticked state is shown as off. The engine's own default is
 does not mean off, which is what "settings never lie" forbids. A
 three-way setting (on, off, the engine decides) would fix it. It is
 left as it was, because changing what an unticked box sends would
-change every existing profile.
+change every existing profile. Tracked as
+[agent #6](https://github.com/eugene-plexus/agent/issues/6).
