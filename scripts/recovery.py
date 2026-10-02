@@ -37,6 +37,75 @@ FORMAT = 1
 MARKER = ".recovery-quarantine"
 CHUNK = 1024 * 1024
 EXCLUDED = {"venv", "pythons", "bin", "logs", ".cache", "__pycache__"}
+#: Where systemd keeps an app's own state on a Linux system install (C1:
+#: `StateDirectory=eugene-plexus-apps/%i` with `DynamicUser`), outside the
+#: prefix, so walking the prefix alone left Workbench's chats out (specs#11).
+APP_STATE_ROOT = Path("/var/lib/private/eugene-plexus-apps")
+#: Where a checkpoint records that state, beside the prefix's own files.
+APP_STATE = "app-state"
+
+
+def installed_apps(root):
+    """The ids of the apps `apps.yaml` records as installed."""
+    path = root / "apps.yaml"
+    if not path.exists():
+        return []
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    ids = []
+    for item in raw.get("installed") or []:
+        app_id = item.get("id") or (item.get("manifest") or {}).get("id")
+        if isinstance(app_id, str) and app_id:
+            ids.append(safe_relative(app_id).as_posix())
+    return ids
+
+
+def app_state(root, state_root=None):
+    """Each installed app's state kept outside the prefix: (file, recorded name).
+
+    Only where the service manager keeps it there (a Linux system install).
+    A directory that exists but cannot be read is refused rather than left
+    out, so a checkpoint never silently drops someone's chats.
+    """
+    state_root = APP_STATE_ROOT if state_root is None else state_root
+    found = []
+    for app_id in installed_apps(root):
+        directory = state_root / app_id
+        try:
+            present = directory.is_dir()
+        except PermissionError as exc:
+            raise ValueError(
+                f"cannot read app {app_id}'s data at {directory}; run the checkpoint as root"
+            ) from exc
+        if not present:
+            continue
+        for path in sorted(directory.rglob("*")):
+            if path.is_symlink():
+                raise ValueError(f"linked file must be inventoried separately: {path}")
+            if path.is_file():
+                rel = path.relative_to(directory).as_posix()
+                found.append((path, f"{APP_STATE}/{app_id}/{rel}"))
+    return found
+
+
+def place_app_state(state, state_root=None):
+    """Put a restored app's state back where its service manager keeps it,
+    never over data already there. systemd gives a `DynamicUser` service's
+    state directory to its account again when the app next starts."""
+    state_root = APP_STATE_ROOT if state_root is None else state_root
+    restored = state / APP_STATE
+    if not restored.is_dir():
+        return []
+    placed = []
+    for directory in sorted(p for p in restored.iterdir() if p.is_dir()):
+        target = state_root / safe_relative(directory.name)
+        if target.exists() and any(target.iterdir()):
+            raise ValueError(
+                f"app {directory.name} already has data at {target}; move it aside first"
+            )
+        target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        shutil.copytree(directory, target, dirs_exist_ok=True)
+        placed.append(directory.name)
+    return placed
 MODEL_SUFFIXES = {".gguf", ".safetensors", ".pt", ".pth", ".bin"}
 
 
@@ -348,12 +417,14 @@ def backup(root, destination, password, phrases, external, *, stopped):
     validate_state(root)
     verified = verify_unlock(root, phrases)
     files, assets, omitted = inventory(root, external)
+    entries = [(f, f.relative_to(root).as_posix()) for f in files] + app_state(root)
+    sources = dict((name, path) for path, name in entries)
     private_directory(destination)
     salt = nacl.utils.random(nacl.pwhash.argon2id.SALTBYTES)
     box = box_for(password, salt)
     (destination / "salt").write_bytes(salt)
     records = []
-    for index, source in enumerate(files):
+    for index, (source, name) in enumerate(entries):
         before = digest(source)
         payload = f"{index}.sealed"
         encrypt_file(source, destination / payload, box)
@@ -363,14 +434,14 @@ def backup(root, destination, password, phrases, external, *, stopped):
             )
         records.append(
             {
-                "path": source.relative_to(root).as_posix(),
+                "path": name,
                 "sha256": before,
                 "mode": source.stat().st_mode & 0o777,
                 "payload": payload,
             }
         )
     for record in records:
-        if digest(root / record["path"]) != record["sha256"]:
+        if digest(sources[record["path"]]) != record["sha256"]:
             raise ValueError(
                 "state changed during checkpoint; keep the install stopped"
             )
@@ -581,6 +652,8 @@ def activate(destination, *, original_stopped):
             rel = Path(spawn["configFile"]).relative_to(source)
             spawn["configFile"] = str((destination / "state" / rel).resolve())
     agent_path.write_text(yaml.safe_dump(agent), encoding="utf-8")
+    for app_id in place_app_state(destination / "state"):
+        print(f"Restored app {app_id}'s data to {APP_STATE_ROOT / app_id}")
     marker.unlink()
     print(f"Activated replacement state: {destination / 'state' / 'agent.yaml'}")
     print(

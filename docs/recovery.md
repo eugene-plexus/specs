@@ -33,6 +33,7 @@ Argon2id. Keep that password separately; it is not recoverable from the backup.
 | Client-key policies, revocations, admission accounting and gateway policy caches | Retained; revoked keys stay revoked at the checkpoint's point in time |
 | `metrics.sqlite3` and related component stores | Retained; restored SQLite files pass integrity checks |
 | Managed engine builds under the state directory | Retained, including build metadata, binaries and companion libraries |
+| Installed apps' own data (Workbench's chats, Open WebUI's database) | Retained. On a Linux system install systemd keeps it outside the state directory, in `/var/lib/private/eugene-plexus-apps/<app>`, so make the checkpoint as root there; a folder it cannot read is refused rather than left out. Activation puts it back there only where that app has no data yet, and otherwise asks you to move the existing data aside |
 | Model files | External assets: paths, sizes and SHA256; **not copied** |
 | `venv`, `pythons`, `bin` | Reconstructed from exact Python/package versions and immutable Eugene archive URLs/hashes |
 | `logs`, `.cache`, `__pycache__` | Expendable; excluded |

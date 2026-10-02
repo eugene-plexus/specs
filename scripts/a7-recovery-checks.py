@@ -72,6 +72,18 @@ def run():
         (engine / "required-library.dat").write_bytes(b"retained engine support file")
         model = root / "model.gguf"
         model.write_bytes(b"external-model")
+        # An app whose own data the service manager keeps outside the prefix,
+        # as systemd does on a Linux system install (specs#11).
+        (root / "apps.yaml").write_text(
+            yaml.safe_dump({"installed": [{"id": "workbench", "version": "v1"}]}),
+            encoding="utf-8",
+        )
+        state_root = Path(temporary) / "app-state-root"
+        (state_root / "workbench").mkdir(parents=True)
+        with closing(sqlite3.connect(state_root / "workbench" / "workbench.sqlite3")) as db:
+            db.execute("CREATE TABLE chats (title TEXT)")
+            db.execute("INSERT INTO chats VALUES ('What is Eugene Plexus?')")
+            db.commit()
         baseline = {
             str(p.relative_to(root)): recovery.digest(p)
             for p in root.rglob("*")
@@ -117,15 +129,25 @@ def run():
                 ),
                 "no stopped acknowledgement",
             )
-            recovery.backup(
-                root, destination, "password", {"agent": phrase}, [], stopped=True
-            )
+            with patch.object(recovery, "APP_STATE_ROOT", state_root):
+                with patch("pathlib.Path.is_dir", side_effect=PermissionError("denied")):
+                    refused(
+                        lambda: recovery.app_state(root),
+                        "app data the checkpoint cannot read",
+                        "run the checkpoint as root",
+                    )
+                recovery.backup(
+                    root, destination, "password", {"agent": phrase}, [], stopped=True
+                )
         assert not any(
             b"provider-secret" in p.read_bytes() or phrase.encode() in p.read_bytes()
             for p in destination.iterdir()
         )
         manifest, box = recovery.read_checkpoint(destination, "password")
         assert "logs" in manifest["excluded"]
+        assert "app-state/workbench/workbench.sqlite3" in {
+            r["path"] for r in manifest["files"]
+        }, "an app's data outside the prefix is in the checkpoint"
         assert manifest["externalAssets"][0]["sha256"] == recovery.digest(model)
         replacement = Path(temporary) / "replacement"
         refused(
@@ -187,6 +209,19 @@ def run():
             root / "client_keys.json"
         ).read_bytes()
         assert not (replacement / "state/logs").exists()
+        restored_app = replacement / "state/app-state/workbench/workbench.sqlite3"
+        assert restored_app.read_bytes() == (
+            state_root / "workbench" / "workbench.sqlite3"
+        ).read_bytes()
+        target_root = Path(temporary) / "placed-app-state"
+        assert recovery.place_app_state(replacement / "state", target_root) == ["workbench"]
+        with closing(sqlite3.connect(target_root / "workbench" / "workbench.sqlite3")) as db:
+            assert db.execute("SELECT title FROM chats").fetchone() == ("What is Eugene Plexus?",)
+        refused(
+            lambda: recovery.place_app_state(replacement / "state", target_root),
+            "app data already in place",
+            "move it aside first",
+        )
         assert (
             replacement / "state/engines/example/bin/required-library.dat"
         ).read_bytes() == b"retained engine support file"
@@ -214,6 +249,16 @@ def run():
                 "Python outside replacement directory",
                 "restored Python must live under the replacement",
             )
+        # Activation puts an app's data back where its service manager keeps
+        # it. The restored venv's own validation is not what is checked here.
+        activated_root = Path(temporary) / "activated-app-state"
+        with patch.object(recovery, "APP_STATE_ROOT", activated_root):
+            with patch.object(recovery.subprocess, "run"):
+                recovery.activate(replacement, original_stopped=True)
+        assert (activated_root / "workbench" / "workbench.sqlite3").read_bytes() == (
+            state_root / "workbench" / "workbench.sqlite3"
+        ).read_bytes(), "activation restores an app's data"
+        assert not (replacement / recovery.MARKER).exists()
         assert {
             str(p.relative_to(root)): recovery.digest(p)
             for p in root.rglob("*")
