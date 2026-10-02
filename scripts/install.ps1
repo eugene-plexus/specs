@@ -119,13 +119,13 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Keep in lockstep with install.sh. One commit per repo.
 $PIN = @{
-    "agent"            = "cd348264b1c4908ec50f97c3e47801bb57031adc"
-    "control"          = "6a3c24bdc7bda8f837442c191b19f16f13327226"
+    "agent"            = "9b5a07c691139cde213ad674d256ddfbddaa8ff9"
+    "control"          = "dca6827ef238baaf363cd6a6039ced9bfb9a9895"
     "gateway"          = "05efc8800711ac31f6b4ea7c8fae9acc40aa5e03"
     "inference-driver" = "53412d5c34ad15ad393bad3ab36c09e7c7312ab4"
     "library"          = "6e22230b163c7e82aed578c738a02d4058bbb548"
     "tool-driver"      = "df23d9223624f2a08b48eefeea9790b678bd159c"
-    "ui"               = "872abd5c22c977e46f379026b3cc74035b98937b"  # branch `dist`, not `main`
+    "ui"               = "66b80b481ca110ba5d633dabcae20310626d2c16"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"

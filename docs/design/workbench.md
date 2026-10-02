@@ -571,8 +571,9 @@ Not a model-chosen action, but late too: **the working animation**
 2. **C2, signing in with Eugene** (§4). **Built 2026-10-01.**
 3. **C3, Workbench's version 1,** in `eugene-plexus/workbench`. **Built
    2026-10-01.**
-4. **C4, Open WebUI.** It needs C1, and C2 for sign-in. It can move ahead
-   of C3 if Troy wants the choice first.
+4. **C4, Open WebUI.** It needs C1, and C2 for sign-in. **Built
+   2026-10-02** ([`c4-open-webui.md`](c4-open-webui.md),
+   [record](../acceptance/c4-open-webui-run.md)).
 5. MCP servers, filesystem tools and local media models, each designed
    first.
 6. **The working animation** (§6.1): the gate first, then the scenes. The

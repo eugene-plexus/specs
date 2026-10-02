@@ -1,6 +1,6 @@
 # C4: Open WebUI in the app registry
 
-**2026-10-01. Designed; not built.** Slice C4 of
+**2026-10-01. Built and pinned 2026-10-02** ([record](../acceptance/c4-open-webui-run.md): 39 of 39 on GitHub's Windows and Ubuntu runners). Slice C4 of
 [`workbench.md`](workbench.md) §7: the first app in the registry that we did
 not write. Built on C1 (an account per app), C2 (sign-in with Eugene) and C3
 (the registry's first entry, Workbench).
