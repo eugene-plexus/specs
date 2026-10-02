@@ -5426,6 +5426,31 @@ components:
             Override the binary for this one runtime, ignoring whatever
             the adapter discovered. For running one model on a custom
             build without disturbing the rest of the install.
+        profile:
+          $ref: "#/components/schemas/RuntimeProfile"
+
+    RuntimeProfile:
+      type: object
+      description: |
+        The library profile this runtime was launched from, as the
+        console that declared it named it (2026-10-01). Recorded and
+        reported, never read: the flags are what the engine runs with,
+        and a profile edited or deleted later changes nothing here.
+
+        Exists because two runtimes of one model on one machine, one
+        from each profile, were indistinguishable on the Inference
+        screen. A runtime's name is derived from the model and the
+        profile and cut to 60 characters, so a long profile name does
+        not survive in it -- "Built for Amish_Station" came out as
+        `…-built-for-amish-statio`.
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          description: The profile's id in the library, unique within its model.
+        name:
+          type: string
+          description: The profile's name when the runtime was declared.
 
     Runtime:
       type: object
@@ -5532,6 +5557,8 @@ components:
           type: string
         binary:
           type: string
+        profile:
+          $ref: "#/components/schemas/RuntimeProfile"
         driver:
           type: string
           description: |
