@@ -7416,12 +7416,19 @@ components:
 
     MetricsAffinity:
       type: object
-      description: Requests by what `conversation` balancing did with them.
-      required: [hit, new, moved]
+      description: |
+        Requests by what conversation affinity did with them. `evicted`
+        (CB5, schema v12) is a turn that went back to its replica and
+        found its history gone there: the engine reused less than the
+        whole of the conversation's previous prompt. Grouped by backend,
+        it says which model needs more context or another replica, where
+        an operator saw only a slow model.
+      required: [hit, new, moved, evicted]
       properties:
         hit: {type: integer, minimum: 0}
         new: {type: integer, minimum: 0}
         moved: {type: integer, minimum: 0}
+        evicted: {type: integer, minimum: 0}
 
     MetricsSummary:
       type: object
@@ -7685,11 +7692,15 @@ components:
           description: |
             What conversation affinity did with this request (PC4;
             `conversationAffinity` since CB1): `hit`, sent back to the
-            replica its conversation used before; `new`, a conversation
-            not seen before; `moved`, its replica was full or gone and it
-            went elsewhere. Null when there was no choice to make or
-            affinity was off (before CB1, when another strategy was in
-            effect).
+            replica its conversation used before; `evicted` (CB5, schema
+            v12), sent back there and the engine reused less than the
+            whole of the conversation's previous prompt, so its history
+            was gone; `new`, a conversation not seen before; `moved`, its
+            replica was full or gone and it went elsewhere. Null when
+            there was no choice to make or affinity was off (before CB1,
+            when another strategy was in effect). A backend that does not
+            report cached tokens cannot be judged, and its turns stay
+            `hit`.
         door:
           type:
             - string
