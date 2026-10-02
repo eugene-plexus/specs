@@ -9,6 +9,7 @@ the Apps card's links). Contract specs `f768bc5`.
 | Run | Result |
 | --- | --- |
 | `scripts/c4-open-webui-acceptance.py` on GitHub's Windows and Ubuntu runners (`c4-open-webui.yml`), a real service install and Open WebUI 0.11.4 from PyPI | **39 of 39 on each** ([run 36969009184](https://github.com/eugene-plexus/specs/actions/runs/36969009184)) |
+| The same run on the installers once pinned (specs `23e8345`; CI, A4 macOS and the container image green on that commit) | **39 of 39 on each** ([run 36969666933](https://github.com/eugene-plexus/specs/actions/runs/36969666933)) |
 | The same run on the installer's pins before C4 | **11 of 12 on each**: it stops at check 30, the catalogue has no Open WebUI |
 | Sabotage: agent (`c4-agent-sabotage.py`), control (`c4-control-sabotage.py`), ui (`c4-ui-sabotage.py`) | **27 of 27, 11 of 11, 7 of 7** |
 | Every script specs CI runs, locally, on the candidates | **25 of 25** |
