@@ -114,7 +114,12 @@ local runs could show:
 ## Not done, named
 
 - **Brave live**: no Brave key on this box. Built from its API documentation
-  and a fixture that checks the subscription token.
+  and a fixture that checks the subscription token. **Since 2026-10-01, a
+  person has used it:** Troy set up a Brave account on the live install
+  and a Workbench chat answered from a web search
+  ([C3 record](c3-workbench-run.md), "The first run by a person"). That
+  was a report, not a capture. No run here has asserted Brave's response
+  shape against the live API.
 - **A live image through the tool**: the P8e leg uses the OpenRouter-shaped
   fixture. P4's live run already proved the images path the tool reuses;
   the tool's own call to a live provider has not been made.

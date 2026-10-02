@@ -259,6 +259,27 @@ Pinned: agent `5c456fe`, control `28ea3e3`.
 updated, the install fails with a 502 that names the root's refusal, and
 no longer signs anyone out. It works once the root is updated too.
 
+## The first run by a person
+
+**2026-10-01, Troy, on the live two-machine install.** Every run before
+this was a harness, a unit test or a scripted Chrome.
+
+1. He updated both machines to the fix's pins: the NAS container (control
+   root and console) and `Amish_Station` (the GPU worker).
+2. He set up a Brave search account.
+3. From the NAS console, he installed Workbench on `Amish_Station`.
+4. He asked a Qwen model about Eugene Plexus. It reasoned, ran a web
+   search, read the project's website, and answered correctly.
+
+That covers, in one sitting, three things no person had done before:
+
+- installing from one machine's console onto another;
+- signing in with Eugene;
+- a search on the install's search account, behind a chat answer.
+
+This is a report, not a capture: nothing recorded which account served
+the search or the exact model.
+
 ## What this does not show
 
 - **Workbench in an account of its own.** These runs are not a service
@@ -270,6 +291,7 @@ no longer signs anyone out. It works once the root is updated too.
 - **Open WebUI beside it.** That a cookie alone opens nothing is checked.
   A second app on the same host actually receiving Workbench's cookie is
   C4's to show.
-- **Many people at once**, Postgres, a phone, HTTPS, two machines.
+- **Many people at once**, Postgres, a phone, HTTPS. Two machines: only by
+  hand, in the run above. The harness puts both agents on one host.
 - **A vision model live.** The live model takes no images, so its image
   check is the refusal.
