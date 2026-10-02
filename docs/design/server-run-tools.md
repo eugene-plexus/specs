@@ -326,3 +326,16 @@ Components: see the record's table,
 * **P8e: metrics gain `imageGenerations` beside `webSearches`** rather than
   putting images into a list named for searches. Same row schema; the
   `provider` of an image row is the image model that made it.
+* **§3 step 4 does not hold on chat (found 2026-10-01, the first person's
+  chat in Workbench; [gateway #4](https://github.com/eugene-plexus/gateway/issues/4)).**
+  Responses and messages keep text, search and text as separate items, as
+  designed. Chat has no item for a search, so the text of every turn
+  streams as one message. A model the gateway forces to search on turn 0
+  (`tool_choice: required`, kept on Troy's call) can write a whole answer
+  before the call, because llama-server does not enforce the choice, and the
+  caller got two answers in one reply. **Kept:** the forced first search, and
+  every turn's text on the wire, since a stream cannot be unsent. **Added
+  (alpha.6):** `StreamProgress.phase`, so a caller that asked for progress is
+  told when each search finishes as well as when it starts, and can show
+  text written before a search as a draft. Workbench does
+  ([workbench #1](https://github.com/eugene-plexus/workbench/issues/1)).
