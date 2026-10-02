@@ -3070,10 +3070,20 @@ paths:
           ordered list of `{model, targets}`; see
           `ConfigValueType.model_slots` for the shape and why targets
           are model ids rather than driver names.
-        * **`loadBalancing`** (`enum`) — `least_busy` (default) picks
-          the eligible driver with the fewest in-flight requests per
-          slot of capacity, ties round-robin; `round_robin` alternates
-          strictly, which is worth having when comparing two replicas.
+        * **`loadBalancing`** (`enum`) — `conversation` (the default
+          since 2026-10-02, PC4) sends a request that continues a
+          conversation to the replica its earlier turns went to, because
+          only that replica's engine holds its prompt in cache, unless
+          that replica is saturated while another has a free slot; a new
+          conversation goes to the least busy. The conversation is the
+          client's `prompt_cache_key`, Claude Code's `session_id` in
+          `metadata.user_id`, or else the model, first system message and
+          first user message. Measured on two replicas: one agent session
+          alternating reused 52.8% of its prompt tokens, kept on one
+          75.3%. `least_busy` picks the eligible driver with the fewest
+          in-flight requests per slot of capacity, ties round-robin;
+          `round_robin` alternates strictly, which is worth having when
+          comparing two replicas.
         * **`swapWaitSeconds`** (`duration`) — how long a request waits
           for a `startOnDemand` runtime to reach `ready` before the next
           tier is tried. Engine-dependent: llama.cpp loads a small
@@ -7546,8 +7556,8 @@ components:
           description: |
             The `loadBalancing` value in effect when this request was
             routed. Recorded per request because the config can change
-            between them, and `least_busy` and `round_robin` explain
-            different orderings.
+            between them, and `conversation`, `least_busy` and
+            `round_robin` explain different orderings.
         candidates:
           type: array
           description: |
