@@ -3070,20 +3070,29 @@ paths:
           ordered list of `{model, targets}`; see
           `ConfigValueType.model_slots` for the shape and why targets
           are model ids rather than driver names.
-        * **`loadBalancing`** (`enum`) — `conversation` (the default
-          since 2026-10-02, PC4) sends a request that continues a
-          conversation to the replica its earlier turns went to, because
-          only that replica's engine holds its prompt in cache, unless
-          that replica is saturated while another has a free slot; a new
-          conversation goes to the least busy. The conversation is the
-          client's `prompt_cache_key`, Claude Code's `session_id` in
+        * **`conversationAffinity`** (`boolean`, default on; CB1, since
+          2026-10-02) — a request that continues a conversation goes to
+          the replica its earlier turns went to, because only that
+          replica's engine holds its prompt in cache, unless that replica
+          is saturated while another has a free slot. The conversation is
+          the client's `prompt_cache_key`, Claude Code's `session_id` in
           `metadata.user_id`, or else the model, first system message and
-          first user message. Measured on two replicas: one agent session
-          alternating reused 52.8% of its prompt tokens, kept on one
-          75.3%. `least_busy` picks the eligible driver with the fewest
-          in-flight requests per slot of capacity, ties round-robin;
-          `round_robin` alternates strictly, which is worth having when
-          comparing two replicas.
+          first user message. Measured with twelve agent sessions on three
+          replicas: 80.8% of prompt tokens reused with it, 67.7% without,
+          and the median first token in half the time. **Off only for
+          benchmarking**, where a tool repeating one prompt would land on
+          one replica every time.
+        * **`loadBalancing`** (`enum`) — where a **new** conversation
+          goes, whatever `conversationAffinity` says. `least_busy` (the
+          default) picks the eligible driver with the fewest in-flight
+          requests per slot of capacity, ties round-robin; `round_robin`
+          alternates strictly, which is worth having when comparing two
+          replicas. **`conversation` is no longer a value** (it was PC4's
+          default, from 2026-10-02 until CB1 the same day, and kept
+          conversations on their replicas, which affinity now does under
+          every value): a file holding it, or holding the default because
+          the gateway wrote it there, follows the current default, and a
+          PATCH of it is refused.
         * **`swapWaitSeconds`** (`duration`) — how long a request waits
           for a `startOnDemand` runtime to reach `ready` before the next
           tier is tried. Engine-dependent: llama.cpp loads a small
@@ -5739,7 +5748,9 @@ components:
           format: date-time
         load_balancing:
           type: string
-          description: The strategy in effect — the `loadBalancing` config value.
+          description: |
+            Where a new conversation goes now: the `loadBalancing` value,
+            or its default when it is unset or the old `conversation`.
         slots:
           type: array
           items:
@@ -7370,8 +7381,9 @@ components:
             - $ref: '#/components/schemas/MetricsAffinity'
             - type: 'null'
           description: |
-            What `conversation` balancing did (PC4). Null when it never
-            had a choice to make in this group.
+            What conversation affinity did (PC4; `conversationAffinity`
+            since CB1). Null when it never had a choice to make in this
+            group.
         tierCounts:
           type: object
           additionalProperties:
@@ -7615,10 +7627,14 @@ components:
             - string
             - 'null'
           description: |
-            The `loadBalancing` value in effect when this request was
-            routed. Recorded per request because the config can change
-            between them, and `conversation`, `least_busy` and
-            `round_robin` explain different orderings.
+            Where a new conversation went when this request was routed:
+            the `loadBalancing` value in effect, or its default when it is
+            unset. Recorded per request because the config can change
+            between them, and `least_busy` and `round_robin` explain
+            different orderings. Rows from before CB1 (2026-10-02) may say
+            `conversation`, PC4's value, which placed new conversations by
+            least busy and kept the rest on their replicas. Whether this
+            request went back to its replica is `affinity`.
         candidates:
           type: array
           description: |
@@ -7659,11 +7675,13 @@ components:
             - string
             - 'null'
           description: |
-            What `conversation` balancing did with this request (PC4):
-            `hit`, sent back to the replica its conversation used before;
-            `new`, a conversation not seen before; `moved`, its replica
-            was full or gone and it went elsewhere. Null when there was
-            no choice to make or another strategy was in effect.
+            What conversation affinity did with this request (PC4;
+            `conversationAffinity` since CB1): `hit`, sent back to the
+            replica its conversation used before; `new`, a conversation
+            not seen before; `moved`, its replica was full or gone and it
+            went elsewhere. Null when there was no choice to make or
+            affinity was off (before CB1, when another strategy was in
+            effect).
         door:
           type:
             - string
