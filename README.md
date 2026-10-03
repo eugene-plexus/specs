@@ -6,16 +6,12 @@
 
 OpenAPI 3.1 contracts for every cross-component interface in [Eugene Plexus](https://eugeneplexus.com).
 
-**Early testing:** [v0.1.0-alpha.1](https://github.com/eugene-plexus/specs/releases/tag/v0.1.0-alpha.1)
-is the first prerelease distribution of the local-inference control plane.
-Start with the [installation guide](https://eugeneplexus.com/install).
-[Release contents and limits](docs/releases/v0.1.0-alpha.1.md). A stable release
-remains gated on usability sessions and the outstanding verification work.
-
-Before updating a development installation, follow the
-[backup and failed-update recovery procedure](docs/recovery.md). Its A7 tooling
-and quarantine guard are newer than the frozen alpha; the guide covers that first
-upgrade separately.
+**[v0.1.0](https://github.com/eugene-plexus/specs/releases/tag/v0.1.0) is the
+first release** of the local-inference control plane: early software that works,
+with rough edges and [known limits](docs/releases/v0.1.0.md#known-issues). Start
+with the [installation guide](https://eugeneplexus.com/install). Before updating
+an installation, make a checkpoint as the
+[backup and recovery guide](docs/recovery.md) describes.
 
 This is the **single source of truth** for how Eugene Plexus components talk to each other. The six active consumers (`agent`, `control`, `gateway`, `inference-driver`, `library`, and `ui`) depend on a pinned revision via codegen, never via direct import. Retired repos retain historical pins; they do not consume today's contracts. Components share *schemas, not code*.
 
@@ -33,36 +29,25 @@ Eugene brings engine lifecycle, model files, application access and routing into
 2. **It tells you what fits before you download, and starts your settings there.** Quant and context picked for *this* card, with the reason shown. Fit estimates guide a launch; they do not establish shared-service latency or replace testing on the target hardware.
 3. **It finds and downloads models in the app, into your own folders, as plain files.** Search a catalogue, read what a model is, pick a quant, download with resume and progress — landing in your existing GGUF directories, plainly named. No content-addressed cache, no hash mismatches. Delete us and you still have your models, correctly named, where you put them.
 4. **One endpoint for your applications.** OpenAI-compatible chat, tool calling, embeddings and streaming, plus an Anthropic Messages subset for Claude Code. See the [supported features and limitations](docs/api-compatibility.md).
-5. **Add the backends you already run and the subscriptions you already pay for.** Connect local HTTP servers, supervised engines and supported CLI backends to one endpoint. Replicas are balanced by outstanding requests and capacity. Failover uses eligible targets only when retry is safe; ambiguous work is not automatically replayed. See the [failover rules](docs/design/failover-safety.md) and the [API feature limits](docs/api-compatibility.md).
+5. **Add the backends you already run and the subscriptions you already pay for.** Connect local HTTP servers, supervised engines and supported CLI backends to one endpoint. Replicas are balanced with the prompt cache in mind: a conversation goes back to the copy that already holds it, a new one goes where there is room, and a llama.cpp server is never sent more than its memory holds ([the research behind it](https://eugeneplexus.com/cache-aware-balancing/)). Failover uses eligible targets only when retry is safe; ambiguous work is not automatically replayed. See the [failover rules](docs/design/failover-safety.md) and the [API feature limits](docs/api-compatibility.md).
 6. **Reach it from your other devices, safely.** One switch, a real login with sessions, and client keys you can revoke — over a tailnet or your own LAN, not just localhost.
 7. **It grows into a homelab.** More machines from one console, a model library on the NAS, replicas across GPUs, one trust root that holds the install together.
 
 This order and this wording were adopted on 2026-09-18 ([`docs/design/release-roadmap.md`](docs/design/release-roadmap.md) decision #2). The design documents number the same ideas differently and deliberately — they keep the numbers older documents cite, so `#4` there is still the schema-driven config UI, which has not gone anywhere: it is now how line 2 prefills a profile rather than something worth leading with. [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md) §2 holds both lists side by side.
 
-Client credentials and revocation: [client-key management](docs/client-keys.md) (development builds after A3).
-Real local-model setup: [Claude Code and Open WebUI](docs/application-workflows.md)
-(A4 development builds, including bounded PNG/JPEG input through OpenAI chat).
+Client credentials and revocation: [client-key management](docs/client-keys.md).
+Real local-model setup: [Claude Code and Open WebUI](docs/application-workflows.md).
 
-Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Current order of work: [experimental model roadmap](docs/design/experimental-model-roadmap.md) — B1 MLX, then B2 local decision models and hosted Jev access.
+Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Current order of work: [audience roadmap](docs/design/audience-roadmap.md).
 
 ## Current status
 
-**Next work, 2026-09-22:** [B1 and B2](docs/design/experimental-model-roadmap.md)
-are planned for experimental MLX and typed decision serving. These are not
-features of the published alpha.2 build.
-
-**2026-09-21:** [v0.1.0-alpha.2](docs/releases/v0.1.0-alpha.2.md) is the current
-early-tester distribution; see the [installation instructions](https://eugeneplexus.com/install).
-The [adoption roadmap](docs/design/adoption-roadmap.md)
-has completed A1-A8 and A6b, including application workflows,
-scoped access, local-only routing, conservative failover and tested recovery.
-[A8 shared-load evidence](docs/acceptance/a8-shared-load-run.md) establishes limits
-for one specific CPU workload; the [support matrix](docs/support-matrix.md)
-distinguishes measured, simulated, pending and unsupported configurations.
-Friend sessions and remaining physical platform checks are still open. This is
-an alpha, not stable-release approval. See the [alpha.2 distribution checks](docs/acceptance/alpha2-release-run.md).
-Alpha.1 remains available unchanged for
-earlier testers; see its [acceptance limits](docs/acceptance/alpha1-release-run.md).
+**2026-10-02: [v0.1.0](docs/releases/v0.1.0.md) is the first release**; see
+the [installation instructions](https://eugeneplexus.com/install) and the
+[release checks](docs/acceptance/v0.1.0-release-run.md). The six alphas before it
+remain available. The [support matrix](docs/support-matrix.md) distinguishes
+measured, simulated, pending and unsupported configurations, and the release
+notes list the physical checks and the moderated sessions still owed.
 
 ### Historical snapshot — 2026-09-17
 
