@@ -59,13 +59,13 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # One commit per repo. Bump these to ship a new version.
-PIN_AGENT=d683bf92d375e9853a86000011b629ff362ec892
+PIN_AGENT=ea769988fdbc42661071cb1d4f594177f7bf4552
 PIN_CONTROL=d4886ef87a81fa781a0139ba12f05d7c58dd9c8a
-PIN_GATEWAY=e179190d5ac5c14184f70c9894a0fd83fbefc064
-PIN_DRIVER=f1e29df9420f148e6349fa6bee1f76507923f82a
-PIN_LIBRARY=6e22230b163c7e82aed578c738a02d4058bbb548
-PIN_TOOL_DRIVER=df23d9223624f2a08b48eefeea9790b678bd159c
-PIN_UI=82d5017a9f62db0996c8120c7401d44186950fe9   # branch `dist`, not `main`
+PIN_GATEWAY=471447e6a9d063cf7a5aac94f36e6f5cd3c683c9
+PIN_DRIVER=971b1dbf44a447ca98b04f94bdc3ff8a4b9d6632
+PIN_LIBRARY=23a1f892a050fbb39fc1550e1326fe44bd57d51e
+PIN_TOOL_DRIVER=ed99e7aa09f3d9fb69611f24bff84d372c5de0e9
+PIN_UI=c8d044edfd9dc759a72bdb3c79d8089b66096bf9   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the

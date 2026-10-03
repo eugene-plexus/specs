@@ -16,6 +16,153 @@ marked on every finding:
 Scratch evidence (help outputs, source snapshots, changelogs, advisory lists)
 is in the session scratchpad and is not kept.
 
+## Fixed the same day
+
+Every finding below was fixed the same day unless it is listed under
+**Left open**, with a test that failed before its fix. Where the fix was
+live-verified, that is said. The installers pin:
+
+| Repo | Commit | What |
+| --- | --- | --- |
+| specs (contract) | `31247a9`, `8c41b85`, `678f57f` | `ReasoningEffort.max`; `output_config.format`; Claude Code's four fields; `prompt is too long`; `Input tag`; `namespace` tools; the second truncation test; web_search's other filters |
+| gateway | `471447e` | `namespace` tools (live: Codex 0.160.0 spawned a sub-agent through the gateway and got its answer); the Anthropic door's four fixes; the forced search turn retried with `auto`; `blocked_domains`; the second truncation test |
+| inference-driver | `971b1db` | see below |
+| agent | `ea76998` | see below |
+| library | `23a1f89` | three GGUF KV conventions (scalar `sliding_window_pattern`, `shared_kv_layers`, MLA); the 8B starter's shape re-read with them; the Hub note |
+| tool-driver | `ed99e7a` | Brave prepaid keys; the pacing wording |
+| ui | `f8249d9`, dist `c8d044e` | Claude Code recipe with the model's window, a Codex recipe, an optional address and key for LM Studio and Ollama |
+| specs | `ae0304f`…`40210f0` | uv refreshed below 0.12.18; VC++ runtime from `aka.ms/vc14`, at least 14.50; the live checks' retiring model ids; mlx-lm 0.32.0 in the Mac checks; the documents below |
+
+**inference-driver, in detail:**
+
+- **A security hole worse than finding 3: command injection on Windows.**
+  npm installs `claude` and `codex` as `.cmd` shims, so their arguments pass
+  through cmd.exe. A `"` in a client's system message (Claude) or user
+  message (Codex) closed cmd.exe's quoting, and an `&` after it ran a
+  command of the client's choosing on the driver host. Reproduced with a
+  shim built like npm's.
+  - Claude now reads its system prompt from a file of its own
+    (`--system-prompt-file`).
+  - Codex reads the transcript from stdin (`exec -`).
+- **Claude Code runs with no tools:**
+  - `--tools ""`, `--permission-mode dontAsk`, `--strict-mcp-config` and
+    `--no-session-persistence`;
+  - no routing variables in its environment.
+- **Codex runs with no tools:**
+  - `-c features.<name>=false` for its shell and every other tool. Its
+    read-only sandbox blocks writes, not reads, so a shell could print the
+    driver host's files to the caller.
+  - The configuration file cannot choose Eugene as the provider, or an
+    automatic reviewer.
+  - `EUGENE_API_KEY` and `OPENAI_BASE_URL` are stripped from its
+    environment.
+- **Other fixes:**
+  - Codex usage is counted once.
+  - Current model lists for both CLIs.
+  - GPT-6's sampler, `logprobs` and tool rules.
+  - **Ollama:**
+    - refuses the settings it drops;
+    - gets reasoning under the name it reads, and its tool results in call
+      order;
+    - gets the key on `/api/ps`.
+  - llama-server's `:` pings no longer reset the stall clock.
+  - **OpenRouter:**
+    - `expiration_date` honoured;
+    - images on `/api/v1/images`;
+    - speech `instructions` and transcription `prompt` refused;
+    - `max_completion_tokens` sent.
+  - ElevenLabs' probe uses the newest scribe.
+  - Kev's model list is read by `id` or `name`.
+
+**agent, in detail:**
+
+- **Linux CUDA:** the CUDA runtime goes beside the server. Live in WSL2 at
+  b11375, through the real install path, `--list-devices` went from
+  `(none)` to `CUDA0: NVIDIA GeForce RTX 5090`.
+- **Newer CUDA minors:** taken only for a card with finished code in that
+  build. Per `ggml-cuda/CMakeLists.txt` at b11375, that is compute
+  capability 8.6/8.7/8.9, 12.0 and 12.1; any other card gets the 12.x
+  build.
+- **Rollback window:** `per_page=100` and 24 fallback builds, about a day at
+  21 builds a day.
+- **Build choices read from the release:**
+  - the ROCm version is read off the asset names;
+  - Windows arm64 is never asked for `+vulkan`;
+  - `linux-arm64-snapdragon` is offered, but not as the default.
+- **`parallelSlots` unset** says 4 shared slots.
+- **Unset `contextSize`:** the ledger reserves what llama.cpp's fit will
+  take.
+- **mlx-lm:**
+  - a 503 `unavailable` reads as a dead engine;
+  - pinned at 0.32.0, so `--adapter-path` takes effect.
+- **vLLM:** the install recipes name what 0.30.0 publishes. Every URL was
+  checked, and every command resolved with uv.
+- **Kev:** `KEV_API_KEY` is carried to the readiness probe and the companion.
+
+## Left open
+
+Each needs a decision, a contract change, hardware, or a live run this
+session did not make.
+
+- **Ollama `:cloud` models under "Confirmed local".** They need a per-model
+  locality field (`DriverModel` has none), which is a contract change. The
+  setting's text now names the gap and `OLLAMA_NO_CLOUD=1`.
+- **Operator MCP servers still load in the Codex and Claude Code
+  backends' configuration.** For Claude, `--strict-mcp-config` drops them.
+  For Codex they still load. They are the operator's own choice.
+- **Unknown top-level fields at `/v1/messages`.** Claude Code's four known
+  fields are accepted. Anthropic's gateway guide says to accept any field;
+  A2's rule says to refuse. A decision.
+- **LM Studio's empty 200 on overflow** (lmstudio-bug-tracker#2339). This
+  needs the loaded window from LM Studio's API.
+- **An Ollama runner that wedges** (ollama#18685). This needs a first-token
+  deadline for backends we do not supervise, which is a design question
+  against R2.5.
+- **llama.cpp memory figures:**
+  - The benchmark places the model with `-ngl -1` and no fit, unlike the
+    server.
+  - A per-device unset-context figure would come from
+    `llama-fit-params --fit-print`.
+- **Mixed NVIDIA cards:** the contract carries only the lowest compute
+  capability.
+- **Snapdragon by default** needs OpenCL/Hexagon detection.
+- **mlx-lm:** nothing compares an operator's installed version with the pin.
+- **Kev:** re-pinning to `kev-1.0` (batching would allow
+  `decisionMaxConcurrent` above 1), or serving it through llama-server's
+  native `/v1/systemone`.
+- **The library's KV estimate:**
+  - There is no default sliding-window period when the pattern key is
+    absent (gemma3 6, gpt-oss 2). This errs high, and fixing it changes
+    common fits.
+  - A sliding layer's cache is `window + n_ubatch` padded to 256, and we
+    count only the window. That errs low by up to ~200 MiB on a 27B, inside
+    the 1 GiB allowance, but low is the direction the module promises
+    never to err in.
+- **specs scripts:**
+  - `responses-acceptance.py` check 3 needs updating for Codex 0.160's
+    sandbox policy.
+  - `a4-claude-acceptance.py` and `a8-shared-load.py` still set
+    `CLAUDE_CODE_EFFORT_LEVEL=unset`.
+  - `bootstrap.sh`/`.ps1` still skip uv when one is present.
+- **Live runs owed:**
+  - Claude Code 2.1.288 against the Anthropic door fixes;
+  - the new live-check model ids (`--live`, cents);
+  - hosted Claude's forced-tool-choice refusal (the fallback keys on its
+    words, from the docs);
+  - GPT-6 (docs);
+  - Brave prepaid (a third-party capture);
+  - Ollama and LM Studio (none on this box).
+- **This box's clients:** Codex 0.130.0 and Claude Code 2.1.283 are old,
+  and an old client hides new request shapes.
+- **Choices made in the fixes, for Troy to confirm:**
+  - The Claude Code recipe's `CLAUDE_CODE_MAX_OUTPUT_TOKENS` is a quarter
+    of the window below 128k.
+  - The 8B starter's shape was re-read (`23a1f89`).
+  - An install or update now stops when uv is too old and astral.sh cannot
+    be reached.
+- **Not ours to fix:** the dated retirements below, and the upstream
+  reports listed at the end.
+
 ## Versions
 
 | Integration | Verified against | Upstream now |
