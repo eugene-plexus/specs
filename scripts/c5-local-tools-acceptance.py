@@ -90,6 +90,10 @@ class Model(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if self.path.rstrip("/") != "/v1/chat/completions":
+            # Engine capability/tokenization probes are not chat requests.
+            self.send_error(404)
+            return
         REQUESTS.append(body)
         results = [m for m in body["messages"] if m["role"] == "tool"]
         if body.get("tools") and not results:
@@ -340,11 +344,24 @@ def exercise(app: dict, token: str) -> None:
         member.get("/api/tools/servers").json()["servers"] == []
         and member.post(f"/api/tools/servers/{server}/check").status_code == 403,
     )
-    api("POST", c1.AGENT + "/v1/apps/workbench/restart", token)
+    _, before = api("GET", c1.AGENT + "/v1/apps/workbench", token)
+    must("56a", "Workbench has a service PID before restart", bool(before.get("pid")))
+    status, restarted = api("POST", c1.AGENT + "/v1/apps/workbench/restart", token)
+    must("56b", "the agent accepts the restart", status == 200, restarted)
+
+    def ready_again():
+        _, current = api("GET", c1.AGENT + "/v1/apps/workbench", token)
+        return (
+            current.get("status") == "running"
+            and current.get("pid")
+            and current["pid"] != before["pid"]
+            and c1.healthy(base)()
+        )
+
     must(
         "56",
-        "Workbench restarts",
-        bool(wait_for(lambda: c1.healthy(base + "/healthz"), 90, 2)),
+        "a new Workbench process answers its health check",
+        bool(wait_for(ready_again, 90, 2)),
     )
     browser = c3.Browser(base)
     must(
