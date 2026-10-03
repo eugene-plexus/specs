@@ -89,7 +89,8 @@ MUTATIONS = [
     (
         "inference-driver",
         "engines/_subprocess.py",
-        "env=_utf8_subprocess_env(),",
+        # `drop_env` since 2026-10-03: each CLI names what it must not see.
+        "env=_utf8_subprocess_env(drop_env),",
         "env=None,",
         "real_cli_child",
     ),

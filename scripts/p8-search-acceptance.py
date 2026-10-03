@@ -340,6 +340,9 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 "input_references": {"type": "range", "min": 0, "max": 0},
             }}]}
 
+        # `/v1/images` is the route OpenRouter documents since 2026-10 (the
+        # driver posts there); `/v1/images/generations` still answers.
+        @app.post("/v1/images")
         @app.post("/v1/images/generations")
         async def paint(request: Request):
             body = await request.json()

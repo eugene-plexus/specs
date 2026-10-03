@@ -22,11 +22,13 @@ function Remove-Autostart { $script:Stopped = $true }
 function Record-Write { $script:Writes++ }
 function Get-OtherInstall { return @{ Prefix = 'C:\existing-install' } }
 
-# The parameter guard is the OUTER if, not the rejection nested inside it.
+# The parameter guard is the OUTER if, not the rejection nested inside it,
+# and the FIRST `if ($Isolated)` in the file: the later ones are its uses.
+# By position, not a line number: a line cap (180 until 2026-10-03) broke
+# the day nine lines of uv constants landed above it.
 $parameter = @($ifs | Where-Object {
-    $_.Extent.StartLineNumber -lt 180 -and $_.Condition -eq $null -and
-    $_.Extent.Text.StartsWith('if ($Isolated)')
-})[0].Extent.Text
+    $_.Condition -eq $null -and $_.Extent.Text.StartsWith('if ($Isolated)')
+} | Sort-Object { $_.Extent.StartOffset })[0].Extent.Text
 if (-not $parameter) { throw 'No isolated parameter guard' }
 $Prefix = 'C:\new-acceptance-prefix'
 $NoService = $true; $NoStart = $true; $Isolated = $true

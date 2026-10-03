@@ -860,13 +860,21 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
            "model_id in the body, speed as voice_settings, the driver's key as xi-api-key; mp3 when no format "
            "is named")
 
-        response = speak(key, "router/acme/kokoro", speed=0.9, instructions="warmly")
+        response = speak(key, "router/acme/kokoro", speed=0.9)
         assert response.status_code == 200 and response.content == AUDIO["mp3"], response.status_code
         sent = last_seen("acme/kokoro")
         assert sent["body"] == {"model": "acme/kokoro", "input": "Hello there.", "voice": "af_heart",
-                                "response_format": "mp3", "speed": 0.9, "instructions": "warmly"}, sent["body"]
-        ok("OpenRouter is asked with the format always sent (its own default is pcm, OpenAI's mp3), and speed "
-           "and instructions carried")
+                                "response_format": "mp3", "speed": 0.9}, sent["body"]
+        # OpenRouter's speech request documents no `instructions` (drift
+        # audit, 2026-10-03), so it is refused, as for ElevenLabs, rather
+        # than sent to be dropped without a word.
+        before = counts()
+        response = speak(key, "router/acme/kokoro", instructions="warmly")
+        assert response.status_code == 400, response.text[:300]
+        assert "instructions" in error_of(response).get("message", ""), response.text[:300]
+        assert counts() == before, (before, counts())
+        ok("OpenRouter is asked with the format always sent (its own default is pcm, OpenAI's mp3) and speed "
+           "carried; instructions, which it does not document, is a 400 that reaches nobody")
 
         # --- 4. wav, made from pcm where the backend has no wav ----------------
         for model, upstream, voice in (("router/acme/kokoro", "acme/kokoro", "af_heart"),
@@ -1009,7 +1017,7 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
 
         before = counts()
         results = transcribe_by_sdk(key, [
-            {"model": "router/acme/whisper", "file": str(FOX), "language": "en", "prompt": "Foxes."},
+            {"model": "router/acme/whisper", "file": str(FOX), "language": "en"},
             {"model": "router/acme/whisper", "file": str(FOX), "response_format": "text"},
             {"model": "router/acme/whisper", "file": str(FOX), "response_format": "verbose_json",
              "timestamp_granularities": ["word", "segment"]},
@@ -1024,11 +1032,18 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         assert counts().get("acme/whisper", 0) == before.get("acme/whisper", 0) + 3
         seen = call("fixture", "GET", "/seen", params={"model": "acme/whisper"}).json()[-3:]
         assert all((e["filename"], e["size"], e["sha"]) == ("p2-fox.mp3", len(fox), fox_sha) for e in seen), seen
-        assert seen[0]["fields"] == {"model": "acme/whisper", "language": "en", "prompt": "Foxes."}, seen[0]
+        assert seen[0]["fields"] == {"model": "acme/whisper", "language": "en"}, seen[0]
         # `text` was asked of nobody: OpenRouter refuses it, so it is made here.
         assert "response_format" not in seen[1]["fields"], seen[1]
         assert seen[2]["fields"]["response_format"] == "verbose_json", seen[2]
         assert seen[2]["fields"]["timestamp_granularities[]"] == ["word", "segment"], seen[2]
+        # OpenRouter's transcription request documents no `prompt` (drift
+        # audit, 2026-10-03): a 400 that reaches nobody.
+        before = counts()
+        response = upload(key, "router/acme/whisper", prompt="Foxes.")
+        assert response.status_code == 400, response.text[:300]
+        assert "prompt" in error_of(response).get("message", ""), response.text[:300]
+        assert counts() == before, (before, counts())
         ok("the OpenAI SDK, unchanged, transcribes through OpenRouter: the file arrives byte for byte under "
            "its name, json and verbose_json are the backend's with each granularity, and text is rendered "
            "here from json, since OpenRouter refuses it")

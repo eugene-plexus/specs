@@ -183,7 +183,9 @@ def serve(kind, directory, ports):
             engine = CodexCliEngine(model_id="cli")
             effect = directory / "effect.txt"
             code = "from pathlib import Path; import sys; p=Path(sys.argv[1]); p.write_text(p.read_text()+'acted\\n' if p.exists() else 'acted\\n'); sys.exit(2)"
-            engine._build_argv = lambda prompt: [
+            # Any signature: since 2026-10-03 the transcript goes on stdin and
+            # `_build_argv` takes no prompt.
+            engine._build_argv = lambda *args, **kwargs: [
                 sys.executable,
                 "-c",
                 code,

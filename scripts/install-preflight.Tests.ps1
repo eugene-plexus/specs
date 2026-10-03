@@ -1114,7 +1114,10 @@ Describe 'uv is fetched again when it is older than the installer keeps' {
         $venv = $text.IndexOf('# --- 2. venv ')
         ($step -lt $call -and $call -lt $venv) | Should Be $true
         $text | Should Match '(?m)^\$UvMinimum = \[version\]"0\.12\.18"'
-        [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'install.sh')) | Should Match '(?m)^UV_MINIMUM=0\.12\.18$'
+        # A Windows checkout may carry install.sh with CRLF, and `$` under
+        # (?m) does not match before a `\r` (CI, 2026-10-03).
+        ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'install.sh')) -replace "`r`n", "`n") |
+            Should Match '(?m)^UV_MINIMUM=0\.12\.18$'
     }
 }
 

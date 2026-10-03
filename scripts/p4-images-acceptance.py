@@ -295,6 +295,9 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 "code": 400, "metadata": {"failed_routing_step": "Filter by Image Capabilities"}}},
                 status_code=400)
 
+        # `/v1/images` is the route OpenRouter documents since 2026-10 (the
+        # driver posts there); `/v1/images/generations` still answers.
+        @app.post("/v1/images")
         @app.post("/v1/images/generations")
         async def or_generate(request: Request):
             body = await request.json()
