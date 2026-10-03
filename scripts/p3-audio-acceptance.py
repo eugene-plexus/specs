@@ -36,7 +36,7 @@ a check can say what reached an upstream and what did not.
 from its own interpreter: this one if it has `openai`, else `$EP_SDK_PYTHON`.
 
 No live service is touched unless `--live` is passed, which adds OpenRouter
-(`hexgrad/kokoro-82m` speaks; `google/gemini-2.5-flash-lite` hears it back;
+(`hexgrad/kokoro-82m` speaks; `mistralai/voxtral-small-24b-2507` hears it back;
 `openai/whisper-large-v3-turbo` transcribes), ElevenLabs (`eleven_flash_v2_5`
 speaks, as WAV and streamed mp3; `scribe_v2` transcribes it back) and an
 OpenAI account (`tts-1` speaks, in English and in French; `whisper-1` and
@@ -125,9 +125,12 @@ AUDIO = {
 }
 CHUNKS = 6
 GAP = 0.4
-#: The live models, measured on OpenRouter 2026-09-28.
+#: The live models, measured on OpenRouter 2026-09-28. LIVE_HEARS was
+#: google/gemini-2.5-flash-lite until 2026-10-03, which OpenRouter retires on
+#: 2026-10-20; its replacement takes audio in and lists no
+#: `expiration_date` (the listing, read 2026-10-03). Not yet run live.
 LIVE_SPEAKS = "hexgrad/kokoro-82m"
-LIVE_HEARS = "google/gemini-2.5-flash-lite"
+LIVE_HEARS = "mistralai/voxtral-small-24b-2507"
 #: Whisper, not qwen3-asr: on 2026-09-28 OpenRouter's `qwen/qwen3-asr-0.6b`
 #: answered the fox in 0.6 s in the morning and hung past 90 s on every file
 #: in the afternoon, while Whisper took our streaming WAV in 2.3 s.

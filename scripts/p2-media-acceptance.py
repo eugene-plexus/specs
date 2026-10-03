@@ -94,9 +94,18 @@ SONG = b"ID3\x03\x00\x00\x00\x00\x00\x00" + bytes(range(256)) * 8
 #: The two models the live run uses, both measured against OpenRouter
 #: directly on 2026-09-28: the first answers the fox and the zebra, the
 #: second is refused audio by OpenRouter itself.
-LIVE_HEARS = "google/gemini-2.5-flash-lite"
+#: LIVE_HEARS was google/gemini-2.5-flash-lite until 2026-10-03, which
+#: OpenRouter retires on 2026-10-20 (its listing's `expiration_date`). Its
+#: replacement's listing, read 2026-10-03: input text, audio and file (this
+#: run asserts both), `tools`, no `logprobs` -- so `live-careful` still
+#: routes past it -- and no `expiration_date`. Not yet run live.
+LIVE_HEARS = "mistralai/voxtral-small-24b-2507"
 LIVE_TEXT = "mistralai/mistral-nemo"
 #: Audio out, measured 2026-09-28: `pcm16` streams only, and Lyria's MP3.
+#: OpenAI retires gpt-audio-mini on 2027-01-20 (its deprecations page, read
+#: 2026-10-03), naming gpt-audio-1.5, which OpenRouter does not list yet;
+#: its other audio-out models are openai/gpt-audio, retiring the same day,
+#: and Lyria. Kept until a replacement is listed.
 LIVE_SPEAKS = "openai/gpt-audio-mini"
 LIVE_SINGS = "google/lyria-3-clip-preview"
 #: P2c: the listing names `reasoning_effort` for the first and

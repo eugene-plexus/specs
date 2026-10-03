@@ -34,9 +34,11 @@ and an OpenAI account with the keys in
 `C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env` (or `$EP_KEYS`), each
 handed only to its own driver as `OPENAI_API_KEY`. On OpenRouter,
 flux.2-klein-4b makes a 512x512 image through the SDK and then edits it, and
-gpt-image-1-mini streams one at low quality. On OpenAI's own API,
-gpt-image-1-mini generates, edits the result with a mask (the one setting only
-OpenAI honours), and streams. The live run costs about five cents.
+gpt-image-2.5-flare streams one at low quality. On OpenAI's own API,
+gpt-image-2.5-flare generates, edits the result with a mask (the one setting
+only OpenAI honours), and streams. The live run cost about five cents with
+gpt-image-1-mini, which OpenAI retires on 2026-12-01; GPT Image 2.5's image
+output tokens are listed at $30 a million against mini's $8, so expect more.
 
 Run in an environment containing all five Python components (on this box,
 `agent/.venv`). Logs and state stay in a temporary tree.
@@ -125,11 +127,18 @@ ANSWERS = {"acme/flux": JPEG, "acme/mini": PNG, "acme/gemini-image": JPEG, "acme
 OAI_MODELS = ["gpt-image-1", "dall-e-3", "gpt-4o"]
 GAP = 1.2
 
-#: The live models, measured on OpenRouter 2026-09-28.
+#: The live models, measured on OpenRouter 2026-09-28. The streaming one was
+#: gpt-image-1-mini until 2026-10-03: OpenAI shuts it down on 2026-12-01 and
+#: names gpt-image-2.5-sunburst or gpt-image-2.5-flare instead (its
+#: deprecations page, read 2026-10-03). Flare is the speed tier. OpenRouter's
+#: /images/models lists it with `supports_streaming: true` and `low` among its
+#: qualities, which is what this run asks for. Not yet run live.
 LIVE_MAKES = "black-forest-labs/flux.2-klein-4b"
-LIVE_STREAMS = "openai/gpt-image-1-mini"
-#: The same model on OpenAI's own API, through an OpenAI account.
-LIVE_OPENAI = "gpt-image-1-mini"
+LIVE_STREAMS = "openai/gpt-image-2.5-flare"
+#: The same model on OpenAI's own API, through an OpenAI account. OpenAI's
+#: image guide documents Image API streaming (`partial_images`) and masked
+#: edits for it; the driver files any `gpt-image-*` as an image model.
+LIVE_OPENAI = "gpt-image-2.5-flare"
 
 
 def rgba_png(width: int, height: int, clear: tuple[int, int, int, int]) -> bytes:
