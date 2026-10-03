@@ -98,6 +98,17 @@ def serve(kind: str, directory: Path, port: int) -> None:
             from eugene_plexus_gateway import routing
 
             routing._Backend.parallel_slots = property(lambda self: int(slots))
+        pool = bootstrap.pop("bench_context_pool", None)
+        if pool:
+            # The same change for CB3's budget: the agent would report each
+            # runtime's shared pool (`contextPoolTokens`, the engine's `-c`
+            # under `--kv-unified`), and both of a replica's drivers front
+            # one engine, `llama-<x>`, whose pool they share.
+            from eugene_plexus_gateway import routing
+
+            routing._Backend.context_pool = property(lambda self: int(pool))
+            routing._Backend.pool_key = property(
+                lambda self: (None, "llama-" + self.name.rsplit("-", 1)[-1]))
         app = create_app(settings=Settings(config_file=directory / "gateway.yaml",
                                            metrics_file=directory / "metrics.sqlite3", **bootstrap))
     elif kind.startswith("proxy"):
@@ -273,7 +284,9 @@ def proxy_app(config: dict):
         slot = (await pins.acquire(key) if state["pin"] == "safe" else pins.assign(key)) if state["pin"] else None
         if slot is not None:
             payload["id_slot"] = slot
-        row = {"rid": request.headers.get("x-request-id"), "key": key, "slot": slot,
+        # The slot the request names, whoever named it: this proxy, or (in
+        # `driverpin`) Eugene's own driver.
+        row = {"rid": request.headers.get("x-request-id"), "key": key, "slot": payload.get("id_slot"),
                "messages": len(payload.get("messages") or []), "stream": bool(payload.get("stream")),
                "t_arrive": time.time()}
         started = time.perf_counter()
@@ -848,7 +861,11 @@ class ConcurrentBench(Bench):
     (`--parallel` slots, its own slot choice); `pinned` adds
     `--no-cache-idle-slots` and the proxy pins each conversation to a slot;
     `pinned0` pins with `--cache-ram 0` instead; `pinsafe` is `pinned` that
-    never names a busy slot (`SlotPins.acquire`).
+    never names a busy slot (`SlotPins.acquire`); `driverpin` (CB4) is the
+    product's own pinning: the engines get `--no-cache-idle-slots`, every
+    driver `slotPinning: true`, the gateway hands each driver the
+    conversation, and the proxy pins nothing. Drivers read the setting at
+    start, so `driverpin` cannot share an invocation with another mode.
     """
 
     def __init__(self, args: argparse.Namespace, directory: Path) -> None:
@@ -888,7 +905,7 @@ class ConcurrentBench(Bench):
         # pool off and gives each slot ctx/slots, while the agent's default
         # (parallelSlots unset) is llama-server's auto, 4 slots sharing one pool.
         extra = ["--parallel", str(self.args.parallel), "--kv-unified"]
-        if mode in ("pinned", "pinsafe"):
+        if mode in ("pinned", "pinsafe", "driverpin"):
             extra.append("--no-cache-idle-slots")
         elif mode == "pinned0":
             # No RAM prompt cache at all (and so no idle-slot caching, which
@@ -899,13 +916,14 @@ class ConcurrentBench(Bench):
             self.start_llama(f"llama-{x}", extra)
         for x in self.names:
             self.call(f"proxy-{x}", "POST", "/_bench", json={
-                "pin": "safe" if mode == "pinsafe" else mode.startswith("pinned"),
+                "pin": "safe" if mode == "pinsafe" else mode.startswith("pinned"),  # driverpin: no
                 "record": str(self.dir / f"proxy-{self.run_id}-{x}.jsonl")}).raise_for_status()
 
     def start_gateway(self, balancing: str) -> None:
         self.stop("gateway")
         bootstrap = self.bootstrap("gateway")
         bootstrap["bench_parallel_slots"] = self.args.parallel
+        bootstrap["bench_context_pool"] = self.args.ctx
         self.write("gateway", "bootstrap.json", bootstrap)
         self.write("gateway", "gateway.yaml", {"routingRefreshSeconds": 2, "loadBalancing": balancing,
                                                "metricsEnabled": True})
@@ -917,6 +935,13 @@ class ConcurrentBench(Bench):
             models = json.dumps(self.call("gateway", "GET", "/v1/models", self.key).json())
             return len(healthy) == 2 * len(self.names) and all(f'"{MODEL}-{x}"' in models for x in self.names)
         self.wait(ready, "every replica routable, balanced and by name")
+
+    @property
+    def driver_pins(self) -> bool:
+        modes = self.args.modes.split(",")
+        if "driverpin" in modes and len(modes) > 1:
+            raise SystemExit("driverpin cannot share an invocation with another mode")
+        return modes == ["driverpin"]
 
     def setup(self) -> None:
         self.install()
@@ -943,7 +968,8 @@ class ConcurrentBench(Bench):
                 self.write(name, "bootstrap.json", self.bootstrap("inference-driver"))
                 self.write(name, "driver.yaml", {"provider": "openai_compat_custom",
                                                  "baseUrl": self.url(f"proxy-{x}"),
-                                                 "modelId": model, "backendLocality": "local"})
+                                                 "modelId": model, "backendLocality": "local",
+                                                 "slotPinning": self.driver_pins})
                 self.start(name)
                 self.call("agent", "POST", "/v1/components", self.operator, json={
                     "name": name, "kind": "inference-driver", "url": self.url(name)}).raise_for_status()
@@ -1182,7 +1208,8 @@ def main() -> None:
     concurrent.add_argument("--seed", type=int, default=20261002)
     concurrent.add_argument("--policies", default="eugene:least_busy,eugene:round_robin,eugene:conversation",
                             help="eugene:<loadBalancing> or route:<Router policy>[@<gateways>], comma-separated")
-    concurrent.add_argument("--modes", default="default", help="default, pinned, pinned0 and/or pinsafe, comma-separated")
+    concurrent.add_argument("--modes", default="default",
+                            help="default, pinned, pinned0, pinsafe and/or driverpin (alone), comma-separated")
     concurrent.add_argument("--reset-at", type=float, default=20.0,
                             help="seconds into a run when a `~reset` policy clears its router's state")
     args = ap.parse_args()

@@ -1,7 +1,10 @@
 # Cache-aware balancing, v2: many conversations, many replicas
 
 **Status: measured 2026-10-02 (late); all six calls in §6 taken by Troy the
-same day, as recommended. Next: build, in §7's order (CB3 first).** Follows [`prompt-cache.md`](prompt-cache.md) (PC1-PC7). Every
+same day, as recommended; CB1-CB5 BUILT AND PINNED the same night** (record
+§9: no turn "cooling down" or failed on the 8B shape, none of 612 pinned turns
+at the deadline, sabotage 69/69; the 8-replica gate met by two of four runs,
+see §7's notes). Follows [`prompt-cache.md`](prompt-cache.md) (PC1-PC7). Every
 number below is in
 [`docs/acceptance/cache-aware-balancing-measurement.md`](../acceptance/cache-aware-balancing-measurement.md).
 
@@ -71,7 +74,7 @@ backend, and "cooling down" refuses everything else on healthy replicas. The bud
   the one that scales**: within noise on three replicas, +20 points and a
   quarter of the TTFT on eight. `least_busy` counts requests in flight, and
   a replica whose agents are all thinking between turns looks empty.
-- **A token budget removes the pool's failures** (engines as launched today): none in 1,152 turns at 32 and 64 at once, where
+- **A token budget removes the pool's failures** (engines as launched today): none in 1,088 turns at 32 and 64 at once, where
   spread alone failed 44 and 109, and the p99 falls by half to three quarters.
 - **Slot pinning helps only where the pool holds a conversation per slot**:
   +3.4 points there (131,072 tokens for 4 slots, conversations to 31,000),
@@ -227,6 +230,24 @@ fastest for one user running several agents on a roomy pool. Taken as recommende
 | CB2 | `spread` | gateway |
 | CB4 | the driver's slot map with the safe rule; the profile setting; the engine flag | `inference-driver.yaml` + driver, agent (PC7) |
 | CB5 | `evicted` in metrics v12 and the Metrics page | gateway, ui |
+
+**Built (2026-10-02, late), record §9.** Agent `d683bf9` (the pool from
+`/props` and the argv; the `slotPinning` flag), driver `f1e29df` (the capacity
+outcome and the stream's error frame; the slot map), gateway `e179190` (the
+circuit, the budget, the doors' words, `conversationAffinity`, `spread`,
+`evicted`, the conversation key), control `d4886ef` (regen-only), ui
+`a41df46` / dist `d2856a7` (Evicted on the Metrics page). Three things the
+build found that this design did not say: **a capacity refusal needed its own
+words at the doors** (Codex was told `context_length_exceeded` and stopped);
+**with the budget and affinity in, `spread` and `least_busy` reuse about the
+same** (78.3% and 79.4% over four and three runs; `spread` alone had no pool
+overflow), so CB2's +20 points were against PC4 without a budget; and the
+failures left are **llama-server pausing its main loop 6-10 s** to update its
+RAM prompt cache at an LRU slot pick, which silences a stream past the
+driver's 30 s stall check (3 in 3,808 turns). A stored `loadBalancing` the
+gateway wrote as a default carries a marker (`.load-balancing-default`), so the
+next default reaches it. **Open, for Troy:** the budget reserves a turn's whole
+`max_tokens`, and Claude Code sends 32,000 (record §9, last paragraph).
 
 Each ends with a check that fails without it, from
 `prompt-cache-measurement.py --experiments concurrent`: CB3 on the 8B shape (no turn refused as

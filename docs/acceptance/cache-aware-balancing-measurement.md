@@ -23,7 +23,7 @@ no `llama-server` running).
   scales** (§5, §7): within noise on three replicas, 60% → 80% reused on
   eight.
 - **A token budget per replica removes the pool's failures** (§5, §7): 0 in
-  1,152 turns where spread alone failed 153.
+  1,088 turns where spread alone failed 153.
 - **llama-server keeps one conversation per prompt family in its slots**
   (§1); pinning slots from Eugene adds ~3.5 points where the pool has room
   for a conversation per slot and loses up to 10 where it does not; and
@@ -31,6 +31,10 @@ no `llama-server` running).
   of it avoids.
 - **Prefix placement, rendezvous hashing and two gateways** measured at or
   below the simpler choice (§3, §5, §7).
+- **After the build (§9):** the 8B shape answers every turn (204 of 204,
+  where it answered 46); the pool's failures are gone under `spread` on eight
+  replicas; driver pinning stalled no turn in 612; and with the budget in,
+  `spread` and `least_busy` reuse about the same.
 
 ## 0. Instruments
 
@@ -271,8 +275,8 @@ tokens read against PC4's default 75.0% and 1,047k.
 All 64 sessions (32 Claude Code, 32 Codex), 32 at once, on eight replicas
 with a q8_0 KV cache and `-c 98304` each so eight fit on the card (30.9 of
 32.6 GB): four conversations a replica, as many as its slots, but four
-Claude Code prompts of 25-31k tokens are more than its pool. 576 requests a
-run.
+Claude Code prompts of 25-31k tokens are more than its pool. 544 requests a
+run (this said 576 until 2026-10-02, late; the files say 544).
 
 | Mode | Policy | Reused | Read (k) | TTFT p50 | p90 | p99 | held / evicted / moved | Failed |
 |---|---|---|---|---|---|---|---|---|
@@ -307,7 +311,7 @@ agent clients whose prompts are tens of thousands of tokens.
    20, and TTFT p50 falls from 4.00 s to 1.05 s.
 2. **A token budget removes the failures.** `spread_fit` holds a turn until
    its replica's prompts in flight plus this one (estimated from the
-   request's size) fit the pool: no failures in 576 turns, and the tail
+   request's size) fit the pool: no failures in 544 turns, and the tail
    halves (p90 7.89 s against 10.83, p99 16.93 against 30.51).
 3. **Pinning does not help when the pool cannot hold a conversation per
    slot.** Pinned slots keep their histories in the pool between turns,
@@ -404,6 +408,126 @@ eugene-plexus/gateway#8).
   answered, but at 31.5% reused and a 14 s median, because pinned histories
   hold the pool between turns.
 
+## 9. After the build (CB1-CB5, 2026-10-02, late)
+
+The same instrument, the same captures and llama-server b11211, against the
+gateway and driver as built: CB3 (the capacity outcome, the pool on runtime
+capabilities, the budget and the wait), CB1 (affinity under every strategy),
+CB2 (`spread`), CB5 (`evicted`) and CB4 (the driver's slot map). Every policy
+below is the gateway's own (`eugene:`), so the cascade runs; none is a
+harness route. Each run on fresh engines and a fresh gateway; component code
+was frozen in worktrees for the runs (`PYTHONPATH`), because a gateway
+restart re-imports its source. The bench gained one shim beside
+`bench_parallel_slots`: `bench_context_pool`, the pool the agent would have
+reported for an engine it launched, and both of a replica's drivers keyed to
+its one engine.
+
+**The 8B shape (§8: three replicas at 65,536, q8_0 KV, 12 + 12 sessions, 12 at
+once), the gate for CB3.** Before, PC4 answered 46 of 204.
+
+| Build | Policy | Answered | Failed | Reused | TTFT p50 | p90 |
+|---|---|---|---|---|---|---|
+| before (§8) | PC4 `conversation` | 46 | 158 (115 "cooling down") | — | 7.88 s | 27.13 |
+| CB3 | `conversation` | **204** | **0** | 66.2% | 11.50 s | 27.98 |
+| CB3 | `least_busy` (no affinity then) | 197 | 7 (none "cooling down") | 50.2% | 17.84 s | 31.92 |
+| CB1-CB5 | **`spread`** (the default) | **204** | **0** | 67.8% | 8.60 s | 27.30 |
+| CB1-CB5 | `least_busy` (affinity on) | **204** | **0** | 64.6% | 10.93 s | 29.32 |
+
+**No turn was refused as "cooling down" in any run.** The seven failures under
+CB3's `least_busy` were streams the engine cut, six of them after output, so
+they could not fail over. The ledger held what it counted (the proxy's records
+put every replica's peak in-flight prompt-plus-answer at 58,375-58,918
+tokens, under 90% of 65,536) and the estimate runs high, not low (characters
+over 3.5 gave 21,751 for a first Claude Code turn the engine counted 19,703,
+and 13,829 for a first Codex turn it counted 11,035). So the engine held more
+than the turns in flight. llama-server's source says where: a slot chosen by
+LRU has a whole cached prompt loaded into it from the RAM cache before it is
+trimmed, and idle slots are cleared only after the new task launches
+(`server-context.cpp`, `get_available_slot` and `TAG_IDLE_SLOT_CLEAR`). It
+happened only without affinity, which moved 108 turns; with affinity, and
+since CB1 affinity is on under every placement, it did not happen at all.
+
+**Two words were wrong at the doors, found by this gate and fixed before the
+pins.** A turn every replica refused for want of room reached Codex as
+`context_length_exceeded` ("A backend serving this model is not ready yet"),
+which stops it, and Claude Code mid-stream as `api_error`. llama-server's words
+for a full pool are "Context size has been exceeded", and the Responses door's
+context words matched them. A capacity refusal is now its own failure: Codex
+gets `server_error` and Claude Code `overloaded_error`, both of which retry.
+
+**The 8-replica shape (§5: eight replicas at 98,304, q8_0 KV, 32 + 32
+sessions, 32 at once), the gate for CB2 and CB3.** 544 requests a run.
+
+| Build | Policy | Reused | Read (k) | TTFT p50 | p90 | held / evicted / moved | Failed |
+|---|---|---|---|---|---|---|---|
+| before (§5) | PC4 `conversation` | 60.4% | 3,839 | 4.00 s | 16.26 | 251 / 25 / 124 | 56 |
+| before (§5) | harness `spread` | 80.2% | 2,007 | 1.05 | 10.83 | 360 / 37 / 37 | 44 |
+| before (§5) | harness `spread_fit` | 81.5% | 2,070 | 1.26 | 7.89 | 398 / 82 / 0 | 0 |
+| CB1-CB5 | **`spread`**, four runs | **78.3, 77.4, 77.4, 80.0%** (mean 78.3) | 2,239-2,520 | 1.95-3.13 | 11.9-14.0 | 346-381 / 75-96 / 21-45 | **1, 0, 1, 0** |
+| CB1-CB5 | `least_busy` (affinity on), three runs | 79.7, 77.3, 81.2% (mean 79.4) | 2,104-2,479 | 1.75-2.34 | 11.8-12.6 | 370-390 / 67-78 / 16-29 | 0, 9, 0 |
+
+- **The pool's failures are gone under `spread`**: none in 2,176 turns. One
+  `least_busy` run had eight streams the engine cut for room, the transient
+  above.
+- **The gate as written (at least 78% reused, none failed) is met by two of
+  four `spread` runs.** Its mean is 78.3%, inside the run-to-run noise of the
+  threshold, and the failures in the other two are not the pool (below).
+- **With the budget and affinity in, `spread` and `least_busy` place new
+  conversations about as well** (means 78.3% and 79.4%, noise about 2
+  points). §5's +20 points were measured against PC4 without a budget; the
+  budget itself sends a new conversation to whichever replica has room, which
+  is most of what `spread` did. `spread` keeps one measured advantage: no pool
+  overflow in four runs, against eight in one of three for `least_busy`.
+- Evictions are about twice §5's harness `spread` (75-96 against 37) and match
+  `spread_fit` (82): a turn that waits for room finds its history pushed out of
+  the RAM cache meanwhile. That is what CB5 now shows per backend.
+
+**What the remaining failures are: llama-server pausing its whole main loop.**
+Three turns in 3,808 (two under `spread`, one under `least_busy`) got a first
+token and then nothing for 30 s, so the driver's stall check
+(`streamStallSeconds`, 30 s) ended them. In the one whose engine log survived,
+every slot picked by LRU shows 6-10 s between `selected slot by LRU` and
+`launch_slot_` with no other line: the RAM prompt cache update (save the slot,
+load the best match) runs on the main loop, and with eight engines sharing
+this box's memory bandwidth it takes seconds, during which no slot decodes.
+Back-to-back, that silences a stream past 30 s. Not something placement can
+fix; for Troy's upstream report beside §4's wedge.
+
+**The 24-at-once shape (§4: three replicas at 131,072, 12 + 12 sessions, all
+at once), the gate for CB4.** Mode `driverpin`: the engines get
+`--no-cache-idle-slots`, every driver `slotPinning: true`, the gateway hands
+each turn's conversation to its driver, and the proxy pins nothing (its record
+shows the slot the driver named).
+
+| Policy | Answered | At the 600 s deadline | Slowest | Reused | TTFT p50 | p90 |
+|---|---|---|---|---|---|---|
+| `spread` | 204 | **0** | 37.1 s | 74.6% | 4.77 s | 9.31 |
+| `least_busy` | 204 | **0** | | 74.2% | 4.58 | 11.15 |
+| `round_robin` (the pattern that wedged worst, §4) | 204 | **0** | | 73.3% | 4.72 | 11.54 |
+
+None of 612 turns reached the deadline, where pinning without the safe rule
+stalled 9 of 200 and once held an engine for 30 minutes (§4). Each
+conversation names its own slot, and its next turn reads its whole history
+from it (19,699 of 19,699 tokens on the first checked). Reuse is 1-3 points
+below §4's harness `pinsafe spread` (77.8%) and about at default `spread`
+(75.6%): this shape has two conversations a slot, where pinning was measured
+as noise, which is why the setting is off by default.
+
+**Sabotage: 69 of 69 caught** (`scripts/cb-sabotage.py`, driver, gateway, agent
+and the doors), after three checks were strengthened: an estimate fixture
+whose numbers agreed with the no-history formula, a cascade whose reservation
+nothing observed mid-attempt, and slot tests that hung rather than failed when
+a slot was never given back.
+
+**One estimate is worth a call (§6 of the design does not settle it):**
+Claude Code sends `max_tokens: 32000`, and the budget counts it whole. The
+replays send 64, so none of these runs shows it, but on a 65,536-token pool
+one Claude Code turn of 20,000-31,000 prompt tokens plus 32,000 reserved
+leaves no room for a second, where two fit by their real use. It is the safe
+reading (an overflow cuts every stream in the batch, and an answer can use
+its whole allowance); a smaller reservation for the answer would trade that
+for concurrency.
+
 ## Not measured
 
 - **Real separate GPUs.** Every replica shares one 5090, so TTFT is the
@@ -414,10 +538,7 @@ eugene-plexus/gateway#8).
   hold fewer conversations (§1) and the pool fill sooner.
 - **Long sessions.** Eight tool turns, prompts to ~31,000 tokens; real agent
   sessions run to hundreds of thousands, which no pool here holds.
-- **The gateway's own spread and budget.** Measured as harness routes
-  through the gateway, which have no cascade: their failures are counted as
-  failures, where the gateway's routes would have cascaded them. The
-  harness's PC4 matched the gateway's to 3 tokens in 703,504.
+- ~~**The gateway's own spread and budget.**~~ Measured since: §9.
 - **Real tool loops**: the replay sends the captured answers, so the 64
   tokens generated each turn are replaced by the next request.
 - **vLLM and MLX** under concurrency.
