@@ -100,7 +100,9 @@ leaves the trust root on loopback in an install that looks healthy.
 - **Mounting the same secret on a standby removes the promotion caveat** the OS
   keyring carries (the keyring is host-bound; a file is not).
 - The image ships as `ghcr.io/eugene-plexus/control-plane:edge`. **`edge`, not
-  `latest`** — nothing is released.
+  `latest`** — nothing is released. *Corrected 2026-10-03:* v0.1.0 was released
+  on 2026-10-02 and its image is `:v0.1.0`; there is still no `:latest`, and the
+  Unraid template still pulls `:edge`.
 
 ### Unraid specifics (read from dockerMan's source, 2026-09-13)
 
@@ -223,4 +225,7 @@ leaves the trust root on loopback in an install that looks healthy.
 - The Vulkan "badge it permanently" degradation was **never built** and is moot.
 - `eugeneplexus.ai` is unregistered and is not a decision anyone is waiting on.
 - Nothing is released. There are zero GitHub Releases, nothing on PyPI or npm,
-  and one container tag called `edge`.
+  and one container tag called `edge`. *Corrected 2026-10-03:* no longer true.
+  v0.1.0 is a GitHub Release (2026-10-02), after six prereleases, and the image
+  has a tag for each (`:v0.1.0`, `:v0.1.0-alpha.1` to `-alpha.6`) beside `:edge`.
+  Still nothing on PyPI or npm, and no `:latest`.

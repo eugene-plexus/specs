@@ -707,7 +707,12 @@ chat one. It runs monthly in CI and on demand, and does this:
 > mutually destructive** — `full=true` returns neither `gguf` nor
 > `cardData`, and passing both leaves a projection of three keys with
 > the sort and filter silently ignored, so the ranking call cannot be a
-> flag on the existing search one. (b) **`pipeline_tag` cannot be a
+> flag on the existing search one. *Corrected 2026-10-03* (the upstream
+> drift audit): the hub has changed, and `full=true` with `expand[]`
+> now returns `_id`, `id`, `downloads` and `gguf` with the sort and
+> filter applied. There is still no call that returns `siblings` and
+> `gguf` together, so the ranking call stays its own method; the
+> library's code never combines the two. (b) **`pipeline_tag` cannot be a
 > filter**: adding `filter=text-generation` dropped the *second*
 > most-downloaded GGUF repo on the hub, because the field is absent on
 > many repos; the discriminator that works is a **chat template** in the

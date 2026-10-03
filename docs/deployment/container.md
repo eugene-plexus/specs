@@ -183,9 +183,12 @@ host, which signs everyone out. Set it before the first start, or accept it.
 It pulls `ghcr.io/eugene-plexus/control-plane:edge`, which CI builds and
 **verifies before pushing** — `scripts/compose-acceptance.sh` runs its
 twenty-three checks against the built image, and a failure means nothing is
-published. `edge` rather than `latest` on purpose: nothing here is released,
-and `latest` is the tag every registry convention reads as "the supported
-one".
+published. `edge` rather than `latest` on purpose: `latest` is the tag every
+registry convention reads as "the supported one". *Corrected 2026-10-03:* this
+said nothing here was released. v0.1.0 was released on 2026-10-02, and its
+image is `ghcr.io/eugene-plexus/control-plane:v0.1.0`; there is no `:latest`.
+The template still pulls `:edge`, and whether it should follow the release
+instead is a separate decision.
 
 **One-time, and only the repository owner can do it:** a package pushed by
 Actions starts **private**, so the first pull fails with an authentication

@@ -151,7 +151,10 @@ reasoning about the API docs.
    returns neither `gguf` nor `cardData`; passing both leaves a
    projection of three keys with the sort and filter silently ignored.
    So the ranking call is its own method rather than a flag on the
-   existing search one.
+   existing search one. *Corrected 2026-10-03* (the upstream drift
+   audit): the hub now answers `full=true` with `expand[]` with `_id`,
+   `id`, `downloads` and `gguf`, sort and filter applied. Still no call
+   returns `siblings` and `gguf` together, so the separate method stands.
 2. **`pipeline_tag` cannot be a filter.** Adding
    `filter=text-generation` dropped the *second* most-downloaded GGUF
    repo on the hub, because the field is simply absent on many repos.

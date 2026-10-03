@@ -440,6 +440,24 @@ tools being evicted.
 auto-sizes to the model's full trained context — 131072 for an 8B,
 about 22 GB of VRAM — with no environment variable set.
 
+> **Corrected 2026-10-03** (the upstream drift audit,
+> `docs/maintenance/upstream-drift-2026-10-03.md`). The 131072 was
+> measured; the rule given for it is wrong, and so is calling the tiny
+> default stale. Ollama's default context is tiered by the machine's
+> total GPU memory: under 23 GiB it is 4,096 tokens, from 23 to 47 GiB
+> 32,768, and from 47 GiB up 262,144, capped at the model's trained
+> length (`server/routes.go`, v0.34.0 lines 2065-2070 and v0.35.1 lines
+> 2216-2226). The 5090's 32 GiB alone is the 32,768 tier, so the 131072
+> seen here is unexplained. Most likely the total also counted the
+> integrated Radeon's shared memory and crossed 47 GiB, which caps
+> 262,144 at the 8B's trained 131072; the Ollama app's context slider is
+> the other candidate. On most cards, under 23 GiB, the default is 4,096
+> tokens, and the silent cut described next starts there. That is why
+> the contract now also counts a near-full window as a truncation
+> (`prompt_truncated`, specs `8c41b85`): a cut that keeps a 4k window
+> was invisible to the ratio below about 82,000 characters. Setting
+> `OLLAMA_CONTEXT_LENGTH` (or `num_ctx`) is the way to choose it.
+
 **Right, and bigger than §6 claimed: input silently does not arrive.**
 66,389 characters across six messages came back as
 `usage.prompt_tokens: 86`, HTTP 200, no flag anywhere. Ollama keeps the

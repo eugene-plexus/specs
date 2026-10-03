@@ -64,7 +64,13 @@ are inside `open_webui/` at 0.11.4.
 - **Its tools and functions are Python its admin pastes in**, run with `exec`
   in the server process. Nothing turns that off, so the entry declares
   `localActions: true`, and installs only where apps get an account of their
-  own (C1).
+  own (C1). *Corrected 2026-10-03* (the upstream drift audit): something
+  does. 0.11.4 has `ENABLE_PLUGINS` (`env.py:1188`, default `True`), and
+  `false` refuses to load tool and function code (`utils/plugin.py:207`
+  and `:260`; `routers/tools.py:81` and `:201`). The code interpreter and
+  terminals run code by other paths, which nobody has checked. Whether
+  the entry sets it, and whether that could let Open WebUI install without
+  an account of its own, is still open; the entry is unchanged.
 - **Ready:** `/ready` answers 503 until startup completes. The first start
   took about 73 s, and later starts 11-15 s. Idle memory: 0.7 GB working
   set, 2.1-2.3 GB private.

@@ -14,10 +14,13 @@
   GPU and was not supposed to; that was a packaging decision, not a
   technical limit (docs/deployment/container.md).
 
-  THE IMAGE IS `:edge`, NOT `:latest`, and that is deliberate. Nothing in
-  this project is released yet. `edge` is the head of `main`, built and
-  verified by CI before it is pushed, and it says what it is rather than
-  implying support this project has not offered.
+  THE IMAGE IS `:edge`, NOT `:latest`, and that is deliberate. `edge` is
+  the head of `main`, built and verified by CI before it is pushed, and it
+  says what it is rather than implying support this project has not
+  offered. (Corrected 2026-10-03: this said nothing in this project was
+  released yet. v0.1.0 was released on 2026-10-02 and its image is
+  `:v0.1.0`; there is still no `:latest`. Which tag this template pulls
+  has not changed, and is a separate decision.)
 
   Kept in the `specs` repo and served raw from `main`, like the install
   scripts and for the same reason: it points at pinned commits that move,

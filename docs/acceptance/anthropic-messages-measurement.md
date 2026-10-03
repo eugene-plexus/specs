@@ -21,7 +21,9 @@ This project has a standing record of reasoning about somebody else's wire and
 being wrong: the hub answers **401** for a repo that does not exist, not 404
 (S6); llama.cpp's two cudart archives are named differently (S10); Ollama's
 resolved context window appears only on `/api/ps` (step 7); `full=true` and
-`expand[]` are mutually destructive (S6 §6.5). Each was a claim held with
+`expand[]` are mutually destructive (S6 §6.5; true when measured, not by
+2026-10-03, when the hub returned `gguf` for both with sort and filter
+applied). Each was a claim held with
 confidence until something dialled the real thing.
 
 **The isolation matters and is the first finding.** A capture taken without an

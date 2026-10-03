@@ -66,7 +66,11 @@
 5. ElevenLabs is asked in its own shape, with the driver's own key, and speed
    as `voice_settings`. `mp3` is asked for when no format is named.
 6. OpenRouter is asked with the format always sent (its own default is `pcm`),
-   and speed and instructions carried.
+   and speed and instructions carried. *Corrected 2026-10-03* (the upstream
+   drift audit): "carried" is true of the request we sent, not of what
+   OpenRouter does with it. Its speech request does not document
+   `instructions`, so it was probably dropped without a word, and the driver
+   now refuses `instructions` on OpenRouter as it does on ElevenLabs (check 8).
 7. `wav` from both is their `pcm` with a streaming WAV header written first.
 8. A format a model cannot make (at the gateway, and at the driver asked
    directly), `instructions` to ElevenLabs, and `stream_format: "sse"` are

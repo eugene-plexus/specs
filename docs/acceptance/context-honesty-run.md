@@ -56,6 +56,18 @@ trained context — 131072 for an 8B, about 22 GB of VRAM — with nothing
 set, which is a good default and useless for provoking truncation. The
 derived model is deleted on teardown.
 
+> **Corrected 2026-10-03** (the upstream drift audit,
+> `docs/maintenance/upstream-drift-2026-10-03.md`): the 131072 is what
+> this run measured, but "the model's full trained context" is not
+> Ollama's rule. Its default is tiered by total GPU memory: 4,096 tokens
+> under 23 GiB, 32,768 from 23 to 47 GiB, and 262,144 from 47 GiB,
+> capped at the trained length (`server/routes.go`, v0.34.0 lines
+> 2065-2070, v0.35.1 lines 2216-2226). The 5090 alone is the 32,768 tier,
+> so the 131072 here is unexplained: likely the integrated Radeon's
+> shared memory took the total past 47 GiB, or the Ollama app's slider
+> was set. On a card under 23 GiB the default is 4,096 tokens, which
+> provokes truncation with no derived model at all.
+
 ## The two headlines
 
 ### 1. An engine that counts is no longer contradicted

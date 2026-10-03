@@ -763,6 +763,13 @@ driver translates to OpenRouter's. Troy took three of four as recommended.
 | P5-3 | Who may poll a job an operator session made, when sessions rotate at every sign-in | **Any operator session of the install**, as recommended. A client key's job is readable only with that key. |
 | P5-4 | What signs the job handle | **The gateway's own secret file**, as recommended: made once, owner-only, kept beside its config. A restart keeps it; a reinstall makes a new one and older handles read as not found. |
 
+**Upstream since P5-2 (the upstream drift audit, 2026-10-03).** P5-2's
+premise, that OpenRouter has no way to edit or extend a video, no longer
+holds. OpenRouter's video request now takes `previous_job_id`, to edit or
+extend a finished job, as well as `input_references`, `generate_audio` and
+`callback_url`. The call stands as taken; this is the fact a later slice
+would start from.
+
 **Taken without a separate call, because each follows a held rule or a
 measurement:**
 

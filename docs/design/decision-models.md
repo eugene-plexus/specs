@@ -73,6 +73,29 @@ local-only keys.
   checkpoint is NOT documented at the pin; the live run records it
   before the library learns to recognize one.
 
+> **Upstream since the pin (the upstream drift audit, 2026-10-03,
+> `docs/maintenance/upstream-drift-2026-10-03.md`).** Everything above is
+> true at `1c35199`, and that pin is unchanged. At Kev's first release,
+> `kev-1.0` (2026-10-01; HEAD was `84847f0`), four of these facts are
+> different:
+>
+> - `--host` exists, so the bind is no longer fixed to `127.0.0.1`.
+> - `GET /v1/models` answers `{models: [{name, ...}]}` with no `id`, so
+>   the driver's reading of the list would find no model.
+> - The one-request lock is gone: requests are batched, up to 64.
+> - `KEV_API_KEY`, when set, makes the server require a bearer token. Set
+>   in a runtime's `env`, it would refuse the readiness probe forever.
+>
+> It also requires Python 3.12 or 3.13 (`>=3.12,<3.14`). Moving the pin
+> means changing those readers and `maxConcurrent: 1`, not only the
+> commit.
+>
+> **And `/v1/systemone` is no longer Kev's alone.** `llama-server` serves
+> it natively from build b11361 (ggml-org/llama.cpp PR #29818), and
+> Ollama 0.35 serves it too. That is a fact for the next decision about
+> how decision models are hosted, not a decision: nothing here uses
+> either today.
+
 **Vercel `/v1/evaluate`** (vercel.com/docs/ai-gateway): a different
 dialect — the boolean kind is `type: "boolean"` answering
 `probability`, and usage is `inputTokens`/`outputTokens` — so TypeSafe

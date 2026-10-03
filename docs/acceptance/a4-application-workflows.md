@@ -98,6 +98,10 @@ authorization. Initially it also sent `output_config.effort: high`, which was
 correctly refused. **`CLAUDE_CODE_EFFORT_LEVEL=unset` on 2.1.207 omitted that
 unsupported setting and enabled the task.** Declaring custom model capabilities
 alone did not remove the effort field. Native Anthropic effort is not implemented.
+*Corrected 2026-10-03* (the upstream drift audit): the door has accepted
+`output_config.effort` since 2026-09-23, so the recipe no longer needs the
+variable, and `unset` is not a value Claude Code documents; the user recipe in
+`docs/application-workflows.md` drops it.
 
 Open WebUI discovered `/v1/models`, then sent `/v1/chat/completions` with
 `model`, `messages`, `stream` and `tools`, using bearer authorization. Its image

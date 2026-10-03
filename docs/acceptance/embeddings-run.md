@@ -166,7 +166,10 @@ field has no `.value`.
   not been driven end to end.
 - **`dimensions`.** Contracted as pass-through with no emulation;
   Ollama ignores it and nothing asserted what happens when a backend
-  honours it.
+  honours it. *Corrected 2026-10-03* (the upstream drift audit, which
+  read Ollama 0.35.1): Ollama now honours `dimensions`, so the case this
+  run could not reach is the ordinary one on a current Ollama, and it is
+  still unasserted.
 - **A vector store consuming the output.** The corruption this design
   prevents is described, and the refusal is proved; nobody has actually
   indexed a corpus through this endpoint and searched it.

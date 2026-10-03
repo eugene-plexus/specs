@@ -537,8 +537,11 @@ into, rather than the unclaimed one. See
 
    **Open call #3 went to "let the engine refuse"** and §6's premise
    turned out to be wrong twice — tool definitions do *not* fall out of
-   the window, and Ollama no longer truncates to a tiny default. What is
-   actually broken is that input silently does not arrive: 66,389
+   the window, and Ollama no longer truncates to a tiny default
+   (*corrected 2026-10-03:* it does on a card under 23 GiB, where its
+   default context is 4,096 tokens; the default is tiered by total GPU
+   memory, not the trained length, as `agent-clients-and-tool-calling.md`
+   §6.1 now says). What is actually broken is that input silently does not arrive: 66,389
    characters came back as `prompt_tokens: 86` with a 200 and no flag.
    Meanwhile `llama-server` refuses the same prompt with both numbers
    and **we were flattening that into a cascading 502**, producing the

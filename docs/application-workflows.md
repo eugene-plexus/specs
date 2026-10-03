@@ -17,7 +17,7 @@ Set these variables in the terminal where you launch Claude Code:
 ANTHROPIC_BASE_URL=http://YOUR-GATEWAY:8080
 ANTHROPIC_AUTH_TOKEN=YOUR-CLIENT-KEY
 ANTHROPIC_MODEL=YOUR-MODEL-ID
-CLAUDE_CODE_EFFORT_LEVEL=unset
+CLAUDE_CODE_MAX_CONTEXT_TOKENS=YOUR-MODEL-WINDOW
 ```
 
 Use `$env:NAME = 'value'` in PowerShell, or `export NAME='value'` in bash. The
@@ -25,11 +25,16 @@ Anthropic base URL has **no `/v1` suffix**. Claude Code adds `/v1/messages` itse
 For an isolated test, also set `CLAUDE_CONFIG_DIR` to a new directory so your
 usual login, plugins and settings do not influence the result.
 
-The `unset` effort value was measured on **2.1.207**: without it the client sends
-`output_config.effort: high`, which Eugene refuses. This is not a reasoning-effort
-implementation. Newer Claude Code versions need their own check; current upstream
-documentation calls the model-default choice `auto`, which is not proof that
-older clients send the same wire. [Claude Code environment reference](https://code.claude.com/docs/en/env-vars)
+This recipe used to set `CLAUDE_CODE_EFFORT_LEVEL=unset`, measured on
+**2.1.207**: without it the client sent `output_config.effort: high`, which
+Eugene then refused. *Corrected 2026-10-03* (the upstream drift audit): that
+reason is gone. The gateway has accepted `output_config.effort` since
+2026-09-23, and `unset` is not a value Claude Code documents (it lists `low`,
+`medium`, `high`, `xhigh`, `max` and `auto`), so the line is dropped.
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` takes its place: Claude Code assumes 200K tokens
+for a model id it does not recognise and compacts against that number, so set it
+to your model's window, shown in Eugene's model listing.
+[Claude Code environment reference](https://code.claude.com/docs/en/env-vars)
 
 For the minimal `--bare` mode, use `ANTHROPIC_API_KEY` instead of
 `ANTHROPIC_AUTH_TOKEN`: that mode explicitly requires an API key and skips

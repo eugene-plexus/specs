@@ -71,11 +71,13 @@ PASS="ctx-live-accept-$$"
 
 OLLAMA="${EP_OLLAMA:-http://127.0.0.1:11434}"
 # A deliberately small window, so a prompt this script can build in
-# memory overruns it. Ollama 0.34 auto-sizes to the model's full trained
-# context (131072 for an 8B, ~22 GB of VRAM) with nothing set, which is
-# a fine default and useless for provoking truncation -- so the window
-# is pinned on a derived model rather than by restarting the operator's
-# Ollama, which on this machine is serving a live install.
+# memory overruns it. With nothing set, Ollama's default context is tiered
+# by total GPU memory (4,096 tokens under 23 GiB, 32,768 to 47 GiB,
+# 262,144 above, capped at the trained length; corrected 2026-10-03 --
+# this box measured 131072 for an 8B), which on this box is useless for
+# provoking truncation -- so the window is pinned on a derived model
+# rather than by restarting the operator's Ollama, which on this machine
+# is serving a live install.
 OLLAMA_MODEL="${EP_OLLAMA_MODEL:-ep-ctx-probe:latest}"
 OLLAMA_BASE="${EP_OLLAMA_BASE:-huihui_ai/dolphin3-abliterated:8b-llama3.1-q4_K_M}"
 OLLAMA_CTX="${EP_OLLAMA_CTX:-2048}"
