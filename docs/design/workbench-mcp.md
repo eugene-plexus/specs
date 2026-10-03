@@ -43,12 +43,61 @@ The official Python MCP SDK owns transport and protocol negotiation. This
 slice uses its released 2.3 series, not a hand-written MCP implementation:
 [client documentation](https://py.sdk.modelcontextprotocol.io/client/).
 
-## Next slices
+## C5b: local servers
 
-C5b adds stdio servers in the app's OS account. Before that ships, settle
-process installation, per-person access to shared app files, and the
-permission signal from the launcher; then change the app manifest's local
-actions requirement. C5a starts no processes and grants no folders.
+The install owner can add a stdio server with an absolute executable path,
+an argument array and optional environment values. Saving does not execute
+code. **Start and check** starts that exact program and lists its tools;
+selecting it for a chat starts one process for that answer. The model can
+choose only the listed tools and their validated arguments, never the
+executable, arguments or environment. Individual tool calls retain C5a's
+approval and durable-intent rules.
+
+**Provisioning:** the machine administrator installs the program and its
+dependencies, using their upstream instructions, in a location the app's
+account can execute. Workbench does not install packages or run shell
+command strings. On Windows the command must be an `.exe`; Python and
+Node scripts name their interpreter and put the script in the argument
+array. This keeps tool dependencies out of Workbench's own environment
+and leaves package updates with the operator. A missing executable or
+permission failure is reported from the attempted start.
+
+**Access:** local servers are owner-only in C5b. This is a deliberate limit:
+all code in the app's account can read its files, including other people's
+chats and Workbench's app-scoped credentials. A separate working directory
+is not a sandbox. The owner must trust the server and its dependencies;
+the page explains this before starting one. Other people cannot list,
+select, check or execute it. Folder grants and per-person process isolation
+remain later work; a shared local executable cannot promise those boundaries.
+
+**Launch signal:** the agent's account supervisor records `accountKind` in
+the launch spec. The launcher supplies `EUGENE_PLEXUS_APP_ACCOUNT_KIND`
+only from that field, replacing any ambient or manifest environment value.
+Workbench accepts `windows_service` or `systemd`; missing or unrecognized
+values disable local starts. The Workbench catalogue now declares
+`localActions: true`, so C5b installs only where C1 can provide an account.
+Existing per-user installs keep C5a until moved to a supported system
+install. A manually launched development copy still serves chat and HTTP
+tools, with local processes disabled by default.
+
+The app uses the official SDK's stdio transport. Each process has its own
+directory under Workbench's `tools/`, also its home and cache directory.
+Its environment contains OS essentials and the owner's explicit values,
+never inherited Eugene or provider credentials. Environment values stay
+in private SQLite storage; reads return their names only. Executable
+arguments must not contain secrets: process lists can show them. Stderr is
+discarded because third-party programs can print those credentials; failures
+name the observed transport/start condition and how to check configuration.
+
+At most four local processes run at once. A process lives through the
+answer, including approval waits, and closes on completion, Stop or graceful
+shutdown. The SDK closes stdin, waits, then terminates an unresponsive
+process tree; it does not restart failed servers. Programs must remain
+attached to stdio and must not daemonize. The C1 service manager owns the
+app's final shutdown boundary. Removing a connection prevents pending calls
+but does not undo dispatched actions or delete program-created data.
+
+## Next slices
 
 C6 designs folder grants and filesystem tools. Dedicated media screens can
 use the gateway's existing media doors; managing local media engines also

@@ -6469,6 +6469,13 @@ components:
         with Eugene (C2) using `EUGENE_PLEXUS_APP_OIDC_ISSUER`,
         `EUGENE_PLEXUS_APP_OIDC_CLIENT_ID` and the secret in the file
         named by `EUGENE_PLEXUS_APP_OIDC_SECRET_FILE`.
+
+        When the service manager gives the app its own OS account, the
+        launcher sets `EUGENE_PLEXUS_APP_ACCOUNT_KIND` to `windows_service`
+        or `systemd`. It is absent on other installs and older launchers;
+        apps must refuse local model-selected processes without this signal.
+        It describes account isolation from Eugene, not isolation between
+        people using the same app. It is not a user-configurable setting.
       required: [id, name, source, version, package, entry]
       properties:
         id:
