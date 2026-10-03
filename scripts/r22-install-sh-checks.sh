@@ -60,7 +60,7 @@ write_stubs() {
   cat > "$bin/uv" <<'STUB'
 #!/bin/sh
 case "$1" in
-  --version) echo "uv 0.0.0-stub" ;;
+  --version) echo "uv 0.12.22 (stub; install.sh refetches a uv older than its UV_MINIMUM)" ;;
   venv)
     if [ "${EP_STUB_UV_VENV_FAILS:-0}" = 1 ]; then
       echo "error: TLS certificate verification failed downloading cpython-3.12" >&2

@@ -6,7 +6,8 @@
   The Windows half of install-paths section 9 step 3. Same six steps as
   `install.sh`, in the same order, so that reading one is reading both:
 
-    1. fetch `uv` into the install prefix and nowhere else,
+    1. fetch `uv` into the install prefix and nowhere else -- and fetch it
+       again over one older than $UvMinimum,
     2. make a virtualenv there with a Python `uv` downloads itself,
     3. install the seven Eugene Plexus packages into it,
     4. check that what landed can actually serve -- see VERIFY below,
@@ -138,6 +139,14 @@ $DIST = @{
 }
 
 $PyVersion = "3.12"
+# **The oldest uv this installer keeps** (2026-10-03). An install keeps the
+# uv it was first made with until something replaces it, and the app's own
+# updates re-run this script, so this is where an old one is replaced
+# (step 1). 0.12.18 fixes GHSA-2cv4-cqwr-gwf7: on Windows, uv 0.12.7 to
+# 0.12.17 can write outside the target directory while unpacking a wheel,
+# with no workaround -- and the agent uses this uv to install apps, as
+# LocalSystem on a service install. Kept equal to install.sh's UV_MINIMUM.
+$UvMinimum = [version]"0.12.18"
 $ServiceName = "EugenePlexusAgent"
 $TaskName = "EugenePlexusAgent"
 # **A different name, because it is a different thing** (R2.6). Before
@@ -1397,8 +1406,21 @@ function Restore-EugeneInstall {
 
 # The Visual C++ runtime llama.cpp's Windows build links against (see step
 # 4c). Microsoft's own permanent links, one per processor architecture.
+# **`aka.ms/vc14`, not `aka.ms/vs/17`** (found 2026-10-03, the upstream
+# drift audit). The `vs/17` link is Visual Studio 2022's, and it now serves
+# that line's final runtime, 14.44. `vc14` follows the current Visual
+# Studio: on 2026-10-03 it redirected to `vs/18` and served 14.51.36247,
+# signed by Microsoft.
 $VcRedistArch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
-$VcRedistUrl = "https://aka.ms/vs/17/release/vc_redist.$VcRedistArch.exe"
+$VcRedistUrl = "https://aka.ms/vc14/vc_redist.$VcRedistArch.exe"
+
+# **The oldest runtime llama.cpp's Windows builds start on.** Upstream
+# builds them with Visual Studio 2026, whose runtime is 14.50. Microsoft
+# supports a program on a runtime newer than the one it was built with,
+# never an older one, so a machine with only the 2022 runtime (14.44) has
+# all three DLLs and can still fail to start the engine. Before 2026-10-03
+# this checked only that the DLLs existed.
+$VcRuntimeMinimum = [version]"14.50"
 
 function Get-NativeSystemDirectory {
     # A 32-bit PowerShell sees SysWOW64 as System32; the engine is 64-bit.
@@ -1408,16 +1430,34 @@ function Get-NativeSystemDirectory {
     return [Environment]::GetFolderPath("System")
 }
 
-function Test-VcRuntime {
+# A file's version from its four numbers, not its FileVersion text, which
+# some Microsoft DLLs follow with words ("14.44.35211.0 built by: ...").
+function Get-DllVersion {
+    param([string]$Path)
+    $info = (Get-Item -LiteralPath $Path).VersionInfo
+    return [version]::new($info.FileMajorPart, $info.FileMinorPart, $info.FileBuildPart, $info.FilePrivatePart)
+}
+
+# The runtime's version, read from msvcp140.dll, or $null when any of its
+# three DLLs is missing.
+function Get-VcRuntimeVersion {
     $system = Get-NativeSystemDirectory
     foreach ($dll in @("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll")) {
-        if (-not (Test-Path -LiteralPath (Join-Path $system $dll))) { return $false }
+        if (-not (Test-Path -LiteralPath (Join-Path $system $dll))) { return $null }
     }
-    return $true
+    return (Get-DllVersion (Join-Path $system "msvcp140.dll"))
+}
+
+# Present AND new enough. [version] compares number by number, so 14.100
+# is newer than 14.50, which a comparison of the text gets backwards.
+function Test-VcRuntime {
+    $version = Get-VcRuntimeVersion
+    return ($null -ne $version -and $version -ge $VcRuntimeMinimum)
 }
 
 # Download Microsoft's redistributable, refuse it unless Microsoft signed it,
-# and run it silently. Throws, with what went wrong, on any failure.
+# and run it silently. Returns its installer's exit code; throws, with what
+# went wrong, on any failure.
 function Install-VcRuntime {
     $file = Join-Path ([IO.Path]::GetTempPath()) "eugene-plexus-vc_redist.$VcRedistArch.exe"
     try {
@@ -1433,10 +1473,85 @@ function Install-VcRuntime {
         if ($run.ExitCode -notin @(0, 1638, 3010)) {
             throw "its installer exited with code $($run.ExitCode)"
         }
+        return $run.ExitCode
     }
     finally {
         Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
     }
+}
+
+# The version a uv says it is -- its words are `uv 0.12.22 (...)` -- as a
+# [version], which compares number by number: 0.12.9 is older than 0.12.18,
+# which a comparison of the text gets backwards. $null for a uv that is not
+# there or cannot say what it is.
+function Get-UvVersion {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { $words = "$(& $Path --version 2>&1)" }
+    catch { return $null }
+    finally { $ErrorActionPreference = $prev }
+    if ($words -match '^uv (\d+)\.(\d+)\.(\d+)') {
+        return [version]::new([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+    }
+    return $null
+}
+
+# Step 1: a uv in the prefix, $UvMinimum or newer.
+#
+# **An install kept the uv it was first made with, forever** (found
+# 2026-10-03, the upstream drift audit). This step skipped the download
+# whenever a uv was there, and the app's updates re-run this script, so
+# nothing ever replaced one. A uv older than $UvMinimum, or one that cannot
+# say its version, is fetched again by the same official installer, over
+# the old one; one new enough is left alone, exactly as before. Not
+# `uv self update`: UV_UNMANAGED_INSTALL, which keeps uv inside the prefix,
+# also turns uv's self-updater off (its installer writes no receipt, and
+# self update refuses a uv without one).
+function Install-Uv {
+    $have = Get-UvVersion $UvExe
+    if ($have -and $have -ge $UvMinimum) {
+        Say "uv already present ($(& $UvExe --version))"
+        return
+    }
+    if ($have) { Say "uv $have is older than $UvMinimum, the oldest this installer keeps (GHSA-2cv4-cqwr-gwf7); fetching a newer one" }
+    elseif (Test-Path $UvExe) { Say "the uv at $UvExe does not say its version; fetching uv again" }
+    else { Say "fetching uv" }
+    # UV_UNMANAGED_INSTALL puts uv exactly here and edits no PATH and no
+    # profile. The installer owns its own copy, so nothing the user
+    # already has is touched and removing the prefix is complete.
+    $env:UV_UNMANAGED_INSTALL = Join-Path $Prefix "bin"
+    # **In a child process, never in this one** (found 2026-10-01, C1's
+    # first Windows runner run). uv's installer catches any error of its
+    # own, writes the reason to the information stream and calls
+    # `exit 1`. Run here, that exit ended THIS installer, and the
+    # silencing it needed took the reason with it: the run stopped after
+    # "fetching uv" with exit code 1 and no words. A child's exit is its
+    # own, and Invoke-Native prints what it said when it fails.
+    $uvScript = Join-Path ([IO.Path]::GetTempPath()) "eugene-plexus-uv-install-$PID.ps1"
+    try {
+        Invoke-RestMethod https://astral.sh/uv/install.ps1 -OutFile $uvScript
+    }
+    catch {
+        Die "could not download https://astral.sh/uv/install.ps1 -- $($_.Exception.Message)"
+    }
+    try {
+        Invoke-Native -Exe (Get-Process -Id $PID).Path `
+            -Arguments @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $uvScript) `
+            -FailMessage "uv's installer (https://astral.sh/uv/install.ps1) failed; its words are above"
+    }
+    finally {
+        Remove-Item -LiteralPath $uvScript -Force -ErrorAction SilentlyContinue
+    }
+    if (-not (Test-Path $UvExe)) { Die "uv did not land at $UvExe" }
+    # Said rather than assumed: a replacement that did not happen (a uv.exe
+    # another program held open, say) leaves the old one in place.
+    $now = Get-UvVersion $UvExe
+    if (-not $now -or $now -lt $UvMinimum) {
+        Die "the uv at $UvExe is $(if ($now) { $now } else { 'one that does not say its version' }) after fetching it again, and this installer needs $UvMinimum or newer. Close anything using it, or put a uv $UvMinimum or newer there yourself, then run this again."
+    }
+    Say "uv $((& $UvExe --version) -replace '^uv ')"
 }
 
 # After a join, where each old install went -- said last, so it is seen.
@@ -1857,40 +1972,9 @@ if ($Migrate) {
     if ($WantsService) { Copy-EngineBuilds -Source $MigrateEngineRoot }
 }
 
-if (Test-Path $UvExe) {
-    Say "uv already present ($(& $UvExe --version))"
-}
-else {
-    Say "fetching uv"
-    # UV_UNMANAGED_INSTALL puts uv exactly here and edits no PATH and no
-    # profile. The installer owns its own copy, so nothing the user
-    # already has is touched and removing the prefix is complete.
-    $env:UV_UNMANAGED_INSTALL = Join-Path $Prefix "bin"
-    # **In a child process, never in this one** (found 2026-10-01, C1's
-    # first Windows runner run). uv's installer catches any error of its
-    # own, writes the reason to the information stream and calls
-    # `exit 1`. Run here, that exit ended THIS installer, and the
-    # silencing it needed took the reason with it: the run stopped after
-    # "fetching uv" with exit code 1 and no words. A child's exit is its
-    # own, and Invoke-Native prints what it said when it fails.
-    $uvScript = Join-Path ([IO.Path]::GetTempPath()) "eugene-plexus-uv-install-$PID.ps1"
-    try {
-        Invoke-RestMethod https://astral.sh/uv/install.ps1 -OutFile $uvScript
-    }
-    catch {
-        Die "could not download https://astral.sh/uv/install.ps1 -- $($_.Exception.Message)"
-    }
-    try {
-        Invoke-Native -Exe (Get-Process -Id $PID).Path `
-            -Arguments @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $uvScript) `
-            -FailMessage "uv's installer (https://astral.sh/uv/install.ps1) failed; its words are above"
-    }
-    finally {
-        Remove-Item -LiteralPath $uvScript -Force -ErrorAction SilentlyContinue
-    }
-    if (-not (Test-Path $UvExe)) { Die "uv did not land at $UvExe" }
-    Say "uv $((& $UvExe --version) -replace '^uv ')"
-}
+# Fetched when missing, and fetched again when older than $UvMinimum;
+# see Install-Uv.
+Install-Uv
 
 # Keep uv's downloaded interpreters inside the prefix too: one directory
 # to remove.
@@ -2033,23 +2117,40 @@ Say "all seven packages present, with a web UI"
 # start, and the screen said only "crashed". The service install is
 # elevated, so it installs the runtime from Microsoft. A per-user install
 # says where to get it, because installing it needs Administrator.
+# **An old runtime counts as missing** (2026-10-03): llama.cpp's builds
+# need $VcRuntimeMinimum or newer, so a machine with only Visual Studio
+# 2022's runtime is upgraded, and every message says which it found.
 if (-not (Test-VcRuntime)) {
+    $vcFound = Get-VcRuntimeVersion
+    $vcLacks = if ($vcFound) {
+        "the Microsoft Visual C++ runtime $vcFound, older than the $VcRuntimeMinimum llama.cpp needs"
+    }
+    else { "no Microsoft Visual C++ runtime, which llama.cpp needs" }
     if ($Isolated) {
-        Warn "this Windows has no Microsoft Visual C++ runtime, which llama.cpp needs. An isolated install changes nothing outside its folder, so it was not installed: $VcRedistUrl"
+        Warn "this Windows has $vcLacks. An isolated install changes nothing outside its folder, so it was not installed: $VcRedistUrl"
     }
     elseif ($IsElevated) {
-        Say "installing the Microsoft Visual C++ runtime, which llama.cpp needs and this Windows does not have"
+        Say "installing the Microsoft Visual C++ runtime: this Windows has $vcLacks"
         try {
-            Install-VcRuntime
+            $vcExit = Install-VcRuntime
             if (Test-VcRuntime) { Say "the Visual C++ runtime is installed" }
-            else { Warn "the Visual C++ runtime installer finished, but its DLLs are not in place. llama.cpp will not start until they are: $VcRedistUrl" }
+            elseif ($vcExit -eq 3010) {
+                # An old runtime's DLLs are in use by running programs, and
+                # Windows replaces a file in use at the next restart.
+                Warn "the Visual C++ runtime is installed, and Windows finishes replacing the old one when this machine restarts. llama.cpp may not start until then."
+            }
+            else {
+                $vcAfter = Get-VcRuntimeVersion
+                if ($vcAfter) { Warn "the Visual C++ runtime installer finished, but this Windows still has $vcAfter, older than $VcRuntimeMinimum. llama.cpp may not start until it is updated: $VcRedistUrl" }
+                else { Warn "the Visual C++ runtime installer finished, but its DLLs are not in place. llama.cpp will not start until they are: $VcRedistUrl" }
+            }
         }
         catch {
             Warn "could not install the Microsoft Visual C++ runtime ($(Get-ErrorText $_)). Eugene works, but llama.cpp will not start until it is installed: $VcRedistUrl"
         }
     }
     else {
-        Warn "llama.cpp needs the Microsoft Visual C++ runtime, which this Windows does not have. Install it from $VcRedistUrl (it asks for Administrator), then start your models."
+        Warn "this Windows has $vcLacks. Install the current one from $VcRedistUrl (it asks for Administrator), then start your models."
     }
 }
 

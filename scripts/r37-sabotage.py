@@ -92,6 +92,43 @@ MUTATIONS = [
         'if [ "$(uname -s)" = Darwin ]; then',
         "if true; then",
     ),
+    # 2026-10-03, the upstream drift audit: an old uv is fetched again.
+    (
+        "install skips the uv download whenever any uv is present (the finding)",
+        "install.sh",
+        'if [ -z "$UV_FETCH" ]; then\n    say "uv already present',
+        'if in_prefix test -x "$UV"; then\n    say "uv already present',
+    ),
+    (
+        "install never compares uv with its minimum",
+        "install.sh",
+        'elif version_older "$UV_HAVE" "$UV_MINIMUM"; then',
+        "elif false; then",
+    ),
+    (
+        "install compares uv versions as text",
+        "install.sh",
+        "awk -v a=\"$1\" -v b=\"$2\" 'BEGIN {\n",
+        "awk -v a=\"$1\" -v b=\"$2\" 'BEGIN { if (a < b) exit 0; exit 1\n",
+    ),
+    (
+        "install keeps a uv that cannot say its version",
+        "install.sh",
+        'UV_FETCH="the uv at $UV does not say its version; fetching uv again"',
+        "UV_FETCH=",
+    ),
+    (
+        "install fetches uv again even when it is new enough",
+        "install.sh",
+        "    else\n        UV_FETCH=\n    fi\nfi\n",
+        '    else\n        UV_FETCH="fetching uv"\n    fi\nfi\n',
+    ),
+    (
+        "install never checks what the uv fetch left behind",
+        "install.sh",
+        'if [ -n "$UV_FETCH" ]; then\n    UV_HAVE=$(uv_version)',
+        'if false; then\n    UV_HAVE=$(uv_version)',
+    ),
 ]
 
 

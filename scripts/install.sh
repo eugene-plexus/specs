@@ -26,7 +26,8 @@
 #   0. (Linux, default) creates the `eugene-plexus` account and its
 #      prefix, with sudo; the steps below then run AS that account, so
 #      no package's build step ever runs as root,
-#   1. fetches `uv` into the install prefix and nowhere else,
+#   1. fetches `uv` into the install prefix and nowhere else -- and fetches
+#      it again over one older than UV_MINIMUM,
 #   2. makes a virtualenv there with a Python `uv` downloads itself,
 #   3. installs the seven Eugene Plexus packages into it,
 #   4. checks that what landed can actually serve — see VERIFY below,
@@ -67,6 +68,14 @@ PIN_TOOL_DRIVER=df23d9223624f2a08b48eefeea9790b678bd159c
 PIN_UI=82d5017a9f62db0996c8120c7401d44186950fe9   # branch `dist`, not `main`
 
 PY_VERSION=3.12
+# **The oldest uv this installer keeps** (2026-10-03). An install keeps the
+# uv it was first made with until something replaces it, and the app's own
+# updates re-run this script, so this is where an old one is replaced
+# (step 1). 0.12.18 fixes GHSA-2cv4-cqwr-gwf7, a path traversal while
+# unpacking a wheel in uv 0.12.7 to 0.12.17. That defect is Windows-only;
+# the number is kept equal to install.ps1's $UvMinimum so that both
+# installers promise the same uv.
+UV_MINIMUM=0.12.18
 SERVICE_LABEL=eugene-plexus-agent
 LAUNCHD_LABEL=com.eugeneplexus.agent
 
@@ -259,6 +268,29 @@ as_service() {
 # as this shell otherwise.
 in_prefix() {
     if [ "$MODE" = system ]; then as_service "$@"; else "$@"; fi
+}
+
+# The version the prefix's uv says it is -- its words are
+# `uv 0.12.22 (x86_64-unknown-linux-gnu)` -- as three numbers, or nothing
+# for a uv that is not there or cannot say what it is.
+uv_version() {
+    in_prefix "$UV" --version 2>/dev/null |
+        sed -n 's/^uv \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -n 1
+}
+
+# version_older A B: true when dotted version A comes before B. Number by
+# number, because as text 0.12.9 sorts after 0.12.18, and 0.9.30 after
+# 0.12.18 -- both older, both read as newer by a comparison of strings.
+version_older() {
+    awk -v a="$1" -v b="$2" 'BEGIN {
+        n = split(a, x, "."); m = split(b, y, ".")
+        if (m > n) n = m
+        for (i = 1; i <= n; i++) {
+            if (x[i] + 0 < y[i] + 0) exit 0
+            if (x[i] + 0 > y[i] + 0) exit 1
+        }
+        exit 1
+    }'
 }
 
 # --- --update ---------------------------------------------------------
@@ -999,10 +1031,31 @@ fi
 say "installing into $PREFIX"
 [ "$MODE" = system ] || mkdir -p "$PREFIX/bin" "$PREFIX/logs"
 
+# **An install kept the uv it was first made with, forever** (found
+# 2026-10-03, the upstream drift audit). This step skipped the download
+# whenever a uv was there, and the app's updates re-run this script, so
+# nothing ever replaced one. A uv older than UV_MINIMUM, or one that cannot
+# say its version, is fetched again by the same official installer, over
+# the old one; one new enough is left alone, exactly as before. Not
+# `uv self update`: UV_UNMANAGED_INSTALL, which keeps uv inside the prefix,
+# also turns uv's self-updater off (its installer writes no receipt, and
+# self update refuses a uv without one).
+UV_FETCH="fetching uv"
 if in_prefix test -x "$UV"; then
+    UV_HAVE=$(uv_version)
+    if [ -z "$UV_HAVE" ]; then
+        UV_FETCH="the uv at $UV does not say its version; fetching uv again"
+    elif version_older "$UV_HAVE" "$UV_MINIMUM"; then
+        UV_FETCH="uv $UV_HAVE is older than $UV_MINIMUM, the oldest this installer keeps (GHSA-2cv4-cqwr-gwf7); fetching a newer one"
+    else
+        UV_FETCH=
+    fi
+fi
+
+if [ -z "$UV_FETCH" ]; then
     say "uv already present ($(in_prefix "$UV" --version))"
 elif [ "$MODE" = system ]; then
-    say "fetching uv"
+    say "$UV_FETCH"
     command -v curl >/dev/null 2>&1 || die "curl is required"
     # Fetched as this shell and run as Eugene's account, which cannot read
     # a file this shell's umask made private -- hence the chmod.
@@ -1022,7 +1075,7 @@ elif [ "$MODE" = system ]; then
     as_service test -x "$UV" || die "uv did not land at $UV"
     say "uv $(as_service "$UV" --version | cut -d' ' -f2)"
 else
-    say "fetching uv"
+    say "$UV_FETCH"
     command -v curl >/dev/null 2>&1 || die "curl is required"
     # UV_UNMANAGED_INSTALL puts uv exactly here and edits no shell
     # profile and no PATH. The installer owns its own copy, so nothing
@@ -1047,6 +1100,16 @@ else
     rm -f "$UV_BOOTSTRAP"
     [ -x "$UV" ] || die "uv did not land at $UV"
     say "uv $("$UV" --version | cut -d' ' -f2)"
+fi
+# Said rather than assumed: a replacement that did not happen (a uv
+# another program was running, say) leaves the old one in place.
+if [ -n "$UV_FETCH" ]; then
+    UV_HAVE=$(uv_version)
+    if [ -z "$UV_HAVE" ] || version_older "$UV_HAVE" "$UV_MINIMUM"; then
+        die "the uv at $UV is ${UV_HAVE:-one that does not say its version} after fetching it
+       again, and this installer needs $UV_MINIMUM or newer. Stop anything using it, or
+       put a uv $UV_MINIMUM or newer there yourself, then run this again."
+    fi
 fi
 
 # Keep uv's downloaded interpreters inside the prefix too, for the same

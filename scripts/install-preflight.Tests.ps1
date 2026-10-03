@@ -12,7 +12,8 @@ $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.Fun
         'Get-ServiceConversionSource', 'Get-AutostartExecutable', 'Get-AgentService', 'Get-AgentTask',
         'Remove-Autostart', 'Remove-StartMenuShortcut', 'Test-RunsFromThisInstall', 'Get-OtherInstall',
         'Grant-ServiceControl', 'Move-Folder', 'Get-ErrorText',
-        'Get-NativeSystemDirectory', 'Test-VcRuntime', 'Install-VcRuntime') }, $false) |
+        'Get-NativeSystemDirectory', 'Test-VcRuntime', 'Install-VcRuntime',
+        'Get-DllVersion', 'Get-VcRuntimeVersion', 'Get-UvVersion', 'Install-Uv') }, $false) |
     ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
 
 Describe 'Installer failure reporting' {
@@ -860,7 +861,8 @@ Describe 'The Visual C++ runtime llama.cpp needs' {
 
     BeforeEach {
         $script:VcRedistArch = 'x64'
-        $script:VcRedistUrl = 'https://aka.ms/vs/17/release/vc_redist.x64.exe'
+        $script:VcRedistUrl = 'https://aka.ms/vc14/vc_redist.x64.exe'
+        $script:VcRuntimeMinimum = [version]'14.50'
         Mock Write-Host {}
         Mock Invoke-WebRequest {}
         Mock Remove-Item {}
@@ -868,6 +870,9 @@ Describe 'The Visual C++ runtime llama.cpp needs' {
             [pscustomobject]@{ Status = 'Valid'; SignerCertificate = [pscustomobject]@{ Subject = 'CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US' } }
         }
         Mock Start-Process { [pscustomobject]@{ ExitCode = 0 } }
+        # The runner's own System32 is never read: every case says what
+        # msvcp140.dll's version is.
+        Mock Get-DllVersion { [version]'14.51.36247.0' }
     }
 
     It 'is missing when any one of its three DLLs is' {
@@ -877,9 +882,41 @@ Describe 'The Visual C++ runtime llama.cpp needs' {
         Test-VcRuntime | Should Be $true
     }
 
+    # 2026-10-03, the upstream drift audit: llama.cpp's Windows builds come
+    # from Visual Studio 2026 (runtime 14.50+), and the installer fetched
+    # Visual Studio 2022's final runtime, 14.44, and asked only whether the
+    # DLLs existed -- so a machine with the 2022 runtime was never upgraded.
+    It 'fetches the current runtime, not Visual Studio 2022''s' {
+        $source | Should Match '(?m)^\$VcRedistUrl = "https://aka\.ms/vc14/vc_redist\.\$VcRedistArch\.exe"'
+        $source | Should Match '(?m)^\$VcRuntimeMinimum = \[version\]"14\.50"'
+        $source | Should Not Match 'https://aka\.ms/vs/'
+    }
+
+    It 'is too old when msvcp140.dll is older than 14.50, though all three DLLs are there' {
+        Mock Test-Path { $true }
+        Mock Get-DllVersion { [version]'14.44.35211.0' }
+        Get-VcRuntimeVersion | Should Be ([version]'14.44.35211.0')
+        Test-VcRuntime | Should Be $false
+    }
+
+    It 'is new enough at 14.50 and after, compared as numbers' {
+        Mock Test-Path { $true }
+        foreach ($ok in '14.50.35719.0', '14.51.36247.0', '14.100.0.0') {
+            Mock Get-DllVersion { [version]$ok }
+            Test-VcRuntime | Should Be $true
+        }
+    }
+
+    It 'reads the version from msvcp140.dll in the native System32' {
+        Mock Test-Path { $true }
+        $null = Get-VcRuntimeVersion
+        Assert-MockCalled Get-DllVersion -Scope It -Times 1 -Exactly -ParameterFilter {
+            $Path -eq (Join-Path (Get-NativeSystemDirectory) 'msvcp140.dll') }
+    }
+
     It 'installs quietly from Microsoft when Microsoft signed it' {
-        Install-VcRuntime
-        Assert-MockCalled Invoke-WebRequest -Scope It -Times 1 -Exactly -ParameterFilter { $Uri -eq 'https://aka.ms/vs/17/release/vc_redist.x64.exe' }
+        Install-VcRuntime | Should Be 0
+        Assert-MockCalled Invoke-WebRequest -Scope It -Times 1 -Exactly -ParameterFilter { $Uri -eq 'https://aka.ms/vc14/vc_redist.x64.exe' }
         Assert-MockCalled Start-Process -Scope It -Times 1 -Exactly -ParameterFilter { ($ArgumentList -join ' ') -eq '/install /quiet /norestart' }
     }
 
@@ -904,23 +941,56 @@ Describe 'The Visual C++ runtime llama.cpp needs' {
     It 'installs it on an elevated run when it is missing' {
         $IsElevated = $true; $Isolated = $false
         Mock Test-VcRuntime { $false }
+        Mock Get-VcRuntimeVersion { $null }
         Mock Install-VcRuntime {}
         . $runVcBlock
         Assert-MockCalled Install-VcRuntime -Scope It -Times 1 -Exactly
     }
 
+    It 'upgrades an old one on an elevated run, and says which it found' {
+        $IsElevated = $true; $Isolated = $false
+        Mock Test-VcRuntime { $false }
+        Mock Get-VcRuntimeVersion { [version]'14.44.35211.0' }
+        Mock Install-VcRuntime { 0 }
+        . $runVcBlock
+        Assert-MockCalled Install-VcRuntime -Scope It -Times 1 -Exactly
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*Visual C++ runtime 14.44.35211.0, older than the 14.50*' }
+    }
+
+    It 'says a restart finishes it when Windows replaces the old runtime at the next restart' {
+        $IsElevated = $true; $Isolated = $false
+        Mock Test-VcRuntime { $false }
+        Mock Get-VcRuntimeVersion { [version]'14.44.35211.0' }
+        Mock Install-VcRuntime { 3010 }
+        . $runVcBlock
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*finishes replacing the old one when this machine restarts*' }
+        Assert-MockCalled Write-Host -Scope It -Times 0 -Exactly -ParameterFilter { "$Object" -like '*DLLs are not in place*' }
+    }
+
     It 'says where to get it on a per-user run, which cannot install it' {
         $IsElevated = $false; $Isolated = $false
         Mock Test-VcRuntime { $false }
+        Mock Get-VcRuntimeVersion { $null }
         Mock Install-VcRuntime {}
         . $runVcBlock
         Assert-MockCalled Install-VcRuntime -Scope It -Times 0 -Exactly
-        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*Visual C++ runtime*aka.ms/vs/17/release/vc_redist.x64.exe*' }
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*no Microsoft Visual C++ runtime*aka.ms/vc14/vc_redist.x64.exe*' }
+    }
+
+    It 'says an old one is too old on a per-user run, and where the current one is' {
+        $IsElevated = $false; $Isolated = $false
+        Mock Test-VcRuntime { $false }
+        Mock Get-VcRuntimeVersion { [version]'14.44.35211.0' }
+        Mock Install-VcRuntime {}
+        . $runVcBlock
+        Assert-MockCalled Install-VcRuntime -Scope It -Times 0 -Exactly
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*runtime 14.44.35211.0, older than the 14.50*aka.ms/vc14/vc_redist.x64.exe*' }
     }
 
     It 'changes nothing on an isolated run, and says so' {
         $IsElevated = $true; $Isolated = $true
         Mock Test-VcRuntime { $false }
+        Mock Get-VcRuntimeVersion { $null }
         Mock Install-VcRuntime {}
         . $runVcBlock
         Assert-MockCalled Install-VcRuntime -Scope It -Times 0 -Exactly
@@ -939,9 +1009,112 @@ Describe 'The Visual C++ runtime llama.cpp needs' {
     It 'warns rather than failing the install when it cannot install it' {
         $IsElevated = $true; $Isolated = $false
         Mock Test-VcRuntime { $false }
+        Mock Get-VcRuntimeVersion { $null }
         Mock Install-VcRuntime { throw 'the network is down' }
         { . $runVcBlock } | Should Not Throw
         Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*could not install the Microsoft Visual C++ runtime (the network is down)*' }
+    }
+}
+
+Describe 'uv is fetched again when it is older than the installer keeps' {
+    # 2026-10-03, the upstream drift audit: step 1 skipped the download
+    # whenever a uv was there, and the app's updates re-run this script, so
+    # an install kept its first uv forever -- and uv 0.12.7 to 0.12.17 can
+    # write outside the target directory while unpacking a wheel on Windows
+    # (GHSA-2cv4-cqwr-gwf7). A uv stand-in here is a .cmd that says a
+    # version in uv's own words; nothing is downloaded and nothing runs.
+    BeforeEach {
+        $script:Prefix = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Force -Path (Join-Path $script:Prefix 'bin') | Out-Null
+        $script:UvExe = Join-Path $script:Prefix 'bin\uv.cmd'
+        $script:UvMinimum = [version]'0.12.18'
+        $script:SavedUnmanaged = $env:UV_UNMANAGED_INSTALL
+        # What a fetch leaves at $UvExe; a case changes it.
+        $script:Fetched = '0.12.22'
+        Mock Write-Host {}
+        Mock Invoke-RestMethod {}
+        $script:UnmanagedAtFetch = $null
+        Mock Invoke-Native {
+            $script:UnmanagedAtFetch = $env:UV_UNMANAGED_INSTALL
+            [IO.File]::WriteAllText($script:UvExe, "@echo uv $($script:Fetched) (x86_64-pc-windows-msvc)")
+        }
+    }
+    AfterEach { $env:UV_UNMANAGED_INSTALL = $script:SavedUnmanaged }
+
+    function Set-Uv([string]$Words) { [IO.File]::WriteAllText($script:UvExe, "@echo $Words") }
+
+    It 'reads the version from uv''s own words' {
+        Set-Uv 'uv 0.12.17 (x86_64-pc-windows-msvc)'
+        Get-UvVersion $UvExe | Should Be ([version]'0.12.17')
+        Set-Uv 'uv: no version here'
+        Get-UvVersion $UvExe | Should BeNullOrEmpty
+        Get-UvVersion (Join-Path $Prefix 'bin\absent.cmd') | Should BeNullOrEmpty
+    }
+
+    It 'keeps a uv that is new enough, and says so in the words it always did' {
+        foreach ($have in '0.12.22', '0.12.18', '0.13.0', '1.0.0') {
+            Set-Uv "uv $have (x86_64-pc-windows-msvc)"
+            Install-Uv
+            Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like "*uv already present (uv $have (*" }
+        }
+        Assert-MockCalled Invoke-RestMethod -Scope It -Times 0 -Exactly
+        Assert-MockCalled Invoke-Native -Scope It -Times 0 -Exactly
+    }
+
+    It 'fetches a newer one over a uv that is too old, compared as numbers, and says why' {
+        foreach ($have in '0.12.17', '0.12.7', '0.12.9', '0.9.30') {
+            Set-Uv "uv $have (x86_64-pc-windows-msvc)"
+            Install-Uv
+            Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like "*uv $have is older than 0.12.18*" }
+            Get-UvVersion $UvExe | Should Be ([version]'0.12.22')
+        }
+        Assert-MockCalled Invoke-Native -Scope It -Times 4 -Exactly
+    }
+
+    It 'uses uv''s own installer, kept inside the prefix' {
+        Set-Uv 'uv 0.12.17 (x86_64-pc-windows-msvc)'
+        Install-Uv
+        Assert-MockCalled Invoke-RestMethod -Scope It -Times 1 -Exactly -ParameterFilter { $Uri -eq 'https://astral.sh/uv/install.ps1' }
+        Assert-MockCalled Invoke-Native -Scope It -Times 1 -Exactly -ParameterFilter {
+            ($Arguments -join ' ') -like '-NoProfile -ExecutionPolicy Bypass -File *eugene-plexus-uv-install-*.ps1' }
+        $script:UnmanagedAtFetch | Should Be (Join-Path $Prefix 'bin')
+    }
+
+    It 'fetches one again over a uv that cannot say its version' {
+        Set-Uv 'uv: no version here'
+        Install-Uv
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -like '*does not say its version; fetching uv again*' }
+        Assert-MockCalled Invoke-Native -Scope It -Times 1 -Exactly
+    }
+
+    It 'fetches one where there is none, as before' {
+        Install-Uv
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { "$Object" -eq '==> fetching uv' }
+        Assert-MockCalled Invoke-Native -Scope It -Times 1 -Exactly
+    }
+
+    It 'stops, naming both versions, when the fetch left the old uv in place' {
+        Set-Uv 'uv 0.12.17 (x86_64-pc-windows-msvc)'
+        $script:Fetched = '0.12.17'
+        { Install-Uv } | Should Throw 'is 0.12.17 after fetching it again, and this installer needs 0.12.18 or newer'
+    }
+
+    It 'stops with the download''s own reason, and keeps the old uv, when it cannot fetch' {
+        Set-Uv 'uv 0.12.17 (x86_64-pc-windows-msvc)'
+        Mock Invoke-RestMethod { throw 'the remote name could not be resolved' }
+        { Install-Uv } | Should Throw 'could not download https://astral.sh/uv/install.ps1 -- the remote name could not be resolved'
+        Assert-MockCalled Invoke-Native -Scope It -Times 0 -Exactly
+        Get-UvVersion $UvExe | Should Be ([version]'0.12.17')
+    }
+
+    It 'is step 1, and both installers keep the same minimum' {
+        $text = $source -replace "`r`n", "`n"
+        $step = $text.IndexOf('# --- 1. uv ')
+        $call = $text.IndexOf("`nInstall-Uv`n")
+        $venv = $text.IndexOf('# --- 2. venv ')
+        ($step -lt $call -and $call -lt $venv) | Should Be $true
+        $text | Should Match '(?m)^\$UvMinimum = \[version\]"0\.12\.18"'
+        [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'install.sh')) | Should Match '(?m)^UV_MINIMUM=0\.12\.18$'
     }
 }
 
