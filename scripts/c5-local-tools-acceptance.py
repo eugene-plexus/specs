@@ -90,7 +90,7 @@ class Model(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        if self.path.rstrip("/") != "/v1/chat/completions":
+        if "messages" not in body:
             # Engine capability/tokenization probes are not chat requests.
             self.send_error(404)
             return
@@ -259,9 +259,11 @@ def exercise(app: dict, token: str) -> None:
     def pending():
         messages = browser.get(f"/api/chats/{chat}").json()["messages"]
         message = messages[-1]
-        if message["status"] != "running" and not message.get("toolRounds"):
-            must("46", "model offers the tool", False, message)
-        return message if message.get("toolRounds") else None
+        return (
+            message
+            if message.get("toolRounds") or message["status"] != "running"
+            else None
+        )
 
     message = wait_for(pending, 60, 0.2) or {}
     calls = (message.get("toolRounds") or [{}])[0].get("calls") or []
@@ -269,7 +271,7 @@ def exercise(app: dict, token: str) -> None:
         "46",
         "the exact call waits for approval",
         bool(calls) and calls[0]["status"] == "pending",
-        calls,
+        calls or message,
     )
     approved = browser.post(
         f"/api/chats/{chat}/messages/{message['id']}/tools/decision",
