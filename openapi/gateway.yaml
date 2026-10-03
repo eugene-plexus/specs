@@ -868,8 +868,29 @@ paths:
         decides whether the model's reasoning is returned as `thinking`
         blocks (see below) and nothing more. Ignored hints are named in
         `x-eugene-plexus-ignored-settings` on both response modes.
-        `metadata` is discarded as an opaque annotation. Unknown top-level
-        fields are rejected with 400 naming the field.
+        `metadata` is discarded as an opaque annotation.
+
+        **`output_config.format` is honoured** (2026-10-03): a
+        `{"type": "json_schema", "schema": {...}}` is carried as the chat
+        path's `response_format` of type `json_schema`, so the answer's
+        text is JSON matching the schema. Claude Code sends it, under the
+        `structured-outputs-2025-12-15` beta, for session titles, memory
+        recall and prompt hooks, and those failed through this door while
+        it was refused.
+
+        Four top-level fields Claude Code's request builder can add --
+        `safeguards`, `speed`, `thread` and `diagnostics` (2.1.288) -- are
+        accepted, not enforced, and named on the ignored-settings header.
+        Any other unknown top-level field is rejected with 400 naming the
+        field.
+
+        A prompt the backend reports as too long for the model's context
+        is a 400 `invalid_request_error` whose message **begins
+        `prompt is too long`**, followed by `: N tokens > M maximum` when
+        the backend reported both numbers. Claude Code compacts the
+        conversation and retries only on that wording, so a local model's
+        overflow relayed in the engine's own words ended the session
+        instead.
 
         `cache_control` appears on system blocks, on the last user
         content block **and on `tool_result` blocks**; prompt caching is
@@ -1346,6 +1367,18 @@ paths:
         server-side tool (file search, code interpreter, computer use,
         MCP, a custom or local-shell tool) is refused with a 400 naming
         its type.
+
+        **A `namespace` tool is accepted** (2026-10-03): `{"type":
+        "namespace", "name", "description", "tools": [...]}`, a group of
+        tools Codex sends to every custom provider since 0.133.0 (its
+        sub-agent tools as `multi_agent_v1`, MCP servers as theirs). Each
+        `function` member is offered to the model under its own `name`,
+        and a call to one comes back as a `function_call` carrying
+        `namespace`, because Codex routes a call by namespace and name
+        together. A member of any other type is not offered and is named
+        on the ignored-settings header. Two offered tools with one name
+        are refused with a 400 naming it. Before this, every request from
+        Codex 0.133 to 0.160 was refused.
 
         ### Reasoning goes out as `reasoning_text` and comes back
 
@@ -5955,7 +5988,9 @@ components:
         Measured Claude Code hints (`cache_control`, `context_management`)
         are accepted with a response header naming ignored settings;
         `thinking` chooses whether reasoning is returned. Metadata is
-        discarded. Unknown top-level settings are explicitly rejected.
+        discarded. Claude Code's `safeguards`, `speed`, `thread` and
+        `diagnostics` are accepted and named as ignored; any other unknown
+        top-level setting is explicitly rejected.
         This is a text, image, document and tool translation, not full parity.
 
         Consequently **this schema does not decide what is refused**.
@@ -6127,9 +6162,13 @@ components:
             `thinkingMode`, exactly as for `thinking.budget_tokens`, so a
             non-null value is named on the ignored-settings header.
 
-            Any other key -- structured output's `format` above all --
-            is refused with a 400 naming it: it changes what the answer
-            is, and this door does not implement it.
+            **`format` is honoured** (2026-10-03): `{"type":
+            "json_schema", "schema": {...}}` becomes the chat path's
+            `response_format` of type `json_schema`. Claude Code sends it
+            for session titles, memory recall and prompt hooks. Any other
+            `format` type, and any other key, is refused with a 400
+            naming it: it changes what the answer is, and this door does
+            not implement it.
         cache_control:
           type: object
           additionalProperties: true
@@ -6368,7 +6407,9 @@ components:
         search** (`web_search_<date>`), which this install's search
         account runs since P8. There is no sandbox to run code in, and
         pretending otherwise would fail at the moment the model chose to
-        use one.
+        use one. The refusal's message contains `Input tag '<type>'`, the
+        wording Claude Code (2.1.280 and later) looks for to retry
+        without an optional server tool such as its advisor.
       additionalProperties: true
       required:
         - name
@@ -6637,7 +6678,8 @@ components:
                 explanation** — measured, a 400 and a 403 are shown to
                 the user verbatim while a 404's message is discarded,
                 which is why this door answers 400 for a model nothing
-                serves.
+                serves. A prompt too long for the model's context begins
+                `prompt is too long`, the wording Claude Code compacts on.
 
     ResponsesInputTokens:
       type: object
@@ -6831,7 +6873,8 @@ components:
 
         Carried: `message` (`role` user, assistant, system or developer;
         `content` a string or parts; `type` may be omitted), `function_call`
-        (`call_id`, `name`, `arguments` as a JSON string),
+        (`call_id`, `name`, `arguments` as a JSON string, and `namespace`
+        when the call was to a member of a `namespace` tool),
         `function_call_output` (`call_id`, `output` as a string or a list
         of `input_text` / `input_image` parts), and `reasoning`
         (`content` of `reasoning_text` parts, `encrypted_content`), and a
@@ -6855,6 +6898,9 @@ components:
           type: string
         name:
           type: string
+        namespace:
+          type: string
+          description: The `namespace` tool a `function_call` was to (Codex 0.133 and later).
         arguments:
           type: string
         output:
@@ -6873,11 +6919,13 @@ components:
       type: object
       description: |
         A `function` tool (`name`, `description`, `parameters`, `strict`)
-        maps onto an OpenAI chat function. `web_search` runs on this
-        install's search account, or is removed and named when it cannot
-        (see the endpoint); `image_generation` runs on this install's
-        image models, or is refused naming why (P8e); any other `type` is
-        refused.
+        maps onto an OpenAI chat function. A `namespace` tool (`name`,
+        `description`, `tools`) offers each of its `function` members the
+        same way and marks calls to them with its `namespace` (see the
+        endpoint). `web_search` runs on this install's search account, or
+        is removed and named when it cannot (see the endpoint);
+        `image_generation` runs on this install's image models, or is
+        refused naming why (P8e); any other `type` is refused.
       additionalProperties: true
       required:
         - type
@@ -6886,6 +6934,12 @@ components:
           type: string
         name:
           type: string
+        tools:
+          type: array
+          description: A `namespace` tool's members, each a tool object of its own.
+          items:
+            type: object
+            additionalProperties: true
         description:
           type: string
         parameters:
@@ -6954,7 +7008,8 @@ components:
         `{"type": "message", "id", "role": "assistant", "status",
         "content": [{"type": "output_text", "text", "annotations": []}]}`,
         `{"type": "function_call", "id", "status", "call_id", "name",
-        "arguments"}`, for a search this install ran (P8),
+        "arguments", "namespace"?}` (`namespace` when the call is to a
+        member of a `namespace` tool), for a search this install ran (P8),
         `{"type": "web_search_call", "id", "status", "action": {"type":
         "search", "query", "sources": [{"type": "url", "url"}]}}`, or for
         an image it made (P8e), `{"type": "image_generation_call", "id",
