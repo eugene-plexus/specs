@@ -3,6 +3,7 @@ annotated-types==0.8.0
 anyio==4.15.1
 argon2-cffi==23.1.0
 argon2-cffi-bindings==26.1.0
+attrs==26.1.0
 authlib==1.8.0
 certifi==2026.7.22
 cffi==2.1.1
@@ -12,15 +13,22 @@ fastapi==0.142.2
 h11==0.16.0
 hatchling==1.32.4
 httpcore==1.0.9
+httpcore2==2.13.1 ; sys_platform != 'emscripten'
 httptools==0.8.0
 httpx==0.28.1
+httpx2==2.13.1
+httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
 idna==3.20
 jaraco-classes==3.4.0
 jaraco-context==6.1.2
 jaraco-functools==4.6.0
 jeepney==0.9.0 ; sys_platform == 'linux'
 joserfc==1.7.5
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
 keyring==25.7.0
+mcp==2.3.0
+mcp-types==2.3.0
 more-itertools==11.1.0
 opentelemetry-api==1.45.0
 packaging==26.3
@@ -38,7 +46,10 @@ python-multipart==0.0.32
 pywin32==312 ; sys_platform == 'win32'
 pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
 pyyaml==6.0.3
+referencing==0.37.0
+rpds-py==2026.6.3
 secretstorage==3.5.0 ; sys_platform == 'linux'
+sse-starlette==3.5.0
 starlette==1.7.0
 tomlkit==0.15.1
 trove-classifiers==2026.9.21.13
