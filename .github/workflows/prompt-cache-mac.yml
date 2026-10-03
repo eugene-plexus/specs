@@ -30,7 +30,7 @@ jobs:
       - name: mlx-lm at the agent's pin
         run: |
           python -m venv "$RUNNER_TEMP/mlx"
-          "$RUNNER_TEMP/mlx/bin/pip" install --quiet "mlx-lm==0.31.3"
+          "$RUNNER_TEMP/mlx/bin/pip" install --quiet "mlx-lm==0.32.0"
       - name: llama.cpp's macOS build
         env:
           GH_TOKEN: ${{ github.token }}
@@ -50,7 +50,7 @@ jobs:
           "$RUNNER_TEMP/mlx/bin/python" -m mlx_lm.server --model mlx-community/Qwen3-0.6B-4bit \
             --host 127.0.0.1 --port 19601 > mlx.log 2>&1 &
           for i in $(seq 1 180); do curl -fs http://127.0.0.1:19601/v1/models >/dev/null && break; sleep 2; done
-          python scripts/prompt-cache-mac.py --url http://127.0.0.1:19601 --label mlx-0.31.3 \
+          python scripts/prompt-cache-mac.py --url http://127.0.0.1:19601 --label mlx-0.32.0 \
             --model mlx-community/Qwen3-0.6B-4bit --report mlx.json
           kill %1 || true
       - name: llama-server (Metal)

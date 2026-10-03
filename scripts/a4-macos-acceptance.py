@@ -53,6 +53,9 @@ LABEL = "com.eugeneplexus.agent"
 PLIST = HOME / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 PASSPHRASE = "a4-disposable-passphrase-on-a-runner"
 MLX_ENV = HOME / "eugene-mlx"
+#: The mlx-lm the agent's install notes pin (its `UPSTREAM_VERSION_PINNED`):
+#: 0.31.3 until 2026-10-03, when the upstream drift audit moved it to 0.32.0.
+MLX_LM_PIN = "0.32.0"
 
 # Two MLX models: one MLX-converted (the pinned known-compatible model), one
 # vanilla HF safetensors (B1's open question 2). A tiny GGUF for llama.cpp.
@@ -530,7 +533,7 @@ def phase_mlx_install(ctx: dict) -> None:
         info = {}
     fact("mlx environment", info)
     check("27", "the environment is native arm64 with the pinned mlx-lm, and MLX sees Metal",
-          info.get("machine") == "arm64" and info.get("mlx_lm") == "0.31.3" and info.get("metal") is True, info)
+          info.get("machine") == "arm64" and info.get("mlx_lm") == MLX_LM_PIN and info.get("metal") is True, info)
     metal = ctx.get("metal") or {}
     check("28", "MLX's own working-set figure agrees with the one the agent reports",
           (info.get("device_info") or {}).get("max_recommended_working_set_size")
@@ -542,7 +545,7 @@ def phase_mlx_install(ctx: dict) -> None:
     mlx = engine(ctx, "mlx")
     python = mlx.get("python") or {}
     check("30", "the agent now finds MLX, reads its version and names the environment's interpreter",
-          mlx.get("available") is True and mlx.get("version") == "0.31.3"
+          mlx.get("available") is True and mlx.get("version") == MLX_LM_PIN
           and str(MLX_ENV) in (python.get("interpreter") or ""),
           {k: mlx.get(k) for k in ("available", "version", "binaryPath", "error")} | {"python": python})
 
@@ -616,7 +619,7 @@ def phase_models(ctx: dict) -> None:
 
 
 def phase_upstream_claims(ctx: dict) -> None:
-    """The v0.31.3 claims the adapter is built on, against the real server."""
+    """The claims the adapter is built on, against the real server at the pin."""
     say("the upstream claims the adapter rests on (mlx_lm.server alone)")
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

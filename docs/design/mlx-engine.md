@@ -12,10 +12,14 @@ written against current `main`.
 
 ## The pinned upstream
 
-**mlx-lm v0.31.3** (released 2026-04-22) — still the newest release as
-of 2026-09-22, and the version every claim below was re-verified
-against by reading `mlx_lm/server.py` at the `v0.31.3` tag on
-2026-09-22. The claims table from the branch document holds unchanged:
+**mlx-lm v0.32.0** (released 2026-10-01) since 2026-10-03, when the
+upstream drift audit (`docs/maintenance/upstream-drift-2026-10-03.md`)
+moved the pin; **v0.31.3** (released 2026-04-22) before that. The claims
+below were verified against v0.31.3 by reading `mlx_lm/server.py` at the
+`v0.31.3` tag on 2026-09-22. The audit re-read v0.32.0: the console
+script, the eleven flags and the missing `--served-model-name` hold;
+`/health` changed, as the section after the list says. The claims table
+from the branch document, at v0.31.3:
 
 - The console script is `mlx_lm.server`; the dot is part of the name.
 - `--model --host --port` launch it; the eleven curated flags exist
@@ -30,12 +34,18 @@ against by reading `mlx_lm/server.py` at the `v0.31.3` tag on
 - `model: "default_model"` resolves to whatever `--model` named
   (`ModelProvider.__init__` seeds `_model_map["default_model"]`).
 
-**Upstream `main` has since changed `/health`** (inspected at
-`c69d128` for the roadmap): it answers `503 {"status": "unavailable"}`
-until the model is resident. That is unreleased, so the pin stays
-0.31.3 — but the adapter already reads a 503 `unavailable` from
-`/health` as `Loading`, so the day a release carries it, the readiness
-probe gets cheaper with no adapter change.
+**v0.32.0 gives `/health` a meaning, and not the one this section
+expected** (corrected 2026-10-03). When the roadmap was written, upstream
+`main` at `c69d128` answered `503 {"status": "unavailable"}` until the
+model was resident, and this section said the adapter's reading of that
+503 as `Loading` would make the probe cheaper with no change once a
+release carried it. What v0.32.0 released (PR #1791) is the reverse:
+`/health` answers 200 while the model loads, and 503 `unavailable`
+means the generation thread has died. Read as `Loading`, a dead server
+would have shown as loading for the 600 s startup budget below. The
+agent now reads a 503 `unavailable` as the server having failed, which
+is what had to land before the pin moved. A read-only probe still
+cannot tell loading from ready, so the one-token readiness below stands.
 
 ## The blocker, and its fix: `upstreamModelId`
 
@@ -101,7 +111,7 @@ mlx-lm never goes into Eugene's own environment. The recipe the agent's
 
 ```bash
 uv venv ~/eugene-mlx --python 3.12
-uv pip install --python ~/eugene-mlx/bin/python "mlx-lm==0.31.3"
+uv pip install --python ~/eugene-mlx/bin/python "mlx-lm==0.32.0"
 # then, in the agent's config: mlxBinary = ~/eugene-mlx/bin/mlx_lm.server
 ```
 
