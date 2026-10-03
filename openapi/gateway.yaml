@@ -1360,8 +1360,12 @@ paths:
         removed, and named on the ignored-settings header, with the
         reason in `x-eugene-plexus-web-search`. Refusing it would refuse
         the first request of every session, as `/v1/messages` once did
-        with `output_config`. `filters.allowed_domains`, `user_location`
-        and `search_context_size` are honoured. `image_generation` runs
+        with `output_config`. `filters.allowed_domains`,
+        `filters.blocked_domains`, `user_location` and
+        `search_context_size` are honoured; any other filter or setting
+        on the tool (`search_content_types`, `image_settings`,
+        `return_token_budget`) is named on the ignored-settings header.
+        `image_generation` runs
         through this install's image models (P8e, "Server-run tools"
         above) or is refused with a 400 naming why. Every other
         server-side tool (file search, code interpreter, computer use,
@@ -5569,6 +5573,15 @@ components:
             chosen to be far below any real tokenizer's — so it cannot
             fire on a merely token-dense prompt, and it needs no
             tokenizer of ours.
+
+            **And by a second test where the window is known**
+            (2026-10-03): `prompt_tokens` reached at least 90% of
+            `context_length` while the prompt's characters, at four to a
+            token, exceed the whole window. The ratio alone cannot see a
+            cut that keeps a near-full window: Ollama's default context is
+            4,096 tokens on a card under 23 GiB and it still keeps the
+            newest turns and drops the middle, so a prompt cut to 4k went
+            unflagged below about 82,000 characters.
 
             **Three states, and the difference matters.** `null` means
             not evaluated — the backend reported no usage, or the prompt
