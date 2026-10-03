@@ -182,7 +182,7 @@ def _readable(path: str) -> bool:
         with open(path, "rb") as handle:
             handle.read(1)
         return True
-    except OSError:
+    except (OSError, ValueError):
         return False
 
 

@@ -80,8 +80,8 @@ Existing per-user installs keep C5a until moved to a supported system
 install. A manually launched development copy still serves chat and HTTP
 tools, with local processes disabled by default.
 
-The app uses the official SDK's stdio transport. Each process has its own
-directory under Workbench's `tools/`, also its home and cache directory.
+The app uses the official SDK's stdio transport. Each connection has its own
+directory under Workbench's `tools/`, also its processes' home and cache directory.
 Its environment contains OS essentials and the owner's explicit values,
 never inherited Eugene or provider credentials. Environment values stay
 in private SQLite storage; reads return their names only. Executable
@@ -92,7 +92,11 @@ name the observed transport/start condition and how to check configuration.
 At most four local processes run at once. A process lives through the
 answer, including approval waits, and closes on completion, Stop or graceful
 shutdown. The SDK closes stdin, waits, then terminates an unresponsive
-process tree; it does not restart failed servers. Programs must remain
+process tree; it does not restart failed servers. On POSIX a small stdio
+guard remains the process-group leader until shutdown and reaps the group
+even when the server exits normally: SDK 2.3 otherwise leaves that server's
+ordinary children running. A real child-process test failed before the guard
+and passes with it. Windows uses the SDK's Job Object. Programs must remain
 attached to stdio and must not daemonize. The C1 service manager owns the
 app's final shutdown boundary. Removing a connection prevents pending calls
 but does not undo dispatched actions or delete program-created data.

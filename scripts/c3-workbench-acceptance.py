@@ -46,6 +46,11 @@ What it proves, in order:
 That is for development only and says so: an archive has no gitignored
 build output, so only the catalogue's archive proves what installs.
 
+Since C5b, a per-user harness must observe the catalogue's account refusal.
+It then tests chat/sign-in against that same archive as a custom, chat-only
+entry: no account signal means local processes stay disabled. C5's separate
+service-install run proves the actual catalogue install and stdio boundary.
+
 Run in an environment holding every Python component (on this box,
 `agent/.venv`). Before C3 this fails at its first check: the catalogue
 has no Workbench.
@@ -514,43 +519,51 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         say("Workbench from the catalogue")
         catalogue = call("agent", "GET", "/v1/app-catalogue", operator).json()
         entry = next((e for e in catalogue.get("apps", []) if e["manifest"]["id"] == "workbench"), None)
+        app_id = "workbench"
         if source is None:
             must("2", "the agent's catalogue offers Workbench at a pinned archive",
                  entry is not None and entry["manifest"]["source"].startswith("https://github.com/"),
                  entry["manifest"]["source"] if entry else "no Workbench in the catalogue")
-            check("3", "it signs people in with Eugene and runs nothing a model chooses",
-                  entry["manifest"].get("signIn") is True and entry["manifest"].get("localActions") is False
+            check("3", "it declares sign-in, settings and its local-action requirement",
+                  entry["manifest"].get("signIn") is True and isinstance(entry["manifest"].get("localActions"), bool)
                   and entry["manifest"].get("configTrio") is True, entry["manifest"])
-        else:
+        if source is not None or (entry and entry["manifest"].get("localActions") is True):
+            if source is None:
+                refused = call("console", "POST", hop + "/v1/apps/workbench/install", console)
+                must("3a", "the real catalogue refuses local actions without an app account",
+                     refused.status_code == 409, refused.text[:300])
+            app_id = "workbench-chat-check"
             manifest = dict((entry or {}).get("manifest") or {
                 "id": "workbench", "name": "Workbench", "package": "eugene-plexus-workbench",
                 "entry": "eugene_plexus_workbench", "ui": True, "configTrio": True, "signIn": True,
                 "localActions": False})
-            manifest.update({"id": "workbench", "source": source, "version": "dev-" + secrets.token_hex(3)})
+            manifest.update({"id": app_id, "localActions": False})
+            if source is not None:
+                manifest.update({"source": source, "version": "dev-" + secrets.token_hex(3)})
             added = call("agent", "POST", "/v1/app-catalogue/custom", operator, json=manifest)
-            must("2", "DEVELOPMENT RUN: Workbench added as a custom entry from a working tree "
-                 "(this is not the acceptance)", added.status_code == 201, added.text[:300])
-        began = call("console", "POST", hop + "/v1/apps/workbench/install", console)
+            must("3b", "chat/API regression entry added; local processes must remain disabled",
+                 added.status_code == 201, added.text[:300])
+        began = call("console", "POST", hop + f"/v1/apps/{app_id}/install", console)
         must("4", "the install starts, from the console on another machine",
              began.status_code == 202, f"{began.status_code} {began.text[:300]}")
 
         def installed() -> bool:
-            progress = call("console", "GET", hop + "/v1/apps/workbench/install", console).json()
+            progress = call("console", "GET", hop + f"/v1/apps/{app_id}/install", console).json()
             if progress["state"] == "failed":
                 raise Abort("the install failed: " + str(progress.get("error"))[-1500:])
             return progress["state"] == "done"
 
         wait(installed, "the install", 600)
-        wait(lambda: call("agent", "GET", "/v1/apps/workbench", operator).json()["status"] == "running",
+        wait(lambda: call("agent", "GET", f"/v1/apps/{app_id}", operator).json()["status"] == "running",
              "Workbench running", 90)
-        app = call("agent", "GET", "/v1/apps/workbench", operator).json()
+        app = call("agent", "GET", f"/v1/apps/{app_id}", operator).json()
         ui = app["uiUrl"].rstrip("/")
         page = client.get(ui + "/")
         must("5", "Workbench runs, and its page is the built front end",
              page.status_code == 200 and 'id="root"' in page.text and "/assets/" in page.text,
              f"{app['status']} at {ui}, isolation {app.get('isolation')}")
         check("6", "its key is the app's own, and it is registered to sign people in",
-              app.get("keyName") == f"app:workbench@{NODE}" and bool(app.get("oidcClientId")),
+              app.get("keyName") == f"app:{app_id}@{NODE}" and bool(app.get("oidcClientId")),
               {"key": app.get("keyName"), "client": app.get("oidcClientId")})
 
         say("before a search account: the switch says why")
@@ -560,6 +573,10 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
              ended.startswith("/#signin="), ended[:200])
         me = owner.get("/api/me").json()
         check("8", "Workbench knows the owner as the owner", me.get("owner") is True, me)
+        if app_id == "workbench-chat-check":
+            local = owner.get("/api/tools/servers").json()["localProcesses"]
+            check("8a", "without the launcher signal local process execution is disabled",
+                  local["available"] is False and bool(local["reason"]), local)
         wait(lambda: any(m["id"] == MODEL for m in owner.get("/api/models").json()["models"]),
              "the model is listed", 60)
         listing = owner.get("/api/models").json()
@@ -655,7 +672,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         rows = requests.get("requests") or []
         keys = {r.get("clientKeyName") for r in rows}
         check("16", "the gateway records Workbench's requests under the app's key and no other",
-              keys == {f"app:workbench@{NODE}"}, sorted(map(str, keys)))
+              keys == {f"app:{app_id}@{NODE}"}, sorted(map(str, keys)))
 
         say("a session needs its cookie and its secret")
         cookie_only = owner.http.get(ui + "/api/me")
@@ -683,7 +700,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
               theirs.status_code == 404 and bo.get("/api/chats").json()["chats"] == []
               and [c["id"] for c in ada.get("/api/chats").json()["chats"]] == [mine])
 
-        reads = call("console", "PATCH", hop + "/v1/apps/workbench/config", console,
+        reads = call("console", "PATCH", hop + f"/v1/apps/{app_id}/config", console,
                      json={"ownerReadsChats": True})
         told = ada.get("/api/me").json().get("ownerReadsChats")
         read = owner.get(f"/api/chats/{mine}")
@@ -693,14 +710,14 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
               and read.json()["chat"]["readOnly"] is True
               and owner.post(f"/api/chats/{mine}/messages", json={"content": "x"}).status_code == 404,
               reads.text[:200])
-        call("console", "PATCH", hop + "/v1/apps/workbench/config", console, json={"ownerReadsChats": None})
+        call("console", "PATCH", hop + f"/v1/apps/{app_id}/config", console, json={"ownerReadsChats": None})
         check("21", "turned back off, the owner cannot", owner.get(f"/api/chats/{mine}").status_code == 404)
 
         person_id = made["ada"]["id"]
         call("control", "PATCH", f"/v1/people/{person_id}", root, json={"disabled": True}).raise_for_status()
         # Ten minutes is the ID token's life (C2 D6); stand in for it by
         # making Ada's session due for its refresh now.
-        database = agent_dir / "apps" / "workbench" / "data" / "workbench.sqlite3"
+        database = agent_dir / "apps" / app_id / "data" / "workbench.sqlite3"
         with sqlite3.connect(database) as db:
             db.execute("UPDATE sessions SET access_expires_at = 0 WHERE sub = ?", (person_id,))
         refused = ada.get("/api/me")
@@ -750,7 +767,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
               after.get("error"))
 
         say("uninstalled from the console")
-        gone = call("console", "DELETE", hop + "/v1/apps/workbench", console)
+        gone = call("console", "DELETE", hop + f"/v1/apps/{app_id}", console)
         clients = call("control", "GET", "/v1/oidc/clients", root).json()["clients"]
         still = call("console", "GET", "/v1/auth/client-keys", console)
         check("27", "uninstalled from the console, its sign-in is gone at the root, and the "
