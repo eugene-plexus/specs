@@ -204,6 +204,22 @@ tags:
     description: Health, version, and restart.
 
 paths:
+  /v1/run-operations:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations"
+  /v1/run-operations/assigned:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations~1assigned"
+  /v1/run-operations/{id}:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}"
+  /v1/run-operations/{id}/answer:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}~1answer"
+  /v1/run-operations/{id}/cancel:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}~1cancel"
+  /v1/run-operations/{id}/claim:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}~1claim"
+  /v1/run-operations/{id}/checkpoint:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}~1checkpoint"
+  /v1/run-operations/{id}/profile:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}~1profile"
 
   # -------- Models --------
 

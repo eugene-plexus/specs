@@ -1,8 +1,9 @@
 """Package committed installers and their exact component pins for a release.
 
 Reads Git blobs, not checkout bytes (Windows CRLF must not change checksums).
-This fixes Eugene source versions; uv, Python patch versions, transitive Python
-dependencies, model catalogue entries and downloaded engines remain upstream.
+Fixes Eugene source and Python runtime/build dependency versions and hashes.
+The interpreter patch, bootstrap uv and independently acquired engines/models
+are outside this lock and are recorded as such in the release manifest.
 """
 import argparse
 import hashlib
@@ -34,12 +35,21 @@ def package(version: str, ref: str, output: Path) -> dict:
     commit = git("rev-parse", "--verify", ref + "^{commit}").decode().strip()
     files = {name: git("show", f"{commit}:scripts/{name}") for name in ("install.sh", "install.ps1")}
     components = pins(files["install.sh"], files["install.ps1"])
+    inputs = json.loads(git("show", f"{commit}:release/manifest.json"))
+    dependencies = git("show", f"{commit}:release/requirements.lock").replace(b"\r\n", b"\n")
+    if components != inputs["components"] or hashlib.sha256(dependencies).hexdigest() != inputs["dependenciesSha256"]:
+        raise ValueError("release inputs do not match committed installers or dependency lock")
+    for data in files.values():
+        if dependencies.rstrip() not in data.replace(b"\r\n", b"\n"):
+            raise ValueError("installer does not embed the release dependency lock")
+    files["requirements.lock"] = dependencies
     manifest = {"version": version, "specsCommit": commit, "components": components,
                 "files": {name: {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
-                                 "source": f"https://raw.githubusercontent.com/eugene-plexus/specs/{commit}/scripts/{name}"}
+                                 "source": f"https://raw.githubusercontent.com/eugene-plexus/specs/{commit}/{'release' if name == 'requirements.lock' else 'scripts'}/{name}"}
                           for name, data in files.items()},
                 "container": f"ghcr.io/eugene-plexus/control-plane:{version}",
-                "scope": "Eugene source pins; upstream tools, Python dependencies, engines and models are not locked"}
+                "releaseInputs": inputs,
+                "scope": "Eugene source pins and hashed Python runtime/build dependencies; interpreter patch, bootstrap uv, engines and models are not locked"}
     files["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
     output.mkdir(parents=True, exist_ok=False)
     for name, data in files.items():

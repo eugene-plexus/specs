@@ -7,12 +7,70 @@ on:
     branches: [main]
   workflow_dispatch:
     inputs:
+      agent_ref:
+        description: "Optional agent candidate commit; defaults to the release pin"
+        required: false
+        type: string
       control_ref:
-        description: "Optional control commit/ref for dependency review; defaults to installer pin"
+        description: "Optional control candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      gateway_ref:
+        description: "Optional gateway candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      inference_driver_ref:
+        description: "Optional inference_driver candidate commit; defaults to the release pin"
         required: false
         type: string
       library_ref:
-        description: "Optional library commit/ref for dependency review; defaults to installer pin"
+        description: "Optional library candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      tool_driver_ref:
+        description: "Optional tool_driver candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      ui_ref:
+        description: "Optional ui candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      workbench_ref:
+        description: "Optional workbench candidate commit; defaults to the release pin"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      agent_ref:
+        description: "Optional agent candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      control_ref:
+        description: "Optional control candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      gateway_ref:
+        description: "Optional gateway candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      inference_driver_ref:
+        description: "Optional inference_driver candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      library_ref:
+        description: "Optional library candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      tool_driver_ref:
+        description: "Optional tool_driver candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      ui_ref:
+        description: "Optional ui candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      workbench_ref:
+        description: "Optional workbench candidate commit; defaults to the release pin"
         required: false
         type: string
 
@@ -28,11 +86,18 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Check shared bandwidth cap and installer isolation guards
         run: python scripts/s10-checks.py
+      - name: Verify generated release inputs
+        run: python scripts/release-inputs.py --check
+      - name: Verify deterministic platform vendoring and drift detection
+        run: python scripts/platform-checks.py
       - name: Check release artifact bytes and component pin agreement
         run: python scripts/release-artifacts-checks.py
       - name: Verify retained A8 measurement integrity and declared targets
@@ -50,6 +115,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
           path: specs
       - uses: actions/setup-python@v6
         with:
@@ -69,7 +136,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ steps.pins.outputs.agent }}
+          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
       - uses: actions/checkout@v6
         with:
@@ -79,7 +146,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/gateway
-          ref: ${{ steps.pins.outputs.gateway }}
+          ref: ${{ inputs.gateway_ref || steps.pins.outputs.gateway }}
           path: gateway
       - uses: actions/checkout@v6
         with:
@@ -89,19 +156,32 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
-          ref: ${{ steps.pins.outputs.driver }}
+          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/tool-driver
-          ref: ${{ steps.pins.outputs.tool_driver }}
+          ref: ${{ inputs.tool_driver_ref || steps.pins.outputs.tool_driver }}
           path: tool-driver
       # Component dev extras pin independent lint/codegen toolchains. Only the
       # shared test runner belongs in this cross-component environment.
       - name: Install runtime consumers and the acceptance test runner
-        run: python -m pip install -r specs/scripts/requirements-acceptance.txt -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r specs/release/requirements.lock
+          python -m pip install --no-deps --no-build-isolation -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver
+          python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt
       - name: Check installed dependency consistency
         run: python -m pip check
+      - name: Verify durable run protocol when both consumers provide it
+        shell: python {0}
+        run: |
+          import importlib.util, subprocess, sys
+          if all(importlib.util.find_spec(module) is not None for module in (
+              "eugene_plexus_agent.run_worker", "eugene_plexus_library.run_operations"
+          )):
+              subprocess.run([sys.executable, "specs/scripts/run-operations-checks.py"], check=True)
+          else:
+              print("Pre-operation release pins: legacy compatibility checks still apply; run recovery activates when both consumers are upgraded.")
       - name: Score the shipped starter set for 8 GB GPU and 16 GB RAM
         run: python specs/scripts/s10-starter-check.py
       - name: One token module in five repos, and nothing of the shared-key model left
@@ -152,6 +232,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
           path: specs
       - uses: actions/setup-python@v6
         with:
@@ -171,15 +253,18 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ steps.pins.outputs.agent }}
+          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
-          ref: ${{ steps.pins.outputs.driver }}
+          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
       - name: Install test dependencies
-        run: python -m pip install -r specs/scripts/requirements-acceptance.txt -e "./agent[service]" -e ./inference-driver
+        run: |
+          python -m pip install --require-hashes --only-binary :all: -r specs/release/requirements.lock
+          python -m pip install --no-deps --no-build-isolation -e "./agent[service]" -e ./inference-driver
+          python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt
       - name: Check installed dependency consistency
         run: python -m pip check
       - name: Check the real Windows service loader
@@ -201,6 +286,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
       - name: Exercise native, translated, and existing Python environments
         run: bash scripts/r37-install-sh-checks.sh
       - name: Verify the regressions detect broken architecture selection
@@ -208,6 +296,7 @@ jobs:
 
   system-update:
     name: Linux system install updates itself through its root helper
+    if: github.repository == 'eugene-plexus/specs'
     # A real sudo install on the runner, then an update asked for the way
     # the agent asks, carried out by root (docs/design/in-app-updates.md
     # §1.4). Its first two live runs each found a defect nothing else could.
@@ -235,6 +324,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -254,6 +346,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
 
       - name: Run gitleaks
         run: |
@@ -265,6 +360,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
 
       - uses: actions/setup-python@v6
         with:
@@ -296,6 +394,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
 
       - uses: actions/setup-node@v6
         with:
@@ -318,7 +419,7 @@ jobs:
 
   dco:
     name: DCO sign-off check
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.repository == 'eugene-plexus/specs'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -358,3 +459,33 @@ jobs:
             fi
           done < <(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}")
           exit $status
+
+  candidate-ui:
+    if: inputs.ui_ref != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/ui
+          ref: ${{ inputs.ui_ref }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test -- --run
+
+  candidate-workbench:
+    if: inputs.workbench_ref != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/workbench
+          ref: ${{ inputs.workbench_ref }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: pytest

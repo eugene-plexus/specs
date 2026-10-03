@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 import subprocess
 import tempfile
+import shutil
 
 spec = importlib.util.spec_from_file_location("release", Path(__file__).with_name("release-artifacts.py"))
 module = importlib.util.module_from_spec(spec)
@@ -13,6 +14,17 @@ with tempfile.TemporaryDirectory(prefix="ep-release-check-") as work:
     root = Path(work).resolve()
     assert root.parent == Path(tempfile.gettempdir()).resolve()
     output = root / "artifacts"
+    # Exercise the checkout under review without creating a commit in the
+    # developer's repository; the packager still reads exclusively Git blobs.
+    fixture = root / "specs"
+    (fixture / "scripts").mkdir(parents=True)
+    for name in ("install.sh", "install.ps1"):
+        shutil.copyfile(module.ROOT / "scripts" / name, fixture / "scripts" / name)
+    shutil.copytree(module.ROOT / "release", fixture / "release")
+    subprocess.run(["git", "init", "-q", str(fixture)], check=True)
+    subprocess.run(["git", "-C", str(fixture), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(fixture), "-c", "user.name=Release Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "Fixture"], check=True)
+    module.ROOT = fixture
     manifest = module.package("v0.1.0-alpha.1", "HEAD", output)
     for line in (output / "SHA256SUMS").read_text().splitlines():
         digest, name = line.split("  ")

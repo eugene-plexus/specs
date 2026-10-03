@@ -32,8 +32,8 @@
 # run `install.sh` and `join` this — that topology is unchanged.
 #
 # The image is Path B's install run by Path B's own script. The seven
-# pinned commits live in exactly one file, `scripts/install.sh`, and a
-# version bump is one edit rather than three.
+# source pins and hashed Python dependencies come from `release/manifest.json`
+# and `release/requirements.lock`, embedded into both generated installers.
 #
 #   docker compose -f docker/compose.yaml up -d --build
 #
