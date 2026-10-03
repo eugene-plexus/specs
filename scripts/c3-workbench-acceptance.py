@@ -533,6 +533,9 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
                 must("3a", "the real catalogue refuses local actions without an app account",
                      refused.status_code == 409, refused.text[:300])
             app_id = "workbench-chat-check"
+            enabled = call("agent", "PATCH", "/v1/config", operator, json={"allowCustomApps": True})
+            must("3c", "the disposable harness enables its custom regression entry",
+                 enabled.status_code == 200, enabled.text[:300])
             manifest = dict((entry or {}).get("manifest") or {
                 "id": "workbench", "name": "Workbench", "package": "eugene-plexus-workbench",
                 "entry": "eugene_plexus_workbench", "ui": True, "configTrio": True, "signIn": True,
