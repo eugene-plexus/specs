@@ -70,6 +70,10 @@ The agent catalogue commit is also green:
 
 ## Remaining scope
 
+**Update 2026-10-03:** C5b is now built and pinned, with owner-only local
+processes; see [its acceptance record](c5-local-tools-run.md). The paragraph
+below records the scope remaining at the end of C5a.
+
 C5b: local stdio processes under the app's account, process provisioning,
 and per-person access. Then folder grants/filesystem tools, dedicated media
 screens, local media engine admission, answer versions and the working

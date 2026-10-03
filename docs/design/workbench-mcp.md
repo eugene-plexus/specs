@@ -4,6 +4,10 @@ The next Workbench slice after C4. C1–C4 are built; the roadmap's C4 pickup
 was stale. Workbench remains an ordinary gateway client. Tool discovery and
 execution belong to Workbench, using MCP, never an operator door in Eugene.
 
+**C5a and C5b are built and pinned 2026-10-03:**
+[network tools](../acceptance/c5-mcp-run.md),
+[local tools](../acceptance/c5-local-tools-run.md).
+
 ## C5a: network servers
 
 The owner adds a named Streamable HTTP MCP server in **Toolbox · Tools**.
@@ -116,3 +120,10 @@ revocation, credentials, hostile results, Stop, interrupted calls and schema
 upgrade. Run the Python and browser suites, lint, type checks and a page
 build. Record deployment separately from implementation: a main-tree build
 does not update the catalogue's dist pin.
+
+For C5b, also install that published archive on disposable Windows service
+and Linux system installs. Exercise actual app-account identity, protected
+files, clean environment, ordinary child cleanup, owner/member access and
+saved results after a verified process restart. Run a real stdio server in
+the transport tests and Chrome, including Stop, startup failure, process
+limits and migration from the HTTP-only schema.

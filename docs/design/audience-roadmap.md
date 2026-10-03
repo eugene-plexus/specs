@@ -102,10 +102,13 @@
   **C5a is built 2026-10-03**, network MCP servers, a Toolbox screen,
   per-chat selection, approval for each call, saved results and honest
   interruption states ([record](../acceptance/c5-mcp-run.md)).
-  **Workbench pickup: C5b, local MCP processes** in the app's account.
-  Settle process provisioning and per-person access before enabling stdio.
-  Folder grants, dedicated media screens, answer versions and the working
-  animation remain open; see [the MCP design](workbench-mcp.md).
+  **C5b is built and pinned 2026-10-03**, local MCP processes in the app's
+  OS account ([record](../acceptance/c5-local-tools-run.md)). The operator
+  provisions trusted executables; only the owner can select or start them.
+  **Workbench pickup: C6, folder grants and filesystem tools**, with a
+  design for the boundary between people's files. Dedicated media screens,
+  answer versions and the working animation remain open; see
+  [the MCP design](workbench-mcp.md).
 - Not scheduled without Troy: PB2's remainder (the model's row saying so
   when fit places a built profile differently at launch; Home's "make it
   faster", call 6, later).
@@ -156,7 +159,7 @@ first:**
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine.md`](mlx-engine.md) (A4 section), B1 | **Built on GitHub's macOS runners 2026-09-30**; the rented-Mac list is in the record, and dropping the `experimental` flag is Troy's call |
 | A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured and built 2026-09-30.** Almost nothing to repair. The one repair, a named `tool_choice` answered by structured output on llama-server, is pinned |
-| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **C1–C4 built; C5a built 2026-10-03.** App accounts, Eugene sign-in, Workbench chat/search, Open WebUI, and network MCP tools with approval. Next: C5b, local MCP processes; folder grants, media screens and answer history remain open |
+| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **C1–C5b built; C5b pinned 2026-10-03.** App accounts, Eugene sign-in, Workbench chat/search, Open WebUI, and network/local MCP tools with approval. Next: C6, folder grants and filesystem tools; media screens and answer history remain open |
 | **A7** | **The prompt cache: keep each engine's cache warm across doors, replicas and hosted backends** | [`prompt-cache.md`](prompt-cache.md) ([record](../acceptance/prompt-cache-measurement.md)) | **Troy, 2026-10-02: high priority before going public** (*"at the core of what Eugene is: managing multiple backends efficiently"*). Measured the same day; **PC1-PC5 built and pinned 2026-10-02** (Troy took the four calls: PC1-PC5 before public, affinity the default, the system-message fold an operator setting, client breakpoints only). PC6-PC7 after the release |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 

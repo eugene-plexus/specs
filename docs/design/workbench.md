@@ -11,7 +11,9 @@ built the same day**, designed in
 ([design](c4-open-webui.md), [record](../acceptance/c4-open-webui-run.md)).
 **C5a, network MCP tools, is built 2026-10-03**, designed in
 [`workbench-mcp.md`](workbench-mcp.md)
-([record](../acceptance/c5-mcp-run.md)). Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
+([record](../acceptance/c5-mcp-run.md)). **C5b, owner-only local MCP tools,
+is built and pinned 2026-10-03**
+([record](../acceptance/c5-local-tools-run.md)). Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
 draft of this file was deleted on purpose, and nothing in it binds. This is
 roadmap A6. It builds on the apps registry
 ([`apps-and-spokes.md`](apps-and-spokes.md), built 2026-09-23). Where this
@@ -578,9 +580,11 @@ Not a model-chosen action, but late too: **the working animation**
 4. **C4, Open WebUI.** It needs C1, and C2 for sign-in. **Built
    2026-10-02** ([`c4-open-webui.md`](c4-open-webui.md),
    [record](../acceptance/c4-open-webui-run.md)).
-5. **C5, MCP servers** ([design](workbench-mcp.md)): **C5a built 2026-10-03**,
-   network connections with approval for each call; C5b adds local processes under
-   C1. Filesystem grants and local media models each need their own design.
+5. **C5, MCP servers** ([design](workbench-mcp.md)): **C5a and C5b built and
+   pinned 2026-10-03**, network connections and owner-only local processes
+   under C1, with approval for each call. **Next: C6**, folder grants and
+   filesystem tools, including the boundary between people's files. Local
+   media models also need their own design.
 6. **The working animation** (§6.1): the gate first, then the scenes. The
    still poses stand in until then.
 
