@@ -106,7 +106,11 @@ info:
     tool the caller offered -- `web_search_options` with no functions, or
     Claude Code's WebSearch request, which offers exactly one tool -- the
     first model call must call a tool, because the caller asked for a
-    search and not for an opinion about whether to search.
+    search and not for an opinion about whether to search. A model that
+    refuses a forced tool choice (Anthropic documents this for Claude
+    Opus 5.5, Sonnet 5.5 and Fable 5.1) is asked that one turn again,
+    once, with the choice left to it and an instruction to search; a
+    caller's own forced choice is never loosened.
 
     **Failover ends at the first search.** Every model call after the
     first goes to the backend that answered the first, and a failure
@@ -885,7 +889,8 @@ paths:
         field.
 
         A prompt the backend reports as too long for the model's context
-        is a 400 `invalid_request_error` whose message **begins
+        is a 400 `invalid_request_error` (on a stream, whose 200 is already
+        sent, the `error` event of that type) whose message **begins
         `prompt is too long`**, followed by `: N tokens > M maximum` when
         the backend reported both numbers. Claude Code compacts the
         conversation and retries only on that wording, so a local model's
@@ -1364,7 +1369,9 @@ paths:
         `filters.blocked_domains`, `user_location` and
         `search_context_size` are honoured; any other filter or setting
         on the tool (`search_content_types`, `image_settings`,
-        `return_token_budget`) is named on the ignored-settings header.
+        `return_token_budget`, and the `indexed_web_access` Codex 0.160
+        sends in its Indexed mode) is named on the ignored-settings
+        header.
         `image_generation` runs
         through this install's image models (P8e, "Server-run tools"
         above) or is refused with a 400 naming why. Every other
@@ -6179,9 +6186,10 @@ components:
             "json_schema", "schema": {...}}` becomes the chat path's
             `response_format` of type `json_schema`. Claude Code sends it
             for session titles, memory recall and prompt hooks. Any other
-            `format` type, and any other key, is refused with a 400
-            naming it: it changes what the answer is, and this door does
-            not implement it.
+            `format` type, a `format` without a `schema` or with a key
+            beside `type` and `schema`, and any other key, is refused
+            with a 400 naming it: it changes what the answer is, and this
+            door does not implement it.
         cache_control:
           type: object
           additionalProperties: true
