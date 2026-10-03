@@ -401,6 +401,19 @@ def exercise(app: dict, token: str) -> None:
         created,
     )
     saved_chat = chat
+    if not c1.WINDOWS:
+        permissions = subprocess.run(
+            ["sudo", "stat", "-c", "%G:%a", str(FOLDER / "new.txt")],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        check(
+            "78a",
+            "new files retain stable group read/write permissions",
+            permissions == "ep-c6-files:660",
+            permissions,
+        )
     temporary = grant("Temporary", writable=True)
     chat, message = offer(
         ada,

@@ -53,9 +53,16 @@ are inferred from old chat settings or the owner-reads-chats setting.
 The file boundary uses OS handles, not `resolve()` followed by an ordinary
 open. Relative paths reject absolute names, parent traversal, alternate
 data streams and Windows device-name aliases. Links/reparse points and
-multiply linked or special files are refused. Linux opens descendants with
-`openat2` beneath the root, without symlinks or mount crossings; unsupported
-kernels/filesystems fail closed. Windows opens single components relative
+multiply linked or special files are refused. Linux uses a fresh thread per
+operation, restricted by Landlock to the held root and that operation's
+rights. Single-component `openat` traversal refuses symlinks; `statx` mount
+IDs refuse mounted descendants. Landlock also prevents a moved parent from
+redirecting a later open or create outside the grant. The thread exits after
+the operation; pooled workers and the app retain their own policy. This is
+a boundary for trusted built-in I/O, not for arbitrary thread code sharing
+the app's memory and descriptors. Linux requires Landlock ABI 3 or newer,
+enabled by the host, and `statx` creation time/mount IDs; unsupported hosts
+fail closed. Windows opens single components relative
 to held parents, refuses reparse points, and retains directory handles
 without delete sharing. It enumerates the directory handle directly.
 Root identity also uses creation time to detect file-ID/inode reuse.
@@ -70,7 +77,7 @@ every external editor. Administrators and trusted owner-installed programs
 are outside the member-access boundary.
 
 References for the OS primitives:
-[Linux openat2](https://kernel.googlesource.com/pub/scm/docs/man-pages/man-pages/+/refs/tags/man-pages-6.12/man/man2/openat2.2),
+[Linux Landlock](https://docs.kernel.org/userspace-api/landlock.html),
 [Windows NtCreateFile](https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile),
 [Windows directory enumeration](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntquerydirectoryfile).
 
@@ -112,6 +119,9 @@ turn those protections off to make a folder accessible. The acceptance run
 exercises this setup on a disposable runner, including a service restart.
 See systemd's [service execution documentation](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)
 for `DynamicUser`, `SupplementaryGroups`, `ReadWritePaths` and `UMask`.
+Keep `DynamicUser` and its `RestrictSUIDSGID` protection enabled. The first
+service run exposed that this protection blocks `openat2`; the Linux adapter
+uses Landlock with ordinary no-link opens so neither protection is weakened.
 
 ## Acceptance
 

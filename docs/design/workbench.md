@@ -13,7 +13,9 @@ built the same day**, designed in
 [`workbench-mcp.md`](workbench-mcp.md)
 ([record](../acceptance/c5-mcp-run.md)). **C5b, owner-only local MCP tools,
 is built and pinned 2026-10-03**
-([record](../acceptance/c5-local-tools-run.md)). Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
+([record](../acceptance/c5-local-tools-run.md)). **C6, person-specific folder
+tools, is built and pinned 2026-10-03** ([design](workbench-files.md),
+[record](../acceptance/c6-folder-tools-run.md)). Written fresh from Troy's 2026-09-24 brief. The 2026-09-23
 draft of this file was deleted on purpose, and nothing in it binds. This is
 roadmap A6. It builds on the apps registry
 ([`apps-and-spokes.md`](apps-and-spokes.md), built 2026-09-23). Where this
@@ -560,8 +562,10 @@ These run model-chosen actions in the app's process, so each needs C1:
 
 - **MCP servers the person adds.** They are processes the app starts, in
   the app's account.
-- **Filesystem tools.** These need one more decision first: which folders
-  an app may reach, and how a person grants it.
+- **Filesystem tools.** Built as C6 on 2026-10-03: the owner assigns
+  existing host folders to named people, read-only by default, with an
+  explicit write option and approval for every call. The administrator
+  provisions Workbench's OS access ([design](workbench-files.md)).
 - **Local image, speech and video models.** A GPU app, admitted by the
   agent's ledger (apps §8 reserved `resources: gpu` for this).
 
@@ -582,8 +586,9 @@ Not a model-chosen action, but late too: **the working animation**
    [record](../acceptance/c4-open-webui-run.md)).
 5. **C5, MCP servers** ([design](workbench-mcp.md)): **C5a and C5b built and
    pinned 2026-10-03**, network connections and owner-only local processes
-   under C1, with approval for each call. **Next: C6**, folder grants and
-   filesystem tools, including the boundary between people's files. Local
+   under C1, with approval for each call. **C6 is built and pinned
+   2026-10-03**, folder grants and built-in filesystem tools, with
+   person-specific access ([design](workbench-files.md)). Local
    media models also need their own design.
 6. **The working animation** (§6.1): the gate first, then the scenes. The
    still poses stand in until then.
