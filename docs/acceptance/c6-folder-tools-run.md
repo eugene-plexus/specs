@@ -66,11 +66,12 @@ The application does not change ACLs or create privileged OS accounts.
 
 ## Published archive under real service accounts
 
-**91/91 on Windows and 91/91 on Ubuntu**, installing the catalogue archive
-through real system installs on disposable GitHub runners:
-[run 37159269830](https://github.com/eugene-plexus/specs/actions/runs/37159269830).
-The unchanged harness is `scripts/c6-folder-tools-acceptance.py` at specs
-`b49849b`, dispatched with the final agent revision above. Reports are
+**91/91 on Windows and 92/92 on Ubuntu**, installing the catalogue archive
+through real system installs on disposable GitHub runners, using the
+release pins without candidate overrides:
+[run 37159508129](https://github.com/eugene-plexus/specs/actions/runs/37159508129).
+The harness is `scripts/c6-folder-tools-acceptance.py` at specs `2ddeab2`.
+Reports are
 retained as `c6-windows-latest` and `c6-ubuntu-24.04` artifacts.
 
 This includes all C5 account, credential, private-file and child-process
@@ -78,13 +79,20 @@ checks. C6 then tests real folder provisioning, default read-only grants,
 approved listing/read/edit/create, changed content, owner/member refusal,
 decline and revocation. A verified new service process reads and edits a
 file created before restart, checking durable OS permissions as well as
-persisted grants and transcripts. The models are scripted integration
+persisted grants and transcripts. The additional Linux assertion confirms
+new files have the stable project group and mode 0660; a restart alone
+would not establish that when systemd reuses the same dynamic UID.
+The preceding candidate run passed 91/91 on both platforms:
+[run 37159269830](https://github.com/eugene-plexus/specs/actions/runs/37159269830).
+The models are scripted integration
 fixtures, not a benchmark of live-model tool accuracy.
 
 Workbench CI:
 [run 37159238381](https://github.com/eugene-plexus/workbench/actions/runs/37159238381).
 Agent CI:
 [run 37159259120](https://github.com/eugene-plexus/agent/actions/runs/37159259120).
+Specs CI for the installer pin:
+[run 37159508676](https://github.com/eugene-plexus/specs/actions/runs/37159508676).
 
 ## Defect found by the service run
 
