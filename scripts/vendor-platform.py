@@ -33,7 +33,9 @@ def vendor(root: Path, *, check: bool, repo: str | None = None) -> None:
             "format": 1,
             "source": "eugene-plexus/specs/platform",
             "version": manifest["version"],
-            "files": {p: hashlib.sha256(data).hexdigest() for p, data in sorted(files.items())},
+            "files": {
+                p: {"sha256": hashlib.sha256(data).hexdigest()} for p, data in sorted(files.items())
+            },
         }
         files["VENDORED.json"] = (json.dumps(lock, indent=2) + "\n").encode()
         for relative, data in files.items():

@@ -4,6 +4,8 @@
 # independently without changing the integration test environment.
 pytest==8.4.2
 pytest-asyncio==0.26.0
+# Hatchling's editable build backend, needed when build isolation is disabled.
+editables==0.5
 # P3a: the done-when is the OpenAI SDK, unchanged, at /v1/audio/speech.
 openai==3.20.0
 # P8: Claude Code's WebSearch request, made by the Anthropic SDK, unchanged.

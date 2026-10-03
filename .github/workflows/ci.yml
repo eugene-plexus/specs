@@ -165,11 +165,13 @@ jobs:
           path: tool-driver
       # Component dev extras pin independent lint/codegen toolchains. Only the
       # shared test runner belongs in this cross-component environment.
-      - name: Install runtime consumers and the acceptance test runner
+      - name: Install locked runtime and build dependencies
         run: |
           python -m pip install --require-hashes --only-binary :all: -r specs/release/requirements.lock
-          python -m pip install --no-deps --no-build-isolation -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver
-          python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt
+      - name: Install the acceptance runner and editable build support
+        run: python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt
+      - name: Install runtime consumers without dependency resolution
+        run: python -m pip install --no-deps --no-build-isolation -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver
       - name: Check installed dependency consistency
         run: python -m pip check
       - name: Verify durable run protocol when both consumers provide it
@@ -260,11 +262,13 @@ jobs:
           repository: eugene-plexus/inference-driver
           ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
-      - name: Install test dependencies
+      - name: Install locked runtime and build dependencies
         run: |
           python -m pip install --require-hashes --only-binary :all: -r specs/release/requirements.lock
-          python -m pip install --no-deps --no-build-isolation -e "./agent[service]" -e ./inference-driver
-          python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt
+      - name: Install the acceptance runner and editable build support
+        run: python -m pip install -c specs/release/constraints.txt -r specs/scripts/requirements-acceptance.txt
+      - name: Install runtime consumers without dependency resolution
+        run: python -m pip install --no-deps --no-build-isolation -e "./agent[service]" -e ./inference-driver
       - name: Check installed dependency consistency
         run: python -m pip check
       - name: Check the real Windows service loader
