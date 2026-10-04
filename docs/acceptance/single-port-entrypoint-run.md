@@ -93,3 +93,30 @@ management UIs are not exercised by these acceptance instruments. Public Let's
 Encrypt reachability and each operator's DNS still require deployment setup.
 Native DNS-provider integrations are not shipped: DNS-01 certificates come from
 an existing proxy or external manager. No live customer installation was changed.
+
+## Released to Edge
+
+2026-10-04, specs `440a3c6`. Pins: agent `5bb6a38`, control `e9cc3a7`,
+ui `6aa1223` / dist `24268f7` (its `BUILD_INFO` names `ui@6aa1223`); the
+other four unchanged.
+
+- All four push workflows passed: [CI](https://github.com/eugene-plexus/specs/actions/runs/37242018227)
+  (Windows/Linux system installs, recovery, offline removal, R7/R8/A2/A3/A5),
+  [A4 macOS](https://github.com/eugene-plexus/specs/actions/runs/37242018236)
+  (macOS 14, 15 and 26) and the
+  [container image](https://github.com/eugene-plexus/specs/actions/runs/37242018384),
+  35 of 35 checks including 33–35 above.
+- The registry's `edge` tag is `sha256:89a1228732b29967b05dd3d2d4f93c5a8c30bfe7a46535d6d5884644b13bda9b`,
+  the digest that run pushed as `sha-440a3c6` after its checks passed.
+- The agent's own `newest_edge()` resolves to `440a3c6` with the pins above, so
+  native installs on Edge are offered this build.
+- CI needed one rerun. Attempt 1 failed `a5-scoped-keys-acceptance.py:449` on
+  Windows: a request on gateway-b was refused 429 right after a 503 on gateway-a,
+  for a key limited to one concurrent request. The gateway frees the key's shared
+  slot after the response has been sent, so an immediate next request can still
+  find it held. The rerun passed with no change. Filed as
+  [gateway #9](https://github.com/eugene-plexus/gateway/issues/9). It is not
+  caused by this slice.
+
+Existing containers keep their published ports until the owner applies a
+configuration from Settings → Container access setup.
