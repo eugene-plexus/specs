@@ -8,7 +8,7 @@
     "gateway": "8cc23afe5ed8e6469d695834e9ed0226a24cad96",
     "library": "23a1f892a050fbb39fc1550e1326fe44bd57d51e",
     "tool-driver": "ed99e7aa09f3d9fb69611f24bff84d372c5de0e9",
-    "ui": "c8d044edfd9dc759a72bdb3c79d8089b66096bf9",
+    "ui": "3b6a4df3dc92f4db30d83f75505535388d223e5b",
     "inference-driver": "971b1dbf44a447ca98b04f94bdc3ff8a4b9d6632"
   },
   "dependenciesSha256": "3a4a32641e201cf2c2ad0082ccb537c396c5b27582cd254a6c2b6b292832e24b"

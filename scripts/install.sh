@@ -65,7 +65,7 @@ PIN_GATEWAY=8cc23afe5ed8e6469d695834e9ed0226a24cad96
 PIN_DRIVER=971b1dbf44a447ca98b04f94bdc3ff8a4b9d6632
 PIN_LIBRARY=23a1f892a050fbb39fc1550e1326fe44bd57d51e
 PIN_TOOL_DRIVER=ed99e7aa09f3d9fb69611f24bff84d372c5de0e9
-PIN_UI=c8d044edfd9dc759a72bdb3c79d8089b66096bf9   # branch `dist`, not `main`
+PIN_UI=3b6a4df3dc92f4db30d83f75505535388d223e5b   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
