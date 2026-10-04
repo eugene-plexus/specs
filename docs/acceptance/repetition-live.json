@@ -1,0 +1,174 @@
+{
+  "model": "Huihui-Qwen3.8-27B-abliterated-Q6_K_L",
+  "engine_build": "b11364-46ca246de",
+  "kind": "live local llama.cpp diagnostic; no original Workbench history or tools",
+  "seed": 42,
+  "max_tokens": 4096,
+  "deadline_seconds": 90,
+  "runtime_defaults": {
+    "temperature": 1.0,
+    "top_k": 20,
+    "top_p": 0.949999988079071,
+    "min_p": 0.05000000074505806,
+    "repeat_penalty": 1.0,
+    "repeat_last_n": 64,
+    "dry_multiplier": 0.0,
+    "dry_base": 1.75,
+    "dry_allowed_length": 2,
+    "dry_penalty_last_n": 64
+  },
+  "cases": [
+    {
+      "variant": "resource-limits-only",
+      "outcome": "completed",
+      "finish_reason": "stop",
+      "elapsed_ms": 5409.004,
+      "detected_at_ms": null,
+      "visible_chars": 325,
+      "reasoning_chars": 960,
+      "delta_events": 285,
+      "usage": {
+        "completion_tokens": 286,
+        "prompt_tokens": 61,
+        "total_tokens": 347,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "visible_sha256": "4b5e23570c3e1debee956f6a624c6b11beab41caefe7ba3058834de8c2cfb2a7",
+      "visible_preview": "Right now, I can see one tool available in this context:\n\n- **think** \u2014 a private reasoning/tool for working through a task before answering.\n\nI don\u2019t currently see any other tooling such as file acce",
+      "detections": {},
+      "sampling_override": {},
+      "case": "tools-question"
+    },
+    {
+      "variant": "gateway-stop",
+      "outcome": "completed",
+      "finish_reason": "stop",
+      "elapsed_ms": 5307.681,
+      "detected_at_ms": null,
+      "visible_chars": 325,
+      "reasoning_chars": 960,
+      "delta_events": 285,
+      "usage": {
+        "completion_tokens": 286,
+        "prompt_tokens": 61,
+        "total_tokens": 347,
+        "prompt_tokens_details": {
+          "cached_tokens": 57
+        }
+      },
+      "visible_sha256": "4b5e23570c3e1debee956f6a624c6b11beab41caefe7ba3058834de8c2cfb2a7",
+      "visible_preview": "Right now, I can see one tool available in this context:\n\n- **think** \u2014 a private reasoning/tool for working through a task before answering.\n\nI don\u2019t currently see any other tooling such as file acce",
+      "detections": {},
+      "sampling_override": {},
+      "case": "tools-question"
+    },
+    {
+      "variant": "native-dry",
+      "outcome": "completed",
+      "finish_reason": "stop",
+      "elapsed_ms": 6356.217,
+      "detected_at_ms": null,
+      "visible_chars": 390,
+      "reasoning_chars": 1008,
+      "delta_events": 346,
+      "usage": {
+        "completion_tokens": 347,
+        "prompt_tokens": 61,
+        "total_tokens": 408,
+        "prompt_tokens_details": {
+          "cached_tokens": 57
+        }
+      },
+      "visible_sha256": "f838946c0b7c2abfc1b87e965a76014cf8cdf2b200ff7d830cf11cc8b68bff8b",
+      "visible_preview": "In this session, the tools I can see available are:\n\n- **bash** \u2014 run shell commands\n- **file** \u2014 read, write, and edit files\n- **patch** \u2014 apply multi-file edits\n- **TodoWrite** \u2014 manage a task list\n",
+      "detections": {},
+      "sampling_override": {
+        "dry_multiplier": 0.8,
+        "dry_penalty_last_n": 2048
+      },
+      "case": "tools-question"
+    },
+    {
+      "variant": "resource-limits-only",
+      "outcome": "completed",
+      "finish_reason": "stop",
+      "elapsed_ms": 12696.8,
+      "detected_at_ms": 5566.397,
+      "visible_chars": 2838,
+      "reasoning_chars": 832,
+      "delta_events": 695,
+      "usage": {
+        "completion_tokens": 696,
+        "prompt_tokens": 110,
+        "total_tokens": 806,
+        "prompt_tokens_details": {
+          "cached_tokens": 42
+        }
+      },
+      "visible_sha256": "b8fd65c8f1ee43d3056438491add5c39a25e2c808c4426fb6e6350a4047b92ee",
+      "visible_preview": "The patient observer records each measurement, checks the instrument, and writes the result in the notebook before beginning the next trial.\n\nThe patient observer records each measurement, checks the ",
+      "detections": {
+        "text": {
+          "period_chars": 141,
+          "normalized_chars": 576
+        }
+      },
+      "sampling_override": {},
+      "case": "intentional-copies"
+    },
+    {
+      "variant": "gateway-stop",
+      "outcome": "repetition-stopped",
+      "finish_reason": null,
+      "elapsed_ms": 5498.807,
+      "detected_at_ms": 5498.245,
+      "visible_chars": 588,
+      "reasoning_chars": 832,
+      "delta_events": 298,
+      "usage": null,
+      "visible_sha256": "cf5f30ac53a12e187f7401527ce6485b206502c19661220d78446c313ab6fe4e",
+      "visible_preview": "The patient observer records each measurement, checks the instrument, and writes the result in the notebook before beginning the next trial.\n\nThe patient observer records each measurement, checks the ",
+      "detections": {
+        "text": {
+          "period_chars": 141,
+          "normalized_chars": 576
+        }
+      },
+      "sampling_override": {},
+      "case": "intentional-copies"
+    },
+    {
+      "variant": "native-dry",
+      "outcome": "completed",
+      "finish_reason": "stop",
+      "elapsed_ms": 21877.761,
+      "detected_at_ms": 12189.228,
+      "visible_chars": 2838,
+      "reasoning_chars": 2060,
+      "delta_events": 1207,
+      "usage": {
+        "completion_tokens": 1208,
+        "prompt_tokens": 110,
+        "total_tokens": 1318,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "visible_sha256": "5003d5c0023390248293f8e5cb7e89db8e3fd3ce33d9814312ff3f45a8a8403c",
+      "visible_preview": "The patient observer records each\nmeasurement, checks the\ninstrument, and writes\nthe result in the\nnotebook before\nbeginning the\nnext\ntrial.\n\nThe patient observer records each\nmeasurement, checks the\n",
+      "detections": {
+        "text": {
+          "period_chars": 141,
+          "normalized_chars": 576
+        }
+      },
+      "sampling_override": {
+        "dry_multiplier": 0.8,
+        "dry_penalty_last_n": 2048
+      },
+      "case": "intentional-copies"
+    }
+  ]
+}

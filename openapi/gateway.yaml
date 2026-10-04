@@ -515,6 +515,8 @@ paths:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
   /v1/chat/completions:
+    parameters:
+      - $ref: '#/components/parameters/RepetitionMode'
     post:
       tags: [inference]
       operationId: createChatCompletion
@@ -802,6 +804,8 @@ paths:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
   /v1/messages:
+    parameters:
+      - $ref: '#/components/parameters/RepetitionMode'
     post:
       tags: [inference]
       operationId: createAnthropicMessage
@@ -1315,6 +1319,8 @@ paths:
                 $ref: '#/components/schemas/AnthropicErrorResponse'
 
   /v1/responses:
+    parameters:
+      - $ref: '#/components/parameters/RepetitionMode'
     post:
       tags: [inference]
       operationId: createResponse
@@ -1659,6 +1665,8 @@ paths:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
   /v1/completions:
+    parameters:
+      - $ref: '#/components/parameters/RepetitionMode'
     post:
       tags: [inference]
       operationId: createCompletion
@@ -3301,6 +3309,34 @@ paths:
                 $ref: 'components/common.yaml#/components/schemas/Health'
 
 components:
+  parameters:
+    RepetitionMode:
+      name: X-Eugene-Repetition-Mode
+      in: header
+      required: false
+      description: |
+        Override repeated-passage protection for this request: off, observe,
+        or stop. Omission inherits gateway settings; the initial default is
+        observe. Invalid values fail before generation. This is a gateway
+        control and is never forwarded to a provider or treated as a sampler.
+
+        Stop applies only to streaming plain-text output. Reasoning, tool
+        arguments, structured output, audio and non-streamed responses remain
+        observation-only. The initial detector requires a substantial passage
+        of at least 100 whitespace-normalized characters, repeated four times;
+        it has a bounded window, not a universal output-token cap.
+
+        A stop closes the upstream stream, preserves already-delivered output,
+        and never retries on another backend. Chat and Completions emit an SSE
+        error with type and code repetition_detected, then [DONE], without a
+        success finish_reason. Responses emits response.failed with
+        invalid_prompt to prevent retrying clients replaying the loop;
+        Messages emits an invalid_request_error. All name repetition in their
+        human-readable message. Time and token limits remain independent.
+        Use off for intentional repeated passages.
+      schema:
+        type: string
+        enum: ['off', observe, stop]
 
   securitySchemes:
     bearerAuth:

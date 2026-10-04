@@ -50,7 +50,14 @@ Both may be supplied only when their non-null values are equal. A conflict retur
 booleans, fractional numbers, integral floats, zero and negatives are rejected.
 Null means unspecified. Normalization happens before routing/profile defaults.
 Each fallback attempt retains the explicit limit; omitted limits use that
-candidate's model profile, then the gateway's `defaultMaxTokens` (initially 2,048).
+candidate's model profile, then the gateway's `defaultMaxTokens` (unset by default).
+
+Development builds also support [repeated response protection](design/repetition-protection.md)
+through `X-Eugene-Repetition-Mode: off|observe|stop` on all four text doors.
+Observation is the initial default. Opt-in stopping preserves already-delivered
+text and reports a non-retryable interruption; it is separate from output-token
+limits. Reasoning, tool arguments, structured output and non-streamed responses
+are observation-only. Workbench exposes the override in Chat settings.
 
 `temperature`, `top_p`, `seed`, up to four `stop` strings (or one string), `tools`,
 `tool_choice`, `response_format`, `frequency_penalty`, `presence_penalty`,
