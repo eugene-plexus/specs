@@ -3576,6 +3576,8 @@ components:
       required:
         - enrolled
       properties:
+        entrypoint:
+          $ref: '#/components/schemas/PublicEntryPoint'
         enrolled:
           type: boolean
           description: |
@@ -6472,6 +6474,28 @@ components:
         - override
 
     # -------- Apps: optional spokes --------
+
+    PublicEntryPoint:
+      type: object
+      description: |
+        Explicit external HTTPS origins for this node's optional single-port
+        container entry point. An absent optional service is not published.
+        These addresses select services, never users or permissions. Backend
+        listener addresses and this node's own controlUrl remain unchanged.
+      required: [consoleUrl, workbenchUrl]
+      properties:
+        consoleUrl:
+          type: string
+          format: uri
+        workbenchUrl:
+          type: string
+          format: uri
+        inferenceUrl:
+          type: string
+          format: uri
+        nodesUrl:
+          type: string
+          format: uri
 
     AppManifest:
       type: object
