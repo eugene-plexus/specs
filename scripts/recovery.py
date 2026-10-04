@@ -355,6 +355,15 @@ def inventory(root, external):
                 omitted.append(str(path.relative_to(root)))
         for name in files:
             path = base / name
+            # The entry point recreates its process credential/configuration
+            # and permissioned socket at boot. A stale Unix socket cannot be
+            # hashed or restored as a regular file. Its CA keys DO belong in
+            # the encrypted checkpoint, and remain under entrypoint/tls.
+            if path.relative_to(root).as_posix() in {
+                "entrypoint/admin.sock", "entrypoint/caddy.json", "entrypoint/ca-bundle.pem"
+            }:
+                omitted.append(str(path.relative_to(root)))
+                continue
             if path.is_symlink() and not path.resolve().is_relative_to(root):
                 raise ValueError(f"linked file must be inventoried separately: {path}")
             if (

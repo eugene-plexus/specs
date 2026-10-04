@@ -46,12 +46,19 @@ configuration uses the same explicit migration back to direct addresses.
 Caddy's configuration is regenerated from installed service records, including
 Workbench's actual assigned port. Uninstalled or disabled Workbench returns 503,
 never another app that later occupies the port. Reloads preserve active streams.
+Before replacing the app, its public route is removed synchronously. A new process
+is published only after its health response confirms the configured public origin
+and origin-isolation capability; rolling back to an older build stays unavailable.
 Invalid startup configuration is fatal in this opt-in mode, never a fallback to
 unprotected legacy listeners. Proxy failure does not widen backend bindings.
 
 Home installations may use Caddy's internal CA, explicitly trusting its public
 root on their browsers and nodes. Businesses should supply certificates from
 their managed CA or a publicly trusted CA. TLS verification is never disabled.
+The local CA is provisioned before child processes start. Internal Python clients
+trust the OS certificate store and explicit certificate bundles. The control root
+reaches its own supervising agent through an exact configured loopback transport
+mapping, preserving the original node credential and audience.
 The first version accepts direct client connections; another proxy in front is
 not a trusted source of client IP or scheme. Docker networking must preserve the
 client's address for CIDR policy (bridge networking on Linux does; a NAT or relay

@@ -7,6 +7,7 @@ The containing harness publishes the app port and checks it from outside too.
 from __future__ import annotations
 
 import html
+import json
 import os
 import pwd
 import re
@@ -179,6 +180,15 @@ def main() -> None:
         )
         assert client.get(base + "/api/me", headers=headers).status_code == 200
         print("PASS: Workbench restarts and keeps the person's sign-in", flush=True)
+        # The next check recreates THIS disposable container in HTTPS mode.
+        # Keep a real chat and fixture credentials only on its temporary volume.
+        chat = client.post(base + "/api/chats", headers=headers, json={})
+        assert chat.status_code == 201
+        from eugene_plexus_agent._private_files import write_private
+        write_private(Path("/data/.entrypoint-acceptance.json"), json.dumps({
+            "password": password, "chat": chat.json()["id"],
+            "oidcClientId": app["oidcClientId"],
+        }))
 
 
 if __name__ == "__main__":

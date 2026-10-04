@@ -692,6 +692,46 @@ print(' '.join(paths))
   else
     bad "20. could not start the image with --user 99:100"
   fi
+  # Migrate that same disposable NAS volume: real existing chat + OIDC client.
+  if $CT exec -i -e EUGENE_CONTAINER_ACCEPTANCE=1 ep-uid-check \
+       /opt/eugene-plexus/venv/bin/python - --prepare < "$HERE/container-entrypoint-acceptance.py"; then
+    $CT stop -t 60 ep-uid-check >/dev/null 2>&1
+    $CT rm ep-uid-check >/dev/null 2>&1
+    $CT rm -f ep-entry-check >/dev/null 2>&1 || true
+    if $CT run -d --name ep-entry-check --hostname entry-check --init --user 99:100 -e HOME=/ \
+         -e EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG=/data/entrypoint.json \
+         --add-host eugene.home.arpa:127.0.0.1 --add-host workbench.home.arpa:127.0.0.1 \
+         --add-host inference.home.arpa:127.0.0.1 --add-host nodes.home.arpa:127.0.0.1 \
+         -v "$UIDDIR:/data" -p 127.0.0.1:18443:18443 \
+         eugene-plexus/control-plane:0.1 >/dev/null; then
+      if $CT exec -i -e EUGENE_CONTAINER_ACCEPTANCE=1 ep-entry-check \
+           /opt/eugene-plexus/venv/bin/python - < "$HERE/container-entrypoint-acceptance.py"; then
+        ENTRYROOT=$(mktemp)
+        $CT cp ep-entry-check:/data/entrypoint/tls/pki/authorities/local/root.crt "$ENTRYROOT"
+        if curl --noproxy '*' --cacert "$ENTRYROOT" --resolve workbench.home.arpa:18443:127.0.0.1 \
+             -fsS https://workbench.home.arpa:18443/ | grep -qi '<!doctype html>'; then
+          ok "31. existing Workbench migrates to one published HTTPS port and keeps its chats"
+        else
+          bad "31. Workbench was not reachable through the one published HTTPS port"
+        fi
+        rm -f "$ENTRYROOT"
+      else
+        bad "31. the NAS HTTPS migration or sign-in failed"
+        $CT logs ep-entry-check 2>&1 | tail -35
+      fi
+      if $CT exec -i ep-entry-check /opt/eugene-plexus/venv/bin/python - < "$HERE/entrypoint-security-checks.py"; then
+        ok "32. packaged proxy rejects spoofed hosts, SNI and forwarding headers; access policies and limits hold"
+      else
+        bad "32. packaged proxy security checks failed"
+      fi
+      $CT stop -t 60 ep-entry-check >/dev/null 2>&1
+      $CT rm ep-entry-check >/dev/null 2>&1
+    else
+      bad "31. could not start the single-port image"
+    fi
+  else
+    bad "31. could not prepare the existing Workbench for HTTPS migration"
+  fi
   $CT rm -f ep-uid-check >/dev/null 2>&1 || true
 
   # 21. The reported failure exactly: /data writable, logs/ not.

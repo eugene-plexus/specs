@@ -241,6 +241,16 @@
     Mask="false">0</Config>
 
   <Config
+    Name="Single HTTPS port configuration (optional)"
+    Target="EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG"
+    Default=""
+    Description="Leave empty for the existing direct ports. To opt in, create /data/entrypoint.json with your exact hostnames and access policies, set this to /data/entrypoint.json, publish only its HTTPS listener (normally 8443), and update the WebUI address. Follow docs/deployment/container.md, One HTTPS port; update Workbench before migration and restart it in Apps afterwards."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"></Config>
+
+  <Config
     Name="Container host"
     Target="EUGENE_PLEXUS_CONTAINER_HOST"
     Default="unraid"

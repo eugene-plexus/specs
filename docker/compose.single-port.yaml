@@ -1,0 +1,23 @@
+# Standalone alternative to compose.yaml. Set up DNS, certificate trust and
+# entrypoint.json first: docs/deployment/container.md, "One HTTPS port".
+services:
+  control-plane:
+    image: ghcr.io/eugene-plexus/control-plane:edge
+    hostname: eugene-plexus
+    container_name: eugene-plexus-control-plane
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      EUGENE_PLEXUS_CONTAINER_HOST: compose
+      EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG: /data/entrypoint.json
+    ports:
+      - "8443:8443"
+    volumes:
+      - plexus-data:/data
+      # Provision /data/entrypoint.json in the existing persistent volume.
+      # For a host file instead, uncomment (relative to this compose file):
+      # - ./entrypoint.json:/data/entrypoint.json:ro
+      # - /srv/models:/models
+volumes:
+  plexus-data:

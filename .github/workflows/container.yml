@@ -34,6 +34,8 @@ on:
       - "scripts/install.sh"
       - "scripts/compose-acceptance.sh"
       - "scripts/container-workbench-acceptance.py"
+      - "scripts/entrypoint-security-checks.py"
+      - "scripts/container-entrypoint-acceptance.py"
       - "scripts/recovery.py"
       - "scripts/a7-*"
       - "unraid/eugene-plexus.xml"

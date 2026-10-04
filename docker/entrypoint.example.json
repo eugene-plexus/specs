@@ -1,0 +1,20 @@
+{
+  "listen_port": 8443,
+  "internal_ca": true,
+  "console": {
+    "origin": "https://eugene.home.arpa:8443",
+    "networks": ["192.168.16.0/24"]
+  },
+  "workbench": {
+    "origin": "https://workbench.home.arpa:8443",
+    "networks": ["192.168.16.0/24"]
+  },
+  "inference": {
+    "origin": "https://inference.home.arpa:8443",
+    "networks": ["192.168.16.0/24"]
+  },
+  "nodes": {
+    "origin": "https://nodes.home.arpa:8443",
+    "networks": ["192.168.16.0/24"]
+  }
+}

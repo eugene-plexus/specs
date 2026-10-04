@@ -61,6 +61,20 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl libgomp1 \
  && rm -rf /var/lib/apt/lists/*
 
+# Unmodified upstream Caddy, pinned by version AND release-archive SHA-512.
+# It runs only when ENTRYPOINT_CONFIG is explicitly configured. No TCP admin
+# endpoint or extra HTTP redirect listener is used by Eugene's configuration.
+COPY docker/caddy-checksums.sha512 /tmp/caddy-checksums.sha512
+RUN arch="$(dpkg --print-architecture)" \
+ && case "$arch" in amd64|arm64) ;; *) echo "Unsupported proxy architecture: $arch"; exit 1 ;; esac \
+ && cd /tmp \
+ && curl -fsSL --retry 3 "https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_linux_${arch}.tar.gz" -o "caddy_2.11.7_linux_${arch}.tar.gz" \
+ && sha512sum --check --ignore-missing caddy-checksums.sha512 \
+ && tar -xzf "caddy_2.11.7_linux_${arch}.tar.gz" -C /usr/local/bin caddy \
+ && mkdir -p /usr/local/share/licenses/caddy \
+ && tar -xzf "caddy_2.11.7_linux_${arch}.tar.gz" -C /usr/local/share/licenses/caddy LICENSE \
+ && rm "caddy_2.11.7_linux_${arch}.tar.gz" caddy-checksums.sha512
+
 # A control plane that needs root to run is one more reason not to run
 # it. A fixed uid so a bind-mounted /data has predictable ownership.
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin plexus \
@@ -195,12 +209,13 @@ VOLUME ["/data"]
 # (gateway 46526f3). Before that it dialled the node's advertised address
 # with the driver's port -- the NAS, on a port this image never publishes
 # -- and a model launched in here was unroutable from the gateway beside it.
-EXPOSE 8079 8080 8083
+EXPOSE 8079 8080 8083 8443
 
 # `start-period` is generous because a first boot seeds the topology and
 # starts three children before any of this is true.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
-    CMD curl -fsS -o /dev/null http://127.0.0.1:8079/healthz || exit 1
+    CMD curl -fsS -o /dev/null http://127.0.0.1:8079/healthz \
+     && { test -z "$EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG" || curl -fsS --unix-socket /data/entrypoint/admin.sock -o /dev/null http://localhost/config/; } || exit 1
 
 # `--unattended` for the reason step 4 recorded: the unattended path is
 # declared, never inferred from the absence of a terminal. A container

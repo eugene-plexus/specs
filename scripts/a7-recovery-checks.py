@@ -67,6 +67,11 @@ def run():
             db.commit()
         (root / "logs").mkdir()
         (root / "logs" / "discard.log").write_text("not retained")
+        # Ingress runtime artifacts are regenerated; CA identity is persistent.
+        (root / "entrypoint" / "tls").mkdir(parents=True)
+        (root / "entrypoint" / "caddy.json").write_text("per-process proxy credential")
+        (root / "entrypoint" / "admin.sock").write_text("stale socket fixture")
+        (root / "entrypoint" / "tls" / "root.key").write_text("persistent CA fixture")
         engine = root / "engines" / "example" / "bin"
         engine.mkdir(parents=True)
         (engine / "required-library.dat").write_bytes(b"retained engine support file")
@@ -145,6 +150,9 @@ def run():
         )
         manifest, box = recovery.read_checkpoint(destination, "password")
         assert "logs" in manifest["excluded"]
+        assert "entrypoint/caddy.json" in {p.replace("\\", "/") for p in manifest["excluded"]}
+        assert "entrypoint/admin.sock" in {p.replace("\\", "/") for p in manifest["excluded"]}
+        assert "entrypoint/tls/root.key" in {r["path"] for r in manifest["files"]}
         assert "app-state/workbench/workbench.sqlite3" in {
             r["path"] for r in manifest["files"]
         }, "an app's data outside the prefix is in the checkpoint"
