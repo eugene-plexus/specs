@@ -76,8 +76,13 @@ whether the helper and Workbench happen to share a machine or not.
 5. Give the displayed helper account OS permission to the intended folder, then
    register that existing folder. On Windows, use the folder's Security settings
    to grant that specific service account Read, or Modify when text writes are
-   intended. On Linux, grant the displayed systemd account or its dedicated group
-   access using the host's normal ACL management. Do not grant the helper access
+   intended. On Linux, use a stable dedicated group and a service drop-in for
+   `eugene-plexus-app@node-files.service`, following the existing
+   [folder provisioning guide](workbench-files.md#provisioning-an-existing-folder)
+   with `node-files` in place of `workbench`. Do not attach persistent ACLs to a
+   dynamic UID. Read/write folders also require the service's `ReadWritePaths`
+   allowance. Reload systemd, then disable and re-enable file support to restart
+   the helper with the new settings. Do not grant the helper access
    to Eugene's private configuration directories. Registration checks access
    and records the folder's identity; it does not change OS permissions.
 6. Select the person and choose **No access**, **Read only**, or **Read and write
