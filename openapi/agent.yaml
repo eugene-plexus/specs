@@ -1070,6 +1070,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/EngineList"
 
+  /v1/engines/{engine}/uninstall:
+    parameters:
+      - in: path
+        name: engine
+        required: true
+        schema:
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
+    post:
+      tags: [engines]
+      operationId: uninstallEngine
+      summary: Remove Eugene-managed builds of an engine, preserving models.
+      description: |
+        Operator-only. Refuses with 409 while an installation or any
+        runtime for this engine is running. Removes only builds with a
+        valid managed-install receipt inside this engine's store. Keeps
+        model files, runtime declarations, borrowed installations and
+        shared dependencies. Repeating removal is harmless. This is
+        separate from DELETE .../install, which cancels an install job.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Managed builds removed (or none existed).
+        "409":
+          description: Stop this engine's runtimes and finish or cancel its install first.
+
   /v1/engines/{engine}/install:
     parameters:
       - in: path
@@ -5052,6 +5078,10 @@ components:
             grey out a launch button and name the missing engine instead
             of offering one that fails.
 
+            `strata` lists no catalogue model formats: it requires a
+            prepared JSON configuration and is offered through the
+            experimental prepared-model form, not arbitrary GGUF launch.
+
             `vllm` does **not** list `gguf`, though upstream has a path
             for it. That path is documented as highly experimental and
             under-optimized, and it needs a second `--tokenizer` model
@@ -5075,15 +5105,11 @@ components:
           type: boolean
           default: false
           description: |
-            True while this engine's integration has never been proved
-            on the hardware it targets — `mlx` until a physical Apple
-            silicon run is recorded. A property of the *integration*,
-            not of this host, and reported so the UI can badge the
-            option instead of hardcoding a list that goes stale the day
-            the evidence lands. Experimental does not mean hidden: on
-            appropriate hardware the engine is offered, badged; on the
-            wrong hardware `acquisition.manualInstall.notes` explains
-            why there is no install command.
+            Limited integration and support, including niche engines
+            whose capabilities and upstream interfaces change quickly.
+            Independent of hardware test status: a successful hardware
+            test does not automatically remove this designation.
+            Experimental engines remain visible on supported hosts.
         binaryPath:
           type: string
           description: Absolute path to the binary the adapter would spawn.
@@ -5269,6 +5295,12 @@ components:
             path, in the operator's own layout.** We never relocate,
             rename, or hash-address a model file; a runtime points at
             where the user put it.
+
+            For `strata`, this is a prepared Strata JSON configuration
+            in a Library folder on the target node. It references the
+            existing weights, pack, tokenizer and optional MTP assets.
+            It is not copied into the node's model cache. The adapter
+            writes a private launch config and preserves this original.
 
             For a sharded GGUF this is the *first* shard
             (`…-00001-of-0000N.gguf`), which is what the engine expects.

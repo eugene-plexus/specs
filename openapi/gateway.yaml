@@ -438,6 +438,36 @@ tags:
     description: Versioning and health.
 
 paths:
+  /v1/runtimes/switch:
+    post:
+      tags: [admin]
+      operationId: switchRuntime
+      summary: Drain one model, stop it, and start another saved runtime on the same node.
+      description: |
+        Operator-only. Holds both runtimes out of this gateway's routing
+        while draining requests, stopping the source and starting the
+        target. Source and target keep their own aliases. Returns 409
+        without stopping the source when it cannot drain within 30 seconds.
+        Returns 202 when the target start is scheduled; the owning agent's
+        runtime status reports loading, ready or failed. Only ready models
+        receive traffic. No requests are replayed and no models are evicted
+        automatically. Both runtimes must use the same engine and have
+        startOnDemand disabled. Direct engine traffic is outside this gateway.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeSwitchRequest"
+      responses:
+        "202":
+          description: Source stopped and target start accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/RestartResult"
+        "409":
+          description: Busy, incompatible, or unable to complete the switch; detail explains recovery.
   # -------- The OpenAI-compatible front door --------
   #
   # These two operations are the only ones in Eugene Plexus that use
@@ -3373,6 +3403,19 @@ components:
         the wrong one.
 
   schemas:
+    RuntimeSwitchRequest:
+      type: object
+      required: [source, target]
+      properties:
+        node:
+          type: string
+          description: Node name; absent for the gateway's local node.
+        source:
+          type: string
+          minLength: 1
+        target:
+          type: string
+          minLength: 1
     DriverProbeRequest:
       type: object
       description: |
