@@ -31,13 +31,23 @@ the component names or where the buttons live.
 Explain the practical download/time cost before beginning; download waiting
 time should be recorded separately from active interaction time.
 
-## Five tasks, in order
+## Six tasks, in order
 
 1. Get a model answering on this computer.
 2. Make it answer from your phone.
 3. Connect it to a tool you use.
 4. Find out why an answer was slow.
 5. Change the context size.
+6. Remove Eugene from this computer and reclaim the space it used for software.
+
+For removal, let the participant find the Windows Installed Apps entry or the
+Mac removal utility without naming it first. Ask what they expect each data
+choice to keep. Use a disposable original model and app conversation; record
+whether both survive the default removal. Then ask them to delete retained
+managed downloads using the saved cleanup utility, with networking disabled.
+Record whether they understand the final report, the space reclaimed, and any
+remaining files. Check that no Eugene process or startup registration remains.
+Do not count a prompted or assisted removal as an unassisted success.
 
 Give one task at a time. Avoid naming the control the participant should use.
 If they stall, ask “What are you looking for?” or “What did you expect?” Do not
@@ -60,6 +70,7 @@ If twenty minutes expires, mark unfinished tasks as not attempted or incomplete.
 | Existing tool | | | | |
 | Explain slow answer | | | | |
 | Change context | | | | |
+| Remove Eugene and clean up retained downloads offline | | | | |
 
 - Time spent downloading/installing versus interacting:
 - First visible token time, where measurable:

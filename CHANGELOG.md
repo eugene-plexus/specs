@@ -2,6 +2,33 @@
 
 Cross-component release notes. Each repo has its own commit history; this file consolidates what shipped together.
 
+### Experimental Strata engines (2026-10-04, Edge)
+
+- Strata v0.1.39 gains a pinned Windows NVIDIA install recipe, prepared-model
+  runtimes, start/stop and text inference, with a persistent Experimental label.
+- Managed engine removal preserves model files and borrowed installations.
+  Explicit model switching drains gateway traffic and retains separate aliases.
+- Actual Windows installation, native dependency checks and upstream mock-server
+  protocol checks passed. Real-model GPU/MTP validation remains. See the
+  [guide](docs/deployment/experimental-engines.md) and
+  [verification record](docs/acceptance/strata-engine-run.md). Included in Edge;
+  published v0.1.0 assets are unchanged.
+
+### Offline Windows and Mac removal (2026-10-04, Edge installers)
+
+- Windows Installed Apps and a Mac removal utility run locally without network
+  access. Both show sizes and separate optional data/download deletion choices.
+- Removal now deletes software while keeping original model folders. Retained
+  data includes an offline cleanup receipt, so later purging works after Python
+  and configuration have gone. Checks prevent following junctions or deleting
+  model folders that overlap a configured copy directory.
+- Scoped credential cleanup uses the application's actual key names and reports
+  failures. Windows service keys are removed in SYSTEM's vault. OS startup and
+  attributable firewall integration are removed; unresolved work is reported.
+- See the [guide](docs/deployment/uninstall.md) and
+  [verification record](docs/acceptance/uninstall-run.md). Published v0.1.0
+  assets remain unchanged; these changes are included in the Edge installers.
+
 ### A3 ? install-wide client-key revocation (2026-09-21, development builds)
 
 - Enrolled agents manage a durable client-key registry at the active control root;

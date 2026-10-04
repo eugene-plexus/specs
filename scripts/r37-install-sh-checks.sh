@@ -86,6 +86,13 @@ case "$1" in
         [ "$architecture" != probe-failed ] || exit 1
         echo "$architecture" ;;
     --version) echo 'Python 3.12' ;;
+    -I)
+        # The installer now writes a local Mac removal app. Run that
+        # portable bundle writer against the fixture HOME, never an OS job.
+        case "$*" in
+            *'/uninstall/inventory.py --prefix '*' --install-macos') exec /usr/bin/python3 "$@" ;;
+            *) echo "unexpected isolated Python call: $*" >&2; exit 2 ;;
+        esac ;;
     -) cat >/dev/null ;;
     *) echo "unexpected Python call: $*" >&2; exit 2 ;;
 esac

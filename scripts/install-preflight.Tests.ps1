@@ -13,7 +13,7 @@ $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.Fun
         'Remove-Autostart', 'Remove-StartMenuShortcut', 'Test-RunsFromThisInstall', 'Get-OtherInstall',
         'Grant-ServiceControl', 'Move-Folder', 'Get-ErrorText',
         'Get-NativeSystemDirectory', 'Test-VcRuntime', 'Install-VcRuntime',
-        'Get-DllVersion', 'Get-VcRuntimeVersion', 'Get-UvVersion', 'Install-Uv') }, $false) |
+        'Get-DllVersion', 'Get-VcRuntimeVersion', 'Get-UvVersion', 'Install-Uv', 'Write-RemovalBundle') }, $false) |
     ForEach-Object { . ([scriptblock]::Create($_.Extent.Text)) }
 
 Describe 'Installer failure reporting' {
@@ -794,6 +794,8 @@ Describe 'Uninstall finds the install wherever it is' {
         Mock Get-AgentTask { $null }
         Mock Get-ScheduledTask { $null }
         Mock Invoke-ElevatedInstaller {}
+        Mock Write-RemovalBundle {}
+        Mock Invoke-Native {}
         Mock Write-Host {}
     }
     AfterEach {
@@ -814,9 +816,7 @@ Describe 'Uninstall finds the install wherever it is' {
         Assert-MockCalled Write-Host -Scope It -Times 0 -ParameterFilter { $Object -like '*nothing*' }
     }
 
-    It 'removes every install it finds, moving each aside' {
-        # Two per-user installs -- the default one and one found through the
-        # config variable -- so nothing here needs Administrator.
+    It 'passes each discovered install to its offline removal utility' {
         $Uninstall = $true; $IsElevated = $false; $PrefixGiven = $false; $NoElevate = $false
         $Prefix = Join-Path $env:LOCALAPPDATA 'EugenePlexus'
         $elsewhere = Join-Path $Root 'elsewhere\EugenePlexus'
@@ -824,20 +824,12 @@ Describe 'Uninstall finds the install wherever it is' {
             New-Item -ItemType Directory -Force -Path $dir | Out-Null
             [IO.File]::WriteAllText((Join-Path $dir 'agent.yaml'), 'x')
         }
-        # A service install's default models folder is inside the prefix.
-        New-Item -ItemType Directory -Force -Path (Join-Path $Prefix 'models') | Out-Null
-        [IO.File]::WriteAllText((Join-Path $Prefix 'models\m.gguf'), 'weights')
         [Environment]::SetEnvironmentVariable($ConfigVariable, (Join-Path $elsewhere 'agent.yaml'), 'User')
         try { . $runUninstall }
         finally { [Environment]::SetEnvironmentVariable($ConfigVariable, $null, 'User') }
-        Test-Path $Prefix | Should Be $false
-        Test-Path $elsewhere | Should Be $false
-        @(Get-ChildItem $env:LOCALAPPDATA -Filter 'EugenePlexus.removed-*').Count | Should Be 1
-        @(Get-ChildItem (Split-Path -Parent $elsewhere) -Filter 'EugenePlexus.removed-*').Count | Should Be 1
-        Assert-MockCalled Invoke-ElevatedInstaller -Scope It -Times 0 -Exactly
-        # Its models moved with it, and it says where -- once, for the one
-        # install that had any.
-        Assert-MockCalled Write-Host -Scope It -Times 1 -Exactly -ParameterFilter { "$Object" -like '*models that were in*moved with it*' }
+        Assert-MockCalled Write-RemovalBundle -Times 1 -Exactly -Scope It -ParameterFilter { $Path -eq $Prefix }
+        Assert-MockCalled Write-RemovalBundle -Times 1 -Exactly -Scope It -ParameterFilter { $Path -eq $elsewhere }
+        Assert-MockCalled Invoke-Native -Times 2 -Exactly -Scope It -ParameterFilter { $Exe -eq 'powershell.exe' -and $Arguments -contains '-Prefix' }
     }
 
     It 'says where it looked when there is nothing to remove' {

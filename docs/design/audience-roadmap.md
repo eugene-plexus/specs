@@ -1,6 +1,16 @@
 # Audience roadmap
 
 **Status: the order of work from 2026-09-30.**
+- **Experimental engine support is the current design direction** (Troy,
+  2026-10-04; [policy](experimental-engines.md),
+  [Strata investigation](strata-engine.md)). Strata is the first candidate
+  and stays explicitly experimental. The baseline is recognition,
+  install/uninstall, start/stop, model switching and inference. Full fit
+  estimates, automatic model conversion/tuning and feature parity with
+  llama.cpp are not prerequisites. NInfer and imp illustrate the same
+  category; their integrations are not built. **First Strata implementation is
+  included in Edge; [verification](../acceptance/strata-engine-run.md). Real-model
+  GPU validation remains.**
 - **A1 (PB1) is built and accepted the same day**:
   [record](../acceptance/profile-builder-run.md), agent `2fcebf9`, control
   `7920bf9`.
@@ -165,6 +175,7 @@ first:**
 | A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured and built 2026-09-30.** Almost nothing to repair. The one repair, a named `tool_choice` answered by structured output on llama-server, is pinned |
 | A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **C1–C6 built; C6 pinned 2026-10-03.** App accounts, Eugene sign-in, Workbench chat/search, Open WebUI, network/local MCP tools and person-specific folder tools with approval. Media screens, answer versions and the working animation remain open |
 | **A7** | **The prompt cache: keep each engine's cache warm across doors, replicas and hosted backends** | [`prompt-cache.md`](prompt-cache.md) ([record](../acceptance/prompt-cache-measurement.md)) | **Troy, 2026-10-02: high priority before going public** (*"at the core of what Eugene is: managing multiple backends efficiently"*). Measured the same day; **PC1-PC5 built and pinned 2026-10-02** (Troy took the four calls: PC1-PC5 before public, affinity the default, the system-message fold an operator setting, client breakpoints only). PC6-PC7 after the release |
+| **A8** | **Experimental engines, starting with Strata** | [`experimental-engines.md`](experimental-engines.md), [`strata-engine.md`](strata-engine.md) | **First Strata implementation on Edge 2026-10-04.** Recognition, install/uninstall, start/stop, model switching and text inference; [verification](../acceptance/strata-engine-run.md). Real-model GPU validation remains. The experimental label persists after hardware validation. NInfer and imp are subsequent candidates. |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 
 ## Not scheduled without Troy

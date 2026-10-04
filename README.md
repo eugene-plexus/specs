@@ -173,26 +173,28 @@ is preserved and rejected with recovery instructions. The bootstrap's
 selection has simulated regression coverage; installation and Metal inference
 on a physical Mac remain unverified.
 
-Both install into a single prefix they own, write an autostart unit (systemd
-user unit, launchd agent, or a Windows logon task — a real Windows service if
-you run it elevated), start it, and print the URL. `--uninstall` / `-Uninstall`
-undoes it, keeping your config and logs. A worker node for an existing install
-joins in the same command: `--join <control-root-url> --token <jwt>`.
+Both install into a single prefix they own, register startup, start Eugene and
+print its URL. Windows uses a service by default and asks for administrator
+access; `-NoService` selects a logon task. Mac uses a per-user LaunchAgent.
+A worker joins an existing installation with `--join <control-root-url>
+--token <jwt>`.
 
-**Three caveats known as of 2026-09-17, all being fixed (see the roadmap).**
-On Windows, **pick one install and stay with it**: running the installer
-elevated after a per-user install creates a second, separate install and
-silently disables the first one's autostart. The default Windows autostart is
-a logon task, so the agent starts when you sign in and **stops when you sign
-out** — a reboot to the lock screen leaves nothing running, whatever the setup
-wizard's wording implies. And `--uninstall` leaves downloaded engine builds
-under `~/.eugene-plexus/engines` and up to two entries in your OS credential store (`eugene-plexus-agent` and, on a control host, `eugene-plexus-control`).
+The current development installers also save an **offline removal utility**:
+Windows **Settings ? Apps ? Installed apps ? Eugene Plexus ? Uninstall**, or
+**Remove Eugene Plexus** in the Mac user's **Applications** folder. Removal
+shows sizes and offers separate choices for deleting settings/app data and
+managed downloads. By default it deletes the software while preserving those
+files and all original model folders. A retained cleanup receipt lets you
+change the choices later, even after Python has been removed.
 
-Nothing is published to PyPI or npm yet; the installers fetch GitHub archives at
-pinned commits. See
-[`docs/design/install-paths-and-distribution.md`](docs/design/install-paths-and-distribution.md)
-§6.1 and §12 for why, and for what is verified and what is not — macOS and the
-Windows service are written but have not been run.
+`--uninstall` / `-Uninstall` remains available. See the
+[Windows and Mac removal guide](docs/deployment/uninstall.md) for exact commands,
+retained-file locations and how to handle a partial cleanup. These improvements
+ship after v0.1.0; published installer assets are unchanged.
+
+Packages are fetched from pinned GitHub archives. The
+[support matrix](docs/support-matrix.md) distinguishes runner checks from
+physical-machine verification, including the remaining Mac and Windows checks.
 
 ### Or in a container, for the control plane
 

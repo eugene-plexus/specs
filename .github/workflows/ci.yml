@@ -344,6 +344,31 @@ jobs:
         run: |
           Import-Module Pester -RequiredVersion 3.4.0
           Invoke-Pester -Script ./scripts/install-preflight.Tests.ps1 -EnableExit
+      - name: Check offline removal without touching machine services
+        shell: powershell
+        run: |
+          Import-Module Pester -RequiredVersion 3.4.0
+          Invoke-Pester -Script ./scripts/uninstall.Tests.ps1 -EnableExit
+
+  offline-removal:
+    name: Offline removal (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, macos-15, macos-26, windows-latest]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install PyYAML==6.0.3
+      - run: python scripts/embed-uninstall.py --check
+      - run: python scripts/test_uninstall.py
 
   secret-scan:
     name: Secret scan (gitleaks)

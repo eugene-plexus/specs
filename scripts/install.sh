@@ -59,13 +59,13 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=8a10235cbb09971105cb7d8c9294e4aced0bed48
-PIN_CONTROL=d4886ef87a81fa781a0139ba12f05d7c58dd9c8a
-PIN_GATEWAY=8cc23afe5ed8e6469d695834e9ed0226a24cad96
-PIN_DRIVER=971b1dbf44a447ca98b04f94bdc3ff8a4b9d6632
-PIN_LIBRARY=23a1f892a050fbb39fc1550e1326fe44bd57d51e
+PIN_AGENT=8f2d75ac05ca7724bca685143ef6f440036dffb4
+PIN_CONTROL=569eed6fa2584654fe4018873070503df0831c10
+PIN_GATEWAY=2c92e568c96f71442605df5f79f07ff4304d808c
+PIN_DRIVER=02beb480eb19af45d71435947291f1387d53060e
+PIN_LIBRARY=98daf3038090ff60b26c5a1cf09b1b7937ff8543
 PIN_TOOL_DRIVER=ed99e7aa09f3d9fb69611f24bff84d372c5de0e9
-PIN_UI=3b6a4df3dc92f4db30d83f75505535388d223e5b   # branch `dist`, not `main`
+PIN_UI=23fad73ebf45c994d09b0073f8f3b5bc42c5ad5f   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
@@ -94,6 +94,8 @@ JOIN_NAME=
 JOIN_ADVERTISE=
 JOINED=0
 DO_PURGE_COPIES=0
+DO_PURGE_DATA=0
+DO_INTERACTIVE=0
 ADVERTISED=0
 UPDATE=0
 
@@ -105,6 +107,8 @@ while [ $# -gt 0 ]; do
         --no-service) DO_SERVICE=0; shift ;;
         --no-start) DO_START=0; shift ;;
         --uninstall) DO_UNINSTALL=1; shift ;;
+        --purge-data) DO_PURGE_DATA=1; shift ;;
+        --interactive) DO_INTERACTIVE=1; shift ;;
         --purge-downloads|--purge-model-copies) DO_PURGE_COPIES=1; shift ;;
         --join) JOIN_CONTROL=$2; shift 2 ;;
         --token) JOIN_TOKEN=$2; shift 2 ;;
@@ -117,13 +121,20 @@ while [ $# -gt 0 ]; do
             echo "           --user  (Linux: install under your own account, no sudo; anything"
             echo "                   you run can then control Eugene)"
             echo "           --purge-downloads  (with --uninstall: delete this install's model"
-            echo "                              copies and engine builds, which live outside the prefix)"
+            echo "                              copies and engine builds)"
+            echo "           --purge-data  (Mac/user install: delete settings, app data and logs)"
+            echo "           --interactive  (Mac: show the removal choices)"
             echo "  worker node: --join URL --token JWT [--name NAME] [--advertise URL]"
             echo "  standalone:  --advertise URL   (the address other devices reach this one at)"
             exit 0 ;;
         *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
     esac
 done
+
+if [ "$DO_UNINSTALL" != 1 ] && { [ "$DO_PURGE_COPIES" = 1 ] || [ "$DO_PURGE_DATA" = 1 ] || [ "$DO_INTERACTIVE" = 1 ]; }; then
+    echo 'Removal options require --uninstall. Nothing was installed or removed.' >&2
+    exit 2
+fi
 
 say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -602,6 +613,569 @@ service_stop() {
     fi
 }
 
+# BEGIN GENERATED OFFLINE REMOVAL
+# Source: scripts/uninstall*; regenerate with python scripts/embed-uninstall.py.
+write_removal_bundle() {
+    mkdir -p "$PREFIX/uninstall"
+    cat > "$PREFIX/uninstall/inventory.py" <<'EUGENE_REMOVAL_INVENTORY_PY'
+"""Read an install's removal inventory before its Python is removed.
+
+Installed verbatim by both installers. This program never deletes files.
+The native uninstallers retain its plain-text inventory for offline cleanup.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+from pathlib import Path
+import plistlib
+import shlex
+import sys
+
+
+def absolute(path: str | Path) -> Path:
+    return Path(os.path.abspath(os.path.expanduser(str(path))))
+
+
+def overlaps(a: Path, b: Path) -> bool:
+    a, b = a.resolve(), b.resolve()
+    return a == b or a in b.parents or b in a.parents
+
+
+def read_config(path: Path, warnings: list[str]) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        import yaml
+
+        value = yaml.safe_load(path.read_text(encoding="utf-8-sig")) or {}
+        if not isinstance(value, dict):
+            raise ValueError("expected a mapping")
+        return value
+    except Exception as exc:
+        warnings.append(
+            f"Could not read {path} ({type(exc).__name__}). Custom downloads are kept."
+        )
+        return {}
+
+
+def inventory(prefix: Path) -> dict:
+    warnings: list[str] = []
+    agent = read_config(prefix / "agent.yaml", warnings)
+    protected = [prefix / "models", Path.home() / "Eugene Models"]
+
+    # Library state contains modelRoots and, on newer installations, folders.
+    def roots(value: object, key: str = "") -> None:
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if k in ("modelRoots", "defaultModelRoots") and isinstance(v, list):
+                    protected.extend(absolute(p) for p in v if isinstance(p, str))
+                    roots(v, k)
+                elif (
+                    k in ("path", "localPath")
+                    and key in ("folders", "modelRoots")
+                    and isinstance(v, str)
+                ):
+                    protected.append(absolute(v))
+                else:
+                    roots(v, k)
+        elif isinstance(value, list):
+            for v in value:
+                roots(v, key)
+
+    for config in prefix.glob("library*.yaml"):
+        roots(read_config(config, warnings))
+    roots(agent)
+    software = [
+        prefix / name for name in ("venv", "pythons", "bin", ".cache/uv", "update")
+    ]
+    software += [
+        prefix / name for name in ("install-check.py", "release-requirements.lock")
+    ]
+    apps = prefix / "apps"
+    software += [apps / name for name in ("pythons", "launcher", "ctl")]
+    data = [prefix / name for name in ("logs", "passphrase", "control-state")]
+    for app in apps.iterdir() if apps.is_dir() and not apps.is_symlink() else []:
+        if (
+            app.is_dir()
+            and not app.is_symlink()
+            and app.name not in ("pythons", "launcher", "ctl")
+        ):
+            software += [app / "versions", app / "python"]
+            data += [p for p in app.iterdir() if p.name not in ("versions", "python")]
+    for item in prefix.iterdir():
+        if item.is_file() and (
+            item.suffix
+            in (
+                ".yaml",
+                ".json",
+                ".sqlite3",
+                ".db",
+                ".sqlite3-wal",
+                ".sqlite3-shm",
+                ".db-wal",
+                ".db-shm",
+            )
+            or item.name.startswith(
+                (
+                    ".update-channel",
+                    "agent.yaml.",
+                    "node.yaml.",
+                    "control.yaml.",
+                    "gateway.yaml.",
+                    "library.yaml.",
+                )
+            )
+        ):
+            data.append(item)
+    if apps.is_dir():
+        data += [p for p in apps.iterdir() if p.is_file()]
+    downloads = [prefix / "engines"]
+    engine = os.environ.get("EUGENE_PLEXUS_AGENT_ENGINE_ROOT")
+    # Service installs own prefix/engines. Do not also sweep the invoking
+    # administrator's per-user store (which may belong to another install).
+    info_path = prefix / "uninstall/install-info.json"
+    if info_path.exists():
+        try:
+            recorded_engine = json.loads(info_path.read_text(encoding="utf-8"))[
+                "engineRoot"
+            ]
+            downloads.append(absolute(recorded_engine))
+        except (OSError, ValueError, KeyError, TypeError):
+            warnings.append(
+                "Could not read the installed download location. External engines were kept."
+            )
+    elif not (prefix / "engines").exists():
+        if engine and absolute(engine) != prefix / "engines":
+            warnings.append(
+                f"External engine store kept: {engine}. Its ownership cannot be confirmed from this installation."
+            )
+        elif not engine:
+            downloads.append(Path.home() / ".eugene-plexus/engines")
+    copies = agent.get("modelCopyDir")
+    if isinstance(copies, str) and copies:
+        if Path(copies).expanduser().is_absolute():
+            downloads.append(absolute(copies))
+        else:
+            warnings.append(
+                f"Relative model-copy location kept: {copies}. Its working directory cannot be confirmed."
+            )
+    if any(w.startswith("Could not read") for w in warnings):
+        downloads = []
+        warnings.append(
+            "Downloads were kept because the configuration could not be read safely."
+        )
+    result: dict = {"version": 1, "prefix": str(prefix), "warnings": warnings}
+    for kind, candidates in (
+        ("software", software),
+        ("data", data),
+        ("downloads", downloads),
+    ):
+        kept = []
+        for path in dict.fromkeys(absolute(p) for p in candidates):
+            if not path.exists() and not path.is_symlink():
+                continue
+            if "\n" in str(path) or "\r" in str(path):
+                warnings.append(
+                    f"Kept a {kind} path containing a newline; remove it manually."
+                )
+                continue
+            if (
+                path == prefix
+                or path in prefix.parents
+                or path == absolute(Path.home())
+                or len(path.parts) < 3
+            ):
+                warnings.append(f"Kept unsafe {kind} path: {path}")
+                continue
+            if any(overlaps(path, p) for p in protected):
+                warnings.append(f"Kept {path}: it overlaps an original model folder.")
+                continue
+            # Never traverse a symlink/junction to make a deletion inventory.
+            if any(
+                p.is_symlink() or (hasattr(p, "is_junction") and p.is_junction())
+                for p in (path, *path.parents)
+            ):
+                warnings.append(f"Kept {path}: it uses a link or junction.")
+                continue
+            kept.append(str(path))
+        result[kind] = kept
+    result["protected"] = list(dict.fromkeys(str(absolute(p)) for p in protected))
+    return result
+
+
+def keyring_cleanup(prefix: Path) -> dict:
+    warnings: list[str] = []
+    config = read_config(prefix / "agent.yaml", warnings)
+    auth = config.get("auth") or {}
+    if not isinstance(auth, dict):
+        return {
+            "removed": 0,
+            "warnings": ["Credentials kept: the auth configuration is not readable."],
+        }
+    salt = auth.get("masterSalt")
+    names = []
+    if salt:
+        try:
+            fingerprint = hashlib.sha256(
+                base64.b64decode(salt, validate=True)
+            ).hexdigest()[:12]
+            # The application uses a colon. The old uninstall/test code
+            # incorrectly used a dash; also remove that historical spelling.
+            names = ["master-key:" + fingerprint, "master-key-" + fingerprint]
+        except Exception as exc:
+            warnings.append(f"Could not identify this install's credentials: {exc}")
+    elif config.get("auth"):
+        # A legacy entry is shared; do not delete a different install's key.
+        warnings.append(
+            "Legacy unscoped credentials were kept. Review Eugene entries in the OS credential store."
+        )
+    removed = 0
+    if names:
+        try:
+            import keyring
+
+            for service in ("eugene-plexus-agent", "eugene-plexus-control"):
+                for name in names:
+                    try:
+                        if keyring.get_password(service, name) is not None:
+                            keyring.delete_password(service, name)
+                            if keyring.get_password(service, name) is not None:
+                                raise RuntimeError(
+                                    "entry is still present after deletion"
+                                )
+                            removed += 1
+                    except Exception as exc:
+                        warnings.append(f"Credential left: {service}/{name}: {exc}")
+        except Exception as exc:
+            warnings.append(f"Could not open the OS credential store: {exc}")
+    return {"removed": removed, "warnings": warnings}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--prefix", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--keyring-only", action="store_true")
+    parser.add_argument("--install-macos", action="store_true")
+    args = parser.parse_args()
+    prefix = absolute(args.prefix)
+    if args.install_macos:
+        install_macos(prefix)
+        return
+    if args.output is None:
+        parser.error("--output is required")
+    result = keyring_cleanup(prefix) if args.keyring_only else inventory(prefix)
+    temporary = args.output.with_suffix(".tmp")
+    temporary.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    temporary.replace(args.output)
+    if not args.keyring_only:
+        for kind in ("software", "data", "downloads", "protected"):
+            (args.output.parent / f"{kind}.txt").write_text(
+                "".join(p + "\n" for p in result[kind]), encoding="utf-8"
+            )
+        (args.output.parent / "original-prefix.txt").write_text(
+            str(prefix) + "\n", encoding="utf-8"
+        )
+        (args.output.parent / "warnings.txt").write_text(
+            "\n".join(result["warnings"]), encoding="utf-8"
+        )
+        programs = [prefix / "venv/bin/python", Path(sys.executable).resolve()]
+        owned_programs = [
+            str(p) for p in programs if p.resolve().is_relative_to(prefix.resolve())
+        ]
+        (args.output.parent / "firewall.txt").write_text(
+            "".join(p + "\n" for p in dict.fromkeys(owned_programs)), encoding="utf-8"
+        )
+        app_record = prefix / "uninstall/mac-app.txt"
+        if app_record.exists():
+            (args.output.parent / "mac-app.txt").write_text(
+                app_record.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+    for warning in result["warnings"]:
+        print(f"warning: {warning}", file=sys.stderr)
+
+
+def install_macos(prefix: Path) -> None:
+    """A Finder-visible local utility; no interpreter or network at launch."""
+    suffix = (
+        ""
+        if prefix == Path.home() / ".local/share/eugene-plexus"
+        else " " + hashlib.sha256(str(prefix).encode()).hexdigest()[:8]
+    )
+    app = Path.home() / "Applications" / f"Remove Eugene Plexus{suffix}.app"
+    contents = app / "Contents"
+    (contents / "MacOS").mkdir(parents=True, exist_ok=True)
+    (contents / "Resources").mkdir(exist_ok=True)
+    (contents / "Info.plist").write_bytes(
+        plistlib.dumps(
+            {
+                "CFBundleIdentifier": "com.eugeneplexus.remove" + suffix.strip(),
+                "CFBundleName": "Remove Eugene Plexus",
+                "CFBundleDisplayName": "Remove Eugene Plexus",
+                "CFBundleExecutable": "remove",
+                "CFBundlePackageType": "APPL",
+                "CFBundleVersion": "1",
+                "LSUIElement": True,
+            }
+        )
+    )
+    executable = contents / "MacOS/remove"
+    executable.write_text(
+        "#!/bin/sh\nexec /bin/sh "
+        + shlex.quote(str(prefix / "uninstall/remove.sh"))
+        + " --interactive\n",
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    (contents / "Resources/prefix.txt").write_text(str(prefix) + "\n", encoding="utf-8")
+    (prefix / "uninstall/mac-app.txt").write_text(str(app) + "\n", encoding="utf-8")
+    engine = os.environ.get("EUGENE_PLEXUS_AGENT_ENGINE_ROOT") or str(
+        Path.home() / ".eugene-plexus/engines"
+    )
+    (prefix / "uninstall/install-info.json").write_text(
+        json.dumps({"engineRoot": engine}), encoding="utf-8"
+    )
+    print(f"Removal utility: {app}")
+
+
+if __name__ == "__main__":
+    main()
+EUGENE_REMOVAL_INVENTORY_PY
+    cat > "$PREFIX/uninstall/remove.sh" <<'EUGENE_REMOVAL_REMOVE_SH'
+#!/bin/sh
+# Offline removal. The installer embeds this script and inventory.py.
+set -eu
+PREFIX=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+INTERACTIVE=0 PURGE_DOWNLOADS=0 PURGE_DATA=0
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --prefix) PREFIX=$2; shift 2 ;;
+        --interactive) INTERACTIVE=1; shift ;;
+        --purge-downloads|--purge-model-copies) PURGE_DOWNLOADS=1; shift ;;
+        --purge-data) PURGE_DATA=1; shift ;;
+        *) echo "Unknown removal option: $1" >&2; exit 2 ;;
+    esac
+done
+PLATFORM=$(uname -s)
+case "$PREFIX" in ''|/|"$HOME"|/Applications|/usr|/var|/opt|*/../*|*/./*) echo "Not an installation folder: $PREFIX" >&2; exit 1 ;; esac
+if [ ! -d "$PREFIX" ]; then echo "Nothing installed at $PREFIX"; exit 0; fi
+if [ -L "$PREFIX" ]; then echo "Refusing a linked installation folder: $PREFIX" >&2; exit 1; fi
+if [ ! -f "$PREFIX/agent.yaml" ] && [ ! -f "$PREFIX/node.yaml" ] && [ ! -f "$PREFIX/bin/uv" ] && [ ! -f "$PREFIX/uninstall/receipt/inventory.json" ]; then
+    echo "No Eugene installation or removal receipt at $PREFIX. Nothing was removed." >&2; exit 1
+fi
+PREFIX=$(CDPATH= cd -- "$PREFIX" && pwd -P)
+RECEIPT=$PREFIX/uninstall/receipt
+mkdir -p "$RECEIPT"
+chmod 700 "$RECEIPT"
+WARNINGS=$RECEIPT/current-warnings.txt
+: > "$WARNINGS"
+warn() { printf 'warning: %s\n' "$*" >&2; printf '%s\n' "$*" >> "$WARNINGS"; }
+fail() {
+    warn "$*"
+    if [ "$INTERACTIVE" = 1 ] && [ "$PLATFORM" = Darwin ]; then
+        /usr/bin/osascript - "$*" <<'APPLE' || true
+on run argv
+    display dialog (item 1 of argv) with title "Eugene removal did not finish" buttons {"OK"} default button "OK" with icon caution
+end run
+APPLE
+    fi
+    exit 1
+}
+PYBIN=$PREFIX/venv/bin/python
+if [ ! -f "$RECEIPT/inventory.json" ] || { [ ! -f "$RECEIPT/removed.txt" ] && [ -x "$PYBIN" ]; }; then
+    if [ -x "$PYBIN" ]; then
+        "$PYBIN" -I "$PREFIX/uninstall/inventory.py" --prefix "$PREFIX" --output "$RECEIPT/inventory.json" || fail "Could not inventory this installation. Nothing was removed."
+    else
+        printf '%s\n' "$PREFIX" > "$RECEIPT/original-prefix.txt"
+        for name in venv pythons bin .cache/uv update; do printf '%s/%s\n' "$PREFIX" "$name"; done > "$RECEIPT/software.txt"
+        : > "$RECEIPT/data.txt"; : > "$RECEIPT/downloads.txt"
+        printf '%s/models\n' "$PREFIX" > "$RECEIPT/protected.txt"
+        printf '%s\n' 'Python is missing. Settings, downloads and credentials were kept; review the remaining folder.' > "$RECEIPT/warnings.txt"
+        printf '{}\n' > "$RECEIPT/inventory.json"
+    fi
+fi
+ORIGINAL=$(cat "$RECEIPT/original-prefix.txt")
+map_path() {
+    case "$1" in "$ORIGINAL"/*) printf '%s%s\n' "$PREFIX" "${1#"$ORIGINAL"}" ;; *) printf '%s\n' "$1" ;; esac
+}
+group_size() {
+    total=0 unknown=0
+    while IFS= read -r original; do
+        path=$(map_path "$original")
+        if [ -e "$path" ] && [ ! -L "$path" ]; then
+            if usage=$(du -sk "$path" 2>/dev/null); then
+                kb=$(printf '%s\n' "$usage" | awk '{print $1}')
+                total=$((total + ${kb:-0}))
+            else unknown=1; fi
+        fi
+    done < "$RECEIPT/$1.txt"
+    if [ "$unknown" = 1 ]; then printf 'size unavailable'; else awk -v kb="$total" 'BEGIN {printf "%.2f GB", kb/1048576}'; fi
+}
+if [ "$INTERACTIVE" = 1 ] && [ "$PLATFORM" = Darwin ]; then
+    if ! CHOICE=$(/usr/bin/osascript - "$(group_size software)" "$(group_size data)" "$(group_size downloads)" "$PREFIX" <<'APPLE'
+on run argv
+    set dataChoice to "Delete settings, app data and logs (" & item 2 of argv & ")"
+    set downloadChoice to "Delete downloaded engines and model copies (" & item 3 of argv & ")"
+    set picked to choose from list {dataChoice, downloadChoice} with title "Remove Eugene Plexus" with prompt ("Software to remove: " & item 1 of argv & return & "Original model folders will be kept." & return & "Optionally select data to delete:") default items {} OK button name "Continue" cancel button name "Cancel" with multiple selections allowed and empty selection allowed
+    if picked is false then error number -128
+    display dialog ("Remove Eugene from this computer?" & return & item 4 of argv & return & "Items you did not select will be kept.") with title "Remove Eugene Plexus" buttons {"Cancel", "Remove Eugene"} default button "Cancel" cancel button "Cancel" with icon caution
+    set answer to ""
+    if picked contains dataChoice then set answer to answer & "data "
+    if picked contains downloadChoice then set answer to answer & "downloads"
+    return answer
+end run
+APPLE
+    ); then echo 'Removal cancelled.'; exit 0; fi
+    case "$CHOICE" in *data*) PURGE_DATA=1 ;; esac
+    case "$CHOICE" in *downloads*) PURGE_DOWNLOADS=1 ;; esac
+fi
+if [ -s "$RECEIPT/warnings.txt" ]; then cat "$RECEIPT/warnings.txt" >> "$WARNINGS"; fi
+
+if [ ! -f "$RECEIPT/removed.txt" ]; then
+    if [ "$PLATFORM" = Darwin ]; then
+        LABEL=com.eugeneplexus.agent
+        PLIST=$HOME/Library/LaunchAgents/$LABEL.plist
+        if [ -f "$PLIST" ]; then
+            OWNER=$(/usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$PLIST") || fail "Cannot read $PLIST. Nothing was removed."
+            case "$OWNER" in "$PREFIX"/*) ;; *) fail "The startup job belongs to $OWNER. Use that install's removal utility." ;; esac
+            if launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
+                launchctl bootout "gui/$(id -u)/$LABEL" || fail "macOS could not stop Eugene. Try removal again after signing out and back in."
+            fi
+            rm -f "$PLIST"
+        fi
+    else
+        UNIT=$HOME/.config/systemd/user/eugene-plexus-agent.service
+        if [ -f "$UNIT" ]; then
+            grep -F -- "$PREFIX/" "$UNIT" >/dev/null || fail "The startup job belongs to another installation."
+            systemctl --user disable --now eugene-plexus-agent || fail 'Could not stop the user service.'
+            rm -f "$UNIT"
+            systemctl --user daemon-reload || fail 'Could not reload the user service manager.'
+        fi
+    fi
+    # launchd normally terminates the job's process group; also cover a
+    # manually started process. Match an executable path, never a regex.
+    PIDS=$(ps -axo pid=,comm= | awk -v root="$PREFIX/" '{pid=$1; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); if(index($0,root)==1) print pid}')
+    for pid in $PIDS; do kill -TERM "$pid" 2>/dev/null || true; done
+    tries=0
+    while [ "$tries" -lt 15 ]; do
+        alive=0
+        for pid in $PIDS; do if kill -0 "$pid" 2>/dev/null; then alive=1; fi; done
+        [ "$alive" = 0 ] && break
+        sleep 1; tries=$((tries + 1))
+    done
+    for pid in $PIDS; do
+        if kill -0 "$pid" 2>/dev/null; then fail "Eugene process $pid is still running. Close it and run removal again."; fi
+    done
+    if [ -x "$PYBIN" ]; then
+        if "$PYBIN" -I "$PREFIX/uninstall/inventory.py" --keyring-only --prefix "$PREFIX" --output "$RECEIPT/credentials-user.json" 2> "$RECEIPT/credential-warnings.txt"; then
+            cat "$RECEIPT/credential-warnings.txt" >> "$WARNINGS"
+        else warn 'Credential cleanup failed. Review Eugene entries in Keychain Access or your OS credential store.'; fi
+    else warn 'Credential cleanup could not run: the installed Python is missing.'; fi
+    if [ "$PLATFORM" = Darwin ]; then
+        # Only entries for this install's Python; no shared firewall rules.
+        FW=/usr/libexec/ApplicationFirewall/socketfilterfw
+        if [ -f "$RECEIPT/firewall.txt" ]; then
+            while IFS= read -r program; do
+                if "$FW" --listapps 2>/dev/null | grep -F -- "$program" >/dev/null; then
+                    if ! /usr/bin/osascript - "$program" <<'APPLE'
+on run argv
+    do shell script "/usr/libexec/ApplicationFirewall/socketfilterfw --remove " & quoted form of (item 1 of argv) with administrator privileges
+end run
+APPLE
+                    then warn "Firewall entry kept: $program. Remove it in System Settings > Network > Firewall > Options."; fi
+                fi
+            done < "$RECEIPT/firewall.txt"
+        fi
+    fi
+    cp "$WARNINGS" "$RECEIPT/integration-warnings.txt"
+elif [ -s "$RECEIPT/integration-warnings.txt" ]; then
+    cat "$RECEIPT/integration-warnings.txt" >> "$WARNINGS"
+fi
+
+safe_remove() {
+    target=$1 kind=$2
+    case "$target" in /*) ;; *) warn "Kept non-absolute path: $target"; return ;; esac
+    case "$target" in /|/usr|/var|/opt|/Applications|/Users|/home|"$HOME"|"$PREFIX"|*/../*|*/./*) warn "Kept unsafe path: $target"; return ;; esac
+    case "$PREFIX/" in "$target"/*) warn "Kept parent of the installation: $target"; return ;; esac
+    if [ "$kind" != downloads ]; then
+        case "$target" in "$PREFIX"/*) ;; *) warn "Kept path outside the installation: $target"; return ;; esac
+    fi
+    cursor=$target
+    while [ "$cursor" != / ] && [ -n "$cursor" ]; do
+        if [ -L "$cursor" ]; then warn "Kept linked path: $target"; return; fi
+        cursor=$(dirname -- "$cursor")
+    done
+    while IFS= read -r original; do
+        protected=$(map_path "$original")
+        case "$target/" in "$protected/"*) warn "Kept original model folder: $target"; return ;; esac
+        case "$protected/" in "$target/"*) warn "Kept parent of an original model folder: $target"; return ;; esac
+    done < "$RECEIPT/protected.txt"
+    if ! rm -rf -- "$target"; then warn "Could not remove $target. Check its permissions and run cleanup again."; fi
+}
+for kind in software downloads data; do
+    [ "$kind" = downloads ] && [ "$PURGE_DOWNLOADS" != 1 ] && continue
+    [ "$kind" = data ] && [ "$PURGE_DATA" != 1 ] && continue
+    while IFS= read -r original; do
+        [ -n "$original" ] || continue
+        safe_remove "$(map_path "$original")" "$kind"
+    done < "$RECEIPT/$kind.txt"
+done
+
+KEEP=$PREFIX
+if [ ! -f "$RECEIPT/removed.txt" ]; then
+    case "$PREFIX" in *.removed-*) ;; *)
+        KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
+        [ ! -e "$KEEP" ] || fail "The retained folder already exists: $KEEP"
+        mv -- "$PREFIX" "$KEEP" || fail "Could not move the retained files to $KEEP. Check permissions and try again."
+        ;;
+    esac
+fi
+PREFIX=$KEEP
+RECEIPT=$KEEP/uninstall/receipt
+WARNINGS=$RECEIPT/current-warnings.txt
+printf '%s\n' 'Startup disabled; see report.txt for remaining work.' > "$RECEIPT/removed.txt"
+if [ "$PLATFORM" = Darwin ] && [ -f "$RECEIPT/mac-app.txt" ]; then
+    APP=$(cat "$RECEIPT/mac-app.txt")
+    case "$APP" in "$HOME/Applications/Remove Eugene Plexus"*.app)
+        # Only our own bundle (identified by its exact stored prefix).
+        if [ -f "$APP/Contents/Resources/prefix.txt" ] && [ "$(cat "$APP/Contents/Resources/prefix.txt")" = "$ORIGINAL" ]; then rm -rf -- "$APP"; fi ;;
+    esac
+fi
+{
+    echo "Eugene's removal finished."
+    echo "Retained files and cleanup utility: $KEEP"
+    echo 'Original model folders were kept.'
+    while IFS= read -r original; do
+        path=$(map_path "$original")
+        if [ -e "$path" ]; then echo "Retained download: $path"; fi
+    done < "$RECEIPT/downloads.txt"
+    echo 'To change your cleanup choices, open uninstall/Remove Eugene.command in the retained folder.'
+    if [ -s "$WARNINGS" ]; then echo 'Items to review:'; cat "$WARNINGS"; fi
+} > "$RECEIPT/report.txt"
+cat "$RECEIPT/report.txt"
+if [ "$INTERACTIVE" = 1 ] && [ "$PLATFORM" = Darwin ]; then
+    /usr/bin/osascript - "$(cat "$RECEIPT/report.txt")" <<'APPLE'
+on run argv
+    display dialog (item 1 of argv) with title "Eugene removal" buttons {"OK"} default button "OK"
+end run
+APPLE
+fi
+[ ! -s "$WARNINGS" ] || exit 1
+EUGENE_REMOVAL_REMOVE_SH
+    cat > "$PREFIX/uninstall/Remove Eugene.command" <<'EUGENE_REMOVAL_COMMAND'
+#!/bin/sh
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+exec /bin/sh "$HERE/remove.sh" --interactive
+EUGENE_REMOVAL_COMMAND
+    chmod 700 "$PREFIX/uninstall/Remove Eugene.command" "$PREFIX/uninstall/remove.sh"
+}
+# END GENERATED OFFLINE REMOVAL
+
 # --- uninstall --------------------------------------------------------
 
 # **Two keyring entries, not one** (review §6.3 #31). The agent stores
@@ -700,6 +1274,9 @@ if [ "$DO_UNINSTALL" = 1 ]; then
 fi
 
 if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
+    if [ "$DO_PURGE_DATA" = 1 ] || [ "$DO_INTERACTIVE" = 1 ]; then
+        die '--purge-data and --interactive apply to Mac and per-user installs; Linux system removal still preserves its data.'
+    fi
     if [ "$(id -u)" != 0 ]; then
         sudo -v || die "removing Eugene's own account needs sudo, and sudo was refused"
     fi
@@ -750,52 +1327,27 @@ if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
 fi
 
 if [ "$DO_UNINSTALL" = 1 ]; then
-    say "stopping the service"
-    service_stop
-    rm -f "$SYSTEMD_UNIT" "$LAUNCHD_PLIST"
-    [ "$PLATFORM" = linux ] && systemctl --user daemon-reload >/dev/null 2>&1 || true
-
-    COPIES=$(model_copy_dir || true)
-    say "clearing this install's OS keyring entries"
-    drop_keyring_entries
-
-    if [ -n "${COPIES:-}" ] && [ -d "$COPIES" ]; then
-        SIZE=$(du -sh "$COPIES" 2>/dev/null | cut -f1 || echo "?")
-        if [ "$DO_PURGE_COPIES" = 1 ]; then
-            say "removing this node's model copies at $COPIES ($SIZE)"
-            rm -rf "$COPIES"
-        else
-            say "this node's model copies are at $COPIES ($SIZE) — they are copies, so"
-            say "  deleting them loses nothing. Re-run with --purge-model-copies, or: rm -rf $COPIES"
-        fi
-    elif [ -n "${COPIES:-}" ]; then
-        say "no model copies on disk (modelCopyDir was $COPIES)"
+    # Keep the old Linux system-account lifecycle above. Mac and user
+    # installations use the same offline utility that Finder launches.
+    if [ ! -d "$PREFIX" ] && { [ "$DO_PURGE_COPIES" = 1 ] || [ "$DO_PURGE_DATA" = 1 ]; }; then
+        for kept in "$PREFIX".removed-*; do
+            [ -f "$kept/uninstall/receipt/inventory.json" ] || continue
+            set -- --prefix "$kept"
+            [ "$DO_PURGE_COPIES" = 1 ] && set -- "$@" --purge-downloads
+            [ "$DO_PURGE_DATA" = 1 ] && set -- "$@" --purge-data
+            [ "$DO_INTERACTIVE" = 1 ] && set -- "$@" --interactive
+            /bin/sh "$kept/uninstall/remove.sh" "$@" || exit $?
+        done
+        exit 0
     fi
-
-    ENGINES=$(engine_root)
-    if [ -d "$ENGINES" ]; then
-        ESIZE=$(du -sh "$ENGINES" 2>/dev/null | cut -f1 || echo "?")
-        if [ "$DO_PURGE_COPIES" = 1 ]; then
-            say "removing the engine store at $ENGINES ($ESIZE)"
-            rm -rf "$ENGINES"
-        else
-            say "the engine builds this install downloaded are at $ENGINES ($ESIZE) —"
-            say "  re-run with --purge-downloads, or: rm -rf $ENGINES"
-        fi
-    fi
-
-    if [ -d "$PREFIX" ]; then
-        # `agent.yaml` and `node.yaml` are the install's identity, and
-        # `logs/` is the only record of what it did. Moving the prefix
-        # aside rather than deleting it means an uninstall cannot be the
-        # thing that loses an enrollment.
-        KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
-        mv "$PREFIX" "$KEEP"
-        say "removed. Your config and logs are at $KEEP — delete it when you are sure."
-    else
-        say "nothing installed at $PREFIX"
-    fi
-    exit 0
+    if [ ! -d "$PREFIX" ]; then say "nothing installed at $PREFIX"; exit 0; fi
+    write_removal_bundle
+    set -- --prefix "$PREFIX"
+    [ "$DO_PURGE_COPIES" = 1 ] && set -- "$@" --purge-downloads
+    [ "$DO_PURGE_DATA" = 1 ] && set -- "$@" --purge-data
+    [ "$DO_INTERACTIVE" = 1 ] && set -- "$@" --interactive
+    /bin/sh "$PREFIX/uninstall/remove.sh" "$@"
+    exit $?
 fi
 
 # --- a join takes over whatever Eugene is already here ------------------
@@ -2640,6 +3192,15 @@ elif [ "$DO_SERVICE" = 1 ] && [ "$PLATFORM" = linux ]; then
 elif [ "$DO_SERVICE" = 1 ]; then
     say "writing $LAUNCHD_PLIST"
     write_launchd_plist
+fi
+
+# Store a local remover even when startup is disabled. No network is
+# needed to use it, and it remains beside retained files after removal.
+if [ "$MODE" = user ]; then
+    write_removal_bundle
+    if [ "$PLATFORM" = macos ]; then
+        "$PYBIN" -I "$PREFIX/uninstall/inventory.py" --prefix "$PREFIX" --install-macos
+    fi
 fi
 
 # --- 6. start ---------------------------------------------------------
