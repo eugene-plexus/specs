@@ -6,11 +6,13 @@ the shipped app, real OIDC provider, real proxy and existing chat data together.
 from __future__ import annotations
 
 import html
+import contextlib
 import json
 import os
 import re
 import socket
 import ssl
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -41,6 +43,14 @@ def main():
     assert os.environ.get("EUGENE_CONTAINER_ACCEPTANCE") == "1"
     assert Path("/.dockerenv").exists() and os.getuid() == 99
     fixture = json.loads(Path("/data/.entrypoint-acceptance.json").read_text())
+    if "--prepare-proxy" in sys.argv:
+        path = Path("/data/entrypoint.json")
+        config = json.loads(path.read_text())
+        config.update(listen_port=8088, internal_ca=False,
+                      proxy={"addresses": ["127.0.0.2"], "transport": "http"},
+                      trusted_ca="/data/entrypoint/tls/pki/authorities/local/root.crt")
+        path.write_text(json.dumps(config))
+        return
     if "--prepare" in sys.argv:
         # Public test names resolve to this container only (--add-host). The
         # separate adversarial harness checks public users cannot reach admin.
@@ -71,11 +81,15 @@ def main():
         assert identity["entrypoint"]["nodesUrl"].rstrip("/") == "https://nodes.home.arpa:18443"
         app = call(CONSOLE, "GET", "/v1/apps/workbench", token)
         assert app["uiUrl"] == WORKBENCH + "/"
-        assert "Restart" in app["detail"]
+        before_id = app["oidcClientId"]
+        if "--proxy" not in sys.argv:
+            assert "Restart" in app["detail"]
         call(CONSOLE, "POST", "/v1/apps/workbench/restart", token)
         wait(lambda: client.get(WORKBENCH + "/healthz").status_code == 200, "proxied Workbench")
         app = call(CONSOLE, "GET", "/v1/apps/workbench", token)
         assert app["oidcClientId"] != fixture["oidcClientId"]
+        if "--proxy" in sys.argv:
+            assert app["oidcClientId"] == before_id
         assert "Restart" not in (app.get("detail") or "")
         assert "<!doctype html>" in client.get(WORKBENCH + "/").text.lower()
 
@@ -125,5 +139,47 @@ def main():
         print("PASS: stopping and starting Workbench refreshes the proxy and preserves its new sign-in", flush=True)
 
 
+@contextlib.contextmanager
+def front_proxy():
+    """Disposable second Caddy, with real verified browser TLS and private HTTP."""
+    if "--proxy" not in sys.argv:
+        yield
+        return
+    hosts = [f"{name}.home.arpa" for name in ("eugene", "workbench", "inference", "nodes")]
+    document = {
+        "admin": {"disabled": True},
+        "storage": {"module": "file_system", "root": "/data/entrypoint/tls"},
+        "apps": {
+            "pki": {"certificate_authorities": {"local": {"install_trust": False}}},
+            "tls": {"automation": {"policies": [{"subjects": hosts, "issuers": [{"module": "internal"}]}]}},
+            "http": {"servers": {"front": {
+                "listen": [":18443"], "protocols": ["h1", "h2"], "strict_sni_host": True,
+                "automatic_https": {"disable_redirects": True},
+                "tls_connection_policies": [{"match": {"sni": hosts}}],
+                "routes": [{"match": [{"host": hosts}], "handle": [{
+                    "handler": "reverse_proxy", "upstreams": [{"dial": "127.0.0.1:8088"}],
+                    "transport": {"protocol": "http", "local_address": "127.0.0.2"},
+                    "flush_interval": -1,
+                }]}],
+            }}},
+        },
+    }
+    path = Path("/data/.acceptance-front.json")
+    path.write_text(json.dumps(document))
+    with Path("/data/.acceptance-front.log").open("w+") as log:
+        process = subprocess.Popen(["caddy", "run", "--config", str(path)], stdout=log, stderr=log)
+        try:
+            yield
+        except BaseException:
+            log.flush()
+            log.seek(0)
+            print(log.read()[-4000:])
+            raise
+        finally:
+            process.terminate()
+            process.wait(timeout=15)
+
+
 if __name__ == "__main__":
-    main()
+    with front_proxy():
+        main()

@@ -13,6 +13,8 @@ services:
       EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG: /data/entrypoint.json
     ports:
       - "8443:8443"
+      # Automatic Let's Encrypt instead requires "443:8443" and public origins
+      # without :8443. For an existing proxy use compose.behind-proxy.yaml.
     volumes:
       - plexus-data:/data
       # Provision /data/entrypoint.json in the existing persistent volume.

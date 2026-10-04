@@ -48,9 +48,48 @@ that passed is the image pushed to Edge.
 ## Limits
 
 This is an opt-in Linux-container entry point. DNS and certificate trust require
-operator setup. Source-network policies require direct connections with preserved
-client addresses; forwarded headers from another proxy are not trusted. Only
+operator setup. Direct connections must preserve client addresses. The follow-up
+below adds explicit trusted-proxy mode; forwarded metadata is otherwise ignored. Only
 Workbench is published as an optional UI app in this version. Hostnames do not
 provide user or tenant authorization; account/node/folder grants remain required,
 and MSP customer installations remain separate. These are regression checks, not
 an independent security certification or a physical test on Troy's NAS.
+
+## Guided setup and certificate management follow-up
+
+2026-10-04. [Setup recipes](../deployment/container-access.md) cover an existing
+NPM/Caddy/Traefik proxy, direct automatic Let's Encrypt, private local CA, supplied
+organisation/DNS-managed certificates and verified TLS to a proxy on another host.
+The preview endpoint validates an operator's configuration without changing files,
+starting listeners or contacting a certificate authority.
+
+- Agent Windows development suite: **1,786 passed, 17 platform skips**; Ruff and
+  mypy passed. Tests include preview authorization/non-mutation and ambiguous or
+  overly broad trust configuration rejection.
+- `scripts/entrypoint-proxy-checks.py`, run with the real pinned Caddy in isolated
+  Linux processes: private HTTP and verified HTTPS proxy transport; forged,
+  missing and duplicated forwarding headers; untrusted source connections;
+  separate public Workbench/private administration policies; IPv4/IPv6 clients.
+  Supplied certificate rotation succeeds without process restart, and a malformed
+  replacement leaves the previously working certificate in service.
+- `scripts/entrypoint-acme-checks.py`: real TLS-ALPN issuance, short-lived automatic
+  renewal and certificate persistence across Caddy restart, using Let's Encrypt's
+  Pebble v2.10.1 in a temporary directory with a pinned archive digest. Challenges
+  and certificate verification stay enabled. Its isolated DNS responder changes
+  no system DNS/trust and no requests are sent to a public CA.
+- Packaged checks **33–35** repeat certificate/proxy checks inside the image and
+  migrate the existing NAS fixture again, to private HTTP behind a second Caddy
+  HTTPS proxy. The latter repeats real Workbench OIDC sign-in, cookie/CSRF, chat,
+  private listener and app restart checks while preserving the existing identity.
+  Container publication requires these checks to pass.
+- Console: **1,671 tests passed**, lint, types, formatting and production build
+  passed. Tests exercise setup validation, explicit subscriber agreement, edited
+  and stale previews. `ui/scripts/access-browser-acceptance.mjs` drives the exported
+  page in Chrome for all four modes, verifies downloaded JSON bytes and narrow
+  screen scrolling. The source workflow runs it alongside the existing UI checks.
+
+NPM and Traefik recipes follow their documented forwarding interfaces; their
+management UIs are not exercised by these acceptance instruments. Public Let's
+Encrypt reachability and each operator's DNS still require deployment setup.
+Native DNS-provider integrations are not shipped: DNS-01 certificates come from
+an existing proxy or external manager. No live customer installation was changed.

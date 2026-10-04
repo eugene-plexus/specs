@@ -1,0 +1,20 @@
+{
+  "listen_port": 8088,
+  "proxy": { "addresses": ["172.30.0.2"], "transport": "http" },
+  "console": {
+    "origin": "https://eugene.example.org",
+    "networks": ["192.168.16.0/24"]
+  },
+  "workbench": {
+    "origin": "https://workbench.example.org",
+    "networks": ["192.168.16.0/24"]
+  },
+  "inference": {
+    "origin": "https://inference.example.org",
+    "networks": ["192.168.16.0/24"]
+  },
+  "nodes": {
+    "origin": "https://nodes.example.org",
+    "networks": ["192.168.16.0/24"]
+  }
+}

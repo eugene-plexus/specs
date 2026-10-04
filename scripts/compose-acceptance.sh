@@ -724,6 +724,35 @@ print(' '.join(paths))
       else
         bad "32. packaged proxy security checks failed"
       fi
+      if $CT exec -i ep-entry-check /opt/eugene-plexus/venv/bin/python - < "$HERE/entrypoint-proxy-checks.py"; then
+        ok "33. trusted proxy isolation and automatic supplied-certificate rotation"
+      else
+        bad "33. trusted proxy or certificate rotation checks failed"
+      fi
+      if $CT exec -i ep-entry-check /opt/eugene-plexus/venv/bin/python - < "$HERE/entrypoint-acme-checks.py"; then
+        ok "34. real ACME issuance, renewal and persistence using TLS-ALPN only"
+      else
+        bad "34. automatic certificate checks failed"
+      fi
+      if $CT exec -i -e EUGENE_CONTAINER_ACCEPTANCE=1 ep-entry-check \
+           /opt/eugene-plexus/venv/bin/python - --prepare-proxy < "$HERE/container-entrypoint-acceptance.py"; then
+        $CT stop -t 60 ep-entry-check >/dev/null 2>&1
+        $CT rm ep-entry-check >/dev/null 2>&1
+        if $CT run -d --name ep-entry-check --hostname entry-check --init --user 99:100 -e HOME=/ \
+             -e EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG=/data/entrypoint.json \
+             --add-host eugene.home.arpa:127.0.0.1 --add-host workbench.home.arpa:127.0.0.1 \
+             --add-host inference.home.arpa:127.0.0.1 --add-host nodes.home.arpa:127.0.0.1 \
+             -v "$UIDDIR:/data" eugene-plexus/control-plane:0.1 >/dev/null && \
+           $CT exec -i -e EUGENE_CONTAINER_ACCEPTANCE=1 ep-entry-check \
+             /opt/eugene-plexus/venv/bin/python - --proxy < "$HERE/container-entrypoint-acceptance.py"; then
+          ok "35. real Workbench sign-in, sessions, chat and private CA trust behind a second HTTPS proxy"
+        else
+          bad "35. private HTTP behind an HTTPS proxy failed the NAS Workbench flow"
+          $CT logs ep-entry-check 2>&1 | tail -35
+        fi
+      else
+        bad "35. could not prepare existing installation for private proxy mode"
+      fi
       $CT stop -t 60 ep-entry-check >/dev/null 2>&1
       $CT rm ep-entry-check >/dev/null 2>&1
     else

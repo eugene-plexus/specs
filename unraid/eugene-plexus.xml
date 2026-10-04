@@ -244,7 +244,7 @@
     Name="Single HTTPS port configuration (optional)"
     Target="EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG"
     Default=""
-    Description="Leave empty for the existing direct ports. To opt in, create /data/entrypoint.json with your exact hostnames and access policies, set this to /data/entrypoint.json, publish only its HTTPS listener (normally 8443), and update the WebUI address. Follow docs/deployment/container.md, One HTTPS port; update Workbench before migration and restart it in Apps afterwards."
+    Description="Leave empty for the existing direct ports. Settings, Container access setup prepares /data/entrypoint.json for automatic HTTPS, a trusted reverse proxy, local CA or supplied certificates. Set this to that path. Publish only the HTTPS listener, or no Eugene ports behind a same-host proxy on a dedicated network. Update the WebUI address. Follow docs/deployment/container-access.md; update Workbench before migration and restart it in Apps afterwards."
     Type="Variable"
     Display="advanced"
     Required="false"

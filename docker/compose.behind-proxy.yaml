@@ -1,0 +1,29 @@
+# Standalone alternative, not an overlay on compose.yaml (which publishes ports).
+# First create the dedicated network and attach your existing proxy with a fixed
+# IP. See docs/deployment/container-access.md. Keep your existing data volume.
+services:
+  control-plane:
+    image: ghcr.io/eugene-plexus/control-plane:edge
+    hostname: eugene-plexus
+    container_name: eugene-plexus-control-plane
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 60s
+    environment:
+      EUGENE_PLEXUS_CONTAINER_HOST: compose
+      EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG: /data/entrypoint.json
+    # No ports: only the existing HTTPS proxy is published.
+    networks:
+      - eugene-ingress
+    volumes:
+      - plexus-data:/data
+      # Put the downloaded entrypoint.json in the existing /data volume.
+      # Retain your model and read-only certificate-directory mounts here.
+networks:
+  eugene-ingress:
+    external: true
+    name: eugene-ingress
+volumes:
+  plexus-data:
+    external: true
+    name: ${EUGENE_DATA_VOLUME:?Set EUGENE_DATA_VOLUME to the existing data volume name}

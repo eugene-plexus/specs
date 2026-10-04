@@ -153,10 +153,18 @@ hostnames on one HTTPS port**. There is no wildcard route, path-based app mount,
 or automatic public administration. User sign-in and node/folder grants still
 decide access. This does not turn one installation into isolated MSP tenants.
 
+Open **Settings → Container access setup** for a guided configuration and
+downloadable instructions. Choose an existing reverse proxy, automatic Let's
+Encrypt, local certificates, or supplied organisation certificates. The
+[setup guide](container-access.md) compares these options and provides Nginx
+Proxy Manager, Caddy and Traefik recipes, including **no published Eugene ports**
+behind a same-host proxy. The steps below describe the migration common to them.
+
 1. Update the image, then **update Workbench in Apps** before changing ports.
    Old Workbench versions are refused by the HTTPS proxy because they cannot
    enforce its origin and cookie rules. Keep the same `/data` volume.
-2. Copy [`docker/entrypoint.example.json`](../../docker/entrypoint.example.json)
+2. Download the prepared configuration, or copy
+   [`docker/entrypoint.example.json`](../../docker/entrypoint.example.json)
    into that volume as `/data/entrypoint.json`. Change the hostnames and source
    networks for your installation. The example uses `192.168.16.0/24`; it is a
    sample, not a discovered network. Each service requires its own explicit
@@ -175,8 +183,10 @@ decide access. This does not turn one installation into isolated MSP tenants.
    `private_key` as absolute container paths to readable PEM files. The full
    certificate chain must cover every configured hostname, and clients must
    trust its issuer. Use certificates managed by your organisation or a public
-   CA. Renew mounted files and restart the container after replacement. This
-   mode does not open port 80 for certificate challenges.
+   CA. Renewed mounted certificate/key files reload automatically; mount their
+   directory so atomic file replacements are visible. This mode does not open
+   port 80 for certificate challenges. Automatic Let's Encrypt instead uses
+   public TCP 443; an existing proxy can manage certificates on Eugene's behalf.
 
    For a private organisation CA, also set `trusted_ca` to its mounted public CA
    PEM file, so services inside the container trust the same issuer. Internal-CA
@@ -184,13 +194,16 @@ decide access. This does not turn one installation into isolated MSP tenants.
    containing the standard public roots plus that CA; it does not modify system
    trust. Native nodes use their operating system's installed certificate trust.
 5. Set `EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG=/data/entrypoint.json`, publish
-   `8443:8443`, and remove the old mappings for `8079`, `8080`, `8083` and the
+   `8443:8443` for the local-CA example (`443:8443` for automatic Let's Encrypt),
+   and remove the old mappings for `8079`, `8080`, `8083` and the
    Workbench app port. With Compose, use the standalone
    [`compose.single-port.yaml`](../../docker/compose.single-port.yaml), preserving
    your existing volume name/project, model mounts and other settings. With
    Unraid, add the variable and HTTPS TCP mapping in the container editor and
    remove the previous port mappings. Set its WebUI address to the configured
    console origin, for example `https://eugene.home.arpa:8443/`.
+   With a same-host reverse proxy, publish **no Eugene ports** and follow the
+   [dedicated-network recipe](container-access.md#existing-reverse-proxy-on-the-same-docker-host).
 6. Recreate the container, open the console hostname, and choose **Apps →
    Workbench → Restart** once. This operator action replaces the registered
    sign-in callback. Existing chats remain; people sign in again. Subsequent
@@ -221,13 +234,13 @@ responses remain supported. Public Workbench still requires an account and its f
 Authenticate and finish first-run setup on the private network before making
 Workbench public.
 
-Source networks refer to the actual client connection Caddy receives. Incoming
-`Forwarded` and `X-Forwarded-*` headers are not trusted. This first version
-supports direct client connections to the container. If another proxy or NAT
-hides client addresses, do not allow its address as though every caller were a
-private administrator; keep the installation private until the network preserves
-client addresses. Docker's normal Linux bridge with published ports is covered
-by the container acceptance test.
+Source networks refer to the actual client. Direct mode ignores incoming
+forwarding headers. Explicit proxy mode accepts client metadata only from
+configured individual proxy IPs, resolves the chain from right to left, and
+rejects missing/invalid metadata. Configure the outer proxy to preserve the
+original client address; never allow its LAN address as if every caller were a
+private administrator. Docker's normal Linux bridge with published ports and
+private HTTP behind a second HTTPS proxy are covered by container acceptance.
 
 **Already enrolled machines:** changing the control endpoint requires updating
 their saved address too. Stop Eugene on each worker, back up its `node.yaml`,
@@ -951,6 +964,11 @@ origin's write, verifies private backend listeners, then stops and starts
 Workbench. The packaged Caddy is also tested for SNI/Host mismatch, spoofed
 forwarding headers, separate network policies, request limits and a streamed
 response surviving a reload. These checks must pass before an image is published.
+
+The guided setup follow-up also checks trusted proxy metadata over private HTTP
+and verified HTTPS, supplied certificate reloads with invalid-file rollback, real
+TLS-ALPN issuance and renewal against a disposable local ACME server, and the
+complete Workbench sign-in flow behind a second HTTPS proxy.
 
 **Not checked by CI, because its runners have no GPU:** passthrough, the
 agent finding a card from inside the container, and a CUDA build loading
