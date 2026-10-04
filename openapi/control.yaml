@@ -1606,9 +1606,310 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Health'
 
+  /v1/node-helpers:
+    get:
+      operationId: listNodeHelpers
+      tags: [node-helpers]
+      summary: listNodeHelpers
+      description: Operator-only capability and folder administration. No implicit file access is granted.
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /v1/node-helpers/{node}:
+    parameters:
+      - name: node
+        in: path
+        required: true
+        schema: {type: string}
+    put:
+      operationId: configureNodeHelper
+      tags: [node-helpers]
+      summary: configureNodeHelper
+      description: Operator-only capability and folder administration. No implicit file access is granted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /v1/node-helpers/{node}/folders:
+    parameters:
+      - name: node
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: createNodeHelperFolder
+      tags: [node-helpers]
+      summary: createNodeHelperFolder
+      description: Operator-only capability and folder administration. No implicit file access is granted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperFolderCreate"
+      responses:
+        '201':
+          description: Success.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /v1/node-helpers/{node}/folders/{folder_id}:
+    parameters:
+      - name: node
+        in: path
+        required: true
+        schema: {type: string}
+      - name: folder_id
+        in: path
+        required: true
+        schema: {type: string}
+    patch:
+      operationId: setNodeFolderOwnerAccess
+      tags: [node-helpers]
+      summary: Set the owner's explicit Workbench permission for this folder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [ownerAccess]
+              properties:
+                ownerAccess: {type: string, enum: [none, read, write]}
+      responses:
+        '200':
+          description: Updated folder; write access cannot exceed its configured maximum.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HelperFolder'}
+        '401':
+          description: An operator session is required.
+        '404':
+          description: The node or folder is no longer registered.
+        '422':
+          description: Invalid permission or writes are disabled for this folder.
+    delete:
+      operationId: removeNodeHelperFolder
+      tags: [node-helpers]
+      summary: removeNodeHelperFolder
+      description: Operator-only capability and folder administration. No implicit file access is granted.
+      responses:
+        '204':
+          description: Success.
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /v1/node-helpers/poll:
+    post:
+      operationId: pollNodeHelper
+      tags: [node-helpers]
+      summary: pollNodeHelper
+      description: An enrolled agent service token addressed to control, for its own node only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperReport"
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /v1/node-helpers/operations/{ident}/claim:
+    parameters:
+      - name: ident
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: claimNodeHelperOperation
+      tags: [node-helpers]
+      summary: claimNodeHelperOperation
+      description: An enrolled agent service token addressed to control, for its own node only.
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /v1/node-helpers/operations/{ident}/result:
+    parameters:
+      - name: ident
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: finishNodeHelperOperation
+      tags: [node-helpers]
+      summary: finishNodeHelperOperation
+      description: An enrolled agent service token addressed to control, for its own node only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperResult"
+      responses:
+        '204':
+          description: Success.
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /oidc/node-helpers/folders:
+    post:
+      operationId: discoverNodeFolders
+      tags: [node-helpers]
+      summary: discoverNodeFolders
+      description: An enrolled Workbench client secret and its signed-in person refresh credential. Current grants are checked for every call.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperDiscovery"
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /oidc/node-helpers/execute:
+    post:
+      operationId: executeNodeFileOperation
+      tags: [node-helpers]
+      summary: executeNodeFileOperation
+      description: An enrolled Workbench client secret and its signed-in person refresh credential. Current grants are checked for every call.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelperCall"
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+
+  /oidc/node-helpers/cancel:
+    post:
+      operationId: cancelNodeFileOperation
+      tags: [node-helpers]
+      summary: Cancel a queued operation belonging to this Workbench sign-in
+      description: |
+        Prevents a queued operation from being claimed. An already running write
+        may finish; cancellation never implies rollback. Reusing the same operation
+        ID is refused for five minutes while this root process remains running.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HelperCancel'}
+      responses:
+        '204':
+          description: Cancelled, already finished, or not yet submitted.
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '403':
+          description: This sign-in or app access was withdrawn.
+        '429':
+          description: Too many recent operations.
+
 components:
 
   securitySchemes:
+    helperClient:
+      type: http
+      scheme: basic
+      description: Workbench client_secret_basic, plus that client's person refresh token in the body.
     bearerAuth:
       type: http
       scheme: bearer
@@ -1646,6 +1947,24 @@ components:
         none of these.
 
   schemas:
+    HelperGrant:
+      $ref: "components/node-helpers.yaml#/HelperGrant"
+    HelperFolder:
+      $ref: "components/node-helpers.yaml#/HelperFolder"
+    NodeHelper:
+      $ref: "components/node-helpers.yaml#/NodeHelper"
+    HelperFolderCreate:
+      $ref: "components/node-helpers.yaml#/HelperFolderCreate"
+    HelperReport:
+      $ref: "components/node-helpers.yaml#/HelperReport"
+    HelperResult:
+      $ref: "components/node-helpers.yaml#/HelperResult"
+    HelperCall:
+      $ref: "components/node-helpers.yaml#/HelperCall"
+    HelperDiscovery:
+      $ref: "components/node-helpers.yaml#/HelperDiscovery"
+    HelperCancel:
+      $ref: "components/node-helpers.yaml#/HelperCancel"
     ClientKeyLimits:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyLimits'
 
@@ -2295,6 +2614,7 @@ components:
         - revokeSession
         - promote
         - putPerson
+        - putNodeHelper
         - setPersonPassword
         - deletePerson
         - putOidcClient
@@ -2485,6 +2805,9 @@ components:
             `setPersonPassword` and `deletePerson` left them, with their
             Argon2id verifiers: as `passphraseVerifier` is here, and for the
             same reason (a promoted standby signs people in).
+        nodeHelpers:
+          type: array
+          items: {$ref: "#/components/schemas/NodeHelper"}
         oidcClients:
           type: array
           items: {$ref: '#/components/schemas/SnapshotOidcClient'}
@@ -2504,6 +2827,11 @@ components:
       type: object
       required: [id, name, passwordVerifier, disabled, createdAt, passwordChangedAt]
       properties:
+        helperGrants:
+          type: array
+          maxItems: 256
+          description: Explicit access to folders on enrolled nodes; absent means no access.
+          items: {$ref: "#/components/schemas/HelperGrant"}
         id: {type: string}
         name: {type: string}
         displayName: {type: string}
@@ -2545,6 +2873,11 @@ components:
         a person's sign-in opens their apps and nothing in the hub.
       required: [id, name, disabled, createdAt, passwordChangedAt]
       properties:
+        helperGrants:
+          type: array
+          maxItems: 256
+          description: Explicit access to folders on enrolled nodes; absent means no access.
+          items: {$ref: "#/components/schemas/HelperGrant"}
         id: {type: string, description: 'Stable; the `sub` in their ID tokens.'}
         name: {type: string, description: 'What they sign in with. Unique, compared case-folded.'}
         displayName: {type: string}
@@ -2579,6 +2912,11 @@ components:
       additionalProperties: false
       required: [name, password]
       properties:
+        helperGrants:
+          type: array
+          maxItems: 256
+          description: Explicit access to folders on enrolled nodes; absent means no access.
+          items: {$ref: "#/components/schemas/HelperGrant"}
         name: {type: string, minLength: 1, maxLength: 64, pattern: "^[^\\s@][^@]*[^\\s@]$|^[^\\s@]$"}
         displayName: {type: string, maxLength: 120}
         email: {type: string, maxLength: 254, pattern: "^[^@\\s]+@[^@\\s]+$"}
@@ -2591,6 +2929,11 @@ components:
       type: object
       additionalProperties: false
       properties:
+        helperGrants:
+          type: array
+          maxItems: 256
+          description: Explicit access to folders on enrolled nodes; absent means no access.
+          items: {$ref: "#/components/schemas/HelperGrant"}
         displayName: {type: string, maxLength: 120}
         email:
           type: [string, 'null']

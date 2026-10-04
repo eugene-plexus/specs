@@ -1,0 +1,92 @@
+HelperGrant:
+  type: object
+  additionalProperties: false
+  required: [folderId, writable]
+  properties:
+    folderId: {type: string, minLength: 1, maxLength: 64}
+    writable: {type: boolean, default: false}
+
+HelperFolder:
+  type: object
+  additionalProperties: false
+  required: [id, name, path, identity, writable, ownerAccess]
+  properties:
+    id: {type: string, minLength: 1, maxLength: 64}
+    name: {type: string, minLength: 1, maxLength: 80}
+    path: {type: string, minLength: 1, maxLength: 4096}
+    identity: {type: string, minLength: 1, maxLength: 256}
+    writable: {type: boolean, default: false}
+    ownerAccess: {type: string, enum: [none, read, write], default: none}
+
+NodeHelper:
+  type: object
+  additionalProperties: false
+  required: [node, nodeKey, enrolledAt, enabled, folders]
+  properties:
+    node: {type: string, minLength: 1, maxLength: 256}
+    nodeKey: {type: string, minLength: 1, maxLength: 256}
+    enrolledAt: {type: string}
+    enabled: {type: boolean, default: false}
+    folders:
+      type: array
+      maxItems: 64
+      items: {$ref: '#/HelperFolder'}
+
+HelperFolderCreate:
+  type: object
+  additionalProperties: false
+  required: [name, path]
+  properties:
+    name: {type: string, minLength: 1, maxLength: 80}
+    path: {type: string, minLength: 1, maxLength: 4096}
+    writable: {type: boolean, default: false}
+    ownerAccess: {type: string, enum: [none, read, write], default: none}
+
+HelperReport:
+  type: object
+  additionalProperties: false
+  required: [supported, ready]
+  properties:
+    supported: {type: boolean}
+    ready: {type: boolean}
+    reason: {type: [string, 'null'], maxLength: 1024}
+    account: {type: [string, 'null'], maxLength: 256}
+
+HelperOperationStatus:
+  type: string
+  enum: [done, failed, uncertain]
+
+HelperResult:
+  type: object
+  additionalProperties: false
+  required: [status]
+  properties:
+    status: {$ref: '#/HelperOperationStatus'}
+    result: {type: object}
+    message: {type: string, maxLength: 1024}
+
+HelperCall:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, folderId, tool, arguments]
+  properties:
+    operationId: {type: string, minLength: 16, maxLength: 64, pattern: '^[a-zA-Z0-9_-]+$'}
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    folderId: {type: string, minLength: 1, maxLength: 64}
+    tool: {type: string, enum: [list_directory, read_text, write_text]}
+    arguments: {type: object}
+
+HelperDiscovery:
+  type: object
+  additionalProperties: false
+  required: [refreshToken]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+
+HelperCancel:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, operationId]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    operationId: {type: string, minLength: 16, maxLength: 64, pattern: '^[a-zA-Z0-9_-]+$'}
