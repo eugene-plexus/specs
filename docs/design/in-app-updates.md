@@ -208,6 +208,29 @@ version is out, and when it last looked.
 finish, in its own words; and machines on different versions when none is
 simply behind.
 
+**Shared status (2026-10-04).** Machines, the header's Needs Attention list,
+and Home subscribe to one browser snapshot and one poll. A Check now, update
+completion, configuration write, or return to the tab refreshes that shared
+snapshot. A write during an outstanding read queues a subsequent read; an
+older response cannot restore a warning after the fix has been observed.
+The poll pauses while the tab is hidden and speeds up while Machines watches
+an update. It is disposed when the last consumer leaves.
+
+Version differences compare full stamped commits for components present on
+multiple machines, including UI-only releases. On a mismatch, enabled checks
+older than a minute are refreshed through each machine's existing update-check
+endpoint. Automatic retries are spaced by at least five minutes per machine;
+Check now remains available. Disabled checks, development checkouts and
+running updates are respected. This never applies an update.
+
+A mismatch is not proof that an update is available: machines can follow
+different channels, and the Edge image can publish before the remaining
+native release checks finish. Machines displays the same mismatch explanation
+as Needs Attention, with “No newer update found” instead of “Up to date” for
+those cards. A failed check is not an all-clear. Only the agent's verified
+update target enables Update; the existing fresh check on confirmation and
+the agent's refusal to downgrade still apply.
+
 ---
 
 ## 2. The calls (all taken as recommended, Troy 2026-09-27)
