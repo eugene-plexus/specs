@@ -58,7 +58,11 @@ async def check(root: Path) -> None:
     for name in ("folder_io.py", "folder_linux.py", "folder_windows.py"):
         original = REPOS / "workbench/src/eugene_plexus_workbench" / name
         copy = REPOS / "agent/src/eugene_plexus_agent/_node_file_helper" / name
-        assert original.read_bytes() == copy.read_bytes(), f"C6 code drift: {name}"
+        # The repositories have different Git EOL settings on Windows.
+        # Compare source text with only newline normalization, not checkout bytes.
+        assert original.read_text(encoding="utf-8") == copy.read_text(encoding="utf-8"), (
+            f"C6 code drift: {name}"
+        )
     uv = shutil.which("uv") or str(
         Path(sys.executable).parent / ("uv.exe" if os.name == "nt" else "uv")
     )

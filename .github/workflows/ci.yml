@@ -409,7 +409,9 @@ jobs:
           set -euo pipefail
           shopt -s globstar nullglob
           status=0
-          for f in openapi/**/*.yaml; do
+          # Schema fragments are validated through their consumers' $refs.
+          # common.yaml is itself a full OpenAPI document, unlike fragments.
+          for f in openapi/*.yaml openapi/components/common.yaml; do
             echo "::group::$f"
             if ! python -m openapi_spec_validator "$f"; then
               status=1

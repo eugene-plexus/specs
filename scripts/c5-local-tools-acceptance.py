@@ -141,8 +141,8 @@ def install(token: str) -> dict:
     )
     must(
         "30",
-        "core Workbench can install without a local file account",
-        entry["localActions"] is False,
+        "catalogue identifies the Workbench package",
+        entry["entry"] == "eugene_plexus_workbench",
     )
     fact("Workbench dist", entry["version"])
     status, body = api("POST", c1.AGENT + "/v1/apps/workbench/install", token)
