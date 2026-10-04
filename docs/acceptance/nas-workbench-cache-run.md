@@ -16,7 +16,8 @@ The real app-install regression first failed at cache initialization with the
 previous code, then passed with the fix on Windows and Linux. It supplies an
 unusable inherited cache and uses `HOME=/` on Linux, installs a real fixture,
 checks its running process and credential boundary, and uninstalls it. The
-Windows app/account/helper suite passed 64 tests. Ruff and type checks passed.
+Windows app/account/helper suite passed 66 tests after the listener regression
+below was added. Ruff and type checks passed.
 
 The container publication gate now goes beyond merely starting Eugene as the
 NAS user. Check 29 runs `container-workbench-acceptance.py` inside the disposable
@@ -25,6 +26,15 @@ node, installs the pinned Workbench through the real Apps API, verifies that the
 cache is on `/data`, completes Eugene sign-in, restarts Workbench and checks the
 saved session. The containing harness checks Workbench's page through a published
 TCP port from outside the container. Publication requires this check to pass.
+
+The first container run confirmed installation, sign-in and restart, but caught
+a second defect: app binding only widened when the node advertised a LAN
+address. It ignored the container's explicit `0.0.0.0` agent listener and left
+Workbench on loopback. Agent `0b110afc993c8bc306c55ff21cb578e091ca204f`, the final
+release pin, also honors that configured listener when choosing the app bind
+address. Regression tests cover loopback and wildcard listeners and prove that
+the internal node file helper stays on loopback in both cases. The failed
+container candidate was not published.
 
 The release changes only the agent component pin. Workbench, console, control
 and the other component packages retain the preceding node-helper release's
