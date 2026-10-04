@@ -101,6 +101,28 @@ lose engine acquisition that way, which wrote under `$HOME/.eugene-plexus/engine
 since 2026-09-23 the image puts engine builds in `/data/engines` and the CUDA
 kernel cache in `/data/cuda-cache`, so it loses nothing (CI checks 20 and 27).
 
+### Hosting Workbench on the NAS
+
+Install Workbench under **Apps** on the container node. App environments,
+interpreters and installation caches live on the `/data` volume; uv's cache is
+`/data/apps/.cache/uv`. No writable home directory or root container user is
+required. If an older image fails with `Failed to initialize cache at
+/.cache/uv`, update the image and retry the installation. Keep the existing
+data volume; the failed environment is rebuilt automatically.
+
+Publish Workbench's assigned TCP port to reach it from other machines. **Apps**
+shows the port; the first app on a fresh node normally receives `8190`. In the
+Unraid container editor, add a TCP port mapping with that same host and container
+port. With Compose, uncomment `8190:8190` under `ports` if that is the assigned
+port, then recreate the container. Keep the NAS node's advertised address set
+to the address your browsers can reach, as described below. Workbench has its
+own sign-in and origin; its port is additional to the three Eugene ports.
+
+The core Workbench runs in the container. To use files on another machine,
+enable its enrolled node's file helper and grant access through **People →
+Files on your machines**. The container does not offer its own local file or
+subprocess tools because it has no separate app account.
+
 ### Ports
 
 | Port   | What                                                | Needed by                     |

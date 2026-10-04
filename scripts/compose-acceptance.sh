@@ -64,6 +64,8 @@
 #       beyond a slim Debian (libgomp) actually loads in the image
 #   27. as --user 99:100 the agent's own engine root is /data/engines
 #       and writable there, and so is the CUDA cache
+#   29. as the NAS uid with HOME=/, Workbench installs, signs in and
+#       restarts, and its page answers through a published app port
 #
 # Not here, and cannot be: a GPU. CI runners have none, so passthrough,
 # detection inside a container and a CUDA build loading are checked on a
@@ -643,8 +645,8 @@ if sudo -n chown 99:100 "$UIDDIR" 2>/dev/null; then
   chmod 755 "$UIDDIR"
 
   $CT rm -f ep-uid-check >/dev/null 2>&1 || true
-  if $CT run -d --name ep-uid-check --init --user 99:100 \
-       -v "$UIDDIR:/data" -p 18079:8079 \
+  if $CT run -d --name ep-uid-check --init --user 99:100 -e HOME=/ \
+       -v "$UIDDIR:/data" -p 18079:8079 -p 127.0.0.1::8190 \
        eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
     uidok=""
     for _ in $(seq 1 90); do
@@ -673,6 +675,20 @@ print(' '.join(paths))
     [ "$where" = "/data/engines /data/cuda-cache" ] \
       && ok "27. as 99:100 the agent keeps engines in /data/engines and the CUDA cache in /data/cuda-cache, both writable" \
       || bad "27. as 99:100: $where"
+
+    # Booting as an unknown uid does not prove optional app installation.
+    # The reported NAS failure occurred only when uv tried to create its cache.
+    if $CT exec -i -e EUGENE_CONTAINER_ACCEPTANCE=1 ep-uid-check \
+         /opt/eugene-plexus/venv/bin/python - < "$HERE/container-workbench-acceptance.py"; then
+      app_address=$($CT port ep-uid-check 8190/tcp | head -1 | tr -d '\r')
+      if curl -fsS -m 5 "http://$app_address/" | grep -qi '<!doctype html>'; then
+        ok "29. Workbench installs, signs in and restarts as the NAS uid, with its page reachable outside the container"
+      else
+        bad "29. Workbench's published port did not serve its page"
+      fi
+    else
+      bad "29. Workbench could not install and sign in as the NAS uid"
+    fi
   else
     bad "20. could not start the image with --user 99:100"
   fi

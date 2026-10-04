@@ -84,6 +84,10 @@ services:
       # The control root: where worker nodes enroll, and where a warm
       # standby follows the log. Nothing else needs it.
       - "8083:8083"
+      # Optional Workbench: after installing it in Apps, publish the port
+      # assigned there (8190 for the first app on a fresh node). Keep the
+      # same host/container port so the sign-in callback and Open link agree.
+      # - "8190:8190"
       # 8082 (library) is intentionally absent — see the Dockerfile.
 
     volumes:

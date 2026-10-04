@@ -33,6 +33,7 @@ on:
       - "docker/**"
       - "scripts/install.sh"
       - "scripts/compose-acceptance.sh"
+      - "scripts/container-workbench-acceptance.py"
       - "scripts/recovery.py"
       - "scripts/a7-*"
       - "unraid/eugene-plexus.xml"
@@ -95,7 +96,7 @@ jobs:
           git -C "$RUNNER_TEMP/agent" checkout --quiet "$pin"
           echo "EP_AGENT_SRC=$RUNNER_TEMP/agent/src/eugene_plexus_agent" >> "$GITHUB_ENV"
 
-      - name: Build and verify the image (28 checks)
+      - name: Build and verify the image and NAS Workbench installation
         env:
           # The name the image reports, so an update can say which tag to pull.
           EP_IMAGE: ${{ env.IMAGE }}:${{ inputs.release_tag || 'edge' }}
