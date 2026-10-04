@@ -1,6 +1,6 @@
 # Workbench files on enrolled Eugene nodes
 
-Status: implemented locally, 2026-10-04; not released to Edge. Troy approved the architecture:
+Status: included in the 2026-10-04 Edge release. Troy approved the architecture:
 one Eugene node installation, independently enabled inference and file support,
 one enrollment, and Workbench hosted either locally or centrally.
 
@@ -143,11 +143,14 @@ Agent helper/app lifecycle tests passed 97; the helper's
 checks, and replay/snapshot recovery checks passed. Platform-specific and
 opt-in browser checks skipped by those suites are not counted as passes.
 
-This acceptance uses the invoking OS account to verify the protocol and file IO.
-It does not claim a new service-install isolation run: the service-account
-mechanism is the existing C1 launcher. Repeat the disposable Windows/Linux
-service-install acceptance against the release candidate before publishing.
+The protocol acceptance uses the invoking OS account. The separate
+`scripts/node-file-helpers-service-acceptance.py` installs real machine services
+on disposable Windows/Linux runners, runs the existing C1 account probes and
+C5/C6 local tool flows, then verifies node-folder permissions, approved reads and
+edits, revoked pending writes, and helper shutdown. Release evidence is recorded
+in [the acceptance record](../acceptance/node-file-helpers-run.md).
 
 The manual **Node file helpers** workflow accepts the three candidate commits
 and repeats the protocol, permissions, recovery, worker and Workbench checks on
-Windows and Linux without modifying an existing installation.
+Windows and Linux. Its service jobs install only on disposable runners; the
+protocol jobs use temporary environments.
