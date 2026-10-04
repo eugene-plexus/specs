@@ -925,7 +925,7 @@ the agent's and all three children's ASGI lifespan shutdown. Those are the
 claims the image depends on and they were measured on Linux.
 
 **Checked by CI on every image build, and the image is published only when
-they pass:** `.github/workflows/container.yml` runs all twenty-seven checks in
+they pass:** `.github/workflows/container.yml` runs the checks in
 `scripts/compose-acceptance.sh` against the artifact it just built, then
 re-tags that same image for GHCR rather than rebuilding — so what ships is
 what was tested. That covers the twelve runtime checks that had never run
@@ -943,6 +943,14 @@ the image, the agent's engine root and the CUDA cache are on `/data` and
 writable as 99:100, a GPU is opt-in in all three deployment files, and the
 A7 recovery check serves a real CPU completion from the published image
 itself rather than from a derivative of it.
+
+Single-port mode is checked against an existing NAS-style installation (uid 99,
+unwritable home) on the same persistent volume. The check migrates its OIDC
+callback, signs in over verified HTTPS, reads an existing chat, rejects a sibling
+origin's write, verifies private backend listeners, then stops and starts
+Workbench. The packaged Caddy is also tested for SNI/Host mismatch, spoofed
+forwarding headers, separate network policies, request limits and a streamed
+response surviving a reload. These checks must pass before an image is published.
 
 **Not checked by CI, because its runners have no GPU:** passthrough, the
 agent finding a card from inside the container, and a CUDA build loading
