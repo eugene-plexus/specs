@@ -2201,6 +2201,35 @@ paths:
 
   # -------- this node --------
 
+  /v1/entrypoint/preview:
+    post:
+      tags: [node]
+      operationId: previewEntryPoint
+      summary: Validate a proposed container access setup without changing listeners.
+      description: |
+        Operator session required. Returns normalized startup configuration and
+        deployment instructions. Does not write files, contact a CA, resolve DNS,
+        restart services or claim that external connectivity has been tested.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntryPointPreviewRequest'
+      responses:
+        '200':
+          description: Valid configuration and setup instructions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntryPointPreview'
+        '400':
+          description: Invalid startup configuration.
+        '401':
+          description: Authentication required.
+        '403':
+          description: An operator session is required.
+
   /v1/node:
     get:
       tags: [node]
@@ -6474,6 +6503,31 @@ components:
         - override
 
     # -------- Apps: optional spokes --------
+
+    EntryPointPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [configuration]
+      properties:
+        configuration:
+          type: object
+          additionalProperties: true
+          description: Startup JSON, strictly validated by the entry point implementation.
+
+    EntryPointPreview:
+      type: object
+      additionalProperties: false
+      required: [configuration, publicUrls, instructions]
+      properties:
+        configuration:
+          type: object
+          additionalProperties: true
+        publicUrls:
+          $ref: '#/components/schemas/PublicEntryPoint'
+        instructions:
+          type: array
+          items:
+            type: string
 
     PublicEntryPoint:
       type: object

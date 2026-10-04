@@ -59,10 +59,29 @@ The local CA is provisioned before child processes start. Internal Python client
 trust the OS certificate store and explicit certificate bundles. The control root
 reaches its own supervising agent through an exact configured loopback transport
 mapping, preserving the original node credential and audience.
-The first version accepts direct client connections; another proxy in front is
-not a trusted source of client IP or scheme. Docker networking must preserve the
-client's address for CIDR policy (bridge networking on Linux does; a NAT or relay
-that hides it must not be treated as a trusted private client).
+Direct mode uses the socket client's address for CIDR policy. An explicit proxy
+mode accepts only individually configured proxy IPs, requires HTTPS forwarding
+metadata, and uses Caddy's strict right-to-left client-IP parsing. Missing,
+invalid or proxy-only client addresses are refused rather than inheriting the
+proxy's network privileges. Proxy mode can use private HTTP on an isolated
+same-host Docker network, or supplied TLS certificates across machines. It never
+changes public HTTPS origins, cookies, callbacks or per-person permissions.
+
+Automatic public certificates use Caddy's ACME issuer, explicitly accepted CA
+terms, and TLS-ALPN validation on public port 443. Certificate acquisition and
+renewal stay with Caddy; the app does not implement ACME. This mode cannot use
+local-only names or a different public port. For LAN/VPN/CGNAT installations,
+DNS-validated certificates can be managed by the existing reverse proxy or a
+certificate manager that mounts its renewed PEM files into Eugene. Supplied
+certificate changes reload without restarting apps; failed reloads retain the
+last working certificate. Changing trusted CA roots still requires restart.
+
+The console's access setup page previews and validates configuration without
+changing listeners. It generates hostnames from a base domain, explicit network
+policies and instructions for standalone, existing-proxy and private-CA setups.
+Preview does not request certificates, modify DNS or claim network reachability.
+The operator applies the prepared configuration with the container's existing
+volume and routing settings. Existing installations never switch implicitly.
 
 Release checks cover exact hosts/SNI, forwarding spoofing, private console with
 reachable Workbench sign-in, callback migration, cookie and sibling-origin CSRF
