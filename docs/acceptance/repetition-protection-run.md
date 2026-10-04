@@ -97,3 +97,36 @@ opt-in Chrome coverage. No installed-service browser acceptance was performed.
 The pilot did not deploy the changes. It covers one seed and two prompts;
 the original failure, a production false-positive rate, concurrency cost under
 load, and any state-of-the-art advantage remain unestablished.
+
+## Published packages and local update path
+
+Published on 2026-10-03 after the user requested commit and push:
+
+| Repository | Revision | Purpose |
+| --- | --- | --- |
+| specs | `d2d491fda3fd63a9ef7f4f2113bce1c25a1f036d` | Contract and evaluation record |
+| gateway | `8cc23afe5ed8e6469d695834e9ed0226a24cad96` | Repetition detector and stream handling |
+| workbench main | `a4b2d7b1b046a6bc123ecc519d82a05d4b3ecab4` | Chat setting and preserved stopped answers |
+| workbench dist | `c5fdf0caeb7c5b058075173f484aeb83f7f7b659` | Installable archive with built page |
+| agent | `8a10235cbb09971105cb7d8c9294e4aced0bed48` | Catalogue pin to that Workbench archive |
+| ui main | `d19f3e993a4a63ecbf1d0cb88e1147c2b7f365dc` | Regenerated API types including the request header |
+
+Gateway, Workbench and console types were regenerated from the published specs
+revision after confirming regeneration at their previous pins was clean. The
+gateway's generated body models were unchanged. Workbench also picked up the
+already-published `max` reasoning-effort enum; console types caught up with
+other contracts published since its previous pin. Console type-checking passed.
+
+The Workbench production build passed. A wheel built from the exact dist commit's
+Git archive contains the page, repetition setting and stop handling, and reports
+the dist commit as its build identity. The agent's 23 app/catalogue tests passed.
+The release manifest and both generated installers pin the published gateway
+and agent. Dependencies are unchanged. The console's deployed UI payload does
+not need a rebuild for generated TypeScript declarations alone.
+
+For an install following the **edge** update channel, the new `main` installer
+becomes available after its CI workflows pass. Update Eugene, then update
+Workbench from **Apps**. The feature starts in observation mode. To exercise
+stopping, select **Chat settings → Repeated response protection → Stop repeated
+responses**. Publishing these commits did not update or restart the developer's
+running installation, and no new tagged release was created.
