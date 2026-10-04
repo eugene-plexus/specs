@@ -103,6 +103,11 @@ followed what the machine was installed from:
 - **Failures** go through the engine release list's `describe_fetch_failure`,
   so a failed check names its cause (rate limit, certificate, timeout).
 - **Kept result:** the last good answer stands through a failed check.
+- **At Update confirmation (2026-10-04):** the console checks the selected
+  machine's channel again and submits that newly returned target. The agent
+  checks once more before starting. A failed final check installs nothing;
+  a target that changes between those calls is refused and shown for the
+  next attempt. The kept result is for display, never a fallback installer.
 - **Settings:** `updateChecks` (on by default; nothing is installed without a
   click) and `updateChannel`, on Config → Agent → Updates.
 
@@ -110,8 +115,9 @@ followed what the machine was installed from:
 
 `POST /v1/node/update {target}` is operator-only, reached from any console
 through `node:<name>`. **`target` must be the ref this agent itself found**,
-so a click is never an update to something the person did not see, and a
-caller cannot name anything else.
+and the final channel check must still name that ref. The confirmation says
+it uses the newest version on the machine's channel; a caller cannot supply
+an arbitrary version or installer URL.
 
 | Install | Started as | Runs |
 | --- | --- | --- |
