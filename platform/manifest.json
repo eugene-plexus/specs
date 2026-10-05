@@ -45,7 +45,8 @@
       "inference-driver": "src/eugene_plexus_inference_driver/_build.py",
       "library": "src/eugene_plexus_library/_build.py",
       "tool-driver": "src/eugene_plexus_tool_driver/_build.py",
-      "workbench": "src/eugene_plexus_workbench/_build.py"
+      "workbench": "src/eugene_plexus_workbench/_build.py",
+      "site-host": "src/eugene_plexus_site_host/_build.py"
     }
   },
   "contracts": {

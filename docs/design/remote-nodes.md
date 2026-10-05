@@ -1,8 +1,8 @@
 # Job Sites: Workbench working on your machines, wherever they are
 
 **Status:** a design, 2026-10-05. **Every call (J1-J18) was decided by Troy
-the same day** (§6), three more as slice 1 started (§6.1), and six as slice 2
-started (§6.2). **Slice 1 is built (2026-10-05)**: what it found is §5.1, and
+the same day** (§6), three more as slice 1 started (§6.1), six as slice 2
+started (§6.2) and three during it (§6.3). Slice 2 is in progress (§5.2). **Slice 1 is built (2026-10-05)**: what it found is §5.1, and
 the run is [`docs/acceptance/job-sites-run.md`](../acceptance/job-sites-run.md).
 
 The file keeps the name `remote-nodes.md` because it began as that
@@ -564,7 +564,25 @@ the case.
     route refuses the announcement anyway.
   - macOS, Docker and per-user installs cannot be job sites (§2.1).
 
+### 5.2 Slice 2 in progress (2026-10-05)
+
+Paused to hand off to a fresh session. Built so far:
+- **Contracts `ba9a280`** (`openapi/site-host.yaml`, `components/sites.yaml`,
+  control's envelope, `/oidc/sites/*`, `Enrollment.owner`). They predate J6g
+  and need one revision for it (§6.3).
+- **The `site-host` repo, `f58a0a6`**: the host, with policy, audit log,
+  local servers, the J9 gate, node mode and 25 tests. Built one server per
+  folder; J6g changes that.
+- **The agent, on branch `slice2-site-host`**: the pinned site owner in
+  `node.yaml` (`siteOwner`, from `Enrollment.owner`, else the first poll's),
+  and the new relay `site_host.py`, not yet wired in.
+
+**Not started:** control's broker and routes, the rest of the agent (wiring,
+the `site` CLI, tests, deleting `_node_file_helper`), Workbench, the
+acceptance and sabotage runs, and the pins.
+
 **Later, each as its own design:**
+- slice 2b, the workspace server under the person's own account (J6h, J6i);
 - the standalone site install (J5);
 - person-held keys (J14);
 - managed-fleet enrolment (J16);
@@ -633,6 +651,14 @@ overturn:
   cannot write. The host refuses to enable a server marked `system` without
   that record. No such server ships in slice 2; a test server proves the
   gate.
+
+### 6.3 Calls taken during slice 2 (Troy, 2026-10-05)
+
+| # | Call | Decision |
+|---|---|---|
+| J6g | The shape of Eugene's file server | **One `files` server per machine, its tools taking a `folder` argument.** This replaces the first build's one server per folder (`files.<id>`, in contract `ba9a280` and site-host `f58a0a6`). Folder grants stay per person and per folder: read, or write as a standing pre-approval. Slice 1's `/oidc/job-sites/{node}/folders/{id}/people` comes back, relayed to the site. Per-tool access remains for local servers. The host lists, in a person's `folder` argument, only the folders they may use, and for `write_text` only those they may change. On a LAN node the root sends all of the person's grants on that node (`grants`, a list); the host checks the named folder against them. Workbench shows one server per machine and narrows the folder list to the folders a chat selected |
+| J6h | Workbench and Eugene's MCP should *"act like Claude Code, Codex, or OpenClaw... full local access within permissions"* | **Slice 2b, on this host.** Slice 2 finishes the MCP channel, site-final policy and today's file tools (J6g), proven end to end. Slice 2b adds a workspace server like Claude Code's: read, write, edit and search within granted workspaces, under allow/ask/deny rules per tool and path; commands come with it, under J9's gate |
+| J6i | Which OS account local-access tools run as | **The person's own account**, like Claude Code: everything the person can touch. Slice 2b's design has to answer how: a process in the person's session or holding their credentials. It also has to address that a compromised root then reaches everything the person owns, which raises J14's priority. Slice 2's host keeps its own unprivileged account for today's file tools |
 
 ---
 
