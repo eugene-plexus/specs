@@ -1259,8 +1259,9 @@ paths:
         which is nobody's business on the internet. The entry point marks
         a request that came that way (`X-Eugene-Plexus-Entry:
         public-nodes`, set by it and stripped from everything else), and
-        this root then refuses one without a token. Every agent sends its
-        token on the pull.
+        this root then refuses one without a token. A Job Site sends its
+        token on every pull; an ordinary node on the root's network need
+        not.
       responses:
         '200':
           description: The current bundle.
@@ -1852,7 +1853,10 @@ paths:
               $ref: "#/components/schemas/HelperReport"
       responses:
         '200':
-          description: Success.
+          description: |
+            `configuration`, the queued `operation` id or null, and, for a Job
+            Site, `siteOwner`: the person whose commands alone may register its
+            folders, which the site's own relay checks again (J11).
           content:
             application/json:
               schema: {type: object, additionalProperties: true}
