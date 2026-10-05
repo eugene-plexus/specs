@@ -31,7 +31,7 @@ Sources for every upstream claim are in §6. They were fetched on 2026-10-05.
 > missing is a public route to the root for node traffic only, and a
 > files-only kind of node. §7 also covers:
 >
-> - the name (proposed: **Job Box**);
+> - the name (**Job Site**, Troy's; §7.1);
 > - whether to split it into its own install;
 > - whether it is MCP (it is not);
 > - Troy's question of whether Workbench belongs on the server at all;
@@ -538,7 +538,7 @@ tunnel, Tailscale DERP, and the yamux and chisel designs.
 
 ---
 
-## 7. Files only: the Job Box on a machine outside the LAN
+## 7. Files only: Job Sites, machines outside the LAN
 
 **The narrowed question (Troy, 2026-10-05).** Workbench runs on the server
 (the NAS). Troy wants it to use the file helper on a remote box, one that is
@@ -553,18 +553,25 @@ are plain:
 - the code says *node file helper*;
 - the design is [`node-file-helpers.md`](node-file-helpers.md).
 
-**Proposed: Job Box.** On a building site, the job box is the lockable tool
-chest kept at the site, away from the shop. It holds only what you put in it,
-and the crew reaches into it from where they work.
+**Job Site** (Troy, 2026-10-05; recommended over the first proposal, *Job
+Box*). Workbench is the shop. Each machine a person works on from it is a job
+site: the crew goes out to it from the shop. That fits what Troy wants it to
+be (§7.9): one person, several machines of their own, worked on from one chat.
 
-| Proposed name | Meaning |
-|---|---|
-| Job Box (Workbench and design docs) | *files on your other machines* |
-| Job Box helper (the component) | — |
-| Files on your machines (the console) | unchanged: Troy's rule keeps workshop names to Workbench |
+| Name | Where | Meaning |
+|---|---|---|
+| **Job sites** | Workbench and the design docs | *your machines*; *Add a job site* is joining one |
+| **Files on your machines** | The console | Unchanged, under Troy's rule that keeps workshop names to Workbench |
+| *node file helper* | The code | Unchanged until the protocol change in J6 renames it |
 
-The alternatives were *Field kit* and *Site box*. A tool crib was rejected: a
-crib is the central store, which is the wrong direction.
+*Job Box* named the component on each machine, the lockable chest kept at the
+site. One name is better than two: people think in machines, not components.
+The workshop list in `workbench.md` §6 still fits around it: **work orders**
+can later be sent out to job sites. Two minor costs:
+
+- *site* also reads as *web site*;
+- to an MSP, *site* means a customer's location. That is apt rather than
+  confusing.
 
 ### 7.2 What it is: not MCP
 
@@ -593,7 +600,7 @@ A bounded custom protocol of four tools, each a `{tool, arguments}` command:
 but as a client of network MCP servers (C5a, `workbench-mcp.md`). An MCP
 client *dials* its server, which brings back exactly the problem in §0. The
 pull through control is what keeps the box undialled. If any MCP client
-should ever use the Job Box, the MCP endpoint belongs at the root, in front of
+should ever use the Job Site, the MCP endpoint belongs at the root, in front of
 the queue (call J6).
 
 ### 7.3 Nothing on its path dials the box
@@ -613,7 +620,7 @@ the queue (call J6).
 - the gateway's node map (`G/routing.py:1074-1080`);
 - control's install views.
 
-So of §0's twelve root→node connections, **the Job Box needs none**, and most
+So of §0's twelve root→node connections, **the Job Site needs none**, and most
 of what an outbound-only node needs exists already.
 
 **What is missing:**
@@ -726,7 +733,7 @@ of what an outbound-only node needs exists already.
   folders I shared"* is an easier ask than *"Eugene's supervisor runs on my
   PC"*.
 
-The role's surface is exactly what a standalone Job Box would implement, so
+The role's surface is exactly what a standalone Job Site helper would implement, so
 the split can follow without rework (call J5).
 
 ### 7.7 Why the field runs the interface where the files are
@@ -738,7 +745,7 @@ good reason for that."* There are five, and the first is this whole document:
 1. **Every connection leaves the user's machine.** A local agent dials the
    model, which works through any NAT, proxy or CGNAT. A central interface
    reaching into a personal machine needs a connection in the other direction
-   (§0). The Job Box survives only because it was built as a pull.
+   (§0). The Job Site survives only because it was built as a pull.
 2. **Authority stays with the person.** A local agent runs as you, while you
    are there. A central service that holds standing grants into many
    machines is one target that opens all of them.
@@ -775,10 +782,10 @@ three placements, and only the last pays this document's cost:
 |---|---|---|
 | On the server | Central Workbench + C6 host folders | None. Works today, no network hop |
 | On the machine you are sitting at | An agent on that machine, pointed at Eugene's gateway: Claude Code (`/v1/messages`), Codex (`/v1/responses`), OpenCode, or Workbench installed there | Inference must be reachable from that machine: on the LAN today, from outside through the entry point's opt-in inference name and a client key |
-| On a machine you are away from | Central Workbench + the Job Box | §7.3-7.5 |
+| On a machine you are away from | Central Workbench + the Job Site | §7.3-7.5 |
 
 **Troy's brief for Workbench also bears on this:** *"it can not have access to
-anything in Eugene that any other harness wouldn't have."* Today the Job Box
+anything in Eugene that any other harness wouldn't have."* Today the Job Site
 is reachable only through an Eugene-specific API under `/oidc`, which only
 Workbench calls. A remote MCP server at the root would be the
 brief-respecting face for it, usable by any MCP client:
@@ -808,7 +815,7 @@ in a secure environment with their own identity and audit trail"*. The post
 says nothing about remote access. Source:
 https://blogs.windows.com/windows-insider/2025/12/05/announcing-windows-11-insider-preview-build-26220-7344-dev-beta-channels/
 
-**What changes if the Job Box is to carry that future.**
+**What changes if the Job Site is to carry that future.**
 
 1. **The protocol should be MCP, before the fifth tool.** Today the four
    tools are named in four places:
@@ -834,7 +841,7 @@ https://blogs.windows.com/windows-insider/2025/12/05/announcing-windows-11-insid
      read-only or write. Default deny.
 
    The box's layer is the owner's, on the owner's machine, and Windows'
-   connectors already carry their own consent and audit. The Job Box should
+   connectors already carry their own consent and audit. The Job Site should
    meet Windows as a local agent with its own identity, so Windows' consent
    prompts and audit name it rather than "Eugene".
 3. **The channel grows from a queue to a held connection, at the message
@@ -869,20 +876,85 @@ https://blogs.windows.com/windows-insider/2025/12/05/announcing-windows-11-insid
      or the owner's standing pre-approval there;
    - an audit log on each box that its owner can read;
    - the box-side piece never runs inside a privileged supervisor, which
-     moves call J5 toward a standalone, unprivileged Job Box.
+     moves call J5 toward a standalone, unprivileged Job Site helper.
 
-### 7.9 Calls for Troy (files scope)
+### 7.9 What Troy wants it to be (later the same day)
+
+Troy's reply:
+
+> - I want one user to be able to access multiple machines under their
+>   control
+> - Many people who are interested in local LLM hate Cloud services
+> - Multiple machine control from a central chat window enables file copy
+>   and other functions that usually require cloud based services, but a
+>   local user might want to handle independently.
+
+That answers J2, which asked whether he would be at the box or away from it:
+**away from it, and many machines at once.** Claude Code and Codex work on the
+one machine they run on, so this is the case only a central interface can
+serve. It is also the case that justifies §7.7's unusual split. It adds three
+requirements, set out in 7.10.
+
+### 7.10 Three requirements and what they change
+
+1. **One person, several machines of their own.**
+   - **Today the operator joins every machine** and must grant even their own
+     folders explicitly. A site should belong to the person who added it.
+     Its owner sees its folders by default; anyone else only by explicit
+     grant.
+   - **Who may add a site** is call J9: operator only, as today, or any
+     signed-in person for their own machines.
+   - A files-only site keeps self-service small. It has no inference, no
+     address, and nothing it can be told to run.
+2. **No cloud in the path.** This audience distrusts cloud services, so the
+   feature must work with no third party at all.
+   - That rules out Tailscale for this feature: it needs Tailscale's cloud
+     coordination. Headscale remains for anyone who wants a mesh.
+   - It rules out Cloudflare's proxy, which decides J7.
+   - The route in 7.4 is already self-hosted: the owner's router forwards one
+     port to the root's entry point.
+   - Even the public CA and the DNS name can be optional. The join command
+     can carry the root's certificate fingerprint, so a site pins the root at
+     join and reaches it by bare address, using the entry point's own CA.
+   - Only a root on CGNAT needs anything outside the home: a relay the owner
+     runs (a VPS), or IPv6.
+3. **Operations across machines from one chat**: copy a folder from the
+   desktop to the NAS, and the other jobs people otherwise hand to Dropbox,
+   OneDrive or Google Drive.
+   - **Neither site can dial the other, so a copy goes site A → root →
+     site B.** It is streamed and never stored at the root. Its speed is the
+     slowest of A's upload, the root's link and B's download. Two sites on the
+     root's own LAN copy at LAN speed.
+   - **It needs what the four tools never did:** chunked, resumable,
+     hash-verified transfer (the library's downloads already work this way),
+     on a stream of its own so a copy never stalls a chat. That is the held
+     channel of 7.8, point 3, now with a feature that needs it.
+   - **A tool spanning two sites lives at the root** and drives each site's
+     own tools. Policy is checked at both ends: A must allow the read and B
+     the write, and each site's own rule is final (J8). The approval shows
+     both sites and both paths.
+   - **Contents never enter the replicated log.** This is already the
+     helper's rule.
+   - **On-demand operations only.** Continuous sync, with its conflicts,
+     deletions and versions, is a separate product.
+   - **The root's reach grows to moving data between all of a person's
+     machines,** so a compromised root costs more. That is why J8's
+     site-final policy and each site's audit log are not optional.
+
+### 7.11 Calls for Troy (files scope)
 
 | # | Call | Recommendation | Counter-argument |
 |---|---|---|---|
-| J1 | The name | **Job Box** in Workbench and the design docs; the console keeps *Files on your machines* | One more name to learn. The console and Workbench then use different words for one thing (the S8 rule pairs a workshop name with its plain meaning, which softens it) |
-| J2 | Which use is this, really: at the box, or away from it? | **Decide this first.** If Troy is at the remote box when he wants its files, run the interface there (§7.7) and skip J3-J5. If he is away from it, the Job Box is the right tool | Even at the box, central Workbench keeps one history and one set of settings across machines, and that is worth something |
+| J1 | The name | **Job Site** (Troy's, recommended): *Job sites (your machines)* in Workbench; the console keeps *Files on your machines* | Two words for one thing across the console and Workbench, softened by the S8 rule that pairs a workshop name with its plain meaning. *Site* also reads as *web site* |
+| J2 | Which use is this, really: at the box, or away from it? | **ANSWERED (Troy, 2026-10-05): away, and many machines at once.** One person controls several of their own machines from one central chat window, including operations across them (§7.9). That is the case only the central interface can serve, so J3-J5 are needed | — |
 | J3 | A node-only public mode for the nodes name (`public_nodes`) | **Yes**, limited to the five paths in 7.4, with an acknowledgement | It is the first internet-facing node surface. The enrolment, token and bundle parsers become reachable by anyone. The rule *nodes are never public* (2026-10-05) is narrowed |
 | J4 | A files-only node: no address, no inference, no run jobs, status from last contact. Public joins can only take it | **Yes**, as one slice with J3 | A second kind of node, which every screen showing nodes must handle |
-| J5 | A standalone Job Box install now | **Not yet, but build toward it** (revised for 7.8). Ship the files-only role first. Build the box-side piece as a self-contained, unprivileged local MCP host with its own policy, which the agent supervises today and which can ship alone when someone else's PC is the case | For anyone else's PC the owner's trust argument is strong from day one. With system tools coming, a piece shipped inside a privileged supervisor is the wrong shape even on Troy's own box |
+| J5 | A standalone Job Site helper install now | **Not yet, but build toward it** (revised for 7.8). Ship the files-only role first. Build the box-side piece as a self-contained, unprivileged local MCP host with its own policy, which the agent supervises today and which can ship alone when someone else's PC is the case | For anyone else's PC the owner's trust argument is strong from day one. With system tools coming, a piece shipped inside a privileged supervisor is the wrong shape even on Troy's own box |
 | J6 | MCP between the box and the root, and an MCP endpoint at the root | **Yes to the first, now, before a fifth tool** (revised for 7.8): the four tools become Eugene's own MCP server on the box. The root's endpoint for other clients follows as its own design | Eugene takes on MCP's spec versions and its server-initiated features, which the long poll does not carry. The four bespoke tools work today, and their limits are tight on purpose |
-| J8 | Where policy is final | **On the box**: default deny per server and per tool; destructive or system tools need approval there or the owner's standing pre-approval; the box keeps an audit log | Approval on a box nobody is sitting at blocks the *away from the box* case (J2). In practice that use gets read-only tools unless the owner pre-approves more |
-| J7 | The nodes name through Cloudflare | **DNS-only (grey cloud)** where NPM is reachable directly | It exposes the home IP and loses Cloudflare's DDoS shield. File operations are small, and Workbench chats already pass through Cloudflare |
+| J7 | Third parties in the path (revised for 7.10) | **None.** The nodes name is DNS-only, or a bare address with the root's certificate pinned at join. No Cloudflare proxy, no Tailscale | It exposes the home IP and gives up Cloudflare's DDoS shield. Pinning means every site joins again if the root's CA changes, so a rotation path is needed before it ships |
+| J8 | Where policy is final | **On the site**: default deny per server and per tool; destructive or system tools need approval there or the owner's standing pre-approval; each site keeps an audit log | Approval on a machine nobody is sitting at blocks the *away from it* case, which is the case (J2). In practice that use gets read-only tools unless the owner pre-approves more |
+| J9 | Who may add a job site | **Any signed-in person, for their own machines**, as files-only sites they own (7.10, item 1). An operator-approval setting is available for installs that want it | A household member can attach any PC to the install. Join tokens become per-person, and the People page gains states. Today only the operator joins machines, which is simpler to reason about |
+| J10 | Cross-site copy as the first tool spanning machines | **Yes, after J6.** Streamed through the root and never stored there, resumable and hash-verified, on its own stream, with policy checked at both sites | It is the first feature that moves bulk data through the root, so the root's bandwidth and the cost of a compromised root both rise. It also invites requests for continuous sync, which is a different product |
 
 **What this does to §4.** Calls 1, 6 and 7 (inference across networks,
 remote models, the tunnel) lose their urgency. Call 3's checks become mostly
