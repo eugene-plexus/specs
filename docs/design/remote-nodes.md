@@ -556,6 +556,18 @@ the case.
 | J17 | The mesh-VPN commitment's wording | **Amend it.** Done in the local `CLAUDE.md` the same day. `README.md` changes when Job Sites ship |
 | J18 | How dev mode switches | **Not retroactive**: results produced in production stay hidden after a switch to dev. **Every user sees the current mode** and is told when it changes. **New installs start in production** |
 
+### 6.1 Calls taken when slice 1 started (Troy, 2026-10-05)
+
+| # | Call | Decision |
+|---|---|---|
+| J7a | What a site pins | **The root's identity key, carried in the join command.** The root signs the list of TLS public keys its nodes name presents. A site accepts a connection only when the presented key is on a list it has verified. The list is public keys only, and is served at a **sixth public path, `GET /v1/trust/tls`**. Renewals need nobody: the root probes its own nodes name, and behind an outside proxy (NPM) it probes the public name; when it cannot, the console says so and joins fail closed |
+| J13a | What production mode hides from the owner's chat reading | **Everything from the first job-site result on.** The model's later replies quote what it read, so hiding only the result would leak it. The owner sees the chat up to that point and one line saying the rest used files on a job site |
+| J13b | What dev mode lets the owner do | **See everything and grant themselves folders.** Folders, grants and results become visible, and the owner may give themselves access to a site's folder. The owner's own grants on job sites stop working the moment the install is in production. Grants to other people stay the site owner's in both modes |
+
+An existing install with no recorded mode is in production. Nothing changes
+for it: before this slice there are no job sites, so there are no results to
+hide.
+
 ---
 
 ## 7. What this design does not cover
