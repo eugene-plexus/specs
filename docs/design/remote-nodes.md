@@ -1,9 +1,9 @@
 # Job Sites: Workbench working on your machines, wherever they are
 
 **Status:** a design, 2026-10-05. **Every call (J1-J18) was decided by Troy
-the same day** (§6), and three more as slice 1 started (§6.1). **Slice 1 is
-built (2026-10-05)**: what it found is §5.1, and the run is
-[`docs/acceptance/job-sites-run.md`](../acceptance/job-sites-run.md).
+the same day** (§6), three more as slice 1 started (§6.1), and six as slice 2
+started (§6.2). **Slice 1 is built (2026-10-05)**: what it found is §5.1, and
+the run is [`docs/acceptance/job-sites-run.md`](../acceptance/job-sites-run.md).
 
 The file keeps the name `remote-nodes.md` because it began as that
 question. The analysis of inference across networks it started with is now
@@ -606,6 +606,33 @@ the case.
 An existing install with no recorded mode is in production. Nothing changes
 for it: before this slice there are no job sites, so there are no results to
 hide.
+
+### 6.2 Calls taken when slice 2 started (Troy, 2026-10-05)
+
+Slice 2 is J6 and J8. Each call below was taken as recommended.
+
+| # | Call | Decision |
+|---|---|---|
+| J6a | The channel | **The long poll, carrying MCP messages.** MCP's 2026-07-28 revision is one self-contained request in and one response out, with no handshake and no session, which is what the queue already carries. The six public paths stay. Tool-list changes ride the poll report, and calls stay bounded at about 20 s. The held WebSocket arrives with cross-site copy (slice 3) |
+| J6b | Where a site's owner manages its policy | **Workbench, enforced on the site.** The site keeps its own copy and its own audit log, and accepts an edit only from the owner it pinned at its join. The root's copy is a cache. A destructive tool is allowed only as an explicit standing pre-approval; approving each call at the machine waits for the held channel. A local CLI shows status and the audit log. The limit of §3.3 stands: a compromised root could forge an owner's edit (J14) |
+| J6c | MCP library and protocol | **The official `mcp` SDK, 2.3 series** (Workbench's pin since C5). **2026-07-28 between site and root**; the handshake revisions to local stdio servers |
+| J6d | Ordinary LAN nodes | **The same host everywhere.** On a LAN node Eugene's owner still writes policy from the console, under a named capability; on a job site its own list is final. The bespoke `{tool, arguments}` path is deleted |
+| J6e | Dev mode against rule 2 | **The site's owner opts in on the site.** A per-site setting, off by default: *let Eugene's owner in while Eugene is in dev mode*. J13b's self-grant then works there. Dev mode alone opens nothing |
+| J6f | Where the host's code lives | **A new repo, `site-host`**, with its loopback API as a specs document. The agent installs it as a bundled app at a pinned commit, in its own OS account. It can ship alone later (J5) |
+
+Two choices made with them, each the conservative reading, for Troy to
+overturn:
+- **A local MCP server is added at the machine, never from Workbench.**
+  Adding one names a program on that machine, so it is the machine
+  administrator's act, as C5b's local servers are: an elevated CLI on the
+  site writes it into the install's protected configuration. Who may use it
+  is then policy, set from Workbench.
+- **J9's gate is an elevated CLI.** It checks for an administrator token
+  (Windows) or uid 0 (Linux), and records the server's name and its
+  program's hash in that same protected file, which the host's own account
+  cannot write. The host refuses to enable a server marked `system` without
+  that record. No such server ships in slice 2; a test server proves the
+  gate.
 
 ---
 
