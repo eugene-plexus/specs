@@ -1,0 +1,303 @@
+# Shapes shared by the site host's loopback API (openapi/site-host.yaml) and
+# the control root's node-helper surface (components/node-helpers.yaml).
+#
+# A machine's file support is a local MCP host whose policy is final on that
+# machine (docs/design/remote-nodes.md §3.4, J6, J8, §6.2). Between the machine
+# and the root travel MCP messages of the 2026-07-28 revision: one
+# self-contained JSON-RPC request in, one response out (J6a, J6c).
+#
+# Every object here is named, never inline: an inline object in a document
+# this size renames an existing schema at codegen (`Person` became `Person1`
+# in slice 1).
+
+McpRequest:
+  type: object
+  description: |
+    One MCP request of the 2026-07-28 revision: `server/discover`,
+    `tools/list` or `tools/call`. `params._meta` carries
+    `io.modelcontextprotocol/protocolVersion` (`2026-07-28`) and may carry the
+    client's info and capabilities. Nothing else crosses: no notifications, no
+    server-initiated requests, no other methods.
+  required: [jsonrpc, id, method]
+  properties:
+    jsonrpc: {$ref: '#/McpJsonRpc'}
+    id: {$ref: '#/McpRequestId'}
+    method: {$ref: '#/McpMethod'}
+    params: {type: object, additionalProperties: true}
+
+McpJsonRpc:
+  type: string
+  enum: ["2.0"]
+
+McpRequestId:
+  type: [string, integer]
+  description: A JSON-RPC id. The site answers with the same one.
+
+McpMethod:
+  type: string
+  enum: [server/discover, tools/list, tools/call]
+
+SiteHostProtocol:
+  type: string
+  description: What a machine's host speaks to the root, through its agent. The only value is MCP's 2026-07-28 revision.
+  enum: [mcp-2026-07-28]
+
+McpResponse:
+  type: object
+  description: |
+    The JSON-RPC response to an `McpRequest`, exactly as the site's server
+    produced it after the site's policy filtered it: `result` or `error`.
+  required: [jsonrpc]
+  properties:
+    jsonrpc: {$ref: '#/McpJsonRpc'}
+    id:
+      anyOf:
+        - {$ref: '#/McpRequestId'}
+        - {type: 'null'}
+    result: {type: object, additionalProperties: true}
+    error: {type: object, additionalProperties: true}
+
+SiteAnswerStatus:
+  type: string
+  description: |
+    `done`: the site answered (an MCP error or a tool's own failure is still
+    `done`, inside `response`). `failed`: the site refused or could not run
+    it, and `message` says why in the site's words; nothing ran. `uncertain`:
+    a tool call started and its end could not be established; it may have
+    acted.
+  enum: [done, failed, uncertain]
+
+SiteServerId:
+  type: string
+  description: |
+    A server on the site. `files.<folder id>` for each folder registered on
+    it (Eugene's own file server, one per folder); otherwise the id a machine
+    administrator gave a local server when adding it at the machine.
+  pattern: '^(files\.[a-f0-9]{32}|[a-z][a-z0-9-]{0,39})$'
+  maxLength: 40
+
+SiteTool:
+  type: object
+  additionalProperties: false
+  required: [name, readOnly, destructive]
+  properties:
+    name: {type: string, minLength: 1, maxLength: 128}
+    title: {type: [string, 'null'], maxLength: 256}
+    description: {type: [string, 'null'], maxLength: 2048}
+    readOnly:
+      type: boolean
+      description: The server marks the tool as changing nothing (`readOnlyHint`).
+    destructive:
+      type: boolean
+      description: |
+        Whether the site treats the tool as able to change or delete
+        something. True unless the server marks it read-only, or marks it
+        `destructiveHint: false`. MCP's own default, so an unmarked tool is
+        destructive. A destructive tool runs only under a standing
+        pre-approval (J6b).
+
+SiteServerKind:
+  type: string
+  description: "`files`: Eugene's own file server, one per registered folder. `local`: a server a machine administrator added at the machine."
+  enum: [files, local]
+
+SiteServer:
+  type: object
+  additionalProperties: false
+  required: [id, name, kind, system, enabled, available, tools]
+  properties:
+    id: {$ref: '#/SiteServerId'}
+    name: {type: string, minLength: 1, maxLength: 80}
+    kind: {$ref: '#/SiteServerKind'}
+    system:
+      type: boolean
+      description: |
+        Marked as able to alter the machine's operating system. It cannot be
+        enabled without an administrator's consent recorded at the machine
+        (J9).
+    enabled:
+      type: boolean
+      description: Whether the site's owner has turned it on. A folder's server is on while the folder is registered.
+    available:
+      type: boolean
+      description: Whether it can run now.
+    reason:
+      type: [string, 'null']
+      maxLength: 1024
+      description: Why it cannot run, in plain words.
+    tools:
+      type: array
+      maxItems: 64
+      items: {$ref: '#/SiteTool'}
+
+SiteToolGrant:
+  type: object
+  additionalProperties: false
+  required: [name]
+  properties:
+    name: {type: string, minLength: 1, maxLength: 128}
+    standing:
+      type: boolean
+      default: false
+      description: |
+        A standing pre-approval: the person may use this destructive tool
+        without the site's owner approving each call. Required for a
+        destructive tool, which is otherwise refused: approving each call at
+        the machine waits for the held channel (J6b).
+
+SiteAccess:
+  type: object
+  additionalProperties: false
+  required: [subject, server, tools]
+  properties:
+    subject:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: A person's id. Never `operator`; Eugene's owner reaches a site only through `ownerInDevMode`.
+    server: {$ref: '#/SiteServerId'}
+    tools:
+      type: array
+      maxItems: 64
+      items: {$ref: '#/SiteToolGrant'}
+
+SiteFolder:
+  type: object
+  additionalProperties: false
+  required: [id, name, path, writable]
+  properties:
+    id: {type: string, pattern: '^[a-f0-9]{32}$'}
+    name: {type: string, minLength: 1, maxLength: 80}
+    path: {type: string, minLength: 1, maxLength: 4096}
+    writable:
+      type: boolean
+      description: Whether its server offers `write_text` at all.
+
+SiteSummary:
+  type: object
+  additionalProperties: false
+  description: |
+    What a job site holds, as the site itself reports it in each poll. The
+    root keeps it as a cache: it answers Workbench's listings from it, and
+    the site checks every call against its own copy again (rule 2 of §3.3).
+  required: [owner, ownerInDevMode, folders, servers, access]
+  properties:
+    owner:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: The person the site pinned as its owner at its join.
+    ownerInDevMode:
+      type: boolean
+      description: The site's owner lets Eugene's owner in while Eugene is in dev mode (J6e).
+    folders:
+      type: array
+      maxItems: 64
+      items: {$ref: '#/SiteFolder'}
+    servers:
+      type: array
+      maxItems: 96
+      items: {$ref: '#/SiteServer'}
+    access:
+      type: array
+      maxItems: 2048
+      items: {$ref: '#/SiteAccess'}
+
+SiteGrantHint:
+  type: object
+  additionalProperties: false
+  description: |
+    The root's own grant, carried with a call: on an ordinary node, where the
+    root's grant is final (J6d); and on a job site for Eugene's owner in dev
+    mode, which the site honours only if its owner opted in (J6e).
+  required: [folderId, path, identity, writable]
+  properties:
+    folderId: {type: string, pattern: '^[a-f0-9]{32}$'}
+    path: {type: string, minLength: 1, maxLength: 4096}
+    identity: {type: string, minLength: 1, maxLength: 256}
+    writable: {type: boolean}
+
+SiteAuditDecision:
+  type: string
+  enum: [allowed, refused]
+
+SiteAuditKind:
+  type: string
+  enum: [mcp, manage]
+
+SiteAuditEntry:
+  type: object
+  additionalProperties: false
+  description: |
+    One line of the site's own audit log, kept on the machine and read by
+    its owner (J8). It records who asked for what and what the site decided,
+    never a file's contents or a tool's result.
+  required: [at, subject, kind, decision]
+  properties:
+    at: {type: string, format: date-time}
+    subject: {type: string, maxLength: 64}
+    kind: {$ref: '#/SiteAuditKind'}
+    server: {type: [string, 'null'], maxLength: 40}
+    method: {type: [string, 'null'], maxLength: 64}
+    tool: {type: [string, 'null'], maxLength: 128}
+    action: {type: [string, 'null'], maxLength: 64}
+    arguments:
+      type: [string, 'null']
+      maxLength: 1024
+      description: The call's arguments as JSON, cut at 1,024 characters, with a write's text left out.
+    decision: {$ref: '#/SiteAuditDecision'}
+    outcome:
+      anyOf:
+        - {$ref: '#/SiteAnswerStatus'}
+        - {type: 'null'}
+    reason: {type: [string, 'null'], maxLength: 1024}
+
+SiteLocalServer:
+  type: object
+  additionalProperties: false
+  description: |
+    A local MCP server a machine administrator added at the machine
+    (`eugene-plexus-agent site server add`, elevated). Kept in the install's
+    protected configuration, which the host's own account cannot write, and
+    handed to the host when it starts (§6.2).
+  required: [id, name, command, sha256]
+  properties:
+    id:
+      type: string
+      pattern: '^[a-z][a-z0-9-]{0,39}$'
+      description: Its id on this site. Ids beginning `files` are Eugene's own.
+    name: {type: string, minLength: 1, maxLength: 80}
+    command: {type: string, minLength: 1, maxLength: 4096, description: The program's absolute path.}
+    args:
+      type: array
+      maxItems: 64
+      items: {type: string, maxLength: 4096}
+    env:
+      type: object
+      maxProperties: 32
+      additionalProperties: {type: string, maxLength: 4096}
+    sha256:
+      type: string
+      pattern: '^[a-f0-9]{64}$'
+      description: The program file's SHA-256 when it was added. A program that changed since is not run.
+    system:
+      type: boolean
+      default: false
+      description: Marked as able to alter the operating system (J9).
+    consentedAt:
+      type: [string, 'null']
+      format: date-time
+      description: |
+        When an administrator, proven elevated at the machine, consented to
+        this system server. A `system` server without it is never enabled.
+
+SiteLocalServerList:
+  type: object
+  additionalProperties: false
+  description: The file of local servers (`site-servers.yaml`) the agent keeps in its protected configuration.
+  required: [servers]
+  properties:
+    servers:
+      type: array
+      maxItems: 32
+      items: {$ref: '#/SiteLocalServer'}

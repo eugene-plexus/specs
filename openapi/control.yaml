@@ -1699,14 +1699,16 @@ paths:
       tags: [node-helpers]
       summary: listNodeHelpers
       description: |
-        Operator-only capability and folder administration. No implicit file access is granted.
+        Needs the `node-files` capability (J15), which the passphrase session holds. Administers ordinary nodes' file support; grants no file access by itself.
 
         **A Job Site** (`jobSite: true`) is listed with its owner and whether it is
         online, and nothing else, in production mode: `folders` is empty and
-        `hidden` is true. In dev mode (`installMode`) its folders and their grants
-        are shown, and the owner may set `ownerAccess` on them; every other change
-        to a Job Site is its owner's, from Workbench (`/oidc/job-sites`), and is
-        refused here with 403.
+        `hidden` is true. In dev mode (`installMode`) its folders and who may use
+        them are shown, as the site last reported them, and Eugene's owner may set
+        `ownerAccess` on them; that grant works only if the site's owner lets
+        Eugene's owner in there (J6e), which the site checks itself. Every other
+        change to a Job Site is its owner's, from Workbench (`/oidc/job-sites`),
+        and is refused here with 403.
       responses:
         '200':
           description: Success.
@@ -1731,7 +1733,7 @@ paths:
       operationId: configureNodeHelper
       tags: [node-helpers]
       summary: configureNodeHelper
-      description: Operator-only capability and folder administration. No implicit file access is granted.
+      description: Needs the `node-files` capability (J15), which the passphrase session holds. Administers ordinary nodes' file support; grants no file access by itself.
       requestBody:
         required: true
         content:
@@ -1766,7 +1768,7 @@ paths:
       operationId: createNodeHelperFolder
       tags: [node-helpers]
       summary: createNodeHelperFolder
-      description: Operator-only capability and folder administration. No implicit file access is granted.
+      description: Needs the `node-files` capability (J15), which the passphrase session holds. Administers ordinary nodes' file support; grants no file access by itself.
       requestBody:
         required: true
         content:
@@ -1827,7 +1829,7 @@ paths:
       operationId: removeNodeHelperFolder
       tags: [node-helpers]
       summary: removeNodeHelperFolder
-      description: Operator-only capability and folder administration. No implicit file access is granted.
+      description: Needs the `node-files` capability (J15), which the passphrase session holds. Administers ordinary nodes' file support; grants no file access by itself.
       responses:
         '204':
           description: Success.
@@ -1855,8 +1857,9 @@ paths:
         '200':
           description: |
             `configuration`, the queued `operation` id or null, and, for a Job
-            Site, `siteOwner`: the person whose commands alone may register its
-            folders, which the site's own relay checks again (J11).
+            Site, `siteOwner`. A site pins its owner at its join
+            (`Enrollment.owner`) and refuses a different one here (J6b); a site
+            joined before slice 2 pins the first one it is told.
           content:
             application/json:
               schema: {type: object, additionalProperties: true}
@@ -1878,13 +1881,16 @@ paths:
       operationId: claimNodeHelperOperation
       tags: [node-helpers]
       summary: claimNodeHelperOperation
-      description: An enrolled agent service token addressed to control, for its own node only.
+      description: |
+        An enrolled agent service token addressed to control, for its own node
+        only. Permission is checked again at the claim; a claimed operation is
+        never offered again.
       responses:
         '200':
-          description: Success.
+          description: The operation, for the machine's host.
           content:
             application/json:
-              schema: {type: object, additionalProperties: true}
+              schema: {$ref: '#/components/schemas/HelperOperation'}
         '401':
           description: Authentication, current permission, state, or availability refused the request.
         '403':
@@ -1921,76 +1927,91 @@ paths:
           description: Authentication, current permission, state, or availability refused the request.
         '503':
           description: Authentication, current permission, state, or availability refused the request.
-  /oidc/node-helpers/folders:
+  /oidc/sites/servers:
     post:
-      operationId: discoverNodeFolders
+      operationId: listMySiteServers
       tags: [node-helpers]
-      summary: discoverNodeFolders
-      description: An enrolled Workbench client secret and its signed-in person refresh credential. Current grants are checked for every call.
+      summary: The servers on machines that the signed-in person may use
+      description: |
+        Every server the person may use: on an ordinary node, each folder
+        Eugene's owner granted them, as `files.<folder id>`; on a Job Site,
+        what that site's own list says, as the site last reported it (J6b).
+        The site checks each call against its own list again. An enrolled
+        Workbench client secret and its signed-in person's refresh credential.
       security: [{helperClient: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/HelperDiscovery"
+            schema: {$ref: '#/components/schemas/HelperDiscovery'}
       responses:
         '200':
-          description: Success.
+          description: The servers, and the install's mode.
           content:
             application/json:
-              schema: {type: object, additionalProperties: true}
+              schema: {$ref: '#/components/schemas/SiteServerList'}
         '401':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: Workbench client or person sign-in is invalid.
         '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: This sign-in or app access was withdrawn.
         '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /oidc/node-helpers/execute:
+          description: Eugene is locked.
+  /oidc/sites/mcp:
     post:
-      operationId: executeNodeFileOperation
+      operationId: callSiteServer
       tags: [node-helpers]
-      summary: executeNodeFileOperation
-      description: An enrolled Workbench client secret and its signed-in person refresh credential. Current grants are checked for every call.
+      summary: One MCP request to one server on one machine
+      description: |
+        Carries one MCP request of the 2026-07-28 revision (`server/discover`,
+        `tools/list`, `tools/call`) to the machine, which claims it on its
+        next poll (J6a). The root checks the Workbench client, the person's
+        sign-in, and on an ordinary node its own grant; on a Job Site the
+        site's own policy decides (J8). A destructive tool runs only under the
+        site owner's standing pre-approval. The request is at most 40,000
+        bytes; the answer at most 70,000. A `tools/call` the machine claimed
+        but did not confirm is `uncertain`: it may have acted.
       security: [{helperClient: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/HelperCall"
+            schema: {$ref: '#/components/schemas/SiteMcpCall'}
       responses:
         '200':
-          description: Success.
+          description: The machine's answer, or its refusal in its own words.
           content:
             application/json:
-              schema: {type: object, additionalProperties: true}
+              schema: {$ref: '#/components/schemas/SiteMcpAnswer'}
         '401':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: Workbench client or person sign-in is invalid.
         '403':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: Not granted, or this sign-in or app access was withdrawn.
         '409':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: This operation id was used already.
+        '413':
+          description: The request is too large.
+        '429':
+          description: The machine is busy.
         '503':
-          description: Authentication, current permission, state, or availability refused the request.
-
-  /oidc/node-helpers/cancel:
+          description: The machine's file support is off, offline or needs an update.
+        '504':
+          description: The machine did not answer in time.
+  /oidc/sites/cancel:
     post:
-      operationId: cancelNodeFileOperation
+      operationId: cancelSiteCall
       tags: [node-helpers]
       summary: Cancel a queued operation belonging to this Workbench sign-in
       description: |
-        Prevents a queued operation from being claimed. An already running write
-        may finish; cancellation never implies rollback. Reusing the same operation
-        ID is refused for five minutes while this root process remains running.
+        Prevents a queued operation from being claimed. A tool call already
+        running may finish; cancellation never implies rollback. Reusing the
+        same operation id is refused for five minutes while this root process
+        remains running.
       security: [{helperClient: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/HelperCancel'}
+            schema: {$ref: '#/components/schemas/SiteCancel'}
       responses:
         '204':
           description: Cancelled, already finished, or not yet submitted.
@@ -2037,10 +2058,11 @@ paths:
       tags: [node-helpers]
       summary: The signed-in person's own Job Sites
       description: |
-        Every Job Site this person owns, with its folders and who may use
-        them. A Job Site's owner is the only one who grants its folders
-        (J11). Authenticated as `/oidc/node-helpers/*` is: an enrolled
-        Workbench client and the person's refresh credential.
+        Every Job Site this person owns, with its folders, its servers and
+        who may use which tool, as each site last reported them. A Job Site's
+        owner is the only one who grants its tools (J11), and the site keeps
+        that list itself (J6b). Authenticated as `/oidc/sites/*` is: an
+        enrolled Workbench client and the person's refresh credential.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2136,9 +2158,9 @@ paths:
       tags: [node-helpers]
       summary: Register an existing folder on the person's own Job Site
       description: |
-        As the operator's folder registration on an ordinary node: the
-        machine's helper opens the folder and reports its identity, and
-        nobody is granted anything.
+        The site registers the folder itself (J6b): its host opens the folder,
+        records its identity, and serves it as `files.<id>`. Nobody is
+        granted anything.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2147,10 +2169,10 @@ paths:
             schema: {$ref: '#/components/schemas/JobSiteFolderCreate'}
       responses:
         '201':
-          description: The folder.
+          description: The folder, as the site recorded it.
           content:
             application/json:
-              schema: {$ref: 'components/node-helpers.yaml#/HelperFolder'}
+              schema: {$ref: 'components/sites.yaml#/SiteFolder'}
         '401':
           description: Authentication, current permission, state, or availability refused the request.
         '403':
@@ -2188,40 +2210,143 @@ paths:
           description: Authentication, current permission, state, or availability refused the request.
         '503':
           description: Authentication, current permission, state, or availability refused the request.
-  /oidc/job-sites/{node}/folders/{folder_id}/people:
+  /oidc/job-sites/{node}/servers/{server}/access:
     parameters:
       - {name: node, in: path, required: true, schema: {type: string}}
-      - {name: folder_id, in: path, required: true, schema: {type: string}}
+      - {name: server, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteServerId'}}
     post:
-      operationId: grantMyJobSiteFolder
+      operationId: setMyJobSiteAccess
       tags: [node-helpers]
-      summary: Say who may use a folder on the person's own Job Site
+      summary: Say who may use which tools of one server on the person's own Job Site
       description: |
-        Replaces the folder's list of people, the site's owner included
-        (J11: the owner grants their own access too). People are named by
-        how they sign in. Write access cannot exceed the folder's.
+        Replaces the server's list of people, the site's owner included (J11:
+        the owner grants their own access too). People are named by how they
+        sign in. The site applies it to its own list and answers with what it
+        holds (J6b). A destructive tool must be granted as a standing
+        pre-approval (`standing: true`), or the site refuses the grant.
       security: [{helperClient: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/JobSitePeopleRequest'}
+            schema: {$ref: '#/components/schemas/JobSiteAccessRequest'}
       responses:
         '200':
-          description: The folder.
+          description: The server and who may use it, as the site now holds them.
           content:
             application/json:
-              schema: {$ref: 'components/node-helpers.yaml#/HelperFolder'}
+              schema: {$ref: 'components/node-helpers.yaml#/JobSiteServer'}
         '401':
-          description: Authentication, current permission, state, or availability refused the request.
-        '403':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: Workbench client or person sign-in is invalid.
         '404':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: The person owns no such site, or it has no such server.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
         '503':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: The site is offline, its file support is off, or it needs an update.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{node}/servers/{server}/enabled:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: server, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteServerId'}}
+    post:
+      operationId: enableMyJobSiteServer
+      tags: [node-helpers]
+      summary: Turn a local server on the person's own Job Site on or off
+      description: |
+        A local server, added at the machine by its administrator, is off
+        until the site's owner turns it on here. A server marked `system`
+        cannot be turned on without an administrator's consent recorded at
+        the machine (J9).
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteServerEnable'}
+      responses:
+        '200':
+          description: The server, as the site now holds it.
+          content:
+            application/json:
+              schema: {$ref: 'components/node-helpers.yaml#/JobSiteServer'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or it has no such server.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, its file support is off, or it needs an update.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{node}/settings:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: setMyJobSiteSettings
+      tags: [node-helpers]
+      summary: The person's own Job Site's settings
+      description: |
+        `ownerInDevMode`: let Eugene's owner use the folders they give
+        themselves while Eugene is in dev mode (J6e). Off by default. Dev mode
+        alone opens nothing on a site.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteSettings'}
+      responses:
+        '200':
+          description: The site.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobSite'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or it has no such server.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, its file support is off, or it needs an update.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{node}/audit:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: readMyJobSiteAudit
+      tags: [node-helpers]
+      summary: The newest lines of the person's own Job Site's audit log
+      description: |
+        Kept on the machine, read from it on each request (J8). Who asked for
+        what, and what the site decided; never a file's contents or a tool's
+        result. Only the site's owner reads it, Eugene's owner never.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteAuditRequest'}
+      responses:
+        '200':
+          description: The entries, newest first.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobSiteAudit'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or it has no such server.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, its file support is off, or it needs an update.
+        '504':
+          description: The site did not answer in time.
   /oidc/job-sites/{node}/leave:
     parameters:
       - {name: node, in: path, required: true, schema: {type: string}}
@@ -2307,12 +2432,18 @@ components:
       $ref: "components/node-helpers.yaml#/HelperReport"
     HelperResult:
       $ref: "components/node-helpers.yaml#/HelperResult"
-    HelperCall:
-      $ref: "components/node-helpers.yaml#/HelperCall"
+    HelperOperation:
+      $ref: "components/node-helpers.yaml#/HelperOperation"
     HelperDiscovery:
       $ref: "components/node-helpers.yaml#/HelperDiscovery"
-    HelperCancel:
-      $ref: "components/node-helpers.yaml#/HelperCancel"
+    SiteCancel:
+      $ref: "components/node-helpers.yaml#/SiteCancel"
+    SiteServerList:
+      $ref: "components/node-helpers.yaml#/SiteServerList"
+    SiteMcpCall:
+      $ref: "components/node-helpers.yaml#/SiteMcpCall"
+    SiteMcpAnswer:
+      $ref: "components/node-helpers.yaml#/SiteMcpAnswer"
     InstallMode:
       $ref: "components/node-helpers.yaml#/InstallMode"
     JobSite:
@@ -2327,8 +2458,16 @@ components:
       $ref: "components/node-helpers.yaml#/JobSiteEnable"
     JobSiteFolderCreate:
       $ref: "components/node-helpers.yaml#/JobSiteFolderCreate"
-    JobSitePeopleRequest:
-      $ref: "components/node-helpers.yaml#/JobSitePeopleRequest"
+    JobSiteAccessRequest:
+      $ref: "components/node-helpers.yaml#/JobSiteAccessRequest"
+    JobSiteServerEnable:
+      $ref: "components/node-helpers.yaml#/JobSiteServerEnable"
+    JobSiteSettings:
+      $ref: "components/node-helpers.yaml#/JobSiteSettings"
+    JobSiteAuditRequest:
+      $ref: "components/node-helpers.yaml#/JobSiteAuditRequest"
+    JobSiteAudit:
+      $ref: "components/node-helpers.yaml#/JobSiteAudit"
     SignedRootTls:
       type: object
       required: [jws]
@@ -2949,6 +3088,13 @@ components:
             What this node's key was granted. `files` tells the agent it is
             a Job Site: it announces no address, polls for no run
             operations, and refuses runtimes and engines.
+        owner:
+          type: [string, 'null']
+          description: |
+            On a Job Site, the person who confirmed this join at the machine
+            (their id). The site pins it: its host takes management actions
+            from this person alone, and refuses a different `siteOwner` in a
+            later poll (J6b, rule 2 of §3.3).
 
     # -------- control state --------
 

@@ -1,0 +1,323 @@
+openapi: 3.1.0
+info:
+  title: Eugene Plexus — site host
+  version: 0.1.0-draft
+  summary: A machine's local MCP host, whose policy is final on that machine (Job Sites J6, J8).
+  description: |
+    **What this is.** The piece of Eugene that runs a machine's tools: its
+    own file server, one per registered folder, and local MCP servers a
+    machine administrator added at the machine. It is an MCP host, and its
+    policy is final: what it refuses, nothing upstream can make it run
+    (`docs/design/remote-nodes.md` §3.4, J8, §6.2).
+
+    **Where it runs.** In an OS account of its own, never inside the agent's
+    privileged supervisor. The agent installs and supervises it for now, as
+    a bundled app at a pinned commit (J5, J6f); it listens on loopback only
+    and talks to nobody but the agent. The agent relays to it the operations
+    the root queued for this machine and posts its answers back. Nothing
+    here dials out.
+
+    **Two modes.**
+    - `site`, on a Job Site: the host keeps its own folders, its own list of
+      who may use which tool, and its own audit log. It accepts a change to
+      them only from the owner it was told at its start, the person the site
+      pinned at its join (J6b). Rule 2 of §3.3: editing the root's state is
+      not enough to get in.
+    - `node`, on an ordinary LAN node: Eugene's owner writes policy from the
+      console, and the root's grant comes with each call (`grant`); the host
+      checks the call against it and keeps an audit log (J6d).
+
+    **What crosses.** MCP requests of the 2026-07-28 revision, one in and
+    one out: `server/discover`, `tools/list`, `tools/call` (J6a, J6c), and
+    the owner's management actions. Each carries the id and deadline the
+    root gave it; the host refuses a used id or a passed deadline, so a
+    replayed operation runs at most once.
+
+    **Default deny.** A server is off until its owner turns it on (a folder's
+    server is on while the folder is registered), and a person may use only
+    the tools the owner named for them. A destructive tool needs a standing
+    pre-approval; approving each call at the machine waits for the held
+    channel of slice 3. A server marked `system` cannot be turned on without
+    an administrator's consent recorded at the machine (J9).
+
+    ## Auth
+
+    A bearer credential the agent generated for this host at install
+    (`EUGENE_PLEXUS_APP_ADMIN_TOKEN`), compared in constant time.
+    `/healthz` is open.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+  contact:
+    name: Eugene Plexus
+    url: https://github.com/eugene-plexus
+servers:
+  - url: http://127.0.0.1:{port}
+    description: Loopback only. The agent reserves the port, as for any app.
+    variables:
+      port:
+        default: "8300"
+security:
+  - agentCredential: []
+paths:
+  /healthz:
+    get:
+      operationId: siteHostHealth
+      summary: Whether the host can run tools on this machine
+      security: []
+      responses:
+        '200':
+          description: Ready.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteHostHealth'}
+        '503':
+          description: Not ready; `reason` says why.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteHostHealth'}
+  /v1/report:
+    get:
+      operationId: siteHostReport
+      summary: What the host holds, for the agent's next poll
+      responses:
+        '200':
+          description: The report.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteHostReport'}
+        '403':
+          description: The credential is wrong.
+  /v1/mcp:
+    post:
+      operationId: siteHostMcp
+      summary: One MCP request, checked against this machine's policy
+      description: |
+        The host checks the operation's id and deadline, the server, the
+        person and the tool against its own policy, then serves the request
+        with its server and filters the answer: `tools/list` lists only the
+        tools this person may use. A refusal is `failed` with a sentence; it
+        is recorded in the audit log, as every call is.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SiteCall'}
+      responses:
+        '200':
+          description: The site's answer.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteAnswer'}
+        '403':
+          description: The credential is wrong.
+        '413':
+          description: The request is larger than 65,536 bytes.
+  /v1/manage:
+    post:
+      operationId: siteHostManage
+      summary: One management action by the site's owner (or, on a node, the root)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SiteManage'}
+      responses:
+        '200':
+          description: The site's answer; `result` holds the action's result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteAnswer'}
+        '403':
+          description: The credential is wrong.
+        '413':
+          description: The request is larger than 65,536 bytes.
+components:
+  securitySchemes:
+    agentCredential:
+      type: http
+      scheme: bearer
+  schemas:
+    SiteLocalServerList:
+      $ref: 'components/sites.yaml#/SiteLocalServerList'
+
+    SiteHostHealth:
+      type: object
+      additionalProperties: false
+      required: [ready]
+      properties:
+        ready: {type: boolean}
+        reason: {type: [string, 'null'], maxLength: 1024}
+
+    SiteHostMode:
+      type: string
+      enum: [site, node]
+
+    SiteHostReport:
+      type: object
+      additionalProperties: false
+      required: [protocol, version, mode, ready]
+      properties:
+        protocol: {$ref: 'components/sites.yaml#/SiteHostProtocol'}
+        version: {type: string, maxLength: 64}
+        mode: {$ref: '#/components/schemas/SiteHostMode'}
+        ready: {type: boolean}
+        reason: {type: [string, 'null'], maxLength: 1024}
+        site:
+          description: In `site` mode only.
+          anyOf:
+            - {$ref: 'components/sites.yaml#/SiteSummary'}
+            - {type: 'null'}
+
+    SiteCall:
+      type: object
+      additionalProperties: false
+      required: [id, expiresAt, subject, server, request, installMode]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 128, description: The root's operation id; used once.}
+        expiresAt: {type: number, description: Unix seconds. At most 30 s ahead.}
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Who asked, as the root says (a person's id, or `operator` for Eugene's owner).
+        server: {$ref: 'components/sites.yaml#/SiteServerId'}
+        request: {$ref: 'components/sites.yaml#/McpRequest'}
+        grant:
+          description: The root's grant, on a node; Eugene's owner's dev-mode grant, on a site.
+          anyOf:
+            - {$ref: 'components/sites.yaml#/SiteGrantHint'}
+            - {type: 'null'}
+        installMode: {$ref: 'components/node-helpers.yaml#/InstallModeName'}
+
+    SiteManageAction:
+      type: string
+      description: |
+        - `folder.inspect` (`SiteFolderInspect`), node mode, from `operator`:
+          check a folder can be opened, and return its full path and
+          identity for the root to register.
+        - `folder.add` (`SiteFolderAdd`), site mode, from the owner:
+          register a folder here; its server is `files.<id>`.
+        - `folder.remove` (`SiteFolderRemove`), site mode, from the owner.
+        - `access.set` (`SiteAccessSet`), site mode, from the owner: who may
+          use one server, and which tools, replacing what was there.
+        - `server.enable` (`SiteServerEnable`), site mode, from the owner.
+        - `settings.set` (`SiteSettings`), site mode, from the owner.
+        - `audit.read` (`SiteAuditRead`), site mode, from the owner: the
+          newest entries of the site's audit log.
+      enum: [folder.inspect, folder.add, folder.remove, access.set, server.enable, settings.set, audit.read]
+
+    SiteManage:
+      type: object
+      additionalProperties: false
+      required: [id, expiresAt, subject, action, arguments]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 128}
+        expiresAt: {type: number}
+        subject: {type: string, minLength: 1, maxLength: 64}
+        action: {$ref: '#/components/schemas/SiteManageAction'}
+        arguments:
+          type: object
+          additionalProperties: true
+          description: The action's arguments; see `SiteManageAction` for each one's schema.
+
+    SiteFolderInspect:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 4096}
+
+    SiteFolderInspected:
+      type: object
+      additionalProperties: false
+      required: [path, identity]
+      properties:
+        path: {type: string, minLength: 1, maxLength: 4096}
+        identity: {type: string, minLength: 1, maxLength: 256}
+
+    SiteFolderAdd:
+      type: object
+      additionalProperties: false
+      required: [name, path]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80}
+        path: {type: string, minLength: 1, maxLength: 4096}
+        writable: {type: boolean, default: false}
+
+    SiteFolderRemove:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id: {type: string, pattern: '^[a-f0-9]{32}$'}
+
+    SitePersonTools:
+      type: object
+      additionalProperties: false
+      required: [subject, tools]
+      properties:
+        subject: {type: string, minLength: 1, maxLength: 64}
+        tools:
+          type: array
+          maxItems: 64
+          items: {$ref: 'components/sites.yaml#/SiteToolGrant'}
+
+    SiteAccessSet:
+      type: object
+      additionalProperties: false
+      required: [server, people]
+      properties:
+        server: {$ref: 'components/sites.yaml#/SiteServerId'}
+        people:
+          type: array
+          maxItems: 256
+          items: {$ref: '#/components/schemas/SitePersonTools'}
+
+    SiteServerEnable:
+      type: object
+      additionalProperties: false
+      required: [server, enabled]
+      properties:
+        server: {$ref: 'components/sites.yaml#/SiteServerId'}
+        enabled: {type: boolean}
+
+    SiteSettings:
+      type: object
+      additionalProperties: false
+      required: [ownerInDevMode]
+      properties:
+        ownerInDevMode: {type: boolean}
+
+    SiteAuditRead:
+      type: object
+      additionalProperties: false
+      properties:
+        limit: {type: integer, minimum: 1, maximum: 200, default: 50}
+
+    SiteAuditPage:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          maxItems: 200
+          items: {$ref: 'components/sites.yaml#/SiteAuditEntry'}
+
+    SiteAnswer:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {$ref: 'components/sites.yaml#/SiteAnswerStatus'}
+        message: {type: [string, 'null'], maxLength: 1024}
+        response:
+          description: For an MCP request answered, the JSON-RPC response.
+          anyOf:
+            - {$ref: 'components/sites.yaml#/McpResponse'}
+            - {type: 'null'}
+        result:
+          type: [object, 'null']
+          additionalProperties: true
+          description: For a management action, its result.
