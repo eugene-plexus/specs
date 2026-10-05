@@ -1010,6 +1010,41 @@ a credential the root cannot mint: each person's own key, such as a passkey,
 registered at their site, with tool calls signed by it (call J14). It is
 end-to-end authorization and a design of its own.
 
+**Where this is going (Troy, the same day).** *"I wouldn't count on the owner
+getting to see everything in the future."* The owner's three powers above
+(granting, setting passwords, reading chats) are where today's code stands,
+not a floor. Two kinds of install are expected, and nothing is to be built
+for them now:
+
+- **An MSP** wants its own tools to join and remove customer machines.
+- **A paid inference service** wants user tools that are more automated.
+
+Neither wants an all-seeing owner. The weekend novice still gets the simple
+path. So the direction is:
+
+- **No role sees everything.** Capabilities are separate and assignable:
+  - manage the Plexus's membership (sites join and leave);
+  - manage people's accounts;
+  - grant a site's tools, which belongs to the site's owner;
+  - read others' chats, a per-business setting;
+  - and later, billing or quotas.
+- **The novice default gives one person every administrative capability, and
+  never data access.**
+- **New surfaces check a named capability, not *is the operator*.** Today's
+  code checks the operator (`require_operator`, `subject == "operator"` in
+  `C/node_helpers.py:62`). Job Site surfaces should check a capability even
+  while only the owner holds it. That costs little now and a migration later
+  (call J15).
+- **Every management action is an API that a scoped, non-interactive
+  credential can drive.** That is what an MSP's own tooling or a paid
+  service's signup flow needs. The console is one client of that API.
+- **Joining needs two paths with the same result.** Item 2 above, a person
+  confirming at the machine, is the novice and household path. A managed
+  fleet installed by an MSP's deployment tool has no person at each machine.
+  That needs bulk enrolment by a scoped automation credential, with the
+  site's owner assigned at enrolment (a customer's person or role). Both must
+  land the same site with the same rules (call J16).
+
 ### 7.12 Calls for Troy (files scope)
 
 | # | Call | Recommendation | Counter-argument |
@@ -1028,6 +1063,8 @@ end-to-end authorization and a design of its own.
 | J12 | The owner setting another person's password | **Remove it.** The owner may disable or remove an account, but not set its password. If a recovery path is needed, an owner's reset suspends that person's site grants until they confirm at a site | People without email have no self-service recovery, so a forgotten password means a new account and re-granting |
 | J13 | `ownerReadsChats` and job-site results | **Never show a job-site result to the owner**: show that a tool ran and on which site, not what it returned | A business that turned it on to supervise work loses sight of exactly the work done on files |
 | J14 | Person-held keys checked at the site (end-to-end) | **Later, its own design.** Items 1-5 of 7.11 first | Until then, a compromised root reads every site anyone has been granted, and a site's owner is trusting the root's word for who is asking |
+| J15 | Capabilities, not *the operator*, on new surfaces | **Yes, for every Job Site surface.** Each checks a named capability. Today the owner holds every administrative one, so nothing changes for a novice | More states to test now, for roles nobody uses yet. And the rest of the product still checks `require_operator`, so there are two models until it is migrated |
+| J16 | Managed-fleet enrolment beside confirm-at-the-machine | **Design for it, do not build it.** A scoped automation credential can enrol many sites, each with its owner named, ending in the same state as a person's join | A credential that can enrol many sites is a high-value secret. Until an MSP exists, the second path is speculation that could shape the first wrongly |
 
 **What this does to §4.** Calls 1, 6 and 7 (inference across networks,
 remote models, the tunnel) lose their urgency. Call 3's checks become mostly
