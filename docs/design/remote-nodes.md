@@ -1,7 +1,11 @@
 # Job Sites: Workbench working on your machines, wherever they are
 
-**Status:** a design for Troy to decide on, 2026-10-05. **Nothing here is
-built.** The file keeps the name `remote-nodes.md` because it began as that
+**Status:** a design, 2026-10-05. **Troy answered calls J1-J17 the same day**
+(§6). Two are still open:
+- **J4** waits on the definition of *no inference work* (§3.2);
+- **J18** is new: how dev mode switches.
+
+**Nothing here is built.** The file keeps the name `remote-nodes.md` because it began as that
 question. The analysis of inference across networks it started with is now
 Appendix B, and is out of scope.
 
@@ -224,10 +228,25 @@ rules:
   what stops a rogue machine announcing an address and being sent prompts.
 - **It has no address.** The root refuses one if offered, and the agent
   neither derives nor announces one.
-- **It runs no inference:**
-  - no gateway grant;
+- **It is sent no inference work.** This is what the call table's *no run
+  jobs* meant, and it means exactly this: Eugene's own model machinery never
+  reaches the site.
+  - no gateway grant, so nothing is routed to it;
   - no runtimes may be declared on it;
-  - the library run-operations poll is off.
+  - no engine installs or model starts;
+  - the library run-operations poll (Appendix A, N7) is off.
+
+  These are commands from the Plexus side (Eugene's owner and the gateway),
+  carried out by the agent's privileged supervisor, and the site's owner
+  never chose them.
+- **Running scripts and OS actions is not inference work. It is a tool,**
+  arriving in a later slice as an MCP server on the site (§3.4).
+  - It is off by default, and only the site's owner enables it.
+  - It runs in the unprivileged site-side host, never through the agent's
+    supervisor.
+  - Each call is approved under the site's own policy (J8).
+  - A tool that can alter the machine's OS needs proof of admin or root at
+    the machine before it turns on (J9).
 - **Its status reads *last contact N s ago***, taken from its authenticated
   poll, not *down: no url recorded*.
 - **A console hop to it** says *this machine only connects out; its files are
@@ -250,7 +269,8 @@ Most of this exists already: an address-less node is skipped everywhere (§2.2).
 - **A site's owner** is the only one who grants its tools, including to
   themselves.
 
-Four rules make that hold:
+Four rules make that hold. Rule 3 is deferred (J12), and rule 4 depends on
+the install's mode (J13):
 
 1. **The invitation names a person, and that person confirms at the
    machine.** The join asks them to sign in there with their own password.
@@ -259,9 +279,26 @@ Four rules make that hold:
 2. **The site keeps its own list and refuses anyone not on it** (J8). Editing
    the root's state is then not enough to get in.
 3. **Eugene's owner cannot become a person.** The owner may disable or remove
-   an account, but not set its password (J12).
-4. **`ownerReadsChats` never shows a job-site result.** The owner sees that a
-   tool ran on which site, not what it returned (J13).
+   an account, but not set its password.
+   - **Deferred by Troy (J12):** the owner keeps setting passwords for now.
+     Doing this properly, including recovery, is a slice of its own.
+   - **Until then, the rule does not hold against the owner.** An owner who
+     sets a person's password can sign in as them and use their grants. The
+     person would notice their password had changed.
+4. **What the owner sees of others' tool activity depends on the install's
+   mode** (Troy, J13).
+   - **Dev mode:** the owner can still see all tool information, job-site
+     results included, and every user is told so.
+   - **Production mode:** `ownerReadsChats` never shows a job-site result.
+     The owner sees that a tool ran, and on which site, but not what it
+     returned.
+
+   Dev mode is for developing Eugene. Production mode is where owners are
+   restricted. Three rules make the switch honest (J18):
+   - **It is not retroactive.** Results produced in production stay hidden
+     if the install later switches to dev.
+   - **Every user sees the current mode**, and is told when it changes.
+   - **A new install starts in production.**
 
 **Leaving needs no one's permission.** Eugene's owner can remove a site,
 which revokes it at once. The site's owner can leave from the machine
@@ -315,6 +352,9 @@ is final** (J8):
 - tools marked destructive or system-level need approval on the site, or the
   owner's standing pre-approval there;
 - an audit log the site's owner can read;
+- **a tool that can alter the machine's OS (Windows' Settings connector, a
+  script runner) needs the person to prove admin or root access on that
+  machine before it turns on** (J9, Troy's note);
 - it meets Windows as a local agent with its own identity, so Windows' consent
   prompts and audit name it rather than "Eugene";
 - **it never runs inside a privileged supervisor.**
@@ -472,13 +512,16 @@ the case.
 ## 5. A first slice (proposal)
 
 1. **Today's four tools, from outside the LAN, with the access model.** Calls
-   J3, J4, J7, J11-J13 and J15, plus the proxy fix.
+   J3, J4, J7, J9, J11, J13 and J15, plus the proxy fix. J12 (owner-set
+   passwords) is not in it.
    - *Done when:* a machine on another network joins over the public route,
      with WSL2 behind its NAT as the stand-in. Then:
      - Eugene's owner sees it online, with its last contact;
      - its own person grants a folder;
      - Workbench reads through it;
-     - Eugene's owner cannot read it, by grant or by chat;
+     - in production mode, Eugene's owner cannot read it, by grant or by
+       chat;
+     - in dev mode the owner can, and every user is told so;
      - a leaked join token yields only a disabled file-only site.
 2. **MCP between site and root** (J6), and site-final policy (J8). The four
    tools become Eugene's own MCP server on the site.
@@ -492,27 +535,34 @@ the case.
 
 ---
 
-## 6. Calls for Troy
+## 6. Calls: Troy's decisions (2026-10-05)
+
+| # | Call | Decision |
+|---|---|---|
+| J1 | The name | **Job Site.** *Job sites (your machines)* in Workbench; the console keeps *Files on your machines* |
+| J2 | At the machine, or away from it? | **Away, and many machines at once** |
+| J3 | A node-only public mode for the nodes name (`public_nodes`) | **Yes**, limited to the five paths in §3.1, with an acknowledgement |
+| J4 | File-only Job Sites | **Open:** depends on the definition of *no inference work*, now written in §3.2. A site must be able to run scripts and OS tools in a later slice. Under that definition, those are tools, not inference work |
+| J5 | Its own install, or a role | **The role first**, with the site-side piece built so it can ship alone (§4.2) |
+| J6 | MCP between site and root | **Yes, before a fifth tool** |
+| J7 | No third party in the path | **Yes**: DNS-only or a bare address, with the root's certificate pinned at join by default. A rotation path is needed before it ships |
+| J8 | Where policy is final | **On the site**: default deny, approval or standing pre-approval for destructive and system tools, and an audit log |
+| J9 | Who may add a job site | **Any signed-in person, for their own machines.** Troy's note: **any future Job Site tool that could alter the machine's OS (Windows MCP, for example) needs the person to prove admin or root access on that machine before it turns on** |
+| J10 | Cross-site copy | **Yes**, after J6 |
+| J11 | Membership is not access | **Yes** |
+| J12 | The owner setting another person's password | **Kept for now.** Doing it properly is a slice of its own. Until then, rule 3 of §3.3 does not hold against the owner |
+| J13 | What the owner sees of job-site results | **A dev mode for Eugene.** In dev mode the owner can still see all tool information, and users are told so. In production mode owners are restricted. *"This will help me in developing Eugene properly"* |
+| J14 | Person-held keys checked at the site | **Yes, later**, as its own design |
+| J15 | Capabilities, not *the operator*, on new surfaces | **Yes** |
+| J16 | Managed-fleet enrolment | **Design for it, do not build it** |
+| J17 | The mesh-VPN commitment's wording | **Amend it.** Done in the local `CLAUDE.md` the same day. `README.md` changes when Job Sites ship |
+
+### 6.1 Still open
 
 | # | Call | Recommendation | Counter-argument |
 |---|---|---|---|
-| J1 | The name | **Job Site**, Troy's: *Job sites (your machines)* in Workbench; the console keeps *Files on your machines* | Two words for one thing across the console and Workbench, softened by the rule that pairs a workshop name with its plain meaning. *Site* also reads as *web site* |
-| J2 | At the machine, or away from it? | **ANSWERED (Troy, 2026-10-05): away, and many machines at once** | — |
-| J3 | A node-only public mode for the nodes name (`public_nodes`) | **Yes**, limited to the five paths in §3.1, with an acknowledgement | It is the first internet-facing node surface. The enrolment, token and bundle parsers become reachable by anyone, and *nodes are never public* narrows |
-| J4 | File-only Job Sites: no address, no inference, no run jobs, status from last contact; public joins can only take this role | **Yes**, one slice with J3 | A second kind of node, which every screen that shows nodes must handle |
-| J5 | Its own install, or a role | **The role first**, building the site-side piece so it can ship alone (§4.2) | For anyone else's PC the trust argument is strong from day one. Building the role first is work the split partly redoes |
-| J6 | MCP between site and root | **Yes, before a fifth tool.** The four tools become Eugene's own MCP server on the site; the root's endpoint for other clients follows | Eugene takes on MCP's spec versions and its server-initiated features, which the long poll does not carry. The four bespoke tools work today |
-| J7 | No third party in the path | **Decided in principle by Troy's no-cloud rule.** The call left is DNS-only versus a bare address with the root's certificate pinned at join. Recommended: support both, with pinning as the default | It exposes the home IP and gives up a CDN's DDoS shield. Pinning means every site joins again if the root's CA changes, so a rotation path must exist before it ships |
-| J8 | Where policy is final | **On the site**: default deny per server and per tool; destructive or system tools need approval there or standing pre-approval; an audit log on each site | Approval on a machine nobody is sitting at blocks the away-from-it case. In practice that use gets read-only tools unless the owner pre-approves more |
-| J9 | Who may add a job site | **Any signed-in person, for their own machines**, as file-only sites they own. An operator-approval setting is available | A household member can attach any PC. Join tokens become per-person, and the People page gains states |
-| J10 | Cross-site copy as the first tool spanning sites | **Yes, after J6:** streamed through the root and never stored, resumable, verified, on its own stream, with policy at both sites | The first feature that moves bulk data through the root, so the root's bandwidth and the cost of compromising it both rise. It also invites requests for continuous sync |
-| J11 | Membership is not access | **Yes:** Eugene's owner invites, removes and sees status; only a site's owner grants. `ownerAccess` and owner-written `helperGrants` go | A solo owner needs a person account to use their own machines, and the owner can no longer fix a person's grants for them |
-| J12 | The owner setting another person's password | **Remove it.** The owner may disable or remove an account. If recovery is needed, an owner's reset suspends that person's site grants until they confirm at a site | People without email have no self-service recovery, so a forgotten password means a new account and re-granting |
-| J13 | `ownerReadsChats` and job-site results | **Never show a job-site result to the owner**, only that a tool ran on which site | A business that turned it on to supervise work loses sight of exactly the file work |
-| J14 | Person-held keys checked at the site | **Later, its own design**, after §3.3 | Until then, a compromised root reads every site anyone has been granted |
-| J15 | Capabilities, not *the operator*, on new surfaces | **Yes, for every Job Site surface**; the owner holds every administrative capability by default, so a novice sees no change | More states to test for roles nobody uses yet, and two models until the rest of the product migrates |
-| J16 | Managed-fleet enrolment beside confirm-at-the-machine | **Design for it, do not build it** | A credential that can enrol many sites is a high-value secret, and until an MSP exists the second path is speculation |
-| J17 | The commitment *"Mesh VPN (Tailscale / WireGuard) for component-to-component auth"* | **Amend its wording.** Components authenticate with Eugene's own per-node keys on any network. Machines on one private network (a LAN, or a mesh the owner runs) talk directly. A machine outside reaches the root only over a node-only route that carries signed node traffic | The list is called immutable, and J3 plus Troy's no-cloud rule change its substance, not just its words. That is a decision, not a correction |
+| J4 | Confirm *no inference work* as defined in §3.2 | **Confirm.** Inference work is the Plexus side's commands, run by the privileged agent: routing, runtimes, engines and model starts. Scripts and OS actions are site tools, enabled by the site's owner and run by the unprivileged host. Then J4 is a yes | A site that also has a GPU cannot both serve inference and be a public-route site. It would need to be on the LAN, or join twice |
+| J18 | How dev mode switches (J13) | **Three rules.** It is not retroactive: results produced in production stay hidden after a switch to dev. Every user sees the current mode and is told when it changes. A new install starts in production | Non-retroactive means storing which mode each result was produced under. A developer chasing a bug in production data cannot see it without the user reproducing it in dev mode |
 
 ---
 
