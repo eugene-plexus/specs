@@ -23,6 +23,24 @@ mesh. §4 holds the calls.
 
 Sources for every upstream claim are in §6. They were fetched on 2026-10-05.
 
+> **▶ Scope narrowed by Troy the same day: files, not inference.** *"I'm not
+> specifically interested in out of LAN inference."* What he wants is
+> Workbench on the server using the file helper on a remote box. **§7 is the
+> answer to that question, and it does not need Tailscale or a tunnel.** The
+> file path already runs entirely on connections the node opens; what is
+> missing is a public route to the root for node traffic only, and a
+> files-only kind of node. §7 also covers:
+>
+> - the name (proposed: **Job Box**);
+> - whether to split it into its own install;
+> - whether it is MCP (it is not);
+> - Troy's question of whether Workbench belongs on the server at all;
+> - planning for a hundred tools and Windows' own MCP connectors, which argues
+>   for carrying MCP between the box and the root before a fifth tool (§7.8).
+>
+> §0-§6 stay as the analysis for inference across networks, and as the
+> inventory behind §7.
+
 ---
 
 ## 0. Every connection between a root and a node
@@ -517,3 +535,356 @@ tunnel, Tailscale DERP, and the yamux and chisel designs.
 - https://github.com/hashicorp/yamux/blob/master/spec.md
 - https://github.com/erebe/wstunnel
 - `websockets` keepalive, memory and proxies: https://websockets.readthedocs.io/en/stable/topics/
+
+---
+
+## 7. Files only: the Job Box on a machine outside the LAN
+
+**The narrowed question (Troy, 2026-10-05).** Workbench runs on the server
+(the NAS). Troy wants it to use the file helper on a remote box, one that is
+not on the NAS's network. Inference stays on the LAN.
+
+### 7.1 A name
+
+Troy has been calling it *"Workbench's local MCP server"*. Today its names
+are plain:
+
+- the console says **Files on your machines**;
+- the code says *node file helper*;
+- the design is [`node-file-helpers.md`](node-file-helpers.md).
+
+**Proposed: Job Box.** On a building site, the job box is the lockable tool
+chest kept at the site, away from the shop. It holds only what you put in it,
+and the crew reaches into it from where they work.
+
+| Proposed name | Meaning |
+|---|---|
+| Job Box (Workbench and design docs) | *files on your other machines* |
+| Job Box helper (the component) | — |
+| Files on your machines (the console) | unchanged: Troy's rule keeps workshop names to Workbench |
+
+The alternatives were *Field kit* and *Site box*. A tool crib was rejected: a
+crib is the central store, which is the wrong direction.
+
+### 7.2 What it is: not MCP
+
+A bounded custom protocol of four tools, each a `{tool, arguments}` command:
+
+- `inspect`;
+- `list_directory`;
+- `read_text`, up to 32 KiB;
+- `write_text`, up to 8,192 characters, hash-checked.
+
+**One operation, end to end:**
+
+1. **Workbench** turns the tools into function tools for the model, each call
+   approved by the person. It posts the call to control's
+   `/oidc/node-helpers/execute` with its own client credential and the
+   person's (`W/node_folders.py`; `C/routes/node_helpers.py:237-309`).
+2. **Control** checks the grant and queues the job. It hands the job to the
+   box's next poll, and checks the grant again before the result is released
+   (`C/node_helpers.py:118-186`).
+3. **The box's agent** claims the job. It hands the job to the helper over
+   loopback with a separate random credential. The helper is a stdlib HTTP
+   worker in a restricted OS account (`A/node_file_helper.py:234-299`;
+   `A/_node_file_helper/__main__.py`).
+
+**Why it must not become an MCP server on the box.** Workbench does speak MCP,
+but as a client of network MCP servers (C5a, `workbench-mcp.md`). An MCP
+client *dials* its server, which brings back exactly the problem in §0. The
+pull through control is what keeps the box undialled. If any MCP client
+should ever use the Job Box, the MCP endpoint belongs at the root, in front of
+the queue (call J6).
+
+### 7.3 Nothing on its path dials the box
+
+| Step | How it reaches the box | Anchor |
+|---|---|---|
+| Turn file support on | A replicated setting, delivered in the answer to the box's own poll; the agent then installs and starts the helper | `C/routes/node_helpers.py:105-111`; `A/node_file_helper.py:144-200,285-286` |
+| Register a folder | An `inspect` job the box claims through the same poll | `C/routes/node_helpers.py:114-180` |
+| A read or write from Workbench | A job, as above | `C/node_helpers.py:118-186` |
+| Its trust bundle | The box pulls it every 60 s (N3) | `A/app.py:541-577` |
+| "Available" | The box polled within 25 s (`ONLINE_SECONDS`); **the probe is not consulted** | `C/node_helpers.py:26,103-116` |
+
+**A node with no recorded address is already skipped** by:
+
+- the probe, which reports *no url recorded* (`C/nodes_client.py:145-146`);
+- the trust push (`C/trust.py:212`);
+- the gateway's node map (`G/routing.py:1074-1080`);
+- control's install views.
+
+So of §0's twelve root→node connections, **the Job Box needs none**, and most
+of what an outbound-only node needs exists already.
+
+**What is missing:**
+
+- **The box cannot reach control from outside.** Control's port is
+  LAN-only. The entry point's nodes name must name its source networks
+  (`A/entrypoint.py:205-206`), and it routes control's whole API, sign-in and
+  admin included (`:546-547`).
+- **The box would announce its own LAN address.** It derives it from the
+  socket (N1), and the root would then dial that address and report *down*.
+- **The helper's root client hard-codes `trust_env=False`**
+  (`A/node_file_helper.py:272-274`). That overrides `client_for`'s
+  per-address rule, so a network that forces a proxy blocks it.
+
+### 7.4 The proposal: a node-only public route and a files-only node
+
+1. **A node-only public mode for the nodes name.** `public_nodes: true`, with
+   a risk acknowledgement like `public_console`'s. From any network the name
+   answers exactly these, and refuses everything else with one sentence
+   saying where the console is:
+   - `POST /v1/nodes/enroll`;
+   - `GET /v1/trust/bundle`, which becomes token-gated (see 7.5);
+   - `POST /v1/node-helpers/poll`;
+   - `POST /v1/node-helpers/operations/{id}/claim` and `…/result`.
+
+   Behind NPM this is the setup Troy already runs: NPM forwards the name to
+   the entry point in proxy mode.
+2. **A files-only node.** Row 3's join tokens already carry `grants`; add a
+   `files` role.
+   - **Joins through the public route may only take this role.**
+   - The node records no address. The root refuses one if offered. The agent
+     does not derive or announce one.
+   - It gets no gateway grant, and no runtimes may be declared on it.
+   - The library run-operations poll (N7) is off.
+   - Its status is *last contact N s ago*, from its authenticated poll, not
+     *down: no url recorded*.
+   - A console hop to it says *this machine only connects out; its files are
+     under People*.
+3. **The helper's client honours proxy settings** for a root URL that is not
+   on the local network: drop the explicit `trust_env=False`.
+4. **The join command for an outside machine** is the existing installer with
+   one more flag, roughly:
+
+   ```
+   install.ps1 -Join https://nodes.example.com -Token … -NodeName … -FilesOnly
+   ```
+
+**Contract changes:**
+
+- `control.yaml`: the `files` grant, `Node.lastContactAt`, and an
+  address-less enrolment.
+- The entry point's settings gain `public_nodes`.
+- No change to Workbench, and none to the helper protocol.
+
+**Performance.**
+
+- Each operation is two or three round trips over a poll the box already
+  holds open (8 s), so one or two internet round trips plus the proxies:
+  roughly 100-300 ms (estimated, not measured).
+- `JOB_SECONDS` (20 s) is the ceiling.
+- Payloads stay well inside Cloudflare's limits (125 s to first byte; 100 MB
+  requests).
+
+### 7.5 Security
+
+- **The box listens on nothing public.** Its agent and helper stay on
+  loopback.
+- **What the internet can reach before authentication:**
+  - the join-token check on enrolment;
+  - token verification on the helper routes;
+  - the bundle read.
+
+  The bundle is public today, and it lists every machine's name, public key,
+  grants and revoked session ids. On the public route it should require a
+  node token. A revoked node then cannot pull it, which is correct.
+- **A leaked join token** lets someone on the internet join a machine within
+  the token's 15 minutes. Through this route it can only be a files-only,
+  address-less node. It is visible under People, it starts disabled, and it
+  gets only folders the operator registers on it. **The rule that public
+  joins are files-only is what stops a rogue node announcing an address and
+  being sent prompts.**
+- **A stolen box key** reaches, from anywhere, the bundle and that box's own
+  helper jobs. That is narrower than the same key on the LAN (row 3: the
+  library catalogue and topology too). Revoking it is one step.
+- **A compromised root** reaches every folder registered on every helper,
+  within its grants. This is unchanged by the route.
+- **Rate limits** are needed on enrolment and on the poll from public
+  sources. The existing per-node bound of 8 jobs limits a stolen key's queue.
+- **Cloudflare.** If the nodes name is proxied (orange cloud), Cloudflare
+  terminates TLS and sees file contents, as it already sees Workbench chats.
+  DNS-only (grey cloud) keeps it out, where NPM is reachable directly
+  (call J7).
+
+### 7.6 Its own install, or a role on the node?
+
+| Problem | Separate install | Files-only node (7.4) |
+|---|---|---|
+| Root unreachable from the box | Same: needs the public node-only route | Same |
+| False *down*, probe timeouts, gateway and console noise | Gone, because it is not a node | Gone: no address, so nothing dials it |
+| A leaked join token | Scoped to file jobs by construction | Scoped by rule: public joins are files-only |
+| Proxy; Cloudflare seeing content | Same | Same |
+| **What sits on the box owner's PC** | **One unprivileged service that touches only folders the owner shared, with no listener at all** | The full agent: a privileged supervisor that can install and run software. The role switches that off, but it is installed |
+| Cost | A new identity type at control, a second installer and updater, its own service-account setup, a third copy of the folder code (`folder_io.py` is already in the agent and Workbench, with a drift check). It also reverses Troy's 2026-10-04 call of *one installation, one enrollment* | Small: mostly 7.4 |
+
+**Recommendation:**
+
+- **Troy's own remote box:** build the files-only node.
+- **Someone else's PC** (a friend, or an MSP customer, whose owner is
+  trusting the install): the split earns its cost. *"Eugene can read the
+  folders I shared"* is an easier ask than *"Eugene's supervisor runs on my
+  PC"*.
+
+The role's surface is exactly what a standalone Job Box would implement, so
+the split can follow without rework (call J5).
+
+### 7.7 Why the field runs the interface where the files are
+
+Troy: *"Claude Code... Codex... Hermes... OpenClaw... everyone else runs the
+interface where the files are instead of splitting them up. There has to be a
+good reason for that."* There are five, and the first is this whole document:
+
+1. **Every connection leaves the user's machine.** A local agent dials the
+   model, which works through any NAT, proxy or CGNAT. A central interface
+   reaching into a personal machine needs a connection in the other direction
+   (§0). The Job Box survives only because it was built as a pull.
+2. **Authority stays with the person.** A local agent runs as you, while you
+   are there. A central service that holds standing grants into many
+   machines is one target that opens all of them.
+3. **Real file work needs a shell, search, git and builds.** Those cannot be
+   brokered safely across machines. Four bounded text tools will always be a
+   thin subset of what Claude Code does on the same folder.
+4. **A task is hundreds of small operations.** Each crosses three machines
+   here, and none crosses any for a local agent.
+5. **The approval belongs where the person and the files are.** Here, the
+   person, the interface and the files can be on three machines.
+
+The cloud agents confirm the pattern. Claude Code on the web and Codex cloud
+copy the repository to where the agent runs; neither reaches back into your
+PC. Desktop chat apps (Claude Desktop) run their file servers locally, beside
+the interface.
+
+**What it means for Workbench.** Putting it on the server was right for what
+it was built to be:
+
+- chat for everyone, from any device;
+- one key held server-side;
+- history kept centrally;
+- several people;
+- the small-business case.
+
+That is the shape of every server-hosted chat UI (Open WebUI, LibreChat,
+ChatGPT), and none of them reach into a PC's folders either. **The unusual
+move is a central interface working on files on a personal machine.** It
+pays for itself in exactly one case: **the files are on a machine you are not
+sitting at** (your phone, asking about a document on the home PC). There are
+three placements, and only the last pays this document's cost:
+
+| Where the files are | Interface | Cost |
+|---|---|---|
+| On the server | Central Workbench + C6 host folders | None. Works today, no network hop |
+| On the machine you are sitting at | An agent on that machine, pointed at Eugene's gateway: Claude Code (`/v1/messages`), Codex (`/v1/responses`), OpenCode, or Workbench installed there | Inference must be reachable from that machine: on the LAN today, from outside through the entry point's opt-in inference name and a client key |
+| On a machine you are away from | Central Workbench + the Job Box | §7.3-7.5 |
+
+**Troy's brief for Workbench also bears on this:** *"it can not have access to
+anything in Eugene that any other harness wouldn't have."* Today the Job Box
+is reachable only through an Eugene-specific API under `/oidc`, which only
+Workbench calls. A remote MCP server at the root would be the
+brief-respecting face for it, usable by any MCP client:
+
+- the MCP endpoint at the root, in front of the existing queue;
+- OAuth through Eugene sign-in, which the root already provides.
+
+That is a design of its own (call J6).
+
+### 7.8 Planning for many tools
+
+Troy, the same day: *"We only have 4 file tools today. That could be 100 next
+year. Even Windows is planning to grant MCP access to system settings and
+tools. I want to make sure that we're set for that more controlled local
+future."*
+
+**What Windows has shipped.** It is a preview, in Windows 11 Insider build
+26220.7344 (2025-12-05):
+
+- native MCP;
+- an **on-device registry (ODR)** for MCP servers;
+- two built-in **agent connectors**, File Explorer and Windows Settings.
+
+On File Explorer, agents *"manage, organize and retrieve local files on a
+user's device with their consent"*. Connectors in the registry are *"contained
+in a secure environment with their own identity and audit trail"*. The post
+says nothing about remote access. Source:
+https://blogs.windows.com/windows-insider/2025/12/05/announcing-windows-11-insider-preview-build-26220-7344-dev-beta-channels/
+
+**What changes if the Job Box is to carry that future.**
+
+1. **The protocol should be MCP, before the fifth tool.** Today the four
+   tools are named in four places:
+   - Workbench's tool definitions;
+   - control's broker;
+   - the agent's validation;
+   - the helper.
+
+   So each new tool is a release of three repos. MCP already provides what a
+   growing tool set needs:
+   - discovery (`tools/list`, `list_changed`);
+   - schemas and annotations;
+   - progress;
+   - cancellation.
+
+   So the box↔root channel should carry MCP messages, and the four file tools
+   become **one MCP server on the box**, Eugene's own. Other servers sit beside
+   it: ones the owner adds, and Windows' own connectors through the registry.
+   A new tool is then a new server on the box, with no Eugene release.
+2. **Policy has two layers, and the box's is final.**
+   - **The root** decides what the install allows: people, grants, approvals.
+   - **The box** decides what is exposed at all: which servers, which tools,
+     read-only or write. Default deny.
+
+   The box's layer is the owner's, on the owner's machine, and Windows'
+   connectors already carry their own consent and audit. The Job Box should
+   meet Windows as a local agent with its own identity, so Windows' consent
+   prompts and audit name it rather than "Eugene".
+3. **The channel grows from a queue to a held connection, at the message
+   level.**
+   - Request/response tool calls fit today's long poll.
+   - MCP's server-initiated messages (`list_changed`, progress, elicitation)
+     and long-running tools want a connection the box holds open both ways:
+     a WebSocket from the box carrying MCP JSON-RPC.
+   - That is §3.2's tunnel, **but carrying messages rather than bytes**, so
+     the root sees each call and can authorize, log or refuse it, which a byte
+     tunnel cannot.
+   - Today's limits are file-tool limits and become per-tool: 32 KiB reads,
+     70 KB results, 20 s per job, 8 jobs per node.
+   - Build the held channel when the first feature needs it.
+4. **The root presents the box's servers as one remote MCP endpoint** (MCP over
+   HTTP, OAuth through Eugene sign-in). Then Workbench, Claude Desktop, Claude
+   Code, Codex and Open WebUI all reach node tools the same way, which is what
+   Troy's brief for Workbench requires (§7.7). It is the tool-side twin of the
+   gateway's *one endpoint for every model*.
+5. **It dissolves the placement question in §7.7.** With MCP servers on the
+   box:
+   - an agent sitting at the box uses them directly and locally;
+   - central Workbench uses the same servers through the root.
+
+   One box-side piece serves both placements, so server-or-client stops being
+   either/or.
+6. **The blast radius grows with the tool list.** With system tools exposed,
+   a compromised root or Workbench session reaches every box's exposed tools.
+   So:
+   - default deny on the box;
+   - tools marked destructive or system-level need approval **on the box**,
+     or the owner's standing pre-approval there;
+   - an audit log on each box that its owner can read;
+   - the box-side piece never runs inside a privileged supervisor, which
+     moves call J5 toward a standalone, unprivileged Job Box.
+
+### 7.9 Calls for Troy (files scope)
+
+| # | Call | Recommendation | Counter-argument |
+|---|---|---|---|
+| J1 | The name | **Job Box** in Workbench and the design docs; the console keeps *Files on your machines* | One more name to learn. The console and Workbench then use different words for one thing (the S8 rule pairs a workshop name with its plain meaning, which softens it) |
+| J2 | Which use is this, really: at the box, or away from it? | **Decide this first.** If Troy is at the remote box when he wants its files, run the interface there (§7.7) and skip J3-J5. If he is away from it, the Job Box is the right tool | Even at the box, central Workbench keeps one history and one set of settings across machines, and that is worth something |
+| J3 | A node-only public mode for the nodes name (`public_nodes`) | **Yes**, limited to the five paths in 7.4, with an acknowledgement | It is the first internet-facing node surface. The enrolment, token and bundle parsers become reachable by anyone. The rule *nodes are never public* (2026-10-05) is narrowed |
+| J4 | A files-only node: no address, no inference, no run jobs, status from last contact. Public joins can only take it | **Yes**, as one slice with J3 | A second kind of node, which every screen showing nodes must handle |
+| J5 | A standalone Job Box install now | **Not yet, but build toward it** (revised for 7.8). Ship the files-only role first. Build the box-side piece as a self-contained, unprivileged local MCP host with its own policy, which the agent supervises today and which can ship alone when someone else's PC is the case | For anyone else's PC the owner's trust argument is strong from day one. With system tools coming, a piece shipped inside a privileged supervisor is the wrong shape even on Troy's own box |
+| J6 | MCP between the box and the root, and an MCP endpoint at the root | **Yes to the first, now, before a fifth tool** (revised for 7.8): the four tools become Eugene's own MCP server on the box. The root's endpoint for other clients follows as its own design | Eugene takes on MCP's spec versions and its server-initiated features, which the long poll does not carry. The four bespoke tools work today, and their limits are tight on purpose |
+| J8 | Where policy is final | **On the box**: default deny per server and per tool; destructive or system tools need approval there or the owner's standing pre-approval; the box keeps an audit log | Approval on a box nobody is sitting at blocks the *away from the box* case (J2). In practice that use gets read-only tools unless the owner pre-approves more |
+| J7 | The nodes name through Cloudflare | **DNS-only (grey cloud)** where NPM is reachable directly | It exposes the home IP and loses Cloudflare's DDoS shield. File operations are small, and Workbench chats already pass through Cloudflare |
+
+**What this does to §4.** Calls 1, 6 and 7 (inference across networks,
+remote models, the tunnel) lose their urgency. Call 3's checks become mostly
+J4's *last contact* status. Calls 9 (offices) and 10 (the commitment's
+wording) stand unchanged.
