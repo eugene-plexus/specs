@@ -1,9 +1,7 @@
 # Job Sites: Workbench working on your machines, wherever they are
 
-**Status:** a design, 2026-10-05. **Troy answered calls J1-J17 the same day**
-(§6). Two are still open:
-- **J4** waits on the definition of *no inference work* (§3.2);
-- **J18** is new: how dev mode switches.
+**Status:** a design, 2026-10-05. **Every call (J1-J18) was decided by Troy
+the same day** (§6). The first slice is §5.
 
 **Nothing here is built.** The file keeps the name `remote-nodes.md` because it began as that
 question. The analysis of inference across networks it started with is now
@@ -294,7 +292,7 @@ the install's mode (J13):
      returned.
 
    Dev mode is for developing Eugene. Production mode is where owners are
-   restricted. Three rules make the switch honest (J18):
+   restricted. Three rules make the switch honest (J18, decided):
    - **It is not retroactive.** Results produced in production stay hidden
      if the install later switches to dev.
    - **Every user sees the current mode**, and is told when it changes.
@@ -512,7 +510,7 @@ the case.
 ## 5. A first slice (proposal)
 
 1. **Today's four tools, from outside the LAN, with the access model.** Calls
-   J3, J4, J7, J9, J11, J13 and J15, plus the proxy fix. J12 (owner-set
+   J3, J4, J7, J9, J11, J13, J15 and J18, plus the proxy fix. J12 (owner-set
    passwords) is not in it.
    - *Done when:* a machine on another network joins over the public route,
      with WSL2 behind its NAT as the stand-in. Then:
@@ -542,7 +540,7 @@ the case.
 | J1 | The name | **Job Site.** *Job sites (your machines)* in Workbench; the console keeps *Files on your machines* |
 | J2 | At the machine, or away from it? | **Away, and many machines at once** |
 | J3 | A node-only public mode for the nodes name (`public_nodes`) | **Yes**, limited to the five paths in §3.1, with an acknowledgement |
-| J4 | File-only Job Sites | **Open:** depends on the definition of *no inference work*, now written in §3.2. A site must be able to run scripts and OS tools in a later slice. Under that definition, those are tools, not inference work |
+| J4 | File-only Job Sites | **Yes**, with *no inference work* as defined in §3.2: no routing, runtimes, engines or model starts on the site. Scripts and OS actions are site tools for a later slice, not inference work |
 | J5 | Its own install, or a role | **The role first**, with the site-side piece built so it can ship alone (§4.2) |
 | J6 | MCP between site and root | **Yes, before a fifth tool** |
 | J7 | No third party in the path | **Yes**: DNS-only or a bare address, with the root's certificate pinned at join by default. A rotation path is needed before it ships |
@@ -556,13 +554,7 @@ the case.
 | J15 | Capabilities, not *the operator*, on new surfaces | **Yes** |
 | J16 | Managed-fleet enrolment | **Design for it, do not build it** |
 | J17 | The mesh-VPN commitment's wording | **Amend it.** Done in the local `CLAUDE.md` the same day. `README.md` changes when Job Sites ship |
-
-### 6.1 Still open
-
-| # | Call | Recommendation | Counter-argument |
-|---|---|---|---|
-| J4 | Confirm *no inference work* as defined in §3.2 | **Confirm.** Inference work is the Plexus side's commands, run by the privileged agent: routing, runtimes, engines and model starts. Scripts and OS actions are site tools, enabled by the site's owner and run by the unprivileged host. Then J4 is a yes | A site that also has a GPU cannot both serve inference and be a public-route site. It would need to be on the LAN, or join twice |
-| J18 | How dev mode switches (J13) | **Three rules.** It is not retroactive: results produced in production stay hidden after a switch to dev. Every user sees the current mode and is told when it changes. A new install starts in production | Non-retroactive means storing which mode each result was produced under. A developer chasing a bug in production data cannot see it without the user reproducing it in dev mode |
+| J18 | How dev mode switches | **Not retroactive**: results produced in production stay hidden after a switch to dev. **Every user sees the current mode** and is told when it changes. **New installs start in production** |
 
 ---
 
