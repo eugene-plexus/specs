@@ -108,6 +108,26 @@ arrives as a Cloudflare address:
   home traffic skips Cloudflare. A Cloudflare *Origin* certificate on your proxy
   is not trusted by browsers when they skip Cloudflare; use a Let's Encrypt
   certificate there instead.
+- Or tick **Allow the console from any network, with sign-in**. Read what it
+  risks first; the page lists it and asks you to confirm:
+  - anyone on the internet can open the console's sign-in page and try
+    passphrases, and your passphrase is then all that stands between them and
+    the whole install (models, backends and their keys, Library folders, apps,
+    people's accounts, connected machines);
+  - Eugene allows 5 wrong passphrases a minute from each visitor address, and
+    behind Cloudflare visitors share Cloudflare's addresses, so an attacker
+    spread across them gets more tries, and other people's wrong guesses can
+    lock you out for a minute;
+  - a signed-in console stays signed in for 14 days, from wherever it is;
+  - a flaw found later in the console or its API is reachable from the
+    internet, not just your network.
+
+  Use a long passphrase used nowhere else. Safer ways to reach the console
+  from outside: a VPN such as Tailscale, or Cloudflare Access in front of the
+  console's name. Connections from other machines stay limited to your
+  networks either way. In the file this is `"public_console": true` with the
+  console's networks `["0.0.0.0/0", "::/0"]`; without the flag such networks
+  are refused.
 
 ### Nginx Proxy Manager
 

@@ -113,6 +113,18 @@ one as `entrypoint.json.reverted` and reports why. A file copied in by hand is n
 on approval. Turning it off from the same page keeps the file as
 `entrypoint.json.disabled` and restarts on the direct ports.
 
+**The console from any network is the owner's explicit choice** (Troy,
+2026-10-05): `public_console: true` lets the console's networks cover
+everything; without it such networks are refused, as before, and node
+connections may never be public. Behind Cloudflare every visitor is a
+Cloudflare address, so a home-only console refuses its owner at home unless home
+DNS bypasses Cloudflare. The setup page lists what a public console risks and
+requires an acknowledgement: the passphrase becomes the only barrier; the login
+limit is 5 failures a minute per visitor address, which a CDN's shared addresses
+weaken (and let strangers' guesses lock the owner out briefly); sessions last 14
+days; later flaws are internet-reachable. It names Tailscale and Cloudflare
+Access as safer.
+
 Every refusal says which check failed and what the proxy saw, as plain text: an
 untrusted connecting address, a proxy that did not say who the visitor is, a
 request not marked HTTPS, a visitor outside a name's networks (with its own answer

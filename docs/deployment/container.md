@@ -243,7 +243,10 @@ extra Linux capability is needed.
 For remote Workbench access, tick **Allow Workbench access from any network**
 (`0.0.0.0/0` and `::/0`). That policy also applies to the console hostname's
 `/oidc/*` sign-in routes. Console administration stays under the console's own
-networks. The node name, when used, keeps a separate restricted policy; inference
+networks, unless you also tick **Allow the console from any network, with
+sign-in**, which the page asks you to confirm after listing what it risks
+([behind Cloudflare](container-access.md#behind-cloudflare) says why you might,
+and the safer alternatives). The node name, when used, keeps a separate restricted policy; inference
 publishes only inference routes, not gateway configuration or authentication
 management. Requests are limited to 32 MiB and headers to 32 KiB; streaming
 responses remain supported. Public Workbench still requires an account and its
