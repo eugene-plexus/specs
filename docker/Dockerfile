@@ -213,13 +213,14 @@ EXPOSE 8079 8080 8083 8443
 
 # `start-period` is generous because a first boot seeds the topology and
 # starts three children before any of this is true.
-# The entry point is checked only when its file exists: the variable naming a
-# missing file falls back to the direct ports (agent `entrypoint.resolve`), and
-# a fallback must not read as unhealthy. A file added after start is not in
-# effect until a restart, so it does read as unhealthy until then.
+# The entry point is checked only when its file exists -- the variable's, or
+# /data/entrypoint.json, which Settings writes -- because a missing file means
+# the direct ports (agent `entrypoint.resolve`), and that must not read as
+# unhealthy. A file copied in by hand is not in effect until a restart, so it
+# does read as unhealthy until then; one applied from Settings restarts at once.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
     CMD curl -fsS -o /dev/null http://127.0.0.1:8079/healthz \
-     && { test ! -f "$EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG" || curl -fsS --unix-socket /data/entrypoint/admin.sock -o /dev/null http://localhost/config/; } || exit 1
+     && { test ! -f "${EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG:-/data/entrypoint.json}" || curl -fsS --unix-socket /data/entrypoint/admin.sock -o /dev/null http://localhost/config/; } || exit 1
 
 # `--unattended` for the reason step 4 recorded: the unattended path is
 # declared, never inferred from the absence of a terminal. A container

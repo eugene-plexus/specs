@@ -124,6 +124,28 @@ def proxy_checks(binary, base, upstream):
         assert request(port, headers=forwarded("198.51.100.4, 203.0.113.4"))[0] == 403
         assert request(port, headers=forwarded("198.51.100.4") + [("X-Forwarded-For", "203.0.113.4")])[0] == 403
         assert request(port, "unknown.example.org", headers=forwarded("198.51.100.4"))[0] == 421
+
+        # Each refusal says which check failed and what Eugene saw, as plain
+        # text, through the real proxy (agent #7, 2026-10-05).
+        def said(*args, **kw):
+            status, body, _ = request(*args, **kw)
+            return status, body.decode()
+
+        status, text = said(port, source="127.0.0.1", headers=forwarded("198.51.100.4"))
+        assert status == 403 and "it came from 127.0.0.1, which is not a proxy" in text, text
+        status, text = said(port, headers=forwarded(""))
+        assert status == 403 and "did not say who the visitor is" in text, text
+        status, text = said(port, headers=forwarded("198.51.100.4", "http"))
+        assert status == 403 and "did not mark it as HTTPS" in text, text
+        status, text = said(port, headers=forwarded("203.0.113.4"))
+        assert status == 403 and "does not answer 203.0.113.4" in text, text
+        assert "eugene.example.org does not answer" in text, text
+        status, text = said(port, headers=forwarded("203.0.113.4") + [("Cf-Ray", "8d1f-LHR")])
+        assert status == 403 and "came through Cloudflare" in text and "(203.0.113.4)" in text, text
+        status, text = said(port, "unknown.example.org", headers=forwarded("198.51.100.4"))
+        assert status == 421 and "not set up to answer for unknown.example.org" in text, text
+        for secret in ("127.0.0.2", "198.51.100.0/24"):
+            assert secret not in text
         status, body, _ = request(port, headers=forwarded("198.51.100.4") + [("X-Eugene-Entry-Token", "forged"), ("X-Eugene-Entry-Client", "attacker")])
         assert status == 200
         headers = {k.lower(): v for k, v in json.loads(body).items()}

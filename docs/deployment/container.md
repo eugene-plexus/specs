@@ -148,67 +148,83 @@ one of these — `-p 18080:8080` and point your tools at 18080.
 
 Single-port mode includes Caddy in the Eugene image. It is opt-in; updating an
 existing container alone does not change its listener addresses or certificates.
-The console, Workbench, inference and node connections use **different exact
-hostnames on one HTTPS port**. There is no wildcard route, path-based app mount,
-or automatic public administration. User sign-in and node/folder grants still
-decide access. This does not turn one installation into isolated MSP tenants.
+The console and Workbench use **different exact hostnames on one HTTPS port**,
+and inference and node connections can have names of their own too. There is no
+wildcard route, path-based app mount, or automatic public administration. User
+sign-in and node/folder grants still decide access. This does not turn one
+installation into isolated MSP tenants.
 
-Open **Settings → Container access setup** for a guided configuration and
-downloadable instructions. Choose an existing reverse proxy, automatic Let's
-Encrypt, local certificates, or supplied organisation certificates. The
-[setup guide](container-access.md) compares these options and provides Nginx
-Proxy Manager, Caddy and Traefik recipes, including **no published Eugene ports**
-behind a same-host proxy. The steps below describe the migration common to them.
+**Set it up from Settings.** Open **Settings → Container access setup**, choose
+who manages HTTPS (an existing reverse proxy, automatic Let's Encrypt, local
+certificates, or supplied organisation certificates), and press **Prepare setup**.
+The page checks the configuration and lists what to set up around it. **Apply**
+saves it as `/data/entrypoint.json` and restarts Eugene in place; no container
+variable is needed, and the container keeps running. The
+[setup guide](container-access.md) compares the options and has Nginx Proxy
+Manager, Caddy and Traefik recipes.
 
-1. Update the image, then **update Workbench in Apps** before changing ports.
-   Old Workbench versions are refused by the HTTPS proxy because they cannot
-   enforce its origin and cookie rules. Keep the same `/data` volume.
-2. Download the prepared configuration, or copy
-   [`docker/entrypoint.example.json`](../../docker/entrypoint.example.json)
-   into that volume as `/data/entrypoint.json`. Change the hostnames and source
-   networks for your installation. The example uses `192.168.16.0/24`; it is a
-   sample, not a discovered network. Each service requires its own explicit
-   policy. Remove the optional `inference` or `nodes` object to leave it closed.
-3. Point those DNS names at the NAS. For example, both `eugene.home.arpa` and
-   `workbench.home.arpa` can resolve to `192.168.16.252`. A router's local DNS or
-   client hosts files work. Remote clients need matching DNS and routing too.
-4. Choose certificate trust. For a home lab, `internal_ca: true` creates a local
-   CA under `/data/entrypoint/tls/pki/authorities/local/`. After first startup,
-   install **only `root.crt`** into the trusted certificate store of each browser
-   and node that connects. Keep the entire `/data/entrypoint` directory private;
-   it contains CA private keys. Eugene never installs trust on your devices or
-   asks you to disable TLS verification.
-
-   For a business, set `internal_ca: false` and specify `certificate` and
-   `private_key` as absolute container paths to readable PEM files. The full
-   certificate chain must cover every configured hostname, and clients must
-   trust its issuer. Use certificates managed by your organisation or a public
-   CA. Renewed mounted certificate/key files reload automatically; mount their
-   directory so atomic file replacements are visible. This mode does not open
-   port 80 for certificate challenges. Automatic Let's Encrypt instead uses
-   public TCP 443; an existing proxy can manage certificates on Eugene's behalf.
-
-   For a private organisation CA, also set `trusted_ca` to its mounted public CA
-   PEM file, so services inside the container trust the same issuer. Internal-CA
-   mode does this automatically. Eugene builds a private process-local CA bundle
-   containing the standard public roots plus that CA; it does not modify system
-   trust. Native nodes use their operating system's installed certificate trust.
-5. Set `EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG=/data/entrypoint.json`, publish
-   `8443:8443` for the local-CA example (`443:8443` for automatic Let's Encrypt),
-   and remove the old mappings for `8079`, `8080`, `8083` and the
-   Workbench app port. With Compose, use the standalone
-   [`compose.single-port.yaml`](../../docker/compose.single-port.yaml), preserving
-   your existing volume name/project, model mounts and other settings. With
-   Unraid, add the variable and HTTPS TCP mapping in the container editor and
-   remove the previous port mappings. Set its WebUI address to the configured
-   console origin, for example `https://eugene.home.arpa:8443/`.
-   With a same-host reverse proxy, publish **no Eugene ports** and follow the
+1. **Update Workbench in Apps first.** Old Workbench versions are refused by the
+   HTTPS proxy because they cannot enforce its origin and cookie rules.
+2. **Point the names at the NAS or your proxy.** For example, both
+   `eugene.home.arpa` and `workbench.home.arpa` can resolve to `192.168.16.252`.
+   A router's local DNS or client hosts files work. Remote clients need matching
+   DNS and routing too. By default there are two names, the console and
+   Workbench; the inference and node names are extras you can tick.
+3. **Publish the HTTPS port** if Eugene serves HTTPS itself: `8443:8443` for local
+   certificates, `443:8443` for automatic Let's Encrypt. Behind a reverse proxy on
+   the same Docker network, the proxy reaches Eugene on its network address and
+   nothing new needs publishing; see the
    [dedicated-network recipe](container-access.md#existing-reverse-proxy-on-the-same-docker-host).
-6. Recreate the container, open the console hostname, and choose **Apps →
-   Workbench → Restart** once. This operator action replaces the registered
-   sign-in callback. Existing chats remain; people sign in again. Subsequent
-   ordinary app restarts keep their sign-ins. **Open** now uses the Workbench
-   hostname, whatever internal app port it was assigned.
+   With Unraid, set the container's WebUI address to the console address, for
+   example `https://eugene.home.arpa:8443/`.
+4. **Apply.** Eugene restarts; the page you applied it from stops answering. Open
+   the console address and sign in **within 15 minutes**. Until somebody signs in
+   to the console through the new address, the setup is on approval: if nobody
+   does, Eugene puts back what it had before, restarts on it, and the setup page
+   says why. A wrong proxy address or DNS name costs fifteen minutes, never the
+   console. A setup that does not start at all goes back at once.
+5. **Nothing else.** Workbench's sign-in address follows by itself at startup,
+   with the same sign-in registration, so its chats and sign-ins are kept.
+   **Open** in Apps uses the Workbench hostname. Machines you have connected keep
+   reaching this one at the control root's port (8083 in the container), so keep
+   that port published while other machines are enrolled. Once the console
+   answers on the new address, you can remove the old mappings for `8079`,
+   `8080` and the Workbench app port; they no longer answer.
+
+To go back to the direct ports, use **Turn off one HTTPS port** on the same page.
+Eugene keeps the configuration as `/data/entrypoint.json.disabled` and restarts on
+its direct ports, which need to be published again to be reached.
+
+Certificate trust, for the modes where Eugene serves HTTPS itself:
+
+- For a home lab, local certificates create a CA under
+  `/data/entrypoint/tls/pki/authorities/local/`. After first startup, install
+  **only `root.crt`** into the trusted certificate store of each browser and node
+  that connects. Keep the entire `/data/entrypoint` directory private; it
+  contains CA private keys. Eugene never installs trust on your devices or asks
+  you to disable TLS verification.
+- For a business, supply `certificate` and `private_key` as absolute container
+  paths to readable PEM files. The full certificate chain must cover every
+  configured hostname, and clients must trust its issuer. Renewed mounted
+  certificate/key files reload automatically; mount their directory so atomic
+  file replacements are visible. This mode does not open port 80 for certificate
+  challenges. Automatic Let's Encrypt instead uses public TCP 443; an existing
+  proxy can manage certificates on Eugene's behalf.
+- For a private organisation CA, also set `trusted_ca` to its mounted public CA
+  PEM file, so services inside the container trust the same issuer. Local
+  certificates do this automatically. Eugene builds a private process-local CA
+  bundle containing the standard public roots plus that CA; it does not modify
+  system trust. Native nodes use their operating system's installed certificate
+  trust.
+
+**By hand, without the page:** copy a prepared configuration (Download
+configuration), or [`docker/entrypoint.example.json`](../../docker/entrypoint.example.json),
+into the data volume as `/data/entrypoint.json`, and restart the container. A
+file copied in by hand is not on approval: Eugene uses it as written. A file
+somewhere else can be named with
+`EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG`. With Compose, the standalone
+[`compose.single-port.yaml`](../../docker/compose.single-port.yaml) publishes the
+HTTPS port; keep your existing volume name, model mounts and other settings.
 
 If you previously set a custom **OIDC issuer** on the control root, change it to
 the console origin plus `/oidc` as part of the migration. Workbench verifies this
@@ -218,38 +234,39 @@ This version publishes Workbench as the browser app. Other optional apps remain
 private and have no Open link in this mode. Use the direct-port setup if you need
 to publish another app until an explicit hostname integration is available.
 
-If port 8443 is occupied, choose another **host** port and put that same port in
-every configured `origin`. Keep `listen_port: 8443` and map, for example,
-`9443:8443`; origins then end in `:9443`. A host mapping of `443:8443` uses origins
-without an explicit port. The internal listener is unprivileged; no root user
-or extra Linux capability is needed.
+If port 8443 is occupied, choose another **host** port and enter it as the public
+HTTPS port on the setup page; Eugene keeps listening on 8443 inside the container,
+so map, for example, `9443:8443`. A host mapping of `443:8443` uses addresses
+without an explicit port. The internal listener is unprivileged; no root user or
+extra Linux capability is needed.
 
-For remote Workbench access, extend **only Workbench's** `networks` policy as
-needed (`0.0.0.0/0` and `::/0` explicitly mean public). Its policy also applies to
-the console hostname's `/oidc/*` sign-in routes. Console administration stays
-under the console policy. Nodes retain a separate restricted policy; inference
+For remote Workbench access, tick **Allow Workbench access from any network**
+(`0.0.0.0/0` and `::/0`). That policy also applies to the console hostname's
+`/oidc/*` sign-in routes. Console administration stays under the console's own
+networks. The node name, when used, keeps a separate restricted policy; inference
 publishes only inference routes, not gateway configuration or authentication
 management. Requests are limited to 32 MiB and headers to 32 KiB; streaming
-responses remain supported. Public Workbench still requires an account and its file grants.
-Authenticate and finish first-run setup on the private network before making
-Workbench public.
+responses remain supported. Public Workbench still requires an account and its
+file grants. Authenticate and finish first-run setup on the private network before
+making Workbench public.
 
-Source networks refer to the actual client. Direct mode ignores incoming
-forwarding headers. Explicit proxy mode accepts client metadata only from
-configured individual proxy IPs, resolves the chain from right to left, and
-rejects missing/invalid metadata. Configure the outer proxy to preserve the
-original client address; never allow its LAN address as if every caller were a
-private administrator. Docker's normal Linux bridge with published ports and
+Source networks refer to the actual visitor. Direct mode ignores incoming
+forwarding headers. Proxy mode accepts visitor addresses only from the individual
+proxy addresses entered, resolves the chain from right to left, and rejects
+missing or invalid metadata. Configure the outer proxy to preserve the original
+client address; never allow its LAN address as if every caller were a private
+administrator. When Eugene refuses a request, the answer says which check failed
+and what address it saw. Docker's normal Linux bridge with published ports and
 private HTTP behind a second HTTPS proxy are covered by container acceptance.
 
-**Already enrolled machines:** changing the control endpoint requires updating
-their saved address too. Stop Eugene on each worker, back up its `node.yaml`,
-change only its `controlUrl` to the configured nodes origin, and start it again.
-Keep its name, keys and all other fields unchanged; do not unenroll it. Install
-CA trust first if using a private CA. The install directory is shown in Eugene's
-machine information. Set the container's advertised agent address to its console
-origin so peers reach it on HTTPS, and include those peers in the console's
-source networks. Newly copied enrollment commands use the nodes origin.
+**Moving connected machines to the node name** (only if you tick it): each one's
+saved control address has to change to the node name. Stop Eugene on each
+machine, back up its `node.yaml`, change only its `controlUrl` to the node
+address, and start it again. Keep its name, keys and all other fields unchanged;
+do not unenroll it. Install CA trust first if using a private CA. Set the
+container's advertised agent address to its console origin so peers reach it on
+HTTPS, and include those peers in the console's networks. Newly copied
+enrollment commands use the node name.
 
 The local Workbench talks to the provider over a fixed loopback transport while
 checking the public OIDC issuer. This avoids hairpin DNS/NAT and does not pass it
@@ -258,13 +275,11 @@ never treated as permission to access another person's files.
 
 If the configuration file exists but is invalid, the container refuses to start
 rather than reverting to the direct ports; its log names the file and the
-problem in one sentence. If the variable names a file that does not exist, Eugene
-starts on its direct ports as before, and its log and `/healthz`
-(`entrypointFallback`) say so. Put the file in place and restart to switch. An absent, stopped or outdated Workbench returns
-503 from its hostname; use the console to update/start it. To roll back to direct
-ports, remove the entry-point variable, restore the previous mappings, recreate,
-and restart Workbench in Apps to restore its direct-port callback. Existing
-workers' `controlUrl` values must match the chosen mode.
+problem in one sentence. (One just applied from Settings goes back instead.) If
+`EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG` names a file that does not exist, Eugene
+starts on its direct ports, and its log and `/healthz` (`entrypointFallback`) say
+so. An absent, stopped or outdated Workbench returns 503 from its hostname; use
+the console to update or start it.
 
 See the [security design](../design/single-port-entrypoint.md) for boundaries and
 the [upstream Caddy proxy documentation](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy)

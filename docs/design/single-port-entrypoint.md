@@ -6,8 +6,16 @@ required. Existing containers retain their current ports until explicitly migrat
 
 The agent supervises a pinned, unmodified Caddy distribution. A startup JSON file
 selects the HTTPS listener, exact service origins, TLS certificate source and an
-independent source-network allowlist for each service. Only that listener is
-published. Agent, components and apps bind loopback in this mode. No arbitrary
+independent source-network allowlist for each service. The file is
+`entrypoint.json` beside `agent.yaml` (`/data/entrypoint.json` in the image),
+read only where the bundled proxy exists, or the path in
+`EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG`; its presence is the opt-in. Agent,
+components and apps bind loopback in this mode, **except the control root's own
+port when the node hostname is not configured** (2026-10-05): enrolled machines
+know the root by that address, its port takes only signed and authenticated
+calls, as before, and moving it behind the entry point meant editing every
+machine's `node.yaml` by hand. With the node hostname configured, the control
+root binds loopback too and machines use that name. No arbitrary
 upstream URL, wildcard hostname, caller-selected target or inferred public address
 is accepted. Unknown hosts fail closed, and TLS SNI must match the HTTP hostname.
 
@@ -37,11 +45,18 @@ Workbench receives these additional startup variables from the agent:
   canonical public issuer. Browser authorization URLs stay public. This avoids
   hairpin NAT and distributing a proxy credential or TLS private key to apps.
 
-Changing an existing app's origin requires an operator-authorized Start/Restart
-to replace its exact registered callbacks. This rotates its OIDC client and ends
-old sign-ins, preserving chat data. Boot alone cannot borrow operator authority.
-New installations register the public callback immediately. Removing single-port
-configuration uses the same explicit migration back to direct addresses.
+When an app's origin changes, **the agent moves its exact registered callbacks
+at boot**, with its own node token (Troy, 2026-10-05; until then this needed an
+operator Restart from a console the move had just made harder to reach). The
+control root accepts a node's own token only on
+`PUT /v1/oidc/clients/{id}/redirect-uris`, only for clients named
+`app:<id>@<that node>`, and changes nothing but the redirect URIs: the same client
+id and secret, so sign-ins and chats are kept. The node gains nothing by it: it
+runs those apps and holds their client secrets, so every sign-in to them already
+passes through it. An operator Start/Restart moves a stale client the same way,
+and registers a new one only for a client the root no longer has. New
+installations register the public callback immediately. Going back to the direct
+ports moves the callbacks back the same way.
 
 Caddy's configuration is regenerated from installed service records, including
 Workbench's actual assigned port. Uninstalled or disabled Workbench returns 503,
@@ -82,11 +97,28 @@ certificate changes reload without restarting apps; failed reloads retain the
 last working certificate. Changing trusted CA roots still requires restart.
 
 The console's access setup page previews and validates configuration without
-changing listeners. It generates hostnames from a base domain, explicit network
-policies and instructions for standalone, existing-proxy and private-CA setups.
-Preview does not request certificates, modify DNS or claim network reachability.
-The operator applies the prepared configuration with the container's existing
-volume and routing settings. Existing installations never switch implicitly.
+changing listeners. It generates two hostnames from a base domain by default, the
+console and Workbench; the inference and node names are opt-in extras. Preview
+does not request certificates, modify DNS or claim network reachability.
+Existing installations never switch implicitly.
+
+**Apply** (2026-10-05) checks the configuration with the bundled proxy, writes the
+file and restarts the agent in place: the lifespan stops every child, and the
+process re-executes itself, so the container keeps running. **An applied
+configuration is on approval**, because the page that applied it stops answering
+at the address it was opened at: until an operator session arrives through the new
+entry point, the previous file is kept aside, and if none arrives within 15
+minutes of a start, or the start fails, the agent puts it back, keeps the failed
+one as `entrypoint.json.reverted` and reports why. A file copied in by hand is not
+on approval. Turning it off from the same page keeps the file as
+`entrypoint.json.disabled` and restarts on the direct ports.
+
+Every refusal says which check failed and what the proxy saw, as plain text: an
+untrusted connecting address, a proxy that did not say who the visitor is, a
+request not marked HTTPS, a visitor outside a name's networks (with its own answer
+when the request came through Cloudflare, whose addresses every visitor then
+appears to have), and an unknown hostname. A refusal names only what the caller
+sent or is, never a trusted address, an allowed network or another hostname.
 
 Release checks cover exact hosts/SNI, forwarding spoofing, private console with
 reachable Workbench sign-in, callback migration, cookie and sibling-origin CSRF

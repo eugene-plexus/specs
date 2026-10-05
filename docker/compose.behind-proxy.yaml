@@ -12,7 +12,9 @@ services:
     environment:
       EUGENE_PLEXUS_CONTAINER_HOST: compose
       EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG: /data/entrypoint.json
-    # No ports: only the existing HTTPS proxy is published.
+    # No ports: only the existing HTTPS proxy is published. While other
+    # machines are enrolled, keep the control root's port for them:
+    # ports: ["8083:8083"]
     networks:
       - eugene-ingress
     volumes:

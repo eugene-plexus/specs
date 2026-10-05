@@ -71,6 +71,10 @@
 #       log and /healthz say why
 #   37. the same variable naming a broken file stops the container with
 #       one sentence naming the file, and no traceback
+#   38. Settings applies one HTTPS port with no variable: the agent restarts
+#       in place (same pid, container never stops), an operator through the
+#       new address confirms it, a second setup nobody signs in through goes
+#       back by itself, and turning it off restores the published direct port
 #
 # Not here, and cannot be: a GPU. CI runners have none, so passthrough,
 # detection inside a container and a CUDA build loading are checked on a
@@ -862,6 +866,38 @@ else
   bad "37. broken entry point file: exit $code"
   printf '%s\n' "$stopped" | tail -20 | sed 's/^/      /'
 fi
+
+# 38. Apply from Settings, confirm, go back, turn off (2026-10-05). The
+# confirmation window is shortened to keep the run short; everything else is
+# the shipped image, its bundled Caddy and its local CA.
+say "runtime: apply one HTTPS port from Settings"
+$CT rm -f ep-apply-check >/dev/null 2>&1 || true
+if $CT run -d --name ep-apply-check --hostname apply-check --init \
+     -e EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIRM_SECONDS=25 \
+     --add-host eugene.home.arpa:127.0.0.1 --add-host workbench.home.arpa:127.0.0.1 \
+     -p 127.0.0.1:18479:8079 eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
+  started=$($CT inspect -f '{{.State.StartedAt}}' ep-apply-check 2>/dev/null | tr -d '\r')
+  if $CT exec -i -e EUGENE_CONTAINER_ACCEPTANCE=1 ep-apply-check \
+       /opt/eugene-plexus/venv/bin/python - < "$HERE/container-entrypoint-apply-acceptance.py"; then
+    after=$($CT inspect -f '{{.State.StartedAt}} {{.RestartCount}} {{.State.Running}}' ep-apply-check 2>/dev/null | tr -d '\r')
+    published=""
+    for _ in $(seq 1 60); do
+      curl -fsS -m 2 http://127.0.0.1:18479/healthz >/dev/null 2>&1 && { published=yes; break; }
+      sleep 1
+    done
+    if [ "$after" = "$started 0 true" ] && [ -n "$published" ]; then
+      ok "38. Settings applies one HTTPS port, it is confirmed or goes back by itself, and turning it off restores the direct port"
+    else
+      bad "38. after applying from Settings: '$after' (started $started), published direct port back: ${published:-no}"
+    fi
+  else
+    bad "38. applying one HTTPS port from Settings failed"
+    $CT logs ep-apply-check 2>&1 | tail -40 | sed 's/^/      /'
+  fi
+else
+  bad "38. could not start the image for the apply check"
+fi
+$CT rm -f ep-apply-check >/dev/null 2>&1 || true
 
 say "result"
 printf '  %d checks, %d failures\n' "$CHECKS" "$FAILURES"

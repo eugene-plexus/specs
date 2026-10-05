@@ -1,9 +1,11 @@
 # Choose how to reach Eugene and Workbench
 
-Open **Settings → Container access setup** to prepare a configuration and download
-the matching instructions. Preparation validates your choices; it does not test
-DNS or change your container. Follow the [migration and rollback steps](container.md#one-https-port)
-to apply it while retaining your data and enrolled machines.
+Open **Settings → Container access setup**, choose one of the setups below and
+press **Prepare setup**: the page checks your choices and lists what to set up
+around them (it does not test DNS). **Apply** then saves it and restarts Eugene
+in place. Open the console address and sign in within 15 minutes; if nobody does,
+Eugene goes back to how it was by itself, so a mistake never locks you out. The
+[migration steps](container.md#one-https-port) say what changes and how to go back.
 
 | Your setup | Choose | Published ports and certificates |
 | --- | --- | --- |
@@ -15,14 +17,33 @@ to apply it while retaining your data and enrolled machines.
 | Reverse proxy on a different machine | My reverse proxy, with HTTPS upstream | Verified TLS on both legs; Eugene's port restricted to the proxy |
 
 Every mode keeps separate exact console and Workbench hostnames, browser HTTPS,
-sign-in and per-user node/folder grants. Accounts are not isolated MSP tenants;
+sign-in and per-user node/folder grants. Those two names are the default; an
+inference name (for apps on other machines) and a node name are extras. Without a
+node name, machines you have connected keep reaching this one at the control
+root's port, 8083 in the container, so keep that port published while any are
+enrolled. Accounts are not isolated MSP tenants;
 use a separate Eugene installation for each customer requiring that boundary.
 Legacy direct ports remain available. The managed entry point runs in the Linux
 container; browsers and enrolled Windows/macOS/Linux machines can use it.
 
 ## Existing reverse proxy on the same Docker host
 
-Use a **dedicated Docker bridge network shared only by Eugene and the proxy**.
+**Two addresses, and they are easy to swap.** Your proxy forwards to *Eugene's*
+address on the Docker network they share, port `8088`, plain `http`. Eugene's
+**Trusted proxy IP addresses** is *the proxy's* address on that same network:
+not its LAN address, and one address, not a network. **Allowed private networks**
+is neither: it is where the people using the console are, such as your home
+network. To list both containers' addresses on a network:
+
+```sh
+docker network inspect <network> -f '{{range .Containers}}{{.Name}} {{.IPv4Address}}{{"\n"}}{{end}}'
+```
+
+Give the proxy a fixed address on that network (Unraid: the container's **Fixed
+IP address**), or it can change when the proxy is recreated and Eugene will stop
+trusting it.
+
+Best is a **dedicated Docker bridge network shared only by Eugene and the proxy**.
 The HTTP hop stays on that host; do not publish it on the LAN. Choose a subnet
 that does not overlap existing Docker, LAN or VPN networks. For example:
 
@@ -51,9 +72,13 @@ Use [compose.behind-proxy.yaml](../../docker/compose.behind-proxy.yaml) as the
 standalone Eugene definition, **not an overlay on a file that publishes ports**.
 Set `EUGENE_DATA_VOLUME` to the existing volume's actual Docker name. For Unraid
 or bind-mounted appdata, retain your existing host path mapped to `/data` instead
-of changing to a named volume. Attach the dedicated network, set the entrypoint
-environment variable and remove all Eugene port mappings. Keep the hostname,
-model mounts, GPU settings and user ID from your existing installation.
+of changing to a named volume. Attach the dedicated network; once the console
+answers through the proxy, the console, gateway and Workbench port mappings can go,
+but keep the control root's `8083` while other machines are enrolled. Keep the
+hostname, model mounts, GPU settings and user ID from your existing installation.
+On Unraid, a shared custom network your proxy already uses (often a
+`proxynet`-style bridge) works the same way; other containers on it are refused,
+because only the proxy's own address is trusted.
 
 The [proxy example](../../docker/entrypoint.proxy.example.json) uses port `8088`
 inside the container and HTTPS port 443 outside. Replace its names and client
@@ -63,6 +88,26 @@ Eugene rejects requests from untrusted connections and those without a valid
 client address and `X-Forwarded-Proto: https`. It reads trusted forwarding chains
 from right to left, so a caller cannot insert a private address to become an
 administrator. The outer proxy must replace or correctly append forwarding data.
+When Eugene refuses a request, the answer says which of these failed and the
+address it saw, such as *it came from 172.18.0.4, which is not a proxy Eugene
+trusts*.
+
+### Behind Cloudflare
+
+With Cloudflare's proxy (the orange cloud) in front of your own, every visitor
+arrives as a Cloudflare address:
+
+- Set Cloudflare's **SSL/TLS** mode to **Full** or **Full (strict)**. With
+  *Flexible*, your proxy tells Eugene the request was not HTTPS, and Eugene
+  refuses it.
+- Workbench works through Cloudflare when **Allow Workbench access from any
+  network** is ticked.
+- The console only answers your own networks, so through Cloudflare it refuses
+  you, and says so. To reach it from home, add a local DNS entry (router, Pi-hole,
+  or the hosts file) pointing the console name at your proxy's LAN address, so
+  home traffic skips Cloudflare. A Cloudflare *Origin* certificate on your proxy
+  is not trusted by browsers when they skip Cloudflare; use a Let's Encrypt
+  certificate there instead.
 
 ### Nginx Proxy Manager
 

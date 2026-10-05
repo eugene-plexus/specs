@@ -2,6 +2,11 @@
 
 The legacy Workbench check ran first on the same temporary volume. This verifies
 the shipped app, real OIDC provider, real proxy and existing chat data together.
+
+Since 2026-10-05 nobody restarts Workbench after the move: the agent moves its
+sign-in return address at boot, with the same client, and this checks that.
+The proxy phase leaves out the node name, so the control root keeps its
+direct port for enrolled machines while every other backend stays private.
 """
 from __future__ import annotations
 
@@ -49,6 +54,9 @@ def main():
         config.update(listen_port=8088, internal_ca=False,
                       proxy={"addresses": ["127.0.0.2"], "transport": "http"},
                       trusted_ca="/data/entrypoint/tls/pki/authorities/local/root.crt")
+        # Two names, as the setup page makes by default.
+        config.pop("inference", None)
+        config.pop("nodes", None)
         path.write_text(json.dumps(config))
         return
     if "--prepare" in sys.argv:
@@ -78,19 +86,21 @@ def main():
         token = call(CONSOLE, "POST", "/v1/auth/login", body={"passphrase": fixture["password"]})["sessionToken"]
         identity = call(CONSOLE, "GET", "/v1/node", token)
         assert identity["entrypoint"]["workbenchUrl"].rstrip("/") == WORKBENCH
-        assert identity["entrypoint"]["nodesUrl"].rstrip("/") == "https://nodes.home.arpa:18443"
-        app = call(CONSOLE, "GET", "/v1/apps/workbench", token)
-        assert app["uiUrl"] == WORKBENCH + "/"
-        before_id = app["oidcClientId"]
-        if "--proxy" not in sys.argv:
-            assert "Restart" in app["detail"]
-        call(CONSOLE, "POST", "/v1/apps/workbench/restart", token)
-        wait(lambda: client.get(WORKBENCH + "/healthz").status_code == 200, "proxied Workbench")
-        app = call(CONSOLE, "GET", "/v1/apps/workbench", token)
-        assert app["oidcClientId"] != fixture["oidcClientId"]
         if "--proxy" in sys.argv:
-            assert app["oidcClientId"] == before_id
-        assert "Restart" not in (app.get("detail") or "")
+            assert "nodesUrl" not in identity["entrypoint"]
+        else:
+            assert identity["entrypoint"]["nodesUrl"].rstrip("/") == "https://nodes.home.arpa:18443"
+        # Nobody restarts Workbench: the agent moved its return address at boot,
+        # with its own token, and kept the client it had (2026-10-05).
+        app = wait(
+            lambda: (found := call(CONSOLE, "GET", "/v1/apps/workbench", token))
+            and "sign-in address" not in (found.get("detail") or "")
+            and found,
+            "Workbench's sign-in address moved at boot",
+        )
+        assert app["uiUrl"] == WORKBENCH + "/"
+        assert app["oidcClientId"] == fixture["oidcClientId"], "the same client, not a new one"
+        wait(lambda: client.get(WORKBENCH + "/healthz").status_code == 200, "proxied Workbench")
         assert "<!doctype html>" in client.get(WORKBENCH + "/").text.lower()
 
         start = client.get(WORKBENCH + "/signin")
@@ -118,17 +128,30 @@ def main():
         assert client.get(WORKBENCH + "/api/me").status_code == 401
         assert client.get(WORKBENCH + f"/api/chats/{fixture['chat']}", headers=headers).status_code == 200
         assert client.post(WORKBENCH + "/api/chats", json={}, headers={**headers, "Origin": CONSOLE}).status_code == 403
-        assert client.get("https://inference.home.arpa:18443/v1/config").status_code == 403
-        assert client.get("https://nodes.home.arpa:18443/v1/nodes").status_code == 401
+        if "--proxy" in sys.argv:
+            # Names that were left out are not served at all.
+            assert client.get("https://inference.home.arpa:18443/v1/models").status_code == 421
+            assert client.get("https://nodes.home.arpa:18443/v1/nodes").status_code == 421
+        else:
+            assert client.get("https://inference.home.arpa:18443/v1/config").status_code == 403
+            assert client.get("https://nodes.home.arpa:18443/v1/nodes").status_code == 401
 
         address = socket.gethostbyname(socket.gethostname())
         assert address != "127.0.0.1"
-        for port in (8079, 8080, 8082, 8083, app["port"]):
+        private = [8079, 8080, 8082, app["port"]]
+        if "--proxy" in sys.argv:
+            # No node name: enrolled machines keep the control root's own port.
+            with socket.socket() as probe:
+                probe.settimeout(1)
+                assert probe.connect_ex((address, 8083)) == 0, "control root lost its direct port"
+        else:
+            private.append(8083)
+        for port in private:
             with socket.socket() as probe:
                 probe.settimeout(1)
                 assert probe.connect_ex((address, port)) != 0, f"backend port {port} escaped loopback"
         assert Path("/data/entrypoint").stat().st_mode & 0o777 == 0o700
-        print("PASS: existing NAS Workbench migrates to HTTPS; exact callbacks, Secure cookies, CSRF, chat preservation and private backend ports", flush=True)
+        print("PASS: existing NAS Workbench migrates to HTTPS with no restart and the same client; exact callbacks, Secure cookies, CSRF, chat preservation and private backend ports", flush=True)
 
         call(CONSOLE, "POST", "/v1/apps/workbench/stop", token)
         wait(lambda: client.get(WORKBENCH + "/").status_code == 503, "stopped app route")
