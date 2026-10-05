@@ -2230,6 +2230,93 @@ paths:
         '403':
           description: An operator session is required.
 
+  /v1/entrypoint:
+    get:
+      tags: [node]
+      operationId: getEntryPoint
+      summary: Whether this container serves on one HTTPS port, and why or why not.
+      description: |
+        Operator session required. Says which file this agent reads, whether
+        the entry point is running in this process, and, when it is not,
+        the reason: the file is missing, it was turned off from Settings, or
+        an applied configuration went back to the direct ports because
+        nobody signed in through it in time.
+      responses:
+        '200':
+          description: The entry point as it stands.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntryPointStatus'
+        '401':
+          description: Authentication required.
+        '403':
+          description: An operator session is required.
+    delete:
+      tags: [node]
+      operationId: turnOffEntryPoint
+      summary: Go back to the direct ports, and restart.
+      description: |
+        Operator session required. Keeps the file beside itself as
+        `<file>.disabled`, then restarts this agent in place, which brings
+        the direct ports back. The answer arrives before the restart.
+      responses:
+        '202':
+          description: Turning off; the agent restarts in a moment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntryPointStatus'
+        '401':
+          description: Authentication required.
+        '403':
+          description: An operator session is required.
+        '409':
+          description: The entry point is not running here, so there is nothing to turn off.
+
+  /v1/entrypoint/apply:
+    post:
+      tags: [node]
+      operationId: applyEntryPoint
+      summary: Save a container access setup and restart into it.
+      description: |
+        Operator session required. Validates as the preview does, also
+        checks that any certificate files exist, writes the file this
+        agent reads, and restarts this agent in place. The answer arrives
+        before the restart.
+
+        **A safety net, because the page that applies it stops answering
+        at the address it was opened at.** Until an operator request
+        arrives through the new entry point, the configuration is on
+        approval: if none arrives within `confirmBy` (15 minutes from each
+        start), the agent puts the previous file back, or removes it, and
+        restarts on what it had before. So a wrong proxy address or DNS
+        name costs fifteen minutes, never the console.
+
+        Refused with 409 where the entry point cannot run (anywhere but a
+        Linux container with the bundled proxy).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EntryPointPreviewRequest'
+      responses:
+        '202':
+          description: Saved; the agent restarts in a moment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntryPointStatus'
+        '400':
+          description: Invalid startup configuration.
+        '401':
+          description: Authentication required.
+        '403':
+          description: An operator session is required.
+        '409':
+          description: The entry point cannot run on this machine.
+
   /v1/node:
     get:
       tags: [node]
@@ -6528,6 +6615,48 @@ components:
           type: array
           items:
             type: string
+
+    EntryPointStatus:
+      type: object
+      additionalProperties: false
+      required: [available, active, path]
+      properties:
+        available:
+          type: boolean
+          description: This machine can run the entry point (a Linux container with the bundled proxy).
+        unavailableReason:
+          type: string
+          description: Why not, when `available` is false.
+        path:
+          type: string
+          description: |
+            The file this agent reads: `EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG`
+            when set, otherwise `entrypoint.json` beside `agent.yaml`.
+        active:
+          type: boolean
+          description: The entry point is running in this process.
+        publicUrls:
+          $ref: '#/components/schemas/PublicEntryPoint'
+        configuration:
+          type: object
+          additionalProperties: true
+          description: The configuration in effect, when `active`.
+        confirmBy:
+          type: string
+          format: date-time
+          description: |
+            When a just-applied configuration goes back to what was there
+            before, unless an operator request arrives through it first.
+            Absent once confirmed.
+        fallback:
+          type: string
+          description: Why the file is not in effect, in one sentence, when it is not.
+        reverted:
+          type: string
+          description: Why the last applied configuration went back, when it did.
+        restarting:
+          type: boolean
+          description: True in the answer to an apply or turn-off; the agent restarts next.
 
     PublicEntryPoint:
       type: object
