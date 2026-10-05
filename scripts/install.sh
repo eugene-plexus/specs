@@ -61,11 +61,11 @@ set -eu
 # Generated from release/manifest.json by scripts/release-inputs.py.
 PIN_AGENT=a8cfddeb1982fc3fdd5594719d650f9ddb8b1445
 PIN_CONTROL=b667699c4698aaf97fc4a351637840f94c46daba
-PIN_GATEWAY=2c92e568c96f71442605df5f79f07ff4304d808c
+PIN_GATEWAY=219b191f8b670afed827c96257b55c6240bdd25d
 PIN_DRIVER=02beb480eb19af45d71435947291f1387d53060e
 PIN_LIBRARY=98daf3038090ff60b26c5a1cf09b1b7937ff8543
 PIN_TOOL_DRIVER=ed99e7aa09f3d9fb69611f24bff84d372c5de0e9
-PIN_UI=cba2e5657453f6bba678281942805baf4ceaa784   # branch `dist`, not `main`
+PIN_UI=1dc26aa8ce03fcf597cef2a3f7e4738632df4eaf   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
