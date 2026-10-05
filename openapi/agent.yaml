@@ -3694,6 +3694,15 @@ components:
       properties:
         entrypoint:
           $ref: '#/components/schemas/PublicEntryPoint'
+        jobSite:
+          type: boolean
+          description: |
+            True when this machine joined as a Job Site
+            (`docs/design/remote-nodes.md` §3.2): it connects out to the
+            root and nothing connects to it, it announces no address, and
+            it runs no inference work. Declaring a runtime, installing an
+            engine, starting a benchmark or a profile build here answers
+            409. Its files are managed by its owner, from Workbench.
         enrolled:
           type: boolean
           description: |
@@ -6679,6 +6688,17 @@ components:
         nodesUrl:
           type: string
           format: uri
+        publicNodes:
+          type: boolean
+          description: |
+            The nodes name also answers machines on any network, for the
+            node paths only (`public_nodes`, J3,
+            `docs/design/remote-nodes.md` §3.1): joining as a Job Site,
+            the trust bundle with a node's token, the signed TLS key list,
+            and the file helper's poll, claim and result. Every other path
+            on that name is refused with a sentence naming the console.
+            The networks listed for the name keep the whole control API,
+            as before. Set only with an acknowledgement of the risks.
 
     AppManifest:
       type: object

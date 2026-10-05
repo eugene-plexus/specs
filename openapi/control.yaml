@@ -1251,6 +1251,16 @@ paths:
         A sealed root still answers, with the last bundle it signed,
         which it keeps on disk. A root that has never signed one answers
         503.
+
+        **A bearer, when sent, must verify**: a member's own `sub: agent`
+        token, or 401. **Through the public node route it is required**
+        (`docs/design/remote-nodes.md` §3.1, J3): the bundle names every
+        machine, its keys and grants, and the signed-out session ids,
+        which is nobody's business on the internet. The entry point marks
+        a request that came that way (`X-Eugene-Plexus-Entry:
+        public-nodes`, set by it and stripped from everything else), and
+        this root then refuses one without a token. Every agent sends its
+        token on the pull.
       responses:
         '200':
           description: The current bundle.
@@ -1258,6 +1268,40 @@ paths:
             application/json:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/SignedTrustBundle'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/trust/tls:
+    get:
+      tags: [control]
+      operationId: getRootTls
+      summary: The TLS public keys this root's nodes name presents, signed by its identity.
+      security: []
+      description: |
+        **Public, and safe to be: public keys only** (J7a, Troy,
+        2026-10-05). A Job Site pins this root's identity key from its
+        join command, not a certificate. Before it sends a join token or
+        a password, and whenever a connection presents a key it has not
+        seen, it fetches this list over that same connection, checks the
+        signature against the pinned key, and accepts the connection only
+        when the key it was shown is listed and its certificate has not
+        expired. So renewals need nobody, and no public CA or DNS name is
+        needed.
+
+        The root learns the keys by connecting to its own nodes name: to
+        its entry point on loopback, or to the public name when an
+        outside proxy holds the certificate. When it cannot, this answers
+        503 with the reason, and a site joins nothing rather than trust
+        what it was shown.
+      responses:
+        '200':
+          description: The current signed list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedRootTls'
         '503':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
@@ -1316,6 +1360,10 @@ paths:
       operationId: createRuntime
       summary: Declare a runtime on a node, forwarded to that node's agent.
       description: |
+        **A Job Site runs nothing** (`Node.grants` holds `files`): a
+        placement that names one is refused with 409, as its own agent
+        would refuse it.
+
         Accepted here and **forwarded** to the target node's agent, which
         is what makes "the operator talks to the control root" true
         rather than aspirational. `node` selects the host; omitted, it
@@ -1649,7 +1697,15 @@ paths:
       operationId: listNodeHelpers
       tags: [node-helpers]
       summary: listNodeHelpers
-      description: Operator-only capability and folder administration. No implicit file access is granted.
+      description: |
+        Operator-only capability and folder administration. No implicit file access is granted.
+
+        **A Job Site** (`jobSite: true`) is listed with its owner and whether it is
+        online, and nothing else, in production mode: `folders` is empty and
+        `hidden` is true. In dev mode (`installMode`) its folders and their grants
+        are shown, and the owner may set `ownerAccess` on them; every other change
+        to a Job Site is its owner's, from Workbench (`/oidc/job-sites`), and is
+        refused here with 403.
       responses:
         '200':
           description: Success.
@@ -1941,6 +1997,256 @@ paths:
         '429':
           description: Too many recent operations.
 
+  /oidc/install-mode:
+    post:
+      operationId: getInstallMode
+      tags: [node-helpers]
+      summary: The install's mode, for an app to tell every person it serves
+      description: |
+        `production` or `dev` (J13, J18). In dev mode Eugene's owner sees all
+        tool information, Job Site results included, and may grant themselves
+        a site's folders; every person is told. Results produced in production
+        stay hidden from the owner after a switch to dev. A new install starts
+        in production. An enrolled Workbench client authenticates; no person
+        is needed, because the mode is the same for everyone.
+      security: [{helperClient: []}]
+      responses:
+        '200':
+          description: The mode, and when it last changed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InstallMode'}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '404':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+
+  /oidc/job-sites:
+    post:
+      operationId: listMyJobSites
+      tags: [node-helpers]
+      summary: The signed-in person's own Job Sites
+      description: |
+        Every Job Site this person owns, with its folders and who may use
+        them. A Job Site's owner is the only one who grants its folders
+        (J11). Authenticated as `/oidc/node-helpers/*` is: an enrolled
+        Workbench client and the person's refresh credential.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HelperDiscovery'}
+      responses:
+        '200':
+          description: The person's sites.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobSiteList'}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '404':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+
+  /oidc/job-sites/invite:
+    post:
+      operationId: inviteMyJobSite
+      tags: [node-helpers]
+      summary: A join command for one of the signed-in person's own machines
+      description: |
+        Self-service (J9): any signed-in person may add a Job Site for a
+        machine of their own. Mints a `files` join token naming them, valid
+        15 minutes, at most three outstanding per person. The machine joins
+        through the public node route, and the person confirms there with
+        their own password. 409 when the owner has not opened that route.
+        Eugene's owner signs in with the passphrase and owns no Job Sites:
+        to use one, they make a person account for themselves.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteInviteRequest'}
+      responses:
+        '200':
+          description: The invitation. The token is shown once.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobSiteInvite'}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '404':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /oidc/job-sites/{node}/enabled:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: enableMyJobSite
+      tags: [node-helpers]
+      summary: Turn a Job Site's file helper on or off
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteEnable'}
+      responses:
+        '200':
+          description: The site.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobSite'}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '404':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /oidc/job-sites/{node}/folders:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: addMyJobSiteFolder
+      tags: [node-helpers]
+      summary: Register an existing folder on the person's own Job Site
+      description: |
+        As the operator's folder registration on an ordinary node: the
+        machine's helper opens the folder and reports its identity, and
+        nobody is granted anything.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteFolderCreate'}
+      responses:
+        '201':
+          description: The folder.
+          content:
+            application/json:
+              schema: {$ref: 'components/node-helpers.yaml#/HelperFolder'}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '404':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /oidc/job-sites/{node}/folders/{folder_id}/remove:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: folder_id, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: removeMyJobSiteFolder
+      tags: [node-helpers]
+      summary: Remove a folder from the person's own Job Site
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HelperDiscovery'}
+      responses:
+        '204':
+          description: Removed, with every grant to it.
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '404':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /oidc/job-sites/{node}/folders/{folder_id}/people:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: folder_id, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: grantMyJobSiteFolder
+      tags: [node-helpers]
+      summary: Say who may use a folder on the person's own Job Site
+      description: |
+        Replaces the folder's list of people, the site's owner included
+        (J11: the owner grants their own access too). People are named by
+        how they sign in. Write access cannot exceed the folder's.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSitePeopleRequest'}
+      responses:
+        '200':
+          description: The folder.
+          content:
+            application/json:
+              schema: {$ref: 'components/node-helpers.yaml#/HelperFolder'}
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '404':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
+  /oidc/job-sites/{node}/leave:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: leaveMyJobSite
+      tags: [node-helpers]
+      summary: Take the person's own machine out of the install
+      description: |
+        Leaving needs no one's permission (§3.3). The site's key leaves the
+        trust bundle at once, as when Eugene's owner removes it.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HelperDiscovery'}
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          description: Authentication, current permission, state, or availability refused the request.
+        '403':
+          description: Authentication, current permission, state, or availability refused the request.
+        '404':
+          description: Authentication, current permission, state, or availability refused the request.
+        '409':
+          description: Authentication, current permission, state, or availability refused the request.
+        '503':
+          description: Authentication, current permission, state, or availability refused the request.
 components:
 
   securitySchemes:
@@ -2003,6 +2309,63 @@ components:
       $ref: "components/node-helpers.yaml#/HelperDiscovery"
     HelperCancel:
       $ref: "components/node-helpers.yaml#/HelperCancel"
+    InstallMode:
+      $ref: "components/node-helpers.yaml#/InstallMode"
+    JobSite:
+      $ref: "components/node-helpers.yaml#/JobSite"
+    JobSiteList:
+      $ref: "components/node-helpers.yaml#/JobSiteList"
+    JobSiteInviteRequest:
+      $ref: "components/node-helpers.yaml#/JobSiteInviteRequest"
+    JobSiteInvite:
+      $ref: "components/node-helpers.yaml#/JobSiteInvite"
+    JobSiteEnable:
+      $ref: "components/node-helpers.yaml#/JobSiteEnable"
+    JobSiteFolderCreate:
+      $ref: "components/node-helpers.yaml#/JobSiteFolderCreate"
+    JobSitePeopleRequest:
+      $ref: "components/node-helpers.yaml#/JobSitePeopleRequest"
+    SignedRootTls:
+      type: object
+      required: [jws]
+      properties:
+        jws:
+          type: string
+          description: |
+            A JWS compact serialization with header
+            `{"alg": "EdDSA", "typ": "ep-root-tls+jwt"}`, whose payload is
+            a `RootTls`, signed with this root's identity key (the key a
+            trust bundle's `authority` names, and a join command's
+            `rootKey`).
+    RootTls:
+      type: object
+      description: What a Job Site checks a connection to this root against.
+      required: [iat, origin, keys]
+      properties:
+        iat:
+          type: integer
+          format: int64
+          description: When it was signed, in seconds since the epoch.
+        origin:
+          type: string
+          description: The nodes name these keys were seen on, `https://host[:port]`.
+        keys:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/RootTlsKey'}
+    RootTlsKey:
+      type: object
+      required: [spki, notAfter]
+      properties:
+        spki:
+          type: string
+          description: |
+            Base64url (no padding) of the SHA-256 of the presented
+            certificate's DER SubjectPublicKeyInfo.
+        notAfter:
+          type: integer
+          format: int64
+          description: The certificate's expiry, in seconds since the epoch. A site refuses a key past it.
     ClientKeyLimits:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyLimits'
 
@@ -2117,9 +2480,37 @@ components:
             $ref: 'components/common.yaml#/components/schemas/TrustGrant'
           description: |
             What this node's key may issue, as the trust bundle lists it:
-            always `node`, plus `gateway` when the join token that
-            enrolled it said so. Given by the operator, never claimed by
-            the node.
+            `node`, plus `gateway` when the join token that enrolled it
+            said so. **A Job Site holds `files` instead of `node`**
+            (`docs/design/remote-nodes.md` §3.2): it has no address, is
+            sent no inference work, and its key opens only the helper
+            routes and the trust bundle. Given by the join token, never
+            claimed by the node.
+        owner:
+          type:
+            - string
+            - "null"
+          description: |
+            A Job Site's owner: the id of the person who confirmed the
+            join at the machine with their own password. Only that person
+            grants the site's folders to other people. `null` for every
+            other node.
+        ownerName:
+          type:
+            - string
+            - "null"
+          description: The owner's sign-in name, for display. `null` when `owner` is.
+        lastContactAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: |
+            When this node last reached this root with its own token (the
+            file helper's poll). It is the status of a Job Site, which has
+            no address to probe: *last contact N s ago*, never *down*.
+            Observation, not applied state, so never replicated; `null`
+            until it has called.
         trustBundleVersion:
           type:
             - integer
@@ -2232,13 +2623,25 @@ components:
           type: array
           items:
             type: string
-            enum: [gateway]
+            enum: [gateway, files]
           description: |
             Extra grants the node enrolled with this token receives in the
             trust bundle. `gateway` lets it mint `sub: gateway` tokens to
             other machines, which the install's gateway needs in order to
             reach every node's drivers and agent. The wizard asks for it
             on the machine that runs the gateway; `/nodes` does not.
+
+            `files` makes the machine a **Job Site** in place of an
+            ordinary node, and needs `owner`. It cannot be combined with
+            `gateway`.
+        owner:
+          type: string
+          description: |
+            The person this Job Site invitation names (`files` only). The
+            join succeeds only when that person signs in at the machine
+            with their own password (`EnrollmentRequest.owner`), and they
+            become the site's owner. Eugene's owner invites; the person
+            owns.
 
     JoinToken:
       type: object
@@ -2274,7 +2677,18 @@ components:
           type: array
           items:
             type: string
-            enum: [gateway]
+            enum: [gateway, files]
+        owner:
+          type: string
+          description: The person a Job Site invitation names.
+        rootKey:
+          type: string
+          description: |
+            Base64 of this root's raw Ed25519 identity public key, for the
+            join command. A Job Site pins it **before** it sends anything
+            (J7a): it checks the root's signed TLS key list
+            (`GET /v1/trust/tls`) against it, and later every trust
+            bundle.
 
     JoinTokenRecord:
       type: object
@@ -2303,8 +2717,11 @@ components:
           type: array
           items:
             type: string
-            enum: [gateway]
+            enum: [gateway, files]
           description: What the node it enrolls will be granted, as minted.
+        owner:
+          type: string
+          description: The person a Job Site invitation names.
         used:
           type: boolean
           description: |
@@ -2367,6 +2784,11 @@ components:
             interface it used to reach this root; a root deriving it from
             the request's source address would be right on a flat mesh
             network and wrong behind anything else.
+
+            **Refused for a Job Site**, which has no address: nothing is
+            ever sent to it.
+        owner:
+          $ref: '#/components/schemas/SiteOwnerProof'
         agentVersion:
           type: string
         os:
@@ -2379,6 +2801,27 @@ components:
           type: array
           items:
             $ref: 'components/common.yaml#/components/schemas/ComputeDevice'
+
+    SiteOwnerProof:
+      type: object
+      additionalProperties: false
+      description: |
+        The person a Job Site invitation names, confirming the join at the
+        machine with their own password (`docs/design/remote-nodes.md`
+        §3.3, rule 1). Required with a `files` join token and refused with
+        any other. Checked after the token, rate-limited as a sign-in is,
+        and never stored: the root records the site's owner from it, so
+        ownership comes from presence plus the person's own credential.
+      required: [name, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        password:
+          type: string
+          minLength: 1
+          maxLength: 1024
 
     NodeAddressAnnouncement:
       type: object
@@ -2494,6 +2937,14 @@ components:
             Held by the control root under the passphrase-derived key, so
             a dead node's credentials are recoverable by the operator and
             by nobody else.
+        grants:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/TrustGrant'
+          description: |
+            What this node's key was granted. `files` tells the agent it is
+            a Job Site: it announces no address, polls for no run
+            operations, and refuses runtimes and engines.
 
     # -------- control state --------
 

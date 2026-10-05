@@ -16,7 +16,29 @@ HelperFolder:
     path: {type: string, minLength: 1, maxLength: 4096}
     identity: {type: string, minLength: 1, maxLength: 256}
     writable: {type: boolean, default: false}
-    ownerAccess: {type: string, enum: [none, read, write], default: none}
+    ownerAccess:
+      type: string
+      enum: [none, read, write]
+      default: none
+      description: >-
+        Eugene's owner's own access. On a Job Site it may be set only in dev
+        mode, and it works only while the install is in dev mode (J13b).
+    people:
+      type: array
+      maxItems: 256
+      description: >-
+        On a Job Site only: who may use this folder, set by the site's owner
+        and nobody else (J11). Empty on every other node, whose grants are
+        each person's helperGrants.
+      items: {$ref: '#/SitePersonGrant'}
+
+SitePersonGrant:
+  type: object
+  additionalProperties: false
+  required: [person, writable]
+  properties:
+    person: {type: string, minLength: 1, maxLength: 64}
+    writable: {type: boolean, default: false}
 
 NodeHelper:
   type: object
@@ -90,3 +112,126 @@ HelperCancel:
   properties:
     refreshToken: {type: string, minLength: 1, maxLength: 16384}
     operationId: {type: string, minLength: 16, maxLength: 64, pattern: '^[a-zA-Z0-9_-]+$'}
+
+InstallMode:
+  type: object
+  additionalProperties: false
+  required: [mode]
+  properties:
+    mode: {type: string, enum: [production, dev]}
+    changedAt:
+      type: [string, 'null']
+      format: date-time
+      description: When the mode last changed; null when it never has.
+
+JobSiteFolderPerson:
+  type: object
+  additionalProperties: false
+  required: [person, name, writable]
+  properties:
+    person: {type: string}
+    name: {type: string, description: How the person signs in.}
+    writable: {type: boolean}
+
+JobSiteFolder:
+  type: object
+  additionalProperties: false
+  required: [id, name, path, writable, people]
+  properties:
+    id: {type: string}
+    name: {type: string}
+    path: {type: string}
+    writable: {type: boolean}
+    people:
+      type: array
+      items: {$ref: '#/JobSiteFolderPerson'}
+
+JobSite:
+  type: object
+  additionalProperties: false
+  required: [node, enabled, online, ready, folders]
+  properties:
+    node: {type: string}
+    enabled: {type: boolean}
+    online: {type: boolean}
+    ready: {type: boolean}
+    supported: {type: [boolean, 'null']}
+    reason: {type: [string, 'null']}
+    account: {type: [string, 'null'], description: The OS account to give folder permission to.}
+    lastContactAt: {type: [string, 'null'], format: date-time}
+    folders:
+      type: array
+      items: {$ref: '#/JobSiteFolder'}
+
+JobSiteList:
+  type: object
+  additionalProperties: false
+  required: [sites, installMode, canInvite]
+  properties:
+    sites:
+      type: array
+      items: {$ref: '#/JobSite'}
+    installMode: {$ref: '#/InstallMode'}
+    canInvite:
+      type: boolean
+      description: Whether the owner has opened the public route for machines, so this person can add one.
+
+JobSiteInviteRequest:
+  type: object
+  additionalProperties: false
+  required: [refreshToken]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    nodeName:
+      type: string
+      minLength: 1
+      maxLength: 63
+      pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$'
+      description: The machine's name in the install. Its own host name when left out.
+
+JobSiteInvite:
+  type: object
+  additionalProperties: false
+  required: [token, expiresAt, nodesUrl, rootKey, owner]
+  properties:
+    token: {type: string, description: Shown once.}
+    expiresAt: {type: string, format: date-time}
+    nodeName: {type: [string, 'null']}
+    nodesUrl: {type: string, description: The public node route the machine joins through.}
+    rootKey: {type: string, description: The root's identity key the machine pins.}
+    owner: {type: string, description: The sign-in name the machine will ask for.}
+
+JobSiteEnable:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, enabled]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    enabled: {type: boolean}
+
+JobSiteFolderCreate:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, name, path]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    name: {type: string, minLength: 1, maxLength: 80}
+    path: {type: string, minLength: 1, maxLength: 4096}
+    writable: {type: boolean, default: false}
+
+JobSitePeopleRequest:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, people]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    people:
+      type: array
+      maxItems: 256
+      items:
+        type: object
+        additionalProperties: false
+        required: [name, writable]
+        properties:
+          name: {type: string, minLength: 1, maxLength: 256, description: How the person signs in.}
+          writable: {type: boolean}
