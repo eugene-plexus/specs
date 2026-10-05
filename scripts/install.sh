@@ -59,13 +59,13 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=a8cfddeb1982fc3fdd5594719d650f9ddb8b1445
-PIN_CONTROL=b667699c4698aaf97fc4a351637840f94c46daba
-PIN_GATEWAY=219b191f8b670afed827c96257b55c6240bdd25d
-PIN_DRIVER=02beb480eb19af45d71435947291f1387d53060e
-PIN_LIBRARY=98daf3038090ff60b26c5a1cf09b1b7937ff8543
-PIN_TOOL_DRIVER=ed99e7aa09f3d9fb69611f24bff84d372c5de0e9
-PIN_UI=1dc26aa8ce03fcf597cef2a3f7e4738632df4eaf   # branch `dist`, not `main`
+PIN_AGENT=7db034d3138558481f0345b3f55e74196424032d
+PIN_CONTROL=981731a5cead9a730ab9e57052f930383fb32a60
+PIN_GATEWAY=271c1a1393ab8750e02d34d199d49e4b9e8fe966
+PIN_DRIVER=381edf37550cda2478b12c247042ac7d92e982f9
+PIN_LIBRARY=1be1803c5f7cbecfaef1dbc6068fa2d6856c0730
+PIN_TOOL_DRIVER=b30adf8e9de4333c41c6c7816e61fe85969a7421
+PIN_UI=114d9b4143d30fd4fee08ac472108cdd9e461dc0   # branch `dist`, not `main`
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
@@ -92,6 +92,9 @@ JOIN_CONTROL=
 JOIN_TOKEN=
 JOIN_NAME=
 JOIN_ADVERTISE=
+JOIN_SITE=0
+JOIN_OWNER=
+JOIN_ROOT_KEY=
 JOINED=0
 DO_PURGE_COPIES=0
 DO_PURGE_DATA=0
@@ -114,6 +117,9 @@ while [ $# -gt 0 ]; do
         --token) JOIN_TOKEN=$2; shift 2 ;;
         --name) JOIN_NAME=$2; shift 2 ;;
         --advertise) JOIN_ADVERTISE=$2; shift 2 ;;
+        --job-site) JOIN_SITE=1; shift ;;
+        --owner) JOIN_OWNER=$2; shift 2 ;;
+        --root-key) JOIN_ROOT_KEY=$2; shift 2 ;;
         --update) UPDATE=1; shift ;;
         -h|--help)
             sed -n '2,52p' "$0" 2>/dev/null || true
@@ -125,6 +131,7 @@ while [ $# -gt 0 ]; do
             echo "           --purge-data  (Mac/user install: delete settings, app data and logs)"
             echo "           --interactive  (Mac: show the removal choices)"
             echo "  worker node: --join URL --token JWT [--name NAME] [--advertise URL]"
+            echo "  job site:    --join URL --token JWT --job-site --owner NAME --root-key KEY [--name NAME]"
             echo "  standalone:  --advertise URL   (the address other devices reach this one at)"
             exit 0 ;;
         *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
@@ -2889,13 +2896,24 @@ if in_prefix test -f "$CONFIG"; then FRESH=0; fi
 
 if [ -n "$JOIN_CONTROL" ]; then
     [ -n "$JOIN_TOKEN" ] || die "--join needs --token (mint one at the control root: Nodes -> Add a node)"
-    say "joining $JOIN_CONTROL as a worker node"
     # `if` rather than `[ ... ] && set --`: under `set -e` a false test
     # at the end of a && chain is the script's exit status, so the
     # short-circuit would end the install rather than skip an option.
     set -- join --control "$JOIN_CONTROL" --token "$JOIN_TOKEN"
+    if [ "$JOIN_SITE" = 1 ]; then
+        # A job site (remote-nodes.md, section 3.2): the person the invitation names
+        # confirms here, typing their own Eugene password at the agent's
+        # prompt (read from the terminal); this script never sees it. It
+        # pins the root's key (J7a) and binds nothing beyond loopback.
+        [ -n "$JOIN_OWNER" ] || die "--job-site needs --owner (copy the whole command from Workbench or Nodes)"
+        say "joining $JOIN_CONTROL as a job site of $JOIN_OWNER"
+        set -- "$@" --job-site --owner "$JOIN_OWNER"
+        if [ -n "$JOIN_ROOT_KEY" ]; then set -- "$@" --root-key "$JOIN_ROOT_KEY"; fi
+    else
+        say "joining $JOIN_CONTROL as a worker node"
+        if [ -n "$JOIN_ADVERTISE" ]; then set -- "$@" --advertise "$JOIN_ADVERTISE"; fi
+    fi
     if [ -n "$JOIN_NAME" ]; then set -- "$@" --name "$JOIN_NAME"; fi
-    if [ -n "$JOIN_ADVERTISE" ]; then set -- "$@" --advertise "$JOIN_ADVERTISE"; fi
     JOIN_RC=0
     in_prefix env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$CONFIG" "$VENV/bin/eugene-plexus-agent" "$@" \
         || JOIN_RC=$?
@@ -2935,8 +2953,8 @@ if [ -n "$JOIN_CONTROL" ]; then
     # Joining is exactly the moment that stops being optional, so the
     # unit written below binds wide. A single-machine install still gets
     # loopback, which is the conservative default and the reason the
-    # rule exists.
-    JOINED=1
+    # rule exists. A job site is the exception: nothing connects to it.
+    if [ "$JOIN_SITE" != 1 ]; then JOINED=1; fi
 elif [ -n "$JOIN_TOKEN" ]; then
     die "--token needs --join <control-root-url>"
 elif [ -n "$JOIN_ADVERTISE" ]; then

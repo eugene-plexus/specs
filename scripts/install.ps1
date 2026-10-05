@@ -110,6 +110,9 @@ param(
     [string]$Token,
     [string]$NodeName,
     [string]$Advertise,
+    [switch]$JobSite,
+    [string]$Owner,
+    [string]$RootKey,
     [switch]$Update
 )
 
@@ -126,13 +129,13 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "a8cfddeb1982fc3fdd5594719d650f9ddb8b1445"
-    "control"          = "b667699c4698aaf97fc4a351637840f94c46daba"
-    "gateway"          = "219b191f8b670afed827c96257b55c6240bdd25d"
-    "inference-driver" = "02beb480eb19af45d71435947291f1387d53060e"
-    "library"          = "98daf3038090ff60b26c5a1cf09b1b7937ff8543"
-    "tool-driver"      = "ed99e7aa09f3d9fb69611f24bff84d372c5de0e9"
-    "ui"               = "1dc26aa8ce03fcf597cef2a3f7e4738632df4eaf"  # branch `dist`, not `main`
+    "agent"            = "7db034d3138558481f0345b3f55e74196424032d"
+    "control"          = "981731a5cead9a730ab9e57052f930383fb32a60"
+    "gateway"          = "271c1a1393ab8750e02d34d199d49e4b9e8fe966"
+    "inference-driver" = "381edf37550cda2478b12c247042ac7d92e982f9"
+    "library"          = "1be1803c5f7cbecfaef1dbc6068fa2d6856c0730"
+    "tool-driver"      = "b30adf8e9de4333c41c6c7816e61fe85969a7421"
+    "ui"               = "114d9b4143d30fd4fee08ac472108cdd9e461dc0"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -3102,10 +3105,21 @@ if (-not (Test-VcRuntime)) {
 # for what went wrong when that was left to the agent.
 if ($Join) {
     if (-not $Token) { Die "-Join needs -Token (mint one at the control root: Nodes -> Add a node)" }
-    Say "joining $Join as a worker node"
     $joinArgs = @("join", "--control", $Join, "--token", $Token)
+    if ($JobSite) {
+        # A job site (remote-nodes.md, section 3.2): the person the invitation names
+        # confirms here, typing their own Eugene password at the agent's
+        # prompt; this script never sees it. It pins the root's key (J7a).
+        if (-not $Owner) { Die "-JobSite needs -Owner (copy the whole command from Workbench or Nodes)" }
+        Say "joining $Join as a job site of $Owner"
+        $joinArgs += @("--job-site", "--owner", $Owner)
+        if ($RootKey) { $joinArgs += @("--root-key", $RootKey) }
+    }
+    else {
+        Say "joining $Join as a worker node"
+    }
     if ($NodeName) { $joinArgs += @("--name", $NodeName) }
-    if ($Advertise) { $joinArgs += @("--advertise", $Advertise) }
+    if ($Advertise -and -not $JobSite) { $joinArgs += @("--advertise", $Advertise) }
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @joinArgs
     $joinCode = $LASTEXITCODE
