@@ -78,9 +78,12 @@ Use [compose.behind-proxy.yaml](../../docker/compose.behind-proxy.yaml) as the
 standalone Eugene definition, **not an overlay on a file that publishes ports**.
 Set `EUGENE_DATA_VOLUME` to the existing volume's actual Docker name. For Unraid
 or bind-mounted appdata, retain your existing host path mapped to `/data` instead
-of changing to a named volume. Attach the dedicated network; once the console
-answers through the proxy, the console, gateway and Workbench port mappings can go,
-but keep the control root's `8083` while other machines are enrolled. Keep the
+of changing to a named volume. Attach the dedicated network; once Workbench
+answers through the proxy, the gateway and Workbench port mappings can go. **Keep
+the console's mapping (container port `8079`) while the console stays on its own
+port, which is the default: it is then the only way into the console.** It can go
+only if you moved the console through the setup too and it answers there. Keep the
+control root's `8083` while other machines are enrolled. Keep the
 hostname, model mounts, GPU settings and user ID from your existing installation.
 On Unraid, a shared custom network your proxy already uses (often a
 `proxynet`-style bridge) works the same way; other containers on it are refused,
