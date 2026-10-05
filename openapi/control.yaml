@@ -1933,11 +1933,14 @@ paths:
       tags: [node-helpers]
       summary: The servers on machines that the signed-in person may use
       description: |
-        Every server the person may use: on an ordinary node, each folder
-        Eugene's owner granted them, as `files.<folder id>`; on a Job Site,
-        what that site's own list says, as the site last reported it (J6b).
-        The site checks each call against its own list again. An enrolled
-        Workbench client secret and its signed-in person's refresh credential.
+        Every server the person may use. Each machine has one file server,
+        `files`, listed once with the folders the person may use there, by
+        the names its tools' `folder` argument takes (J6g): on an ordinary
+        node, the folders Eugene's owner granted them; on a Job Site, what
+        that site's own list says, as the site last reported it (J6b), with
+        the local servers it lets them use. The machine checks each call
+        again. An enrolled Workbench client secret and its signed-in person's
+        refresh credential.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2159,7 +2162,8 @@ paths:
       summary: Register an existing folder on the person's own Job Site
       description: |
         The site registers the folder itself (J6b): its host opens the folder,
-        records its identity, and serves it as `files.<id>`. Nobody is
+        records its identity, and offers it through its one file server by
+        its name, which must be unused on that machine (J6g). Nobody is
         granted anything.
       security: [{helperClient: []}]
       requestBody:
@@ -2169,10 +2173,10 @@ paths:
             schema: {$ref: '#/components/schemas/JobSiteFolderCreate'}
       responses:
         '201':
-          description: The folder, as the site recorded it.
+          description: The folder, as the site recorded it, with nobody on its list.
           content:
             application/json:
-              schema: {$ref: 'components/sites.yaml#/SiteFolder'}
+              schema: {$ref: 'components/node-helpers.yaml#/JobSiteFolder'}
         '401':
           description: Authentication, current permission, state, or availability refused the request.
         '403':
@@ -2210,6 +2214,43 @@ paths:
           description: Authentication, current permission, state, or availability refused the request.
         '503':
           description: Authentication, current permission, state, or availability refused the request.
+  /oidc/job-sites/{node}/folders/{folder_id}/people:
+    parameters:
+      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: folder_id, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: grantMyJobSiteFolder
+      tags: [node-helpers]
+      summary: Say who may use a folder on the person's own Job Site
+      description: |
+        Replaces the folder's list of people, the site's owner included (J11:
+        the owner grants their own access too). People are named by how they
+        sign in. `writable` lets a person change files without asking each
+        time, a standing pre-approval for `write_text`, and cannot exceed the
+        folder's. The site applies it to its own list and answers with what
+        it holds (J6b, J6g).
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSitePeopleRequest'}
+      responses:
+        '200':
+          description: The folder and who may use it, as the site now holds them.
+          content:
+            application/json:
+              schema: {$ref: 'components/node-helpers.yaml#/JobSiteFolder'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or it has no such folder, or no such person signs in.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, its file support is off, or it needs an update.
+        '504':
+          description: The site did not answer in time.
   /oidc/job-sites/{node}/servers/{server}/access:
     parameters:
       - {name: node, in: path, required: true, schema: {type: string}}
@@ -2217,10 +2258,12 @@ paths:
     post:
       operationId: setMyJobSiteAccess
       tags: [node-helpers]
-      summary: Say who may use which tools of one server on the person's own Job Site
+      summary: Say who may use which tools of one local server on the person's own Job Site
       description: |
-        Replaces the server's list of people, the site's owner included (J11:
-        the owner grants their own access too). People are named by how they
+        For a local server only; folders are granted through
+        `/oidc/job-sites/{node}/folders/{folder_id}/people` (J6g). Replaces
+        the server's list of people, the site's owner included (J11: the
+        owner grants their own access too). People are named by how they
         sign in. The site applies it to its own list and answers with what it
         holds (J6b). A destructive tool must be granted as a standing
         pre-approval (`standing: true`), or the site refuses the grant.
@@ -2255,10 +2298,11 @@ paths:
       tags: [node-helpers]
       summary: Turn a local server on the person's own Job Site on or off
       description: |
-        A local server, added at the machine by its administrator, is off
-        until the site's owner turns it on here. A server marked `system`
-        cannot be turned on without an administrator's consent recorded at
-        the machine (J9).
+        For a local server only: added at the machine by its administrator,
+        it is off until the site's owner turns it on here. The file server is
+        on while a folder is registered. A server marked `system` cannot be
+        turned on without an administrator's consent recorded at the machine
+        (J9).
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2458,6 +2502,8 @@ components:
       $ref: "components/node-helpers.yaml#/JobSiteEnable"
     JobSiteFolderCreate:
       $ref: "components/node-helpers.yaml#/JobSiteFolderCreate"
+    JobSitePeopleRequest:
+      $ref: "components/node-helpers.yaml#/JobSitePeopleRequest"
     JobSiteAccessRequest:
       $ref: "components/node-helpers.yaml#/JobSiteAccessRequest"
     JobSiteServerEnable:

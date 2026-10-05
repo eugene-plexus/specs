@@ -70,10 +70,11 @@ SiteAnswerStatus:
 SiteServerId:
   type: string
   description: |
-    A server on the site. `files.<folder id>` for each folder registered on
-    it (Eugene's own file server, one per folder); otherwise the id a machine
-    administrator gave a local server when adding it at the machine.
-  pattern: '^(files\.[a-f0-9]{32}|[a-z][a-z0-9-]{0,39})$'
+    A server on the machine. `files` is Eugene's own file server, one per
+    machine, whose tools take a `folder` argument (J6g). Any other id is one
+    a machine administrator gave a local server when adding it at the
+    machine; no local server's id begins `files`.
+  pattern: '^(files|[a-z][a-z0-9-]{0,39})$'
   maxLength: 40
 
 SiteTool:
@@ -98,7 +99,7 @@ SiteTool:
 
 SiteServerKind:
   type: string
-  description: "`files`: Eugene's own file server, one per registered folder. `local`: a server a machine administrator added at the machine."
+  description: "`files`: Eugene's own file server, one per machine, its tools taking a `folder` argument (J6g). `local`: a server a machine administrator added at the machine."
   enum: [files, local]
 
 SiteServer:
@@ -117,7 +118,7 @@ SiteServer:
         (J9).
     enabled:
       type: boolean
-      description: Whether the site's owner has turned it on. A folder's server is on while the folder is registered.
+      description: Whether it is on. Eugene's file server is on while a folder is registered; a local server is on once the site's owner turns it on.
     available:
       type: boolean
       description: Whether it can run now.
@@ -148,6 +149,9 @@ SiteToolGrant:
 SiteAccess:
   type: object
   additionalProperties: false
+  description: |
+    Who may use which tools of one local server. Eugene's file server is
+    granted per folder instead (`SiteFolder.people`, J6g).
   required: [subject, server, tools]
   properties:
     subject:
@@ -164,14 +168,46 @@ SiteAccess:
 SiteFolder:
   type: object
   additionalProperties: false
-  required: [id, name, path, writable]
+  description: |
+    A folder registered on the machine. Eugene's file server offers it to
+    the people on its list, by its name, as its tools' `folder` argument
+    (J6g).
+  required: [id, name, path, writable, people]
   properties:
     id: {type: string, pattern: '^[a-f0-9]{32}$'}
-    name: {type: string, minLength: 1, maxLength: 80}
+    name:
+      type: string
+      minLength: 1
+      maxLength: 96
+      description: |
+        Unique on the machine, and the value of the `folder` argument. A
+        folder that shares a name with one registered before it is shown,
+        and taken, as `Name (2)`, `Name (3)` and so on.
     path: {type: string, minLength: 1, maxLength: 4096}
     writable:
       type: boolean
-      description: Whether its server offers `write_text` at all.
+      description: Whether anyone may change files in it at all. A person's `writable` cannot exceed it.
+    people:
+      type: array
+      maxItems: 256
+      description: Who may use it, the site's owner included (J11). Nobody is on it until the owner says so.
+      items: {$ref: '#/SiteFolderPerson'}
+
+SiteFolderPerson:
+  type: object
+  additionalProperties: false
+  required: [subject, writable]
+  properties:
+    subject:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: A person's id. Never `operator`; Eugene's owner reaches a site only through `ownerInDevMode`.
+    writable:
+      type: boolean
+      description: |
+        The person may change files in it: a standing pre-approval for
+        `write_text` (J6b). Otherwise they may list and read.
 
 SiteSummary:
   type: object
@@ -201,18 +237,26 @@ SiteSummary:
     access:
       type: array
       maxItems: 2048
+      description: Who may use the local servers' tools. Folders carry their own people.
       items: {$ref: '#/SiteAccess'}
 
 SiteGrantHint:
   type: object
   additionalProperties: false
   description: |
-    The root's own grant, carried with a call: on an ordinary node, where the
-    root's grant is final (J6d); and on a job site for Eugene's owner in dev
-    mode, which the site honours only if its owner opted in (J6e).
-  required: [folderId, path, identity, writable]
+    One of the root's own folder grants, carried with a call in a list
+    (`grants`): on an ordinary node, all of the person's grants there, the
+    root's grant being final (J6d); on a job site, Eugene's owner's dev-mode
+    grants, which the site honours only if its owner opted in (J6e). The
+    host checks the folder a call names against them.
+  required: [folderId, name, path, identity, writable]
   properties:
-    folderId: {type: string, pattern: '^[a-f0-9]{32}$'}
+    folderId: {type: string, minLength: 1, maxLength: 64}
+    name:
+      type: string
+      minLength: 1
+      maxLength: 96
+      description: The folder's name on this machine, as the `folder` argument takes it. The root makes it unique; a folder that shares a name with an earlier one reads `Name (2)`.
     path: {type: string, minLength: 1, maxLength: 4096}
     identity: {type: string, minLength: 1, maxLength: 256}
     writable: {type: boolean}
@@ -265,7 +309,7 @@ SiteLocalServer:
     id:
       type: string
       pattern: '^[a-z][a-z0-9-]{0,39}$'
-      description: Its id on this site. Ids beginning `files` are Eugene's own.
+      description: Its id on this site. An id beginning `files` is refused; `files` is Eugene's own file server.
     name: {type: string, minLength: 1, maxLength: 80}
     command: {type: string, minLength: 1, maxLength: 4096, description: The program's absolute path.}
     args:

@@ -5,8 +5,9 @@ info:
   summary: A machine's local MCP host, whose policy is final on that machine (Job Sites J6, J8).
   description: |
     **What this is.** The piece of Eugene that runs a machine's tools: its
-    own file server, one per registered folder, and local MCP servers a
-    machine administrator added at the machine. It is an MCP host, and its
+    own file server (`files`, one per machine, whose tools take a `folder`
+    argument, J6g), and local MCP servers a machine administrator added at
+    the machine. It is an MCP host, and its
     policy is final: what it refuses, nothing upstream can make it run
     (`docs/design/remote-nodes.md` §3.4, J8, §6.2).
 
@@ -24,8 +25,9 @@ info:
       pinned at its join (J6b). Rule 2 of §3.3: editing the root's state is
       not enough to get in.
     - `node`, on an ordinary LAN node: Eugene's owner writes policy from the
-      console, and the root's grant comes with each call (`grant`); the host
-      checks the call against it and keeps an audit log (J6d).
+      console, and the person's grants on this machine come with each call
+      (`grants`); the host checks the folder the call names against them and
+      keeps an audit log (J6d).
 
     **What crosses.** MCP requests of the 2026-07-28 revision, one in and
     one out: `server/discover`, `tools/list`, `tools/call` (J6a, J6c), and
@@ -33,11 +35,14 @@ info:
     root gave it; the host refuses a used id or a passed deadline, so a
     replayed operation runs at most once.
 
-    **Default deny.** A server is off until its owner turns it on (a folder's
-    server is on while the folder is registered), and a person may use only
-    the tools the owner named for them. A destructive tool needs a standing
-    pre-approval; approving each call at the machine waits for the held
-    channel of slice 3. A server marked `system` cannot be turned on without
+    **Default deny.** A local server is off until its owner turns it on, and
+    a person may use only the tools the owner named for them there. A folder
+    is open only to the people on its list: to read, or also to change files,
+    which is a standing pre-approval for `write_text`. The file server lists,
+    in each person's `folder` argument, only the folders they may use, and
+    for `write_text` only those they may change. A destructive tool needs a
+    standing pre-approval; approving each call at the machine waits for the
+    held channel of slice 3. A server marked `system` cannot be turned on without
     an administrator's consent recorded at the machine (J9).
 
     ## Auth
@@ -96,7 +101,9 @@ paths:
         The host checks the operation's id and deadline, the server, the
         person and the tool against its own policy, then serves the request
         with its server and filters the answer: `tools/list` lists only the
-        tools this person may use. A refusal is `failed` with a sentence; it
+        tools this person may use, and the file server's `folder` argument
+        lists only the folders they may use (for `write_text`, only those
+        they may change). A refusal is `failed` with a sentence; it
         is recorded in the audit log, as every call is.
       requestBody:
         required: true
@@ -183,11 +190,11 @@ components:
           description: Who asked, as the root says (a person's id, or `operator` for Eugene's owner).
         server: {$ref: 'components/sites.yaml#/SiteServerId'}
         request: {$ref: 'components/sites.yaml#/McpRequest'}
-        grant:
-          description: The root's grant, on a node; Eugene's owner's dev-mode grant, on a site.
-          anyOf:
-            - {$ref: 'components/sites.yaml#/SiteGrantHint'}
-            - {type: 'null'}
+        grants:
+          type: array
+          maxItems: 64
+          description: The person's grants on this machine, on a node; Eugene's owner's dev-mode grants, on a site. Empty otherwise.
+          items: {$ref: 'components/sites.yaml#/SiteGrantHint'}
         installMode: {$ref: 'components/node-helpers.yaml#/InstallModeName'}
 
     SiteManageAction:
@@ -197,15 +204,20 @@ components:
           check a folder can be opened, and return its full path and
           identity for the root to register.
         - `folder.add` (`SiteFolderAdd`), site mode, from the owner:
-          register a folder here; its server is `files.<id>`.
+          register a folder here, under a name no other folder here has. It
+          returns `SiteFolder`, with nobody on its list.
         - `folder.remove` (`SiteFolderRemove`), site mode, from the owner.
+        - `folder.people` (`SiteFolderPeople`), site mode, from the owner:
+          who may use one folder, and who may change files in it, replacing
+          what was there. It returns `SiteFolder`.
         - `access.set` (`SiteAccessSet`), site mode, from the owner: who may
-          use one server, and which tools, replacing what was there.
-        - `server.enable` (`SiteServerEnable`), site mode, from the owner.
+          use one local server, and which tools, replacing what was there.
+        - `server.enable` (`SiteServerEnable`), site mode, from the owner: a
+          local server on or off.
         - `settings.set` (`SiteSettings`), site mode, from the owner.
         - `audit.read` (`SiteAuditRead`), site mode, from the owner: the
           newest entries of the site's audit log.
-      enum: [folder.inspect, folder.add, folder.remove, access.set, server.enable, settings.set, audit.read]
+      enum: [folder.inspect, folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read]
 
     SiteManage:
       type: object
@@ -252,6 +264,18 @@ components:
       properties:
         id: {type: string, pattern: '^[a-f0-9]{32}$'}
 
+    SiteFolderPeople:
+      type: object
+      additionalProperties: false
+      required: [id, people]
+      properties:
+        id: {type: string, pattern: '^[a-f0-9]{32}$'}
+        people:
+          type: array
+          maxItems: 256
+          description: Each person once. `writable` cannot exceed the folder's.
+          items: {$ref: 'components/sites.yaml#/SiteFolderPerson'}
+
     SitePersonTools:
       type: object
       additionalProperties: false
@@ -266,6 +290,7 @@ components:
     SiteAccessSet:
       type: object
       additionalProperties: false
+      description: A local server's list. Eugene's file server is granted per folder (`folder.people`).
       required: [server, people]
       properties:
         server: {$ref: 'components/sites.yaml#/SiteServerId'}

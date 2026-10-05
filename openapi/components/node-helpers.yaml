@@ -66,7 +66,15 @@ HelperFolderCreate:
   additionalProperties: false
   required: [name, path]
   properties:
-    name: {type: string, minLength: 1, maxLength: 80}
+    name:
+      type: string
+      minLength: 1
+      maxLength: 80
+      description: >-
+        Unique on the node, since it is the file server's `folder` argument
+        (J6g); a name in use there is refused with 409. A folder registered
+        before that rule, sharing a name with an earlier one, is offered as
+        `Name (2)`.
     path: {type: string, minLength: 1, maxLength: 4096}
     writable: {type: boolean, default: false}
     ownerAccess: {type: string, enum: [none, read, write], default: none}
@@ -149,11 +157,15 @@ HelperOperation:
       anyOf:
         - {$ref: 'sites.yaml#/McpRequest'}
         - {type: 'null'}
-    grant:
-      description: The root's grant where it is final (an ordinary node), or Eugene's owner's dev-mode grant on a site (J6e).
-      anyOf:
-        - {$ref: 'sites.yaml#/SiteGrantHint'}
-        - {type: 'null'}
+    grants:
+      type: array
+      maxItems: 64
+      description: >-
+        For `mcp` to the file server: on an ordinary node, all of the
+        person's grants there, where the root's grant is final (J6d); on a
+        Job Site, Eugene's owner's dev-mode grants (J6e). Empty otherwise.
+        The host checks the folder a call names against them (J6g).
+      items: {$ref: 'sites.yaml#/SiteGrantHint'}
     action:
       type: [string, 'null']
       description: For `manage`, the action.
@@ -180,16 +192,39 @@ SiteCancel:
 SiteServerGrant:
   type: object
   additionalProperties: false
-  description: One server on one machine that the signed-in person may use.
-  required: [node, server, name, kind, jobSite, available]
+  description: >-
+    One server on one machine that the signed-in person may use. The file
+    server (`files`) appears once per machine, with the folders the person
+    may use there (J6g).
+  required: [node, server, name, kind, jobSite, available, folders]
   properties:
     node: {type: string}
     server: {$ref: 'sites.yaml#/SiteServerId'}
-    name: {type: string, description: "The server's name: the folder's name, for a folder."}
+    name: {type: string, description: The server's name.}
     kind: {$ref: 'sites.yaml#/SiteServerKind'}
     jobSite: {type: boolean}
     available: {type: boolean}
     reason: {type: [string, 'null']}
+    folders:
+      type: array
+      maxItems: 64
+      description: For the file server, the folders this person may use, each by the name its tools' `folder` argument takes. Empty for a local server.
+      items: {$ref: '#/SiteServerFolder'}
+
+SiteServerFolder:
+  type: object
+  additionalProperties: false
+  required: [id, name, writable]
+  properties:
+    id: {type: string, minLength: 1, maxLength: 64}
+    name:
+      type: string
+      minLength: 1
+      maxLength: 96
+      description: Unique on its machine; the `folder` argument's value.
+    writable:
+      type: boolean
+      description: This person may change files in it.
 
 SiteServerList:
   type: object
@@ -244,6 +279,31 @@ InstallMode:
       format: date-time
       description: When the mode last changed; null when it never has.
 
+JobSiteFolderPerson:
+  type: object
+  additionalProperties: false
+  required: [person, name, writable]
+  properties:
+    person: {type: string}
+    name: {type: string, description: How the person signs in.}
+    writable:
+      type: boolean
+      description: May change files in it, without asking the site's owner each time (a standing pre-approval).
+
+JobSiteFolder:
+  type: object
+  additionalProperties: false
+  description: A folder on the site, as the site reports it, and who may use it (J6g).
+  required: [id, name, path, writable, people]
+  properties:
+    id: {type: string}
+    name: {type: string, description: Unique on the machine; what Workbench and the model call it.}
+    path: {type: string}
+    writable: {type: boolean}
+    people:
+      type: array
+      items: {$ref: '#/JobSiteFolderPerson'}
+
 JobSiteServerPerson:
   type: object
   additionalProperties: false
@@ -258,7 +318,7 @@ JobSiteServerPerson:
 JobSiteServer:
   type: object
   additionalProperties: false
-  description: A server on the site, as the site reports it, and who may use which of its tools.
+  description: A local server on the site, as the site reports it, and who may use which of its tools.
   required: [server, people]
   properties:
     server: {$ref: 'sites.yaml#/SiteServer'}
@@ -281,10 +341,11 @@ JobSite:
     lastContactAt: {type: [string, 'null'], format: date-time}
     folders:
       type: array
-      description: The folders registered on it. Each one's server is `files.<id>`.
-      items: {$ref: 'sites.yaml#/SiteFolder'}
+      description: The folders registered on it, which its one file server offers by name (J6g), and who may use each.
+      items: {$ref: '#/JobSiteFolder'}
     servers:
       type: array
+      description: The local servers a machine administrator added at it.
       items: {$ref: '#/JobSiteServer'}
     ownerInDevMode:
       type: [boolean, 'null']
@@ -345,6 +406,27 @@ JobSiteFolderCreate:
     name: {type: string, minLength: 1, maxLength: 80}
     path: {type: string, minLength: 1, maxLength: 4096}
     writable: {type: boolean, default: false}
+
+JobSitePeopleRequest:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, people]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    people:
+      type: array
+      maxItems: 256
+      items: {$ref: '#/JobSitePersonGrant'}
+
+JobSitePersonGrant:
+  type: object
+  additionalProperties: false
+  required: [name, writable]
+  properties:
+    name: {type: string, minLength: 1, maxLength: 256, description: How the person signs in.}
+    writable:
+      type: boolean
+      description: May change files in the folder without asking each time. Cannot exceed the folder's own `writable`.
 
 JobSitePersonTools:
   type: object
