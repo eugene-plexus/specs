@@ -1,9 +1,11 @@
 # Job Sites: Workbench working on your machines, wherever they are
 
 **Status:** a design, 2026-10-05. **Every call (J1-J18) was decided by Troy
-the same day** (§6). The first slice is §5.
+the same day** (§6), and three more as slice 1 started (§6.1). **Slice 1 is
+built (2026-10-05)**: what it found is §5.1, and the run is
+[`docs/acceptance/job-sites-run.md`](../acceptance/job-sites-run.md).
 
-**Nothing here is built.** The file keeps the name `remote-nodes.md` because it began as that
+The file keeps the name `remote-nodes.md` because it began as that
 question. The analysis of inference across networks it started with is now
 Appendix B, and is out of scope.
 
@@ -524,6 +526,43 @@ the case.
 2. **MCP between site and root** (J6), and site-final policy (J8). The four
    tools become Eugene's own MCP server on the site.
 3. **Cross-site copy** (J10), on the held channel.
+
+### 5.1 What building slice 1 found (2026-10-05)
+
+- **A bare address needs two things from Caddy.** A client sends no SNI for an
+  address, so no name-matched TLS policy applies: the address's certificate is
+  chosen by a `default_sni` policy. And Caddy's server-wide strict SNI check
+  then answers every such request 421. For an address origin the server check
+  is off and the first route makes the same check, letting through only
+  requests to that address with no SNI. Measured on real Caddy 2.11.7: a TLS
+  session made for the console's name and sent to the address is still 421.
+- **Registering a folder was the operator's in two places**: the agent's relay
+  and the helper worker each refused any other subject. On a job site its owner
+  registers. The root now tells a site its owner in the poll answer
+  (`siteOwner`), and the relay allows that person and nobody else, Eugene's
+  owner included. The worker no longer knows who may register, only that a
+  registration names someone and asks about one path.
+- **A job site's key holds `files` instead of `node`.** Its tokens reach the
+  root's node routes and its own machine, nothing else. The root also refuses
+  a site's token on every route but the helper's three and the bundle, so a
+  route added later cannot open to one by forgetting.
+- **A site has no console.** Its local sign-in answers 409 and says to use
+  Workbench. Reading it (the acceptance does) takes a token its own key signs
+  for itself.
+- **The owner's live view of someone's chat streams only "changed".** The page
+  then re-reads the chat through the redaction, so a running answer never
+  reaches the owner before production mode could hide it (J13a).
+- **Codegen renamed `Person` to `Person1`** when a job-site schema had an
+  inline item object; the schemas are named now. The trap this file's project
+  notes record, met again.
+- **Not done, named:**
+  - Workbench's join commands use the installer from `main`, not the root's
+    release tag, which Workbench does not know.
+  - Ordinary nodes' file helpers stay operator-managed. Giving a LAN node a
+    site owner is a later step.
+  - A site skips its address announcement. No check can see that: the public
+    route refuses the announcement anyway.
+  - macOS, Docker and per-user installs cannot be job sites (§2.1).
 
 **Later, each as its own design:**
 - the standalone site install (J5);

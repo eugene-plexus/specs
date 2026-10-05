@@ -275,3 +275,38 @@ explicitly; selecting `https` alone is insufficient. Never disable verification.
 If another NAT/proxy hides the original client, configure its authenticated
 forwarding boundary correctly before allowing remote access; do not allow its
 LAN address as if every caller were an administrator.
+
+## Job sites: machines outside your network
+
+A job site is a person's own machine, anywhere, whose files they use from
+Workbench (`docs/design/remote-nodes.md`). It connects out to Eugene and nothing
+connects to it, so it needs no VPN and no tunnel. Eugene needs one thing: a
+name for machines that answers outside your network.
+
+1. In **Settings, Container access setup**, turn on **Also a name for other
+   machines** and **Let job sites join from any network**, read the risks, and
+   apply. The name keeps the whole control API for your own networks; from
+   anywhere else it answers six paths and nothing more: joining with a token,
+   the trust bundle with a machine's own token, the root's signed TLS key list,
+   and the file helper's poll, claim and result. Everything else is refused with
+   a sentence naming where the console is.
+2. On your router, forward the entry point's port to Eugene. That is the only
+   change outside Eugene. The name may be a DNS name with **no proxying in
+   front** (in Cloudflare, *DNS only*), or a bare public address.
+3. A person adds their machine from Workbench, **Job sites (your machines)**,
+   or you invite one for them from **Nodes** (*Whose machine*). The command
+   names the person and carries the root's identity key. They run it on the
+   machine, which asks for their own Eugene password there.
+
+**No certificate authority is needed.** A job site pins the root's identity
+key from its command, and trusts a TLS key only when the root has signed it
+(`GET /v1/trust/tls`). The root learns the key its name presents by connecting
+to it: to its own entry point, or, behind a proxy such as Nginx Proxy Manager
+that holds the certificate, to the public name. If the root cannot reach its
+own public name from inside your network (no hairpin NAT), it says so on that
+path and no machine can join until it can; a local DNS entry pointing the name
+at your proxy fixes it. Certificate renewals then need nobody.
+
+**The proxy in front must pass the six paths through unchanged** and must
+not add `X-Eugene-Plexus-Entry`; Eugene's own entry point sets that header and
+strips it from everything else.

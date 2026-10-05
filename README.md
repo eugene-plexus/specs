@@ -336,7 +336,7 @@ These are settled. Don't relitigate them in PRs without a strong reason.
 - **Apache 2.0** — permissive adoption with an explicit patent grant.
 - **Open-core**. Core stays Apache 2.0 forever. Future commercial add-ons live in *physically separate repos* under commercial license.
 - **DCO**, no CLA. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **Mesh VPN (Tailscale / WireGuard)** for component-to-component transport between hosts. The control root owns install-wide trust; enrolled agents distribute credentials to their children, and user-facing endpoints enforce bearer auth.
+- **Eugene's own per-node keys** authenticate components to each other on any network. Machines on one private network (a LAN, or a mesh the owner runs) talk directly; a machine outside reaches the root only over a node-only route that carries signed node traffic and nothing else (Job Sites, [`docs/design/remote-nodes.md`](docs/design/remote-nodes.md)). No cloud service is required in the path. The control root owns install-wide trust; enrolled agents distribute credentials to their children, and user-facing endpoints enforce bearer auth.
 
 ## History
 

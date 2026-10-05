@@ -4,6 +4,13 @@ Status: included in the 2026-10-04 Edge release. Troy approved the architecture:
 one Eugene node installation, independently enabled inference and file support,
 one enrollment, and Workbench hosted either locally or centrally.
 
+**Job Sites (2026-10-05).** A machine joined as a job site
+([`remote-nodes.md`](remote-nodes.md)) works the other way round: its owner, a
+person, turns its helper on, registers its folders and grants them from
+Workbench, and Eugene's owner sees only that it exists and whether it is online
+(in production mode). What follows describes ordinary nodes, whose helpers the
+operator still manages.
+
 ## Boundaries
 
 - Workbench remains an ordinary application. Its sign-in cannot administer nodes.
