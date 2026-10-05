@@ -36,7 +36,9 @@ Sources for every upstream claim are in §6. They were fetched on 2026-10-05.
 > - whether it is MCP (it is not);
 > - Troy's question of whether Workbench belongs on the server at all;
 > - planning for a hundred tools and Windows' own MCP connectors, which argues
->   for carrying MCP between the box and the root before a fifth tool (§7.8).
+>   for carrying MCP between the box and the root before a fifth tool (§7.8);
+> - membership is not access: Eugene's owner manages which machines are in
+>   the Plexus, and only a site's owner grants its tools (§7.11).
 >
 > §0-§6 stay as the analysis for inference across networks, and as the
 > inventory behind §7.
@@ -898,10 +900,10 @@ requirements, set out in 7.10.
 ### 7.10 Three requirements and what they change
 
 1. **One person, several machines of their own.**
-   - **Today the operator joins every machine** and must grant even their own
-     folders explicitly. A site should belong to the person who added it.
-     Its owner sees its folders by default; anyone else only by explicit
-     grant.
+   - **Today the operator joins every machine** and grants every folder,
+     their own included. A site should belong to a person, and its tools
+     should be used only by explicit grant. Troy took this further the same
+     day: Eugene's owner gets no access at all (7.11).
    - **Who may add a site** is call J9: operator only, as today, or any
      signed-in person for their own machines.
    - A files-only site keeps self-service small. It has no inference, no
@@ -941,7 +943,74 @@ requirements, set out in 7.10.
      machines,** so a compromised root costs more. That is why J8's
      site-final policy and each site's audit log are not optional.
 
-### 7.11 Calls for Troy (files scope)
+### 7.11 Membership is not access
+
+Troy, the same day: *"Maybe Eugene doesn't automatically grant the owner
+access to all files on Job Sites. Maybe instead the owner can help a Job Site
+join or leave the Plexus, but rights to the Job Site tools must be explicitly
+given to a user before they can be used?"*
+
+**What the code does today** (control `b667699`):
+
+- **Nobody has access by default.** A folder's `ownerAccess` starts at
+  `none` (`C/routes/node_helpers.py:45-48`).
+- **The owner is the one who grants.** The owner gives themselves access in
+  one click (`PATCH …/folders/{id}`, `:51-69`; `C/node_helpers.py:61-70`).
+  The owner also sets every person's grants (`PATCH /v1/people/{id}`
+  `helperGrants`, owner-only, `C/routes/people.py:56,159-185`).
+- **The owner can become anyone.** The owner sets any person's password
+  (`PUT /v1/people/{id}/password`, `:196-206`), signs in as them, and uses
+  their grants.
+- **Workbench can show the owner what was read.** Its `ownerReadsChats`
+  setting (W4, off by default) lets the owner read people's chats, and those
+  chats hold every file result a person approved (`W/api.py:203-215,
+  464-470`).
+
+So *the owner is not granted access* is true today, and means nothing while
+the owner is the one who grants, can become any person, and can read their
+chats. **The rule needs five companions:**
+
+1. **A job site belongs to a person, and only that person grants its tools,**
+   including to themselves. Eugene's owner manages membership:
+   - invite a site to join;
+   - remove it;
+   - see that it exists and whether it is online.
+
+   The owner does not see its folders, their contents, or who holds grants.
+   `ownerAccess` goes, and `helperGrants` stops being an owner-only write.
+2. **The invitation names the person, and the person confirms at the
+   machine.** Eugene's owner helps by minting an invitation for that person.
+   At the machine, the join asks that person to sign in with their own
+   password. The site records its owner from that, so it is bound by presence
+   plus the person's own credential, never by anything the owner holds.
+3. **The site keeps its own list (J8) and refuses anyone not on it.** Then
+   editing the root's state is not enough to get in.
+4. **Eugene's owner cannot become a person.** Two possible shapes:
+   - the owner may disable or remove an account, but not set its password;
+   - an owner's password reset suspends that person's site grants until they
+     confirm again at a site (call J12).
+5. **`ownerReadsChats` never shows a job-site result.** The owner sees that a
+   tool ran on which site, not what it returned (call J13).
+
+**Leaving needs no one's permission.** Eugene's owner can remove a site, which
+revokes it at once. The site's owner can leave from the machine
+(`POST /v1/node/unenroll`, which exists).
+
+**The human is two people in the model.** The admin role is the passphrase
+session; using sites needs a person account. A solo owner makes one for
+themselves and owns their own sites. This is a little friction for a solo
+install, and it is also what makes the MSP case honest: the MSP runs the
+Plexus, each employee owns their PC's job site, and the MSP cannot read it.
+
+**The limit, stated plainly.** Items 1-5 stop Eugene's owner *through the
+product*. A compromised root, or an owner willing to edit the root's state
+and keys directly, can still mint a sign-in for "Alice", and the site accepts
+it, because the site trusts the root to say who Alice is. Closing that needs
+a credential the root cannot mint: each person's own key, such as a passkey,
+registered at their site, with tool calls signed by it (call J14). It is
+end-to-end authorization and a design of its own.
+
+### 7.12 Calls for Troy (files scope)
 
 | # | Call | Recommendation | Counter-argument |
 |---|---|---|---|
@@ -955,6 +1024,10 @@ requirements, set out in 7.10.
 | J8 | Where policy is final | **On the site**: default deny per server and per tool; destructive or system tools need approval there or the owner's standing pre-approval; each site keeps an audit log | Approval on a machine nobody is sitting at blocks the *away from it* case, which is the case (J2). In practice that use gets read-only tools unless the owner pre-approves more |
 | J9 | Who may add a job site | **Any signed-in person, for their own machines**, as files-only sites they own (7.10, item 1). An operator-approval setting is available for installs that want it | A household member can attach any PC to the install. Join tokens become per-person, and the People page gains states. Today only the operator joins machines, which is simpler to reason about |
 | J10 | Cross-site copy as the first tool spanning machines | **Yes, after J6.** Streamed through the root and never stored there, resumable and hash-verified, on its own stream, with policy checked at both sites | It is the first feature that moves bulk data through the root, so the root's bandwidth and the cost of a compromised root both rise. It also invites requests for continuous sync, which is a different product |
+| J11 | Membership is not access (Troy's proposal, 7.11) | **Yes.** Eugene's owner invites, removes and sees status. Only a site's owner grants its tools, themselves included. `ownerAccess` and owner-written `helperGrants` go | A solo owner needs a person account to use their own machines. The owner can no longer fix a person's broken grants for them |
+| J12 | The owner setting another person's password | **Remove it.** The owner may disable or remove an account, but not set its password. If a recovery path is needed, an owner's reset suspends that person's site grants until they confirm at a site | People without email have no self-service recovery, so a forgotten password means a new account and re-granting |
+| J13 | `ownerReadsChats` and job-site results | **Never show a job-site result to the owner**: show that a tool ran and on which site, not what it returned | A business that turned it on to supervise work loses sight of exactly the work done on files |
+| J14 | Person-held keys checked at the site (end-to-end) | **Later, its own design.** Items 1-5 of 7.11 first | Until then, a compromised root reads every site anyone has been granted, and a site's owner is trusting the root's word for who is asking |
 
 **What this does to §4.** Calls 1, 6 and 7 (inference across networks,
 remote models, the tunnel) lose their urgency. Call 3's checks become mostly
