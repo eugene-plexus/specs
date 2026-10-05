@@ -445,6 +445,11 @@ def exercise(directory: Path) -> None:
             },
         )
         assert changed.status_code == 200, changed.text
+        # The failed request's shared slot is freed just after its answer is
+        # sent (gateway #9), so a request sent at once can still find it held.
+        # One pause rather than a retry loop: a refusal counts against this
+        # key's four requests a minute, which the check below relies on.
+        time.sleep(0.5)
         fallback = chat("gateway-b", a)
         assert fallback.status_code == 200, (fallback.status_code, fallback.text)
         assert call("fixture", "GET", "/stats").json()["excluded"] == before + 1
