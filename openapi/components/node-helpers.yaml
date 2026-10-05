@@ -16,20 +16,16 @@ HelperFolder:
     path: {type: string, minLength: 1, maxLength: 4096}
     identity: {type: string, minLength: 1, maxLength: 256}
     writable: {type: boolean, default: false}
-    ownerAccess:
-      type: string
-      enum: [none, read, write]
-      default: none
-      description: >-
-        Eugene's owner's own access. On a Job Site it may be set only in dev
-        mode, and it works only while the install is in dev mode (J13b).
+    ownerAccess: {type: string, enum: [none, read, write], default: none}
     people:
       type: array
       maxItems: 256
       description: >-
         On a Job Site only: who may use this folder, set by the site's owner
         and nobody else (J11). Empty on every other node, whose grants are
-        each person's helperGrants.
+        each person's helperGrants. On a Job Site, `ownerAccess` (Eugene's
+        owner's own access) may be set only in dev mode, and works only
+        while the install is in dev mode (J13b).
       items: {$ref: '#/SitePersonGrant'}
 
 SitePersonGrant:
@@ -118,7 +114,7 @@ InstallMode:
   additionalProperties: false
   required: [mode]
   properties:
-    mode: {type: string, enum: [production, dev]}
+    mode: {$ref: '#/InstallModeName'}
     changedAt:
       type: [string, 'null']
       format: date-time
@@ -228,10 +224,16 @@ JobSitePeopleRequest:
     people:
       type: array
       maxItems: 256
-      items:
-        type: object
-        additionalProperties: false
-        required: [name, writable]
-        properties:
-          name: {type: string, minLength: 1, maxLength: 256, description: How the person signs in.}
-          writable: {type: boolean}
+      items: {$ref: '#/JobSitePersonGrant'}
+
+JobSitePersonGrant:
+  type: object
+  additionalProperties: false
+  required: [name, writable]
+  properties:
+    name: {type: string, minLength: 1, maxLength: 256, description: How the person signs in.}
+    writable: {type: boolean}
+
+InstallModeName:
+  type: string
+  enum: [production, dev]
