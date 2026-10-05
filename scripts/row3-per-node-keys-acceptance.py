@@ -156,7 +156,10 @@ def exercise(directory: Path, lan: str | None) -> None:
             try:
                 if check():
                     return
-            except httpx.HTTPError:
+            # PermissionError: on Windows a file read while the agent
+            # replaces it atomically (os.replace) is refused for that
+            # instant; the next read sees the new file.
+            except (httpx.HTTPError, PermissionError):
                 pass
             time.sleep(0.1)
         raise AssertionError("timed out: " + label)
