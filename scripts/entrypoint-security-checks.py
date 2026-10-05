@@ -84,7 +84,11 @@ def main():
         startup = directory / "entrypoint.json"
         startup.write_text(config.model_dump_json())
         prior_bundle = os.environ.get("SSL_CERT_FILE")
-        application = SimpleNamespace(state=SimpleNamespace(settings=SimpleNamespace(
+        # The agent's own settings, not a stand-in: a stand-in carrying four
+        # fields stopped this check the day `prepare` read a fifth.
+        from eugene_plexus_agent.settings import Settings
+
+        application = SimpleNamespace(state=SimpleNamespace(settings=Settings(
             config_file=directory / "agent.yaml", entrypoint_config=startup,
             entrypoint_binary=binary, bind_port=backend.server_port,
         )), add_middleware=lambda *args, **kwargs: None)
