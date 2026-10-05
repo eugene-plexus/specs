@@ -113,6 +113,15 @@ one as `entrypoint.json.reverted` and reports why. A file copied in by hand is n
 on approval. Turning it off from the same page keeps the file as
 `entrypoint.json.disabled` and restarts on the direct ports.
 
+**The console may stay on its own port** (`console_direct: true`, the setup
+page's default; Troy, 2026-10-05): only Workbench goes behind the entry point, and
+the agent keeps its direct bind, as before. Workbench's sign-in still needs an
+HTTPS name every browser can reach, and the identity provider stays on an origin
+of its own rather than Workbench's, so the console's name remains, serving
+`/oidc/*` alone and answering everything else with a refusal that says where the
+console is. Its networks may be empty; it cannot be made public; and any operator
+session confirms an applied setup, because the console's address did not move.
+
 **The console from any network is the owner's explicit choice** (Troy,
 2026-10-05): `public_console: true` lets the console's networks cover
 everything; without it such networks are refused, as before, and node

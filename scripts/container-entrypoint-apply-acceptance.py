@@ -11,6 +11,10 @@ own API the way the setup page does (2026-10-05):
 3. A second Apply that nobody signs in through goes back to the first, after
    the window, by itself, and says why.
 4. Turning it off restarts on the direct ports and keeps the file.
+5. With the console on its own port, only Workbench goes behind the entry
+   point: the agent keeps its direct bind, the console's name serves sign-in
+   only and says where the console is, and a session at the old address
+   confirms it.
 
 The proxy is the real bundled Caddy with its local CA; nothing is mocked.
 """
@@ -20,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import socket
 import ssl
 import time
 from pathlib import Path
@@ -172,6 +177,39 @@ def main() -> None:
         wait(direct, "direct ports after turning off")
         assert not FILE.exists() and agent_pid() == pid
         print("PASS: turning it off restarts on the direct ports and keeps the file", flush=True)
+
+        # 5. The console on its own port; Workbench behind the entry point.
+        own_port = setup(["127.0.0.1/32", "172.16.0.0/12"])
+        own_port["console"] = {**own_port["console"], "networks": []}
+        own_port["console_direct"] = True
+        call("POST", "/v1/entrypoint/apply", token, {"configuration": own_port}, expected=202)
+        wait(lambda: json.loads(FILE.read_text()).get("console_direct") is True, "saved")
+        context = ssl.create_default_context(cafile=str(ROOT))
+        with httpx.Client(timeout=30, trust_env=False, verify=context) as tls:
+            wait(
+                lambda: tls.get(CONSOLE + "/").status_code == 403,
+                "the console's name answering after restart",
+            )
+            refused = tls.get(CONSOLE + "/")
+            assert "stays on its own port" in refused.text, refused.text
+            sign_in = tls.get(CONSOLE + "/oidc/.well-known/openid-configuration")
+            assert "stays on its own port" not in sign_in.text, sign_in.text
+            # The old address still answers, and a session there confirms it.
+            body = call("GET", "/v1/entrypoint", token)
+            assert body["active"] is True and body["configuration"]["console_direct"] is True
+            assert not Path("/data/entrypoint/pending.json").exists()
+            address = socket.gethostbyname(socket.gethostname())
+            with socket.socket() as probe:
+                probe.settimeout(1)
+                assert probe.connect_ex((address, 8079)) == 0, "the console left its own port"
+            for port in (8080, 8082):
+                with socket.socket() as probe:
+                    probe.settimeout(1)
+                    assert probe.connect_ex((address, port)) != 0, f"{port} escaped loopback"
+            assert agent_pid() == pid
+        print("PASS: with the console on its own port, only Workbench and its sign-in go behind the entry point", flush=True)
+        call("DELETE", "/v1/entrypoint", token, expected=202)
+        wait(direct, "direct ports after turning off again")
 
 
 if __name__ == "__main__":

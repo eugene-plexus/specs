@@ -154,6 +154,13 @@ wildcard route, path-based app mount, or automatic public administration. User
 sign-in and node/folder grants still decide access. This does not turn one
 installation into isolated MSP tenants.
 
+**The console can stay where it is.** By default only Workbench goes through
+this setup: you keep opening the console at its own address on your network
+(for example `http://192.168.16.252:8279`), with no DNS entry to add, and the
+console's name (`eugene.…`) serves only Workbench's sign-in, which every browser
+must reach over HTTPS. Choose **Through this setup too** to move the console to
+its HTTPS name as well.
+
 **Set it up from Settings.** Open **Settings → Container access setup**, choose
 who manages HTTPS (an existing reverse proxy, automatic Let's Encrypt, local
 certificates, or supplied organisation certificates), and press **Prepare setup**.
@@ -183,13 +190,16 @@ Manager, Caddy and Traefik recipes.
    does, Eugene puts back what it had before, restarts on it, and the setup page
    says why. A wrong proxy address or DNS name costs fifteen minutes, never the
    console. A setup that does not start at all goes back at once.
+   With the console on its own port, the page you applied it from comes back by
+   itself after the restart, and that confirms it.
 5. **Nothing else.** Workbench's sign-in address follows by itself at startup,
    with the same sign-in registration, so its chats and sign-ins are kept.
    **Open** in Apps uses the Workbench hostname. Machines you have connected keep
    reaching this one at the control root's port (8083 in the container), so keep
-   that port published while other machines are enrolled. Once the console
-   answers on the new address, you can remove the old mappings for `8079`,
-   `8080` and the Workbench app port; they no longer answer.
+   that port published while other machines are enrolled. Keep `8079` too while
+   the console stays on its own port. Otherwise, once the console answers on the
+   new address, you can remove the old mappings for `8079`, `8080` and the
+   Workbench app port; they no longer answer.
 
 To go back to the direct ports, use **Turn off one HTTPS port** on the same page.
 Eugene keeps the configuration as `/data/entrypoint.json.disabled` and restarts on

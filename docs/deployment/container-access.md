@@ -16,6 +16,12 @@ Eugene goes back to how it was by itself, so a mistake never locks you out. The
 | SMB/MSP with organisation PKI | Supplied certificate files | One HTTPS port, automatically reloaded PEM files; organisation CA trust |
 | Reverse proxy on a different machine | My reverse proxy, with HTTPS upstream | Verified TLS on both legs; Eugene's port restricted to the proxy |
 
+**Where you open the console** is a choice of its own. By default it stays on its
+own port on your network, as before, and only Workbench goes through the setup;
+the console's name is then used only for Workbench's sign-in, so it still needs a
+proxy host, but nobody needs a local DNS entry. This is the setup to start with
+when Workbench is reached from outside, for example through Cloudflare.
+
 Every mode keeps separate exact console and Workbench hostnames, browser HTTPS,
 sign-in and per-user node/folder grants. Those two names are the default; an
 inference name (for apps on other machines) and a node name are extras. Without a
@@ -95,7 +101,9 @@ trusts*.
 ### Behind Cloudflare
 
 With Cloudflare's proxy (the orange cloud) in front of your own, every visitor
-arrives as a Cloudflare address:
+arrives as a Cloudflare address. The simplest setup is the default one: keep the
+console on its own port, and only Workbench (and its sign-in) goes through
+Cloudflare. If you move the console through the setup too:
 
 - Set Cloudflare's **SSL/TLS** mode to **Full** or **Full (strict)**. With
   *Flexible*, your proxy tells Eugene the request was not HTTPS, and Eugene
