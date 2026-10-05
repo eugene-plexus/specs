@@ -66,6 +66,11 @@
 #       and writable there, and so is the CUDA cache
 #   29. as the NAS uid with HOME=/, Workbench installs, signs in and
 #       restarts, and its page answers through a published app port
+#   36. EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG naming a missing file falls
+#       back to the direct ports: healthy, published 8079 answers, and the
+#       log and /healthz say why
+#   37. the same variable naming a broken file stops the container with
+#       one sentence naming the file, and no traceback
 #
 # Not here, and cannot be: a GPU. CI runners have none, so passthrough,
 # detection inside a container and a CUDA build loading are checked on a
@@ -806,6 +811,57 @@ else
 '
 fi
 rm -rf "$UIDDIR"
+
+# 36-37. The entry point variable naming a file that is missing, or broken.
+#
+# Found on the first live NAS migration (2026-10-04): the variable set and no
+# file at its path crashed the agent with a traceback on every restart, so the
+# owner had no console to fix it from. A missing file now falls back to the
+# direct ports -- and the image's own HEALTHCHECK must agree, or the fallback
+# reads as an unhealthy container forever. A broken file still stops the
+# agent, in one sentence rather than a traceback.
+say "runtime: entry point file missing or broken"
+$CT rm -f ep-entry-missing >/dev/null 2>&1 || true
+if $CT run -d --name ep-entry-missing --hostname entry-missing \
+     -e EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG=/data/entrypoint.json \
+     -p 127.0.0.1:18379:8079 eugene-plexus/control-plane:0.1 >/dev/null 2>&1; then
+  state=starting
+  for _ in $(seq 1 60); do
+    state=$($CT inspect -f '{{.State.Health.Status}}' ep-entry-missing 2>/dev/null | tr -d '\r')
+    [ "$state" = healthy ] && break
+    sleep 2
+  done
+  details=$(curl -fsS -m 5 http://127.0.0.1:18379/healthz 2>/dev/null)
+  said=$($CT logs ep-entry-missing 2>&1 | grep -c "does not exist, so the HTTPS entry point is off")
+  if [ "$state" = healthy ] && printf '%s' "$details" | grep -q '"entrypointFallback"' \
+     && [ "${said:-0}" -ge 1 ]; then
+    ok "36. a missing entry point file falls back to the direct ports, healthy, and says why"
+  else
+    bad "36. missing entry point file: health '$state', fallback on /healthz: $(printf '%s' "$details" | grep -c entrypointFallback), said in log: ${said:-0}"
+    $CT logs ep-entry-missing 2>&1 | tail -20 | sed 's/^/      /'
+  fi
+else
+  bad "36. could not start the image with a missing entry point file"
+fi
+$CT rm -f ep-entry-missing >/dev/null 2>&1 || true
+
+BROKEN=$(mktemp)
+printf '{not json' > "$BROKEN"
+chmod 644 "$BROKEN"  # readable by the image's user, so the failure is the content
+stopped=$(timeout 120 $CT run --rm --name ep-entry-broken \
+  -e EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG=/config/entrypoint.json \
+  -v "$BROKEN:/config/entrypoint.json:ro" \
+  eugene-plexus/control-plane:0.1 2>&1)
+code=$?
+rm -f "$BROKEN"
+if [ "$code" -ne 0 ] && [ "$code" -ne 124 ] \
+   && printf '%s' "$stopped" | grep -q "configuration at /config/entrypoint.json cannot be used: Invalid JSON" \
+   && ! printf '%s' "$stopped" | grep -q "Traceback"; then
+  ok "37. a broken entry point file stops the container in one sentence, not a traceback"
+else
+  bad "37. broken entry point file: exit $code"
+  printf '%s\n' "$stopped" | tail -20 | sed 's/^/      /'
+fi
 
 say "result"
 printf '  %d checks, %d failures\n' "$CHECKS" "$FAILURES"

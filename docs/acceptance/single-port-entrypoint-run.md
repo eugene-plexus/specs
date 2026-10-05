@@ -120,3 +120,37 @@ other four unchanged.
 
 Existing containers keep their published ports until the owner applies a
 configuration from Settings → Container access setup.
+
+## A missing configuration file falls back to the direct ports
+
+2026-10-04, found on Troy's NAS during the first live migration. With
+`EUGENE_PLEXUS_AGENT_ENTRYPOINT_CONFIG=/data/entrypoint.json` set and no file at
+that path, the agent stopped with a `FileNotFoundError` traceback on every restart.
+That left no console to repair it from. Troy's call: a missing file falls back to
+the direct ports with a warning. A file that exists and is invalid still stops the
+agent, now in one sentence.
+
+- Agent `d04fc91`: `entrypoint.resolve` clears the variable for the process and
+  keeps the reason. The log carries it once, and `/healthz` carries it as
+  `details.entrypointFallback` without degrading the status. Bad JSON, a rejected
+  setting or a directory at the path exits with
+  `agent: the HTTPS entry point configuration at <path> cannot be used: <reason>…`.
+  Full Windows suite 1,795 passed, 15 skipped. Its
+  [source CI](https://github.com/eugene-plexus/agent/actions/runs/37256650465)
+  passed. Sabotage 10/10. The checks that caught them include: the variable not
+  cleared, loopback still forced, a broken file falling back, a traceback, the
+  warning logged twice or not at all, and `/healthz` silent.
+- The image's `HEALTHCHECK` asks for the entry point only when its file exists.
+  Before this, the fallback would have read as unhealthy forever. A file added
+  after start reads as unhealthy until the container restarts, which is when it
+  takes effect.
+- Container checks **36** (missing file: healthy, published 8079 answers, log and
+  `/healthz` say why) and **37** (broken file: non-zero exit, one sentence naming
+  the file, no traceback) run in the image workflow before publication.
+
+The same session's diagnosis on the NAS found two more problems, both filed:
+- [Agent #7](https://github.com/eugene-plexus/agent/issues/7): a trusted-proxy
+  refusal does not say which check failed.
+- [ui #16](https://github.com/eugene-plexus/ui/issues/16): the setup page's
+  address fields were easy to swap. The proxy's own Docker address belongs in
+  `proxy.addresses`, and people's networks belong in each service's `networks`.

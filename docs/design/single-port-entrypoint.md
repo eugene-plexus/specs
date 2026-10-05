@@ -49,8 +49,13 @@ never another app that later occupies the port. Reloads preserve active streams.
 Before replacing the app, its public route is removed synchronously. A new process
 is published only after its health response confirms the configured public origin
 and origin-isolation capability; rolling back to an older build stays unavailable.
-Invalid startup configuration is fatal in this opt-in mode, never a fallback to
-unprotected legacy listeners. Proxy failure does not widen backend bindings.
+An invalid startup configuration file is fatal in this opt-in mode, never a
+fallback to the direct listeners. A variable naming a file that does not exist
+falls back to the direct ports with a warning in the log and on `/healthz`
+(Troy, 2026-10-04, after the first live migration: a missing file crash-looped the
+container and left no console to repair it from). The direct ports are reachable
+only where the owner still publishes them. Proxy failure does not widen backend
+bindings.
 
 Home installations may use Caddy's internal CA, explicitly trusting its public
 root on their browsers and nodes. Businesses should supply certificates from

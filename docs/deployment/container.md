@@ -256,9 +256,11 @@ checking the public OIDC issuer. This avoids hairpin DNS/NAT and does not pass i
 the proxy's private credential or a TLS private key. The external hostname is
 never treated as permission to access another person's files.
 
-On an invalid startup configuration the container refuses to start, rather than
-silently reverting to exposed backend ports. Inspect the container log for the
-specific configuration error. An absent, stopped or outdated Workbench returns
+If the configuration file exists but is invalid, the container refuses to start
+rather than reverting to the direct ports; its log names the file and the
+problem in one sentence. If the variable names a file that does not exist, Eugene
+starts on its direct ports as before, and its log and `/healthz`
+(`entrypointFallback`) say so. Put the file in place and restart to switch. An absent, stopped or outdated Workbench returns
 503 from its hostname; use the console to update/start it. To roll back to direct
 ports, remove the entry-point variable, restore the previous mappings, recreate,
 and restart Workbench in Apps to restore its direct-port callback. Existing
