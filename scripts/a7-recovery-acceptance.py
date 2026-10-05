@@ -85,16 +85,27 @@ def exercise(args):
             **kwargs,
         )
 
-    def wait(check, label, seconds=90):
-        deadline = time.monotonic() + seconds
-        while time.monotonic() < deadline:
+    def wait(check, label, seconds=90, explain=()):
+        """`explain` is (name, request) pairs printed on a timeout, so the
+        next failure says what each side saw (specs #13)."""
+        deadline = time.perf_counter() + seconds
+        last = None
+        while time.perf_counter() < deadline:
             try:
                 result = check()
                 if result:
                     return result
-            except (httpx.HTTPError, KeyError):
-                pass
+                last = repr(result)
+            except (httpx.HTTPError, KeyError) as exc:
+                last = f"{type(exc).__name__}: {exc}"
             time.sleep(0.25)
+        print(f"TIMEOUT {label} after {seconds} s; the check last saw: {last}", flush=True)
+        for name, request in explain:
+            try:
+                response = request()
+                print(f"  {name}: {response.status_code} {response.text[:4000]}", flush=True)
+            except Exception as exc:  # A diagnostic must not hide the timeout.
+                print(f"  {name}: {type(exc).__name__}: {exc}", flush=True)
         raise AssertionError("timed out: " + label)
 
     def start(name, python=Path(sys.executable)):
@@ -139,7 +150,7 @@ def exercise(args):
         # The gateway learns a runtime is ready one routing refresh after
         # its agent does, and says so as a 503 "still coming up". That one
         # answer is waited through; any other failure is the check's.
-        deadline = time.monotonic() + 60
+        deadline = time.perf_counter() + 60
         while True:
             response = call(
                 "gateway",
@@ -154,7 +165,7 @@ def exercise(args):
                 },
             )
             coming_up = response.status_code == 503 and "still coming up" in response.text
-            if not coming_up or time.monotonic() > deadline:
+            if not coming_up or time.perf_counter() > deadline:
                 break
             time.sleep(1)
         assert response.status_code == 200, response.text
@@ -314,6 +325,15 @@ def exercise(args):
                 .get("data", [])
             ),
             "gateway discovers worker",
+            explain=(
+                ("gateway /v1/models", lambda: call("gateway", "GET", "/v1/models", keys[0]["token"])),
+                ("gateway routing", lambda: call("gateway", "GET", "/v1/admin/routing", operator)),
+                ("gateway drivers", lambda: call("gateway", "GET", "/v1/admin/drivers", operator)),
+                ("control runtimes", lambda: call("control", "GET", "/v1/runtimes", operator)),
+                ("control nodes", lambda: call("control", "GET", "/v1/nodes", operator)),
+                ("worker runtimes", lambda: call("worker", "GET", "/v1/runtimes", worker_session)),
+                ("worker components", lambda: call("worker", "GET", "/v1/components", worker_session)),
+            ),
         )
         infer(keys[0]["token"])
         call(
@@ -332,7 +352,7 @@ def exercise(args):
             "PASS originals and children stopped before checkpoint/update", flush=True
         )
         for name in ("root", "worker"):
-            started = time.monotonic()
+            started = time.perf_counter()
             recovery.backup(
                 locations[name],
                 root / (name + "-checkpoint"),
@@ -341,7 +361,7 @@ def exercise(args):
                 [args.engine.resolve().parent],
                 stopped=True,
             )
-            timings[name + "BackupSeconds"] = time.monotonic() - started
+            timings[name + "BackupSeconds"] = time.perf_counter() - started
         # A real failed package operation after the previous processes stopped,
         # with partial package mutation and deliberately incompatible new state.
         subprocess.run(
@@ -376,7 +396,7 @@ def exercise(args):
             flush=True,
         )
         for name in ("root", "worker"):
-            started = time.monotonic()
+            started = time.perf_counter()
             replacement = root / (name + "-replacement")
             recovery.restore(
                 root / (name + "-checkpoint"), replacement, password, args.uv
@@ -416,7 +436,7 @@ def exercise(args):
             )
             if name == "root":
                 login("control")
-            timings[name + "RestoreSeconds"] = time.monotonic() - started
+            timings[name + "RestoreSeconds"] = time.perf_counter() - started
         operator = login("root")
         worker_session = login("worker")
         response = call(
