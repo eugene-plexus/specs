@@ -2753,8 +2753,19 @@ components:
             `node`, plus `gateway` when the join token that enrolled it
             said so. Given by the join token, never claimed by the node.
             A Job Site is not a node: it has its own registry and key
-            (`/v1/sites`, J19). An `enrollNode` that granted `files`,
-            written before that, is skipped at replay.
+            (`/v1/sites`, J19). A node enrolled with `files` before that
+            (slices 1 and 2) still replays, as a **retired** node: it is
+            in no listing and no trust bundle, and nothing it signs is
+            accepted.
+        owner:
+          type:
+            - string
+            - "null"
+          deprecated: true
+          description: |
+            Written only for a node enrolled with `files` before slice
+            2b.1, and kept so its log and snapshots still replay. `null`
+            for every other node.
         trustBundleVersion:
           type:
             - integer
@@ -3319,8 +3330,10 @@ components:
         claim to host a site, J32) and `setSiteDevGrants` (Eugene's owner's
         own dev-mode grants on a site, J13b). A Job Site is its own
         enrollment, never a node (J19). **`putNodeHelper` is read and
-        ignored**, because the operator-managed node folders retired (J20),
-        and so is an `enrollNode` that granted `files`.
+        ignored**, because the operator-managed node folders retired (J20).
+        An `enrollNode` that granted `files` still applies, so a later
+        `revokeNode` of it replays, but the node it records is retired
+        (`Node.grants`).
 
         **The seven sign-in operations (C2, 2026-10-01)** replicate people,
         the apps that sign in, the provider's sealed RSA key and revoked
