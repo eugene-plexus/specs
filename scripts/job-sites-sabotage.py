@@ -1509,17 +1509,50 @@ SABOTAGES.extend(
             "agent-site",
         ),
         e(
-            "a worker is not put in the agent's job",
+            "a worker is not put in its job",
             SITE_WORKERS,
-            "            win32job.AssignProcessToJobObject(self._job, process)\n",
+            "            win32job.AssignProcessToJobObject(job, process)\n",
             "            pass\n",
             "agent-site",
         ),
         e(
             "the job does not close with the agent",
             SITE_WORKERS,
-            '        info["BasicLimitInformation"]["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE\n',
-            '        info["BasicLimitInformation"]["LimitFlags"] |= 0\n',
+            '    info["BasicLimitInformation"]["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE\n',
+            '    info["BasicLimitInformation"]["LimitFlags"] |= 0\n',
+            "agent-site",
+        ),
+        # Found by the Windows acceptance (run 2): one job for every worker.
+        e(
+            "every worker shares one job",
+            SITE_WORKERS,
+            "        job = _worker_job()\n",
+            '        job = self.__dict__.setdefault("_shared_job", _worker_job())\n',
+            "agent-site",
+        ),
+        e(
+            "stopping a worker leaves its job open",
+            SITE_WORKERS,
+            "                win32process.TerminateProcess(entry.handle, 1)\n            _close(entry.job)\n",
+            "                win32process.TerminateProcess(entry.handle, 1)\n",
+            "agent-site",
+        ),
+        e(
+            "a worker that cannot join its job leaves the job open",
+            SITE_WORKERS,
+            "            win32process.TerminateProcess(process, 1)\n            _close(job)\n            raise\n",
+            "            win32process.TerminateProcess(process, 1)\n            raise\n",
+            "agent-site",
+        ),
+        # Found by the Windows acceptance (run 1): a venv is not an install.
+        e(
+            "site join takes any venv's interpreter for the installed site host",
+            SITE_CLI,
+            "    store = AppStore(config_dir / APPS_FILE)\n    try:\n        store.load()\n",
+            "    for found in (config_dir / APPS_DIR / HELPER_ID / \"versions\").glob(\"*/venv\"):\n"
+            "        if venv_python(found).exists():\n"
+            "            return venv_python(found)\n"
+            "    store = AppStore(config_dir / APPS_FILE)\n    try:\n        store.load()\n",
             "agent-site",
         ),
         e(

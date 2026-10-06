@@ -500,7 +500,7 @@ def put_file(path: Path, data: bytes, mode: int = 0o644, *, root: bool) -> None:
 #: only account there is. Everything else is the worker's own code.
 STAND_IN = (
     "import sys;from eugene_plexus_site_host import accounts, worker;"
-    "accounts.refuse_to_serve=lambda *a:None;worker.main(sys.argv[1:])"
+    "accounts.refuse_to_serve=lambda *a,**k:None;worker.main(sys.argv[1:])"
 )
 
 #: A stranger's connection to the channel, from whatever account runs it.

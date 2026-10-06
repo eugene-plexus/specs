@@ -710,6 +710,11 @@ def run(args: argparse.Namespace) -> None:
         thread.join(timeout=10)
         after = service_state()
         assert {k: v for k, v in after.items() if k != SITE_HOST_SERVICE} == before, (before, after)
+        # The files the run made one account's alone refuse even an
+        # administrator's delete: take them back first.
+        shared_dir = work / "shared"
+        subprocess.run(["takeown", "/f", str(shared_dir), "/r", "/d", "y"], capture_output=True)
+        subprocess.run(["icacls", str(shared_dir), "/reset", "/t", "/q"], capture_output=True)
         if not args.keep:
             shutil.rmtree(work, ignore_errors=True)
         else:
