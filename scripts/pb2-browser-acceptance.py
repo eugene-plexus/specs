@@ -131,6 +131,7 @@ def exercise(directory: Path, engine: Path, model: Path) -> int:
         [sys.executable, "-m", "eugene_plexus_agent", "--unattended"],
         cwd=directory,
         env=env,
+        stdin=subprocess.DEVNULL,
         stdout=log,
         stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,

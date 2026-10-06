@@ -64,7 +64,7 @@ def check(root: Path, engine: Path, model: Path, *, browser: Path | None = None,
         for name, command in commands:
             log = (root / f"{name}.log").open("w", encoding="utf-8")
             logs.append(log)
-            processes.append(subprocess.Popen(command, cwd=root, env=env, stdout=log, stderr=log,
+            processes.append(subprocess.Popen(command, cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)))
         with httpx.Client(trust_env=False, timeout=10) as client:
             def wait(path: str, headers: dict | None = None, predicate=lambda r: r.status_code == 200):

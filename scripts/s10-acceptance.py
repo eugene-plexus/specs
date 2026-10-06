@@ -88,7 +88,7 @@ def run(root: Path, download: bool, seed: Path | None, installer_source: Path | 
     try:
         log = (root / "proxy.log").open("w", encoding="utf-8"); logs.append(log)
         proxy = subprocess.Popen([sys.executable, str(HERE / "s10-network.py"), "--port", str(proxy_port),
-                                  "--output", str(root)], stdout=log, stderr=log, creationflags=FLAGS)
+                                  "--output", str(root)], stdin=subprocess.DEVNULL, stdout=log, stderr=log, creationflags=FLAGS)
         for _ in range(100):
             if (root / "proxy-ready").exists():
                 break
@@ -161,6 +161,7 @@ hardware._intel_gpus = lambda warnings: []
         log = (root / "agent.log").open("w", encoding="utf-8"); logs.append(log)
         agent = subprocess.Popen([str(python), str(HERE / "s8-ui-acceptance.py"), "--serve", str(prefix),
                                   "--port", str(agent_port)], cwd=prefix, env=env,
+                                 stdin=subprocess.DEVNULL,
                                  stdout=log, stderr=log, creationflags=FLAGS)
         url = f"http://127.0.0.1:{agent_port}"
         with httpx.Client(trust_env=False, timeout=5) as client:

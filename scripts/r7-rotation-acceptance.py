@@ -274,6 +274,7 @@ def exercise(root: Path) -> int:
             ],
             cwd=directory,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=logs[name],
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,

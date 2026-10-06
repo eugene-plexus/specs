@@ -129,6 +129,7 @@ def exercise(args):
             [str(python), __file__, "--serve", str(directory), str(ports[name])],
             cwd=directory,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=subprocess.STDOUT,
         )

@@ -186,6 +186,7 @@ def exercise(directory: Path, lan: str | None) -> None:
             ],
             cwd=work,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,

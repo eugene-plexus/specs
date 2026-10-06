@@ -189,6 +189,7 @@ def acceptance(agent_port: int, engine_port: int) -> None:
                 ],
                 cwd=work,
                 env=env,
+                stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 **process_signals.spawn_kwargs(),

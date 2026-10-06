@@ -630,6 +630,7 @@ def phase_upstream_claims(ctx: dict) -> None:
     proc = subprocess.Popen(
         [str(MLX_ENV / "bin" / "mlx_lm.server"), "--model", ctx["qwen"]["path"],
          "--host", "127.0.0.1", "--port", str(port)],
+        stdin=subprocess.DEVNULL,
         stdout=log, stderr=subprocess.STDOUT,
     )
     first_health = first_token = None

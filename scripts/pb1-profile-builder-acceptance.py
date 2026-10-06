@@ -99,6 +99,7 @@ def main(args: argparse.Namespace) -> None:
             proc = subprocess.Popen(
                 [sys.executable, __file__, "--serve", str(root), "--port", str(port)],
                 env=env,
+                stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,

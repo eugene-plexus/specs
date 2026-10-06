@@ -228,6 +228,7 @@ def main() -> int:
         procs.append(
             subprocess.Popen(
                 args,
+                stdin=subprocess.DEVNULL,
                 stdout=open(log, "wb"),  # noqa: SIM115 - closed with the process
                 stderr=subprocess.STDOUT,
                 env={**env, **extra},

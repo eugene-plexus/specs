@@ -139,7 +139,7 @@ def exercise(directory: Path) -> None:
         env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
         processes[name] = subprocess.Popen(
             [sys.executable, str(LAUNCHER), "--serve", kind, "--directory", str(work), "--port", str(ports[name])],
-            cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT)
+            cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
         wait(lambda: call(name, "GET", "/healthz").status_code == 200, name + " healthz")
 
     def login(name: str) -> str:

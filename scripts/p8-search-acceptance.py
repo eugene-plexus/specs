@@ -473,7 +473,7 @@ def exercise(directory: Path, *, clients: bool, searxng: str | None, browser: bo
         processes[name] = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), "--serve", name,
              "--directory", str(work), "--port", str(ports[name])],
-            cwd=work, env=env, stdout=output, stderr=subprocess.STDOUT,
+            cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         wait(lambda: call(name, "GET", "/healthz").status_code == 200, name)

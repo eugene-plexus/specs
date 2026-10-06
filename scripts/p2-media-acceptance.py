@@ -451,6 +451,7 @@ def exercise(directory: Path, *, live: bool) -> None:
              "--directory", str(work), "--port", str(ports[name])],
             cwd=work,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,

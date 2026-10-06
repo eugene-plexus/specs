@@ -180,6 +180,7 @@ def serve_root(directory: Path) -> None:
     (work / "caddy.json").write_text(json.dumps(document), encoding="utf-8")
     caddy = subprocess.Popen(
         [str(caddy_binary(Path(spec["cache"]))), "run", "--config", str(work / "caddy.json")],
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=open(state / "caddy.log", "wb"),  # noqa: SIM115
     )

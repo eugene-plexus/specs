@@ -282,6 +282,7 @@ def exercise(directory: Path) -> None:
             ],
             cwd=work,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=log,
             stderr=subprocess.STDOUT,
         )

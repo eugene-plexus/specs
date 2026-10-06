@@ -60,6 +60,7 @@ async def check(server: Path) -> None:
                     "Thinking.</think>\n\nHello from Strata.",
                 ],
                 cwd=root,
+                stdin=subprocess.DEVNULL,
                 stdout=output,
                 stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,

@@ -268,7 +268,7 @@ def main() -> int:
     def start(argv: list[str], log: str, env: dict[str, str], cwd: Path | None = None) -> None:
         handle = open(work / log, "w", encoding="utf-8")
         procs.append(
-            subprocess.Popen(argv, stdout=handle, stderr=subprocess.STDOUT, env=env, cwd=cwd)
+            subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=handle, stderr=subprocess.STDOUT, env=env, cwd=cwd)
         )
 
     def wait_for(port: int, seconds: float = 90) -> bool:

@@ -179,6 +179,7 @@ def main() -> int:
         procs.append(
             subprocess.Popen(
                 args,
+                stdin=subprocess.DEVNULL,
                 stdout=open(log, "wb"),  # noqa: SIM115 - closed with the process
                 stderr=subprocess.STDOUT,
                 env={**env, **extra},
@@ -554,6 +555,7 @@ def run_claude_code_check(work: Path) -> None:
     listener = subprocess.Popen(
         [sys.executable, str(ROOT / "specs/scripts/r4-capture.py"), "--port", str(CAPTURE_PORT),
          "--out", str(capture), "--mode", "capture"],
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     try:

@@ -83,6 +83,7 @@ def main() -> None:
                 [str(binary), "-m", str(args.model), "--alias", "probe", "--host", "127.0.0.1",
                  "--port", str(p), "--metrics", "--jinja", "-c", str(args.ctx), "-np", "1",
                  "--slot-save-path", str(saves), *args.engine_args],
+                stdin=subprocess.DEVNULL,
                 stdout=log, stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             deadline = time.time() + 300

@@ -464,7 +464,7 @@ class Bench:
         self.procs[name] = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), "--serve", name, "--directory", str(work),
              "--port", str(self.ports[name])],
-            cwd=work, env=env, stdout=log, stderr=subprocess.STDOUT,
+            cwd=work, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         self.wait(lambda: self.call(name, "GET", "/healthz").status_code == 200, name)
 
@@ -497,7 +497,7 @@ class Bench:
                 *self.args.engine_args, *(extra or [])]
         log.write((" ".join(argv) + "\n").encode())
         log.flush()
-        self.procs[name] = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT,
+        self.procs[name] = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                                             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         self.wait(lambda: self.call(name, "GET", "/health").status_code == 200, name, 300)
 

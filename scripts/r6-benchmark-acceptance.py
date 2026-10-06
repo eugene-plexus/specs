@@ -59,7 +59,7 @@ def main(args) -> None:
         def boot():
             (root / "stop").unlink(missing_ok=True)
             proc = subprocess.Popen([sys.executable, __file__, "--serve", str(root), "--port", str(port)],
-                env=env, stdout=log, stderr=subprocess.STDOUT,
+                env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
             for _ in range(150):
                 try:

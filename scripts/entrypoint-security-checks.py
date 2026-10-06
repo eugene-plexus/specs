@@ -111,7 +111,7 @@ def main():
         path.write_text(json.dumps(document))
         subprocess.run([binary, "validate", "--config", str(path)], check=True)
         with (directory / "caddy.log").open("w+") as log:
-            process = subprocess.Popen([binary, "run", "--config", str(path)], stdout=log, stderr=log)
+            process = subprocess.Popen([binary, "run", "--config", str(path)], stdin=subprocess.DEVNULL, stdout=log, stderr=log)
             try:
                 root = directory / "tls/pki/authorities/local/root.crt"
                 deadline = time.perf_counter() + 30

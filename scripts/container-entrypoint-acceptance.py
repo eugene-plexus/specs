@@ -190,7 +190,7 @@ def front_proxy():
     path = Path("/data/.acceptance-front.json")
     path.write_text(json.dumps(document))
     with Path("/data/.acceptance-front.log").open("w+") as log:
-        process = subprocess.Popen(["caddy", "run", "--config", str(path)], stdout=log, stderr=log)
+        process = subprocess.Popen(["caddy", "run", "--config", str(path)], stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         try:
             yield
         except BaseException:

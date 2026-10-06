@@ -75,7 +75,7 @@ def running(binary, directory, config, ports):
     path.write_text(json.dumps(caddy_config(config, directory, "test-ingress-secret", ports)))
     subprocess.run([binary, "validate", "--config", str(path)], check=True, capture_output=True)
     with (directory / "log.txt").open("w+") as log:
-        process = subprocess.Popen([binary, "run", "--config", str(path)], stdout=log, stderr=log)
+        process = subprocess.Popen([binary, "run", "--config", str(path)], stdin=subprocess.DEVNULL, stdout=log, stderr=log)
         try:
             deadline = time.perf_counter() + 15
             while True:

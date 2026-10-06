@@ -193,7 +193,7 @@ def main() -> None:
                 logs.append(log)
                 processes[kind] = subprocess.Popen([sys.executable, str(Path(__file__).resolve()),
                     "--serve", kind, "--directory", str(root), "--port", str(port),
-                    "--agent-url", agent_url], env=env, cwd=root, stdout=log, stderr=subprocess.STDOUT)
+                    "--agent-url", agent_url], env=env, cwd=root, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
                 deadline = time.perf_counter() + 30
                 while time.perf_counter() < deadline:
                     try:

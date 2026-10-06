@@ -150,7 +150,7 @@ def main():
         log = stack.enter_context((folder / "pebble.log").open("w+"))
         env = {k: v for k, v in os.environ.items() if not k.startswith(("PEBBLE_", "EUGENE_PLEXUS_"))}
         env.update(PEBBLE_VA_NOSLEEP="1", PEBBLE_WFE_NONCEREJECT="0", PEBBLE_AUTHZREUSE="0")
-        ca_process = subprocess.Popen([str(pebble), "-config", str(config_file), "-dnsserver", f"127.0.0.1:{dns.server_address[1]}"], stdout=log, stderr=log, env=env)
+        ca_process = subprocess.Popen([str(pebble), "-config", str(config_file), "-dnsserver", f"127.0.0.1:{dns.server_address[1]}"], stdin=subprocess.DEVNULL, stdout=log, stderr=log, env=env)
         def stop(proc):
             if proc.poll() is None:
                 proc.terminate()
@@ -182,7 +182,7 @@ def main():
         path.write_text(json.dumps(document))
         proxy_log = stack.enter_context((folder / "caddy.log").open("w+"))
         def start():
-            proc = subprocess.Popen([binary, "run", "--config", str(path)], stdout=proxy_log, stderr=proxy_log)
+            proc = subprocess.Popen([binary, "run", "--config", str(path)], stdin=subprocess.DEVNULL, stdout=proxy_log, stderr=proxy_log)
             stack.callback(stop, proc)
             return proc
         process = start()

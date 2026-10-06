@@ -102,7 +102,7 @@ def main() -> None:
         "agent": subprocess.Popen(
             [sys.executable, str(ACCEPT), "--serve", "agent", "--directory", str(agent_dir),
              "--port", str(ports["agent"])],
-            cwd=agent_dir, env=env, stdout=(agent_dir / "process.log").open("wb"),
+            cwd=agent_dir, env=env, stdin=subprocess.DEVNULL, stdout=(agent_dir / "process.log").open("wb"),
             stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW,
         )
     }
@@ -160,7 +160,7 @@ def main() -> None:
                "result": str(result), "ui": str(ROOT / "ui")}
         (work / "cfg.json").write_text(json.dumps(cfg))
         node = subprocess.Popen(
-            ["node", str(HERE / "c2-browser-acceptance.mjs"), str(work / "cfg.json")]
+            ["node", str(HERE / "c2-browser-acceptance.mjs"), str(work / "cfg.json")], stdin=subprocess.DEVNULL
         )
         ada_verifier = None
         while node.poll() is None:

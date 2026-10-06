@@ -111,6 +111,7 @@ def main() -> None:
                     ],
                     cwd=work,
                     env=env,
+                    stdin=subprocess.DEVNULL,
                     stdout=log,
                     stderr=subprocess.STDOUT,
                 )

@@ -562,7 +562,7 @@ def serve(server: Path, model: Path, port: int, log: Path, args: argparse.Namesp
     if args.threads:
         argv += ["-t", str(args.threads)]
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
-    process = subprocess.Popen(argv, stdout=log.open("w"), stderr=subprocess.STDOUT, env=env)
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log.open("w"), stderr=subprocess.STDOUT, env=env)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     deadline = time.perf_counter() + 900
     while time.perf_counter() < deadline:
@@ -601,6 +601,7 @@ def serve_driver(python: str, llama_port: int, name: str, workdir: Path) -> tupl
     })
     log = (workdir / "driver.log").open("w")
     process = subprocess.Popen([python, "-m", "eugene_plexus_inference_driver"], env=env,
+                               stdin=subprocess.DEVNULL,
                                stdout=log, stderr=subprocess.STDOUT)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     for _ in range(120):

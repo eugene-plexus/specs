@@ -48,7 +48,7 @@ def check(root: Path) -> None:
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
     with (root / "agent.log").open("w", encoding="utf-8") as log:
         proc = subprocess.Popen([sys.executable, __file__, "--serve", str(root), "--port", str(port)],
-                                env=env, stdout=log, stderr=log,
+                                env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         try:
             url = f"http://127.0.0.1:{port}"
