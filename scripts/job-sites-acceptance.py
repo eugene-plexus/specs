@@ -1,5 +1,8 @@
-"""Job Sites, slice 1 (docs/design/remote-nodes.md §5): a machine on another
-network joins over the public node route, and its files are its owner's.
+"""Job Sites, slices 1 and 2 (docs/design/remote-nodes.md §3.4, §5, §6.2,
+§6.3): a machine on another network joins over the public node route, its
+files are its owner's, and what it runs is decided on the machine (J8): MCP
+between site and root (J6), one file server per machine whose tools take a
+folder (J6g), and local servers its administrator added at it.
 
 **The root** is the real control root behind the real entry point: Caddy
 2.11.7 (pinned, checksum-verified) running the configuration the agent's own
@@ -13,10 +16,21 @@ the owner's password on stdin), then started and left to run, so its own
 trust-bundle pull and its own file-helper poll cross the public route, pinned
 to the root's identity key (J7a). Nothing listens for it but loopback.
 
-**The file read** then runs the agent's real relay (`NodeFileHelper`) and the
-real helper worker wheel, over that real public route with the pins the site
-saved: a service install's OS account is the one thing a test process cannot
-give the site agent itself (C1's disposable runners own that check).
+**The files** then run through the agent's real relay (`SiteHostRelay`) and
+the real site host, installed from this checkout of `site-host` the way the
+agent installs it (`EUGENE_PLEXUS_AGENT_SITE_HOST_SOURCE`) and started with
+the environment the relay builds, over that real public route with the pins
+the site saved: a service install's OS account is the one thing a test
+process cannot give the site agent itself (C1's disposable runners own that
+check), so the host is started here rather than by the site agent's app
+manager. A local server is added the way `eugene-plexus-agent site server
+add` adds one after its elevation check (the check itself is the agent's unit
+test); the host learns it at its next start, as the agent restarts it.
+
+**Editing the root's state** is played by a hook this script adds to the root
+it hosts (`/acceptance/forge`, on the control port, loopback only): it queues
+an operation the root's own checks would not, and it names a different owner
+for the site. Rule 2 of §3.3 says neither is enough to get in.
 
 **Workbench** is played by a client with Workbench's own credentials: a
 registered sign-in client and each person's refresh token from the real
@@ -30,7 +44,10 @@ Topologies:
   through it; the site is this Windows machine.
 
 Everything uses temporary directories and free ports, clears the ambient
-`EUGENE_PLEXUS_*` environment, and never touches an installed Eugene.
+`EUGENE_PLEXUS_*` environment, and never touches an installed Eugene. No child
+inherits this script's standard input: from Git Bash on Windows that is a pipe,
+and two children hung at start on it (the site agent, and the build backend
+uv ran for the site host).
 """
 
 from __future__ import annotations
@@ -45,7 +62,6 @@ import re
 import secrets
 import shutil
 import socket
-import ssl
 import subprocess
 import sys
 import tarfile
@@ -94,7 +110,7 @@ def free_port() -> int:
 def caddy_binary(cache: Path) -> Path:
     found = shutil.which("caddy")
     if found and CADDY_VERSION in subprocess.run(
-        [found, "version"], capture_output=True, text=True
+        [found, "version"], capture_output=True, text=True, stdin=subprocess.DEVNULL
     ).stdout:
         return Path(found)
     target = cache / "caddy"
@@ -149,8 +165,10 @@ def serve_root(directory: Path) -> None:
         nodes_public=True,
         nodes_probe=f"127.0.0.1:{port}",
     )
+    app = create_app(settings)
+    forge_hook(app)
     server = uvicorn.Server(
-        uvicorn.Config(create_app(settings), host="127.0.0.1", port=control_port, log_level="warning")
+        uvicorn.Config(app, host="127.0.0.1", port=control_port, log_level="warning")
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -191,6 +209,37 @@ def serve_root(directory: Path) -> None:
         server.should_exit = True
         thread.join(timeout=10)
         shutil.rmtree(state, ignore_errors=True)
+
+
+def forge_hook(app: Any) -> None:
+    """Stand in for an owner who edits the root's state directly (rule 2 of
+    §3.3): queue an operation the root's routes would refuse, or name another
+    owner for a site. Harness only: the root this script hosts, its loopback
+    control port."""
+    from dataclasses import replace
+
+    from eugene_plexus_control import node_helpers as helpers
+
+    async def forge(body: dict[str, Any]) -> dict[str, Any]:
+        machine = app.state.machine
+        if body["kind"] == "owner":
+            record = machine.state.nodes[body["node"]]
+            nodes = {**machine.state.nodes, body["node"]: replace(record, owner=body["owner"])}
+            machine._state = replace(machine.state, nodes=nodes)
+            return {"owner": body["owner"]}
+        config = helpers.configuration(machine.state, body["node"])
+        broker = app.state.node_helper_broker
+        envelope = helpers.envelope(
+            machine.state,
+            config,
+            body["subject"],
+            server=body["server"],
+            request=body["request"],
+            grants=body.get("grants") or [],
+        )
+        return await broker.submit(config, lambda: envelope, write=True)
+
+    app.add_api_route("/acceptance/forge", forge, methods=["POST"])
 
 
 # --------------------------------------------------------------------------- #
@@ -238,6 +287,22 @@ def sign_in(http: Any, control: str, client: dict[str, Any], name: str, password
     return str(tokens.json()["refresh_token"])
 
 
+def rpc(method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One MCP request of the 2026-07-28 revision, as Workbench sends it."""
+    return {
+        "jsonrpc": "2.0",
+        "id": secrets.token_hex(4),
+        "method": method,
+        "params": {
+            **(params or {}),
+            "_meta": {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+            },
+        },
+    }
+
+
 class Workbench:
     def __init__(self, http: Any, control: str, client: dict[str, Any]) -> None:
         self.http, self.control, self.client = http, control, client
@@ -249,6 +314,9 @@ class Workbench:
             json={"refreshToken": token, **body},
             timeout=40,
         )
+
+    def mcp(self, token: str, server: str, method: str, params: dict[str, Any] | None = None) -> Any:
+        return self.call("sites/mcp", token, node="desk", server=server, request=rpc(method, params))
 
 
 # --------------------------------------------------------------------------- #
@@ -282,6 +350,7 @@ def start_root(work: Path, wsl: bool, ip: str, port: int, control_port: int) -> 
             ["wsl", "-d", "Ubuntu", "--", "bash", "-lc", f"echo {cache}"],
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
         ).stdout.strip()
         (work / "root.json").write_text(json.dumps(spec), encoding="utf-8")
         command = ["wsl", "-d", "Ubuntu", "--", "bash", "-lc",
@@ -290,14 +359,15 @@ def start_root(work: Path, wsl: bool, ip: str, port: int, control_port: int) -> 
         command = [sys.executable, __file__, "--serve-root", str(work)]
     return subprocess.Popen(
         command, env=clean_environment(), stdout=open(work / "root.out", "wb"),  # noqa: SIM115
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
     )
 
 
 def routable(wsl: bool) -> str:
     if wsl:
         out = subprocess.run(
-            ["wsl", "-d", "Ubuntu", "--", "hostname", "-I"], capture_output=True, text=True
+            ["wsl", "-d", "Ubuntu", "--", "hostname", "-I"], capture_output=True, text=True,
+            stdin=subprocess.DEVNULL,
         ).stdout.split()
         return out[0]
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -309,60 +379,10 @@ def agent_command(*args: str) -> list[str]:
     return [sys.executable, "-m", "eugene_plexus_agent", *args]
 
 
-async def relay_read(
-    site: Path, port: int, worker_port: int, token: str, package: Any
-) -> tuple[Any, Any]:
-    """The agent's real relay, as the site's, over the real public route."""
-    from eugene_plexus_agent import tokens
-    from eugene_plexus_agent._generated.models import ComponentStatus
-    from eugene_plexus_agent.node_file_helper import NodeFileHelper
-    from eugene_plexus_agent.node_identity import NodeIdentityStore
-    from eugene_plexus_agent.root_tls import RootLink
-    from fastapi import FastAPI
-
-    store = NodeIdentityStore(site / "node.yaml")
-    store.load()
-    record = store.record
-    signer = tokens.Signer(
-        key=tokens.load_private(str(record.token_private_key)), issuer=f"node:{record.name}"
-    )
-    app = FastAPI()
-    app.state.node_identity = store
-    app.state.root_link = RootLink(store)
-    app.state.auth_state = SimpleNamespace(
-        trust=SimpleNamespace(
-            agent_token=lambda aud: signer.mint(
-                typ=tokens.TYP_SERVICE, sub="agent", aud=[aud], ttl_seconds=600
-            )[0]
-        )
-    )
-    kind = "windows_service" if os.name == "nt" else "systemd"
-    app.state.apps = SimpleNamespace(
-        accounts=SimpleNamespace(available=True, kind=kind),
-        store=SimpleNamespace(
-            get=lambda _: SimpleNamespace(enabled=True, port=worker_port, manifest=package)
-        ),
-        supervisor=SimpleNamespace(
-            status=lambda _: (ComponentStatus.running, None, None, None, None),
-            admin_token=lambda _: token,
-        ),
-        installer=SimpleNamespace(snapshot=lambda _: None),
-    )
-    relay = NodeFileHelper(app)
-
-    async def nothing(_config: dict[str, Any]) -> None:
-        pass
-
-    relay.reconcile = nothing  # type: ignore[method-assign]
-    return relay, app
-
-
 def run(args: argparse.Namespace) -> None:
     import httpx
 
     from eugene_plexus_agent import root_tls
-    from eugene_plexus_agent.apps import AppStore, venv_python
-    from eugene_plexus_agent.node_file_helper import manifest
 
     work = Path(tempfile.mkdtemp(prefix="ep-job-sites-"))
     ip = routable(args.root_wsl)
@@ -472,14 +492,17 @@ def run(args: argparse.Namespace) -> None:
         assert PASSWORD not in "".join(p.read_text(errors="ignore") for p in site.rglob("*") if p.is_file())
         node = http.get(f"{control}/v1/nodes/desk").json()
         assert node["grants"] == ["files"] and node["ownerName"] == "ada" and not node.get("url")
-        ok("the site joined over the public route as ada's, files only, with no address; "
-           "her password is kept nowhere on it")
+        ada_id = node["owner"]
+        assert f"siteOwner: {ada_id}" in (site / "node.yaml").read_text(encoding="utf-8")
+        ok("the site joined over the public route as ada's, files only, with no address, and "
+           "pinned her as its owner; her password is kept nowhere on it")
 
         # ---- the site runs, and only connects out --------------------------
         site_port = free_port()
         site_process = subprocess.Popen(
             agent_command("--unattended"),
             env={**site_env, "EUGENE_PLEXUS_AGENT_BIND_PORT": str(site_port)},
+            stdin=subprocess.DEVNULL,
             stdout=open(work / "site.out", "wb"),  # noqa: SIM115
             stderr=subprocess.STDOUT,
         )
@@ -567,43 +590,22 @@ def run(args: argparse.Namespace) -> None:
         site_process.wait(timeout=30)
         site_process = None
 
-        # ---- files: the real relay and helper over the real public route --
+        # ---- files: the real relay and site host over the real public route
         folder = work / "shared"
         folder.mkdir()
         (folder / "note.txt").write_text("Notes from ada's desk", encoding="utf-8")
-        package = manifest(SimpleNamespace(store=AppStore(work / "relay" / "apps.yaml")), work / "relay")
-        uv = shutil.which("uv") or str(Path(sys.executable).parent / ("uv.exe" if os.name == "nt" else "uv"))
-        env_dir = work / "worker-env"
-        subprocess.run([uv, "venv", "--python", sys.executable, str(env_dir)], check=True, capture_output=True)
-        python = venv_python(env_dir)
-        subprocess.run([uv, "pip", "install", "--python", str(python), "--no-deps", str(package.source)],
-                       check=True, capture_output=True)
-        worker_port, worker_token = free_port(), secrets.token_urlsafe(24)
-        data = work / "worker-data"
-        data.mkdir()
-        worker = subprocess.Popen(
-            [str(python), "-m", package.entry],
-            cwd=data,
-            env={
-                **clean_environment(),
-                "EUGENE_PLEXUS_APP_DATA_DIR": str(data),
-                "EUGENE_PLEXUS_APP_BIND_PORT": str(worker_port),
-                "EUGENE_PLEXUS_APP_ADMIN_TOKEN": worker_token,
-                "EUGENE_PLEXUS_APP_ACCOUNT_KIND": "windows_service" if os.name == "nt" else "systemd",
-                "NODE_HELPER_PROTECTED_ROOTS": json.dumps([str(site)]),
-            },
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
+        people = {p["name"]: p["id"] for p in http.get(f"{control}/v1/people").json()["people"]}
+        host = SiteHost(work, site)
         asyncio.run(files_through_the_site(
-            work, site, worker_port, worker_token, package, http, workbench, ada, bo, owner, folder, control
+            host, http, workbench, ada, bo, owner, folder, control, people
         ))
+        worker = None
         left = workbench.call("job-sites/desk/leave", ada)
         assert left.status_code == 204
         assert "desk" not in {n["name"] for n in http.get(f"{control}/v1/nodes").json()["nodes"]}
         ok("ada takes her machine out herself; it is gone at once")
     finally:
-        for process in (site_process, worker):
+        for process in (site_process, worker, *SiteHost.running):
             if process is not None and process.poll() is None:
                 process.kill()
         (work / "stop").write_text("")
@@ -617,48 +619,307 @@ def run(args: argparse.Namespace) -> None:
             print(f"kept {work}")
 
 
+class SiteHost:
+    """The site host, installed from the `site-host` checkout the way the
+    agent installs it, and started with the environment the agent's relay
+    builds; restarted, as the agent restarts it, when that changes."""
+
+    running: list[subprocess.Popen[bytes]] = []
+
+    def __init__(self, work: Path, site: Path) -> None:
+        from eugene_plexus_agent import site_host
+        from eugene_plexus_agent.apps import venv_python
+
+        os.environ[site_host.SOURCE_OVERRIDE] = str(REPOS / "site-host")
+        where, self.version = site_host.source()
+        assert self.version.startswith("local-") and Path(where) == (REPOS / "site-host").resolve()
+        uv = shutil.which("uv") or str(
+            Path(sys.executable).parent / ("uv.exe" if os.name == "nt" else "uv")
+        )
+        env_dir = work / "site-host-env"
+        subprocess.run([uv, "venv", "--python", "3.12", str(env_dir)], check=True,
+                       capture_output=True, stdin=subprocess.DEVNULL)
+        self.python = venv_python(env_dir)
+        installed = subprocess.run(
+            [uv, "pip", "install", "--python", str(self.python), where],
+            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        )
+        assert installed.returncode == 0, installed.stderr[-2000:]
+        self.site, self.port, self.token = site, free_port(), secrets.token_urlsafe(24)
+        self.process: subprocess.Popen[bytes] | None = None
+
+    def start(self, environment: dict[str, str]) -> None:
+        from eugene_plexus_agent.site_host import ENTRY, HELPER_ID
+
+        self.stop()
+        data = self.site / "apps" / HELPER_ID / "data"
+        data.mkdir(parents=True, exist_ok=True)
+        self.process = subprocess.Popen(
+            [str(self.python), "-m", ENTRY],
+            cwd=data,
+            stdin=subprocess.DEVNULL,
+            env={
+                **clean_environment(),
+                **environment,
+                "EUGENE_PLEXUS_APP_DATA_DIR": str(data),
+                "EUGENE_PLEXUS_APP_BIND_PORT": str(self.port),
+                "EUGENE_PLEXUS_APP_ADMIN_TOKEN": self.token,
+                "EUGENE_PLEXUS_APP_ACCOUNT_KIND": "windows_service" if os.name == "nt" else "systemd",
+            },
+            stdout=subprocess.DEVNULL,
+            stderr=open(self.site / "site-host.err", "ab"),  # noqa: SIM115
+        )
+        SiteHost.running.append(self.process)
+        deadline = time.perf_counter() + 30
+        while True:
+            try:
+                with socket.create_connection(("127.0.0.1", self.port), timeout=1):
+                    return
+            except OSError:
+                if self.process.poll() is not None or time.perf_counter() > deadline:
+                    raise SystemExit(
+                        "the site host did not start:\n"
+                        + (self.site / "site-host.err").read_text(errors="replace")[-2000:]
+                    ) from None
+                time.sleep(0.2)
+
+    def stop(self) -> None:
+        if self.process is not None and self.process.poll() is None:
+            self.process.terminate()
+            self.process.wait(timeout=20)
+
+
+def site_relay(host: SiteHost) -> Any:
+    """The agent's real relay, as the site's, over the real public route,
+    with a stand-in for the app manager a service install would give it."""
+    from eugene_plexus_agent import tokens
+    from eugene_plexus_agent._generated.models import ComponentStatus
+    from eugene_plexus_agent.apps import AppStore
+    from eugene_plexus_agent.node_identity import NodeIdentityStore
+    from eugene_plexus_agent.root_tls import RootLink
+    from eugene_plexus_agent.site_host import ENTRY, SiteHostRelay
+    from fastapi import FastAPI
+
+    store = NodeIdentityStore(host.site / "node.yaml")
+    store.load()
+    record = store.record
+    signer = tokens.Signer(
+        key=tokens.load_private(str(record.token_private_key)), issuer=f"node:{record.name}"
+    )
+    app = FastAPI()
+    app.state.node_identity = store
+    app.state.root_link = RootLink(store)
+    app.state.settings = SimpleNamespace(config_file=host.site / "agent.yaml")
+    app.state.auth_state = SimpleNamespace(
+        trust=SimpleNamespace(
+            agent_token=lambda aud: signer.mint(
+                typ=tokens.TYP_SERVICE, sub="agent", aud=[aud], ttl_seconds=600
+            )[0]
+        )
+    )
+    kind = "windows_service" if os.name == "nt" else "systemd"
+    apps = AppStore(host.site / "apps.yaml")
+    installed = SimpleNamespace(
+        enabled=True, port=host.port, version=host.version, manifest=SimpleNamespace(entry=ENTRY)
+    )
+    app.state.apps = SimpleNamespace(
+        accounts=SimpleNamespace(available=True, kind=kind),
+        store=SimpleNamespace(get=lambda _: installed, app_dir=apps.app_dir),
+        supervisor=SimpleNamespace(
+            status=lambda _: (ComponentStatus.running, None, None, None, None),
+            admin_token=lambda _: host.token,
+        ),
+        installer=SimpleNamespace(snapshot=lambda _: None),
+    )
+    relay = SiteHostRelay(app)
+
+    async def reconcile(_config: dict[str, Any]) -> None:
+        # The agent restarts the host when what it is told changes.
+        wanted = relay.environment(app.state.apps)
+        if wanted is not None and wanted != getattr(relay, "_started_with", None):
+            relay._started_with = wanted
+            await asyncio.to_thread(host.start, wanted)
+
+    relay.reconcile = reconcile  # type: ignore[method-assign]
+    return relay
+
+
 async def files_through_the_site(
-    work: Path, site: Path, worker_port: int, worker_token: str, package: Any,
-    http: Any, workbench: Workbench, ada: str, bo: str, owner: str, folder: Path, control: str,
+    host: SiteHost, http: Any, workbench: Workbench, ada: str, bo: str, owner: str,
+    folder: Path, control: str, people: dict[str, str],
 ) -> None:
-    relay, _app = await relay_read(site, 0, worker_port, worker_token, package)
+    import yaml
+    from eugene_plexus_agent import site_cli
+
+    relay = site_relay(host)
     task = asyncio.create_task(relay.run())
 
     async def call(route: str, token: str, /, **body: Any) -> Any:
         return await asyncio.to_thread(lambda: workbench.call(route, token, **body))
 
-    try:
-        assert (await call("job-sites/desk/enabled", ada, enabled=True)).status_code == 200
+    async def mcp(token: str, server: str, method: str, params: dict[str, Any] | None = None) -> Any:
+        return await asyncio.to_thread(lambda: workbench.mcp(token, server, method, params))
+
+    async def forge(**body: Any) -> Any:
+        return await asyncio.to_thread(
+            lambda: http.post(f"{control}/acceptance/forge", json={"node": "desk", **body})
+        )
+
+    async def settle(predicate: Any, what: str) -> dict[str, Any]:
+        """The site's next report, which the root keeps as a cache."""
         deadline = time.perf_counter() + 30
         while True:
             sites = (await call("job-sites", ada)).json()["sites"]
-            if sites and sites[0]["ready"]:
-                break
+            if sites and predicate(sites[0]):
+                return dict(sites[0])
             if time.perf_counter() > deadline:
-                raise AssertionError(f"the site's helper never became ready: {sites}")
-            await asyncio.sleep(0.5)
-        added = await call("job-sites/desk/folders", ada, name="Notes", path=str(folder), writable=False)
+                raise AssertionError(f"{what}: {sites}")
+            await asyncio.sleep(0.3)
+
+    read = {"name": "read_text", "arguments": {"folder": "Notes", "path": "note.txt"}}
+    try:
+        # ---- the site keeps its own list ---------------------------------------
+        assert (await call("job-sites/desk/enabled", ada, enabled=True)).status_code == 200
+        await settle(lambda s: s["ready"], "the site host never became ready")
+        added = await call(
+            "job-sites/desk/folders", ada, name="Notes", path=str(folder), writable=True
+        )
         assert added.status_code == 201, added.text
         folder_id = added.json()["id"]
-        before = await call("node-helpers/execute", ada, folderId=folder_id, tool="read_text",
-                            arguments={"path": "note.txt"})
-        assert before.status_code == 403, before.text
+        assert added.json()["people"] == []
+        again = await call("job-sites/desk/folders", ada, name="notes", path=str(folder))
+        assert again.status_code == 422 and "registered already" in again.text, again.text
+        await settle(lambda s: s["folders"], "the site never reported its folder")
+        ok("ada's site registers a folder itself, under a name unique on it, and nobody "
+           "may use it yet")
+
+        # ---- default deny, and an edit to the root's state grants nothing ------
+        refused = await mcp(bo, "files", "tools/list")
+        assert refused.status_code == 403, refused.text
+        forged = await forge(kind="enqueue", subject=people["bo"], server="files",
+                             request=rpc("tools/call", read))
+        assert forged.status_code == 200, forged.text
+        assert forged.json()["status"] == "failed" and "has not given you" in forged.json()["message"]
+        ok("default deny: the site refuses bo even when the root itself sends his call (rule 2)")
+
+        # ---- tools/list and a read through the public route --------------------
         granted = await call(f"job-sites/desk/folders/{folder_id}/people", ada,
                              people=[{"name": "ada", "writable": False}, {"name": "bo", "writable": False}])
         assert granted.status_code == 200, granted.text
-        ok("ada turns on her site's helper, registers a folder, and grants it, herself included")
-
-        read = await call("node-helpers/execute", bo, folderId=folder_id, tool="read_text",
-                          arguments={"path": "note.txt"})
-        assert read.status_code == 200, read.text
-        body = read.json()
-        assert body["status"] == "done" and "Notes from ada's desk" in json.dumps(body["result"])
+        assert {p["name"] for p in granted.json()["people"]} == {"ada", "bo"}
+        await settle(lambda s: len(s["folders"][0]["people"]) == 2, "the grant never reported")
+        listed = await call("sites/servers", bo)
+        files = next(s for s in listed.json()["servers"] if s["server"] == "files")
+        assert files["jobSite"] and files["folders"] == [{"id": folder_id, "name": "Notes", "writable": False}]
+        tools = await mcp(bo, "files", "tools/list")
+        assert tools.status_code == 200, tools.text
+        offered = {t["name"]: t["inputSchema"]["properties"]["folder"]["enum"]
+                   for t in tools.json()["response"]["result"]["tools"]}
+        assert offered == {"list_directory": ["Notes"], "read_text": ["Notes"]}, offered
+        got = await mcp(bo, "files", "tools/call", read)
+        body = got.json()
+        assert got.status_code == 200 and body["status"] == "done", got.text
+        assert "Notes from ada's desk" in json.dumps(body["response"])
         assert body["jobSite"] is True and body["installMode"] == "production"
-        ok("a person she granted reads the file through the public route, marked as a job site's")
+        ok("tools/list and a read through the public route, by the site's own list, one file "
+           "server whose folder argument names only bo's folders")
 
-        mine = await call("node-helpers/execute", owner, folderId=folder_id, tool="read_text",
-                          arguments={"path": "note.txt"})
-        assert mine.status_code == 403
+        # ---- a write needs a standing pre-approval -----------------------------
+        write = {"name": "write_text", "arguments": {
+            "folder": "Notes", "path": "note.txt", "text": "bo was here", "expectedSha256": ""}}
+        denied = await mcp(bo, "files", "tools/call", write)
+        assert denied.json()["status"] == "failed" and "not change files" in denied.json()["message"]
+        assert (folder / "note.txt").read_text(encoding="utf-8") == "Notes from ada's desk"
+        await call(f"job-sites/desk/folders/{folder_id}/people", ada,
+                   people=[{"name": "ada", "writable": False}, {"name": "bo", "writable": True}])
+        await settle(lambda s: any(p["writable"] for p in s["folders"][0]["people"]), "write grant")
+        wrote = await mcp(bo, "files", "tools/call", {"name": "write_text", "arguments": {
+            "folder": "Notes", "path": "new.txt", "text": "bo was here", "expectedSha256": ""}})
+        assert wrote.json()["status"] == "done", wrote.text
+        assert (folder / "new.txt").read_text(encoding="utf-8") == "bo was here"
+        ok("a write needs the site owner's standing pre-approval, and runs with it")
+
+        # ---- the audit log is the owner's alone ---------------------------------
+        log = await call("job-sites/desk/audit", ada, limit=50)
+        assert log.status_code == 200, log.text
+        entries = log.json()["entries"]
+        decided = {(e["subject"], e.get("tool"), e["decision"]) for e in entries}
+        assert (people["bo"], "read_text", "refused") in decided
+        assert (people["bo"], "write_text", "refused") in decided
+        assert (people["bo"], "write_text", "allowed") in decided
+        assert "bo was here" not in json.dumps(entries) and "Notes from ada" not in json.dumps(entries)
+        for someone in (bo, owner):
+            assert (await call("job-sites/desk/audit", someone)).status_code == 404
+        ok("the site's audit log records who asked and what it decided, never contents, and only "
+           "its owner reads it")
+
+        # ---- the pinned owner holds ----------------------------------------------
+        assert (await forge(kind="owner", owner=people["bo"])).status_code == 200
+        await asyncio.sleep(2)  # a poll or two, each naming bo
+        node_yaml = (host.site / "node.yaml").read_text(encoding="utf-8")
+        assert f"siteOwner: {people['ada']}" in node_yaml
+        taken = await call(f"job-sites/desk/folders/{folder_id}/people", bo,
+                           people=[{"name": "bo", "writable": True}])
+        assert taken.status_code == 422 and "Only this machine's owner" in taken.text, taken.text
+        assert (await forge(kind="owner", owner=people["ada"])).status_code == 200
+        ok("the site keeps the owner it pinned at its join when the root names someone else")
+
+        # ---- a fifth tool, added at the machine ------------------------------------
+        fixture = host.site / "local_server.py"
+        fixture.write_bytes((REPOS / "site-host" / "tests" / "fixtures" / "local_server.py").read_bytes())
+        if not site_cli.elevated():
+            unelevated = subprocess.run(
+                agent_command("site", "server", "add", "notes-tool", "--name", "Notes tool",
+                              "--command", str(host.python), "--arg=-I", "--arg", str(fixture)),
+                capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL,
+                env={**clean_environment(),
+                     "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(host.site / "agent.yaml")},
+            )
+            assert unelevated.returncode != 0 and "administrator" in unelevated.stderr
+        # What the CLI does after its elevation check: this process stands in
+        # for the machine's administrator, whose check is the agent's unit test.
+        elevated, site_cli.elevated = site_cli.elevated, lambda: True
+        try:
+            site_cli.add_server(host.site, server_id="notes-tool", name="Notes tool",
+                                command=str(host.python), args=["-I", str(fixture)], env=[],
+                                system=False)
+        finally:
+            site_cli.elevated = elevated
+        listed = await settle(lambda s: s["servers"], "the local server never reported")
+        assert listed["servers"][0]["server"]["id"] == "notes-tool"
+        assert not listed["servers"][0]["server"]["enabled"]
+        on = await call("job-sites/desk/servers/notes-tool/enabled", ada, enabled=True)
+        assert on.status_code == 200, on.text
+        assert {t["name"] for t in on.json()["server"]["tools"]} == {"echo", "touch"}
+        plain = await call("job-sites/desk/servers/notes-tool/access", ada,
+                           people=[{"name": "bo", "tools": [{"name": "touch"}]}])
+        assert plain.status_code == 422 and "standing" in plain.text, plain.text
+        given = await call("job-sites/desk/servers/notes-tool/access", ada,
+                           people=[{"name": "bo", "tools": [{"name": "echo"}]}])
+        assert given.status_code == 200, given.text
+        await settle(lambda s: s["servers"][0]["people"], "the tool grant never reported")
+        mine = await call("sites/servers", bo)
+        assert any(s["server"] == "notes-tool" and s["kind"] == "local" for s in mine.json()["servers"])
+        tools = await mcp(bo, "notes-tool", "tools/list")
+        assert [t["name"] for t in tools.json()["response"]["result"]["tools"]] == ["echo"]
+        echoed = await mcp(bo, "notes-tool", "tools/call", {"name": "echo", "arguments": {"text": "hi"}})
+        assert echoed.json()["status"] == "done" and "echo: hi" in json.dumps(echoed.json()), echoed.text
+        ok("a fifth tool, from a local server added at the machine, works through the same "
+           "route, with no change to control, the agent or Workbench")
+
+        # ---- J9: a system server needs an administrator's consent -----------------
+        servers = yaml.safe_load((host.site / site_cli.SERVERS_FILE).read_text(encoding="utf-8"))
+        servers["servers"].append({**servers["servers"][0], "id": "settings-tool",
+                                   "name": "Settings tool", "system": True})
+        (host.site / site_cli.SERVERS_FILE).write_text(yaml.safe_dump(servers), encoding="utf-8")
+        await settle(lambda s: len(s["servers"]) == 2, "the system server never reported")
+        system = await call("job-sites/desk/servers/settings-tool/enabled", ada, enabled=True)
+        assert system.status_code == 422 and "consent" in system.text.lower(), system.text
+        ok("J9: a server marked system will not turn on without an administrator's consent "
+           "recorded at the machine")
+
+        # ---- production: Eugene's owner cannot read it -----------------------------
+        assert (await mcp(owner, "files", "tools/call", read)).status_code == 403
         patched = await asyncio.to_thread(
             http.patch, f"{control}/v1/node-helpers/desk/folders/{folder_id}", json={"ownerAccess": "read"}
         )
@@ -668,36 +929,41 @@ async def files_through_the_site(
         assert desk["hidden"] and desk["folders"] == []
         ok("production: Eugene's owner cannot read it, by grant or by listing")
 
+        # ---- dev mode: only with the site owner's opt-in (J6e) ---------------------
         switched = await asyncio.to_thread(http.patch, f"{control}/v1/config", json={"installMode": "dev"})
         assert switched.status_code == 200, switched.text
-        mode = await asyncio.to_thread(
-            workbench.http.post, f"{control}/oidc/install-mode",
-            auth=(workbench.client["client"]["clientId"], workbench.client["clientSecret"]),
-        )
-        assert mode.json()["mode"] == "dev" and mode.json()["changedAt"]
         listing = (await asyncio.to_thread(http.get, f"{control}/v1/node-helpers")).json()
         desk = next(h for h in listing["helpers"] if h["node"] == "desk")
         assert not desk["hidden"] and desk["folders"][0]["id"] == folder_id
+        assert desk["ownerInDevMode"] is False
         patched = await asyncio.to_thread(
             http.patch, f"{control}/v1/node-helpers/desk/folders/{folder_id}", json={"ownerAccess": "read"}
         )
         assert patched.status_code == 200, patched.text
-        mine = await call("node-helpers/execute", owner, folderId=folder_id, tool="read_text",
-                          arguments={"path": "note.txt"})
-        assert mine.status_code == 200 and mine.json()["installMode"] == "dev", mine.text
-        ok("dev mode: the owner sees the site's folders, grants themselves one and reads it, "
-           "and every app can tell everyone")
+        # The root sends it (its grant exists, in dev mode); the site refuses it.
+        closed = await mcp(owner, "files", "tools/call", read)
+        assert closed.status_code == 200, closed.text
+        assert closed.json()["status"] == "failed"
+        assert "Dev mode alone opens nothing" in closed.json()["message"]
+        opted = await call("job-sites/desk/settings", ada, ownerInDevMode=True)
+        assert opted.status_code == 200, opted.text
+        assert opted.json()["ownerInDevMode"] is True, opted.text
+        await settle(lambda s: s["ownerInDevMode"], "the opt-in never reported")
+        mine = await mcp(owner, "files", "tools/call", read)
+        assert mine.status_code == 200 and mine.json()["status"] == "done", mine.text
+        assert mine.json()["installMode"] == "dev"
+        ok("dev mode: the owner grants themselves a folder, and it opens only once the site's "
+           "owner lets them in there (J6e)")
 
         back = await asyncio.to_thread(http.patch, f"{control}/v1/config", json={"installMode": "production"})
         assert back.status_code == 200
-        mine = await call("node-helpers/execute", owner, folderId=folder_id, tool="read_text",
-                          arguments={"path": "note.txt"})
-        assert mine.status_code == 403
+        assert (await mcp(owner, "files", "tools/call", read)).status_code == 403
         ok("back in production the owner's own grant stops at once")
     finally:
         task.cancel()
         with __import__("contextlib").suppress(asyncio.CancelledError):
             await task
+        host.stop()
 
 
 def main() -> int:

@@ -15,9 +15,11 @@ McpRequest:
   description: |
     One MCP request of the 2026-07-28 revision: `server/discover`,
     `tools/list` or `tools/call`. `params._meta` carries
-    `io.modelcontextprotocol/protocolVersion` (`2026-07-28`) and may carry the
-    client's info and capabilities. Nothing else crosses: no notifications, no
-    server-initiated requests, no other methods.
+    `io.modelcontextprotocol/protocolVersion` (`2026-07-28`) and
+    `io.modelcontextprotocol/clientCapabilities` (the revision's envelope: the
+    SDK answers a request without it with an error), and may carry the
+    client's info. Nothing else crosses: no notifications, no server-initiated
+    requests, no other methods.
   required: [jsonrpc, id, method]
   properties:
     jsonrpc: {$ref: '#/McpJsonRpc'}

@@ -1,4 +1,6 @@
-"""Node files through a real installed service and signed-in Workbench.
+"""Node files through a real installed service and signed-in Workbench: the
+agent installs the site host at its pinned commit (Job Sites J6), and each
+file tool names its folder (J6g).
 
 Disposable GitHub runners only, enforced by the reused C5 entry point.
 Includes C1 account probes and the existing C5/C6 local tool acceptance.
@@ -25,6 +27,8 @@ c5, c1 = c6.c5, c6.c1
 api, check, must, wait_for = c6.api, c6.check, c6.must, c6.wait_for
 FOLDER = Path(r"C:\ep-node-files") if c1.WINDOWS else Path("/srv/ep-node-files")
 ENDPOINT = c1.CONTROL + "/v1/node-helpers/c1-node"
+#: The folder's name on the node: the file server's `folder` argument (J6g).
+NAME = "Node project"
 
 
 def exercise(app: dict, token: str) -> None:
@@ -148,7 +152,7 @@ def exercise(app: dict, token: str) -> None:
         "POST",
         ENDPOINT + "/folders",
         control_token,
-        {"name": "Node project", "path": str(FOLDER), "writable": True},
+        {"name": NAME, "path": str(FOLDER), "writable": True},
     )
     must("N6", "helper registers the provisioned folder", status == 201, folder)
     status, private = api(
@@ -186,7 +190,7 @@ def exercise(app: dict, token: str) -> None:
             "unassigned people cannot see the node folder",
             all(g["id"] != grant for g in browser.get("/api/folders").json()["grants"]),
         )
-    chat, message = c6.offer(ada, grant, "read_text", path="notes.txt")
+    chat, message = c6.offer(ada, grant, "read_text", folder=NAME, path="notes.txt")
     check(
         "N12",
         "node content waits for per-call approval",
@@ -205,6 +209,7 @@ def exercise(app: dict, token: str) -> None:
         ada,
         grant,
         "write_text",
+        folder=NAME,
         path="notes.txt",
         text="Node edited",
         expectedSha256=contents["sha256"],
@@ -223,13 +228,14 @@ def exercise(app: dict, token: str) -> None:
         call["status"] == "done" and actual == "Node edited",
         call,
     )
-    chat, message = c6.offer(ada, grant, "read_text", path="../outside.txt")
+    chat, message = c6.offer(ada, grant, "read_text", folder=NAME, path="../outside.txt")
     call = c6.finish(ada, chat, message)
     check("N16", "node helper refuses traversal", call["status"] == "failed", call)
     chat, message = c6.offer(
         ada,
         grant,
         "write_text",
+        folder=NAME,
         path="revoked.txt",
         text="Forbidden",
         expectedSha256="",

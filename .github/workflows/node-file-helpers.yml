@@ -15,6 +15,10 @@ on:
         description: Candidate Workbench commit
         required: true
         type: string
+      site_host_ref:
+        description: Candidate site-host commit
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -75,21 +79,29 @@ jobs:
           repository: eugene-plexus/workbench
           ref: ${{ inputs.workbench_ref }}
           path: workbench
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/site-host
+          ref: ${{ inputs.site_host_ref }}
+          path: site-host
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install runtime consumers and acceptance tools
-        run: python -m pip install -e ./agent -e ./control -e ./workbench pytest pytest-asyncio uv
+        run: python -m pip install -e ./agent -e ./control -e ./workbench -e "./site-host[dev]" pytest pytest-asyncio uv
       - name: Check installed dependency consistency
         run: python -m pip check
-      - name: Real sign-in, outbound relay, installed worker and files
+      - name: Real sign-in, outbound relay, installed site host and files
         run: python specs/scripts/node-file-helpers-acceptance.py
       - name: Control permissions and standby recovery
         working-directory: control
         run: python -m pytest tests/test_node_helpers.py tests/test_replay_equivalence.py -q
-      - name: Worker containment and node lifecycle
+      - name: Site host policy, folder containment and local servers
+        working-directory: site-host
+        run: python -m pytest -q
+      - name: The agent's relay, the site CLI and node lifecycle
         working-directory: agent
-        run: python -m pytest tests/test_node_file_helper.py tests/test_app_accounts.py -q
+        run: python -m pytest tests/test_site_host.py tests/test_app_accounts.py -q
       - name: Central Workbench sign-in and approvals
         working-directory: workbench
         run: python -m pytest tests/test_node_folders.py tests/test_folders.py -q

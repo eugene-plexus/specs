@@ -39,6 +39,10 @@ on:
         description: "Optional workbench candidate commit; defaults to the release pin"
         required: false
         type: string
+      site_host_ref:
+        description: "Optional site-host candidate commit; defaults to the agent's pin"
+        required: false
+        type: string
   workflow_call:
     inputs:
       agent_ref:
@@ -71,6 +75,10 @@ on:
         type: string
       workbench_ref:
         description: "Optional workbench candidate commit; defaults to the release pin"
+        required: false
+        type: string
+      site_host_ref:
+        description: "Optional site-host candidate commit; defaults to the agent's pin"
         required: false
         type: string
 
@@ -164,6 +172,24 @@ jobs:
           repository: eugene-plexus/tool-driver
           ref: ${{ inputs.tool_driver_ref || steps.pins.outputs.tool_driver }}
           path: tool-driver
+      # The site host the agent installs, at the commit the agent pins: the
+      # Job Sites acceptance installs it from this checkout (J6, 2026-10-05).
+      - name: Read the agent's site host pin
+        id: site_host
+        shell: python {0}
+        run: |
+          import os, re
+          from pathlib import Path
+          text = Path("agent/src/eugene_plexus_agent/site_host.py").read_text(encoding="utf-8")
+          pin = re.search(r'^SITE_HOST_COMMIT = "([0-9a-f]{40})"$', text, re.M)
+          assert pin
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"commit={pin.group(1)}\n")
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/site-host
+          ref: ${{ inputs.site_host_ref || steps.site_host.outputs.commit }}
+          path: site-host
       # Component dev extras pin independent lint/codegen toolchains. Only the
       # shared test runner belongs in this cross-component environment.
       - name: Install locked runtime and build dependencies
