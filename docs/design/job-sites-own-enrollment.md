@@ -937,6 +937,53 @@ Amish_Station (an elevated throwaway agent run as LocalSystem on +100
 ports, and Jessie signed in through *Switch user*) and on Linux in CI →
 sabotage.
 
+#### 3.2.1 What building found (2026-10-06)
+
+Built on branches `slice2b1-sites` beside 2b.1 (contract `f52f8d4`, pushed):
+site-host `01e47a4`, agent `f30f6c7`, control `2f3240a`, Workbench `53f6e81`,
+installers specs `8113d96`, Windows acceptance `scripts/job-sites-windows-
+acceptance.py`. Suites: site-host 174, agent 1974, control 416, Workbench 170
++ 78 (web), all green on Windows; the agent's 20 targeted sabotages caught.
+
+- **A worker that is replaced stops.** The first build had a replaced worker
+  reconnect, so a worker an earlier agent left behind and its replacement
+  would trade the connection back and forth. The site host now sends
+  `{"t": "replaced"}` (and `refused` to an unlinked account) and the worker
+  exits; its starter decides whether to start another. On Windows the
+  starter also puts workers in a kill-on-close job, so an agent restart
+  leaves none behind.
+- **The pipe grants clients data access only.** Generic write on a named pipe
+  includes `FILE_CREATE_PIPE_INSTANCE`, which would let any local account
+  create a second server instance and sit between a worker and the site
+  host. Clients get read data, write data, read attributes, read control
+  and synchronize (`0x120083`), and the worker opens the pipe with exactly
+  that. The pipe's owner is set to the site host's own account, which is
+  what a worker checks.
+- **Tests found three defects in the first site host build**: a duplicated
+  link left one person still reachable by subject; a complete frame over
+  256 KiB passed on Windows; the first call after the links file broke gave
+  the wrong reason. All fixed with tests.
+- **On a Linux system install the local-server list is root's too**, in
+  `/etc/eugene-plexus/site/servers.yaml`. `site server add` under `sudo` ran
+  the agent's code as root, which its account can rewrite; it now refuses
+  there and names the file. A root-owned way to add servers on Linux is not
+  built.
+- **The Linux site host runs as a static system account**,
+  `eugene-plexus-site`, not a C1 dynamic user: a worker checks the channel's
+  far end by uid, which a dynamic user does not keep.
+- **Control, as built:** `linked`, `account` and `linkPage` appear on a grant
+  only for a site that reports `links` (an older site's grants are
+  unchanged); a person's own link counts as "may use the site" for removal;
+  Eugene's owner on the link page is refused after the passphrase checks, as
+  the app-list refusal is ordered.
+- **An acceptance-only override**, `EUGENE_PLEXUS_AGENT_ACCEPTANCE_MECHANISM`,
+  tells a throwaway agent started as LocalSystem by a task that it is a
+  service install. Nothing else sets it.
+- **Not built:** Workbench cannot tell a per-user install from a Linux system
+  install when `linkPage` is null, so both show the Linux link command; and a
+  link's display name in the owner's view comes from the folder and server
+  people lists (`SitePersonLink` carries no name).
+
 **J14, designed next** in a session of its own. J14a (signed policy edits)
 is then built.
 

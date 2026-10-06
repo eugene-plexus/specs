@@ -36,6 +36,39 @@ registered sign-in client and each person's refresh token from the real
 sign-in page, calling the routes Workbench calls. Workbench's own half is its
 own test suite's.
 
+**Slice 2b.2 (§2.4, §3.2): the site host runs no tool.** Each linked person's
+tools run in a worker, as that person's own OS account, over a local channel
+(a Unix socket, or a named pipe on Windows) the host serves. This script plays
+the machine's privileged starter, which is not under test here (the agent's,
+root's and the installer's own checks are): it writes the links file
+(`SITE_HOST_LINKS_FILE`, ada -> the account the workers run as), gives the host
+its channel (`SITE_HOST_CHANNEL`) and its local-server list
+(`SITE_HOST_LOCAL_SERVERS_FILE`, read as YAML by the host AND by each worker;
+the JSON copy and its hash are gone), and starts a real worker, from the same
+installed site-host environment, beside each host.
+
+* With **passwordless sudo on Linux** (CI's runner) it creates throwaway
+  accounts (`epa`, `epj` for two people, `eps` for the site host, `epz` for a
+  stranger; `userdel -r` in teardown), installs the site host under a root-owned
+  `/opt/ep-acc-*` so every account can run it, and runs the host and each worker
+  as their own account. Every earlier check then runs through the real
+  accounts: the host as `eps`, the owner's worker as `epa`. `--no-sudo` forces
+  the single-account mode below.
+* Without it (Windows with `--root-wsl`, or Linux without sudo) there is one
+  account here, so the harness's "worker" is the real worker with only its
+  account refusal removed (`STAND_IN`): without that the real worker refuses to
+  run as the site host's own account, which is what the one-account run would be
+  (see the note printed by check 14). What the OS does between accounts is then
+  not checked, and each such check prints a `SKIP:` line saying so.
+
+Mechanisms that changed since 2b.1: the local-server check writes the YAML list
+the agent's `site server add` writes (`servers_path`), and the host and the
+workers are restarted to read it; the site's own files are read through the
+host's account (`sudo -u`) when the host runs as another account; the agent's
+`site join` is no longer elevated on a per-user install and links the owner at
+the machine, so check 11 runs it for real; the nodes name carries seven paths
+(`POST /v1/sites/links/check`, J36), which check 1 and check 18 assert.
+
 Topologies:
 * Linux, one host (CI): `python job-sites-acceptance.py`.
 * Windows with WSL2 (the doc's stand-in): `python job-sites-acceptance.py
@@ -375,18 +408,182 @@ def install_site_host(work: Path, source: str) -> Path:
     return Path(python)
 
 
+def install_site_host_for_all(base: Path, source: str) -> Path:
+    """Sudo mode: the site host's environment under a root-owned `base`
+    (0755), so the host's account and every worker's can run it and none can
+    write it (§2.4: the program that runs as the person is root-owned)."""
+    uv = shutil.which("uv") or str(Path(sys.executable).parent / "uv")
+    environment = {
+        "UV_PYTHON_INSTALL_DIR": str(base / "py"),
+        "UV_CACHE_DIR": str(base / "uvcache"),
+        "UV_LINK_MODE": "copy",
+    }
+    sudo("env", *[f"{k}={v}" for k, v in environment.items()], uv, "venv", "--python", "3.12",
+         str(base / "env"))
+    python = base / "env" / "bin" / "python"
+    sudo("env", *[f"{k}={v}" for k, v in environment.items()], uv, "pip", "install",
+         "--compile-bytecode", "--python", str(python), source)
+    sudo("rm", "-rf", str(base / "uvcache"))
+    sudo("chmod", "-R", "a+rX", str(base))
+    return python
+
+
+class Account:
+    """A throwaway OS account (sudo mode only), removed in teardown."""
+
+    made: list[Account] = []
+
+    def __init__(self, prefix: str) -> None:
+        import pwd
+
+        self.name = prefix + secrets.token_hex(3)
+        sudo("useradd", "-m", "-s", "/usr/sbin/nologin", self.name)
+        Account.made.append(self)
+        entry = pwd.getpwnam(self.name)
+        self.uid, self.home = str(entry.pw_uid), entry.pw_dir
+
+    def remove(self) -> None:
+        sudo("pkill", "-KILL", "-u", self.name, check=False)
+        time.sleep(0.3)
+        sudo("userdel", "-r", "-f", self.name, check=False)
+
+
+def sudo(*argv: str, check: bool = True, input: str | None = None) -> subprocess.CompletedProcess[str]:
+    done = subprocess.run(
+        ["sudo", "-n", *argv], capture_output=True, text=True, input=input,
+        stdin=None if input is not None else subprocess.DEVNULL, timeout=300,
+    )
+    if check and done.returncode != 0:
+        raise AssertionError(f"sudo {' '.join(argv)}: {done.stderr or done.stdout}")
+    return done
+
+
+def sudo_available() -> bool:
+    if not sys.platform.startswith("linux") or not shutil.which("sudo"):
+        return False
+    return subprocess.run(
+        ["sudo", "-n", "true"], capture_output=True, stdin=subprocess.DEVNULL
+    ).returncode == 0
+
+
+def as_user(user: Account | None, argv: list[str], environment: dict[str, str]) -> list[str]:
+    """`argv` as `user`, with exactly `environment` and nothing of this
+    script's; unchanged for no user (the caller passes `environment` itself)."""
+    if user is None:
+        return argv
+    base = {"HOME": user.home, "PATH": "/usr/local/bin:/usr/bin:/bin", **environment}
+    return ["sudo", "-n", "-u", user.name, "env", "-i", *[f"{k}={v}" for k, v in base.items()], *argv]
+
+
+def kill_user(user: Account, signal: str = "TERM") -> None:
+    sudo("pkill", f"-{signal}", "-u", user.name, check=False)
+
+
+def put_file(path: Path, data: bytes, mode: int = 0o644, *, root: bool) -> None:
+    """Write a file the way the machine's administrator would: root-owned and
+    read-only to everyone else in sudo mode, plain otherwise."""
+    if not root:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return
+    with tempfile.NamedTemporaryFile(delete=False) as handle:
+        handle.write(data)
+    try:
+        sudo("install", "-D", "-m", f"{mode:o}", "-o", "root", "-g", "root", handle.name, str(path))
+    finally:
+        os.unlink(handle.name)
+
+
+#: The real worker with its one account refusal removed, for the one-account
+#: run only (see the docstring): `accounts.refuse_to_serve` is what forbids
+#: serving as the site host's own account, and with one account that is the
+#: only account there is. Everything else is the worker's own code.
+STAND_IN = (
+    "import sys;from eugene_plexus_site_host import accounts, worker;"
+    "accounts.refuse_to_serve=lambda *a:None;worker.main(sys.argv[1:])"
+)
+
+#: A stranger's connection to the channel, from whatever account runs it.
+RAW_CONNECT = (
+    "import asyncio,json,sys\n"
+    "from eugene_plexus_site_host import local_channel\n"
+    "async def main():\n"
+    "    conn = await local_channel.connect(sys.argv[1], sys.argv[2], "
+    "{'protocol': 1, 'pid': 0, 'account': 'x'})\n"
+    "    print(json.dumps(await asyncio.wait_for(conn.receive(), 10)))\n"
+    "asyncio.run(main())\n"
+)
+
+#: What the site host's account tries on the links file: every write refused.
+TRY_TO_LINK = (
+    "import sys,os\n"
+    "out=[]\n"
+    "for label, action in ("
+    "('append', lambda: open(sys.argv[1], 'a').write('x')),"
+    "('truncate', lambda: open(sys.argv[1], 'w').write('{}')),"
+    "('create beside', lambda: open(os.path.join(os.path.dirname(sys.argv[1]), 'links2.json'), 'w')),"
+    "('rename', lambda: os.rename(sys.argv[1], sys.argv[1] + '.old')),"
+    "('unlink', lambda: os.unlink(sys.argv[1]))):\n"
+    "    try:\n"
+    "        action(); out.append(label + ': WROTE')\n"
+    "    except PermissionError: out.append(label + ': PermissionError')\n"
+    "print('|'.join(out))\n"
+)
+
+
 class SiteHost:
-    """One site on this machine: its data directory, its `join`, and the
-    host process started with the environment the agent builds."""
+    """One site on this machine: its data directory, its `join`, the host
+    process started with the environment the agent builds, and the starter's
+    part beside it: the links file, the channel, the local-server list and the
+    workers (`Worker`)."""
 
     running: list[subprocess.Popen[bytes]] = []
+    temps: list[Path] = []
 
-    def __init__(self, python: Path, data: Path) -> None:
-        self.python, self.data = python, data
+    def __init__(
+        self,
+        python: Path,
+        data: Path,
+        *,
+        user: Account | None = None,
+        site_dir: Path | None = None,
+        channel: str | None = None,
+        logs: Path | None = None,
+    ) -> None:
+        self.python, self.data, self.user = python, data, user
         data.mkdir(parents=True, exist_ok=True)
+        self.label = data.parent.name
+        self.logs = logs or data.parent
         self.port = free_port()
         self.process: subprocess.Popen[bytes] | None = None
         self.environment: dict[str, str] = {}
+        self.site_dir = site_dir or data.parent / "site"
+        self.links_file = self.site_dir / "links.json"
+        self.servers_file = self.site_dir / "servers.yaml"
+        self.protected: list[str] = []
+        self.linked: list[dict[str, str]] = []
+        self.workers: dict[str, Worker] = {}
+        if channel is None:
+            if os.name == "nt":
+                channel = rf"\\.\pipe\eugene-plexus-site-{secrets.token_hex(6)}"
+            else:
+                short = Path(tempfile.mkdtemp(prefix="ep-js-", dir="/tmp"))
+                SiteHost.temps.append(short)
+                channel = str(short / "c.sock")
+        self.channel = channel
+        self._account: str | None = None
+
+    # --- the host's own account ------------------------------------------------
+
+    @property
+    def account(self) -> str:
+        """The account this host runs as: a uid in decimal, or a SID."""
+        if self._account is None:
+            if self.user is not None:
+                self._account = self.user.uid
+            else:
+                self._account = account_of(self.python)
+        return self._account
 
     @property
     def command(self) -> list[str]:
@@ -396,43 +593,101 @@ class SiteHost:
                     "from eugene_plexus_site_host.__main__ import main;main(sys.argv[1:])"]
         return [str(self.python), "-m", SITE_HOST_ENTRY]
 
+    # --- the starter's part ------------------------------------------------------
+
+    def link(self, subject: str, name: str, account: str, account_name: str) -> None:
+        self.linked = [e for e in self.linked if e["subject"] != subject]
+        self.linked.append({"subject": subject, "name": name, "account": account,
+                            "accountName": account_name,
+                            "linkedAt": "2026-10-06T00:00:00+00:00"})
+
+    def write_links(self) -> None:
+        put_file(self.links_file, json.dumps({"version": 1, "links": self.linked}).encode(),
+                 root=self.user is not None)
+
+    def add_worker(self, name: str, account: str, user: Account | None, protect: list[str]) -> Worker:
+        worker = Worker(self, name, account, user, protect)
+        self.workers[name] = worker
+        return worker
+
+    def start_workers(self) -> None:
+        for worker in self.workers.values():
+            worker.start()
+
+    def stop_workers(self) -> None:
+        for worker in self.workers.values():
+            worker.stop()
+
+    # --- running the host's own commands ------------------------------------------
+
+    def run(self, *arguments: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+        argv = as_user(self.user, [*self.command, *arguments], {})
+        return subprocess.run(
+            argv, input=stdin, capture_output=True, text=True,
+            env=clean_environment(), timeout=120, cwd="/" if self.user else self.data,
+            stdin=None if stdin is not None else subprocess.DEVNULL,
+        )
+
     def join(
         self, url: str, token: str, owner: str, label: str, password: str, root_key: str | None
     ) -> subprocess.CompletedProcess[str]:
         arguments = [
-            *self.command, "join", "--url", url, "--token", token, "--owner", owner,
+            "join", "--url", url, "--token", token, "--owner", owner,
             "--label", label, "--data-dir", str(self.data),
         ]
         if root_key:
             arguments += ["--root-key", root_key]
-        return subprocess.run(
-            arguments, input=password + "\n", capture_output=True, text=True,
-            env=clean_environment(), timeout=120,
-        )
+        return self.run(*arguments, stdin=password + "\n")
 
     def leave(self) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [*self.command, "leave", "--data-dir", str(self.data)], capture_output=True,
-            text=True, env=clean_environment(), timeout=120, stdin=subprocess.DEVNULL,
-        )
+        return self.run("leave", "--data-dir", str(self.data))
+
+    def check_person(self, name: str, password: str) -> subprocess.CompletedProcess[str]:
+        return self.run("check-person", "--name", name, "--data-dir", str(self.data),
+                        stdin=password + "\n")
+
+    # --- reading the host's own directory (it may belong to another account) --------
+
+    def read(self, name: str) -> str:
+        if self.user is None:
+            return (self.data / name).read_text(encoding="utf-8")
+        return sudo("-u", self.user.name, "cat", str(self.data / name)).stdout
+
+    def exists(self, name: str) -> bool:
+        if self.user is None:
+            return (self.data / name).exists()
+        return sudo("-u", self.user.name, "test", "-e", str(self.data / name), check=False).returncode == 0
+
+    def all_text(self) -> str:
+        if self.user is None:
+            return "".join(p.read_text(errors="ignore") for p in self.data.rglob("*") if p.is_file())
+        return sudo("-u", self.user.name, "find", str(self.data), "-type", "f", "-exec", "cat", "{}", "+").stdout
+
+    def record(self) -> dict[str, Any]:
+        return dict(json.loads(self.read("site.json")))
+
+    # --- the process ----------------------------------------------------------------
 
     def start(self, environment: dict[str, str] | None = None) -> None:
         self.stop()
         self.environment = environment if environment is not None else self.environment
+        launch = {
+            "SITE_HOST_PROTECTED_ROOTS": json.dumps(self.protected),
+            "SITE_HOST_CHANNEL": self.channel,
+            "SITE_HOST_LINKS_FILE": str(self.links_file),
+            "SITE_HOST_LOCAL_SERVERS_FILE": str(self.servers_file),
+            **self.environment,
+            "EUGENE_PLEXUS_APP_DATA_DIR": str(self.data),
+            "EUGENE_PLEXUS_APP_BIND_PORT": str(self.port),
+            "EUGENE_PLEXUS_APP_ACCOUNT_KIND": "windows_service" if os.name == "nt" else "systemd",
+        }
         self.process = subprocess.Popen(
-            self.command,
-            cwd=self.data,
+            as_user(self.user, self.command, launch),
+            cwd="/" if self.user else self.data,
             stdin=subprocess.DEVNULL,
-            env={
-                **clean_environment(),
-                "SITE_HOST_PROTECTED_ROOTS": "[]",
-                **self.environment,
-                "EUGENE_PLEXUS_APP_DATA_DIR": str(self.data),
-                "EUGENE_PLEXUS_APP_BIND_PORT": str(self.port),
-                "EUGENE_PLEXUS_APP_ACCOUNT_KIND": "windows_service" if os.name == "nt" else "systemd",
-            },
+            env={**clean_environment(), **launch} if self.user is None else clean_environment(),
             stdout=subprocess.DEVNULL,
-            stderr=open(self.data.parent / f"{self.data.name}.err", "ab"),  # noqa: SIM115
+            stderr=open(self.logs / f"{self.label}.err", "ab"),  # noqa: SIM115
         )
         SiteHost.running.append(self.process)
         deadline = time.perf_counter() + 30
@@ -442,19 +697,30 @@ class SiteHost:
                     return
             except OSError:
                 if self.process.poll() is not None or time.perf_counter() > deadline:
-                    raise SystemExit(
-                        "the site host did not start:\n"
-                        + (self.data.parent / f"{self.data.name}.err").read_text(errors="replace")[-2000:]
-                    ) from None
+                    raise SystemExit("the site host did not start:\n" + self.log()) from None
                 time.sleep(0.2)
 
+    def restart_all(self, environment: dict[str, str] | None = None) -> None:
+        """The host and every worker, as the agent restarts them when the
+        links page, the channel or the local-server list changes."""
+        self.stop_workers()
+        self.start(environment)
+        self.start_workers()
+
     def stop(self) -> None:
-        if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
+        process = self.process
+        if process is not None and process.poll() is None:
+            if self.user is not None:
+                kill_user(self.user)
+            else:
+                process.terminate()
             try:
-                self.process.wait(timeout=20)
+                process.wait(timeout=20)
             except subprocess.TimeoutExpired:
-                self.process.kill()
+                if self.user is not None:
+                    kill_user(self.user, "KILL")
+                process.kill()
+                process.wait(timeout=20)
 
     def health(self, http: Any) -> dict[str, Any]:
         return dict(http.get(f"http://127.0.0.1:{self.port}/healthz", timeout=5).json())
@@ -473,17 +739,90 @@ class SiteHost:
             time.sleep(0.5)
 
     def log(self) -> str:
-        path = self.data.parent / f"{self.data.name}.err"
-        return path.read_text(errors="replace")[-2000:] if path.exists() else ""
+        parts = []
+        for path in [self.logs / f"{self.label}.err", *(w.log_path for w in self.workers.values())]:
+            if path.exists():
+                parts.append(f"--- {path.name}\n" + path.read_text(errors="replace")[-1500:])
+        return "\n".join(parts)
 
 
-def site_token(data: Path) -> str:
+class Worker:
+    """One person's worker beside a host: `python -I -m
+    eugene_plexus_site_host.worker`, as that person's account (sudo mode) or,
+    in the one-account run, as `STAND_IN`."""
+
+    def __init__(
+        self, host: SiteHost, name: str, account: str, user: Account | None, protect: list[str]
+    ) -> None:
+        self.host, self.name, self.account, self.user, self.protect = host, name, account, user, protect
+        self.process: subprocess.Popen[bytes] | None = None
+        self.log_path = host.logs / f"{host.label}.{name}.worker.err"
+
+    def arguments(self, account: str | None = None, host_account: str | None = None) -> list[str]:
+        args = [
+            "--account", account or self.account, "--channel", self.host.channel,
+            "--host", host_account or self.host.account, "--servers", str(self.host.servers_file),
+        ]
+        for path in self.protect:
+            args += ["--protect", path]
+        return args
+
+    def command(self, *arguments: str) -> list[str]:
+        python = str(self.host.python)
+        if self.user is None:
+            return [python, "-I", "-c", STAND_IN, *arguments]
+        return [python, "-I", "-m", "eugene_plexus_site_host.worker", *arguments]
+
+    def start(self) -> None:
+        self.stop()
+        self.process = subprocess.Popen(
+            as_user(self.user, self.command(*self.arguments()), {}),
+            cwd="/" if self.user else self.host.data,
+            stdin=subprocess.DEVNULL,
+            env=clean_environment(),
+            stdout=subprocess.DEVNULL,
+            stderr=open(self.log_path, "ab"),  # noqa: SIM115
+        )
+        SiteHost.running.append(self.process)
+
+    def alive(self) -> bool:
+        return self.process is not None and self.process.poll() is None
+
+    def stop(self) -> None:
+        process = self.process
+        if process is None or process.poll() is not None:
+            return
+        if self.user is not None:
+            kill_user(self.user)
+        else:
+            process.terminate()
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            if self.user is not None:
+                kill_user(self.user, "KILL")
+            process.kill()
+            process.wait(timeout=15)
+
+
+def account_of(python: Path) -> str:
+    """The uid or SID this script's own account has, as the site host's code
+    says it (not as this script guesses it)."""
+    done = subprocess.run(
+        [str(python), "-I", "-c", "from eugene_plexus_site_host import accounts;print(accounts.own())"],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
+    return done.stdout.strip()
+
+
+def site_token(host: SiteHost) -> str:
     """A token the site's own key signs, as its host signs one for a poll."""
     import jwt
     from cryptography.hazmat.primitives import serialization
 
-    site = json.loads((data / "site.json").read_text(encoding="utf-8"))["site"]
-    key = serialization.load_pem_private_key((data / "site_key.pem").read_bytes(), password=None)
+    site = json.loads(host.read("site.json"))["site"]
+    key = serialization.load_pem_private_key(host.read("site_key.pem").encode(), password=None)
     now = int(time.time())
     return str(
         jwt.encode(
@@ -556,6 +895,8 @@ def run(args: argparse.Namespace) -> None:
     ports = (free_port(), free_port(), free_port())
     root = start_root(work, args.root_wsl, ip, ports)
     hosts: list[SiteHost] = []
+    sudo_mode = sudo_available() and not args.no_sudo
+    base: Path | None = None
     try:
         deadline = time.perf_counter() + 90
         while not (work / "ready.json").exists():
@@ -566,7 +907,23 @@ def run(args: argparse.Namespace) -> None:
         control, nodes, lan = ready["controlUrl"], ready["nodesUrl"], ready["lanUrl"]
         http = httpx.Client(trust_env=False, timeout=30)
         unverified = httpx.Client(trust_env=False, timeout=30, verify=False)
-        python = install_site_host(work, site_host_source(args.site_host_source))
+        source = site_host_source(args.site_host_source)
+        if sudo_mode:
+            base = Path(f"/opt/ep-acc-{secrets.token_hex(4)}")
+            sudo("install", "-d", "-m", "755", str(base))
+            python = install_site_host_for_all(base, source)
+            acc_a, acc_j, acc_s, acc_z = (Account(p) for p in ("epa", "epj", "eps", "epz"))
+            sudo("install", "-d", "-m", "755", "-o", "root", str(base / "site"))
+            sudo("install", "-d", "-m", "755", "-o", acc_s.name, str(base / "run"))
+            sudo("install", "-d", "-m", "755", "-o", acc_s.name, str(base / "desk"))
+            sudo("install", "-d", "-m", "700", "-o", acc_s.name, str(base / "desk" / "data"))
+            sudo("install", "-d", "-m", "777", str(base / "shared"))
+            print(f"sudo mode: host as {acc_s.name}, people as {acc_a.name} and {acc_j.name} "
+                  f"under {base}", flush=True)
+        else:
+            python = install_site_host(work, source)
+            print("one-account mode: " + ("--no-sudo" if args.no_sudo else "no passwordless sudo "
+                  "here") + "; workers are the stand-in for a second account", flush=True)
 
         # ---- the owner sets the root up ----------------------------------
         assert http.post(f"{control}/v1/auth/initialize", json={"passphrase": PASSPHRASE}).status_code == 204
@@ -577,7 +934,7 @@ def run(args: argparse.Namespace) -> None:
             json={"name": "Workbench", "owner": "app:workbench@root", "redirectUris": [CALLBACK]},
         ).json()
         app_id = client["client"]["clientId"]
-        for name in ("ada", "bo"):
+        for name in ("ada", "bo", "jo"):
             made = http.post(
                 f"{control}/v1/people",
                 json={"name": name, "password": PASSWORD, "apps": [app_id]},
@@ -588,10 +945,11 @@ def run(args: argparse.Namespace) -> None:
         workbench = Workbench(plain, control, client)
         ada = sign_in(plain, control, client, "ada", PASSWORD)
         bo = sign_in(plain, control, client, "bo", PASSWORD)
+        jo = sign_in(plain, control, client, "jo", PASSWORD)
         owner = sign_in(plain, control, client, "operator", PASSPHRASE)
-        ok("the root is set up: two people and Workbench's sign-in")
+        ok("the root is set up: three people and Workbench's sign-in")
 
-        # ---- 1. J31: the public route carries six site paths and nothing else
+        # ---- 1. J31: the public route carries seven site paths and nothing else
         tls = unverified.get(f"{nodes}/v1/trust/tls")
         assert tls.status_code == 200 and tls.json().get("jws"), tls.text
         for method, path in (
@@ -614,12 +972,15 @@ def run(args: argparse.Namespace) -> None:
             "/v1/sites/operations/x/claim",
             "/v1/sites/operations/x/result",
             "/v1/sites/leave",
+            "/v1/sites/links/check",
         ):
             reached = unverified.post(f"{nodes}{path}", json={})
             assert reached.status_code in (401, 422), (path, reached.status_code, reached.text[:200])
-        ok("from another network the nodes name answers the six site paths (the signed TLS list "
-           "and the five site routes) and refuses the trust bundle, a node's enrollment and "
-           "everything else")
+        wrong_way = unverified.get(f"{nodes}/v1/sites/links/check")
+        assert wrong_way.status_code == 403 and "machines only" in wrong_way.text, wrong_way.text
+        ok("from another network the nodes name answers the seven site paths (the signed TLS list "
+           "and the six site routes, the person check among them) and refuses the trust bundle, "
+           "a node's enrollment, the person check by any other method, and everything else")
 
         # ---- 2. an invitation names a person -----------------------------
         mine = http.post(
@@ -640,8 +1001,14 @@ def run(args: argparse.Namespace) -> None:
            "joinUrl, and Eugene's owner (who owns no sites) cannot invite from there")
 
         # ---- 3. the join, confirmed at the machine, pinned to the root --
-        desk = SiteHost(python, work / "desk" / "data")
+        if sudo_mode:
+            assert base is not None
+            desk = SiteHost(python, base / "desk" / "data", user=acc_s, site_dir=base / "site",
+                            channel=str(base / "run" / "c.sock"), logs=work)
+        else:
+            desk = SiteHost(python, work / "desk" / "data")
         hosts.append(desk)
+        desk.protected = [str(desk.site_dir)]
         wrong_key = desk.join(
             nodes, invitation["token"], "ada", "desk", PASSWORD,
             base64.b64encode(b"\x01" * 32).decode(),
@@ -649,23 +1016,21 @@ def run(args: argparse.Namespace) -> None:
         assert wrong_key.returncode != 0 and "could not be trusted" in (
             wrong_key.stdout + wrong_key.stderr
         ), wrong_key.stdout + wrong_key.stderr
-        assert not (desk.data / "site.json").exists()
+        assert not desk.exists("site.json")
         leaked = desk.join(nodes, invitation["token"], "ada", "desk", "not her password", invitation["rootKey"])
         assert leaked.returncode != 0 and "refused" in (leaked.stdout + leaked.stderr), (
             leaked.stdout + leaked.stderr
         )
         assert http.get(f"{control}/v1/sites").json()["sites"] == []
-        assert not (desk.data / "site.json").exists()
+        assert not desk.exists("site.json")
         joined = desk.join(nodes, invitation["token"], "ada", "desk", PASSWORD, invitation["rootKey"])
         assert joined.returncode == 0, joined.stdout + joined.stderr
         assert "ada's job site desk" in joined.stdout, joined.stdout
-        record = json.loads((desk.data / "site.json").read_text(encoding="utf-8"))
+        record = desk.record()
         assert record["owner"] == people["ada"] and record["ownerName"] == "ada", record
         assert record["rootKey"] == invitation["rootKey"] and record["url"] == nodes
-        assert json.loads((desk.data / "root_tls.json").read_text())["origin"] == nodes
-        assert PASSWORD not in "".join(
-            p.read_text(errors="ignore") for p in desk.data.rglob("*") if p.is_file()
-        )
+        assert json.loads(desk.read("root_tls.json"))["origin"] == nodes
+        assert PASSWORD not in desk.all_text()
         site_id = record["site"]
         assert re.fullmatch(r"s-[a-z2-7]{26}", site_id), site_id
         reused = desk.join(nodes, invitation["token"], "ada", "other", PASSWORD, invitation["rootKey"])
@@ -675,7 +1040,20 @@ def run(args: argparse.Namespace) -> None:
            "key, as ada's site; her password is kept nowhere on it")
 
         # ---- 4. started, it polls; the console lists it -------------------
+        # The machine's starter, played: the owner's link, the channel, a worker per
+        # linked person (sudo mode: ada as epa and jo as epj; one account: ada's
+        # link is this account and jo has none, so her calls run in ada's worker).
+        if sudo_mode:
+            desk.link(people["ada"], "ada", acc_a.uid, acc_a.name)
+            desk.link(people["jo"], "jo", acc_j.uid, acc_j.name)
+            desk.add_worker("ada", acc_a.uid, acc_a, desk.protected)
+            desk.add_worker("jo", acc_j.uid, acc_j, desk.protected)
+        else:
+            desk.link(people["ada"], "ada", desk.account, "harness")
+            desk.add_worker("ada", desk.account, None, desk.protected)
+        desk.write_links()
         desk.start()
+        desk.start_workers()
         health = desk.wait_for(
             http, lambda h: h.get("lastContactAt") and h.get("reason") is None,
             "the site host never reached its root",
@@ -705,8 +1083,12 @@ def run(args: argparse.Namespace) -> None:
            "the host listens on loopback only")
 
         # ---- 5. ada's folders, bo's read, the audit log -------------------
-        folder = work / "shared"
-        folder.mkdir()
+        if sudo_mode:
+            assert base is not None
+            folder = base / "shared"  # root's, mode 0777: what the OS lets each account do is its own
+        else:
+            folder = work / "shared"
+            folder.mkdir()
         (folder / "note.txt").write_text("Notes from ada's desk", encoding="utf-8")
 
         def call(route: str, token: str, /, **body: Any) -> Any:
@@ -722,13 +1104,27 @@ def run(args: argparse.Namespace) -> None:
             """The site's next report, which the root keeps as a cache."""
             deadline = time.perf_counter() + 30
             while True:
-                sites = call("job-sites", ada).json()["sites"]
+                sites = [x for x in call("job-sites", ada).json()["sites"] if x["id"] == site_id]
                 if sites and predicate(sites[0]):
                     return dict(sites[0])
                 if time.perf_counter() > deadline:
                     raise AssertionError(f"{what}: {sites}")
                 time.sleep(0.3)
 
+        def workers_up(*names: str) -> None:
+            """The root's cache of the site's last report says each named
+            person's worker is connected."""
+            deadline = time.perf_counter() + 40
+            while True:
+                sites = [x for x in call("job-sites", ada).json()["sites"] if x["id"] == site_id]
+                links = {e["subject"]: e for e in (sites[0].get("links") or [])} if sites else {}
+                if all(links.get(people[n], {}).get("available") for n in names):
+                    return
+                if time.perf_counter() > deadline:
+                    raise AssertionError(f"a worker never connected for {names}: {links}" + chr(10) + desk.log())
+                time.sleep(0.5)
+
+        workers_up(*(["ada", "jo"] if sudo_mode else ["ada"]))
         read = {"name": "read_text", "arguments": {"folder": "Notes", "path": "note.txt"}}
         mine_only = call("job-sites", bo).json()["sites"]
         assert mine_only == [], mine_only
@@ -796,7 +1192,7 @@ def run(args: argparse.Namespace) -> None:
         # ---- 6. editing the root's state is not enough -------------------
         assert forge(kind="owner", owner=people["bo"]).status_code == 200
         time.sleep(2)  # a poll or two, each naming bo
-        assert json.loads((desk.data / "site.json").read_text())["owner"] == people["ada"]
+        assert desk.record()["owner"] == people["ada"]
         taken = call(f"job-sites/{site_id}/folders/{folder_id}/people", bo,
                      people=[{"name": "bo", "writable": True}])
         assert taken.status_code == 422 and "Only this machine's owner" in taken.text, taken.text
@@ -815,14 +1211,14 @@ def run(args: argparse.Namespace) -> None:
            "owner; 'not for this site')")
 
         # ---- 7. the site's token opens its own routes only ---------------
-        token = site_token(desk.data)
+        token = site_token(desk)
         bearer = {"Authorization": "Bearer " + token}
-        for base in (control, nodes):
-            client_ = unverified if base == nodes else plain
+        for origin in (control, nodes):
+            client_ = unverified if origin == nodes else plain
             for path in ("/v1/nodes", "/v1/sites", "/v1/config", "/v1/people"):
-                refused = client_.get(f"{base}{path}", headers=bearer)
-                assert refused.status_code in (401, 403), (base, path, refused.status_code)
-            assert client_.post(f"{base}/v1/sites/invitations", headers=bearer,
+                refused = client_.get(f"{origin}{path}", headers=bearer)
+                assert refused.status_code in (401, 403), (origin, path, refused.status_code)
+            assert client_.post(f"{origin}/v1/sites/invitations", headers=bearer,
                                 json={"owner": people["ada"]}).status_code in (401, 403)
         own = plain.post(f"{control}/v1/sites/operations/none/claim", headers=bearer)
         assert own.status_code == 404, own.text  # its own route, answered
@@ -832,7 +1228,7 @@ def run(args: argparse.Namespace) -> None:
            "refused with it (directly and through the nodes name), and so is minting an invitation")
 
         # ---- a fifth tool, added at the machine --------------------------
-        local_server_check(desk, work, call, mcp, settle, site_id, ada, bo)
+        local_server_check(desk, work, base, call, mcp, settle, site_id, ada, bo)
 
         # ---- production, then dev mode (J6e) ---------------------------------
         assert mcp(owner, "files", "tools/call", read).status_code == 403
@@ -895,13 +1291,23 @@ def run(args: argparse.Namespace) -> None:
            "the root does not know it, and the enrollment stays on its disk")
 
         # ---- 11. the agent's `site join` ---------------------------------
-        agent_site_join(args, python, work, nodes, http, control, people, invitation)
+        agent_site_join(python, work, nodes, http, control, people, acc_a if sudo_mode else None)
+
+        # ---- 13-18. slice 2b.2: whose account runs a call ----------------------
+        two_b_two(SimpleNamespace(
+            desk=desk, sudo_mode=sudo_mode, folder=folder, people=people, ada=ada, bo=bo, jo=jo,
+            call=call, mcp=mcp, settle=settle, site_id=site_id, folder_id=folder_id, http=http,
+            plain=plain, unverified=unverified, control=control, nodes=nodes,
+            acc_a=acc_a if sudo_mode else None, acc_j=acc_j if sudo_mode else None,
+            acc_s=acc_s if sudo_mode else None, acc_z=acc_z if sudo_mode else None,
+        ))
 
         # ---- 12. the site leaves ----------------------------------------
+        desk.stop_workers()
         desk.stop()
         left = desk.leave()
         assert left.returncode == 0 and "no longer a job site" in left.stdout, left.stdout + left.stderr
-        assert not (desk.data / "site.json").exists() and not (desk.data / "site_key.pem").exists()
+        assert not desk.exists("site.json") and not desk.exists("site_key.pem")
         assert site_id not in {s["id"] for s in http.get(f"{control}/v1/sites").json()["sites"]}
         refused = plain.post(f"{control}/v1/sites/leave", headers={"Authorization": "Bearer " + token})
         assert refused.status_code == 401, refused.text
@@ -909,10 +1315,17 @@ def run(args: argparse.Namespace) -> None:
            "no more and its old token is refused")
     finally:
         for host in hosts:
+            host.stop_workers()
             host.stop()
         for process in SiteHost.running:
             if process.poll() is None:
                 process.kill()
+        for account in Account.made:
+            account.remove()
+        if base is not None:
+            sudo("rm", "-rf", str(base), check=False)
+        for short in SiteHost.temps:
+            shutil.rmtree(short, ignore_errors=True)
         (work / "stop").write_text("")
         try:
             root.wait(timeout=30)
@@ -1002,20 +1415,25 @@ def lan_only_join(
 
 
 def local_server_check(
-    desk: SiteHost, work: Path, call: Any, mcp: Any, settle: Any, site_id: str, ada: str, bo: str,
+    desk: SiteHost, work: Path, base: Path | None, call: Any, mcp: Any, settle: Any, site_id: str,
+    ada: str, bo: str,
 ) -> None:
     """A fifth tool, added the way `eugene-plexus-agent site server add` adds
     one after its elevation check (the check itself is the agent's unit test
-    and the real CLI is run in check 11), and the host learns it at its next
-    start, as the agent restarts it."""
+    and the real CLI is run in check 11), written to the YAML list the host AND
+    its workers read (`SITE_HOST_LOCAL_SERVERS_FILE`; in sudo mode root's, in a
+    root-owned directory, like the links), then the host and every worker are
+    restarted to read it, as the agent restarts them. The tool then runs in the
+    owner's worker."""
     import yaml
     from eugene_plexus_agent import site_cli
-    from eugene_plexus_agent.site_host import SERVERS_COPY, local_servers
+    from eugene_plexus_agent.site_host import servers_path
 
     config = work / "desk-config"
     config.mkdir()
-    fixture = work / "local_server.py"
-    fixture.write_bytes((REPOS / "site-host" / "tests" / "fixtures" / "local_server.py").read_bytes())
+    fixture = (base or work) / "local_server.py"
+    put_file(fixture, (REPOS / "site-host" / "tests" / "fixtures" / "local_server.py").read_bytes(),
+             root=base is not None)
     elevated, site_cli.elevated = site_cli.elevated, lambda: True
     try:
         site_cli.add_server(config, server_id="notes-tool", name="Notes tool",
@@ -1024,15 +1442,11 @@ def local_server_check(
         site_cli.elevated = elevated
 
     def restart_with_servers() -> None:
-        data = json.dumps(local_servers(config), ensure_ascii=False).encode()
-        copy = work / "desk-state" / SERVERS_COPY
-        copy.parent.mkdir(exist_ok=True)
-        copy.write_bytes(data)
-        desk.start({
-            "SITE_HOST_PROTECTED_ROOTS": json.dumps([str(config)]),
-            "SITE_HOST_LOCAL_SERVERS_FILE": str(copy),
-            "SITE_HOST_LOCAL_SERVERS_SHA256": hashlib.sha256(data).hexdigest(),
-        })
+        put_file(desk.servers_file, servers_path(config).read_bytes(), root=desk.user is not None)
+        desk.protected = [str(desk.site_dir), str(config)]
+        for worker in desk.workers.values():
+            worker.protect = desk.protected
+        desk.restart_all()
         # No wait here, on purpose: the root's long poll for the host just
         # stopped may take the next call and answer a closed socket. The root
         # offers an operation nobody claimed again after five seconds
@@ -1059,10 +1473,10 @@ def local_server_check(
     echoed = mcp(bo, "notes-tool", "tools/call", {"name": "echo", "arguments": {"text": "hi"}})
     assert echoed.json()["status"] == "done" and "echo: hi" in json.dumps(echoed.json()), echoed.text
     # J9: a server marked system will not turn on without an administrator's consent.
-    servers = yaml.safe_load((config / site_cli.SERVERS_FILE).read_text(encoding="utf-8"))
+    servers = yaml.safe_load(servers_path(config).read_text(encoding="utf-8"))
     servers["servers"].append({**servers["servers"][0], "id": "settings-tool",
                                "name": "Settings tool", "system": True})
-    (config / site_cli.SERVERS_FILE).write_text(yaml.safe_dump(servers), encoding="utf-8")
+    servers_path(config).write_text(yaml.safe_dump(servers), encoding="utf-8")
     restart_with_servers()
     settle(lambda s: len(s["servers"]) == 2, "the system server never reported")
     system = call(f"job-sites/{site_id}/servers/settings-tool/enabled", ada, enabled=True)
@@ -1073,45 +1487,285 @@ def local_server_check(
 
 
 def agent_site_join(
-    args: argparse.Namespace, python: Path, work: Path, nodes: str, http: Any, control: str,
-    people: dict[str, str], invitation: dict[str, Any],
+    python: Path, work: Path, nodes: str, http: Any, control: str, people: dict[str, str],
+    site_account: Account | None,
 ) -> None:
+    """The agent's own `site join`, run for real against a site host this
+    script installed. 2b.2 changed it: on a per-user install it needs no
+    elevation and links the owner, at the machine, to the account that ran it
+    (§2.2); only a system install's join, and any local-server change, need an
+    administrator."""
     from eugene_plexus_agent import site_cli
+    from eugene_plexus_agent.site_host import servers_path
 
     config = work / "agent-config"
     config.mkdir()
     environment = {**clean_environment(), "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(config / "agent.yaml")}
-    join = ["site", "join", "--url", nodes, "--token", "x", "--owner", "ada", "--label", "away",
-            "--root-key", invitation["rootKey"], "--password-stdin"]
+    refusals = []
     if not site_cli.elevated():
         refused = subprocess.run(
-            agent_command(*join), input=PASSWORD + "\n", capture_output=True, text=True,
-            env=environment, timeout=120,
+            agent_command("site", "server", "add", "notes", "--name", "Notes", "--command", str(python)),
+            capture_output=True, text=True, env=environment, timeout=120, stdin=subprocess.DEVNULL,
         )
         assert refused.returncode == 2 and "administrator" in refused.stderr.lower(), (
             refused.returncode, refused.stderr,
         )
-        assert not (config / "site-host.json").exists()
-        ok("the agent's `site join` refuses an unelevated caller, and changes nothing "
-           "(not elevated here, so the elevated join is the disposable runners' to run)")
-        return
-    # Elevated: the real CLI, pointed at a site host this script installed.
+        assert not servers_path(config).exists()
+        refusals.append("`site server add` refuses an unelevated caller and writes nothing")
+        if os.name == "nt":
+            # A system install's join needs an administrator: ProgramData is the system's place.
+            program_data = work / "ProgramData"
+            system = program_data / "EugenePlexus"
+            system.mkdir(parents=True)
+            refused = subprocess.run(
+                agent_command("site", "join", "--url", nodes, "--token", "x", "--owner", "ada",
+                              "--label", "sys", "--password-stdin"),
+                input=PASSWORD + "\n", capture_output=True, text=True, timeout=120,
+                env={**environment, "PROGRAMDATA": str(program_data),
+                     "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(system / "agent.yaml")},
+            )
+            assert refused.returncode == 2 and "administrator" in refused.stderr.lower(), (
+                refused.returncode, refused.stderr,
+            )
+            refusals.append("a system install's `site join` refuses an unelevated caller")
+    else:
+        print("SKIP: the agent's unelevated refusals (this account is elevated here); "
+              "the agent's own tests carry them", flush=True)
     minted = http.post(f"{control}/v1/sites/invitations", json={"owner": people["ada"], "label": "away"})
     assert minted.status_code == 201, minted.text
     data = work / "away" / "data"
     data.mkdir(parents=True)
+    join = ["site", "join", "--url", nodes, "--token", minted.json()["token"],
+            "--owner", "ada", "--label", "away", "--root-key", minted.json()["rootKey"],
+            "--password-stdin", "--python", str(python), "--data-dir", str(data)]
+    if site_account is not None:  # root ran this: name the person's own account
+        join += ["--site-account", site_account.name]
     done = subprocess.run(
-        agent_command("site", "join", "--url", nodes, "--token", minted.json()["token"],
-                      "--owner", "ada", "--label", "away", "--root-key", minted.json()["rootKey"],
-                      "--password-stdin", "--python", str(python), "--data-dir", str(data)),
-        input=PASSWORD + "\n", capture_output=True, text=True, env=environment, timeout=300,
+        agent_command(*join), input=PASSWORD + "\n", capture_output=True, text=True,
+        env=environment, timeout=300,
     )
     assert done.returncode == 0, done.stdout + done.stderr
     record = json.loads((data / "site.json").read_text(encoding="utf-8"))
     assert record["label"] == "away" and record["owner"] == people["ada"]
     assert record["site"] in {s["id"] for s in http.get(f"{control}/v1/sites").json()["sites"]}
-    ok("the agent's elevated `site join` installed nothing of its own and joined the site host "
-       "it was pointed at, as ada's")
+    links = json.loads((config / "site" / "links.json").read_text(encoding="utf-8"))["links"]
+    expected = site_account.uid if site_account is not None else account_of(python)
+    assert [(e["subject"], e["account"]) for e in links] == [(people["ada"], expected)], (
+        links, done.stdout,
+    )
+    ok("the agent's `site join`, with no elevation on a per-user install, joined the site host "
+       "it was pointed at as ada's and linked her to the account that ran it, in the links file "
+       "beside its config" + ("; " + "; ".join(refusals) if refusals else ""))
+
+
+def two_b_two(c: SimpleNamespace) -> None:
+    """Slice 2b.2's checks, 13 to 18: whose account runs a call (§2.4, §3.2,
+    J24, J27, J36). `c` carries what `run()` has built."""
+    desk: SiteHost = c.desk
+    sudo_mode: bool = c.sudo_mode
+    folder: Path = c.folder
+    people: dict[str, str] = c.people
+    ada, bo, jo = c.ada, c.bo, c.jo
+
+    def write(token: str, name: str, text: str) -> Any:
+        return c.mcp(token, "files", "tools/call", {"name": "write_text", "arguments": {
+            "folder": "Notes", "path": name, "text": text, "expectedSha256": ""}})
+
+    def read_file(token: str, name: str) -> Any:
+        return c.mcp(token, "files", "tools/call", {"name": "read_text", "arguments": {
+            "folder": "Notes", "path": name}})
+
+    def served(reply: Any) -> bool:
+        return bool(reply.status_code == 200 and reply.json()["status"] == "done")
+
+    # ---- 13. a call runs as the person -------------------------------------
+    given = c.call(f"job-sites/{c.site_id}/folders/{c.folder_id}/people", ada, people=[
+        {"name": "ada", "writable": True}, {"name": "bo", "writable": True},
+        {"name": "jo", "writable": True}])
+    assert given.status_code == 200, given.text
+    c.settle(lambda s: bool(s["folders"]) and sum(p["writable"] for p in s["folders"][0]["people"]) == 3, "write grants")
+    for token, name in ((ada, "ada.txt"), (jo, "jo.txt"), (bo, "bo.txt")):
+        reply = write(token, name, f"written for {name}")
+        assert served(reply), reply.text
+        assert (folder / name).read_text(encoding="utf-8") == f"written for {name}"
+    if sudo_mode:
+        a, j = int(c.acc_a.uid), int(c.acc_j.uid)
+        owners = {n: os.stat(folder / n).st_uid for n in ("ada.txt", "jo.txt", "bo.txt")}
+        # bo has no link: his call runs in the OWNER's worker, as the owner (J27).
+        assert owners == {"ada.txt": a, "jo.txt": j, "bo.txt": a}, (owners, a, j)
+        secret = "only jo may read this"
+        assert served(write(jo, "secret.txt", secret))
+        sudo("chmod", "600", str(folder / "secret.txt"))
+        mine = read_file(jo, "secret.txt")
+        assert served(mine) and secret in json.dumps(mine.json()), mine.text
+        theirs = read_file(ada, "secret.txt")
+        assert secret not in json.dumps(theirs.json()), theirs.text
+        failed = theirs.json()["status"] == "failed" or "isError" in json.dumps(theirs.json())
+        assert failed, theirs.text
+        decided = {(e["subject"], e.get("tool"), e["decision"])
+                   for e in c.call(f"job-sites/{c.site_id}/audit", ada, limit=200).json()["entries"]}
+        assert (people["ada"], "read_text", "allowed") in decided, decided
+        ok("each call runs as its person's own OS account: ada's write is a file owned by "
+           f"{c.acc_a.name}, jo's by {c.acc_j.name} (her own link), and bo's, who has no link, "
+           f"by {c.acc_a.name} (the owner's worker, J27); a 0600 file jo owns is read by jo and "
+           "refused to ada, whose call the site's policy allowed (the audit log says so): the "
+           "operating system decided")
+    else:
+        if os.name != "nt":
+            own = os.getuid()
+            assert {os.stat(folder / n).st_uid for n in ("ada.txt", "jo.txt", "bo.txt")} == {own}
+        ok("one account: ada's, jo's and bo's writes all run in the one worker, whose "
+           "account is the link's (jo and bo have no link of their own, J27)")
+        print("SKIP: each person's calls running as a DIFFERENT OS account, and the OS refusing "
+              "ada a file jo owns, need a second account: passwordless sudo on Linux (CI's "
+              "runner) provides them", flush=True)
+
+    # ---- 14. a worker that is not the account it names is refused -----------------
+    host_account = desk.account
+    if sudo_mode:
+        wrong = c.acc_j.uid
+    elif os.name == "nt":
+        wrong = "S-1-5-21-1111111111-2222222222-3333333333-1999"
+    else:
+        wrong = str(os.getuid() + 1)
+    impostor = Worker(desk, "impostor", wrong, None, desk.protected)
+    ran = subprocess.run(
+        [str(desk.python), "-I", "-m", "eugene_plexus_site_host.worker", *impostor.arguments()],
+        capture_output=True, text=True, stdin=subprocess.DEVNULL, env=clean_environment(), timeout=60,
+    )
+    assert ran.returncode != 0 and "not the account it was started for" in ran.stderr, (
+        ran.returncode, ran.stdout, ran.stderr,
+    )
+    assert "refused" not in ran.stderr  # it never got as far as the host
+    assert served(read_file(ada, "note.txt"))  # and the real worker is undisturbed
+    sentence = "a worker started for another account refuses to run, before it connects"
+    if sudo_mode:
+        raw = subprocess.run(
+            as_user(c.acc_z, [str(desk.python), "-I", "-c", RAW_CONNECT, desk.channel, host_account], {}),
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, env=clean_environment(), timeout=60,
+        )
+        assert raw.returncode == 0, raw.stderr
+        said = json.loads(raw.stdout.strip().splitlines()[-1])
+        assert said.get("t") == "refused", said
+        assert served(read_file(ada, "note.txt"))
+        sentence += (f"; a stranger account ({c.acc_z.name}) connecting to the host's channel is "
+                     "sent {\"t\": \"refused\"} (no link names it) and disconnected")
+    else:
+        print("SKIP: a raw connection to the channel from an account no link names needs a "
+              "second account (this one is ada's), so only the sudo run makes it", flush=True)
+        lone = Worker(desk, "lone", host_account, None, desk.protected)
+        real = subprocess.run(
+            [str(desk.python), "-I", "-m", "eugene_plexus_site_host.worker",
+             *lone.arguments(host_account, host_account)],
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, env=clean_environment(), timeout=60,
+        )
+        assert real.returncode != 0 and "site host's own account" in real.stderr, (
+            real.returncode, real.stderr,
+        )
+        sentence += ("; the real worker, as the site host's own account and not told it shares "
+                     "it, refuses (a service install's rule), and a per-user install's starter "
+                     "says --shared-account (J38)")
+    ok(sentence)
+
+    # ---- 15. neither the root nor the site host can make a link ------------------------
+    ada_id = people["ada"]
+    for method, path in (
+        ("POST", "/v1/sites/links"), ("PUT", "/v1/sites/links"),
+        ("POST", f"/v1/sites/{c.site_id}/links"), ("PUT", f"/v1/sites/{c.site_id}/links/{ada_id}"),
+        ("POST", "/v1/site/links"), ("PUT", f"/v1/site/links/{ada_id}"),
+        ("PUT", f"/v1/sites/{c.site_id}/links"), ("POST", f"/oidc/job-sites/{c.site_id}/links"),
+    ):
+        reply = c.http.request(method, f"{c.control}{path}", json={"subject": ada_id, "account": "0"})
+        assert reply.status_code in (404, 405), (method, path, reply.status_code, reply.text[:200])
+    for method, path in (("POST", "/links"), ("PUT", "/links"), ("POST", "/v1/links"), ("POST", "/link"),
+                         ("PUT", "/link/confirm")):
+        reply = c.plain.request(method, f"http://127.0.0.1:{desk.port}{path}", json={"subject": ada_id})
+        assert reply.status_code in (404, 405), (method, path, reply.status_code)
+    from eugene_plexus_agent.routes.site_link import api as agent_links
+
+    assert {(r.path, tuple(sorted(r.methods))) for r in agent_links.routes} == {
+        ("/v1/site/links/{subject}", ("DELETE",))
+    }, "the agent's /v1 link route must only ever remove"
+    sentence = ("the root has no route that makes a link (POST/PUT on every plausible path is 404 "
+                "or 405), nor does the site host's own app, and the agent's one /v1 link route is "
+                "DELETE and removes (its tests: test_site_link_page.py "
+                "test_the_root_removes_a_link, test_no_one_but_the_root_may_remove_a_link)")
+    if sudo_mode:
+        directory, links = os.stat(desk.site_dir), os.stat(desk.links_file)
+        assert (directory.st_uid, directory.st_mode & 0o777) == (0, 0o755), directory
+        assert (links.st_uid, links.st_mode & 0o777) == (0, 0o644), links
+        before = desk.links_file.read_bytes()
+        tried = subprocess.run(
+            as_user(c.acc_s, [str(desk.python), "-I", "-c", TRY_TO_LINK, str(desk.links_file)], {}),
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, env=clean_environment(), timeout=60,
+        )
+        assert tried.returncode == 0, tried.stderr
+        assert tried.stdout.strip() == "append: PermissionError|truncate: PermissionError|" \
+            "create beside: PermissionError|rename: PermissionError|unlink: PermissionError", tried.stdout
+        assert desk.links_file.read_bytes() == before and not (desk.site_dir / "links2.json").exists()
+        sentence += (f"; the links file and its directory are root's (0644 in 0755), and the site "
+                     f"host's own account ({c.acc_s.name}) cannot append to, truncate, replace, "
+                     "rename or remove it, or create a file beside it")
+    else:
+        print("SKIP: the site host's account failing to write the links file needs the host to "
+              "run as an account other than the one that owns the file (the sudo run)", flush=True)
+    ok(sentence)
+
+    # ---- 16. no worker, no tools ----------------------------------------------------
+    stopped = desk.workers["jo" if sudo_mode else "ada"]
+    if sudo_mode:
+        expected = "Your worker on desk is not running"
+    elif desk.account.startswith("S-"):  # Windows: a worker lives while its person is signed in (J25)
+        expected = "desk's owner is not signed in there"
+    else:
+        expected = "The owner's worker on desk is not running"
+    stopped.stop()
+    deadline = time.perf_counter() + 40
+    while True:
+        refused = read_file(jo, "note.txt")
+        body = refused.json()
+        if body["status"] == "failed" and expected in body["message"]:
+            break
+        if time.perf_counter() > deadline:
+            raise AssertionError(f"jo's call was never refused for a missing worker: {refused.text}")
+        time.sleep(0.5)
+    assert "Notes from ada" not in refused.text
+    if sudo_mode:
+        assert served(read_file(ada, "note.txt"))  # another person's worker is not jo's
+    stopped.start()
+    deadline = time.perf_counter() + 40
+    while not served(read_file(jo, "note.txt")):
+        if time.perf_counter() > deadline:
+            raise AssertionError("jo's calls were never served after her worker came back")
+        time.sleep(0.5)
+    ok("with the worker that would run a call stopped, the call is refused and says why "
+       f"({expected!r}), and nothing runs in anyone else's; started again, it is served")
+
+    # ---- 17. the person check -----------------------------------------------------------
+    good = desk.check_person("ada", PASSWORD)
+    assert good.returncode == 0, good.stdout + good.stderr
+    answer = json.loads(good.stdout.strip().splitlines()[-1])
+    assert answer == {"subject": people["ada"], "name": "ada"}, answer
+    bad = desk.check_person("ada", "not her password")
+    assert bad.returncode != 0 and "That name or password is not right." in bad.stderr, (
+        bad.returncode, bad.stdout, bad.stderr,
+    )
+    assert PASSWORD not in good.stdout + good.stderr + bad.stdout + bad.stderr
+    ok("`check-person`, run at the machine with the password on standard input, prints ada's "
+       "subject and name through the root; a wrong password exits non-zero with the root's "
+       "sentence and nothing else")
+
+    # ---- 18. the seventh public path --------------------------------------------------------
+    assert desk.record()["url"] == c.nodes  # check 17 went through the nodes name, pinned
+    bearer = {"Authorization": "Bearer " + site_token(desk)}
+    unknown = c.unverified.post(f"{c.nodes}/v1/sites/links/check", headers=bearer,
+                                json={"name": "nobody-here", "password": "x"})
+    assert unknown.status_code == 401, unknown.text  # the root's answer, not the entry point's
+    bare = c.unverified.post(f"{c.nodes}/v1/sites/links/check", json={"name": "ada", "password": PASSWORD})
+    assert bare.status_code == 401, bare.text  # a site's token is what it takes
+    ok("through the nodes name the person check reaches the root (check 17 did it for real, "
+       "pinned to the root's key): the root's own 401 for an unknown person, and a refusal "
+       "without a site's token; every other path stays refused (checks 1 and 7)")
 
 
 def main() -> int:
@@ -1119,6 +1773,10 @@ def main() -> int:
     parser.add_argument("--serve-root", type=Path)
     parser.add_argument("--root-wsl", action="store_true")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument(
+        "--no-sudo", action="store_true",
+        help="do not create throwaway accounts even when passwordless sudo is available",
+    )
     parser.add_argument(
         "--site-host-source",
         help="what to install as the site host: a checkout or an archive URL "

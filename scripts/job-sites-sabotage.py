@@ -572,13 +572,13 @@ SABOTAGES: list[Sabotage] = [
         "agent",
     ),
     Sabotage(
-        "site join does not need an administrator",
-        one(SITE_CLI, "def join(config_dir: Path, args: argparse.Namespace) -> str:\n    _need_elevation()\n", "def join(config_dir: Path, args: argparse.Namespace) -> str:\n"),
+        "a system install's site join does not need an administrator",
+        one(SITE_CLI, "    if _system_install(config_dir):\n        _need_elevation()\n    password = _password(args)\n", "    password = _password(args)\n"),
         "agent",
     ),
     Sabotage(
-        "site leave does not need an administrator",
-        one(SITE_CLI, "def leave(config_dir: Path, args: argparse.Namespace) -> str:\n    _need_elevation()\n", "def leave(config_dir: Path, args: argparse.Namespace) -> str:\n"),
+        "a system install's site leave does not need an administrator",
+        one(SITE_CLI, "    if _system_install(config_dir):\n        _need_elevation()\n    python = Path(args.python) if args.python else _host_python(config_dir)\n    data = Path(args.data_dir) if args.data_dir else _host_data(config_dir)\n    if python is not None and data.exists():", "    python = Path(args.python) if args.python else _host_python(config_dir)\n    data = Path(args.data_dir) if args.data_dir else _host_data(config_dir)\n    if python is not None and data.exists():"),
         "agent",
     ),
     Sabotage(
@@ -773,9 +773,11 @@ SABOTAGES: list[Sabotage] = [
             "            if person.subject == OPERATOR:\n                raise Refused(\n"
             '                    "Eugene\'s owner is not a person here. Let them in for dev mode in this "\n'
             "                    \"site's settings instead.\"\n                )\n"
+            "            self._only_owner(person.subject)\n"
             '            if any(p["subject"] == person.subject for p in people):\n'
             '                raise Refused("Each person is named once.")\n'
             '            if person.writable',
+            "            self._only_owner(person.subject)\n"
             '            if any(p["subject"] == person.subject for p in people):\n'
             '                raise Refused("Each person is named once.")\n'
             '            if person.writable',
@@ -839,18 +841,9 @@ SABOTAGES: list[Sabotage] = [
         "site-host",
     ),
     Sabotage(
-        "a local servers file the agent did not write is taken",
-        one(
-            SITE_HOST / "settings.py",
-            "    if not hmac.compare_digest(hashlib.sha256(data).hexdigest(), expected):\n",
-            "    if False:\n",
-        ),
-        "site-host",
-    ),
-    Sabotage(
         "anyone may add a local server",
-        one(SITE_CLI, "    system: bool,\n) -> str:\n    _need_elevation()\n",
-            "    system: bool,\n) -> str:\n"),
+        one(SITE_CLI, "    system: bool,\n) -> str:\n    _root_owns_the_list(config_dir)\n    _need_elevation()\n",
+            "    system: bool,\n) -> str:\n    _root_owns_the_list(config_dir)\n"),
         "agent",
     ),
     Sabotage(
@@ -863,12 +856,6 @@ SABOTAGES: list[Sabotage] = [
         "a system server is added without the administrator's consent",
         one(SITE_CLI, '        "consentedAt": datetime.now(UTC).isoformat() if system else None,\n',
             '        "consentedAt": None,\n'),
-        "agent",
-    ),
-    Sabotage(
-        "the host is told a hash that is not its file's",
-        one(RELAY, '            "SITE_HOST_LOCAL_SERVERS_SHA256": hashlib.sha256(data).hexdigest(),\n',
-            '            "SITE_HOST_LOCAL_SERVERS_SHA256": hashlib.sha256(b"").hexdigest(),\n'),
         "agent",
     ),
     Sabotage(
