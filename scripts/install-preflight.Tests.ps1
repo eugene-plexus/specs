@@ -20,6 +20,8 @@ Describe 'Installer failure reporting' {
     BeforeEach {
         Mock Write-Host {}
         # Execute the actual generated wrapper, without UAC or install actions.
+        # 60 s, not 20: a busy windows-latest runner once took longer than
+        # 20 s to start and run the child (specs #14).
         Mock Start-Process {
             param($FilePath, $ArgumentList)
             $start = New-Object Diagnostics.ProcessStartInfo
@@ -28,7 +30,7 @@ Describe 'Installer failure reporting' {
             $start.UseShellExecute = $false
             $start.CreateNoWindow = $true
             $process = [Diagnostics.Process]::Start($start)
-            if (-not $process.WaitForExit(20000)) { $process.Kill(); throw 'test child timed out' }
+            if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'test child timed out' }
             [pscustomobject]@{ ExitCode = $process.ExitCode }
         }
     }
@@ -1150,7 +1152,7 @@ Describe 'How a failed run ends' {
             $start.UseShellExecute = $false
             $start.CreateNoWindow = $true
             $process = [Diagnostics.Process]::Start($start)
-            if (-not $process.WaitForExit(20000)) { $process.Kill(); throw 'test child timed out' }
+            if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'test child timed out' }
             [pscustomobject]@{ ExitCode = $process.ExitCode }
         }
         { Invoke-ElevatedInstaller -ScriptText '$global:EugenePlexusInstallFailed = $true' -Parameters @{} -WorkDirectory $TestDrive } |
