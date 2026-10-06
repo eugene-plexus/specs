@@ -172,7 +172,7 @@ SiteFolder:
     A folder registered on the machine. Eugene's file server offers it to
     the people on its list, by its name, as its tools' `folder` argument
     (J6g).
-  required: [id, name, path, writable, people]
+  required: [id, name, path, identity, writable, people]
   properties:
     id: {type: string, pattern: '^[a-f0-9]{32}$'}
     name:
@@ -184,6 +184,11 @@ SiteFolder:
         folder that shares a name with one registered before it is shown,
         and taken, as `Name (2)`, `Name (3)` and so on.
     path: {type: string, minLength: 1, maxLength: 4096}
+    identity:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: The folder's identity on its file system, as the site recorded it. A dev-mode grant names it (`SiteGrantHint`).
     writable:
       type: boolean
       description: Whether anyone may change files in it at all. A person's `writable` cannot exceed it.
