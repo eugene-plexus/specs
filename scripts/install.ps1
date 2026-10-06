@@ -113,6 +113,7 @@ param(
     [switch]$JobSite,
     [string]$Owner,
     [string]$RootKey,
+    [string]$SiteAccount,
     [switch]$Update
 )
 
@@ -1790,9 +1791,9 @@ if ($JobSite) {
     if (-not $Join -or -not $Token -or -not $Owner) {
         Die "a job site's join command gives -Join, -Token and -Owner (copy the whole command from Workbench)"
     }
-    if (-not $WantsService) {
-        Die "a job site needs Eugene installed as a Windows service (the default), so its tools run in an account of their own"
-    }
+    # A per-user (logon task) install can be a job site too (J38): there
+    # `site join` runs unelevated, as this user, and the site serves only
+    # this person. On a service install this run is already elevated.
     if (-not (Test-Path $AgentEx)) {
         Die @"
 this machine is not a node yet.
@@ -1803,6 +1804,7 @@ this machine is not a node yet.
     $siteLabel = if ($NodeName) { $NodeName } else { $env:COMPUTERNAME }
     $siteArgs = @("site", "join", "--url", $Join, "--token", $Token, "--owner", $Owner, "--label", $siteLabel)
     if ($RootKey) { $siteArgs += @("--root-key", $RootKey) }
+    if ($SiteAccount) { $siteArgs += @("--site-account", $SiteAccount) }
     Say "adding $siteLabel as a job site of $Owner"
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @siteArgs

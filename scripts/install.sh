@@ -67,6 +67,13 @@ PIN_LIBRARY=1be1803c5f7cbecfaef1dbc6068fa2d6856c0730
 PIN_TOOL_DRIVER=b30adf8e9de4333c41c6c7816e61fe85969a7421
 PIN_UI=8cbe323ed1143989cf74c50b090ee8f5dfdde3b4   # branch `dist`, not `main`
 
+# The job-site host (Linux system installs only; root installs and runs it,
+# see "a job site on a Linux system install" below). Not in the generated
+# block above: it is not one of the seven packages in the agent's prefix. It
+# must equal SITE_HOST_COMMIT in agent/src/eugene_plexus_agent/site_host.py,
+# and it moves at landing, with the agent's pin.
+PIN_SITE_HOST=38d7ed8c0185440c6fc9abc6139fc48834d614f2
+
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
 # uv it was first made with until something replaces it, and the app's own
@@ -95,6 +102,11 @@ JOIN_ADVERTISE=
 JOIN_SITE=0
 JOIN_OWNER=
 JOIN_ROOT_KEY=
+SITE_ACTION=
+SITE_PERSON=
+SITE_LINK_ACCOUNT=
+PASSWORD_STDIN=0
+TTY_SAVED=
 JOINED=0
 DO_PURGE_COPIES=0
 DO_PURGE_DATA=0
@@ -120,6 +132,11 @@ while [ $# -gt 0 ]; do
         --job-site) JOIN_SITE=1; shift ;;
         --owner) JOIN_OWNER=$2; shift 2 ;;
         --root-key) JOIN_ROOT_KEY=$2; shift 2 ;;
+        --site-account|--account) SITE_LINK_ACCOUNT=$2; shift 2 ;;
+        --site-link) SITE_ACTION=link; shift ;;
+        --site-unlink) SITE_ACTION=unlink; shift ;;
+        --person) SITE_PERSON=$2; shift 2 ;;
+        --password-stdin) PASSWORD_STDIN=1; shift ;;
         --update) UPDATE=1; shift ;;
         -h|--help)
             sed -n '2,52p' "$0" 2>/dev/null || true
@@ -132,6 +149,10 @@ while [ $# -gt 0 ]; do
             echo "           --interactive  (Mac: show the removal choices)"
             echo "  worker node: --join URL --token JWT [--name NAME] [--advertise URL]"
             echo "  job site (on a node): --join URL --token TOKEN --job-site --owner NAME [--root-key KEY] [--name NAME]"
+            echo "                        [--site-account USER] [--password-stdin]"
+            echo "  link a person to their account on a job site (Linux system install, as root):"
+            echo "           --site-link --person NAME [--site-account USER] [--password-stdin]"
+            echo "           --site-unlink --person NAME"
             echo "  standalone:  --advertise URL   (the address other devices reach this one at)"
             exit 0 ;;
         *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
@@ -594,6 +615,620 @@ EOF
     as_root systemctl daemon-reload
     as_root systemctl enable --now eugene-plexus-apps-ctl.path >/dev/null 2>&1 \
         || warn "could not enable eugene-plexus-apps-ctl.path, so apps will run as eugene-plexus"
+}
+
+# --- a job site on a Linux system install (2b.2) -----------------------------
+# **Root installs, owns and runs the job-site host and every person's
+# worker** (job-sites-own-enrollment.md §2.4, §3.2; in-app-updates.md, "the
+# root helper follows one rule"). The agent runs as eugene-plexus, and a
+# worker runs as a *person*: whoever can write the program a person's worker
+# runs can become that person. So nothing under $PREFIX is ever executed as
+# root here, and nothing the agent's account can write is ever written
+# through. The program lives in /usr/local/lib/eugene-plexus/site-host
+# (root:root, nothing group- or world-writable), with its own uv and its
+# own Python, fetched and installed by root. The site's state is in the
+# home of an account of its own, eugene-plexus-site, which opens no one's
+# files. The links (who is which account) and the local-server list are
+# root's, in /etc/eugene-plexus/site; a link is made only by root, at the
+# machine, after the person has proved who they are (J36).
+SITE_SVC_ACCOUNT=eugene-plexus-site
+SITE_SVC_HOME=/var/lib/eugene-plexus-site
+SITE_ROOT=/usr/local/lib/eugene-plexus/site-host
+SITE_PY=$SITE_ROOT/venv/bin/python
+SITE_CONF=/etc/eugene-plexus/site
+SITE_CACHE=/var/cache/eugene-plexus-site
+SITE_WORKERS=/usr/local/lib/eugene-plexus/site-workers
+SITE_HOST_UNIT=/etc/systemd/system/eugene-plexus-site-host.service
+SITE_WORKER_UNIT=/etc/systemd/system/eugene-plexus-site-worker@.service
+SITE_WORKERS_UNIT=/etc/systemd/system/eugene-plexus-site-workers.service
+SITE_WORKERS_PATH=/etc/systemd/system/eugene-plexus-site-workers.path
+SITE_DEFAULT_PORT=8300
+SITE_PW=
+SITE_UID=
+SITE_UNAME=
+SITE_PORT=
+
+# What the link program does, as one program so that every way of changing
+# the links follows the same rules: one link per person and one person per
+# account, an account that is a real person's (uid 1000 or more), and the
+# file replaced whole (a temporary file in the same folder, then a rename)
+# so a reader never sees half of one. No apostrophes in it: it sits in
+# single quotes.
+SITE_LINK_PY='
+import json, os, sys, tempfile, time
+
+mode, path = sys.argv[1], sys.argv[2]
+
+
+def fail(message):
+    sys.stderr.write("error: " + message + "\n")
+    sys.exit(1)
+
+
+def load():
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return []
+    except (OSError, ValueError):
+        fail("the links file " + path + " could not be read, so nothing was changed")
+    links = data.get("links") if isinstance(data, dict) else None
+    if not isinstance(links, list) or not all(isinstance(x, dict) for x in links):
+        fail("the links file " + path + " is not a links file, so nothing was changed")
+    return links
+
+
+def save(links):
+    fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".links-")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump({"version": 1, "links": links}, handle, indent=2)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, path)
+
+
+def text(value):
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def add(subject, name, uid, uname):
+    subject, name = text(subject), text(name)
+    if subject is None or name is None:
+        fail("the site did not say who this person is, so nobody was linked")
+    if not (uid.isascii() and uid.isdigit() and int(uid) >= 1000):
+        fail("an account below uid 1000 is not a person, so nobody was linked")
+    links = load()
+    for link in links:
+        same_account = str(link.get("account")) == uid
+        if link.get("subject") == subject:
+            if same_account:
+                link["accountName"] = uname
+                save(links)
+                print(name + " was already linked to " + uname + " (uid " + uid + ").")
+                return
+            fail(name + " is already linked to the account " + str(link.get("accountName")) + " (uid " + str(link.get("account")) + "). A person has one account on a machine. To move them, run --site-unlink --person " + name + " first.")
+        if same_account:
+            fail("the account " + uname + " is already linked to " + str(link.get("name")) + ". One account serves one person. To give it to someone else, run --site-unlink --person " + str(link.get("name")) + " first.")
+    links.append({
+        "subject": subject,
+        "name": name,
+        "account": uid,
+        "accountName": uname,
+        "linkedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
+    save(links)
+    print("Linked " + name + " to the account " + uname + " (uid " + uid + ").")
+
+
+if mode == "owner":
+    try:
+        with open(sys.argv[3], encoding="utf-8") as handle:
+            site = json.load(handle)
+    except (OSError, ValueError):
+        fail("the record of this site could not be read, so its owner was not linked")
+    add(site.get("owner"), site.get("ownerName"), sys.argv[4], sys.argv[5])
+elif mode == "link":
+    try:
+        who = json.loads(sys.argv[3])
+    except ValueError:
+        fail("the site answered with something that is not a person, so nobody was linked")
+    if not isinstance(who, dict):
+        fail("the site answered with something that is not a person, so nobody was linked")
+    add(who.get("subject"), who.get("name"), sys.argv[4], sys.argv[5])
+elif mode == "unlink":
+    wanted = sys.argv[3].casefold()
+    links = load()
+    kept = [x for x in links if str(x.get("subject")) != sys.argv[3] and str(x.get("name")).casefold() != wanted]
+    if len(kept) == len(links):
+        fail("no one named " + sys.argv[3] + " is linked on this machine")
+    save(kept)
+    print("Removed the link for " + sys.argv[3] + ". Their worker stops now.")
+else:
+    fail("unknown mode " + mode)
+'
+
+# Root, with a clean environment, from `/`, with a umask that leaves what it
+# installs readable by the account that runs it. uv gets a root-only home
+# and cache; the proxy variables are carried by name, as `as_service` does,
+# because uv and curl go to the network and a TLS-intercepting proxy is the
+# commonest reason either fails.
+as_site_root() {
+    set -- env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+        HOME="$SITE_CACHE/home" UV_CACHE_DIR="$SITE_CACHE/uv" \
+        UV_PYTHON_INSTALL_DIR="$SITE_ROOT/pythons" \
+        ${HTTPS_PROXY:+"HTTPS_PROXY=$HTTPS_PROXY"} ${https_proxy:+"https_proxy=$https_proxy"} \
+        ${HTTP_PROXY:+"HTTP_PROXY=$HTTP_PROXY"} ${http_proxy:+"http_proxy=$http_proxy"} \
+        ${NO_PROXY:+"NO_PROXY=$NO_PROXY"} ${no_proxy:+"no_proxy=$no_proxy"} \
+        ${SSL_CERT_FILE:+"SSL_CERT_FILE=$SSL_CERT_FILE"} "$@"
+    (umask 022; cd / && as_root "$@")
+}
+
+# The site host's own account, for what only it may do (the join, the
+# check of a person's sign-in). Same clean environment, its own home.
+as_site_account() {
+    set -- env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$SITE_SVC_HOME" \
+        ${HTTPS_PROXY:+"HTTPS_PROXY=$HTTPS_PROXY"} ${https_proxy:+"https_proxy=$https_proxy"} \
+        ${HTTP_PROXY:+"HTTP_PROXY=$HTTP_PROXY"} ${http_proxy:+"http_proxy=$http_proxy"} \
+        ${NO_PROXY:+"NO_PROXY=$NO_PROXY"} ${no_proxy:+"no_proxy=$no_proxy"} \
+        ${SSL_CERT_FILE:+"SSL_CERT_FILE=$SSL_CERT_FILE"} "$@"
+    if [ "$(id -u)" = 0 ] && command -v runuser >/dev/null 2>&1; then
+        (cd / && runuser -u "$SITE_SVC_ACCOUNT" -- "$@")
+    else
+        (cd / && sudo -u "$SITE_SVC_ACCOUNT" -- "$@")
+    fi
+}
+
+# put_changed MODE OWNER:GROUP PATH < content. Written root-only beside the
+# target, given its owner and mode, and renamed over it -- never rewritten in
+# place. A file whose content is already right is left alone (its owner and
+# mode are still set), so an update does not touch a unit it did not change.
+put_changed() {
+    _m=$1; _o=$2; _p=$3
+    (umask 077; as_root tee "$_p.new" >/dev/null)
+    as_root chown "$_o" "$_p.new"
+    as_root chmod "$_m" "$_p.new"
+    if as_root test -f "$_p" && as_root cmp -s "$_p.new" "$_p"; then
+        as_root rm -f "$_p.new"
+        as_root chown "$_o" "$_p"
+        as_root chmod "$_m" "$_p"
+        return 0
+    fi
+    as_root mv -f "$_p.new" "$_p"
+}
+
+# The account the site host runs as: a system user with a home of its own
+# and no shell. Its home is 0700: the site's key and enrollment are in it.
+ensure_site_account() {
+    if ! id "$SITE_SVC_ACCOUNT" >/dev/null 2>&1; then
+        say "creating the $SITE_SVC_ACCOUNT account (the job-site host runs as it)"
+        _nologin=/usr/sbin/nologin
+        [ -x "$_nologin" ] || _nologin=/sbin/nologin
+        [ -x "$_nologin" ] || _nologin=/bin/false
+        as_root useradd --system --user-group --home-dir "$SITE_SVC_HOME" --no-create-home \
+            --shell "$_nologin" "$SITE_SVC_ACCOUNT" \
+            || die "could not create the $SITE_SVC_ACCOUNT account"
+    fi
+    as_root install -d -m 0700 -o "$SITE_SVC_ACCOUNT" -g "$SITE_SVC_ACCOUNT" "$SITE_SVC_HOME"
+}
+
+# The program: its own uv, its own Python, a venv, and the site host at the
+# pin, all fetched and installed by root. Skipped when the recorded pin is
+# the wanted one. EUGENE_PLEXUS_SITE_HOST_SOURCE (a local checkout) is for
+# acceptance runs and always reinstalls.
+install_site_host() {
+    _spec="eugene-plexus-site-host @ https://github.com/eugene-plexus/site-host/archive/$PIN_SITE_HOST.tar.gz"
+    _want=$PIN_SITE_HOST
+    _local=0
+    if [ -n "${EUGENE_PLEXUS_SITE_HOST_SOURCE:-}" ]; then
+        _spec=$EUGENE_PLEXUS_SITE_HOST_SOURCE
+        _want="local:$EUGENE_PLEXUS_SITE_HOST_SOURCE"
+        _local=1
+    fi
+    if [ "$_local" = 0 ] && as_root test -x "$SITE_PY" \
+            && [ "$(as_root cat "$SITE_ROOT/PIN" 2>/dev/null || true)" = "$_want" ]; then
+        say "the job-site host is already installed at its pinned version"
+        return 0
+    fi
+    command -v curl >/dev/null 2>&1 || die "curl is required"
+    as_root install -d -m 0755 -o root -g root /usr/local/lib/eugene-plexus "$SITE_ROOT" "$SITE_ROOT/bin"
+    as_root install -d -m 0700 -o root -g root "$SITE_CACHE" "$SITE_CACHE/home" "$SITE_CACHE/uv"
+    _uv=$SITE_ROOT/bin/uv
+    _have=$(as_site_root "$_uv" --version 2>/dev/null \
+        | sed -n 's/^uv \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' | head -n 1 || true)
+    if [ -z "$_have" ] || version_older "$_have" "$UV_MINIMUM"; then
+        say "fetching uv for the job-site host (into $SITE_ROOT/bin, as root)"
+        # Fetched to a file only root can read or replace, the fetch checked,
+        # then run -- the same shape as step 1, and never `sh -c "$(curl)"`.
+        _boot=$(as_root mktemp "$SITE_CACHE/uv-install.XXXXXX")
+        _err=$(as_root mktemp "$SITE_CACHE/uv-fetch.XXXXXX")
+        if ! as_site_root sh -c 'curl -fsSL -o "$1" https://astral.sh/uv/install.sh 2>"$2"' sh "$_boot" "$_err"; then
+            printf '\033[31merror:\033[0m could not fetch https://astral.sh/uv/install.sh\n' >&2
+            as_root cat "$_err" | sed 's/^/  /' >&2
+            printf '  A proxy that intercepts TLS is the usual cause. Set HTTPS_PROXY.\n' >&2
+            as_root rm -f "$_boot" "$_err"
+            exit 1
+        fi
+        run_step "installing uv for the job-site host" \
+            as_site_root UV_UNMANAGED_INSTALL="$SITE_ROOT/bin" sh "$_boot"
+        as_root rm -f "$_boot" "$_err"
+        as_root test -x "$_uv" || die "uv did not land at $_uv"
+    fi
+    if ! as_root test -x "$SITE_PY"; then
+        run_step "creating a Python $PY_VERSION virtualenv for the job-site host" \
+            as_site_root "$_uv" venv --python "$PY_REQUEST" --python-preference only-managed "$SITE_ROOT/venv"
+        as_root test -x "$SITE_PY" || die "uv reported success but there is no interpreter at $SITE_PY"
+    fi
+    run_step "installing the job-site host" \
+        as_site_root "$_uv" pip install --python "$SITE_PY" \
+        --reinstall-package eugene-plexus-site-host "$_spec"
+    # Root's, and writable by nobody else, whatever uv's umask made.
+    as_root chown -R root:root "$SITE_ROOT"
+    as_root chmod -R go-w,a+rX "$SITE_ROOT"
+    as_site_account "$SITE_PY" -I -c 'import eugene_plexus_site_host, eugene_plexus_site_host.worker' \
+        || die "the job-site host was installed, but the $SITE_SVC_ACCOUNT account cannot run it"
+    printf '%s\n' "$_want" | put_changed 0644 root:root "$SITE_ROOT/PIN"
+}
+
+# Root's configuration: the links and the local servers (root's to write; the
+# site host reads them and cannot change them), and the site host's
+# environment. `links.json` and `servers.yaml` are made once and then left:
+# they are what the people at the machine have put in them.
+write_site_config() {
+    as_root install -d -m 0755 -o root -g root /etc/eugene-plexus "$SITE_CONF"
+    if ! as_root test -e "$SITE_CONF/links.json"; then
+        printf '{"version": 1, "links": []}\n' | put_changed 0644 root:root "$SITE_CONF/links.json"
+    fi
+    if ! as_root test -e "$SITE_CONF/servers.yaml"; then
+        printf 'servers: []\n' | put_changed 0640 "root:$SITE_SVC_ACCOUNT" "$SITE_CONF/servers.yaml"
+    fi
+    as_root chown root:root "$SITE_CONF/links.json"
+    as_root chmod 0644 "$SITE_CONF/links.json"
+    as_root chown "root:$SITE_SVC_ACCOUNT" "$SITE_CONF/servers.yaml"
+    as_root chmod 0640 "$SITE_CONF/servers.yaml"
+    SITE_PORT=$(as_root cat "$SITE_CONF/host.json" 2>/dev/null \
+        | sed -n 's/.*"port"[^0-9]*\([0-9][0-9]*\).*/\1/p' | head -n 1 || true)
+    SITE_PORT=${SITE_PORT:-$SITE_DEFAULT_PORT}
+    printf '{"port": %s}\n' "$SITE_PORT" | put_changed 0644 root:root "$SITE_CONF/host.json"
+    # systemd reads an EnvironmentFile's quotes, so the JSON list is in
+    # single quotes: everything inside them is literal.
+    put_changed 0644 root:root "$SITE_CONF/host.env" <<EOF
+EUGENE_PLEXUS_APP_DATA_DIR=$SITE_SVC_HOME
+EUGENE_PLEXUS_APP_BIND_PORT=$SITE_PORT
+EUGENE_PLEXUS_APP_ACCOUNT_KIND=systemd
+SITE_HOST_PROTECTED_ROOTS='["/var/lib/eugene-plexus","/etc/eugene-plexus","/usr/local/lib/eugene-plexus","/var/lib/eugene-plexus-site"]'
+SITE_HOST_LINKS_FILE=$SITE_CONF/links.json
+SITE_HOST_LOCAL_SERVERS_FILE=$SITE_CONF/servers.yaml
+SITE_HOST_CHANNEL=/run/eugene-plexus-site/channel
+EOF
+}
+
+# The units and the root script that keeps one worker per linked person.
+write_site_units() {
+    _hostuid=$(id -u "$SITE_SVC_ACCOUNT")
+    put_changed 0644 root:root "$SITE_HOST_UNIT" <<EOF
+[Unit]
+Description=Eugene Plexus job-site host
+Documentation=https://github.com/eugene-plexus/specs/blob/main/docs/design/job-sites-own-enrollment.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=$SITE_SVC_ACCOUNT
+Group=$SITE_SVC_ACCOUNT
+EnvironmentFile=$SITE_CONF/host.env
+ExecStart=$SITE_PY -I -m eugene_plexus_site_host serve
+# The folder its channel to the workers is in. 0755: a worker running as a
+# person has to be able to reach the socket in it.
+RuntimeDirectory=eugene-plexus-site
+RuntimeDirectoryMode=0755
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=$SITE_SVC_HOME
+ProtectHome=yes
+PrivateTmp=yes
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    # One instance per linked person, the instance being their uid. No
+    # ProtectHome: it works in that person's own files, as that person. The
+    # server list arrives as a credential (systemd reads it as root), so the
+    # worker's account needs no read of /etc/eugene-plexus/site/servers.yaml.
+    put_changed 0644 root:root "$SITE_WORKER_UNIT" <<EOF
+[Unit]
+Description=Eugene Plexus job-site worker for uid %i
+After=eugene-plexus-site-host.service
+
+[Service]
+User=%i
+ExecStart=$SITE_PY -I -m eugene_plexus_site_host.worker --account %i --channel /run/eugene-plexus-site/channel --host $_hostuid --servers %d/servers --protect /var/lib/eugene-plexus --protect /etc/eugene-plexus --protect /usr/local/lib/eugene-plexus --protect /var/lib/eugene-plexus-site
+LoadCredential=servers:$SITE_CONF/servers.yaml
+NoNewPrivileges=yes
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    put_changed 0644 root:root "$SITE_WORKERS_UNIT" <<EOF
+[Unit]
+Description=Eugene Plexus job site: one worker for each linked person
+
+[Service]
+Type=oneshot
+ExecStart=$SITE_WORKERS
+EOF
+    put_changed 0644 root:root "$SITE_WORKERS_PATH" <<EOF
+[Unit]
+Description=Eugene Plexus job-site links
+
+[Path]
+PathChanged=$SITE_CONF/links.json
+Unit=eugene-plexus-site-workers.service
+
+[Install]
+WantedBy=paths.target
+EOF
+    as_root install -d -m 0755 -o root -g root "$(dirname "$SITE_WORKERS")"
+    put_changed 0755 root:root "$SITE_WORKERS" <<'SITEWORKERS'
+#!/bin/sh
+# Installed by Eugene Plexus's install.sh; see "a job site on a Linux system
+# install" there. Run as root by eugene-plexus-site-workers.service when
+# /etc/eugene-plexus/site/links.json changes, and by the installer.
+#
+# One worker for each linked account, and none for any other. Reads only the
+# root-owned links file, with the root-owned program; an id is used only if
+# it is all digits, is 1000 or more, and names an account on this machine.
+# Safe to run any number of times.
+set -u
+LINKS=/etc/eugene-plexus/site/links.json
+PY=/usr/local/lib/eugene-plexus/site-host/venv/bin/python
+UNIT=eugene-plexus-site-worker
+
+WANT=$("$PY" -I -c '
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+    for link in data["links"]:
+        account = link["account"]
+        if isinstance(account, str) and account.isascii() and account.isdigit():
+            print(account)
+except FileNotFoundError:
+    pass
+' "$LINKS") || { echo "eugene-plexus-site-workers: $LINKS could not be read; no worker was changed" >&2; exit 1; }
+
+LINKED=" "
+for U in $WANT; do
+    case "$U" in ''|*[!0-9]*) continue ;; esac
+    [ "${#U}" -le 9 ] || continue
+    [ "$(expr "$U" + 0)" = "$U" ] || continue
+    [ "$U" -ge 1000 ] || continue
+    if ! getent passwd "$U" >/dev/null 2>&1; then
+        echo "eugene-plexus-site-workers: no account has uid $U on this machine; skipped" >&2
+        continue
+    fi
+    LINKED="$LINKED$U "
+    systemctl enable --now "$UNIT@$U.service" >/dev/null 2>&1 \
+        || echo "eugene-plexus-site-workers: could not start the worker for uid $U" >&2
+done
+
+# Every worker that is loaded, or only enabled, for an account that is not
+# linked: stopped and disabled.
+HAVE=$( {
+    systemctl list-units --all --plain --no-legend --type=service "$UNIT@*.service" 2>/dev/null |
+        awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^eugene-plexus-site-worker@/) { print $i; break } }'
+    find /etc/systemd/system -name "$UNIT@*.service" 2>/dev/null | sed 's|.*/||'
+} | sed -n "s/^$UNIT@\([0-9][0-9]*\)\.service\$/\1/p" | sort -u )
+for U in $HAVE; do
+    case "$LINKED" in *" $U "*) continue ;; esac
+    systemctl disable --now "$UNIT@$U.service" >/dev/null 2>&1 \
+        || systemctl stop "$UNIT@$U.service" >/dev/null 2>&1 || true
+done
+exit 0
+SITEWORKERS
+}
+
+site_reconcile() {
+    as_root "$SITE_WORKERS" || warn "could not start the workers for the linked people: sudo $SITE_WORKERS"
+}
+
+# Everything a site needs on disk, in one call: used by --job-site and by
+# an update.
+site_prepare() {
+    ensure_site_account
+    install_site_host
+    write_site_config
+    write_site_units
+}
+
+# An update (run as root by the update unit): the program at this
+# installer's pin, the units as this installer writes them, and the host and
+# its workers restarted. Does nothing on a machine that is not a job site.
+update_site_host() {
+    as_root test -f "$SITE_CONF/host.env" || return 0
+    say "updating the job-site host"
+    site_prepare
+    as_root systemctl daemon-reload
+    as_root systemctl restart eugene-plexus-site-host.service
+    as_root systemctl try-restart 'eugene-plexus-site-worker@*.service' >/dev/null 2>&1 || true
+    site_reconcile
+}
+
+# Removal. The state folder holds the site's key and its enrollment, so it
+# is handled like the prefix is: moved aside, handed to root (the account is
+# deleted next, and files left under its number would belong to whichever
+# system account is given that number later), and said. It is never deleted
+# here. The apps' state folders (systemd's) are left where they are, so
+# this is the one place a state folder is moved.
+remove_site_host() {
+    as_root systemctl disable --now eugene-plexus-site-workers.path eugene-plexus-site-workers.service \
+        eugene-plexus-site-host.service >/dev/null 2>&1 || true
+    for _u in $(as_root find /etc/systemd/system -name 'eugene-plexus-site-worker@[0-9]*.service' 2>/dev/null \
+            | sed 's|.*/||' | sort -u); do
+        as_root systemctl disable --now "$_u" >/dev/null 2>&1 || as_root systemctl stop "$_u" >/dev/null 2>&1 || true
+    done
+    as_root rm -f "$SITE_HOST_UNIT" "$SITE_WORKER_UNIT" "$SITE_WORKERS_UNIT" "$SITE_WORKERS_PATH" "$SITE_WORKERS"
+    as_root rm -rf "$SITE_ROOT" "$SITE_CONF" "$SITE_CACHE"
+    as_root rmdir /etc/eugene-plexus >/dev/null 2>&1 || true
+    as_root systemctl daemon-reload >/dev/null 2>&1 || true
+    if as_root test -d "$SITE_SVC_HOME"; then
+        _keep=$SITE_SVC_HOME.removed-$(date +%Y%m%d%H%M%S)
+        as_root mv "$SITE_SVC_HOME" "$_keep"
+        as_root chown -R root:root "$_keep"
+        as_root chmod 0700 "$_keep"
+        say "the job site's own records are at $_keep (readable by root only);"
+        say "  delete it when you are sure: sudo rm -rf '$_keep'. The install it joined still lists"
+        say "  this machine as a job site: remove it there (Workbench, Job sites)."
+    fi
+    if id "$SITE_SVC_ACCOUNT" >/dev/null 2>&1; then
+        as_root userdel "$SITE_SVC_ACCOUNT" >/dev/null 2>&1 \
+            || warn "could not remove the $SITE_SVC_ACCOUNT account: sudo userdel $SITE_SVC_ACCOUNT"
+    fi
+}
+
+# --- the person at the machine: a password and an account -----------------
+# A password is read where only the person can see it -- the terminal, with
+# echo off -- or, for automation, from the first line of this script's own
+# standard input (--password-stdin). It is never an argument or part of the
+# environment of any process: it is written to the site host's stdin by a
+# shell builtin.
+site_read_password() {
+    SITE_PW=
+    if [ "$PASSWORD_STDIN" = 1 ]; then
+        IFS= read -r SITE_PW || true
+    else
+        ( : </dev/tty ) 2>/dev/null || die "this needs $1's Eugene password, typed at a terminal, and this
+       has none. Run it from a terminal, or give the password as the first line of
+       standard input with --password-stdin (save this script to a file first, so its
+       own standard input is free)."
+        printf "%s's Eugene password: " "$1" >/dev/tty
+        TTY_SAVED=$(stty -g </dev/tty 2>/dev/null || true)
+        stty -echo </dev/tty 2>/dev/null || true
+        IFS= read -r SITE_PW </dev/tty || true
+        if [ -n "$TTY_SAVED" ]; then stty "$TTY_SAVED" </dev/tty 2>/dev/null || true; fi
+        TTY_SAVED=
+        printf '\n' >/dev/tty
+    fi
+    [ -n "$SITE_PW" ] || die "no password was given, so nothing was changed"
+}
+
+# Which account a person works as: --site-account, else the account that ran
+# sudo. Never root, never a system account, never one of Eugene's own.
+site_resolve_account() {
+    if [ -n "$SITE_LINK_ACCOUNT" ]; then
+        SITE_UID=$(id -u -- "$SITE_LINK_ACCOUNT" 2>/dev/null) \
+            || die "there is no account named $SITE_LINK_ACCOUNT on this machine"
+    elif [ -n "${SUDO_UID:-}" ]; then
+        SITE_UID=$SUDO_UID
+    else
+        die "say which account this person works as on this machine:  --site-account USER
+       (it is taken from sudo when you run this with sudo)"
+    fi
+    case "$SITE_UID" in ''|*[!0-9]*) die "that account's number ($SITE_UID) is not one this installer can use" ;; esac
+    [ "$SITE_UID" != 0 ] || die "root cannot be linked to a person: their calls would run as root"
+    [ "$SITE_UID" -ge 1000 ] || die "uid $SITE_UID is a system account, not a person (people are uid 1000 and up)"
+    for _a in "$SITE_SVC_ACCOUNT" "$SYSTEM_ACCOUNT"; do
+        if [ "$(id -u -- "$_a" 2>/dev/null || true)" = "$SITE_UID" ]; then
+            die "$_a is one of Eugene's own accounts, not a person. Name the person's own account."
+        fi
+    done
+    SITE_UNAME=$(getent passwd "$SITE_UID" | cut -d: -f1)
+    [ -n "$SITE_UNAME" ] || die "no account on this machine has uid $SITE_UID"
+}
+
+site_link_py() { as_site_root "$SITE_PY" -I -c "$SITE_LINK_PY" "$@"; }
+
+# What every --job-site / --site-link / --site-unlink on a system install
+# needs first.
+site_system_preflight() {
+    [ "$MODE" = system ] || die "$1 needs Eugene installed as a system service (the default on Linux). A per-user
+       install (--user) serves only the person who installed it, so it has nothing to link."
+    [ -d /run/systemd/system ] || die "this machine is not running systemd, so a job site cannot run its workers here"
+    if [ "$(id -u)" != 0 ]; then
+        command -v sudo >/dev/null 2>&1 || die "this needs root, and sudo is not installed. Run it as root."
+        sudo -v || die "sudo was refused, so nothing was changed"
+    fi
+}
+
+site_require_installed() {
+    as_root test -f "$SITE_CONF/host.env" && as_root test -f "$SITE_SVC_HOME/site.json" \
+        || die "this machine is not a job site yet. Add it first, with the join command Workbench gives
+       you (Job sites -> Add a job site)."
+}
+
+# --site-link: who the person is, from their Eugene sign-in typed here, and
+# then a link written by root. The site host's own account asks the root;
+# root never takes the person's word for who they are.
+site_link_person() {
+    [ -n "$SITE_PERSON" ] || die "--site-link needs --person NAME, how that person signs in to Eugene"
+    site_system_preflight "--site-link"
+    site_require_installed
+    site_resolve_account
+    site_read_password "$SITE_PERSON"
+    _who=$(printf '%s\n' "$SITE_PW" | as_site_account "$SITE_PY" -I -m eugene_plexus_site_host \
+        check-person --name "$SITE_PERSON" --data-dir "$SITE_SVC_HOME") \
+        || die "$SITE_PERSON could not be checked (see above), so nobody was linked"
+    SITE_PW=
+    site_link_py link "$SITE_CONF/links.json" "$_who" "$SITE_UID" "$SITE_UNAME" \
+        || die "nobody was linked"
+    # The path unit starts the worker too; this makes it immediate.
+    site_reconcile
+    say "done: $SITE_PERSON's job-site calls on this machine now run as $SITE_UNAME, in their own files"
+    say "  and with their own permissions."
+}
+
+site_unlink_person() {
+    [ -n "$SITE_PERSON" ] || die "--site-unlink needs --person NAME"
+    site_system_preflight "--site-unlink"
+    site_require_installed
+    site_link_py unlink "$SITE_CONF/links.json" "$SITE_PERSON" || die "nobody was unlinked"
+    site_reconcile
+}
+
+# --job-site on a system install: the program, the account, the root's
+# configuration and units; the site host's own `join`, run as its own
+# account with the owner's password on its standard input; the owner's link;
+# then the site host and the workers started.
+site_join_system() {
+    site_system_preflight "a job site"
+    as_root test -x "$VENV/bin/eugene-plexus-agent" || die "this machine is not a node yet.
+       Install Eugene here and join it to your install first, then run this
+       again. A machine that is only a job site waits for the standalone install."
+    SITE_LABEL=${JOIN_NAME:-$(hostname)}
+    # Before anything is changed: a link that cannot be made stops the run
+    # now, not after the machine has joined.
+    site_resolve_account
+    site_prepare
+    as_root systemctl daemon-reload
+    site_read_password "$JOIN_OWNER"
+    set -- join --data-dir "$SITE_SVC_HOME" --url "$JOIN_CONTROL" --token "$JOIN_TOKEN" \
+        --owner "$JOIN_OWNER" --label "$SITE_LABEL"
+    if [ -n "$JOIN_ROOT_KEY" ]; then set -- "$@" --root-key "$JOIN_ROOT_KEY"; fi
+    say "adding $SITE_LABEL as a job site of $JOIN_OWNER"
+    printf '%s\n' "$SITE_PW" | as_site_account "$SITE_PY" -I -m eugene_plexus_site_host "$@" \
+        || die "the job site was not added (see above). Its program and accounts are installed;
+       run the same command again once that is fixed."
+    SITE_PW=
+    site_link_py owner "$SITE_CONF/links.json" "$SITE_SVC_HOME/site.json" "$SITE_UID" "$SITE_UNAME" \
+        || die "the site joined, but its owner was not linked to an account. Run:  --site-link --person $JOIN_OWNER"
+    as_root systemctl enable --now eugene-plexus-site-host.service eugene-plexus-site-workers.path \
+        >/dev/null 2>&1 || warn "could not enable the job-site units: sudo systemctl enable --now eugene-plexus-site-host.service eugene-plexus-site-workers.path"
+    # The host reads its enrollment at start, and may have run before it.
+    as_root systemctl restart eugene-plexus-site-host.service \
+        || warn "the job-site host did not start: sudo journalctl -u eugene-plexus-site-host"
+    site_reconcile
+    say "done: $SITE_LABEL is a job site of $JOIN_OWNER. Its owner manages it from Workbench (Job sites)."
+    say "  $JOIN_OWNER's calls on this machine run as the account $SITE_UNAME, in their own files."
+    say "  Anyone else's run in that same worker, confined to the folders $JOIN_OWNER shares."
+    say "  To let another person work as their own account here, they or you run, on this machine:"
+    say "    curl -fsSL $INSTALLER_URL | sudo sh -s -- --site-link --person NAME --account USER"
 }
 
 # --- service plumbing -------------------------------------------------
@@ -1296,6 +1931,8 @@ if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
     as_root systemctl stop 'eugene-plexus-app@*.service' >/dev/null 2>&1 || true
     as_root rm -f "$APPS_TEMPLATE" "$APPS_CTL_SERVICE" "$APPS_CTL_PATH" "$APPS_HELPER"
     as_root sh -c 'rm -rf /etc/systemd/system/eugene-plexus-app@*.service.d'
+    # The job-site host, its workers, its program and its account (if any).
+    remove_site_host
     as_root rm -f "$SYSTEM_UNIT" "$UPDATE_SERVICE" "$UPDATE_PATH" "$UPDATE_HELPER"
     as_root rm -rf "$UPDATE_STAGE"
     as_root systemctl daemon-reload >/dev/null 2>&1 || true
@@ -1499,6 +2136,8 @@ restore_existing() {
 # back. `die` exits, and so does `run_step`, so this is the one place.
 on_exit() {
     _code=$?
+    # A password was being typed: give the terminal its echo back.
+    if [ -n "$TTY_SAVED" ]; then stty "$TTY_SAVED" </dev/tty 2>/dev/null || true; fi
     if [ "$_code" != 0 ] && [ -n "$SET_ASIDE_STAMP" ] && [ "$JOIN_COMMITTED" = 0 ] && [ "$RESTORED" = 0 ]; then
         restore_existing
         printf '       This machine is back as it was.\n' >&2
@@ -1514,19 +2153,43 @@ trap 'exit 130' INT TERM
 # (J21). The site host makes the site's key itself; this script never sees
 # the owner's password, which the agent's `site join` asks for at the
 # terminal.
+#
+# **On a Linux system install (2b.2) root does all of it** -- see "a job site
+# on a Linux system install" above: root installs the site host's program,
+# runs the site host's own `join` as its own account, and makes the links. The
+# agent there is unprivileged and `site join` through it would run agent code
+# the `eugene-plexus` account owns, as root. A per-user install has no
+# privilege to separate: the agent's own `site join` runs as this user and
+# links the owner to this account itself, and the site serves only them (J38).
+if [ -n "$SITE_ACTION" ] && { [ "$JOIN_SITE" = 1 ] || [ "$UPDATE" = 1 ] || [ -n "$JOIN_CONTROL" ]; }; then
+    die "--site-link and --site-unlink are run on their own, not with --job-site, --join or --update"
+fi
+if [ "$SITE_ACTION" = link ]; then
+    site_link_person
+    exit 0
+elif [ "$SITE_ACTION" = unlink ]; then
+    site_unlink_person
+    exit 0
+fi
+
 if [ "$JOIN_SITE" = 1 ]; then
     if [ -z "$JOIN_CONTROL" ] || [ -z "$JOIN_TOKEN" ] || [ -z "$JOIN_OWNER" ]; then
         die "a job site's join command gives --join, --token and --owner (copy the whole command from Workbench)"
     fi
-    [ "$MODE" = system ] || die "a job site needs Eugene installed as a system service (the default), so its tools run in an account of their own"
-    as_root test -x "$VENV/bin/eugene-plexus-agent" || die "this machine is not a node yet.
+    if [ "$MODE" = system ]; then
+        site_join_system
+        exit 0
+    fi
+    [ "$PLATFORM" = linux ] || [ "$PLATFORM" = macos ] || die "this installer adds job sites on Linux and macOS"
+    [ -x "$VENV/bin/eugene-plexus-agent" ] || die "this machine is not a node yet.
        Install Eugene here and join it to your install first, then run this
        again. A machine that is only a job site waits for the standalone install."
     SITE_LABEL=${JOIN_NAME:-$(hostname)}
     set -- site join --url "$JOIN_CONTROL" --token "$JOIN_TOKEN" --owner "$JOIN_OWNER" --label "$SITE_LABEL"
     if [ -n "$JOIN_ROOT_KEY" ]; then set -- "$@" --root-key "$JOIN_ROOT_KEY"; fi
-    say "adding $SITE_LABEL as a job site of $JOIN_OWNER"
-    as_root env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$CONFIG" "$VENV/bin/eugene-plexus-agent" "$@" \
+    if [ -n "$SITE_LINK_ACCOUNT" ]; then set -- "$@" --site-account "$SITE_LINK_ACCOUNT"; fi
+    say "adding $SITE_LABEL as a job site of $JOIN_OWNER (it serves only you; tools run as you)"
+    env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$CONFIG" "$VENV/bin/eugene-plexus-agent" "$@" \
         || die "the job site was not added (see above). Nothing else on this machine changed."
     say "done: $SITE_LABEL is a job site of $JOIN_OWNER. Its owner manages it from Workbench (Job sites)."
     exit 0
@@ -3193,7 +3856,12 @@ EOF
 if [ "$UPDATE" = 1 ]; then
     # The unit stays as it was written; the update helper is this
     # version's, since a newer installer may carry a newer one.
-    if [ "$MODE" = system ]; then write_update_helper; write_app_units; fi
+    if [ "$MODE" = system ]; then
+        write_update_helper; write_app_units
+        # A failure here must not stop the agent's own update before it is
+        # restarted: a subshell, so `die` and `run_step` end only this step.
+        ( update_site_host ) || warn "the job-site host was not updated (see above); the agent was"
+    fi
 elif [ "$MODE" = system ]; then
     prepare_models_dir
     say "writing $SYSTEM_UNIT"
