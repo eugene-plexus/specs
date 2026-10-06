@@ -564,22 +564,70 @@ the case.
     route refuses the announcement anyway.
   - macOS, Docker and per-user installs cannot be job sites (§2.1).
 
-### 5.2 Slice 2 in progress (2026-10-05)
+### 5.2 What building slice 2 found (2026-10-05)
 
-Paused to hand off to a fresh session. Built so far:
-- **Contracts `ba9a280`** (`openapi/site-host.yaml`, `components/sites.yaml`,
-  control's envelope, `/oidc/sites/*`, `Enrollment.owner`). They predate J6g
-  and need one revision for it (§6.3).
-- **The `site-host` repo, `f58a0a6`**: the host, with policy, audit log,
-  local servers, the J9 gate, node mode and 25 tests. Built one server per
-  folder; J6g changes that.
-- **The agent, on branch `slice2-site-host`**: the pinned site owner in
-  `node.yaml` (`siteOwner`, from `Enrollment.owner`, else the first poll's),
-  and the new relay `site_host.py`, not yet wired in.
+Built: MCP between site and root (J6) and site-final policy (J8), with J6g's
+one file server per machine. Record:
+[`job-sites-mcp-run.md`](../acceptance/job-sites-mcp-run.md).
 
-**Not started:** control's broker and routes, the rest of the agent (wiring,
-the `site` CLI, tests, deleting `_node_file_helper`), Workbench, the
-acceptance and sabotage runs, and the pins.
+Pins: agent `f6705fc` (site-host `38d7ed8`, Workbench dist `bf4aeef` from
+`d872e00`), control `d4a7dda`, ui `52d84f7` / dist `8cbe323`.
+
+- **Contracts `29cbf3c` and `b98899c`** revise `ba9a280` for J6g. Eugene's
+  file server is `files`, once per machine; its tools take a `folder`
+  argument whose value is the folder's name, unique on the machine (an older
+  duplicate reads `Name (2)`). Folders carry their own people (read, or
+  writable as a standing pre-approval for `write_text`), set by a new
+  management action, `folder.people`. `grants` is a list. A site's report
+  names each folder's identity, because Eugene's owner's dev-mode grant must.
+- **`site-host`** builds the file server for one person and one request: the
+  `folder` argument lists only that person's folders, and `write_text` only
+  the ones they may change. The worker's folder-scope tests moved here.
+- **The agent** relays to the host (`SiteHostRelay`) and has the elevated
+  `site` CLI (`status`, `audit`, `server add|remove`). The bespoke helper and
+  its worker are deleted.
+- **Control** carries the envelope. Listings come from each site's last
+  report, a cache: the site checks every call again. Every owner route is a
+  relayed management action. The console's routes need the `node-files`
+  capability (J15).
+- **Workbench** shows one server per machine, narrowed to the folders a
+  chat selected, and a job site's local servers as tools a chat can choose.
+  Chats still select folders as `node:<id>`, so no stored id needed
+  migrating. The Job sites page manages folder people, local servers, the
+  dev-mode opt-in and the audit log.
+- **The console** says when a site's owner has not let Eugene's owner in.
+
+**Found by building it:**
+- **The 2026-07-28 envelope requires `clientCapabilities`** in `_meta`, and
+  the SDK answers a request without it with an error. The contract said it
+  was optional, and Workbench's first build left it out. Workbench's fake now
+  refuses such a request too.
+- **The local servers cannot travel in the host's launch environment.** A
+  list can exceed the agent's 2,048-character value cap, and an argument
+  holding braces would trip the launcher's placeholder fill. The agent writes
+  the list to a file beside the host's install, which the host's account can
+  read and not write, and names its SHA-256 in the environment. The host
+  refuses a file that differs.
+- **`site server add --command X` started a whole agent.** The option shared
+  its argparse dest with the subcommand. The acceptance found it, running the
+  CLI unelevated. An argument beginning with `-` is given as `--arg=-x`.
+- **A slice 1 defect: the TLS key list was decoded with no clock leeway.** A
+  root 2.4 s ahead of the site (WSL2 behind its NAT) failed the join with
+  *"not signed by its pinned key"*. It allows the 300 s every token here
+  allows, and a list dated further ahead says to check the clocks.
+- **Harness, not product:** from Git Bash on Windows, a child that inherited
+  the script's standard input hung at start, twice: the site agent, and the
+  build backend uv ran for the site host. Every child gets `DEVNULL` now.
+- **A slice 1 site's folders do not carry over.** Slice 1 kept them on the
+  root's replicated record. They still replay but grant nothing, so a site
+  upgraded from slice 1 registers its folders again. Slice 1 reached edge
+  only.
+
+**Not done, named:**
+- Approving each call at the machine waits for the held channel (slice 3).
+- The service install on GitHub's runners
+  (`node-file-helpers-service-acceptance.py`) needs the pushed pins. It is a
+  manual dispatch.
 
 **Later, each as its own design:**
 - slice 2b, the workspace server under the person's own account (J6h, J6i);

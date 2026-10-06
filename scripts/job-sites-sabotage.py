@@ -1,5 +1,10 @@
 """Sabotage pass for Job Sites, slice 1 (docs/design/remote-nodes.md §5).
 
+Slice 2 replaced the file helper (`node_file_helper.py`) with the site host,
+so the anchors here that name it no longer exist and this pass refuses to
+start on them; `job-sites-mcp-sabotage.py` is slice 2's. Kept as the record
+of slice 1's 45 of 45.
+
 Each sabotage puts back one way the slice could be wrong -- in the control
 root, the agent, the shared token module, Workbench or the console -- runs the
 gate that should see it, and requires that gate to FAIL.
