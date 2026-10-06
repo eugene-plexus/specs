@@ -424,8 +424,8 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         processes.append(subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), "--serve", name, "--directory",
              str(directory), "--port", str(ports[name])],
-            cwd=directory, env=env, stdout=(directory / "process.log").open("ab"),
-            stderr=subprocess.STDOUT,
+            cwd=directory, env=env, stdin=subprocess.DEVNULL,
+            stdout=(directory / "process.log").open("ab"), stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         ))
         wait(lambda: call(name, "GET", "/healthz").status_code == 200, name)
@@ -450,7 +450,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
             processes.append(subprocess.Popen(
                 [engine, "-m", gguf, "--host", "127.0.0.1", "--port", str(ports["engine"]),
                  "--alias", MODEL, "--jinja", "-c", "8192", "--reasoning-budget", "0"],
-                stdout=log, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             ))
             wait(lambda: client.get(url["engine"] + "/health").status_code == 200, "llama-server", 180)
@@ -800,7 +800,7 @@ def browser_run(work: Path, *, ui: str, passphrase: str, fixture: str, call, liv
                                "playwright": str(ROOT / "ui" / "node_modules" / "playwright-core")}),
                    encoding="utf-8")
     run = subprocess.run(["node", str(HERE / "c3-workbench-browser.mjs"), str(cfg)],
-                         capture_output=True, text=True, timeout=600)
+                         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=600)
     if not result.is_file():
         check("B0", "Chrome ran the page", False, (run.stdout + run.stderr)[-1500:])
         return

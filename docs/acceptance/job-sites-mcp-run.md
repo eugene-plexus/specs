@@ -139,6 +139,38 @@ gates are:
 could not reach its check: no folder was writable, so `write_text` was never
 offered and its folder check never ran. It uses a writable folder now.
 
+## Other gates, run again before the push
+
+These ran on this machine on 2026-10-05 against the pins above.
+
+- **C3 (`c3-workbench-acceptance.py`): 27 of 27, three runs.** It installs
+  Workbench `bf4aeef` from the agent's catalogue. One earlier run timed out
+  with the install still `resolving` after 600 s. **That timeout is not
+  reproduced and not explained:**
+  - The three runs gave the harness's children three different stdin
+    setups: stdin from `/dev/null`, the old script inheriting its stdin, and
+    the script with `stdin=DEVNULL` on every child. In all three, uv
+    installed the archive in about three minutes.
+  - On this machine, Git Bash's `/dev/null` reaches a Windows child as `NUL`,
+    which Python reports as a terminal. `subprocess.DEVNULL` opens the same
+    device, so stdin cannot be what differed between these runs.
+  - Network speed is the suspect left.
+
+  The script now gives every child `stdin=DEVNULL`, by the harness rule. That
+  change is not the fix.
+- **The SDK gates, run with `EP_SDK_PYTHON`** pointing at an interpreter
+  holding `openai` 3.20.0 and `anthropic`. Each passed with exit code 0:
+
+  | Script | Checks passed |
+  |---|---|
+  | p3 | 27 |
+  | p4 | 15 |
+  | p5 | 8 |
+  | p6 | 9 |
+  | p8-search | 15 |
+
+  Their earlier stop was the missing SDK.
+
 ## Not covered, named
 
 - **The service install.** The host in its own OS account is C1's
