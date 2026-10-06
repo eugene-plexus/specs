@@ -12,7 +12,7 @@ checkout --`. It opens with a baseline assertion that every gate it uses
 passes unsabotaged, and refuses to start if any anchor is not found exactly
 once.
 
-    python scripts/job-sites-sabotage.py [label filter | --from=N | --gate=NAME | --anchors]
+    python scripts/job-sites-sabotage.py [label filter | --from=N | --gate=NAME | --labels=FILE | --anchors]
 
 `--anchors` only checks that every anchor is found exactly once. The
 acceptance gate runs `job-sites-acceptance.py --root-wsl` on Windows (the
@@ -55,6 +55,21 @@ GATES: dict[str, tuple[list[str], Path]] = {
         "control", "tests/test_sites.py", "tests/test_replay_equivalence.py", "tests/test_tokens.py"
     ),
     "workbench": pytest("workbench", "tests/test_job_sites.py", "tests/test_node_folders.py"),
+    # Slice 2b.2: each person's worker, the link page and the links file.
+    "agent-site": pytest(
+        "agent",
+        "tests/test_site_links.py",
+        "tests/test_site_link_page.py",
+        "tests/test_site_link_cli.py",
+        "tests/test_site_workers.py",
+        "tests/test_site_workers_win32_calls.py",
+        "tests/test_site_host.py",
+        "tests/test_entrypoint.py",
+        "tests/test_entrypoint_setup.py",
+    ),
+    "control-links": pytest(
+        "control", "tests/test_sites.py", "tests/test_site_links.py", "tests/test_oidc.py"
+    ),
     "acceptance": (
         [venv("agent"), str(SPECS / "scripts" / "job-sites-acceptance.py")]
         + (["--root-wsl"] if WINDOWS else []),
@@ -884,6 +899,1260 @@ SABOTAGES: list[Sabotage] = [
 ]
 
 
+# === Slice 2b.2: each person's worker, as that person (§3.2, §3.2.1; J24-J27, J36-J38) =====
+CHANNEL_LOCAL = SITE_HOST / "local_channel.py"
+WORKERS = SITE_HOST / "workers.py"
+ACCOUNTS = SITE_HOST / "accounts.py"
+WORKER = SITE_HOST / "worker.py"
+HOST_LINKS = SITE_HOST / "links.py"
+HOST_SETTINGS = SITE_HOST / "settings.py"
+SITE_LINKS = AGENT / "site_links.py"
+SITE_WORKERS = AGENT / "site_workers.py"
+LINK_ROUTE = AGENT / "routes" / "site_link.py"
+DEPENDENCIES = AGENT / "dependencies.py"
+OIDC = CONTROL / "oidc.py"
+OIDC_ROUTE = CONTROL / "routes" / "oidc.py"
+
+
+def e(
+    label: str, path: Path, old: str, new: str, gate: str, escapes: str | None = None
+) -> Sabotage:
+    return Sabotage(label, one(path, old, new), gate, escapes)
+
+
+SABOTAGES.extend(
+    [
+        # --- site host: the local channel -------------------------------------------
+        e(
+            "the channel grants clients the right to create another pipe instance",
+            CHANNEL_LOCAL,
+            "    CLIENT_ACCESS = 0x00120083\n",
+            "    CLIENT_ACCESS = 0x00120087\n",
+            "site-host",
+        ),
+        e(
+            "the channel grants clients generic write",
+            CHANNEL_LOCAL,
+            "    CLIENT_ACCESS = 0x00120083\n",
+            "    CLIENT_ACCESS = 0x0012019F\n",
+            "site-host",
+        ),
+        e(
+            "the first pipe instance is not exclusive",
+            CHANNEL_LOCAL,
+            "            if first:\n                mode |= FILE_FLAG_FIRST_PIPE_INSTANCE\n",
+            "            if first:\n                pass\n",
+            "site-host",
+        ),
+        e(
+            "the pipe's security descriptor names no owner",
+            CHANNEL_LOCAL,
+            'f"O:{owner}D:P(A;;GA;;;SY)',
+            'f"D:P(A;;GA;;;SY)',
+            "site-host",
+        ),
+        e(
+            "the pipe answers clients on other machines",
+            CHANNEL_LOCAL,
+            "                PIPE_REJECT_REMOTE_CLIENTS,\n                PIPE_UNLIMITED_INSTANCES,\n",
+            "                0,\n                PIPE_UNLIMITED_INSTANCES,\n",
+            "site-host",
+        ),
+        e(
+            "a worker's account is the one its hello claims, not the one the system reports",
+            CHANNEL_LOCAL,
+            "            conn.hello = hello\n            conn.start_reading(rest)\n",
+            '            conn.hello = hello\n            conn.account = str(hello.get("account") or account)\n'
+            "            conn.start_reading(rest)\n",
+            "site-host",
+        ),
+        e(
+            "a worker's hello is not required to say hello",
+            CHANNEL_LOCAL,
+            '            if hello.get("t") != "hello":\n                pipe.close()\n                return\n',
+            '            if False:\n                pipe.close()\n                return\n',
+            "site-host",
+        ),
+        e(
+            "a failed RevertToSelf leaves the thread running as the worker",
+            CHANNEL_LOCAL,
+            "            if not _RevertToSelf():\n"
+            "                # A thread left running as someone else must not run on.\n"
+            "                os._exit(70)\n",
+            "            _RevertToSelf()\n",
+            "site-host",
+        ),
+        e(
+            "workers connect at a level that lets the site host act as them",
+            CHANNEL_LOCAL,
+            "                FILE_FLAG_OVERLAPPED | SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,\n",
+            "                FILE_FLAG_OVERLAPPED,\n",
+            "site-host",
+        ),
+        e(
+            "a worker does not check who owns the pipe it found",
+            CHANNEL_LOCAL,
+            "        if owner != host:\n            _CloseHandle(handle)\n",
+            "        if False:\n            _CloseHandle(handle)\n",
+            "site-host",
+        ),
+        e(
+            "an outgoing frame may be any size",
+            CHANNEL_LOCAL,
+            "\n    if len(data) > MAX_FRAME:\n",
+            "\n    if False:\n",
+            "site-host",
+        ),
+        e(
+            "an incoming frame may be any size (the buffer)",
+            CHANNEL_LOCAL,
+            "                if len(self._buffer) > MAX_FRAME:\n",
+            "                if False:\n",
+            "site-host",
+        ),
+        e(
+            "an incoming frame may be any size (the line)",
+            CHANNEL_LOCAL,
+            "            if len(line) + 1 > MAX_FRAME:\n",
+            "            if False:\n",
+            "site-host",
+        ),
+        e(
+            "a first frame may be any size",
+            CHANNEL_LOCAL,
+            "            if len(data) > MAX_FRAME:\n",
+            "            if False:\n",
+            "site-host",
+        ),
+        # --- site host: one worker per linked account ---------------------------------
+        e(
+            "a worker from an account no one linked is served",
+            WORKERS,
+            "        link = self.links.for_account(conn.account)\n        if link is None:\n",
+            "        link = self.links.for_account(conn.account)\n        if False:\n",
+            "site-host",
+        ),
+        e(
+            "an unlinked worker is not told it was refused",
+            WORKERS,
+            '                        "t": "refused",\n',
+            '                        "t": "ignored",\n',
+            "site-host",
+        ),
+        e(
+            "a replaced worker is not told it was replaced",
+            WORKERS,
+            '                await old.conn.send({"t": "replaced"})\n',
+            "                pass\n",
+            "site-host",
+        ),
+        e(
+            "a replaced worker's connection stays open",
+            WORKERS,
+            "            await self._drop(old)\n",
+            "            pass\n",
+            "site-host",
+        ),
+        e(
+            "prune keeps a worker whose link was removed",
+            WORKERS,
+            "            if self.links.for_account(account) is None:\n                await self._drop(worker)\n",
+            "            if False:\n                await self._drop(worker)\n",
+            "site-host",
+        ),
+        e(
+            "a worker that goes away stays in the table",
+            WORKERS,
+            "            if self._by_account.get(worker.conn.account) is worker:\n"
+            "                del self._by_account[worker.conn.account]\n"
+            "            worker.fail_all()\n"
+            "            with contextlib.suppress(Exception):\n"
+            "                await worker.conn.close()\n",
+            "            worker.fail_all()\n"
+            "            with contextlib.suppress(Exception):\n"
+            "                await worker.conn.close()\n",
+            "site-host",
+        ),
+        e(
+            "a worker that goes away leaves its calls waiting",
+            WORKERS,
+            "                del self._by_account[worker.conn.account]\n            worker.fail_all()\n            with",
+            "                del self._by_account[worker.conn.account]\n            with",
+            "site-host",
+        ),
+        e(
+            "an unanswered call is reported as a worker that went away",
+            WORKERS,
+            "        except TimeoutError:\n            raise WorkerTimeout from None\n",
+            "        except TimeoutError:\n            raise WorkerGone from None\n",
+            "site-host",
+        ),
+        e(
+            "a call's id stays pending after it ends",
+            WORKERS,
+            "        finally:\n            worker.pending.pop(ident, None)\n",
+            "        finally:\n            pass\n",
+            "site-host",
+        ),
+        e(
+            "a message that is not a result answers a call",
+            WORKERS,
+            '                if message.get("t") != "result":\n                    continue\n',
+            '                if False:\n                    continue\n',
+            "site-host",
+        ),
+        # --- site host: who is never a person ------------------------------------------
+        e(
+            "an account with a well-known SID outside the person ranges may be a person",
+            ACCOUNTS,
+            '        if not account.startswith("S-1-5-21-") and not account.startswith("S-1-12-1-"):\n',
+            "        if False:\n",
+            "site-host",
+        ),
+        e(
+            "an Entra ID account is not a person",
+            ACCOUNTS,
+            '        if not account.startswith("S-1-5-21-") and not account.startswith("S-1-12-1-"):\n',
+            '        if not account.startswith("S-1-5-21-"):\n',
+            "site-host",
+        ),
+        e(
+            "a window-manager virtual account is only 'not a person's account'",
+            ACCOUNTS,
+            '_PROGRAM_PREFIXES = ("S-1-5-80-", "S-1-5-82-", "S-1-5-90-", "S-1-5-96-")\n',
+            '_PROGRAM_PREFIXES = ("S-1-5-80-", "S-1-5-82-", "S-1-5-96-")\n',
+            "site-host",
+        ),
+        e(
+            "a Linux system uid is a person",
+            ACCOUNTS,
+            "LINUX_UID_MIN = 1000\n",
+            "LINUX_UID_MIN = 100\n",
+            "site-host",
+        ),
+        e(
+            "macOS uses Linux's lowest uid",
+            ACCOUNTS,
+            '    floor = MACOS_UID_MIN if sys.platform == "darwin" else LINUX_UID_MIN\n',
+            "    floor = LINUX_UID_MIN\n",
+            "site-host",
+        ),
+        e(
+            "nobody is a person",
+            ACCOUNTS,
+            "    if uid == 65534:\n",
+            "    if False:\n",
+            "site-host",
+        ),
+        e(
+            "root is not named as root",
+            ACCOUNTS,
+            "    if uid == 0:\n",
+            "    if False:\n",
+            "site-host",
+        ),
+        e(
+            "a worker may run as an account other than the one it was started for",
+            ACCOUNTS,
+            "    if mine != expected:\n",
+            "    if False:\n",
+            "site-host",
+        ),
+        e(
+            "a worker may run as the site host's own account",
+            ACCOUNTS,
+            "    if host is not None and mine == host and not shared:\n",
+            "    if False:\n",
+            "site-host",
+        ),
+        e(
+            "the shared-account flag is ignored",
+            ACCOUNTS,
+            "    if host is not None and mine == host and not shared:\n",
+            "    if host is not None and mine == host:\n",
+            "site-host",
+        ),
+        e(
+            "an elevated worker serves",
+            ACCOUNTS,
+            "    if elevated():\n        return",
+            "    if False:\n        return",
+            "site-host",
+        ),
+        # --- site host: the worker ------------------------------------------------------
+        e(
+            "a worker takes the local servers the site host names in the call",
+            WORKER,
+            '            server = self.local.server(self._entry(work.get("server")), outcome)\n',
+            '            if isinstance(work.get("servers"), list):\n'
+            "                from ._generated.models import SiteLocalServer\n\n"
+            "                self.local = LocalServers(\n"
+            '                    tuple(SiteLocalServer.model_validate(s) for s in work["servers"]),\n'
+            "                    self.local.data_dir,\n"
+            "                )\n"
+            '            server = self.local.server(self._entry(work.get("server")), outcome)\n',
+            "site-host",
+        ),
+        e(
+            "a worker takes the protected roots the site host names in the call",
+            WORKER,
+            "                folders, frozenset(str(w) for w in writable), list(self.protected), outcome\n",
+            "                folders,\n"
+            "                frozenset(str(w) for w in writable),\n"
+            '                [Path(p) for p in work.get("protected", self.protected)],\n'
+            "                outcome,\n",
+            "site-host",
+        ),
+        # Registering a folder is checked twice (the path, then the identity), so
+        # either alone escapes by design; both removed is the mistake.
+        Sabotage(
+            "a worker inspects a folder without its protected roots",
+            (
+                (
+                    WORKER,
+                    "            full = folder_io.check_root_path(path, self.protected)\n",
+                    "            full = folder_io.check_root_path(path, [])\n",
+                ),
+                (
+                    WORKER,
+                    "folder_io.inspect, full, self.protected)",
+                    "folder_io.inspect, full, [])",
+                ),
+            ),
+            "site-host",
+        ),
+        e(
+            "a worker keeps going after the site host refuses it",
+            WORKER,
+            '                        file=sys.stderr,\n                    )\n                    raise Stopped\n                if message.get("t") == "replaced":\n',
+            '                        file=sys.stderr,\n                    )\n                    continue\n                if message.get("t") == "replaced":\n',
+            "site-host",
+        ),
+        e(
+            "a worker keeps going after another worker replaced it",
+            WORKER,
+            '                        "eugene-plexus-site-worker: another worker for this account took over",\n'
+            "                        file=sys.stderr,\n                    )\n                    raise Stopped\n",
+            '                        "eugene-plexus-site-worker: another worker for this account took over",\n'
+            "                        file=sys.stderr,\n                    )\n                    continue\n",
+            "site-host",
+        ),
+        e(
+            "a worker the site host refused reconnects",
+            WORKER,
+            "            except Stopped:\n                return\n",
+            "            except Stopped:\n                pass\n",
+            "site-host",
+        ),
+        e(
+            "a worker that must not serve starts serving",
+            WORKER,
+            '        sys.exit(f"eugene-plexus-site-worker: {why}")\n',
+            '        print(f"eugene-plexus-site-worker: {why}", file=sys.stderr)\n',
+            "site-host",
+        ),
+        e(
+            "a per-user worker is never told it may share the host's account",
+            WORKER,
+            "args.host, shared=args.shared_account):",
+            "args.host, shared=False):",
+            "site-host",
+        ),
+        e(
+            "a worker ignores the protected roots it was started with",
+            WORKER,
+            "    protected = [Path(sys.prefix), Path(__file__).parent, *(Path(p) for p in args.protect)]\n",
+            "    protected = [Path(sys.prefix), Path(__file__).parent]\n",
+            "site-host",
+        ),
+        e(
+            "a worker reads no local-server list of its own",
+            WORKER,
+            "        servers=read_servers(Path(args.servers) if args.servers else None),\n",
+            "        servers=(),\n",
+            "site-host",
+        ),
+        # --- site host: routing a call to a person's worker ---------------------------
+        e(
+            "an unlinked person's calls are refused rather than run as the owner",
+            HOST,
+            "        link = self.links.for_subject(owner) if owner else None\n",
+            "        link = self.links.for_subject(subject)\n",
+            "site-host",
+        ),
+        e(
+            "a linked person whose worker is absent runs as the owner",
+            HOST,
+            "            if not self.workers.connected(own.account):\n"
+            "                raise Refused(self._not_running(own, own=True))\n"
+            "            return own.account\n",
+            "            if self.workers.connected(own.account):\n                return own.account\n",
+            "site-host",
+        ),
+        e(
+            "a machine that serves only its owner serves everyone",
+            HOST,
+            "        if subject != owner and not self.settings.sharing:\n",
+            "        if False:\n",
+            "site-host",
+        ),
+        e(
+            "the owner's absent worker is not said",
+            HOST,
+            "        if not self.workers.connected(link.account):\n"
+            "            raise Refused(self._not_running(link, own=subject == owner))\n",
+            "        if False:\n            pass\n",
+            "site-host",
+        ),
+        e(
+            "a folder is opened in the site host rather than by the owner's worker",
+            HOST,
+            '            answer = await self._ask(account, {"op": "inspect", "path": path.strip()})\n',
+            "            _full = folder_io.check_root_path(path.strip(), self.protected)\n"
+            "            answer = {\n"
+            '                "path": _full,\n'
+            '                "identity": await asyncio.to_thread(folder_io.inspect, _full, self.protected),\n'
+            "            }\n",
+            "site-host",
+        ),
+        e(
+            "the report says a linked person's worker is running when it is not",
+            HOST,
+            "            available = self.workers.connected(link.account)\n",
+            "            available = True\n",
+            "site-host",
+        ),
+        e(
+            "a removed link's worker is never pruned",
+            HOST,
+            "        self._spawn(self.workers.prune())\n",
+            "        pass\n",
+            "site-host",
+        ),
+        # --- site host: the links file and settings ---------------------------------------
+        e(
+            "two links for one person are both kept",
+            HOST_LINKS,
+            "                entry.subject in by_subject\n                or entry.account in by_account\n",
+            "                entry.account in by_account\n",
+            "site-host",
+        ),
+        e(
+            "a third entry for a dropped person revives it",
+            HOST_LINKS,
+            "                or entry.subject in broken_subjects\n",
+            "",
+            "site-host",
+        ),
+        e(
+            "the earlier half of a duplicate is kept",
+            HOST_LINKS,
+            "                        by_subject.pop(earlier.subject, None)\n"
+            "                        by_account.pop(earlier.account, None)\n",
+            "                        pass\n",
+            "site-host",
+        ),
+        e(
+            "a changed links file is not read again",
+            HOST_LINKS,
+            "        if stamp == self._stamp:\n",
+            "        if self._stamp is not None:\n",
+            "site-host",
+        ),
+        e(
+            "the host does not say when it has no channel for workers",
+            HOST_SETTINGS,
+            "        if self.channel is None:\n",
+            "        if False:\n",
+            "site-host",
+        ),
+        e(
+            "the starter's protected roots are not the host's",
+            HOST_SETTINGS,
+            "    protected = (data, Path(sys.prefix), Path(__file__).parent, *(Path(p) for p in roots))\n",
+            "    protected = (data, Path(sys.prefix), Path(__file__).parent)\n",
+            "site-host",
+        ),
+        # --- agent: the links file --------------------------------------------------
+        e(
+            "a person may be linked to two accounts",
+            SITE_LINKS,
+            "                if link.subject == subject:\n",
+            "                if False:\n",
+            "agent-site",
+        ),
+        e(
+            "an account may be linked to two people",
+            SITE_LINKS,
+            "                if link.account == account:\n                    raise LinkError(\n",
+            "                if False:\n                    raise LinkError(\n",
+            "agent-site",
+        ),
+        e(
+            "an account that is never a person's is linked",
+            SITE_LINKS,
+            "        if why := not_a_person(account):\n            raise LinkError(",
+            "        if False:\n            raise LinkError(",
+            "agent-site",
+        ),
+        e(
+            "Eugene's own accounts may be linked",
+            SITE_LINKS,
+            "        if account in never:\n",
+            "        if False:\n",
+            "agent-site",
+        ),
+        e(
+            "the agent links an account whose SID is outside the person ranges",
+            SITE_LINKS,
+            '        if not account.startswith(("S-1-5-21-", "S-1-12-1-")):\n',
+            "        if False:\n",
+            "agent-site",
+        ),
+        e(
+            "the agent links nobody (65534)",
+            SITE_LINKS,
+            "    if uid < (MACOS_UID_MIN if sys.platform == \"darwin\" else LINUX_UID_MIN) or uid == 65534:\n",
+            '    if uid < (MACOS_UID_MIN if sys.platform == "darwin" else LINUX_UID_MIN):\n',
+            "agent-site",
+        ),
+        e(
+            "the agent's Linux uid floor is lower",
+            SITE_LINKS,
+            "LINUX_UID_MIN = 1000\n",
+            "LINUX_UID_MIN = 100\n",
+            "agent-site",
+        ),
+        e(
+            "a linked account's worker cannot read the server list's grant: wrong right",
+            SITE_LINKS,
+            '        grants = [f"*{link.account}:R" for link in links if link.account.startswith("S-")]\n',
+            '        grants = [f"*{link.account}:F" for link in links if link.account.startswith("S-")]\n',
+            "agent-site",
+        ),
+        e(
+            "the site host's account may write beside the links",
+            SITE_LINKS,
+            '        grants.append(f"{SITE_HOST_ACCOUNT}:(OI)(CI)RX")\n',
+            '        grants.append(f"{SITE_HOST_ACCOUNT}:(OI)(CI)F")\n',
+            "agent-site",
+        ),
+        e(
+            "the site folder inherits permissions from the install",
+            SITE_LINKS,
+            '    _icacls(folder, "/inheritance:r", "/grant:r", *grants)\n',
+            '    _icacls(folder, "/grant:r", *grants)\n',
+            "agent-site",
+        ),
+        # --- agent: starting each person's worker -----------------------------------
+        e(
+            "a worker is started with the person's unfiltered token",
+            SITE_WORKERS,
+            "        limited = _limited(token)\n",
+            "        limited = token\n",
+            "agent-site",
+        ),
+        e(
+            "a full token's filtered twin is not used",
+            SITE_WORKERS,
+            "        return win32security.GetTokenInformation(token, win32security.TokenLinkedToken)\n",
+            "        return token\n",
+            "agent-site",
+        ),
+        e(
+            "a token with administrators enabled is not filtered",
+            SITE_WORKERS,
+            "    if not _admin_enabled(token):\n        return token\n    return _filter_by_hand(token)\n",
+            "    return token\n",
+            "agent-site",
+        ),
+        e(
+            "the administrators group is never found enabled",
+            SITE_WORKERS,
+            "        if sid == admins and attributes & 0x4:  # SE_GROUP_ENABLED\n",
+            "        if False:\n",
+            "agent-site",
+        ),
+        e(
+            "a worker is started for an account that is not a person's",
+            SITE_WORKERS,
+            "        linked = {link.account for link in self.links.load() if not not_a_person(link.account)}\n",
+            "        linked = {link.account for link in self.links.load()}\n",
+            "agent-site",
+        ),
+        e(
+            "a worker keeps running after its link was removed",
+            SITE_WORKERS,
+            "            elif account not in linked or program is None or entry.program != program:\n",
+            "            elif program is None or entry.program != program:\n",
+            "agent-site",
+        ),
+        e(
+            "a worker keeps running on an old program",
+            SITE_WORKERS,
+            "            elif account not in linked or program is None or entry.program != program:\n",
+            "            elif account not in linked or program is None:\n",
+            "agent-site",
+        ),
+        e(
+            "a worker is started for everyone signed in, linked or not",
+            SITE_WORKERS,
+            "        for account in linked:\n            if account in self.running or account not in sessions:\n",
+            "        for account in sessions:\n            if account in self.running or account not in sessions:\n",
+            "agent-site",
+        ),
+        e(
+            "a worker is started in a session of someone else",
+            SITE_WORKERS,
+            "        if user != account:\n",
+            "        if False:\n",
+            "agent-site",
+        ),
+        e(
+            "a worker is not put in the agent's job",
+            SITE_WORKERS,
+            "            win32job.AssignProcessToJobObject(self._job, process)\n",
+            "            pass\n",
+            "agent-site",
+        ),
+        e(
+            "the job does not close with the agent",
+            SITE_WORKERS,
+            '        info["BasicLimitInformation"]["LimitFlags"] |= win32job.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE\n',
+            '        info["BasicLimitInformation"]["LimitFlags"] |= 0\n',
+            "agent-site",
+        ),
+        e(
+            "a worker runs before it is in the job",
+            SITE_WORKERS,
+            "            win32con.CREATE_SUSPENDED\n            | win32process.CREATE_NO_WINDOW\n",
+            "            win32process.CREATE_NO_WINDOW\n",
+            "agent-site",
+        ),
+        e(
+            "a disconnected session is preferred to an active one",
+            SITE_WORKERS,
+            "        if user not in found or rank < found[user][1]:\n",
+            "        if user not in found:\n",
+            "agent-site",
+        ),
+        e(
+            "sessions that are neither active nor disconnected count",
+            SITE_WORKERS,
+            "        if state not in (win32ts.WTSActive, win32ts.WTSDisconnected):\n            continue\n",
+            "",
+            "agent-site",
+        ),
+        e(
+            "a crashing worker restarts at once, always",
+            SITE_WORKERS,
+            "        return due is None or time.perf_counter() >= due[0]\n",
+            "        return True\n",
+            "agent-site",
+        ),
+        e(
+            "a per-user worker keeps running on an old program",
+            SITE_WORKERS,
+            "        if self.process is not None and self._program_running != self.program:\n            await self.stop()\n",
+            "",
+            "agent-site",
+        ),
+        e(
+            "a worker is run without Python's isolated mode",
+            SITE_WORKERS,
+            '            "-I",\n',
+            "",
+            "agent-site",
+        ),
+        e(
+            "a worker is not told it shares the host's account",
+            SITE_WORKERS,
+            "        if self.shared:\n            args.append(\"--shared-account\")\n",
+            "",
+            "agent-site",
+        ),
+        e(
+            "a worker is not told which paths are never a folder",
+            SITE_WORKERS,
+            '            args += ["--protect", str(path)]\n',
+            "            pass\n",
+            "agent-site",
+        ),
+        # --- agent: the link page ------------------------------------------------------
+        e(
+            "the link page serves a connection from another address",
+            LINK_ROUTE,
+            '        or client[0] != "127.0.0.1"\n',
+            "",
+            "agent-site",
+        ),
+        e(
+            "the link page serves a request made to another address",
+            LINK_ROUTE,
+            '        or server[0] != "127.0.0.1"\n',
+            "",
+            "agent-site",
+        ),
+        e(
+            "the link page serves a TLS connection",
+            LINK_ROUTE,
+            '        or scope.get("scheme") != "http"\n',
+            "",
+            "agent-site",
+        ),
+        e(
+            "the link page serves a request that came through the entry point",
+            LINK_ROUTE,
+            '        or (scope.get("state") or {}).get("via_entrypoint")\n',
+            "",
+            "agent-site",
+        ),
+        e(
+            "the link page serves a request carrying a forwarding header",
+            LINK_ROUTE,
+            "        or any(name in request.headers for name in _FORWARDING)\n",
+            "",
+            "agent-site",
+        ),
+        e(
+            "the link page is opened by an account that is never a person's",
+            LINK_ROUTE,
+            "    if why := not_a_person(account):\n        raise NotHere(f\"This page was opened by",
+            "    if False:\n        raise NotHere(f\"This page was opened by",
+            "agent-site",
+        ),
+        e(
+            "the link page serves other systems",
+            LINK_ROUTE,
+            '    if sys.platform != "win32":\n        raise NotHere("This page runs on a Windows service install.")\n',
+            "",
+            "agent-site",
+            escapes="the refusal is for other systems: its test is skipped on Windows and runs in CI on Linux",
+        ),
+        e(
+            "an attempt survives a different account at the other end",
+            LINK_ROUTE,
+            "        if attempt.account != account:\n",
+            "        if False:\n",
+            "agent-site",
+        ),
+        e(
+            "attempts never expire",
+            LINK_ROUTE,
+            "            if now - attempt.started > ATTEMPT_SECONDS:\n",
+            "            if False:\n",
+            "agent-site",
+        ),
+        e(
+            "attempts are never bounded",
+            LINK_ROUTE,
+            "        while len(self.attempts) >= MAX_ATTEMPTS:\n",
+            "        while False:\n",
+            "agent-site",
+        ),
+        e(
+            "the callback's state is not checked",
+            LINK_ROUTE,
+            '        if request.query_params.get("state") != attempt.state:\n',
+            "        if False:\n",
+            "agent-site",
+        ),
+        e(
+            "a callback carrying an error is read as a sign-in",
+            LINK_ROUTE,
+            '        if request.query_params.get("error"):\n',
+            "        if False:\n",
+            "agent-site",
+        ),
+        e(
+            "a callback with no code goes on",
+            LINK_ROUTE,
+            "        if not code:\n",
+            "        if False:\n",
+            "agent-site",
+        ),
+        e(
+            "the root's refusal of the code is not noticed",
+            LINK_ROUTE,
+            "    if answer.status_code != 200:\n",
+            "    if False:\n",
+            "agent-site",
+        ),
+        e(
+            "the ID token's nonce is not checked",
+            LINK_ROUTE,
+            '    if claims.get("nonce") != attempt.nonce:\n',
+            "    if False:\n",
+            "agent-site",
+        ),
+        Sabotage(
+            "the ID token's audience is not checked",
+            (
+                (LINK_ROUTE, "            audience=CLIENT_ID,\n", ""),
+                (
+                    LINK_ROUTE,
+                    '            options={"require": ["iss", "sub", "aud", "exp", "iat"]},\n',
+                    '            options={"require": ["iss", "sub", "aud", "exp", "iat"], "verify_aud": False},\n',
+                ),
+            ),
+            "agent-site",
+        ),
+        e(
+            "the ID token's issuer is not checked",
+            LINK_ROUTE,
+            "            issuer=_issuer(request),\n",
+            "",
+            "agent-site",
+        ),
+        e(
+            "an ID token with no expiry is accepted",
+            LINK_ROUTE,
+            '            options={"require": ["iss", "sub", "aud", "exp", "iat"]},\n',
+            '            options={"require": ["iss", "sub", "aud", "iat"]},\n',
+            "agent-site",
+        ),
+        e(
+            "the role claim is not checked on the link page",
+            LINK_ROUTE,
+            '    if claims.get("eugene_role") != "member" or claims.get("sub") == "operator":\n',
+            '    if claims.get("sub") == "operator":\n',
+            "agent-site",
+        ),
+        e(
+            "the owner's subject is not refused on the link page",
+            LINK_ROUTE,
+            '    if claims.get("eugene_role") != "member" or claims.get("sub") == "operator":\n',
+            '    if claims.get("eugene_role") != "member":\n',
+            "agent-site",
+        ),
+        e(
+            "the confirmation's CSRF token is not compared",
+            LINK_ROUTE,
+            "        if csrf is None or not secrets.compare_digest(csrf, attempt.csrf) or attempt.person is None:\n",
+            "        if csrf is None or attempt.person is None:\n",
+            "agent-site",
+        ),
+        e(
+            "a confirmation before any sign-in links someone",
+            LINK_ROUTE,
+            "        if csrf is None or not secrets.compare_digest(csrf, attempt.csrf) or attempt.person is None:\n",
+            "        if csrf is None or not secrets.compare_digest(csrf, attempt.csrf):\n",
+            "agent-site",
+        ),
+        e(
+            "the removal's CSRF token is not compared",
+            LINK_ROUTE,
+            "        if found is None or csrf is None or not secrets.compare_digest(csrf, found[1].csrf):\n",
+            "        if found is None:\n",
+            "agent-site",
+        ),
+        e(
+            "removing a link removes whoever is first, not this account's",
+            LINK_ROUTE,
+            "        link = store.for_account(account)\n        if link is not None:\n            store.remove(link.subject)\n",
+            "        link = (store.load() or [None])[0]\n        if link is not None:\n            store.remove(link.subject)\n",
+            "agent-site",
+        ),
+        e(
+            "the page's cookie is sent on cross-site requests",
+            LINK_ROUTE,
+            'samesite="strict"',
+            'samesite="none"',
+            "agent-site",
+        ),
+        e(
+            "the page's cookie is readable by scripts",
+            LINK_ROUTE,
+            "        COOKIE, key, httponly=True,",
+            "        COOKIE, key, httponly=False,",
+            "agent-site",
+        ),
+        e(
+            "the page may be framed",
+            LINK_ROUTE,
+            '            "X-Frame-Options": "DENY",\n',
+            "",
+            "agent-site",
+        ),
+        e(
+            "the link is made with no list of Eugene's own accounts",
+            LINK_ROUTE,
+            "                never=supervisor.never_linked(),\n",
+            "                never=frozenset(),\n",
+            "agent-site",
+        ),
+        e(
+            "the link page is offered whenever there is a site host",
+            LINK_ROUTE,
+            "    return bool(supervisor is not None and supervisor.link_page_offered())\n",
+            "    return supervisor is not None\n",
+            "agent-site",
+        ),
+        e(
+            "anyone may ask the agent to remove a link",
+            LINK_ROUTE,
+            '@api.delete("/v1/site/links/{subject}", status_code=204, dependencies=[Depends(require_control)])\n',
+            '@api.delete("/v1/site/links/{subject}", status_code=204)\n',
+            "agent-site",
+        ),
+        e(
+            "the root removes a link on a machine where root links people",
+            LINK_ROUTE,
+            '    if supervisor is not None and supervisor.mode() == "root":\n',
+            "    if False:\n",
+            "agent-site",
+        ),
+        e(
+            "any bearer may do what only the control root may",
+            DEPENDENCIES,
+            '    if _is_control(claims):\n        return claims\n    raise _refuse(claims, "do this; only the control root may")\n',
+            "    return claims\n",
+            "agent-site",
+        ),
+        e(
+            "a service token from any issuer is the control root",
+            DEPENDENCIES,
+            "        and claims.iss == tokens.ISSUER_CONTROL\n",
+            "",
+            "agent-site",
+        ),
+        e(
+            "a service token with any subject is the control root",
+            DEPENDENCIES,
+            "        and claims.sub == tokens.SUB_CONTROL\n",
+            "",
+            "agent-site",
+        ),
+        # --- agent: the machine's own CLI ----------------------------------------------
+        e(
+            "SYSTEM links itself when it runs the link",
+            SITE_CLI,
+            '    mine = _own_sid()\n    if mine == "S-1-5-18":\n',
+            "    mine = _own_sid()\n    if False:\n",
+            "agent-site",
+        ),
+        e(
+            "root links root when it runs the link",
+            SITE_CLI,
+            '    if sys.platform != "win32" and mine == "0":\n',
+            "    if False:\n",
+            "agent-site",
+        ),
+        e(
+            "a system install is taken for a person's",
+            SITE_CLI,
+            "        return where.startswith(program_data)\n",
+            "        return False\n",
+            "agent-site",
+        ),
+        e(
+            "joining a system install needs no administrator",
+            SITE_CLI,
+            "    if _system_install(config_dir):\n        _need_elevation()\n    password = _password(args)\n",
+            "    password = _password(args)\n",
+            "agent-site",
+        ),
+        e(
+            "leaving a system install needs no administrator",
+            SITE_CLI,
+            "    if _system_install(config_dir):\n        _need_elevation()\n    python = Path(args.python) if args.python else _host_python(config_dir)\n",
+            "    python = Path(args.python) if args.python else _host_python(config_dir)\n",
+            "agent-site",
+        ),
+        e(
+            "linking someone needs no administrator",
+            SITE_CLI,
+            "\n    _need_elevation()\n    python = Path(args.python)",
+            "\n    python = Path(args.python)",
+            "agent-site",
+        ),
+        e(
+            "unlinking someone needs no administrator",
+            SITE_CLI,
+            "def unlink(config_dir: Path, person: str) -> str:\n    _need_elevation()\n",
+            "def unlink(config_dir: Path, person: str) -> str:\n",
+            "agent-site",
+        ),
+        e(
+            "the agent joins a Linux system install, which is root's",
+            SITE_CLI,
+            'if sys.platform == "linux" and _system_install(config_dir):\n        raise SiteError(\n            "On a Linux system install root makes',
+            'if False:\n        raise SiteError(\n            "On a Linux system install root makes',
+            "agent-site",
+        ),
+        e(
+            "the agent links people on a Linux system install, which is root's",
+            SITE_CLI,
+            'if sys.platform == "linux" and _system_install(config_dir):\n        raise SiteError(\n            "On a Linux system install root links',
+            'if False:\n        raise SiteError(\n            "On a Linux system install root links',
+            "agent-site",
+        ),
+        e(
+            "the agent edits root's local-server list on a Linux system install",
+            SITE_CLI,
+            'if sys.platform == "linux" and _system_install(config_dir):\n        raise SiteError(\n            "On a Linux system install root keeps',
+            'if False:\n        raise SiteError(\n            "On a Linux system install root keeps',
+            "agent-site",
+        ),
+        e(
+            "removing a local server on Linux ignores root's ownership of the list",
+            SITE_CLI,
+            "def remove_server(config_dir: Path, server_id: str) -> str:\n    _root_owns_the_list(config_dir)\n",
+            "def remove_server(config_dir: Path, server_id: str) -> str:\n",
+            "agent-site",
+        ),
+        e(
+            "SYSTEM may be linked as the owner's account",
+            SITE_CLI,
+            '    accounts = {"S-1-5-18"}\n',
+            "    accounts: set[str] = set()\n",
+            "agent-site",
+        ),
+        e(
+            "leaving a site keeps its links",
+            SITE_CLI,
+            "    for entry in links.load():\n        links.remove(entry.subject)\n    return \"This machine is no longer a job site.",
+            "    for entry in []:\n        links.remove(entry.subject)\n    return \"This machine is no longer a job site.",
+            "agent-site",
+        ),
+        # --- agent: the entry point's public paths ---------------------------------------
+        e(
+            "a node's enrollment is reachable from anywhere",
+            ENTRY,
+            '        "/v1/sites/enroll",\n',
+            '        "/v1/sites/enroll",\n        "/v1/nodes/enroll",\n',
+            "agent-site",
+        ),
+        e(
+            "the trust bundle is reachable from anywhere",
+            ENTRY,
+            '    "GET": ["/v1/trust/tls"],\n',
+            '    "GET": ["/v1/trust/tls", "/v1/trust/bundle"],\n',
+            "agent-site",
+        ),
+        e(
+            "a machine's person check is not reachable from the site",
+            ENTRY,
+            '        "/v1/sites/links/check",\n',
+            "",
+            "agent-site",
+        ),
+        # --- control: the built-in client (J37) ---------------------------------------
+        e(
+            "the link client accepts localhost",
+            OIDC,
+            '_SITE_LINK_REDIRECT = re.compile(r"http://127[.]0[.]0[.]1:',
+            '_SITE_LINK_REDIRECT = re.compile(r"http://(?:127[.]0[.]0[.]1|localhost):',
+            "control-links",
+        ),
+        e(
+            "the link client's redirect may carry more after the path",
+            OIDC,
+            "_SITE_LINK_REDIRECT.fullmatch(uri)",
+            "_SITE_LINK_REDIRECT.match(uri)",
+            "control-links",
+        ),
+        e(
+            "the link client's redirect may use a port above 65535",
+            OIDC,
+            "    return match is not None and int(match.group(1)) <= 65535\n",
+            "    return match is not None\n",
+            "control-links",
+        ),
+        e(
+            "the link client may redirect anywhere",
+            OIDC,
+            "    if client.get(\"builtin\"):\n        return is_site_link_redirect(uri)\n",
+            '    if client.get("builtin"):\n        return True\n',
+            "control-links",
+        ),
+        e(
+            "the link client may present a secret in a header",
+            OIDC_ROUTE,
+            '        if scheme == "basic" or form.get("client_secret") is not None:\n',
+            '        if form.get("client_secret") is not None:\n',
+            "control-links",
+        ),
+        e(
+            "the link client may present a secret in the form",
+            OIDC_ROUTE,
+            '        if scheme == "basic" or form.get("client_secret") is not None:\n',
+            '        if scheme == "basic":\n',
+            "control-links",
+        ),
+        e(
+            "the link client gets a refresh token",
+            OIDC_ROUTE,
+            "                with_refresh=not builtin,\n",
+            "                with_refresh=True,\n",
+            "control-links",
+        ),
+        e(
+            "the link client may use any grant",
+            OIDC_ROUTE,
+            '    if builtin and grant != "authorization_code":\n',
+            "    if False:\n",
+            "control-links",
+        ),
+        e(
+            "the app list applies to the link client",
+            OIDC_ROUTE,
+            '        and not client.get("builtin")\n        and not oidc.may_use(',
+            "        and not oidc.may_use(",
+            "control-links",
+        ),
+        e(
+            "the app list is skipped for every client",
+            OIDC_ROUTE,
+            '        and not client.get("builtin")\n        and not oidc.may_use(',
+            "        and False\n        and not oidc.may_use(",
+            "control-links",
+        ),
+        e(
+            "Eugene's owner may use the link client",
+            OIDC_ROUTE,
+            '    if client.get("builtin") and subject is oidc.OWNER:\n',
+            "    if False:\n",
+            "control-links",
+        ),
+        # --- control: the check of a person typed at a machine (J36) ------------------------
+        e(
+            "a check is not counted per site",
+            SITES,
+            '    buckets = [LINK_CHECK_SITE_BUCKET + site.id, f"oidc-name:{name.casefold()}"]\n',
+            '    buckets = [f"oidc-name:{name.casefold()}"]\n',
+            "control-links",
+        ),
+        e(
+            "a check is not counted per name",
+            SITES,
+            '    buckets = [LINK_CHECK_SITE_BUCKET + site.id, f"oidc-name:{name.casefold()}"]\n',
+            "    buckets = [LINK_CHECK_SITE_BUCKET + site.id]\n",
+            "control-links",
+        ),
+        e(
+            "a failed check is not counted",
+            SITES,
+            "        for bucket in buckets:\n            auth.record_login_failure(\n",
+            "        for bucket in []:\n            auth.record_login_failure(\n",
+            "control-links",
+        ),
+        e(
+            "a check of Eugene's owner goes on",
+            SITES,
+            "    if name.casefold() == oidc.OPERATOR_NAME:\n",
+            "    if False:\n",
+            "control-links",
+        ),
+        e(
+            "a check of a person whose sign-in is off passes",
+            SITES,
+            '    if person.get("disabled"):\n        raise problem(\n            403,\n            "Signing in is turned off",\n            f"{person[\'name\']} cannot sign in on this install, so cannot link an account.",',
+            '    if False:\n        raise problem(\n            403,\n            "Signing in is turned off",\n            f"{person[\'name\']} cannot sign in on this install, so cannot link an account.",',
+            "control-links",
+        ),
+        e(
+            "a wrong name is answered differently from a wrong password",
+            SITES,
+            "    verifier = person[\"passwordVerifier\"] if person else _DUMMY_VERIFIER\n",
+            '    if person is None:\n        raise problem(401, "No such person", "Nobody has that name.")\n'
+            '    verifier = person["passwordVerifier"] if person else _DUMMY_VERIFIER\n',
+            "control-links",
+        ),
+        e(
+            "a check is answered while Eugene is locked",
+            SITES,
+            "    if auth.signing_key is None:\n"
+            '        raise problem(503, "Eugene is locked", "Unlock Eugene before linking people.")\n',
+            "",
+            "control-links",
+            escapes="a locked root is refused earlier, by the site-token dependency (dependencies.py)",
+        ),
+        # --- control: removing a link (§3.2) ----------------------------------------------
+        e(
+            "anyone may remove anyone's link",
+            SITES,
+            "    if target != subject and not owns:\n",
+            "    if False:\n",
+            "control-links",
+        ),
+        e(
+            "the site's owner may only remove their own link",
+            SITES,
+            "    target = body.person or subject\n",
+            "    target = subject\n",
+            "control-links",
+        ),
+        e(
+            "anyone signed in may remove links on any site",
+            SITES,
+            "    if record is None or not (owns or helpers.may_use_site(summary, subject)):\n",
+            "    if record is None:\n",
+            "control-links",
+        ),
+        e(
+            "a site the person has no part in is a different answer from no site",
+            SITES,
+            "    if record is None or not (owns or helpers.may_use_site(summary, subject)):\n"
+            '        raise problem(404, "No such job site", "You have no such job site.")\n',
+            "    if record is None or not (owns or helpers.may_use_site(summary, subject)):\n"
+            '        raise problem(403, "Not yours", "That site is not yours.")\n',
+            "control-links",
+        ),
+        e(
+            "a removal made only at the machine looks like it was done",
+            SITES,
+            "    if code == 409:\n        raise problem(409, \"Removed at the machine only\", _agent_words(payload))\n",
+            "",
+            "control-links",
+        ),
+        # --- control: what a person is told about their link ----------------------------------
+        e(
+            "everyone is told they are linked when the owner is",
+            BROKER,
+            '    mine = next((entry for entry in links if entry.get("subject") == subject), None)\n',
+            '    mine = next((entry for entry in links if entry.get("subject") == owner), None)\n',
+            "control-links",
+        ),
+        e(
+            "a linked person is told where to link",
+            BROKER,
+            '    if mine is not None:\n        return {"linked": True, "account": mine.get("accountName"), "linkPage": None}\n',
+            '    if mine is not None:\n        return {"linked": True, "account": mine.get("accountName"), "linkPage": (summary or {}).get("linkPage")}\n',
+            "control-links",
+        ),
+        e(
+            "an unlinked person is not told whose account their calls run as",
+            BROKER,
+            '        "account": theirs.get("accountName") if theirs else None,\n',
+            '        "account": None,\n',
+            "control-links",
+        ),
+        e(
+            "a site that says nothing about links is reported as having none",
+            BROKER,
+            "    if reported is None:\n        # A site that predates linking says nothing about it; neither do we.\n        return {}\n",
+            "    if reported is None:\n        reported = []\n",
+            "control-links",
+        ),
+        e(
+            "a person who is only linked is not told the site exists",
+            BROKER,
+            '        or any(entry.get("subject") == subject for entry in (summary or {}).get("links") or [])\n',
+            "",
+            "control-links",
+        ),
+        e(
+            "the link page's address is not passed to the owner's console",
+            SITES,
+            '("links", "linkPage", "sharing")',
+            '("links", "sharing")',
+            "control-links",
+        ),
+    ]
+)
+
+
 def run_gate(gate: str) -> int:
     command, cwd = GATES[gate]
     env = {k: v for k, v in os.environ.items() if not k.startswith("EUGENE_PLEXUS_")}
@@ -913,6 +2182,9 @@ def main() -> None:
         only = None
     if only and only.startswith("--from="):
         chosen = SABOTAGES[int(only.split("=", 1)[1]) - 1 :]
+    elif only and only.startswith("--labels="):
+        wanted = set(Path(only.split("=", 1)[1]).read_text(encoding="utf-8").splitlines())
+        chosen = [s for s in SABOTAGES if s.label in wanted]
     elif only and only.startswith("--gate="):
         chosen = [s for s in SABOTAGES if s.gate == only.split("=", 1)[1]]
     else:
