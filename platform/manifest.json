@@ -22,7 +22,8 @@
       "gateway": "src/eugene_plexus_gateway/_http.py",
       "inference-driver": "src/eugene_plexus_inference_driver/_http.py",
       "library": "src/eugene_plexus_library/_http.py",
-      "tool-driver": "src/eugene_plexus_tool_driver/_http.py"
+      "tool-driver": "src/eugene_plexus_tool_driver/_http.py",
+      "site-host": "src/eugene_plexus_site_host/_http.py"
     },
     "body_limit.py": {
       "gateway": "src/eugene_plexus_gateway/body_limit.py",
@@ -36,7 +37,8 @@
     },
     "_private_files.py": {
       "inference-driver": "src/eugene_plexus_inference_driver/_private_files.py",
-      "tool-driver": "src/eugene_plexus_tool_driver/_private_files.py"
+      "tool-driver": "src/eugene_plexus_tool_driver/_private_files.py",
+      "site-host": "src/eugene_plexus_site_host/_private_files.py"
     },
     "_build.py": {
       "agent": "src/eugene_plexus_agent/_build.py",
