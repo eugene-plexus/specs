@@ -631,8 +631,10 @@ Ubuntu (117 of 117). It ran through `node-file-helpers-service-acceptance.py`,
 dispatched by hand, at the pins above.
 
 **Later, each as its own design:**
-- slice 2b, the workspace server under the person's own account (J6h, J6i);
-- the standalone site install (J5);
+- slice 2b, the workspace server under the person's own account (J6h, J6i),
+  designed in one session with the site as its own enrollment (J19-J22,
+  §6.4);
+- the standalone site install (J5, deferred by J21);
 - person-held keys (J14);
 - managed-fleet enrolment (J16);
 - the root's MCP endpoint for other clients.
@@ -647,7 +649,7 @@ dispatched by hand, at the pins above.
 | J2 | At the machine, or away from it? | **Away, and many machines at once** |
 | J3 | A node-only public mode for the nodes name (`public_nodes`) | **Yes**, limited to the five paths in §3.1, with an acknowledgement |
 | J4 | File-only Job Sites | **Yes**, with *no inference work* as defined in §3.2: no routing, runtimes, engines or model starts on the site. Scripts and OS actions are site tools for a later slice, not inference work |
-| J5 | Its own install, or a role | **The role first**, with the site-side piece built so it can ship alone (§4.2) |
+| J5 | Its own install, or a role | **The role first**, with the site-side piece built so it can ship alone (§4.2). **Reversed 2026-10-06 by J19 (§6.4):** a site is its own enrollment, and a machine may be a node, a site or both |
 | J6 | MCP between site and root | **Yes, before a fifth tool** |
 | J7 | No third party in the path | **Yes**: DNS-only or a bare address, with the root's certificate pinned at join by default. A rotation path is needed before it ships |
 | J8 | Where policy is final | **On the site**: default deny, approval or standing pre-approval for destructive and system tools, and an audit log |
@@ -708,6 +710,48 @@ overturn:
 | J6g | The shape of Eugene's file server | **One `files` server per machine, its tools taking a `folder` argument.** This replaces the first build's one server per folder (`files.<id>`, in contract `ba9a280` and site-host `f58a0a6`). Folder grants stay per person and per folder: read, or write as a standing pre-approval. Slice 1's `/oidc/job-sites/{node}/folders/{id}/people` comes back, relayed to the site. Per-tool access remains for local servers. The host lists, in a person's `folder` argument, only the folders they may use, and for `write_text` only those they may change. On a LAN node the root sends all of the person's grants on that node (`grants`, a list); the host checks the named folder against them. Workbench shows one server per machine and narrows the folder list to the folders a chat selected |
 | J6h | Workbench and Eugene's MCP should *"act like Claude Code, Codex, or OpenClaw... full local access within permissions"* | **Slice 2b, on this host.** Slice 2 finishes the MCP channel, site-final policy and today's file tools (J6g), proven end to end. Slice 2b adds a workspace server like Claude Code's: read, write, edit and search within granted workspaces, under allow/ask/deny rules per tool and path; commands come with it, under J9's gate |
 | J6i | Which OS account local-access tools run as | **The person's own account**, like Claude Code: everything the person can touch. Slice 2b's design has to answer how: a process in the person's session or holding their credentials. It also has to address that a compromised root then reaches everything the person owns, which raises J14's priority. Slice 2's host keeps its own unprivileged account for today's file tools |
+
+### 6.4 Calls taken after testing slice 2 (Troy, 2026-10-06)
+
+Troy turned on file support for Amish_Station and stopped at two steps:
+- **Where it is turned on.** People → *Files on your machines* is the wrong
+  place to enable something on a machine.
+- **The folder permission.** Granting the file server's account access by
+  hand, in PowerShell or the folder's Security tab, is the kind of step this
+  project has rejected before.
+
+Both were deliberate in the 2026-10-04 design
+([`node-file-helpers.md`](node-file-helpers.md)). Neither was a placeholder
+for a later slice.
+
+His scenario then showed that J5 was the wrong call. The three machines are:
+- the root, on Unraid, with no job site;
+- Amish_Station, a node that should also be a job site;
+- a work PC on another LAN that is **not** a node, and should be a job site.
+
+A machine may be a node, a job site, or both. A person may own several
+sites. Not every install will use Workbench or job sites at all.
+
+> I think Jobsite agents should be treated "seperate but equal" to Eugene
+> Nodes since a machine may be one or the other or both.
+
+| # | Call | Decision |
+|---|---|---|
+| J19 | Is a job site its own enrollment? | **Yes. This reverses J5's "the role first".** A job site has its own enrollment, its own key, and its own owner, a person. The site host holds that enrollment, not the Eugene agent. The root keeps sites in a registry separate from nodes, so one machine can hold a node enrollment, a site enrollment, or both. In the console, a **Job sites** branch beside Machines is for membership only: invite, remove, and whether a site is online. Workbench keeps everything a site's owner does. People loses *Files on your machines* |
+| J20 | Do the operator-managed node folders stay? | **No, they retire.** A machine shares files only as a job site its owner controls, so there is one access model. On Amish_Station that owner is Troy, as a person. J6d's console-managed policy on ordinary nodes goes with it. The 2026-10-04 node folders feature migrates into job sites. The by-hand folder permission goes too: under J6i, a site's tools run as the person's own account, which already has their access |
+| J21 | Does the standalone site install ship with this? | **Not yet.** Troy: *"I can wait because I believe that will simplify the development path to get there."* Until it does, the agent installs and supervises the site host on a machine that is a node. The site still holds its own enrollment under J19. A machine that is not a node, like the work PC, waits for the standalone install |
+| J22 | How it is designed | **In one design session with slice 2b (J6h, J6i), in a fresh session.** J19-J21 reshape the site that 2b's workspace server runs on |
+
+**The design session has to answer:**
+- the site's enrollment and its key, and how a node's agent hosts a site
+  without holding its key;
+- the root's site registry, and the console's Job sites branch;
+- migrating slice 2's node folders, grants and Workbench selections into
+  job sites;
+- 2b's workspace server, running as the person's own account (J6h, J6i),
+  with J14's priority raised;
+- what the standalone install (J21) will need, so nothing built now has to
+  be undone.
 
 ---
 
