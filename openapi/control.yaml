@@ -2952,9 +2952,7 @@ components:
             enum: [gateway]
           description: What the node it enrolls will be granted, as minted.
         kind:
-          type: string
-          enum: [node, site]
-          description: What the token enrolls. A site invitation (`POST /v1/sites/invitations`) is listed and withdrawn here too.
+          $ref: '#/components/schemas/JoinTokenKind'
         owner:
           type: string
           description: The person a site invitation names. Absent on a node's token.
@@ -2966,6 +2964,11 @@ components:
             spent" rather than 401 "unknown" — so a listing shows it,
             and revoking it is allowed and pointless rather than
             refused.
+
+    JoinTokenKind:
+      type: string
+      enum: [node, site]
+      description: What a join token enrolls. A site invitation (`POST /v1/sites/invitations`) is listed and withdrawn with the node tokens.
 
     JoinTokenList:
       type: object
