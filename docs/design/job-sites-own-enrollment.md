@@ -170,8 +170,9 @@ for the other.
   checks the signature and refuses only a move from a non-public address to
   a public one. A site has no previous address, so the check passes
   (`C/routes/nodes.py:164-320`, `C/node_address.py:145-158`). No test
-  covers it. It is live on edge and wants a fix before this design is
-  built; the site registry then removes the route for sites entirely.
+  covers it. It is live on edge: [control#6](https://github.com/eugene-plexus/control/issues/6).
+  The site registry removes the route for sites entirely, and 2b.1 closes
+  the issue.
 - **Deleting a person leaves their sites enrolled**, owned by nobody
   (`C/applied.py:871-875`).
 - **Revoking a node leaves its helper record behind.** It is ignored only
@@ -634,6 +635,79 @@ The file tools still run in the site host's isolated account. *Done when:*
 - a site's key is refused everywhere but its four routes;
 - deleting a person removes their sites.
 
+#### 3.1 The build of 2b.1 (started 2026-10-06)
+
+**On a node only (J21).** Until the standalone install, a site's machine
+must already have the agent installed. A machine that is not a node waits;
+slice 1's files-only node over the public route ends here. `public_sites` is
+still built and tested, with a node whose site polls through it.
+
+**The contract (specs), first:**
+- `control.yaml`:
+  - New paths:
+    - `POST /v1/sites/invitations` (`membership`);
+    - `POST /v1/sites/enroll` (a join token);
+    - `POST /v1/sites/poll`, `…/operations/{id}/claim`, `…/operations/{id}/result` and `POST /v1/sites/leave` (a site token);
+    - `GET /v1/sites`, with a dev section only in dev mode, and `DELETE /v1/sites/{id}` (`membership`);
+    - `PATCH /v1/sites/{id}/folders/{folder_id}`, Eugene's owner's own grant, dev mode only (`dev-access`, replacing `node-files`);
+    - `PUT /v1/nodes/{name}/hosted-sites` (that node's own token, J32).
+  - `/oidc/job-sites/{site}/…` takes site ids, and `…/enabled` goes. The
+    invite answers `joinUrl`, the nodes origin or else the root's own
+    address, so it works on a LAN-only install (J31).
+  - `/oidc/sites/*` takes `site` in place of `node`, and `jobSite` goes:
+    every machine with tools is a site.
+  - Removed: `/v1/node-helpers*`; `files` from join-token grants;
+    `EnrollmentRequest.owner`; `Node.owner` and `Node.lastContactAt`.
+  - **Replay.** `putNodeHelper`, `helperGrants`, and `enrollNode` with
+    `files` stay readable and apply as nothing. New log operations:
+    `enrollSite`, `removeSite`, `setSiteHost`, `setSiteDevGrants`.
+    `Snapshot` gains `sites`.
+- `components/sites.yaml` gains what control and the site host now share
+  directly: `SiteReport`, `SitePollAnswer`, `SiteOperation`, `SiteResult`,
+  `SiteEnrollmentRequest` and `SiteEnrollment`.
+- `site-host.yaml` loses the agent-facing relay API. It keeps `/healthz`
+  and documents the launch environment and the `join` command.
+- `agent.yaml`: the entry point's `public_nodes` becomes `public_sites`,
+  with six paths (J31).
+- `specs/platform` `tokens.py`: the `site` grant. A site key signs only
+  `aud: control`. Control checks site keys against its registry, never the
+  bundle.
+
+**Then, repo by repo:**
+- **control:**
+  - the registry, its log operations and the routes;
+  - the broker keyed by *(site id, `enrolledAt`)*;
+  - `deletePerson` removes the person's sites;
+  - closes control#6.
+- **site-host:**
+  - `join`: the key, the root pin (the agent's `root_tls.py` moves here),
+    the owner's confirmation;
+  - the poll, claim and answer loop, checking each operation's binding;
+  - `node` mode removed.
+- **agent:**
+  - removed: `SiteHostRelay`, `validate()`, the job-site join flags,
+    `root_tls.py` and the job-site refusals;
+  - it supervises the site host when a site is configured;
+  - `eugene-plexus-agent site join` (elevated) installs the site host and
+    runs its `join`;
+  - it reports the sites it hosts;
+  - the entry point serves `public_sites`.
+- **Workbench:**
+  - site ids, in place of node names;
+  - no file-support toggle;
+  - the invite works on a LAN-only install.
+- **ui:**
+  - the Job sites branch and page;
+  - People's section and `helperGrants` removed;
+  - Machines: the files-role code removed, and the *Also a job site* line
+    added;
+  - the node invite form loses its job-site option;
+  - `public_sites`.
+- **Installers:** `-JobSite` on an existing node runs `site join`. On a
+  machine with no node install it refuses, naming J21.
+- **Acceptance:** `job-sites-acceptance.py` reworked to the done-when list
+  above, and a sabotage pass.
+
 **2b.2, each person as themselves** (J24, J25, J26, J27):
 - workers, and the local channel that checks their account;
 - the link page at the machine, served by the agent, and the links file;
@@ -893,6 +967,12 @@ after 2b.2.
 | J28 | *"I'm taking 'workspace server' to mean jobsite? If so then this is perfect."* | It is not the job site; it is the job site's file tools (J28). Awaiting Troy |
 | J30 | *"Let's make sure they can consent later, in case they didn't understand at join time."* | A later path: the Windows tray behind UAC, or the one-liner again (J30) |
 | J34 | *"No migration needed because no one has used the old site policy yet."* | No import and no add-again listing (§2.11) |
+
+**Then Troy said to begin the next slice.** That takes the calls 2b.1 rests
+on as recommended: **J23, J31, J32, J33 and J35**. Still open:
+- J25 and J27's question about people with no account, which 2b.2 needs;
+- J28, which 2b.3 needs;
+- J29, which gates a release.
 
 The build order changed in one place: **2b.2 grew** (§3). It now builds the
 workers, the local channel, the link page and the links file, instead of
