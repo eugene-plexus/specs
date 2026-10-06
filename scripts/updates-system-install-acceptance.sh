@@ -166,8 +166,10 @@ mechanism=$(printf '%s' "$NODE" | json 'd["install"]["mechanism"]')
 agent_commit=$(printf '%s' "$NODE" | json 'next(c.get("commit","") for c in d["install"]["components"] if c["name"]=="agent")')
 pinned=$(sed -n 's/^PIN_AGENT=\([0-9a-f]*\).*/\1/p' "$WORK/install.sh")
 # One stamped commit per pin the installer that ran carries: seven since P8
-# added the tool-driver, six from an EP_FROM that predates it.
-count=$(grep -cE '^PIN_[A-Z_]+=[0-9a-f]{40}' "$WORK/install.sh")
+# added the tool-driver, six from an EP_FROM that predates it. PIN_SITE_HOST
+# (Job Sites 2b.2) is not one: root installs the site host apart from the
+# agent's prefix, and the agent does not report it as a component.
+count=$(grep -E '^PIN_[A-Z_]+=[0-9a-f]{40}' "$WORK/install.sh" | grep -vc '^PIN_SITE_HOST=')
 expected=$(for _ in $(seq 1 "$count"); do printf 'stamped '; done | sed 's/ $//')
 if [ "$states" = "$expected" ] && [ "$mechanism" = systemd_system ] \
         && [ "$agent_commit" = "$pinned" ]; then
