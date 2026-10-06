@@ -340,15 +340,16 @@ machine's privileged starter, and stops it when it has been idle.
 
 **The local channel.** A worker connects to the site host over a named
 pipe (Windows) or a Unix socket (Linux). The site host checks the
-connecting process's account on every connection: on Windows, the token of
-the client process; on Linux, `SO_PEERCRED`. A worker that is not running
+connecting process's account on every connection: on Windows, the client's
+token read by impersonating it at Identification level (the worker connects
+with `SECURITY_IDENTIFICATION`, so the site host can learn who it is but
+never act as it); on Linux, `SO_PEERCRED`. A worker that is not running
 as the account its link names is refused. So a call for Jessie can only ever
 reach a process running as Jessie.
 
 | Install | The agent runs as | A person's worker is started by | It runs |
 |---|---|---|---|
-| Windows service | LocalSystem | A Task Scheduler task per linked person: principal the person, logon type S4U, limited token, restarted on failure. The agent creates it when the link is made, and runs it when the site host asks | Signed in or out. While signed out it has no network credentials, so it reaches this machine's own files only (J25) |
-| Windows service, an account S4U refuses | LocalSystem | The same task with the person's interactive token | While that person is signed in |
+| Windows service | LocalSystem | **The agent**, with the person's own session token (`WTSQueryUserToken`), started in their session as the agent's supervised child (J25 as revised, §2.4.1). The token is UAC's filtered one; if it is not (UAC off, the built-in Administrator), the agent filters it by hand | **While that person is signed in.** Their network shares and Credential Manager work, as in any program they run. At sign-out Windows ends the worker, and calls for them are refused, saying so |
 | Windows per-user | The person | The agent, as its own child | While the person is signed in. Only the installing person can be served |
 | Linux system | `eugene-plexus` | The root broker: `eugene-plexus-site-worker@<uid>.service` with `User=` the person and `NoNewPrivileges=yes` | Always |
 | Linux `--user` | The person | The agent, as its own child | As the agent does. Only the installing person can be served |
@@ -394,13 +395,90 @@ only that person.
   the site's rules. It cannot add a link or start a worker for an unlinked
   account. It runs only its own code, and opens no one's files.
 
-**Owed by measurement before this is built** (Windows 11, on real accounts):
-- S4U for a Microsoft account (Troy's `troyc` is one), for an Entra ID
-  account, and for a domain account away from its domain;
-- whether S4U for an administrator, with run level Limited, yields the
-  filtered token;
-- profile loading under S4U (`%LOCALAPPDATA%`, `HKCU`);
-- what a signed-out S4U process can and cannot reach.
+#### 2.4.1 What the S4U measurement found (2026-10-06)
+
+Measured on Amish_Station (Windows 11 Pro 10.0.26200, a workgroup machine)
+with `troyc` (a Microsoft account, an administrator, signed in over Chrome
+Remote Desktop), `jessie` (a local standard user) and `ep-s4u-admin` (a local
+administrator), the last two created for this and never signed in. Six
+elevated passes; the scripts are not kept. The live install and the root
+were not touched.
+
+**The design's Windows row could not be built.** Windows lets an account
+register an S4U task only for itself:
+- `Register-ScheduledTask`, `schtasks /NP` and the Task Scheduler COM API
+  (`RegisterTaskDefinition`, `TASK_LOGON_S4U`) each answered *Access is
+  denied* when registering for another account, from an elevated
+  administrator and from LocalSystem alike;
+- LocalSystem was refused even for `troyc`, while `troyc`'s own elevated
+  session registered his task;
+- granting `jessie` `SeBatchLogonRight` changed nothing.
+
+**S4U at run level Limited does not filter an administrator.** `troyc`'s own
+S4U task ran with elevation type 1 (no split token), High integrity,
+Administrators enabled and `SeDebugPrivilege` on. Only an interactive-token
+task got the filtered token (type 3, Medium, Administrators deny-only, five
+privileges).
+
+**What works, from LocalSystem:**
+- **An S4U logon made by the starter itself**: `LsaRegisterLogonProcess`,
+  then `LsaLogonUser` with an `MSV1_0_S4U_LOGON` and logon type Network,
+  for `jessie`, `ep-s4u-admin` and `troyc` (a Microsoft account), in about
+  1 ms. Logon type Batch is refused for `jessie` (1385), since standard users
+  lack the batch logon right; Network needs only *Access this computer from
+  the network*, which Users hold by default.
+- **Filtering it by hand**, as UAC does: `CreateRestrictedToken` with
+  `DISABLE_MAX_PRIVILEGE | LUA_TOKEN` and Administrators deny-only, Medium
+  integrity, **and the token's owner and default DACL set to the user**.
+  Without that last step, an administrator's token keeps Administrators as
+  its owner and default DACL, the child cannot open its own objects, and it
+  dies at start with `0xC0000142`. With it: Medium, Administrators deny-only,
+  one privilege.
+- `LoadUserProfile` creates and loads the profile of an account that has
+  never signed in (`C:\Users\jessie`); `HKCU` and `%LOCALAPPDATA%` work;
+  `CreateEnvironmentBlock` gives the person's environment.
+- `CreateProcessAsUser` on a window station and desktop made for the worker
+  (its DACL grants SYSTEM and the person, labelled low) or on the service
+  desktop. A worker of its own is the safer of the two; it shares no desktop
+  with SYSTEM's windows.
+- **`WTSQueryUserToken`** for a signed-in person gives the filtered token
+  already (type 3, Medium, Administrators deny-only), in their session.
+- Interactive-token tasks and a `BUILTIN\Users` group task with a logon
+  trigger **can** be registered by LocalSystem for other accounts, and run
+  only while the person is signed in. Not needed, given the above.
+
+**What a worker reaches when started that way** (all three accounts, signed
+out or never signed in):
+- its own profile, documents and `%LOCALAPPDATA%`: yes; another person's
+  profile (`C:\Users\troyc` from `jessie` or the filtered admin): **denied**;
+- HTTPS out: yes;
+- **DPAPI: denied for an account that has not signed in** (`jessie`,
+  `ep-s4u-admin`); it worked for `troyc` while he was signed in. Anything a
+  local MCP server keeps in Credential Manager is out of reach while its
+  person is signed out;
+- network shares: not measured against another machine (the only one on
+  this network is the root, which was not touched). An S4U logon carries no
+  credentials, so no share that asks for them will open.
+
+**The peer check holds.** A pipe server reading its client by
+`ImpersonateNamedPipeClient` at Identification level got the right account
+and SID for every worker above, filtered or not, in session 0 or 1.
+
+**Not measured:** an Entra ID account and a domain account away from its
+domain (neither exists here); a `troyc` worker after he signs out; a machine
+whose policy has removed *Access this computer from the network* from Users
+(then the S4U logon fails, and the person is served only while signed in,
+which is J25's fallback).
+
+**Troy's call on it (2026-10-06): only while signed in, with the session
+token** (J25 revised). The recommendation was the agent's own S4U logon,
+which works signed in or out. Troy took the simpler shape: one start path,
+no logon sessions made by the agent, and a worker that reaches what the
+person reaches in any program they run, network shares and Credential
+Manager included. The cost, stated and accepted: after a reboot a person's
+calls on that machine wait until they sign in. The S4U findings above stay
+recorded for the day signed-out service is wanted; the hand filter is still
+used, for a session token that UAC did not filter.
 
 ### 2.5 What becomes of the permission step
 
@@ -565,8 +643,8 @@ connect from anywhere"* (J31).
 
 - **Sites are named by id**, with labels like *Amish_Station (yours)*.
 - **The Job sites page** drops the permission hint. It says which account
-  your calls run as on each site, and whether that works while you are
-  signed out there (J25). A site you may use but have not linked says how:
+  your calls run as on each site, and, on Windows, that they run only while
+  you are signed in there (J25). A site you may use but have not linked says how:
   *"On that machine, open this page and sign in"*.
 - **Add a job site** works on a LAN-only install (J31). It says that on a
   machine that is already a node, the same command adds the site (J35).
@@ -727,6 +805,138 @@ still built and tested, with a node whose site polls through it.
 **2b.1 and 2b.2 ship together.** No release has the first without the
 second, because 2b.1 alone keeps the permission step.
 
+#### 3.2 The build of 2b.2 (started 2026-10-06)
+
+**Calls taken starting it** (Troy, all as recommended except J25, §2.4.1):
+
+| # | Call | Taken |
+|---|---|---|
+| J25 | Windows while signed out | **Revised: only while signed in**, with the person's session token |
+| J27 | People with no account on the machine | The owner's worker, as the owner, confined, file tools only |
+| J36 | How a person links on a Linux system install | **The elevated one-liner** (`sudo`), which takes the person's Eugene sign-in and writes the link as root. The agent there is unprivileged, and a link it made would let its account become anyone. A headless server has no browser at the machine anyway |
+| J37 | How the link page signs a person in | **One built-in public OIDC client** at the root, `eugene-site-link`, accepted only with a loopback redirect (`http://127.0.0.1:<port>/link/callback`, RFC 8252), PKCE required. The one exception to D2 of `sign-in-with-eugene.md` |
+| J38 | Per-user installs in 2b.2 | **Yes.** The agent runs the site host and the installing person's worker as its own children |
+
+**What 2b.2 reads as in scope.** Folders stay the owner's to register and
+share, as in 2b.1. Each person keeping their own workspaces and rules is
+2b.3 (§2.6). What changes is *as whom* a call runs: a linked person's in
+their own worker, so the OS decides what a shared folder lets them touch;
+anyone else's in the owner's worker, confined to the folder, as every call
+already is.
+
+**Where things live:**
+
+| | Windows service | Linux system | Per-user (Windows task, Linux `--user`, macOS) |
+|---|---|---|---|
+| Site host program | `<prefix>\apps\site-host\versions\<v>`, installed by the agent (LocalSystem). Users get RX on it and its interpreter, so a worker can run it; nobody but administrators writes it | **Root-owned** `/usr/local/lib/eugene-plexus/site-host/`, installed and updated by `install.sh` and the root update unit, never by the agent | The agent's prefix |
+| Site host runs as | `NT SERVICE\EugenePlexusApp-site-host` (C1) | Its own unit `eugene-plexus-site-host.service`, `DynamicUser=yes` (no longer a C1 app) | The person |
+| Links | `<prefix>\site\links.json`: SYSTEM and Administrators write; the site host's account reads | `/etc/eugene-plexus/site/links.json`, root 0644 | `<config>\site\links.json`, one link, the owner's, made by `site join` |
+| Local-server list | `<prefix>\site\servers.yaml`; read granted to the site host's account and each linked account, by the agent | `/etc/eugene-plexus/site/servers.yaml`, root 0600, handed to the site host and each worker as a systemd credential | `<config>\site\servers.yaml` |
+| Channel | `\\.\pipe\eugene-plexus-site-<suffix>` | `/run/eugene-plexus-site/channel` (the unit's `RuntimeDirectory`, 0755) | the same names, in the person's own space |
+| Worker started by | The agent: `WTSQueryUserToken` for each linked person's session, `CreateProcessAsUser` into it (§2.4.1) | Root: `eugene-plexus-site-workers.path` watches the links and reconciles `eugene-plexus-site-worker@<uid>.service` | The agent, as its own child |
+
+**The worker** is the site host's own package, run as
+`python -I -m eugene_plexus_site_host.worker --account <SID or uid>
+--channel <name> [--host <SID or uid>]`. Before it serves:
+- its own account must be `--account`, and never LocalSystem, a service SID,
+  root, or a uid below 1000;
+- on Windows its token must not be elevated;
+- the far end of the channel must be the site host's account (Windows: the
+  pipe's owner; Linux: `SO_PEERCRED`, matching the owner of the root-made
+  runtime directory).
+
+It runs the `files` tools and the local servers in its own process, as its
+person, with today's code. It reads the local-server list itself, so the
+site host cannot name a program for it to run. It refuses folders inside
+the install's protected roots.
+
+**The channel** carries newline-delimited JSON, each frame at most 256 KiB.
+- The worker says hello. The site host reads the peer's account from the
+  connection, not from the hello: on Windows by `ImpersonateNamedPipeClient`
+  at Identification level (the worker connects with
+  `SECURITY_IDENTIFICATION`); on Linux by `SO_PEERCRED`.
+- An account in no link is refused and disconnected. A second worker for one
+  account replaces the first.
+- Calls are `{"t": "call", "id", "kind", ...}`, where `kind` is `files`,
+  `local`, `inspect` (a folder's identity, at registration) or `tools` (a
+  local server's list). Answers are `{"t": "result", "id", ...}`. Several
+  can be in flight.
+- The Windows pipe is made with `FILE_FLAG_FIRST_PIPE_INSTANCE` and a DACL
+  of SYSTEM, Administrators and the site host's account full, and
+  Authenticated Users read, write and read-control. A site host that finds
+  the name taken stops and says so.
+
+**Routing, in the site host.** The policy decides as in 2b.1, then:
+- a linked person's call goes to their account's worker;
+- anyone else's (no link, or Eugene's owner in dev mode) goes to the
+  **owner's** worker, confined as every call is;
+- registering a folder and listing a local server's tools run in the owner's
+  worker;
+- with no worker connected the call is refused, naming why: on Windows
+  *"Jessie is not signed in on Amish_Station. Calls run as her account only
+  while she is"*; elsewhere *"Jessie's worker is not running"*.
+
+The isolated-account check retires. The site host opens no one's files.
+
+**The report** gains, in `SiteSummary.links`, each linked person, their
+account's display name and whether their worker is connected, plus
+`linkPage` (the agent's loopback link page, on a Windows service install).
+Workbench shows each person their own line.
+
+**The link page** (Windows service installs; J36 keeps Linux elevated) is
+served by the agent:
+- **`GET /link`** answers only a loopback TCP peer with no forwarding
+  header. The agent finds the OS account that owns the connecting socket
+  (`GetExtendedTcpTable` → pid → its token's user) and refuses system and
+  service accounts. The page names the account.
+- **Sign in** runs the code flow with PKCE against the root through the
+  agent's own `/oidc` (J37). `state`, `nonce` and the verifier are bound to a
+  cookie set by `/link`, and the account is read again on each request.
+- **The callback** exchanges the code and checks the ID token: RS256 against
+  the root's JWKS, issuer, audience `eugene-site-link`, nonce, expiry.
+- **A confirm page** names both, *"Link Eugene person Jessie to Windows
+  account AMISH_STATION\jessie?"*, and only its POST, carrying a CSRF token,
+  writes the link.
+- **Rules:** one link per person; an account belongs to one person; a person
+  can remove their own link on the same page. Workbench's *remove* (the
+  person or the owner) reaches the agent from the root
+  (`DELETE /v1/site/links/{subject}`, the root's token), because removing a
+  link can only take access away.
+
+**The owner's link at the join.** `site join` links the owner to the
+account that ran it: on Windows the elevated caller, or the console's user
+if that caller is SYSTEM; on Linux `SUDO_UID`. `--site-account` overrides
+both. The owner's Eugene password, typed at the join, is the person's proof
+there.
+
+**Linux `site link`** (J36): `install.sh --site-link --account <user>`
+asks for the person's Eugene name and password. Root checks them with the
+root using the site's own key (`POST /v1/sites/links/check`, a seventh
+`public_sites` path, rate-limited), writes the link, and the path unit
+starts the worker. `--site-unlink` removes it.
+
+**The contract:**
+- `control.yaml`:
+  - the built-in client `eugene-site-link` (J37);
+  - `POST /v1/sites/links/check` (a site token);
+  - `POST /oidc/job-sites/{site}/links/{subject}/remove` (the person, or
+    the site's owner).
+- `agent.yaml`:
+  - `/link`, `/link/start`, `/link/callback` and `/link/confirm`;
+  - `DELETE /v1/site/links/{subject}`;
+  - `public_sites` gains the seventh path.
+- `sites.yaml`: `SiteSummary.links` and `linkPage`, and `SiteReport.account`
+  as the site host's own account.
+- `site-host.yaml`: the launch environment (links, servers, channel), the
+  worker, and `check-person`.
+
+**Order:** contract → site host (worker, channel, routing) → control →
+agent (starter, link page, owner's link, per-user) → installers (Linux
+root-owned site host, units, `--site-link`) → Workbench → acceptance on
+Amish_Station (an elevated throwaway agent run as LocalSystem on +100
+ports, and Jessie signed in through *Switch user*) and on Linux in CI →
+sabotage.
+
 **J14, designed next** in a session of its own. J14a (signed policy edits)
 is then built.
 
@@ -748,9 +958,9 @@ one-liner again).
 |---|---|---|
 | J23 | Which process holds the site's enrollment | **The site host, end to end**: its key, the pin, its own poll. The agent's relay retires |
 | J24 | Which OS accounts the site runs in | *Revised after J26/J27:* **the site host in an unprivileged account of its own; each person's tools in a worker as their own account.** The permission step retires |
-| J25 | Windows, while the person is signed out | **An S4U task where Windows allows it** (this machine's files only), **else only while signed in.** Never a stored password |
+| J25 | Windows, while the person is signed out | **Taken (Troy), then revised after measurement (§2.4.1): only while the person is signed in**, with their own session token. Never a stored password |
 | J26 | Several people on one machine | **Taken (Troy): one install serving everyone**, each as their own account |
-| J27 | Whose permissions a person's calls carry | **Taken (Troy): their own local account's**, linked to their Eugene sign-in at the machine. *Recommended:* people with no account there get only folders the owner shares, as the owner, confined |
+| J27 | Whose permissions a person's calls carry | **Taken (Troy): their own local account's**, linked to their Eugene sign-in at the machine. **Also taken:** people with no account there get only folders the owner shares, as the owner, confined |
 | J28 | The workspace server and `files` | **Fold them**: one server, id `files` kept, allow/ask/deny rules, "ask" answered in Workbench. *Awaiting Troy after a clarification (§4.1)* |
 | J29 | What waits for person-held keys (J14) | **Widening edits before any release with sites running as their people; commands before commands ship.** J14 designed next |
 | J30 | J9's proof of administrator rights, without a terminal | **Taken (Troy): at join, and later too.** Later: the Windows tray behind a UAC prompt, or the one-liner again; the CLI for experts |
@@ -759,6 +969,9 @@ one-liner again).
 | J33 | Dev mode in a console that is membership only | **A dev-mode section on the site's page**, absent in production |
 | J34 | Migration | **Taken (Troy): none.** Nobody has used the old site policy |
 | J35 | Making a node into a site | **The same installer one-liner, run at the machine**, adding the site without reinstalling the node |
+| J36 | Linking on a Linux system install | **Taken (Troy): the elevated one-liner**, which writes the link as root (§3.2) |
+| J37 | How the link page signs a person in | **Taken (Troy): one built-in public loopback OIDC client**, `eugene-site-link` (§3.2) |
+| J38 | Per-user installs in 2b.2 | **Taken (Troy): yes**, the agent runs the site host and the person's worker as its children (§3.2) |
 
 ### J23. Which process holds the site's enrollment
 
@@ -797,8 +1010,14 @@ else.
 
 ### J25. Windows, while the person is signed out
 
-**Recommendation: a Task Scheduler task with S4U logon, where Windows
-allows it for that account.** It runs at boot, signed in or out, with this
+**Revised (Troy, 2026-10-06), after the measurement of §2.4.1: only while
+the person is signed in, with their own session token.** The text below is
+the recommendation as first taken. The measurement found Windows refuses an
+S4U task registered for anyone but the registering account, so the agent
+would have had to make the S4U logon itself; Troy chose the simpler shape.
+
+**First taken, as recommended: a Task Scheduler task with S4U
+logon, where Windows allows it for that account.** It runs at boot, signed in or out, with this
 machine's files only. Network shares and EFS-encrypted files need the
 person's credentials, which S4U does not have. Where Windows refuses S4U
 (probably Entra ID, and domain accounts away from the domain; to be
@@ -826,8 +1045,8 @@ permissions for that person"*. A link is made at the machine: the person
 signs in to Eugene in a browser there, and the starter reads their OS
 account from the connection (§2.2).
 
-**Still open, with a recommendation: people with no account on the
-machine.** They can be given a folder by the owner, and their calls run in
+**Also taken (Troy, 2026-10-06), as recommended: people with no account on
+the machine.** They can be given a folder by the owner, and their calls run in
 the owner's worker as the owner, confined to that folder, with file tools
 only and never commands. That is the only way to share a folder with someone
 at another office.
@@ -969,8 +1188,17 @@ after 2b.2.
 | J34 | *"No migration needed because no one has used the old site policy yet."* | No import and no add-again listing (§2.11) |
 
 **Then Troy said to begin the next slice.** That takes the calls 2b.1 rests
-on as recommended: **J23, J31, J32, J33 and J35**. Still open:
-- J25 and J27's question about people with no account, which 2b.2 needs;
+on as recommended: **J23, J31, J32, J33 and J35**.
+
+**Starting 2b.2 (2026-10-06), Troy took J25 and J27's open question as
+recommended:** an S4U task where Windows allows it, else only while signed
+in, never a stored password; and a person with no account on the machine
+can be given a folder, served by the owner's worker as the owner, confined
+to it, with file tools only. **The S4U measurement then found the task
+impossible (§2.4.1), and Troy revised J25: on Windows, a person's worker
+runs only while they are signed in, with their own session token.** So a
+person without an account on a Windows machine is served only while its
+owner is signed in there. Still open:
 - J28, which 2b.3 needs;
 - J29, which gates a release.
 
