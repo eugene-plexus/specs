@@ -117,6 +117,25 @@ Jessie's 0.2 s after her link was confirmed.
   removing it. Not yet run: the one file left by run 3 goes with the test
   accounts' cleanup.
 
+## Found by CI after landing, and fixed
+
+The first CI run at the new pins passed the Linux Job Sites acceptance
+(21 of 21) and failed five cheap checks: four contract descriptions split at a
+comma (Redocly, red since 2b.1's contract), the site host's installer pin read
+as an eighth component, mypy on Linux over Windows-only `ctypes`, one
+unformatted test, and two secret-scan false positives on key type
+annotations. Fixed in specs `0bce164`, agent `b6f08a1`, site-host `044c159`.
+
+The agent's Linux tests, which that CI run never reached, then found a real
+defect: **a service install with broken accounts** (pywin32 missing, or an
+old `install.sh`'s units) was read as a per-user install (J38), so the agent
+would have run the site host as its own child, as LocalSystem or its own
+account. It now hosts no site there until repaired (agent `d83712c`). The
+test meant to hold this had passed only where uv could not be found. The app's
+own site-host loop now idles in unit tests, where it raced tests that put a
+host record. One sabotage added for it (283), caught. The installers still
+pin agent `c3a718c`; this rides the next pin.
+
 ## Not done, named
 
 - **CI's Linux runner** (a sudo-capable user, not root) runs the

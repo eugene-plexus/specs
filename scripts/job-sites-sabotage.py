@@ -1555,6 +1555,14 @@ SABOTAGES.extend(
             "    store = AppStore(config_dir / APPS_FILE)\n    try:\n        store.load()\n",
             "agent-site",
         ),
+        # Found by CI on Linux after landing: a broken service install read as per-user.
+        e(
+            "a service install with broken accounts hosts the site as the agent's own child",
+            RELAY,
+            "            InstallMechanism.windows_service,\n            InstallMechanism.systemd_system,\n",
+            "",
+            "agent-site",
+        ),
         e(
             "a worker runs before it is in the job",
             SITE_WORKERS,
