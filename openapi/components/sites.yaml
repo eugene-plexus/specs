@@ -532,7 +532,7 @@ SiteEnrollment:
     id: {$ref: '#/SiteId'}
     label: {$ref: '#/SiteLabel'}
     owner: {type: string, minLength: 1, maxLength: 64, description: The owner's person id.}
-    ownerName: {type: string, maxLength: 256, description: How the owner signs in, for display.}
+    ownerName: {type: string, maxLength: 256, description: 'How the owner signs in, for display.'}
     controlPublicKey:
       type: string
       description: Base64 of the root's raw Ed25519 identity key. A site that pinned a key at its join (J7a) checks it is this one.

@@ -128,8 +128,8 @@ SiteInvitation:
     owner: {type: string}
     ownerName: {type: string, description: The sign-in name the machine will ask for.}
     label: {type: [string, 'null']}
-    joinUrl: {type: [string, 'null'], description: The address the machine joins through, when this root knows one.}
-    rootKey: {type: string, description: Base64 of the root's raw Ed25519 identity key, which the site pins (J7a).}
+    joinUrl: {type: [string, 'null'], description: 'The address the machine joins through, when this root knows one.'}
+    rootKey: {type: string, description: "Base64 of the root's raw Ed25519 identity key, which the site pins (J7a)."}
 
 HostedSites:
   type: object
@@ -344,7 +344,7 @@ JobSite:
       type: boolean
       description: Whether the site can serve anyone but its owner (false on macOS). Absent means true.
     lastContactAt: {type: [string, 'null'], format: date-time}
-    hostNode: {type: [string, 'null'], description: The node that hosts it (J32), for display.}
+    hostNode: {type: [string, 'null'], description: 'The node that hosts it (J32), for display.'}
     folders:
       type: array
       description: The folders registered on it, which its one file server offers by name (J6g), and who may use each.

@@ -14,6 +14,15 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
 COMPONENTS = {"agent", "control", "gateway", "inference-driver", "library", "tool-driver", "ui"}
+#: Pinned by install.sh alone, for the job-site host root installs on a Linux
+#: system install (Job Sites 2b.2). Not one of the seven packages in the
+#: agent's prefix, so not in the comparison; recorded in the manifest beside them.
+SITE_HOST = "site-host"
+
+
+def site_host_pin(shell: bytes) -> str | None:
+    found = re.search(r"^PIN_SITE_HOST=([0-9a-f]{40})\b", shell.decode(), re.M)
+    return found.group(1) if found else None
 
 
 def pins(shell: bytes, powershell: bytes) -> dict[str, str]:
@@ -21,6 +30,7 @@ def pins(shell: bytes, powershell: bytes) -> dict[str, str]:
              re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})\b", shell.decode(), re.M)}
     if "driver" in posix:
         posix["inference-driver"] = posix.pop("driver")
+    posix.pop(SITE_HOST, None)
     windows = dict(re.findall(r'^\s*"([a-z-]+)"\s*=\s*"([0-9a-f]{40})"', powershell.decode(), re.M))
     if set(posix) != COMPONENTS or windows != posix:
         raise ValueError("installers must pin the same seven components to full commit IDs")
@@ -44,6 +54,7 @@ def package(version: str, ref: str, output: Path) -> dict:
             raise ValueError("installer does not embed the release dependency lock")
     files["requirements.lock"] = dependencies
     manifest = {"version": version, "specsCommit": commit, "components": components,
+                "siteHost": site_host_pin(files["install.sh"]),
                 "files": {name: {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
                                  "source": f"https://raw.githubusercontent.com/eugene-plexus/specs/{commit}/{'release' if name == 'requirements.lock' else 'scripts'}/{name}"}
                           for name, data in files.items()},

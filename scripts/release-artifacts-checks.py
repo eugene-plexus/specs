@@ -40,10 +40,12 @@ with tempfile.TemporaryDirectory(prefix="ep-release-check-") as work:
         print("CAUGHT: Windows and POSIX release pins diverge")
     else:
         raise AssertionError("accepted mismatched release pins")
+    assert manifest["siteHost"] == module.site_host_pin(shell), manifest["siteHost"]
+    assert manifest["siteHost"] is None or len(manifest["siteHost"]) == 40
     try:
         module.package("v0.1.0-alpha.1", "HEAD", output)
     except FileExistsError:
         pass
     else:
         raise AssertionError("overwrote existing release artifacts")
-print("PASS: exact committed bytes, checksums, seven matching pins, no output overwrite")
+print("PASS: exact committed bytes, checksums, seven matching pins, the site host recorded, no output overwrite")
