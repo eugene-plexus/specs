@@ -984,6 +984,22 @@ acceptance.py`. Suites: site-host 174, agent 1974, control 416, Workbench 170
   link's display name in the owner's view comes from the folder and server
   people lists (`SitePersonLink` carries no name).
 
+**What the Windows acceptance found** (Amish_Station, `troyc` and `jessie`,
+9 of 9 on the third run; record
+[`job-sites-each-person-run.md`](../acceptance/job-sites-each-person-run.md)):
+- `site join` took a venv's `python.exe` for an installed site host. uv makes
+  the interpreter before it installs anything, so a first join raced the
+  install. The join now waits for the version `apps.yaml` records (agent
+  `36f5a66`).
+- One job for every worker refused the second person's worker: a process
+  already in a job joins another only while that one is empty, and an agent
+  that is itself in a job hands its job to each child. Each worker now has a
+  job of its own (agent `e924ff3`).
+- What the design said held: `troyc`'s worker ran with a filtered token (the
+  file it wrote is his, not Administrators'); a worker started into a
+  disconnected session served; the pipe's account check refused Jessie once
+  unlinked; `logoff` ended her worker with her session.
+
 **J14, designed next** in a session of its own. J14a (signed policy edits)
 is then built.
 
