@@ -1,7 +1,10 @@
 # Job Sites as their own enrollment, with the workspace server (slice 2b)
 
 **Status:** a design, 2026-10-06. Nothing in it is built. **Calls J23-J35
-(§4) are Troy's to take.** It builds on J1-J22 and J6a-J6i
+(§4) are Troy's to take.** Troy answered J26, J27, J30 and J34 the same
+day (§4.1): one install serves every person on a machine, each as their own
+local account. The text below is revised to match, which changed J24 and
+J27 and grew slice 2b.2. It builds on J1-J22 and J6a-J6i
 ([`remote-nodes.md`](remote-nodes.md) §6), which it does not reopen. J19-J22
 (§6.4 there) are the reason it exists: a job site is its own enrollment,
 the operator-managed node folders retire, the standalone install waits, and
@@ -21,13 +24,18 @@ Code anchors are at the commits measured on 2026-10-06:
 
 ## 0. The shape, in one page
 
-**A job site is an enrollment held by one program, the site host, running
-as its owner's own OS account.**
+**A job site is one install and one enrollment per machine, held by one
+program, the site host, which serves each person as their own OS account.**
 
-- The site host keeps the site's key, pins the root, polls it, and serves
-  the site's tools. It no longer depends on the agent's relay (J23).
-- It runs as the person who owns the site, so their tools reach what they
-  can reach, and nothing has to be granted to a service account (J24).
+- The site host keeps the site's key, pins the root, polls it, and keeps the
+  site's policy and audit log. It no longer depends on the agent's relay
+  (J23). It runs in an unprivileged account of its own and never opens
+  anyone's files (J24).
+- **Each person's tools run in a worker process under that person's own OS
+  account**, so they reach what that person can reach, and nothing has to
+  be granted to a service account (J24, J26). A person's Eugene sign-in is
+  linked to their local account at the machine, the same way once sign-in
+  with Google arrives (J27).
 - On a machine that is also a node, the agent installs, starts and updates
   the site host. It holds none of the site's identity, and the two
   enrollments share nothing but the machine (J21).
@@ -44,8 +52,9 @@ as its owner's own OS account.**
 that Troy rejected was, by accident, the one check a compromised root could
 not forge. Under J6b a root can already forge a site owner's policy edit;
 today that edit can only reach folders someone granted the isolated account
-by hand. Once the site runs as its owner (J6i), a forged edit reaches
-everything the owner's account can. J20 removes the step, as Troy asked, and
+by hand. Once tools run as each person (J6i), a forged edit reaches
+everything a linked person's account can. J20 removes the step, as Troy
+asked, and
 J14 (person-held keys checked at the site) is what puts a check back (§2.8,
 J29).
 
@@ -55,8 +64,8 @@ design):
 | Process | OS account | Holds | Talks to |
 |---|---|---|---|
 | The agent | LocalSystem (Windows service), `eugene-plexus` (Linux) | The node's enrollment (`node.yaml`) | The root, as the node |
-| The site host | The site owner's own account, e.g. `AMISH_STATION\troyc` | The site's key, its policy, its audit log | The root, as the site, by its own poll |
-| The site's tools: the workspace server, local MCP servers, later commands | The same account, as children of the site host | Nothing | Only the site host |
+| The site host | Its own unprivileged account: `NT SERVICE\EugenePlexusApp-site-host` (Windows), a system user (Linux) | The site's key, its policy, its audit log, the links between people and accounts | The root, as the site, by its own poll; the workers |
+| A worker for each linked person: the workspace server, local MCP servers, later commands | That person's own account, e.g. `AMISH_STATION\troyc` and `AMISH_STATION\jessie` | Nothing | Only the site host, over a local channel that proves its account |
 | Apps (Workbench, Open WebUI) | Their own accounts (C1), as today | Their own keys | The root and the gateway |
 
 Revoking either enrollment leaves the other working. Neither key can sign
@@ -188,8 +197,8 @@ safe: **the two enrollments share nothing but the machine.**
 - Each has its own key, its own registry entry and its own channel to the
   root.
 - Neither process uses the other's identity or reads the other's files.
-- On Linux the OS enforces that. The site's directory belongs to the
-  person, and `eugene-plexus` cannot read it. On Windows the agent is
+- On Linux the OS enforces that. The site host's directory belongs to its
+  own account, and `eugene-plexus` cannot read it. On Windows the agent is
   LocalSystem and could read anything; there, "does not hold" is a rule
   the code keeps, not one Windows enforces. That is the same limit
   `remote-nodes.md` §3.7 states for an administrator.
@@ -209,26 +218,56 @@ from Workbench. At the machine:
 1. The installer one-liner, run elevated, installs or updates the site host
    program. On a machine that is already a node it adds the site without
    reinstalling the node (J35).
-2. It chooses the OS account the site will run as (below), and creates the
-   site's data directory, readable only by that account and administrators.
-3. It runs the site host's own `join` **as that account**. The person types
-   their Eugene password there (rule 1 of `remote-nodes.md` §3.3). When
-   the root's address is HTTPS, the site pins the root's identity key from
-   the command (J7a).
+2. It creates the site host's own account and data directory, readable only
+   by that account and administrators.
+3. It runs the site host's own `join` **as that account**. The person who
+   will own the site confirms at the machine (rule 1 of `remote-nodes.md`
+   §3.3). Today that is their Eugene password, typed into the installer.
+   When the root's address is HTTPS, the site pins the root's identity key
+   from the command (J7a).
 4. The root answers with the site's id, its owner's person id and the root's
    key. **The site records its owner from that answer, once**, so the poll
    answer stops carrying `siteOwner`.
-5. The installer writes the binding, *site id → account → data directory*,
-   to a file only an administrator can write. The agent reads it to know
-   what to supervise; on Linux the root broker reads it to know whom to run.
+5. The installer links the owner to the OS account that ran it (below).
+6. The installer writes the site's id and data directory to a file only an
+   administrator can write. The agent reads it to know what to supervise.
 
-**Choosing the account.** The installer uses the account that ran it. If
-that is an administrator who is not the person signed in at the machine,
-which happens when a standard user elevates with someone else's password, it
-uses the signed-in person. It prints the choice (*"Tools will run as
-AMISH_STATION\troyc"*), and `-SiteAccount` overrides it. It refuses
-LocalSystem, root, the agent's account, service accounts, and Linux uids
-below 1000.
+**One site serves every person on the machine (J26).** There is one
+install, one enrollment and one owner per machine. The owner decides who
+may use the site at all. Each person who may is served as their own OS
+account, once they have linked it.
+
+**Linking a person to their OS account (J27).** A link says: *this Eugene
+person is this account on this machine.* It is made at the machine, never
+from the root:
+1. The person opens a page served on loopback by the machine's privileged
+   starter (the agent, on a node), in a browser on that machine, and signs
+   in to Eugene there.
+2. The starter learns the OS account from the connection itself: on
+   Windows, the account of the process that owns the client socket; on
+   Linux, the socket's uid.
+3. The OS account proves itself, and the Eugene sign-in proves the person.
+4. The starter records the link in a file only an administrator can write.
+   The site host reads it and cannot change it.
+
+Because it is a browser sign-in, it works unchanged once Eugene signs people
+in with Google or Microsoft (control#4). The installer makes the owner's
+link at join from the account that ran it, so the owner never needs the
+page. If that account is an administrator other than the person signed in at
+the machine, it uses the signed-in person; `-SiteAccount` overrides.
+
+Links are refused for LocalSystem, root, the agent's and the site host's
+accounts, service accounts, and Linux uids below 1000. One person has one
+link per machine, and one account belongs to one person. **A root cannot
+make a link**: a link needs someone at the machine, signed in as that
+account. **Nor can a compromised site host**, because the starter makes
+and keeps the links itself. Removing a link is the person's or the owner's
+choice, from Workbench; the starter removes it and the person's task.
+
+**Sign-in at the machine also replaces the password in the installer,
+later.** A person who signs in with Google has no Eugene password to type,
+so the join's confirmation (step 3) moves to the same page when single
+sign-on arrives.
 
 **Leaving and removal.**
 - The owner leaves from Workbench, or at the machine by uninstalling.
@@ -236,8 +275,10 @@ below 1000.
   capability).
 - Either one revokes the key at the root. The site host's next poll is
   refused; it stops, and says why.
-- **Deleting a person removes the sites they own.** A site has exactly one
-  owner, and only the owner can grant anything on it (§1.5).
+- **Deleting a person removes the sites they own** (§1.5), and the root
+  sends no call in their name to any other site again. Their links there
+  stay inert until that site's owner removes them. A site has exactly one
+  owner, and only the owner decides who may use it.
 
 ### 2.3 The root's side
 
@@ -286,27 +327,46 @@ site ids. The invite no longer needs the public route (J31).
 
 Their old log entries still replay, and grant nothing.
 
-### 2.4 Running as the person (J24, J25)
+### 2.4 Running as each person (J24, J25)
 
-**The whole site host runs as its owner:** policy, audit log, the workspace
-server, local MCP servers and later commands. It is one process with its
-tools as children. That is Claude Code's shape, and it is the only shape the
-standalone install can have without administrator rights (§2.12).
+**Two parts.** The site host runs in an unprivileged account of its own and
+holds the enrollment, the policy, the audit log and the links. It opens no
+one's files, so it needs no folder permission. **A worker per linked person
+runs that person's tools**: the workspace server, local MCP servers and
+later commands, all as that person's own account. The site host starts a
+worker when a call for that person arrives and none is running, through the
+machine's privileged starter, and stops it when it has been idle.
 
-| Install | The agent runs as | The site host is started by | It runs |
+**The local channel.** A worker connects to the site host over a named
+pipe (Windows) or a Unix socket (Linux). The site host checks the
+connecting process's account on every connection: on Windows, the token of
+the client process; on Linux, `SO_PEERCRED`. A worker that is not running
+as the account its link names is refused. So a call for Jessie can only ever
+reach a process running as Jessie.
+
+| Install | The agent runs as | A person's worker is started by | It runs |
 |---|---|---|---|
-| Windows service | LocalSystem | A Task Scheduler task per site: principal the person, logon type S4U, limited token, at boot, restarted on failure. The agent starts, stops and watches it | Signed in or out. While signed out it has no network credentials, so it reaches this machine's own files only (J25) |
-| Windows service, an account S4U refuses | LocalSystem | A task at the person's sign-in, with their interactive token | While the person is signed in |
-| Windows per-user | The person | The agent, as its own child | While the person is signed in, as the agent is |
-| Linux system | `eugene-plexus` | The root broker: `eugene-plexus-site@<id>.service` with `User=` the person and `NoNewPrivileges=yes` | Always |
-| Linux `--user` | The person | The agent, as its own child | As the agent does |
-| macOS (per-user) | The person | The agent, as its own child | As the agent does. The owner's own tools only, until a folder boundary exists for sharing (§2.6) |
+| Windows service | LocalSystem | A Task Scheduler task per linked person: principal the person, logon type S4U, limited token, restarted on failure. The agent creates it when the link is made, and runs it when the site host asks | Signed in or out. While signed out it has no network credentials, so it reaches this machine's own files only (J25) |
+| Windows service, an account S4U refuses | LocalSystem | The same task with the person's interactive token | While that person is signed in |
+| Windows per-user | The person | The agent, as its own child | While the person is signed in. Only the installing person can be served |
+| Linux system | `eugene-plexus` | The root broker: `eugene-plexus-site-worker@<uid>.service` with `User=` the person and `NoNewPrivileges=yes` | Always |
+| Linux `--user` | The person | The agent, as its own child | As the agent does. Only the installing person can be served |
+| macOS (per-user) | The person | The agent, as its own child | As the agent does. Only the installing person, and only their own workspaces, until a folder boundary exists for sharing (§2.6) |
 | Docker | — | Not a site. A container's files are not a person's | — |
 
+On the per-user rows the agent's account is the only account there is, so
+the site host and the one worker are the same person. A site there serves
+only that person.
+
 **Rules that hold in every row:**
-- **The site host refuses to serve tools unless it runs as the account in
-  its binding.** It never serves as LocalSystem, root or the agent's
-  account. This replaces the isolated-account check (`S/settings.py:37`).
+- **The starter runs a worker only for an account in its own link file**,
+  and only the pinned worker program. A link exists only because someone at
+  the machine made it (§2.2). Neither a root nor the site host can cause a
+  worker to start for anyone else.
+- **A worker refuses to serve unless it runs as the account its link
+  names.** It never serves as LocalSystem, root, the agent's account or the
+  site host's. This replaces the isolated-account check
+  (`S/settings.py:37`).
 - **It always gets a limited token.** Tools never run elevated. J9's proof
   of administrator rights is about turning a tool on, not about running it
   elevated.
@@ -324,10 +384,14 @@ standalone install can have without administrator rights (§2.12).
   or tag, and nothing the agent writes is ever executed as root
   (`A/update_apply.py:12-19,439-450`). On Windows the program sits in the
   administrator-only install directory, as the agent's does.
-- **The local-server list moves beside the binding.** An administrator
-  writes it at the machine (§6.2 of `remote-nodes.md`). The site host reads
-  it directly, and cannot write it. The agent's copy and its hash in the
-  environment are no longer needed.
+- **The local-server list moves beside the links**, in the same
+  administrator-only place. An administrator writes it at the machine (§6.2
+  of `remote-nodes.md`). Workers read it directly and cannot write it. The
+  agent's copy and its hash in the environment are no longer needed.
+- **The site host's own account becomes valuable.** It chooses which worker
+  a call goes to, so whoever controls it can act as any linked person, within
+  the site's rules. It cannot add a link or start a worker for an unlinked
+  account. It runs only its own code, and opens no one's files.
 
 **Owed by measurement before this is built** (Windows 11, on real accounts):
 - S4U for a Microsoft account (Troy's `troyc` is one), for an Entra ID
@@ -340,10 +404,11 @@ standalone install can have without administrator rights (§2.12).
 ### 2.5 What becomes of the permission step
 
 **Nothing remains for anyone to run.**
-- The owner's tools reach what the owner can.
-- A folder shared with another person is reached as the owner, confined to
-  that folder (§2.6).
-- No service account is granted anything.
+- Each linked person's tools reach what that person's account can.
+- A folder shared with someone who has no link on the machine is reached as
+  the owner, confined to that folder (§2.7).
+- No service account is granted anything. The site host's account opens no
+  one's files.
 
 At upgrade, the `node-files` virtual account, its service and its data are
 removed. **Entries a person added by hand to their folders' permissions for
@@ -355,9 +420,16 @@ create.
 
 **One server per site, with the id `files` kept.** Workbench, its tool
 offers and its chats key on `files` (`W/tools.py:326-331`), so keeping the
-id costs nothing. What a site shares are now called workspaces. Each is
+id costs nothing. The folders it works in are now called workspaces. Each is
 today's registered folder: a name unique on the machine, a path and an
-identity.
+identity. **The server is not the job site:** the job site is the machine
+and its enrollment; the workspace server is the set of file tools on it that
+Workbench's model calls; a workspace is one folder those tools work in.
+
+**Each linked person keeps their own workspaces and rules**, from Workbench,
+because their workspaces are folders their own account reaches. The site's
+owner decides who may use the site, and what people without a link get
+(§2.7). The owner does not see another linked person's workspaces.
 
 **Its tools:**
 - today's `list_directory`, `read_text` and `write_text`, unchanged;
@@ -373,14 +445,14 @@ short. Commands (`run_command`) are the last slice (J29).
 
 **Rules: allow, ask or deny, per person, workspace and tool, with optional
 path patterns inside the workspace.** Deny wins, then ask, then allow.
-Anything outside every workspace is denied. The owner adds a workspace to
+Anything outside every workspace is denied. A person adds a workspace to
 reach more, as Claude Code's additional directories do.
 
 | Who | Reads, `glob`, `grep` | `write_text`, `edit_text` |
 |---|---|---|
-| The owner, in their own workspaces | allow | ask |
-| Someone the owner shared a workspace with to read | allow | deny |
-| Someone the owner let change files | allow | ask, or allow when the owner chose *"without asking you"* (today's standing pre-approval) |
+| A linked person, in their own workspaces | allow | ask |
+| Someone without a link, given a folder to read | allow | deny |
+| Someone without a link, allowed to change files | allow | ask, or allow when the owner chose *"without asking you"* (today's standing pre-approval) |
 
 **Who answers "ask".** Workbench already asks the person to approve every
 call (`W/answers.py:36,381-412`). Under these rules it asks only for "ask",
@@ -389,52 +461,64 @@ claimed. **Until J14 the site cannot check that an approval happened**, so
 an "ask" is exactly as strong as the root (J29).
 
 **The boundary.**
-- **For the owner, the rules are the boundary.** By J6i the OS is not: the
-  host runs as the owner. Troy accepted that cost.
-- **For anyone else, every call is also confined to the shared folder in
-  code**, as today:
+- **For a linked person, their OS account and their rules are the
+  boundary.** Their account's permissions decide what can be touched at all,
+  and their rules narrow it. Beyond the rules, nothing confines a call to
+  its workspace: J6i accepted that cost.
+- **For someone without a link, every call is also confined to the shared
+  folder in code**, as today:
   - on Windows, by C6's handle-relative opens that refuse links
     (`S/folder_windows.py`);
   - on Linux, by Landlock, which the kernel enforces per thread
     (`S/folder_linux.py`).
 
-  macOS has neither yet, so a macOS site serves its owner only.
+  macOS has neither yet, so a macOS site serves only its owner.
 
-### 2.7 Other people on someone's site (J26, J27)
+### 2.7 People on a site (J26, J27)
 
-- **A person given a workspace on someone else's site acts as the site's
-  owner's account**, confined to that workspace, with file tools only. They
-  never get commands.
-- **A local MCP server the owner grants them, tool by tool, runs as the
-  owner.** It runs in the host's account today; this keeps that.
-- **A person with an account of their own on that machine can have their
-  own site there** (J26). Each site is its own enrollment, owned by one
-  person and running as that person. The console groups them by machine.
+- **A person with a link works as themselves.** Their calls run in their own
+  worker, as their own account, with that account's permissions (Troy:
+  their sign-in is *"attached to the local permissions for that person"*).
+  Commands, when they come, run as them too.
+- **A person without an account on the machine** can still be given a
+  folder by the site's owner. Their calls run in the owner's worker, as the
+  owner, confined to that folder, with file tools only. They never get
+  commands.
+- **A local MCP server** runs in the worker of whoever calls it, so it acts
+  with that person's permissions. For someone without a link, it runs as the
+  owner, tool by tool as the owner granted, as it runs in the host's account
+  today.
+- **Who may link.** The site's owner chooses, from Workbench, which people
+  may use the site. Each of them makes their own link at the machine.
 
 ### 2.8 What a compromised root reaches (J29)
 
-| Through | Slice 2, today | 2b.1, own enrollment | 2b.2, runs as its owner | 2b.3, workspace | 2b.4, commands |
+| Through | Slice 2, today | 2b.1, own enrollment | 2b.2, runs as each person | 2b.3, workspace | 2b.4, commands |
 |---|---|---|---|---|---|
-| **Access people were given** | Granted folders, as the isolated account | The same | The same folders, as the owner | Workspaces: read, write, edit, search | Everything the owner's account can do |
-| **A forged edit from the owner** (J6b's stated limit) | Only folders a person granted the isolated account by hand | The same | **Anything the owner's account can read or write** | The same | The same |
+| **Access people were given** | Granted folders, as the isolated account | The same | The same folders, as each linked person | Workspaces: read, write, edit, search | Everything each linked person's account can do |
+| **A forged edit in a person's name** (J6b's stated limit) | Only folders a person granted the isolated account by hand | The same | **Anything a linked person's account can read or write** | The same | The same |
+
+What a compromised root still cannot do: make a link, or reach an account
+nobody linked. Those need someone at the machine (§2.2).
 
 **The by-hand permission was the one check a compromised root could not
 forge.** It was unintended, and it was the step Troy rejected. J20 removes
 it. J14 is what puts a check back. It has two halves, and they guard
 different things:
 - **J14a, signed policy edits.** Every management action is signed by a key
-  only the owner holds. The site checks it against the public key it pinned
-  at its join, at the machine. A compromised root is then held to what
-  owners actually granted.
+  only the person it speaks for holds: the owner, for who may use the site;
+  each linked person, for their own workspaces and rules. The site checks it
+  against the public key it pinned at the machine, at the join or at the
+  link. A compromised root is then held to what people actually granted.
 - **J14b, signed calls.** Each call the person approves is signed by them,
   which the site checks. That makes "ask" a check the site makes itself. It
   is also what commands need: with commands, a forged call is the whole
   account.
 
 **A sketch, for J14's own session.**
-1. At the join, the installer shows a short pairing code, which never leaves
-   the machine.
-2. The owner types it into Workbench. Workbench registers a passkey and sends
+1. At the join, or when a person links, the machine shows a short pairing
+   code, which never leaves the machine.
+2. The person types it into Workbench. Workbench registers a passkey and sends
    its public key, with a MAC under the code, through the root.
 3. The site accepts the key only if the MAC checks, so the root cannot
    substitute its own.
@@ -480,8 +564,9 @@ connect from anywhere"* (J31).
 
 - **Sites are named by id**, with labels like *Amish_Station (yours)*.
 - **The Job sites page** drops the permission hint. It says which account
-  the site runs as, and whether it works while the person is signed out
-  (J25).
+  your calls run as on each site, and whether that works while you are
+  signed out there (J25). A site you may use but have not linked says how:
+  *"On that machine, open this page and sign in"*.
 - **Add a job site** works on a LAN-only install (J31). It says that on a
   machine that is already a node, the same command adds the site (J35).
 - **The rules editor** arrives with the workspace server (2b.3). "Allow"
@@ -491,40 +576,35 @@ connect from anywhere"* (J31).
 
 ### 2.11 Migration (J34)
 
-Node folders shipped on edge on 2026-10-04. No release carries them:
-v0.1.0 is 2026-10-02. **Nothing converts.**
-- **LAN node folders and their grants** (`putNodeHelper`, `ownerAccess`,
-  `helperGrants`) replay and grant nothing. The console says once what
-  retired, and links to Job sites. Converting them is the wrong move: they
-  were decided by Eugene's owner, and J11 says the owner's decisions do not
-  become a person's.
-- **Slice 1 and 2 job sites** are nodes with the `files` grant. After the
-  upgrade the agent no longer relays for them, so they stop. Job sites lists
-  them as *joined before sites had their own enrollment: remove it and add it
-  again*. Their `policy.json` stays on disk. A new site for the same person
-  on that machine imports its workspaces, people and servers.
-- **Workbench chats** keep their history. Their old selections show as
-  removed (§2.10).
-- **Troy's Amish_Station:**
-  1. The upgrade removes the `node-files` service and account.
-  2. Troy adds Amish_Station as his site from Workbench, by running the
-     one-liner on the machine.
-  3. He adds `C:\Users\troyc\…` workspaces. Nothing has to be granted.
+**No migration (Troy, J34): nobody has used the old site policy.** Node
+folders shipped on edge on 2026-10-04, and no release carries them (v0.1.0
+is 2026-10-02).
+- **Old records** (`putNodeHelper`, `ownerAccess`, `helperGrants`, and
+  nodes with the `files` grant) replay and grant nothing. Nothing converts
+  and nothing is imported.
+- **What we made is removed:** the `node-files` service, its account and
+  its data.
+- **Troy's Amish_Station:** Troy adds it as his site from Workbench by
+  running the one-liner on the machine, then adds `C:\Users\troyc\…`
+  workspaces. Nothing has to be granted.
 
 ### 2.12 What J21's standalone install will need
 
 This design is built so that none of it has to be undone:
-- **The site host is self-contained.** It joins, pins the root, polls,
-  keeps its policy and audit log, and serves its tools, with none of the
-  agent's code or files (J23).
-- **Its launch is a binding file and a data directory.** An agent-hosted
-  site and a standalone one differ only in who starts it.
+- **The site host and its workers are self-contained.** They join, pin
+  the root, poll, keep the policy and audit log, and serve tools, with none
+  of the agent's code or files (J23).
+- **The starter is a role, not the agent.** On a node the agent plays it:
+  it serves the link page, keeps the links, and starts workers. A
+  standalone install serving several people needs a small privileged
+  service of its own to play it. An agent-hosted site and a standalone one
+  differ only in who plays that role.
 - **The standalone installer** installs a Python and the site host program,
-  then registers the start:
+  then one of two shapes:
   - **without administrator rights:** a logon task (Windows), a
-    `systemd --user` unit (Linux) or a LaunchAgent (macOS), running while the
-    person is signed in;
-  - **with them:** the S4U task, or a system unit with `User=`.
+    `systemd --user` unit (Linux) or a LaunchAgent (macOS). It runs while
+    the person is signed in, and serves only that person;
+  - **with them:** the starter service, which serves everyone linked.
 - **Updates.** A standalone site host updates itself, to the version the
   root names in its poll answer. An agent-hosted one ignores that, and the
   node updates it.
@@ -545,22 +625,31 @@ This design is built so that none of it has to be undone:
 - the site host holding its enrollment and polling;
 - the agent supervising instead of relaying;
 - the Job sites branch, People's section removed, and Workbench by site id;
-- the migration.
+- the old records replaying as inert.
 
-The site host still runs in its isolated account. *Done when:*
+The file tools still run in the site host's isolated account. *Done when:*
 - Amish_Station is a node and Troy's site at once, each revocable alone;
 - a site behind WSL2's NAT joins over `public_sites`;
 - a site on the root's LAN joins with no public route;
 - a site's key is refused everywhere but its four routes;
 - deleting a person removes their sites.
 
-**2b.2, it runs as its owner** (J24, J25, J27, J30):
-- the S4U task, the logon task, and the broker's unit with `User=`;
-- the isolated account removed;
-- per-user installs on Windows and Linux host sites.
+**2b.2, each person as themselves** (J24, J25, J26, J27):
+- workers, and the local channel that checks their account;
+- the link page at the machine, served by the agent, and the links file;
+- per person, the S4U task, the logon task, or the broker's unit with
+  `User=`;
+- the owner's worker serving people without a link, confined;
+- per-user installs on Windows and Linux hosting a site for their person;
+- the site host's account opening no one's files.
 
-*Done when* Troy shares `C:\Users\troyc\Projects` from Workbench with
-nothing granted by hand, and Jessie's workspace there is confined to it.
+*Done when:*
+- on Amish_Station, Troy's calls run as `troyc` and Jessie's as `jessie`,
+  each having linked at the machine, with nothing granted by hand;
+- someone without a link reads only the folder Troy gave them;
+- a worker running as the wrong account is refused;
+- the root and the site host each fail to make a link.
+
 **2b.1 and 2b.2 ship together.** No release has the first without the
 second, because 2b.1 alone keeps the permission step.
 
@@ -570,7 +659,9 @@ is then built.
 **2b.3, the workspace server** (J28): the new tools, the rules, and
 Workbench's editor and prompts.
 
-**2b.4, commands** (J29): `run_command`, after J14b.
+**2b.4, commands** (J29, J30): `run_command`, after J14b, with J9's consent
+given at join or later (the Windows tray behind a UAC prompt, or the
+one-liner again).
 
 **Then slice 3**, cross-site copy on the held channel (J10), as
 `remote-nodes.md` §5 had it.
@@ -582,17 +673,17 @@ Workbench's editor and prompts.
 | # | Call | Recommendation |
 |---|---|---|
 | J23 | Which process holds the site's enrollment | **The site host, end to end**: its key, the pin, its own poll. The agent's relay retires |
-| J24 | Which OS account the site host runs as | **Its owner's own account, the whole host.** The isolated account and the permission step retire |
+| J24 | Which OS accounts the site runs in | *Revised after J26/J27:* **the site host in an unprivileged account of its own; each person's tools in a worker as their own account.** The permission step retires |
 | J25 | Windows, while the person is signed out | **An S4U task where Windows allows it** (this machine's files only), **else only while signed in.** Never a stored password |
-| J26 | Several sites on one machine | **Yes, one per person**, each its own enrollment and account |
-| J27 | Someone else using a site | **As the owner's account, confined to what was shared**, file tools only, never commands |
-| J28 | The workspace server and `files` | **Fold them**: one server, id `files` kept, allow/ask/deny rules, "ask" answered in Workbench |
-| J29 | What waits for person-held keys (J14) | **Widening edits before any release with sites running as their owners; commands before commands ship.** J14 designed next |
-| J30 | J9's proof of administrator rights, without a terminal | **The installer one-liner asks when it adds the site**; the elevated CLI stays for experts |
+| J26 | Several people on one machine | **Taken (Troy): one install serving everyone**, each as their own account |
+| J27 | Whose permissions a person's calls carry | **Taken (Troy): their own local account's**, linked to their Eugene sign-in at the machine. *Recommended:* people with no account there get only folders the owner shares, as the owner, confined |
+| J28 | The workspace server and `files` | **Fold them**: one server, id `files` kept, allow/ask/deny rules, "ask" answered in Workbench. *Awaiting Troy after a clarification (§4.1)* |
+| J29 | What waits for person-held keys (J14) | **Widening edits before any release with sites running as their people; commands before commands ship.** J14 designed next |
+| J30 | J9's proof of administrator rights, without a terminal | **Taken (Troy): at join, and later too.** Later: the Windows tray behind a UAC prompt, or the one-liner again; the CLI for experts |
 | J31 | How a site reaches the root | **Like a node:** the LAN address, or the nodes name. **`public_sites` only for machines outside**, on six paths. Site keys stay out of the node bundle |
 | J32 | Linking a node and the site it hosts | **Attested by the hosting node, for display only** |
 | J33 | Dev mode in a console that is membership only | **A dev-mode section on the site's page**, absent in production |
-| J34 | Migration | **Nothing converts.** Notices, add again, and the old site policy imported for the same person |
+| J34 | Migration | **Taken (Troy): none.** Nobody has used the old site policy |
 | J35 | Making a node into a site | **The same installer one-liner, run at the machine**, adding the site without reinstalling the node |
 
 ### J23. Which process holds the site's enrollment
@@ -609,20 +700,26 @@ standalone install needs. The alternative, the agent polling for the site
 with the site's key, keeps one copy but makes the agent hold the site's
 identity, which J19 says it must not.
 
-### J24. Which OS account the site host runs as
+### J24. Which OS accounts the site runs in
 
-**Recommendation: the site owner's own account, the whole host.** That
-covers its policy, its audit log, the workspace server, local servers and
-later commands. There is nothing to grant and no isolated account, and it
-works on per-user installs and macOS.
+**Revised after Troy's J26 and J27.** The first recommendation ran the whole
+host as its owner. One install serving several people, each as their own
+account, cannot be one process, so:
 
-**Trade-off:** every program the owner runs can read the site's key and edit
-its policy. That is acceptable, because those programs already reach every
-file the site could. The alternative splits the host in two: a part in its
-own account, holding the key and staying online, and a part per person.
-That keeps the key from the owner's programs, but adds a local channel
-between the two, a second process per person, and keeps the isolated-account
-requirement that excludes per-user installs and macOS.
+**Recommendation: two parts (§2.4).**
+- The site host runs in an unprivileged account of its own. It holds the
+  enrollment, the policy and the audit log, and it opens no one's files.
+- Each linked person's tools run in a worker under that person's account,
+  started by the machine's privileged starter (the agent, on a node). The
+  worker reaches the site host over a local channel that proves its
+  account.
+
+**Trade-off:** more moving parts: a worker per person, the local channel,
+and a starter that keeps the links. The site host's account can act as any
+linked person within the rules, so it must run nothing but its own code.
+Per-user installs and macOS still work, but serve only the installing
+person, because only a privileged starter can run a process as someone
+else.
 
 ### J25. Windows, while the person is signed out
 
@@ -640,33 +737,41 @@ and Entra accounts is unmeasured. The simpler choice, only while signed in
 reboot until someone signs in. That is the problem R2.6 fixed for the agent
 itself.
 
-### J26. Several sites on one machine
+### J26. Several people on one machine
 
-**Recommendation: yes, one per person.** Each is its own enrollment running
-as its own person's account. The registry, the agent's list and the installer
-allow several from the start; the console groups them by machine.
+**Taken (Troy, 2026-10-06): one install serving everyone,** *"based on
+permissions of who is using it"*. One enrollment and one owner per machine;
+the owner decides who may use it; each of those people is served as their
+own account (§2.2, §2.4).
 
-**Trade-off:** a little more to build and test now: several tasks or units,
-and a binding per site. A shared household PC is the case. The alternative,
-one site per machine, is simpler, but then a second person on that PC can only
-use what the owner shares, as the owner's account.
+### J27. Whose permissions a person's calls carry
 
-### J27. Someone else using a site
+**Taken (Troy, 2026-10-06): their own.** A person's Eugene sign-in, and
+later their Google or Microsoft sign-in, is *"attached to the local
+permissions for that person"*. A link is made at the machine: the person
+signs in to Eugene in a browser there, and the starter reads their OS
+account from the connection (§2.2).
 
-**Recommendation: their calls run as the owner's account, confined to the
-workspace shared with them**, by C6's handle-based opens on Windows and by
-Landlock on Linux. They get file tools only, never commands. A local server
-the owner grants them tool by tool runs as the owner, as it does today in the
-host's account.
+**Still open, with a recommendation: people with no account on the
+machine.** They can be given a folder by the owner, and their calls run in
+the owner's worker as the owner, confined to that folder, with file tools
+only and never commands. That is the only way to share a folder with someone
+at another office.
 
-**Trade-off:** on Windows the confinement is this product's code, not an OS
-boundary. A bug in it would expose the owner's whole account to the other
-person. OS-enforced confinement is a later hardening: an AppContainer whose
-SID the site host, as the owner, adds to the shared folder's permissions,
-with no administrator needed. The alternative, an isolated account per
-grantee, brings the permission step back.
+**Trade-off:** on Windows that confinement is this product's code, not an OS
+boundary, so a bug in it would expose the owner's account to that person.
+OS-enforced confinement is a later hardening: an AppContainer whose SID the
+owner's worker adds to the shared folder's permissions, with no
+administrator needed. The alternative, giving people without an account
+nothing, is simpler and stricter, but leaves Workbench no way to share a
+folder across offices.
 
 ### J28. The workspace server and `files`
+
+**Awaiting Troy, after one clarification.** The workspace server is not the
+job site. The job site is the machine and its enrollment; the workspace
+server is the set of file tools on it that Workbench's model calls; a
+workspace is one folder those tools work in.
 
 **Recommendation: fold them.** The `files` server keeps its id and becomes
 the workspace server. It gains `edit_text`, `glob`, `grep` and ranged
@@ -683,8 +788,8 @@ rules.
 
 **Recommendation:**
 - **Design J14 next**, in its own session.
-- **No release ships a site running as its owner before J14a.** Owners sign
-  their policy edits, and the site checks them.
+- **No release ships a site running tools as its people before J14a.**
+  People sign their policy edits, and the site checks them.
 - **Commands do not ship before J14b.** Persons sign their approvals.
 
 Edge can carry 2b.1-2b.3 before J14a, with the limit stated, because Troy is
@@ -692,23 +797,29 @@ edge's only user.
 
 **Trade-off:** the Claude-Code-like Workbench waits behind a design that
 does not exist yet. The alternative, shipping everything root-trusted, means
-a compromised root reaches every site owner's whole account: their files
+a compromised root reaches every linked person's whole account: their files
 first, and with commands everything. Today it reaches only what someone
 granted by hand.
 
 ### J30. J9's proof of administrator rights, without a terminal
 
-**Recommendation:** the installer one-liner asks one question when it adds a
-site: *"Allow tools that change this machine's settings or run programs, as
-troyc?"* The installer is already elevated, so its answer is the J9 proof,
-recorded with the binding. The elevated `site` CLI stays as the expert path
-for changing it later and for adding local servers. A tray action behind a
-UAC prompt can replace that later.
+**Taken (Troy, 2026-10-06): consent at join, and later too**, *"in case
+they didn't understand at join time"*.
+- **At join**, the installer one-liner asks one question: *"Allow tools that
+  change this machine's settings or run programs?"* It is already elevated,
+  so its answer is the J9 proof.
+- **Later, on Windows**, from the tray, which runs in the person's session.
+  It raises a UAC prompt, and the elevated step records the consent.
+- **Later, on Linux and macOS**, by running the one-liner again, the stated
+  exception. Those sites are mostly headless and have no tray.
+- **Taking consent back** needs no proof, and is a switch in Workbench.
 
-**Trade-off:** consent is asked at join, before the person knows they will
-want it. Changing it later means the installer again, or the CLI, until the
-tray action exists. The alternative keeps the CLI as the only path, which is
-the terminal step Troy has ruled out.
+The elevated `site` CLI stays as the expert path, and for adding local
+servers. The later path ships with commands (2b.4), the first tool that
+needs it.
+
+**Trade-off:** the tray action is Windows-only. A Linux desktop would need
+a polkit prompt, which nothing here has yet.
 
 ### J31. How a site reaches the root
 
@@ -720,8 +831,8 @@ outside. It opens six paths:
 - the four site routes of §2.3;
 - `GET /v1/trust/tls`.
 
-The trust bundle leaves the public list, and leaving joins it. Site keys are verified by the root
-only.
+The trust bundle leaves the public list, and leaving joins it. Site keys
+are verified by the root only.
 
 **Trade-off:** a site on the LAN without the entry point talks to the root in
 clear text, as nodes do today (`remote-nodes.md` §7). Requiring the nodes
@@ -754,21 +865,9 @@ is not a person there, and Workbench hides Job sites from the owner
 
 ### J34. Migration
 
-**Recommendation: nothing converts.**
-- Node folders and their grants replay and grant nothing, with one notice
-  in the console.
-- Slice 1 and 2 job sites are listed as needing to be added again.
-- A new site for the same person on the same machine imports the old site's
-  policy.
-- Old chat selections show as removed.
-
-Everything here is edge-only.
-
-**Trade-off:** edge users set things up again. Troy's Amish_Station had file
-support turned on but no folder registered, since he stopped at the
-permission step. Converting node folders would carry Eugene's owner's
-decisions into a person's site, against J11, for an install base of about
-one.
+**Taken (Troy, 2026-10-06): no migration**, because nobody has used the old
+site policy. Old records replay and grant nothing, and what we made (the
+`node-files` service, account and data) is removed (§2.11).
 
 ### J35. Making a node into a site
 
@@ -778,11 +877,27 @@ installs the site host at the version that node's agent pins, and adds the
 site without upgrading or re-enrolling the node.
 
 **Trade-off:** a terminal command remains, the installer's one-liner, which
-is the stated exception. The alternative is a page served by the node's own
-agent on loopback, at the machine, where the person signs in. It identifies
-their OS account from the browser's connection. That has no terminal, but it
-is a new local page and a lookup per platform, and it does nothing for a
-machine that is not a node (J21). It could come later.
+is the stated exception. The alternative is the link page of §2.2, served by
+the node's agent at the machine, which 2b.2 builds anyway. Joining from it
+too would take a node from nothing to a site with no terminal at all, for
+little more work. It does nothing for a machine that is not a node (J21), so
+the one-liner stays either way. The page could take over joins on nodes
+after 2b.2.
+
+### 4.1 Troy's answers (2026-10-06)
+
+| # | Answer | What it changed |
+|---|---|---|
+| J26 | *"One install serving multiple people based on permissions of who is using it."* | One site per machine. J24 is revised to the site host plus a worker per person (§2.4) |
+| J27 | *"Eventually I wanted SSO through Google and other services, and I was hoping that login was attached to the local permissions for that person."* | Links between a sign-in and a local account, made at the machine through a browser sign-in, so they work with single sign-on (§2.2). People without an account there stay a recommendation (J27) |
+| J28 | *"I'm taking 'workspace server' to mean jobsite? If so then this is perfect."* | It is not the job site; it is the job site's file tools (J28). Awaiting Troy |
+| J30 | *"Let's make sure they can consent later, in case they didn't understand at join time."* | A later path: the Windows tray behind UAC, or the one-liner again (J30) |
+| J34 | *"No migration needed because no one has used the old site policy yet."* | No import and no add-again listing (§2.11) |
+
+The build order changed in one place: **2b.2 grew** (§3). It now builds the
+workers, the local channel, the link page and the links file, instead of
+running one host as its owner. 2b.1 shrank by the migration. J30's later
+path lands with 2b.4.
 
 ---
 
@@ -792,8 +907,10 @@ machine that is not a node (J21). It could come later.
 - **The standalone site install** (J21). §2.12 lists what it will need.
 - **Cross-site copy and the held channel** (slice 3), and approving a call
   at the machine.
-- **OS-enforced confinement on Windows** for people other than the owner
-  (J27's later hardening).
+- **OS-enforced confinement on Windows** for people without an account on
+  the machine (J27's later hardening).
+- **Single sign-on itself** (control#4). This design only makes links and,
+  later, joins work with it.
 - **A folder boundary on macOS**, so a macOS site can share with others.
 - **TLS between machines on a LAN**, as before (`remote-nodes.md` §7).
 - **Managed-fleet enrollment** (J16), and transferring a site to another
