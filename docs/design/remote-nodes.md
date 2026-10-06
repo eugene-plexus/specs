@@ -633,7 +633,7 @@ dispatched by hand, at the pins above.
 **Later, each as its own design:**
 - slice 2b, the workspace server under the person's own account (J6h, J6i),
   designed in one session with the site as its own enrollment (J19-J22,
-  §6.4);
+  §6.4): [`job-sites-own-enrollment.md`](job-sites-own-enrollment.md);
 - the standalone site install (J5, deferred by J21);
 - person-held keys (J14);
 - managed-fleet enrolment (J16);
@@ -752,6 +752,12 @@ sites. Not every install will use Workbench or job sites at all.
   with J14's priority raised;
 - what the standalone install (J21) will need, so nothing built now has to
   be undone.
+
+**Designed 2026-10-06:**
+[`job-sites-own-enrollment.md`](job-sites-own-enrollment.md), with calls
+J23-J35 for Troy. Its main finding: the by-hand permission step was the one
+check a compromised root could not forge. Running a site as its owner (J6i)
+removes it, so J14 moves forward (its §2.8 and J29).
 
 ---
 
