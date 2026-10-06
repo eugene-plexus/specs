@@ -625,9 +625,10 @@ Pins: agent `f6705fc` (site-host `38d7ed8`, Workbench dist `bf4aeef` from
 
 **Not done, named:**
 - Approving each call at the machine waits for the held channel (slice 3).
-- The service install on GitHub's runners
-  (`node-file-helpers-service-acceptance.py`) needs the pushed pins. It is a
-  manual dispatch.
+
+The service install on GitHub's runners passed on Windows (116 of 116) and
+Ubuntu (117 of 117). It ran through `node-file-helpers-service-acceptance.py`,
+dispatched by hand, at the pins above.
 
 **Later, each as its own design:**
 - slice 2b, the workspace server under the person's own account (J6h, J6i);

@@ -55,7 +55,7 @@ run first shows the real CLI refusing an unelevated account.
 | Where | Root | Site | Result |
 |---|---|---|---|
 | This machine | WSL2 Ubuntu, behind its NAT, one port reached through it | Windows 11, the agent's venv | **23 of 23**, three runs in a row; one run before them failed (below) |
-| One Linux host (CI's shape) | — | — | runs in specs CI after the pins |
+| One Linux host (CI's shape) | the same host | the same host | **passed** in specs CI ([run 37402589175](https://github.com/eugene-plexus/specs/actions/runs/37402589175), at `4e1de6d`), with site-host checked out at the agent's `SITE_HOST_COMMIT` |
 
 ## The checks
 
@@ -171,13 +171,40 @@ These ran on this machine on 2026-10-05 against the pins above.
 
   Their earlier stop was the missing SDK.
 
+After the push, specs CI ran C3 on GitHub's Windows and Ubuntu runners, and
+it passed on both.
+
+## The service install, on GitHub's runners
+
+The host runs in its own OS account in C1's disposable-runner check,
+[`node-file-helpers-service-acceptance.py`](../../scripts/node-file-helpers-service-acceptance.py).
+It was dispatched by hand through `.github/workflows/node-file-helpers.yml`
+([run 37402629047](https://github.com/eugene-plexus/specs/actions/runs/37402629047))
+with these full commits:
+- agent `f6705fc`;
+- control `d4a7dda`;
+- Workbench `d872e00`;
+- site-host `38d7ed8`.
+
+**All four jobs passed:**
+
+| Job | Runner | Result | Time |
+|---|---|---|---|
+| Helper service | Ubuntu 24.04 | **117 of 117** | 1 m 57 s |
+| Helper service | Windows | **116 of 116** | 5 m 06 s |
+| Helper protocol | Ubuntu 24.04 | passed | 1 m 34 s |
+| Helper protocol | Windows | passed | 3 m 07 s |
+
+- **Helper service** uses real service accounts, Workbench's approvals and
+  node folder access. Each report records the agent and control pins it ran.
+- **Helper protocol** runs the LAN helper acceptance and the suites of
+  control, site-host, the agent and Workbench.
+- **C1's probe apps walk the install** from their own accounts. The report
+  records what they could not list as a fact, not a check: none of 4,662
+  files on Ubuntu, and 7 of 11,164 on Windows.
+
 ## Not covered, named
 
-- **The service install.** The host in its own OS account is C1's
-  disposable-runner check:
-  [`node-file-helpers-service-acceptance.py`](../../scripts/node-file-helpers-service-acceptance.py),
-  a manual dispatch of `.github/workflows/node-file-helpers.yml`. It needs
-  the pushed pins.
 - **Workbench end to end.** Its suite drives one server per machine,
   narrowed folders, a site's local server as a chosen tool, and the Job
   sites page against a fake Eugene. Here a client with its credentials calls
