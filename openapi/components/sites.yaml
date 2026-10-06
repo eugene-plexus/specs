@@ -1,10 +1,12 @@
-# Shapes shared by the site host's loopback API (openapi/site-host.yaml) and
-# the control root's node-helper surface (components/node-helpers.yaml).
+# Shapes shared by the site host (openapi/site-host.yaml) and the control
+# root's Job Site surface (openapi/control.yaml, components/job-sites.yaml).
 #
-# A machine's file support is a local MCP host whose policy is final on that
-# machine (docs/design/remote-nodes.md §3.4, J6, J8, §6.2). Between the machine
-# and the root travel MCP messages of the 2026-07-28 revision: one
-# self-contained JSON-RPC request in, one response out (J6a, J6c).
+# A Job Site is its own enrollment, held by the site host, whose policy is
+# final on that machine (docs/design/job-sites-own-enrollment.md, J19, J23;
+# docs/design/remote-nodes.md §3.4, J6, J8). The site host joins, polls and
+# answers the root itself. Between them travel MCP messages of the
+# 2026-07-28 revision: one self-contained JSON-RPC request in, one response
+# out (J6a, J6c).
 #
 # Every object here is named, never inline: an inline object in a document
 # this size renames an existing schema at codegen (`Person` became `Person1`
@@ -41,7 +43,7 @@ McpMethod:
 
 SiteHostProtocol:
   type: string
-  description: What a machine's host speaks to the root, through its agent. The only value is MCP's 2026-07-28 revision.
+  description: What a site host speaks to the root. The only value is MCP's 2026-07-28 revision.
   enum: [mcp-2026-07-28]
 
 McpResponse:
@@ -251,11 +253,10 @@ SiteGrantHint:
   type: object
   additionalProperties: false
   description: |
-    One of the root's own folder grants, carried with a call in a list
-    (`grants`): on an ordinary node, all of the person's grants there, the
-    root's grant being final (J6d); on a job site, Eugene's owner's dev-mode
-    grants, which the site honours only if its owner opted in (J6e). The
-    host checks the folder a call names against them.
+    One of Eugene's owner's dev-mode folder grants on a site (J13b), carried
+    with a call in a list (`grants`). The site honours them only if its
+    owner opted in there (J6e) and Eugene is in dev mode. The host checks
+    the folder a call names against them.
   required: [folderId, name, path, identity, writable]
   properties:
     folderId: {type: string, minLength: 1, maxLength: 64}
@@ -310,7 +311,7 @@ SiteLocalServer:
     A local MCP server a machine administrator added at the machine
     (`eugene-plexus-agent site server add`, elevated). Kept in the install's
     protected configuration, which the host's own account cannot write, and
-    handed to the host when it starts (§6.2).
+    handed to the host when it starts (remote-nodes.md §6.2).
   required: [id, name, command, sha256]
   properties:
     id:
@@ -352,3 +353,170 @@ SiteLocalServerList:
       type: array
       maxItems: 32
       items: {$ref: '#/SiteLocalServer'}
+
+InstallModeName:
+  type: string
+  description: The install's mode (J13, J18). In `dev`, Eugene's owner sees all tool information; in `production`, owners are restricted.
+  enum: [production, dev]
+
+SiteId:
+  type: string
+  description: |
+    A site's id: random, given by the root at enrollment, and fixed for
+    that enrollment. A machine that joins again gets a new one. Never a
+    machine's name, which is only its `label`.
+  pattern: '^s-[a-z2-7]{26}$'
+
+SiteLabel:
+  type: string
+  description: What people call the site, the machine's name by default. Not unique, not an identifier.
+  minLength: 1
+  maxLength: 63
+  pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$'
+
+SiteOwnerProof:
+  type: object
+  additionalProperties: false
+  description: |
+    The person a site invitation names, confirming the join at the machine
+    with their own password (remote-nodes.md §3.3, rule 1). Checked after
+    the join token, rate-limited as a sign-in is, and never stored: the root
+    records the site's owner from it, so ownership comes from presence plus
+    the person's own credential.
+  required: [name, password]
+  properties:
+    name: {type: string, minLength: 1, maxLength: 256}
+    password: {type: string, minLength: 1, maxLength: 1024}
+
+SiteEnrollmentRequest:
+  type: object
+  additionalProperties: false
+  description: |
+    What a site host sends to join (`POST /v1/sites/enroll`). It generated
+    its token key first and sends only the public half; no private key
+    leaves the machine (J23).
+  required: [token, label, tokenPublicKey, owner]
+  properties:
+    token: {type: string, minLength: 1, maxLength: 4096, description: The site invitation's join token.}
+    label: {$ref: '#/SiteLabel'}
+    tokenPublicKey:
+      type: string
+      minLength: 40
+      maxLength: 64
+      description: Base64 of the site's raw Ed25519 token public key. Its tokens are checked against it, by the root alone; it is never in the trust bundle nodes receive.
+    owner: {$ref: '#/SiteOwnerProof'}
+    hostVersion: {type: [string, 'null'], maxLength: 64}
+
+SiteEnrollment:
+  type: object
+  additionalProperties: false
+  description: |
+    The root's answer to a site's join. The site records its owner from it,
+    once (J6b); no later answer changes it.
+  required: [id, label, owner, ownerName, controlPublicKey, enrolledAt]
+  properties:
+    id: {$ref: '#/SiteId'}
+    label: {$ref: '#/SiteLabel'}
+    owner: {type: string, minLength: 1, maxLength: 64, description: The owner's person id.}
+    ownerName: {type: string, maxLength: 256, description: How the owner signs in, for display.}
+    controlPublicKey:
+      type: string
+      description: Base64 of the root's raw Ed25519 identity key. A site that pinned a key at its join (J7a) checks it is this one.
+    enrolledAt: {type: string, format: date-time}
+
+SiteReport:
+  type: object
+  additionalProperties: false
+  description: |
+    What a site host reports in each poll (`POST /v1/sites/poll`). The root
+    keeps it as a cache for listings; the site checks every call against
+    its own copy again (rule 2 of remote-nodes.md §3.3).
+  required: [protocol, ready]
+  properties:
+    protocol: {$ref: '#/SiteHostProtocol'}
+    hostVersion: {type: [string, 'null'], maxLength: 64}
+    ready: {type: boolean}
+    reason: {type: [string, 'null'], maxLength: 1024}
+    account:
+      type: [string, 'null']
+      maxLength: 256
+      description: The OS account the site's tools run as.
+    site:
+      anyOf:
+        - {$ref: '#/SiteSummary'}
+        - {type: 'null'}
+
+SitePollAnswer:
+  type: object
+  additionalProperties: false
+  required: [operation]
+  properties:
+    operation:
+      type: [string, 'null']
+      description: The id of an operation waiting for this site to claim, or null when the long poll ended with none.
+
+SiteOperationKind:
+  type: string
+  description: "`mcp`: one MCP request to one of the site's servers. `manage`: one of the site host's management actions (`SiteManageAction`, site-host.yaml)."
+  enum: [mcp, manage]
+
+SiteOperation:
+  type: object
+  additionalProperties: false
+  description: |
+    What a site claims (`POST /v1/sites/operations/{id}/claim`): one
+    operation, bound to this site's enrollment, to be done before
+    `expiresAt`. The site host refuses one whose `site` or `enrolledAt` is
+    not its own, so an operation queued for an earlier enrollment never runs
+    on a later one; then its policy decides (J8).
+  required: [id, expiresAt, site, enrolledAt, subject, kind, installMode]
+  properties:
+    id: {type: string, minLength: 1, maxLength: 128}
+    expiresAt: {type: number, description: Unix seconds. At most 30 s ahead.}
+    site: {$ref: '#/SiteId'}
+    enrolledAt: {type: string, format: date-time}
+    subject:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: Who asked, as the root established it (a person's id, or `operator` for Eugene's owner).
+    kind: {$ref: '#/SiteOperationKind'}
+    server:
+      description: For `mcp`, the site's server.
+      anyOf:
+        - {$ref: '#/SiteServerId'}
+        - {type: 'null'}
+    request:
+      description: For `mcp`, the request.
+      anyOf:
+        - {$ref: '#/McpRequest'}
+        - {type: 'null'}
+    grants:
+      type: array
+      maxItems: 64
+      description: For `mcp` to the file server from Eugene's owner, their dev-mode grants (J6e). Empty otherwise.
+      items: {$ref: '#/SiteGrantHint'}
+    action:
+      type: [string, 'null']
+      description: For `manage`, the action.
+    arguments:
+      type: [object, 'null']
+      description: For `manage`, its arguments.
+    installMode: {$ref: '#/InstallModeName'}
+
+SiteResult:
+  type: object
+  additionalProperties: false
+  description: A site's answer to an operation it claimed (`POST /v1/sites/operations/{id}/result`).
+  required: [status]
+  properties:
+    status: {$ref: '#/SiteAnswerStatus'}
+    message: {type: [string, 'null'], maxLength: 1024}
+    result:
+      type: [object, 'null']
+      description: A management action's result.
+    response:
+      description: An MCP request's JSON-RPC response, as the site's server answered it after its policy filtered it.
+      anyOf:
+        - {$ref: '#/McpResponse'}
+        - {type: 'null'}

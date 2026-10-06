@@ -3694,15 +3694,17 @@ components:
       properties:
         entrypoint:
           $ref: '#/components/schemas/PublicEntryPoint'
-        jobSite:
-          type: boolean
+        hostedSites:
+          type: array
+          maxItems: 16
+          items: {type: string}
           description: |
-            True when this machine joined as a Job Site
-            (`docs/design/remote-nodes.md` §3.2): it connects out to the
-            root and nothing connects to it, it announces no address, and
-            it runs no inference work. Declaring a runtime, installing an
-            engine, starting a benchmark or a profile build here answers
-            409. Its files are managed by its owner, from Workbench.
+            The Job Sites whose site host this agent supervises, by id
+            (`docs/design/job-sites-own-enrollment.md`, J21, J32). Each is
+            its own enrollment, held by its site host: this agent holds none
+            of its identity, and the node's own enrollment is unchanged by
+            it. Reported to the root (`PUT /v1/nodes/{name}/hosted-sites`)
+            for display only.
         enrolled:
           type: boolean
           description: |
@@ -6688,17 +6690,21 @@ components:
         nodesUrl:
           type: string
           format: uri
-        publicNodes:
+        publicSites:
           type: boolean
           description: |
-            The nodes name also answers machines on any network, for the
-            node paths only (`public_nodes`, J3,
-            `docs/design/remote-nodes.md` §3.1): joining as a Job Site,
-            the trust bundle with a node's token, the signed TLS key list,
-            and the file helper's poll, claim and result. Every other path
-            on that name is refused with a sentence naming the console.
-            The networks listed for the name keep the whole control API,
-            as before. Set only with an acknowledgement of the risks.
+            The nodes name also answers Job Sites on any network, on six
+            paths only (`public_sites`, J3, J31;
+            `docs/design/job-sites-own-enrollment.md` §2.3): a site's join
+            (`POST /v1/sites/enroll`), its poll, claim, result and leave, and
+            the signed TLS key list (`GET /v1/trust/tls`). The trust bundle
+            is not among them. Every other path on that name is refused with
+            a sentence naming the console. The networks listed for the name
+            keep the whole control API, as before. Set only with an
+            acknowledgement of the risks. A machine on the root's own
+            network needs none of this: a site there joins through the LAN
+            address (J31). Read from an older `entrypoint.json` as
+            `public_nodes`.
 
     AppManifest:
       type: object

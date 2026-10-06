@@ -195,6 +195,14 @@ tags:
       per-component code.
   - name: meta
     description: Health and version.
+  - name: sites
+    description: |
+      Job Sites (`docs/design/job-sites-own-enrollment.md`): machines a
+      person owns, joined so that central Workbench can use their tools.
+      Each is its own enrollment, held by its site host, and never a node
+      (J19, J23). Eugene's owner manages membership only (`/v1/sites`); a
+      site's owner manages it from Workbench (`/oidc/job-sites`); a person
+      uses its tools through `/oidc/sites`.
 
 paths:
   /v1/auth/client-keys/admission:
@@ -1253,15 +1261,14 @@ paths:
         503.
 
         **A bearer, when sent, must verify**: a member's own `sub: agent`
-        token, or 401. **Through the public node route it is required**
-        (`docs/design/remote-nodes.md` §3.1, J3): the bundle names every
-        machine, its keys and grants, and the signed-out session ids,
-        which is nobody's business on the internet. The entry point marks
-        a request that came that way (`X-Eugene-Plexus-Entry:
-        public-nodes`, set by it and stripped from everything else), and
-        this root then refuses one without a token. A Job Site sends its
-        token on every pull; an ordinary node on the root's network need
-        not.
+        token, or 401. **It is not on the entry point's public route**
+        (`public_sites`, J31): the bundle names every node, its keys and
+        grants, and the signed-out session ids, which is nobody's business
+        on the internet, and no Job Site needs it. A site's key is checked by
+        this root alone and is never in the bundle. A request marked as
+        having come that way (`X-Eugene-Plexus-Entry: public-sites`, set by
+        the entry point and stripped from everything else) is refused
+        without a token, in case an older entry point forwards it.
       responses:
         '200':
           description: The current bundle.
@@ -1361,10 +1368,6 @@ paths:
       operationId: createRuntime
       summary: Declare a runtime on a node, forwarded to that node's agent.
       description: |
-        **A Job Site runs nothing** (`Node.grants` holds `files`): a
-        placement that names one is refused with 409, as its own agent
-        would refuse it.
-
         Accepted here and **forwarded** to the target node's agent, which
         is what makes "the operator talks to the control root" true
         rather than aspirational. `node` selects the host; omitted, it
@@ -1693,260 +1696,335 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Health'
 
-  /v1/node-helpers:
+  /v1/sites:
     get:
-      operationId: listNodeHelpers
-      tags: [node-helpers]
-      summary: listNodeHelpers
+      operationId: listSites
+      tags: [sites]
+      summary: Every Job Site, for membership
       description: |
-        Needs the `node-files` capability (J15), which the passphrase session holds. Administers ordinary nodes' file support; grants no file access by itself.
-
-        **A Job Site** (`jobSite: true`) is listed with its owner and whether it is
-        online, and nothing else, in production mode: `folders` is empty and
-        `hidden` is true. In dev mode (`installMode`) its folders and who may use
-        them are shown, as the site last reported them, and Eugene's owner may set
-        `ownerAccess` on them; that grant works only if the site's owner lets
-        Eugene's owner in there (J6e), which the site checks itself. Every other
-        change to a Job Site is its owner's, from Workbench (`/oidc/job-sites`),
-        and is refused here with 403.
+        Needs the `membership` capability (J15). What Eugene's owner sees of
+        a site is membership only (J19): who owns it, whether it is online,
+        and the node that hosts it. **In dev mode** each site also carries
+        `dev` (J33): its folders and servers as it last reported them, and
+        Eugene's owner's own access there (J13b), which works only if the
+        site's owner lets Eugene's owner in (J6e).
       responses:
         '200':
-          description: Success.
+          description: The sites.
           content:
             application/json:
-              schema: {type: object, additionalProperties: true}
+              schema: {$ref: '#/components/schemas/SiteList'}
         '401':
-          description: Authentication, current permission, state, or availability refused the request.
+          $ref: 'components/common.yaml#/components/responses/Problem'
         '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /v1/node-helpers/{node}:
-    parameters:
-      - name: node
-        in: path
-        required: true
-        schema: {type: string}
-    put:
-      operationId: configureNodeHelper
-      tags: [node-helpers]
-      summary: configureNodeHelper
-      description: Needs the `node-files` capability (J15), which the passphrase session holds. Administers ordinary nodes' file support; grants no file access by itself.
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/sites/invitations:
+    post:
+      operationId: inviteSite
+      tags: [sites]
+      summary: Invite a machine to be one person's Job Site
+      description: |
+        Needs the `membership` capability. Mints a single-use join token
+        naming a person, who confirms at the machine with their own password
+        and becomes the site's owner (remote-nodes.md §3.3, rule 1). Eugene's
+        owner invites; the person owns (J11). The machine must already be a
+        node (J21); the join command adds the site to it without reinstalling
+        anything (J35). Listed and withdrawn with the node join tokens
+        (`/v1/nodes/join-tokens`), where its record has `kind: site`.
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [enabled]
-              properties:
-                enabled: {type: boolean}
+            schema: {$ref: '#/components/schemas/SiteInvitationRequest'}
       responses:
-        '200':
-          description: Success.
+        '201':
+          description: The invitation. The token is shown once.
           content:
             application/json:
-              schema: {type: object, additionalProperties: true}
+              schema: {$ref: '#/components/schemas/SiteInvitation'}
         '401':
-          description: Authentication, current permission, state, or availability refused the request.
+          $ref: 'components/common.yaml#/components/responses/Problem'
         '403':
-          description: Authentication, current permission, state, or availability refused the request.
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '422':
+          description: The person does not exist or is disabled.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/sites/enroll:
+    post:
+      operationId: enrollSite
+      tags: [sites]
+      summary: A site host exchanges a site invitation and its public key for membership
+      description: |
+        Called by the **site host**, at the machine, and authenticated by the
+        join token, its only credential. In order: the token is a site
+        invitation that has not been spent; the person it names confirms
+        with their own password, rate-limited as a sign-in is; no site or
+        node uses the token key. Then the token is spent and `enrollSite` is
+        appended. A site has no address, so nothing on it is ever dialled:
+        it polls (J23). One of the six paths of the entry point's public mode
+        (`public_sites`, J31), where failed joins are rate-limited too.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SiteEnrollmentRequest'}
+      responses:
+        '201':
+          description: Enrolled.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteEnrollment'}
+        '400':
+          description: A malformed key, or a key another site or node already uses.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '401':
+          description: The token is unknown, expired or not a site invitation, or the person's password is wrong.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '403':
+          description: The person is disabled, or is not the one the invitation names.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
         '409':
-          description: Authentication, current permission, state, or availability refused the request.
+          description: This token has already enrolled a site.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '429':
+          description: Too many failed joins; try again shortly.
         '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /v1/node-helpers/{node}/folders:
+          description: The root is locked.
+
+  /v1/sites/poll:
+    post:
+      operationId: pollSite
+      tags: [sites]
+      summary: A site reports what it holds and waits for an operation
+      description: |
+        A site token (`siteToken`). A long poll of about 8 seconds; the site
+        is *online* while it has polled within the last 25. The report is
+        kept as a cache for listings.
+      security: [{siteToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SiteReport'}
+      responses:
+        '200':
+          description: An operation to claim, or none.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SitePollAnswer'}
+        '401':
+          description: Not the token of an enrolled site. A removed site is told so here, and its site host stops.
+        '503':
+          description: The root is locked.
+
+  /v1/sites/operations/{ident}/claim:
     parameters:
-      - name: node
+      - name: ident
         in: path
         required: true
         schema: {type: string}
     post:
-      operationId: createNodeHelperFolder
-      tags: [node-helpers]
-      summary: createNodeHelperFolder
-      description: Needs the `node-files` capability (J15), which the passphrase session holds. Administers ordinary nodes' file support; grants no file access by itself.
+      operationId: claimSiteOperation
+      tags: [sites]
+      summary: A site claims one operation queued for it
+      description: |
+        A site token, for this site's own operations only. Permission is
+        checked again at the claim, and a claimed operation is never offered
+        again. The operation names the site and its `enrolledAt`; the site
+        refuses one that is not its own.
+      security: [{siteToken: []}]
+      responses:
+        '200':
+          description: The operation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteOperation'}
+        '401':
+          description: Not the token of an enrolled site.
+        '403':
+          description: The person's access was withdrawn after the operation was queued.
+        '404':
+          description: No such operation for this site, or it was claimed, cancelled or expired.
+
+  /v1/sites/operations/{ident}/result:
+    parameters:
+      - name: ident
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: finishSiteOperation
+      tags: [sites]
+      summary: A site answers an operation it claimed
+      description: |
+        A site token, for this site's own operations only. The answer is at
+        most 70,000 bytes, and reaches the caller only after the caller's
+        access is checked once more.
+      security: [{siteToken: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/HelperFolderCreate"
+            schema: {$ref: '#/components/schemas/SiteResult'}
       responses:
-        '201':
-          description: Success.
-          content:
-            application/json:
-              schema: {type: object, additionalProperties: true}
+        '204':
+          description: Recorded.
         '401':
-          description: Authentication, current permission, state, or availability refused the request.
-        '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /v1/node-helpers/{node}/folders/{folder_id}:
+          description: Not the token of an enrolled site.
+        '404':
+          description: No such running operation for this site.
+        '413':
+          description: The answer is larger than 70,000 bytes.
+
+  /v1/sites/leave:
+    post:
+      operationId: leaveSite
+      tags: [sites]
+      summary: A site leaves the install, from the machine
+      description: |
+        A site token. Leaving needs no one's permission (remote-nodes.md
+        §3.3): `removeSite` is appended and the site's key stops working at
+        once. The site host calls it when it is removed at the machine.
+      security: [{siteToken: []}]
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          description: Not the token of an enrolled site.
+
+  /v1/sites/{id}:
     parameters:
-      - name: node
+      - name: id
         in: path
         required: true
-        schema: {type: string}
+        schema: {$ref: 'components/sites.yaml#/SiteId'}
+    delete:
+      operationId: removeSite
+      tags: [sites]
+      summary: Remove a Job Site
+      description: |
+        Needs the `membership` capability. Revokes the site at once:
+        `removeSite` is appended, its key stops working, and its site host
+        stops at its next poll and says why. Nothing on the machine is
+        touched from here.
+      responses:
+        '204':
+          description: Removed, or already gone.
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          description: The root is locked.
+
+  /v1/sites/{id}/folders/{folder_id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {$ref: 'components/sites.yaml#/SiteId'}
       - name: folder_id
         in: path
         required: true
         schema: {type: string}
     patch:
-      operationId: setNodeFolderOwnerAccess
-      tags: [node-helpers]
-      summary: Set the owner's explicit Workbench permission for this folder
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [ownerAccess]
-              properties:
-                ownerAccess: {type: string, enum: [none, read, write]}
-      responses:
-        '200':
-          description: Updated folder; write access cannot exceed its configured maximum.
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/HelperFolder'}
-        '401':
-          description: An operator session is required.
-        '404':
-          description: The node or folder is no longer registered.
-        '422':
-          description: Invalid permission or writes are disabled for this folder.
-    delete:
-      operationId: removeNodeHelperFolder
-      tags: [node-helpers]
-      summary: removeNodeHelperFolder
-      description: Needs the `node-files` capability (J15), which the passphrase session holds. Administers ordinary nodes' file support; grants no file access by itself.
-      responses:
-        '204':
-          description: Success.
-        '401':
-          description: Authentication, current permission, state, or availability refused the request.
-        '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /v1/node-helpers/poll:
-    post:
-      operationId: pollNodeHelper
-      tags: [node-helpers]
-      summary: pollNodeHelper
-      description: An enrolled agent service token addressed to control, for its own node only.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/HelperReport"
-      responses:
-        '200':
-          description: |
-            `configuration`, the queued `operation` id or null, and, for a Job
-            Site, `siteOwner`. A site pins its owner at its join
-            (`Enrollment.owner`) and refuses a different one here (J6b); a site
-            joined before slice 2 pins the first one it is told.
-          content:
-            application/json:
-              schema: {type: object, additionalProperties: true}
-        '401':
-          description: Authentication, current permission, state, or availability refused the request.
-        '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /v1/node-helpers/operations/{ident}/claim:
-    parameters:
-      - name: ident
-        in: path
-        required: true
-        schema: {type: string}
-    post:
-      operationId: claimNodeHelperOperation
-      tags: [node-helpers]
-      summary: claimNodeHelperOperation
+      operationId: setSiteFolderOwnerAccess
+      tags: [sites]
+      summary: Eugene's owner's own access to a site's folder, in dev mode only
       description: |
-        An enrolled agent service token addressed to control, for its own node
-        only. Permission is checked again at the claim; a claimed operation is
-        never offered again.
-      responses:
-        '200':
-          description: The operation, for the machine's host.
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/HelperOperation'}
-        '401':
-          description: Authentication, current permission, state, or availability refused the request.
-        '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /v1/node-helpers/operations/{ident}/result:
-    parameters:
-      - name: ident
-        in: path
-        required: true
-        schema: {type: string}
-    post:
-      operationId: finishNodeHelperOperation
-      tags: [node-helpers]
-      summary: finishNodeHelperOperation
-      description: An enrolled agent service token addressed to control, for its own node only.
+        Needs the `dev-access` capability (J15), which the passphrase session
+        holds. **Dev mode only** (J13b): refused with 409 in production. The
+        grant works only if the site's owner lets Eugene's owner in there
+        (J6e), which the site checks itself, and it stops working the moment
+        the install is in production.
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/HelperResult"
+            schema: {$ref: '#/components/schemas/SiteFolderOwnerAccess'}
+      responses:
+        '200':
+          description: The site, with its dev view.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Site'}
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          description: No such site, or the site has not reported that folder.
+        '409':
+          description: The install is in production mode.
+        '422':
+          description: Write access to a folder registered read-only.
+
+  /v1/nodes/{name}/hosted-sites:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: {type: string}
+    put:
+      operationId: putHostedSites
+      tags: [nodes, sites]
+      summary: A node says which sites its agent supervises
+      description: |
+        That node's own `agent` service token, addressed to `control`;
+        another node's is refused. Appends `setSiteHost` for each listed site
+        whose recorded host differs, and clears this node from the sites it
+        no longer lists (J32). **For display and cross-links only**: nothing
+        is authorized by it, so a node that lied could only mislabel. A site
+        id that is not enrolled is ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/HostedSites'}
       responses:
         '204':
-          description: Success.
+          description: Recorded.
         '401':
-          description: Authentication, current permission, state, or availability refused the request.
+          $ref: 'components/common.yaml#/components/responses/Problem'
         '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
+          $ref: 'components/common.yaml#/components/responses/Problem'
   /oidc/sites/servers:
     post:
       operationId: listMySiteServers
-      tags: [node-helpers]
+      tags: [sites]
       summary: The servers on machines that the signed-in person may use
       description: |
-        Every server the person may use. Each machine has one file server,
-        `files`, listed once with the folders the person may use there, by
-        the names its tools' `folder` argument takes (J6g): on an ordinary
-        node, the folders Eugene's owner granted them; on a Job Site, what
-        that site's own list says, as the site last reported it (J6b), with
-        the local servers it lets them use. The machine checks each call
-        again. An enrolled Workbench client secret and its signed-in person's
-        refresh credential.
+        Every server on a Job Site that the person may use. Each site has one
+        file server, `files`, listed once with the folders the person may use
+        there by the names its tools' `folder` argument takes (J6g), and the
+        local servers it lets them use: what the site's own list says, as the
+        site last reported it (J6b). The site checks each call again. An
+        enrolled Workbench client secret and its signed-in person's refresh
+        credential.
       security: [{helperClient: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/HelperDiscovery'}
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
       responses:
         '200':
           description: The servers, and the install's mode.
@@ -1962,17 +2040,16 @@ paths:
   /oidc/sites/mcp:
     post:
       operationId: callSiteServer
-      tags: [node-helpers]
+      tags: [sites]
       summary: One MCP request to one server on one machine
       description: |
         Carries one MCP request of the 2026-07-28 revision (`server/discover`,
-        `tools/list`, `tools/call`) to the machine, which claims it on its
-        next poll (J6a). The root checks the Workbench client, the person's
-        sign-in, and on an ordinary node its own grant; on a Job Site the
-        site's own policy decides (J8). A destructive tool runs only under the
-        site owner's standing pre-approval. The request is at most 40,000
-        bytes; the answer at most 70,000. A `tools/call` the machine claimed
-        but did not confirm is `uncertain`: it may have acted.
+        `tools/list`, `tools/call`) to the site, which claims it on its next
+        poll (J6a). The root checks the Workbench client and the person's
+        sign-in; the site's own policy decides (J8). A destructive tool runs
+        only under the site owner's standing pre-approval. The request is at
+        most 40,000 bytes; the answer at most 70,000. A `tools/call` the site
+        claimed but did not confirm is `uncertain`: it may have acted.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -1996,13 +2073,13 @@ paths:
         '429':
           description: The machine is busy.
         '503':
-          description: The machine's file support is off, offline or needs an update.
+          description: The site is offline or needs an update.
         '504':
           description: The machine did not answer in time.
   /oidc/sites/cancel:
     post:
       operationId: cancelSiteCall
-      tags: [node-helpers]
+      tags: [sites]
       summary: Cancel a queued operation belonging to this Workbench sign-in
       description: |
         Prevents a queued operation from being claimed. A tool call already
@@ -2028,7 +2105,7 @@ paths:
   /oidc/install-mode:
     post:
       operationId: getInstallMode
-      tags: [node-helpers]
+      tags: [sites]
       summary: The install's mode, for an app to tell every person it serves
       description: |
         `production` or `dev` (J13, J18). In dev mode Eugene's owner sees all
@@ -2058,7 +2135,7 @@ paths:
   /oidc/job-sites:
     post:
       operationId: listMyJobSites
-      tags: [node-helpers]
+      tags: [sites]
       summary: The signed-in person's own Job Sites
       description: |
         Every Job Site this person owns, with its folders, its servers and
@@ -2071,7 +2148,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/HelperDiscovery'}
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
       responses:
         '200':
           description: The person's sites.
@@ -2092,16 +2169,20 @@ paths:
   /oidc/job-sites/invite:
     post:
       operationId: inviteMyJobSite
-      tags: [node-helpers]
+      tags: [sites]
       summary: A join command for one of the signed-in person's own machines
       description: |
         Self-service (J9): any signed-in person may add a Job Site for a
-        machine of their own. Mints a `files` join token naming them, valid
-        15 minutes, at most three outstanding per person. The machine joins
-        through the public node route, and the person confirms there with
-        their own password. 409 when the owner has not opened that route.
-        Eugene's owner signs in with the passphrase and owns no Job Sites:
-        to use one, they make a person account for themselves.
+        machine of their own. Mints a site invitation naming them, valid 15
+        minutes, at most three outstanding per person. The machine must
+        already be a node (J21); the join command, run there, adds the site
+        without reinstalling the node (J35), and the person confirms with
+        their own password. The machine joins through `joinUrl`: the entry
+        point's nodes name, else the address Eugene's owner set
+        (`siteJoinUrl`). The public route is not needed on the root's own
+        network (J31). 409 when this root knows neither address. Eugene's
+        owner signs in with the passphrase and owns no Job Sites: to use one,
+        they make a person account for themselves.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2124,41 +2205,12 @@ paths:
           description: Authentication, current permission, state, or availability refused the request.
         '503':
           description: Authentication, current permission, state, or availability refused the request.
-  /oidc/job-sites/{node}/enabled:
+  /oidc/job-sites/{site}/folders:
     parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
-    post:
-      operationId: enableMyJobSite
-      tags: [node-helpers]
-      summary: Turn a Job Site's file helper on or off
-      security: [{helperClient: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/JobSiteEnable'}
-      responses:
-        '200':
-          description: The site.
-          content:
-            application/json:
-              schema: {$ref: '#/components/schemas/JobSite'}
-        '401':
-          description: Authentication, current permission, state, or availability refused the request.
-        '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '404':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /oidc/job-sites/{node}/folders:
-    parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
     post:
       operationId: addMyJobSiteFolder
-      tags: [node-helpers]
+      tags: [sites]
       summary: Register an existing folder on the person's own Job Site
       description: |
         The site registers the folder itself (J6b): its host opens the folder,
@@ -2176,7 +2228,7 @@ paths:
           description: The folder, as the site recorded it, with nobody on its list.
           content:
             application/json:
-              schema: {$ref: 'components/node-helpers.yaml#/JobSiteFolder'}
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteFolder'}
         '401':
           description: Authentication, current permission, state, or availability refused the request.
         '403':
@@ -2187,20 +2239,20 @@ paths:
           description: Authentication, current permission, state, or availability refused the request.
         '503':
           description: Authentication, current permission, state, or availability refused the request.
-  /oidc/job-sites/{node}/folders/{folder_id}/remove:
+  /oidc/job-sites/{site}/folders/{folder_id}/remove:
     parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
       - {name: folder_id, in: path, required: true, schema: {type: string}}
     post:
       operationId: removeMyJobSiteFolder
-      tags: [node-helpers]
+      tags: [sites]
       summary: Remove a folder from the person's own Job Site
       security: [{helperClient: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/HelperDiscovery'}
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
       responses:
         '204':
           description: Removed, with every grant to it.
@@ -2214,13 +2266,13 @@ paths:
           description: Authentication, current permission, state, or availability refused the request.
         '503':
           description: Authentication, current permission, state, or availability refused the request.
-  /oidc/job-sites/{node}/folders/{folder_id}/people:
+  /oidc/job-sites/{site}/folders/{folder_id}/people:
     parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
       - {name: folder_id, in: path, required: true, schema: {type: string}}
     post:
       operationId: grantMyJobSiteFolder
-      tags: [node-helpers]
+      tags: [sites]
       summary: Say who may use a folder on the person's own Job Site
       description: |
         Replaces the folder's list of people, the site's owner included (J11:
@@ -2240,7 +2292,7 @@ paths:
           description: The folder and who may use it, as the site now holds them.
           content:
             application/json:
-              schema: {$ref: 'components/node-helpers.yaml#/JobSiteFolder'}
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteFolder'}
         '401':
           description: Workbench client or person sign-in is invalid.
         '404':
@@ -2251,17 +2303,17 @@ paths:
           description: The site is offline, its file support is off, or it needs an update.
         '504':
           description: The site did not answer in time.
-  /oidc/job-sites/{node}/servers/{server}/access:
+  /oidc/job-sites/{site}/servers/{server}/access:
     parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
       - {name: server, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteServerId'}}
     post:
       operationId: setMyJobSiteAccess
-      tags: [node-helpers]
+      tags: [sites]
       summary: Say who may use which tools of one local server on the person's own Job Site
       description: |
         For a local server only; folders are granted through
-        `/oidc/job-sites/{node}/folders/{folder_id}/people` (J6g). Replaces
+        `/oidc/job-sites/{site}/folders/{folder_id}/people` (J6g). Replaces
         the server's list of people, the site's owner included (J11: the
         owner grants their own access too). People are named by how they
         sign in. The site applies it to its own list and answers with what it
@@ -2278,7 +2330,7 @@ paths:
           description: The server and who may use it, as the site now holds them.
           content:
             application/json:
-              schema: {$ref: 'components/node-helpers.yaml#/JobSiteServer'}
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteServer'}
         '401':
           description: Workbench client or person sign-in is invalid.
         '404':
@@ -2289,13 +2341,13 @@ paths:
           description: The site is offline, its file support is off, or it needs an update.
         '504':
           description: The site did not answer in time.
-  /oidc/job-sites/{node}/servers/{server}/enabled:
+  /oidc/job-sites/{site}/servers/{server}/enabled:
     parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
       - {name: server, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteServerId'}}
     post:
       operationId: enableMyJobSiteServer
-      tags: [node-helpers]
+      tags: [sites]
       summary: Turn a local server on the person's own Job Site on or off
       description: |
         For a local server only: added at the machine by its administrator,
@@ -2314,7 +2366,7 @@ paths:
           description: The server, as the site now holds it.
           content:
             application/json:
-              schema: {$ref: 'components/node-helpers.yaml#/JobSiteServer'}
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteServer'}
         '401':
           description: Workbench client or person sign-in is invalid.
         '404':
@@ -2325,12 +2377,12 @@ paths:
           description: The site is offline, its file support is off, or it needs an update.
         '504':
           description: The site did not answer in time.
-  /oidc/job-sites/{node}/settings:
+  /oidc/job-sites/{site}/settings:
     parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
     post:
       operationId: setMyJobSiteSettings
-      tags: [node-helpers]
+      tags: [sites]
       summary: The person's own Job Site's settings
       description: |
         `ownerInDevMode`: let Eugene's owner use the folders they give
@@ -2358,12 +2410,12 @@ paths:
           description: The site is offline, its file support is off, or it needs an update.
         '504':
           description: The site did not answer in time.
-  /oidc/job-sites/{node}/audit:
+  /oidc/job-sites/{site}/audit:
     parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
     post:
       operationId: readMyJobSiteAudit
-      tags: [node-helpers]
+      tags: [sites]
       summary: The newest lines of the person's own Job Site's audit log
       description: |
         Kept on the machine, read from it on each request (J8). Who asked for
@@ -2391,22 +2443,23 @@ paths:
           description: The site is offline, its file support is off, or it needs an update.
         '504':
           description: The site did not answer in time.
-  /oidc/job-sites/{node}/leave:
+  /oidc/job-sites/{site}/leave:
     parameters:
-      - {name: node, in: path, required: true, schema: {type: string}}
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
     post:
       operationId: leaveMyJobSite
-      tags: [node-helpers]
+      tags: [sites]
       summary: Take the person's own machine out of the install
       description: |
-        Leaving needs no one's permission (§3.3). The site's key leaves the
-        trust bundle at once, as when Eugene's owner removes it.
+        Leaving needs no one's permission (remote-nodes.md §3.3). The site is
+        revoked at once, as when Eugene's owner removes it, and its site host
+        stops at its next poll.
       security: [{helperClient: []}]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {$ref: '#/components/schemas/HelperDiscovery'}
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
       responses:
         '204':
           description: Removed.
@@ -2423,6 +2476,16 @@ paths:
 components:
 
   securitySchemes:
+    siteToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A Job Site's own token: EdDSA, signed by the key the site sent at
+        enrollment, `iss: site:<id>`, `sub: site`, `aud: control`, at most
+        five minutes long. Checked against the site registry, never the
+        trust bundle, and accepted only by the four `/v1/sites` routes a site
+        calls.
     helperClient:
       type: http
       scheme: basic
@@ -2464,56 +2527,74 @@ components:
         none of these.
 
   schemas:
-    HelperGrant:
-      $ref: "components/node-helpers.yaml#/HelperGrant"
-    HelperFolder:
-      $ref: "components/node-helpers.yaml#/HelperFolder"
-    NodeHelper:
-      $ref: "components/node-helpers.yaml#/NodeHelper"
-    HelperFolderCreate:
-      $ref: "components/node-helpers.yaml#/HelperFolderCreate"
-    HelperReport:
-      $ref: "components/node-helpers.yaml#/HelperReport"
-    HelperResult:
-      $ref: "components/node-helpers.yaml#/HelperResult"
-    HelperOperation:
-      $ref: "components/node-helpers.yaml#/HelperOperation"
-    HelperDiscovery:
-      $ref: "components/node-helpers.yaml#/HelperDiscovery"
+    SiteId:
+      $ref: "components/sites.yaml#/SiteId"
+    SiteLabel:
+      $ref: "components/sites.yaml#/SiteLabel"
+    SiteOwnerProof:
+      $ref: "components/sites.yaml#/SiteOwnerProof"
+    SiteEnrollmentRequest:
+      $ref: "components/sites.yaml#/SiteEnrollmentRequest"
+    SiteEnrollment:
+      $ref: "components/sites.yaml#/SiteEnrollment"
+    SiteReport:
+      $ref: "components/sites.yaml#/SiteReport"
+    SitePollAnswer:
+      $ref: "components/sites.yaml#/SitePollAnswer"
+    SiteOperation:
+      $ref: "components/sites.yaml#/SiteOperation"
+    SiteResult:
+      $ref: "components/sites.yaml#/SiteResult"
+    InstallModeName:
+      $ref: "components/sites.yaml#/InstallModeName"
+    SiteDevGrant:
+      $ref: "components/job-sites.yaml#/SiteDevGrant"
+    SiteFolderOwnerAccess:
+      $ref: "components/job-sites.yaml#/SiteFolderOwnerAccess"
+    Site:
+      $ref: "components/job-sites.yaml#/Site"
+    SiteList:
+      $ref: "components/job-sites.yaml#/SiteList"
+    SiteInvitationRequest:
+      $ref: "components/job-sites.yaml#/SiteInvitationRequest"
+    SiteInvitation:
+      $ref: "components/job-sites.yaml#/SiteInvitation"
+    HostedSites:
+      $ref: "components/job-sites.yaml#/HostedSites"
+    JobSiteRequest:
+      $ref: "components/job-sites.yaml#/JobSiteRequest"
     SiteCancel:
-      $ref: "components/node-helpers.yaml#/SiteCancel"
+      $ref: "components/job-sites.yaml#/SiteCancel"
     SiteServerList:
-      $ref: "components/node-helpers.yaml#/SiteServerList"
+      $ref: "components/job-sites.yaml#/SiteServerList"
     SiteMcpCall:
-      $ref: "components/node-helpers.yaml#/SiteMcpCall"
+      $ref: "components/job-sites.yaml#/SiteMcpCall"
     SiteMcpAnswer:
-      $ref: "components/node-helpers.yaml#/SiteMcpAnswer"
+      $ref: "components/job-sites.yaml#/SiteMcpAnswer"
     InstallMode:
-      $ref: "components/node-helpers.yaml#/InstallMode"
+      $ref: "components/job-sites.yaml#/InstallMode"
     JobSite:
-      $ref: "components/node-helpers.yaml#/JobSite"
+      $ref: "components/job-sites.yaml#/JobSite"
     JobSiteList:
-      $ref: "components/node-helpers.yaml#/JobSiteList"
+      $ref: "components/job-sites.yaml#/JobSiteList"
     JobSiteInviteRequest:
-      $ref: "components/node-helpers.yaml#/JobSiteInviteRequest"
+      $ref: "components/job-sites.yaml#/JobSiteInviteRequest"
     JobSiteInvite:
-      $ref: "components/node-helpers.yaml#/JobSiteInvite"
-    JobSiteEnable:
-      $ref: "components/node-helpers.yaml#/JobSiteEnable"
+      $ref: "components/job-sites.yaml#/JobSiteInvite"
     JobSiteFolderCreate:
-      $ref: "components/node-helpers.yaml#/JobSiteFolderCreate"
+      $ref: "components/job-sites.yaml#/JobSiteFolderCreate"
     JobSitePeopleRequest:
-      $ref: "components/node-helpers.yaml#/JobSitePeopleRequest"
+      $ref: "components/job-sites.yaml#/JobSitePeopleRequest"
     JobSiteAccessRequest:
-      $ref: "components/node-helpers.yaml#/JobSiteAccessRequest"
+      $ref: "components/job-sites.yaml#/JobSiteAccessRequest"
     JobSiteServerEnable:
-      $ref: "components/node-helpers.yaml#/JobSiteServerEnable"
+      $ref: "components/job-sites.yaml#/JobSiteServerEnable"
     JobSiteSettings:
-      $ref: "components/node-helpers.yaml#/JobSiteSettings"
+      $ref: "components/job-sites.yaml#/JobSiteSettings"
     JobSiteAuditRequest:
-      $ref: "components/node-helpers.yaml#/JobSiteAuditRequest"
+      $ref: "components/job-sites.yaml#/JobSiteAuditRequest"
     JobSiteAudit:
-      $ref: "components/node-helpers.yaml#/JobSiteAudit"
+      $ref: "components/job-sites.yaml#/JobSiteAudit"
     SignedRootTls:
       type: object
       required: [jws]
@@ -2670,36 +2751,10 @@ components:
           description: |
             What this node's key may issue, as the trust bundle lists it:
             `node`, plus `gateway` when the join token that enrolled it
-            said so. **A Job Site holds `files` instead of `node`**
-            (`docs/design/remote-nodes.md` §3.2): it has no address, is
-            sent no inference work, and its key opens only the helper
-            routes and the trust bundle. Given by the join token, never
-            claimed by the node.
-        owner:
-          type:
-            - string
-            - "null"
-          description: |
-            A Job Site's owner: the id of the person who confirmed the
-            join at the machine with their own password. Only that person
-            grants the site's folders to other people. `null` for every
-            other node.
-        ownerName:
-          type:
-            - string
-            - "null"
-          description: The owner's sign-in name, for display. `null` when `owner` is.
-        lastContactAt:
-          type:
-            - string
-            - "null"
-          format: date-time
-          description: |
-            When this node last reached this root with its own token (the
-            file helper's poll). It is the status of a Job Site, which has
-            no address to probe: *last contact N s ago*, never *down*.
-            Observation, not applied state, so never replicated; `null`
-            until it has called.
+            said so. Given by the join token, never claimed by the node.
+            A Job Site is not a node: it has its own registry and key
+            (`/v1/sites`, J19). An `enrollNode` that granted `files`,
+            written before that, is skipped at replay.
         trustBundleVersion:
           type:
             - integer
@@ -2812,25 +2867,13 @@ components:
           type: array
           items:
             type: string
-            enum: [gateway, files]
+            enum: [gateway]
           description: |
             Extra grants the node enrolled with this token receives in the
             trust bundle. `gateway` lets it mint `sub: gateway` tokens to
             other machines, which the install's gateway needs in order to
             reach every node's drivers and agent. The wizard asks for it
             on the machine that runs the gateway; `/nodes` does not.
-
-            `files` makes the machine a **Job Site** in place of an
-            ordinary node, and needs `owner`. It cannot be combined with
-            `gateway`.
-        owner:
-          type: string
-          description: |
-            The person this Job Site invitation names (`files` only). The
-            join succeeds only when that person signs in at the machine
-            with their own password (`EnrollmentRequest.owner`), and they
-            become the site's owner. Eugene's owner invites; the person
-            owns.
 
     JoinToken:
       type: object
@@ -2866,18 +2909,7 @@ components:
           type: array
           items:
             type: string
-            enum: [gateway, files]
-        owner:
-          type: string
-          description: The person a Job Site invitation names.
-        rootKey:
-          type: string
-          description: |
-            Base64 of this root's raw Ed25519 identity public key, for the
-            join command. A Job Site pins it **before** it sends anything
-            (J7a): it checks the root's signed TLS key list
-            (`GET /v1/trust/tls`) against it, and later every trust
-            bundle.
+            enum: [gateway]
 
     JoinTokenRecord:
       type: object
@@ -2906,11 +2938,15 @@ components:
           type: array
           items:
             type: string
-            enum: [gateway, files]
+            enum: [gateway]
           description: What the node it enrolls will be granted, as minted.
+        kind:
+          type: string
+          enum: [node, site]
+          description: What the token enrolls. A site invitation (`POST /v1/sites/invitations`) is listed and withdrawn here too.
         owner:
           type: string
-          description: The person a Job Site invitation names.
+          description: The person a site invitation names. Absent on a node's token.
         used:
           type: boolean
           description: |
@@ -2973,11 +3009,6 @@ components:
             interface it used to reach this root; a root deriving it from
             the request's source address would be right on a flat mesh
             network and wrong behind anything else.
-
-            **Refused for a Job Site**, which has no address: nothing is
-            ever sent to it.
-        owner:
-          $ref: '#/components/schemas/SiteOwnerProof'
         agentVersion:
           type: string
         os:
@@ -2990,27 +3021,6 @@ components:
           type: array
           items:
             $ref: 'components/common.yaml#/components/schemas/ComputeDevice'
-
-    SiteOwnerProof:
-      type: object
-      additionalProperties: false
-      description: |
-        The person a Job Site invitation names, confirming the join at the
-        machine with their own password (`docs/design/remote-nodes.md`
-        §3.3, rule 1). Required with a `files` join token and refused with
-        any other. Checked after the token, rate-limited as a sign-in is,
-        and never stored: the root records the site's owner from it, so
-        ownership comes from presence plus the person's own credential.
-      required: [name, password]
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 256
-        password:
-          type: string
-          minLength: 1
-          maxLength: 1024
 
     NodeAddressAnnouncement:
       type: object
@@ -3131,16 +3141,8 @@ components:
           items:
             $ref: 'components/common.yaml#/components/schemas/TrustGrant'
           description: |
-            What this node's key was granted. `files` tells the agent it is
-            a Job Site: it announces no address, polls for no run
-            operations, and refuses runtimes and engines.
-        owner:
-          type: [string, 'null']
-          description: |
-            On a Job Site, the person who confirmed this join at the machine
-            (their id). The site pins it: its host takes management actions
-            from this person alone, and refuses a different `siteOwner` in a
-            later poll (J6b, rule 2 of §3.3).
+            What this node's key was granted: `node`, plus `gateway` when
+            the join token said so.
 
     # -------- control state --------
 
@@ -3307,7 +3309,19 @@ components:
         - putOidcKey
         - revokeSignIn
         - setOidcClientRedirects
+        - enrollSite
+        - removeSite
+        - setSiteHost
+        - setSiteDevGrants
       description: |
+        **The four Job Site operations (slice 2b.1, 2026-10-06)** are
+        `enrollSite`, `removeSite`, `setSiteHost` (a node's display-only
+        claim to host a site, J32) and `setSiteDevGrants` (Eugene's owner's
+        own dev-mode grants on a site, J13b). A Job Site is its own
+        enrollment, never a node (J19). **`putNodeHelper` is read and
+        ignored**, because the operator-managed node folders retired (J20),
+        and so is an `enrollNode` that granted `files`.
+
         **The seven sign-in operations (C2, 2026-10-01)** replicate people,
         the apps that sign in, the provider's sealed RSA key and revoked
         sign-ins, so a promoted standby signs people in as the old root
@@ -3493,9 +3507,15 @@ components:
             `setPersonPassword` and `deletePerson` left them, with their
             Argon2id verifiers: as `passphraseVerifier` is here, and for the
             same reason (a promoted standby signs people in).
+        sites:
+          type: array
+          items: {$ref: '#/components/schemas/SnapshotSite'}
+          description: The Job Site registry (J19), as `enrollSite`, `removeSite`, `setSiteHost` and `setSiteDevGrants` left it.
         nodeHelpers:
           type: array
-          items: {$ref: "#/components/schemas/NodeHelper"}
+          deprecated: true
+          items: {type: object, additionalProperties: true}
+          description: Read from snapshots written before slice 2b.1, and ignored. The operator-managed node folders retired (J20).
         oidcClients:
           type: array
           items: {$ref: '#/components/schemas/SnapshotOidcClient'}
@@ -3511,15 +3531,32 @@ components:
             $ref: 'components/common.yaml#/components/schemas/RevokedSession'
           description: Sign-ins revoked at `/oidc/revoke` and not yet expired, by their `jti`.
 
+    SnapshotSite:
+      type: object
+      additionalProperties: false
+      description: One Job Site in the registry (J19).
+      required: [id, label, owner, tokenPublicKey, enrolledAt]
+      properties:
+        id: {$ref: 'components/sites.yaml#/SiteId'}
+        label: {$ref: 'components/sites.yaml#/SiteLabel'}
+        owner: {type: string, description: The owner's person id.}
+        tokenPublicKey: {type: string}
+        enrolledAt: {type: string, format: date-time}
+        hostNode: {type: [string, 'null']}
+        devGrants:
+          type: array
+          maxItems: 64
+          items: {$ref: '#/components/schemas/SiteDevGrant'}
+
     SnapshotPerson:
       type: object
       required: [id, name, passwordVerifier, disabled, createdAt, passwordChangedAt]
       properties:
         helperGrants:
           type: array
-          maxItems: 256
-          description: Explicit access to folders on enrolled nodes; absent means no access.
-          items: {$ref: "#/components/schemas/HelperGrant"}
+          deprecated: true
+          items: {type: object, additionalProperties: true}
+          description: Read from snapshots written before slice 2b.1, and ignored (J20).
         id: {type: string}
         name: {type: string}
         displayName: {type: string}
@@ -3561,11 +3598,6 @@ components:
         a person's sign-in opens their apps and nothing in the hub.
       required: [id, name, disabled, createdAt, passwordChangedAt]
       properties:
-        helperGrants:
-          type: array
-          maxItems: 256
-          description: Explicit access to folders on enrolled nodes; absent means no access.
-          items: {$ref: "#/components/schemas/HelperGrant"}
         id: {type: string, description: 'Stable; the `sub` in their ID tokens.'}
         name: {type: string, description: 'What they sign in with. Unique, compared case-folded.'}
         displayName: {type: string}
@@ -3600,11 +3632,6 @@ components:
       additionalProperties: false
       required: [name, password]
       properties:
-        helperGrants:
-          type: array
-          maxItems: 256
-          description: Explicit access to folders on enrolled nodes; absent means no access.
-          items: {$ref: "#/components/schemas/HelperGrant"}
         name: {type: string, minLength: 1, maxLength: 64, pattern: "^[^\\s@][^@]*[^\\s@]$|^[^\\s@]$"}
         displayName: {type: string, maxLength: 120}
         email: {type: string, maxLength: 254, pattern: "^[^@\\s]+@[^@\\s]+$"}
@@ -3617,11 +3644,6 @@ components:
       type: object
       additionalProperties: false
       properties:
-        helperGrants:
-          type: array
-          maxItems: 256
-          description: Explicit access to folders on enrolled nodes; absent means no access.
-          items: {$ref: "#/components/schemas/HelperGrant"}
         displayName: {type: string, maxLength: 120}
         email:
           type: [string, 'null']

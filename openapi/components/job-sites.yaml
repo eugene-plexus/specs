@@ -1,182 +1,151 @@
-HelperGrant:
+# The control root's Job Site surface (docs/design/job-sites-own-enrollment.md):
+#
+# - the console's membership routes, `/v1/sites` (J19, J33);
+# - Workbench's routes for a site's owner, `/oidc/job-sites` (J6b);
+# - Workbench's routes for a person using a site's tools, `/oidc/sites`.
+#
+# What a site host and the root exchange directly is in sites.yaml.
+#
+# Every object here is named, never inline: an inline object in a document
+# this size renames an existing schema at codegen (`Person` became `Person1`
+# in slice 1).
+
+SiteDevGrant:
   type: object
   additionalProperties: false
+  description: |
+    A folder Eugene's owner gave themselves on a site in dev mode (J13b). It
+    works only while the install is in dev mode, and only if the site's
+    owner lets Eugene's owner in there (J6e), which the site checks itself.
   required: [folderId, writable]
   properties:
     folderId: {type: string, minLength: 1, maxLength: 64}
     writable: {type: boolean, default: false}
 
-HelperFolder:
-  type: object
-  additionalProperties: false
-  required: [id, name, path, identity, writable, ownerAccess]
-  properties:
-    id: {type: string, minLength: 1, maxLength: 64}
-    name: {type: string, minLength: 1, maxLength: 80}
-    path: {type: string, minLength: 1, maxLength: 4096}
-    identity: {type: string, minLength: 1, maxLength: 256}
-    writable: {type: boolean, default: false}
-    ownerAccess: {type: string, enum: [none, read, write], default: none}
-    people:
-      type: array
-      maxItems: 256
-      description: >-
-        Deprecated, read and ignored. Slice 1 kept a Job Site's folders and
-        who may use them here; since slice 2 the site keeps them itself and
-        its own list is final (J6b). Kept so the replicated log replays.
-      items: {$ref: '#/SitePersonGrant'}
+SiteOwnerAccess:
+  type: string
+  enum: [none, read, write]
 
-SitePersonGrant:
+SiteFolderOwnerAccess:
   type: object
   additionalProperties: false
-  required: [person, writable]
+  required: [ownerAccess]
   properties:
-    person: {type: string, minLength: 1, maxLength: 64}
-    writable: {type: boolean, default: false}
+    ownerAccess: {$ref: '#/SiteOwnerAccess'}
 
-NodeHelper:
+SiteDevFolder:
   type: object
   additionalProperties: false
-  required: [node, nodeKey, enrolledAt, enabled, folders]
+  description: A folder on a site, as the site last reported it, with Eugene's owner's own dev-mode access to it.
+  required: [id, name, path, writable, ownerAccess]
   properties:
-    node: {type: string, minLength: 1, maxLength: 256}
-    nodeKey: {type: string, minLength: 1, maxLength: 256}
-    enrolledAt: {type: string}
-    enabled: {type: boolean, default: false}
+    id: {type: string}
+    name: {type: string}
+    path: {type: string}
+    writable: {type: boolean, description: Whether the folder was registered for writing at all.}
+    ownerAccess: {$ref: '#/SiteOwnerAccess'}
+
+SiteDevView:
+  type: object
+  additionalProperties: false
+  description: |
+    What dev mode adds to a site's entry in the console (J13, J33): its
+    folders and servers as it last reported them, and Eugene's owner's own
+    access there. Absent in production, where the console shows membership
+    only (J19).
+  required: [ownerInDevMode, folders, servers]
+  properties:
+    ownerInDevMode:
+      type: [boolean, 'null']
+      description: Whether the site's owner lets Eugene's owner in while Eugene is in dev mode (J6e). Null until the site has reported.
     folders:
       type: array
-      maxItems: 64
-      description: >-
-        An ordinary node's folders, registered by Eugene's owner. A Job
-        Site's folders are the site's own (`HelperReport.site`); none are
-        kept here for one.
-      items: {$ref: '#/HelperFolder'}
-    devGrants:
+      items: {$ref: '#/SiteDevFolder'}
+    servers:
       type: array
-      maxItems: 64
-      description: >-
-        On a Job Site only: the folders Eugene's owner gave themselves in dev
-        mode (J13b). They work only while the install is in dev mode, and
-        only if the site's owner lets Eugene's owner in there (J6e), which
-        the site checks itself.
-      items: {$ref: '#/HelperGrant'}
+      items: {$ref: 'sites.yaml#/SiteServer'}
 
-HelperFolderCreate:
+Site:
   type: object
   additionalProperties: false
-  required: [name, path]
+  description: One Job Site, as Eugene's owner sees it in the console (J19).
+  required: [id, label, owner, ownerName, online, ready, enrolledAt]
   properties:
-    name:
-      type: string
-      minLength: 1
-      maxLength: 80
-      description: >-
-        Unique on the node, since it is the file server's `folder` argument
-        (J6g); a name in use there is refused with 409. A folder registered
-        before that rule, sharing a name with an earlier one, is offered as
-        `Name (2)`.
-    path: {type: string, minLength: 1, maxLength: 4096}
-    writable: {type: boolean, default: false}
-    ownerAccess: {type: string, enum: [none, read, write], default: none}
-
-HelperReport:
-  type: object
-  additionalProperties: false
-  required: [supported, ready]
-  properties:
-    supported: {type: boolean}
+    id: {$ref: 'sites.yaml#/SiteId'}
+    label: {$ref: 'sites.yaml#/SiteLabel'}
+    owner: {type: string, description: The owner's person id.}
+    ownerName: {type: string, description: How the owner signs in.}
+    online:
+      type: boolean
+      description: The site polled within the last 25 s. A site has no address to probe, so this is its status.
+    lastContactAt: {type: [string, 'null'], format: date-time}
     ready: {type: boolean}
-    reason: {type: [string, 'null'], maxLength: 1024}
-    account: {type: [string, 'null'], maxLength: 256}
-    protocol:
-      description: >-
-        The protocol this machine's host speaks. Absent from an agent older
-        than slice 2, whose helper takes only the four bespoke tools; the
-        root then says the machine needs an update, rather than sending it
-        MCP.
-      anyOf:
-        - {$ref: 'sites.yaml#/SiteHostProtocol'}
-        - {type: 'null'}
-    hostVersion: {type: [string, 'null'], maxLength: 64}
-    site:
-      description: A Job Site's own folders, servers and list of who may use what (J6b).
-      anyOf:
-        - {$ref: 'sites.yaml#/SiteSummary'}
-        - {type: 'null'}
-
-HelperOperationStatus:
-  type: string
-  enum: [done, failed, uncertain]
-
-HelperResult:
-  type: object
-  additionalProperties: false
-  required: [status]
-  properties:
-    status: {$ref: '#/HelperOperationStatus'}
-    result:
-      type: object
-      description: A management action's result.
-    message: {type: string, maxLength: 1024}
-    response:
-      description: An MCP request's JSON-RPC response, as the machine's host answered it.
-      anyOf:
-        - {$ref: 'sites.yaml#/McpResponse'}
-        - {type: 'null'}
-
-HelperOperationKind:
-  type: string
-  description: "`mcp`: one MCP request to one of the machine's servers. `manage`: one of the site host's management actions (`SiteManageAction`, site-host.yaml)."
-  enum: [mcp, manage]
-
-HelperOperation:
-  type: object
-  additionalProperties: false
-  description: >-
-    What a machine claims: one operation, bound to this machine's enrolment,
-    to be done before `expiresAt`. The agent checks the binding and hands the
-    rest to the machine's host, whose policy decides (J8).
-  required: [id, expiresAt, node, nodeKey, enrolledAt, subject, kind, installMode]
-  properties:
-    id: {type: string, minLength: 1, maxLength: 128}
-    expiresAt: {type: number}
-    node: {type: string}
-    nodeKey: {type: string}
-    enrolledAt: {type: string}
-    subject:
-      type: string
-      description: Who asked, as the root established it (a person's id, or `operator`).
-    kind: {$ref: '#/HelperOperationKind'}
-    server:
-      description: For `mcp`, the machine's server.
-      anyOf:
-        - {$ref: 'sites.yaml#/SiteServerId'}
-        - {type: 'null'}
-    request:
-      description: For `mcp`, the request.
-      anyOf:
-        - {$ref: 'sites.yaml#/McpRequest'}
-        - {type: 'null'}
-    grants:
-      type: array
-      maxItems: 64
-      description: >-
-        For `mcp` to the file server: on an ordinary node, all of the
-        person's grants there, where the root's grant is final (J6d); on a
-        Job Site, Eugene's owner's dev-mode grants (J6e). Empty otherwise.
-        The host checks the folder a call names against them (J6g).
-      items: {$ref: 'sites.yaml#/SiteGrantHint'}
-    action:
+    reason: {type: [string, 'null']}
+    hostVersion: {type: [string, 'null']}
+    hostNode:
       type: [string, 'null']
-      description: For `manage`, the action.
-    arguments:
-      type: [object, 'null']
-      description: For `manage`, its arguments.
-    installMode: {$ref: '#/InstallModeName'}
+      description: The node whose agent says it hosts this site (J32). For display and links only; nothing is authorized by it.
+    enrolledAt: {type: string, format: date-time}
+    dev:
+      description: In dev mode only (J33).
+      anyOf:
+        - {$ref: '#/SiteDevView'}
+        - {type: 'null'}
 
-HelperDiscovery:
+SiteList:
   type: object
   additionalProperties: false
+  required: [sites, installMode]
+  properties:
+    sites:
+      type: array
+      items: {$ref: '#/Site'}
+    installMode: {$ref: '#/InstallMode'}
+    joinUrl:
+      type: [string, 'null']
+      description: The address a machine joins through, when this root knows one (see `JobSiteList.canInvite`).
+
+SiteInvitationRequest:
+  type: object
+  additionalProperties: false
+  required: [owner]
+  properties:
+    owner: {type: string, minLength: 1, maxLength: 64, description: The person id the site will belong to. They confirm at the machine.}
+    label: {$ref: 'sites.yaml#/SiteLabel'}
+    ttlSeconds: {type: integer, minimum: 30, maximum: 86400, default: 900}
+
+SiteInvitation:
+  type: object
+  additionalProperties: false
+  description: A site invitation. The token is shown once.
+  required: [id, token, expiresAt, owner, ownerName, rootKey]
+  properties:
+    id:
+      type: string
+      description: The handle to withdraw it by (`DELETE /v1/nodes/join-tokens/{id}`), not the token.
+    token: {type: string}
+    expiresAt: {type: string, format: date-time}
+    owner: {type: string}
+    ownerName: {type: string, description: The sign-in name the machine will ask for.}
+    label: {type: [string, 'null']}
+    joinUrl: {type: [string, 'null'], description: The address the machine joins through, when this root knows one.}
+    rootKey: {type: string, description: Base64 of the root's raw Ed25519 identity key, which the site pins (J7a).}
+
+HostedSites:
+  type: object
+  additionalProperties: false
+  description: The sites a node's agent supervises, by id (J32). Display only.
+  required: [sites]
+  properties:
+    sites:
+      type: array
+      maxItems: 16
+      items: {$ref: 'sites.yaml#/SiteId'}
+
+JobSiteRequest:
+  type: object
+  additionalProperties: false
+  description: A Workbench request on behalf of its signed-in person.
   required: [refreshToken]
   properties:
     refreshToken: {type: string, minLength: 1, maxLength: 16384}
@@ -193,16 +162,16 @@ SiteServerGrant:
   type: object
   additionalProperties: false
   description: >-
-    One server on one machine that the signed-in person may use. The file
-    server (`files`) appears once per machine, with the folders the person
-    may use there (J6g).
-  required: [node, server, name, kind, jobSite, available, folders]
+    One server on one site that the signed-in person may use. The file
+    server (`files`) appears once per site, with the folders the person may
+    use there (J6g).
+  required: [site, label, server, name, kind, available, folders]
   properties:
-    node: {type: string}
+    site: {$ref: 'sites.yaml#/SiteId'}
+    label: {$ref: 'sites.yaml#/SiteLabel'}
     server: {$ref: 'sites.yaml#/SiteServerId'}
     name: {type: string, description: The server's name.}
     kind: {$ref: 'sites.yaml#/SiteServerKind'}
-    jobSite: {type: boolean}
     available: {type: boolean}
     reason: {type: [string, 'null']}
     folders:
@@ -221,7 +190,7 @@ SiteServerFolder:
       type: string
       minLength: 1
       maxLength: 96
-      description: Unique on its machine; the `folder` argument's value.
+      description: Unique on its site; the `folder` argument's value.
     writable:
       type: boolean
       description: This person may change files in it.
@@ -239,10 +208,10 @@ SiteServerList:
 SiteMcpCall:
   type: object
   additionalProperties: false
-  required: [refreshToken, node, server, request]
+  required: [refreshToken, site, server, request]
   properties:
     refreshToken: {type: string, minLength: 1, maxLength: 16384}
-    node: {type: string, minLength: 1, maxLength: 256}
+    site: {$ref: 'sites.yaml#/SiteId'}
     server: {$ref: 'sites.yaml#/SiteServerId'}
     request: {$ref: 'sites.yaml#/McpRequest'}
     operationId:
@@ -250,12 +219,12 @@ SiteMcpCall:
       minLength: 16
       maxLength: 64
       pattern: '^[a-zA-Z0-9_-]+$'
-      description: Lets `/oidc/sites/cancel` stop it before the machine claims it.
+      description: Lets `/oidc/sites/cancel` stop it before the site claims it.
 
 SiteMcpAnswer:
   type: object
   additionalProperties: false
-  required: [status, jobSite, installMode]
+  required: [status, installMode]
   properties:
     status: {$ref: 'sites.yaml#/SiteAnswerStatus'}
     message: {type: [string, 'null'], maxLength: 1024}
@@ -263,17 +232,15 @@ SiteMcpAnswer:
       anyOf:
         - {$ref: 'sites.yaml#/McpResponse'}
         - {type: 'null'}
-    jobSite:
-      type: boolean
-      description: Whether a Job Site answered. Workbench keeps it with the result, with `installMode` (J13a, J18).
-    installMode: {$ref: '#/InstallModeName'}
+    installMode:
+      $ref: 'sites.yaml#/InstallModeName'
 
 InstallMode:
   type: object
   additionalProperties: false
   required: [mode]
   properties:
-    mode: {$ref: '#/InstallModeName'}
+    mode: {$ref: 'sites.yaml#/InstallModeName'}
     changedAt:
       type: [string, 'null']
       format: date-time
@@ -297,7 +264,7 @@ JobSiteFolder:
   required: [id, name, path, writable, people]
   properties:
     id: {type: string}
-    name: {type: string, description: Unique on the machine; what Workbench and the model call it.}
+    name: {type: string, description: Unique on the site; what Workbench and the model call it.}
     path: {type: string}
     writable: {type: boolean}
     people:
@@ -329,16 +296,17 @@ JobSiteServer:
 JobSite:
   type: object
   additionalProperties: false
-  required: [node, enabled, online, ready, folders]
+  description: One of the signed-in person's own sites, as Workbench's Job sites page shows it.
+  required: [id, label, online, ready, folders, servers]
   properties:
-    node: {type: string}
-    enabled: {type: boolean}
+    id: {$ref: 'sites.yaml#/SiteId'}
+    label: {$ref: 'sites.yaml#/SiteLabel'}
     online: {type: boolean}
     ready: {type: boolean}
-    supported: {type: [boolean, 'null']}
     reason: {type: [string, 'null']}
-    account: {type: [string, 'null'], description: The OS account to give folder permission to.}
+    account: {type: [string, 'null'], description: The OS account the site's tools run as.}
     lastContactAt: {type: [string, 'null'], format: date-time}
+    hostNode: {type: [string, 'null'], description: The node that hosts it (J32), for display.}
     folders:
       type: array
       description: The folders registered on it, which its one file server offers by name (J6g), and who may use each.
@@ -362,7 +330,12 @@ JobSiteList:
     installMode: {$ref: '#/InstallMode'}
     canInvite:
       type: boolean
-      description: Whether the owner has opened the public route for machines, so this person can add one.
+      description: |
+        Whether this root knows the address a machine joins through: the
+        entry point's nodes name, or the address Eugene's owner set
+        (`siteJoinUrl` in the root's settings). It does not need the public
+        route: a machine on the root's own network joins through its LAN
+        address (J31).
 
 JobSiteInviteRequest:
   type: object
@@ -370,32 +343,20 @@ JobSiteInviteRequest:
   required: [refreshToken]
   properties:
     refreshToken: {type: string, minLength: 1, maxLength: 16384}
-    nodeName:
-      type: string
-      minLength: 1
-      maxLength: 63
-      pattern: '^[A-Za-z0-9][A-Za-z0-9_.-]*$'
-      description: The machine's name in the install. Its own host name when left out.
+    label:
+      $ref: 'sites.yaml#/SiteLabel'
 
 JobSiteInvite:
   type: object
   additionalProperties: false
-  required: [token, expiresAt, nodesUrl, rootKey, owner]
+  required: [token, expiresAt, joinUrl, rootKey, owner]
   properties:
     token: {type: string, description: Shown once.}
     expiresAt: {type: string, format: date-time}
-    nodeName: {type: [string, 'null']}
-    nodesUrl: {type: string, description: The public node route the machine joins through.}
+    label: {type: [string, 'null']}
+    joinUrl: {type: string, description: The address the machine joins through.}
     rootKey: {type: string, description: The root's identity key the machine pins.}
     owner: {type: string, description: The sign-in name the machine will ask for.}
-
-JobSiteEnable:
-  type: object
-  additionalProperties: false
-  required: [refreshToken, enabled]
-  properties:
-    refreshToken: {type: string, minLength: 1, maxLength: 16384}
-    enabled: {type: boolean}
 
 JobSiteFolderCreate:
   type: object
@@ -482,7 +443,3 @@ JobSiteAudit:
     entries:
       type: array
       items: {$ref: 'sites.yaml#/SiteAuditEntry'}
-
-InstallModeName:
-  type: string
-  enum: [production, dev]
