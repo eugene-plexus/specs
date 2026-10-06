@@ -150,6 +150,22 @@ JobSiteRequest:
   properties:
     refreshToken: {type: string, minLength: 1, maxLength: 16384}
 
+SiteLinkRemove:
+  type: object
+  additionalProperties: false
+  description: |
+    Remove a link between a person and an OS account on a site's machine.
+    A person removes their own; the site's owner may name anyone's. Removing
+    a link only takes access away, so the root may ask for it (§3.2).
+  required: [refreshToken, site]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    site: {$ref: 'sites.yaml#/SiteId'}
+    person:
+      type: [string, 'null']
+      maxLength: 64
+      description: Whose link. Absent means the signed-in person's own.
+
 SiteCancel:
   type: object
   additionalProperties: false
@@ -179,6 +195,18 @@ SiteServerGrant:
       maxItems: 64
       description: For the file server, the folders this person may use, each by the name its tools' `folder` argument takes. Empty for a local server.
       items: {$ref: '#/SiteServerFolder'}
+    linked:
+      type: boolean
+      description: |
+        This person has linked their own OS account on that machine, so their
+        calls there run as it (J27). Otherwise they run as the site's owner,
+        confined to the folder. Absent from an older root.
+    account:
+      type: [string, 'null']
+      description: The OS account this person's calls run as there, for display, once the site has said.
+    linkPage:
+      type: [string, 'null']
+      description: Where to link, on that machine, when they have not and the site offers a page (§3.2).
 
 SiteServerFolder:
   type: object
@@ -304,7 +332,17 @@ JobSite:
     online: {type: boolean}
     ready: {type: boolean}
     reason: {type: [string, 'null']}
-    account: {type: [string, 'null'], description: The OS account the site's tools run as.}
+    account: {type: [string, 'null'], description: The kind of OS account the site host itself runs in. Tools run in each person's worker (`links`).}
+    links:
+      type: array
+      description: The people linked to an OS account on that machine, and whether each one's calls can run now (§3.2).
+      items: {$ref: 'sites.yaml#/SitePersonLink'}
+    linkPage:
+      type: [string, 'null']
+      description: Where a person links their account on that machine, when it offers a page (a Windows service install).
+    sharing:
+      type: boolean
+      description: Whether the site can serve anyone but its owner (false on macOS). Absent means true.
     lastContactAt: {type: [string, 'null'], format: date-time}
     hostNode: {type: [string, 'null'], description: The node that hosts it (J32), for display.}
     folders:

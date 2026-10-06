@@ -359,6 +359,13 @@ paths:
         `profile` and `email` are honoured and anything else is ignored.
         With `email`, a person who has an address gets `email` and
         `email_verified: false` (C4).
+
+        **One built-in client, `eugene-site-link`** (J37,
+        `job-sites-own-enrollment.md` §3.2): the agent's link page on a
+        site's machine. It is public, with no secret, and its only redirect
+        is a loopback one, `http://127.0.0.1:<port>/link/callback` with any
+        port (RFC 8252 §7.3). Every person may use it, and Eugene's owner may
+        not. It is never in the client list and cannot be edited or removed.
       parameters:
         - {name: response_type, in: query, required: true, schema: {type: string, enum: [code]}}
         - {name: client_id, in: query, required: true, schema: {type: string}}
@@ -439,6 +446,10 @@ paths:
         refresh is refused when the person has been disabled or deleted,
         their password changed after the sign-in, or the sign-in was
         revoked (D6).
+
+        The built-in `eugene-site-link` client sends `client_id` in the form
+        and no secret, and may only trade a code: it gets an ID token and no
+        refresh token.
       requestBody:
         required: true
         content:
@@ -1766,7 +1777,7 @@ paths:
         with their own password, rate-limited as a sign-in is; no site or
         node uses the token key. Then the token is spent and `enrollSite` is
         appended. A site has no address, so nothing on it is ever dialled:
-        it polls (J23). One of the six paths of the entry point's public mode
+        it polls (J23). One of the seven paths of the entry point's public mode
         (`public_sites`, J31), where failed joins are rate-limited too.
       security: []
       requestBody:
@@ -1909,6 +1920,42 @@ paths:
           description: Removed.
         '401':
           description: Not the token of an enrolled site.
+
+  /v1/sites/links/check:
+    post:
+      operationId: checkSitePerson
+      tags: [sites]
+      summary: A site checks a person's Eugene sign-in, typed at its machine to link them (J36)
+      description: |
+        A site token. Used by the elevated link step on a Linux system
+        install (`install.sh --site-link`), which signs with the site's own
+        key: root reads it, as it reads the site host's directory. Answers
+        who the person is when the name and password are right, so root can
+        write the link; a wrong pair is 401, with the same sentence for
+        both. Rate-limited as a sign-in is, per site and per name, so a site
+        cannot use it to guess passwords at speed. A disabled person is 403.
+        Nothing is recorded at the root: the link lives on the machine. One
+        of the seven paths of the entry point's public mode (`public_sites`).
+      security: [{siteToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SitePersonCheckRequest'}
+      responses:
+        '200':
+          description: The person.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SitePersonCheck'}
+        '401':
+          description: Not an enrolled site's token, or the name or password is wrong.
+        '403':
+          description: The person is disabled, or is Eugene's owner, who is not a person on a site.
+        '429':
+          description: Too many failed checks; try again shortly.
+        '503':
+          description: The root is locked.
 
   /v1/sites/{id}:
     parameters:
@@ -2101,6 +2148,41 @@ paths:
           description: This sign-in or app access was withdrawn.
         '429':
           description: Too many recent operations.
+
+  /oidc/sites/link/remove:
+    post:
+      operationId: removeSiteLink
+      tags: [sites]
+      summary: Remove a person's link to an OS account on a site's machine
+      description: |
+        A person removes their own link; the site's owner may name anyone's
+        (§3.2). The root asks the agent that hosts the site
+        (`DELETE /v1/site/links/{subject}` there, with the root's token),
+        because the link lives on the machine and only its starter writes
+        it. Removing a link only takes access away: from then on that
+        person's calls there run as the owner, confined, if the owner shares
+        a folder with them, and otherwise not at all. A Linux system install
+        removes a link with the elevated one-liner instead (J36); there the
+        answer is 409, saying so.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SiteLinkRemove'}
+      responses:
+        '204':
+          description: Removed, or there was none.
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '403':
+          description: Not the person's own link, and they do not own the site.
+        '404':
+          description: No such site, or it is not one the person owns or may use.
+        '409':
+          description: The site's machine links people only with the elevated one-liner, or no node hosts it now; `detail` says which.
+        '503':
+          description: The machine's agent did not answer.
 
   /oidc/install-mode:
     post:
@@ -2527,6 +2609,14 @@ components:
         none of these.
 
   schemas:
+    SitePersonCheckRequest:
+      $ref: "components/sites.yaml#/SitePersonCheckRequest"
+    SitePersonCheck:
+      $ref: "components/sites.yaml#/SitePersonCheck"
+    SitePersonLink:
+      $ref: "components/sites.yaml#/SitePersonLink"
+    SiteLinkRemove:
+      $ref: "components/job-sites.yaml#/SiteLinkRemove"
     SiteId:
       $ref: "components/sites.yaml#/SiteId"
     SiteLabel:

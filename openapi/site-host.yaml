@@ -16,10 +16,33 @@ info:
     (`remote-nodes.md` §3.4, J8).
 
     **Where it runs.** On a machine that is a node (J21), the agent installs
-    it and keeps it running. The agent holds none of its identity and relays
-    nothing for it: the two enrollments share nothing but the machine
-    (J19, J23). It listens on loopback only, for its health and nothing
-    else. Until slice 2b.2 it runs in an OS account of its own.
+    it and keeps it running; on a Linux system install it is root's to
+    install and update, never the agent's (§2.4). The agent holds none of
+    its identity and relays nothing for it: the two enrollments share
+    nothing but the machine (J19, J23). It listens on loopback only, for
+    its health and nothing else. It runs in an OS account of its own, or as
+    the installing person on a per-user install (J38), and **opens no one's
+    files** (§3.2).
+
+    **Each person's tools run in a worker, as that person** (J24, J27,
+    §3.2). The worker is this package, `python -I -m
+    eugene_plexus_site_host.worker --account <SID or uid> --channel <name>
+    [--host <SID or uid>]`, started by the machine's privileged starter
+    for each linked person: the agent on Windows (with the person's session
+    token, while they are signed in, J25), root's
+    `eugene-plexus-site-worker@<uid>.service` on a Linux system install,
+    the agent's own child on a per-user install. A worker serves only if it
+    runs as `--account`, never as a system, service or root account, never
+    elevated, and only once the far end of the channel is the site host's
+    account. It reads the local-server list itself.
+
+    **The channel** between them is a named pipe on Windows and a Unix
+    socket elsewhere, carrying newline-delimited JSON. The site host reads
+    each worker's account from the connection (Windows:
+    `ImpersonateNamedPipeClient` at Identification level; elsewhere
+    `SO_PEERCRED`) and refuses an account in no link. A linked person's call
+    goes to their own worker; anyone else's to the owner's, confined to the
+    folder (J27). With no worker connected, the call is refused, saying why.
 
     **Its join** is a command, not an HTTP call: `python -m
     eugene_plexus_site_host join --url <root> --token <invitation>
@@ -47,13 +70,23 @@ info:
     held channel of slice 3. A server marked `system` cannot be turned on
     without an administrator's consent recorded at the machine (J9).
 
-    **The launch environment** (set by the agent):
+    **The launch environment** (set by whoever starts it):
     `EUGENE_PLEXUS_APP_DATA_DIR` (the site's directory: its enrollment, key,
     policy and audit log), `EUGENE_PLEXUS_APP_BIND_PORT`,
-    `EUGENE_PLEXUS_APP_ACCOUNT_KIND`, `SITE_HOST_PROTECTED_ROOTS`, and the
-    local-server list as `SITE_HOST_LOCAL_SERVERS_FILE` with its
-    `SITE_HOST_LOCAL_SERVERS_SHA256`. The root's address and the owner come
-    from the site's own enrollment, never from the environment.
+    `EUGENE_PLEXUS_APP_ACCOUNT_KIND`, `SITE_HOST_PROTECTED_ROOTS`,
+    `SITE_HOST_LINKS_FILE` (`SiteLinkFile`, which it reads and cannot
+    write), `SITE_HOST_LOCAL_SERVERS_FILE` (`SiteLocalServerList`, the same),
+    `SITE_HOST_CHANNEL` (the pipe's name or the socket's path), and
+    optionally `SITE_HOST_LINK_PAGE` (`SiteSummary.linkPage`). The root's
+    address and the owner come from the site's own enrollment, never from
+    the environment.
+
+    **Checking a person at the machine** (J36) is a command too:
+    `python -m eugene_plexus_site_host check-person --data-dir <dir>
+    --name <name>`, with the password on standard input. It signs with the
+    site's key and asks the root (`POST /v1/sites/links/check`), and prints
+    `SitePersonCheck` as JSON. Root runs it to link someone on a Linux
+    system install, then writes the link itself.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -99,6 +132,16 @@ components:
       $ref: 'components/sites.yaml#/SiteOperation'
     SiteResult:
       $ref: 'components/sites.yaml#/SiteResult'
+    SiteLinkFile:
+      $ref: 'components/sites.yaml#/SiteLinkFile'
+    SiteAccountLink:
+      $ref: 'components/sites.yaml#/SiteAccountLink'
+    SitePersonLink:
+      $ref: 'components/sites.yaml#/SitePersonLink'
+    SitePersonCheckRequest:
+      $ref: 'components/sites.yaml#/SitePersonCheckRequest'
+    SitePersonCheck:
+      $ref: 'components/sites.yaml#/SitePersonCheck'
 
     SiteHostHealth:
       type: object

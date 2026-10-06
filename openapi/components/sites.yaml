@@ -248,6 +248,115 @@ SiteSummary:
       maxItems: 2048
       description: Who may use the local servers' tools. Folders carry their own people.
       items: {$ref: '#/SiteAccess'}
+    links:
+      type: array
+      maxItems: 256
+      description: |
+        The people linked to an OS account on this machine (§2.2, J27), and
+        whether each one's worker is connected now. A linked person's calls
+        run as their own account; anyone else's run in the owner's worker,
+        as the owner, confined to the folder (J27).
+      items: {$ref: '#/SitePersonLink'}
+    linkPage:
+      type: [string, 'null']
+      maxLength: 256
+      description: |
+        Where a person links their account, on the machine itself: the
+        agent's loopback link page on a Windows service install. Null where
+        linking is the elevated one-liner (a Linux system install, J36) or
+        where only the installing person is served (a per-user install, J38).
+    sharing:
+      type: boolean
+      description: |
+        Whether this site can serve anyone but its owner. False on macOS,
+        which has no folder boundary yet (§2.6). Absent means true.
+
+SitePersonLink:
+  type: object
+  additionalProperties: false
+  description: One person linked to an OS account on a site's machine, as the site reports it.
+  required: [subject, accountName, available]
+  properties:
+    subject:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: The person's id.
+    accountName:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: The OS account, for display, e.g. `AMISH_STATION\jessie` or `jessie`.
+    available:
+      type: boolean
+      description: Their worker is connected, so their calls can run now.
+    reason:
+      type: [string, 'null']
+      maxLength: 1024
+      description: Why not, when it is not, e.g. that they are not signed in on a Windows machine (J25).
+
+SiteAccountLink:
+  type: object
+  additionalProperties: false
+  description: |
+    One link in the links file: *this Eugene person is this OS account on
+    this machine* (§2.2, J27). Made at the machine only, by the machine's
+    privileged starter (the agent on a Windows service install, root on a
+    Linux system install, the join on a per-user install), never by the root
+    or the site host.
+  required: [subject, account, accountName, linkedAt]
+  properties:
+    subject:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: The person's id.
+    name:
+      type: [string, 'null']
+      maxLength: 256
+      description: How the person signs in, for display.
+    account:
+      type: string
+      minLength: 1
+      maxLength: 256
+      description: The OS account's SID on Windows, or its uid in decimal elsewhere. Compared exactly.
+    accountName:
+      type: string
+      minLength: 1
+      maxLength: 256
+    linkedAt: {type: string, format: date-time}
+
+SiteLinkFile:
+  type: object
+  additionalProperties: false
+  description: |
+    The links file (§3.2): written by the machine's privileged starter,
+    read by the site host, which cannot write it. One link per person, and
+    one person per account.
+  required: [version, links]
+  properties:
+    version: {type: integer, const: 1}
+    links:
+      type: array
+      maxItems: 256
+      items: {$ref: '#/SiteAccountLink'}
+
+SitePersonCheckRequest:
+  type: object
+  additionalProperties: false
+  description: A person's Eugene sign-in, typed at the machine to link them there (J36).
+  required: [name, password]
+  properties:
+    name: {type: string, minLength: 1, maxLength: 256, description: How the person signs in.}
+    password: {type: string, minLength: 1, maxLength: 1024}
+
+SitePersonCheck:
+  type: object
+  additionalProperties: false
+  required: [subject, name]
+  properties:
+    subject: {type: string, minLength: 1, maxLength: 64, description: The person's id.}
+    name: {type: string, maxLength: 256}
 
 SiteGrantHint:
   type: object
@@ -310,8 +419,9 @@ SiteLocalServer:
   description: |
     A local MCP server a machine administrator added at the machine
     (`eugene-plexus-agent site server add`, elevated). Kept in the install's
-    protected configuration, which the host's own account cannot write, and
-    handed to the host when it starts (remote-nodes.md §6.2).
+    protected configuration, which neither the site host nor a worker can
+    write (remote-nodes.md §6.2). It runs in the worker of whoever calls it,
+    as that person, or as the site's owner for someone with no link (J27).
   required: [id, name, command, sha256]
   properties:
     id:
@@ -346,7 +456,11 @@ SiteLocalServer:
 SiteLocalServerList:
   type: object
   additionalProperties: false
-  description: The file of local servers (`site-servers.yaml`) the agent keeps in its protected configuration.
+  description: |
+    The local-server list (`servers.yaml`), beside the links in the
+    install's administrator-only place (§3.2). An administrator writes it at
+    the machine. The site host and each worker read it directly and cannot
+    write it, so the site host cannot name a program for a worker to run.
   required: [servers]
   properties:
     servers:
@@ -440,7 +554,10 @@ SiteReport:
     account:
       type: [string, 'null']
       maxLength: 256
-      description: The OS account the site's tools run as.
+      description: |
+        The kind of OS account the site host itself runs in. Since 2b.2 the
+        site's tools run in each person's worker, as `SiteSummary.links`
+        says, and never in this account.
     site:
       anyOf:
         - {$ref: '#/SiteSummary'}
