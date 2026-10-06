@@ -1780,6 +1780,39 @@ trap {
     return
 }
 
+# --- 0c. a job site on this node ----------------------------------------
+# A job site is its own enrollment (job-sites-own-enrollment.md, J19), added
+# to a machine that is already a node without reinstalling or re-joining
+# it (J35). A machine that is only a job site waits for the standalone
+# install (J21). The site host makes the site's key itself; this script
+# never sees the owner's password, which the agent's `site join` asks for.
+if ($JobSite) {
+    if (-not $Join -or -not $Token -or -not $Owner) {
+        Die "a job site's join command gives -Join, -Token and -Owner (copy the whole command from Workbench)"
+    }
+    if (-not $WantsService) {
+        Die "a job site needs Eugene installed as a Windows service (the default), so its tools run in an account of their own"
+    }
+    if (-not (Test-Path $AgentEx)) {
+        Die @"
+this machine is not a node yet.
+       Install Eugene here and join it to your install first, then run this
+       again. A machine that is only a job site waits for the standalone install.
+"@
+    }
+    $siteLabel = if ($NodeName) { $NodeName } else { $env:COMPUTERNAME }
+    $siteArgs = @("site", "join", "--url", $Join, "--token", $Token, "--owner", $Owner, "--label", $siteLabel)
+    if ($RootKey) { $siteArgs += @("--root-key", $RootKey) }
+    Say "adding $siteLabel as a job site of $Owner"
+    $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
+    & $AgentEx @siteArgs
+    if ($LASTEXITCODE -ne 0) {
+        Die "the job site was not added (see above). Nothing else on this machine changed."
+    }
+    Say "done: $siteLabel is a job site of $Owner. Its owner manages it from Workbench (Job sites)."
+    return
+}
+
 # --- 0b. what is already here -------------------------------------------
 # Below the trap, so a refusal ends cleanly, and below `# --- 1. uv`, so
 # the preflight suite, which runs the text above that line, never sets a
@@ -3106,20 +3139,9 @@ if (-not (Test-VcRuntime)) {
 if ($Join) {
     if (-not $Token) { Die "-Join needs -Token (mint one at the control root: Nodes -> Add a node)" }
     $joinArgs = @("join", "--control", $Join, "--token", $Token)
-    if ($JobSite) {
-        # A job site (remote-nodes.md, section 3.2): the person the invitation names
-        # confirms here, typing their own Eugene password at the agent's
-        # prompt; this script never sees it. It pins the root's key (J7a).
-        if (-not $Owner) { Die "-JobSite needs -Owner (copy the whole command from Workbench or Nodes)" }
-        Say "joining $Join as a job site of $Owner"
-        $joinArgs += @("--job-site", "--owner", $Owner)
-        if ($RootKey) { $joinArgs += @("--root-key", $RootKey) }
-    }
-    else {
-        Say "joining $Join as a worker node"
-    }
+    Say "joining $Join as a worker node"
     if ($NodeName) { $joinArgs += @("--name", $NodeName) }
-    if ($Advertise -and -not $JobSite) { $joinArgs += @("--advertise", $Advertise) }
+    if ($Advertise) { $joinArgs += @("--advertise", $Advertise) }
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @joinArgs
     $joinCode = $LASTEXITCODE

@@ -131,7 +131,7 @@ while [ $# -gt 0 ]; do
             echo "           --purge-data  (Mac/user install: delete settings, app data and logs)"
             echo "           --interactive  (Mac: show the removal choices)"
             echo "  worker node: --join URL --token JWT [--name NAME] [--advertise URL]"
-            echo "  job site:    --join URL --token JWT --job-site --owner NAME --root-key KEY [--name NAME]"
+            echo "  job site (on a node): --join URL --token TOKEN --job-site --owner NAME [--root-key KEY] [--name NAME]"
             echo "  standalone:  --advertise URL   (the address other devices reach this one at)"
             exit 0 ;;
         *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
@@ -1506,6 +1506,31 @@ on_exit() {
 }
 trap on_exit EXIT
 trap 'exit 130' INT TERM
+
+# --- a job site on this node ---------------------------------------------
+# A job site is its own enrollment (job-sites-own-enrollment.md, J19), added
+# to a machine that is already a node without reinstalling or re-joining it
+# (J35). A machine that is only a job site waits for the standalone install
+# (J21). The site host makes the site's key itself; this script never sees
+# the owner's password, which the agent's `site join` asks for at the
+# terminal.
+if [ "$JOIN_SITE" = 1 ]; then
+    if [ -z "$JOIN_CONTROL" ] || [ -z "$JOIN_TOKEN" ] || [ -z "$JOIN_OWNER" ]; then
+        die "a job site's join command gives --join, --token and --owner (copy the whole command from Workbench)"
+    fi
+    [ "$MODE" = system ] || die "a job site needs Eugene installed as a system service (the default), so its tools run in an account of their own"
+    as_root test -x "$VENV/bin/eugene-plexus-agent" || die "this machine is not a node yet.
+       Install Eugene here and join it to your install first, then run this
+       again. A machine that is only a job site waits for the standalone install."
+    SITE_LABEL=${JOIN_NAME:-$(hostname)}
+    set -- site join --url "$JOIN_CONTROL" --token "$JOIN_TOKEN" --owner "$JOIN_OWNER" --label "$SITE_LABEL"
+    if [ -n "$JOIN_ROOT_KEY" ]; then set -- "$@" --root-key "$JOIN_ROOT_KEY"; fi
+    say "adding $SITE_LABEL as a job site of $JOIN_OWNER"
+    as_root env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$CONFIG" "$VENV/bin/eugene-plexus-agent" "$@" \
+        || die "the job site was not added (see above). Nothing else on this machine changed."
+    say "done: $SITE_LABEL is a job site of $JOIN_OWNER. Its owner manages it from Workbench (Job sites)."
+    exit 0
+fi
 
 if [ -n "$JOIN_CONTROL" ]; then
     [ -n "$JOIN_TOKEN" ] || die "--join needs --token (mint one at the control root: Nodes -> Add a node)"
@@ -2900,19 +2925,8 @@ if [ -n "$JOIN_CONTROL" ]; then
     # at the end of a && chain is the script's exit status, so the
     # short-circuit would end the install rather than skip an option.
     set -- join --control "$JOIN_CONTROL" --token "$JOIN_TOKEN"
-    if [ "$JOIN_SITE" = 1 ]; then
-        # A job site (remote-nodes.md, section 3.2): the person the invitation names
-        # confirms here, typing their own Eugene password at the agent's
-        # prompt (read from the terminal); this script never sees it. It
-        # pins the root's key (J7a) and binds nothing beyond loopback.
-        [ -n "$JOIN_OWNER" ] || die "--job-site needs --owner (copy the whole command from Workbench or Nodes)"
-        say "joining $JOIN_CONTROL as a job site of $JOIN_OWNER"
-        set -- "$@" --job-site --owner "$JOIN_OWNER"
-        if [ -n "$JOIN_ROOT_KEY" ]; then set -- "$@" --root-key "$JOIN_ROOT_KEY"; fi
-    else
-        say "joining $JOIN_CONTROL as a worker node"
-        if [ -n "$JOIN_ADVERTISE" ]; then set -- "$@" --advertise "$JOIN_ADVERTISE"; fi
-    fi
+    say "joining $JOIN_CONTROL as a worker node"
+    if [ -n "$JOIN_ADVERTISE" ]; then set -- "$@" --advertise "$JOIN_ADVERTISE"; fi
     if [ -n "$JOIN_NAME" ]; then set -- "$@" --name "$JOIN_NAME"; fi
     JOIN_RC=0
     in_prefix env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$CONFIG" "$VENV/bin/eugene-plexus-agent" "$@" \
