@@ -608,6 +608,13 @@ A passkey wants a gesture every time, so silent forgery at scale stops. A
 passkey prompt does not show what it signs, so a compromised Workbench could
 still ask a person to sign one wrong thing.
 
+**J14 is now designed:** [`person-held-keys.md`](person-held-keys.md)
+(2026-10-06), calls J39-J49 for Troy. The browser measurement there changes the
+sketch above: a passkey cannot bind to an IP and plain-HTTP LAN is not a secure
+context, so a key usable *from central Workbench* needs the HTTPS entry point,
+while the one key every install can hold is a WebCrypto key at the machine's own
+loopback page — where the link ceremony already is.
+
 ### 2.9 The console
 
 **The Job sites branch** sits beside Machines, with `sel` tokens `sites` and

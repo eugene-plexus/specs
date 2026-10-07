@@ -327,7 +327,8 @@ product*. A compromised root, or an owner willing to edit the root's state
 and keys directly, can still mint a sign-in for "Alice" that her site accepts,
 because the site trusts the root to say who Alice is. Closing that needs a key
 the person holds and the root cannot mint: a passkey registered at the site,
-with tool calls signed by it (J14). That is a design of its own.
+with tool calls signed by it (J14). That is a design of its own,
+[`person-held-keys.md`](person-held-keys.md) (2026-10-06).
 
 ### 3.4 MCP between site and root
 
