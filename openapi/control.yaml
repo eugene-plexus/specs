@@ -2094,8 +2094,10 @@ paths:
         `tools/list`, `tools/call`) to the site, which claims it on its next
         poll (J6a). The root checks the Workbench client and the person's
         sign-in; the site's own policy decides (J8). A destructive tool runs
-        only under the site owner's standing pre-approval. The request is at
-        most 40,000 bytes; the answer at most 70,000. A `tools/call` the site
+        only under the site owner's standing pre-approval. Since 2b.3b each
+        call runs under its workspace's rule (J70): `allow` at once, `ask` only
+        with `asked` (J72), which this root carries and does not check. The
+        request is at most 40,000 bytes; the answer at most 70,000. A `tools/call` the site
         claimed but did not confirm is `uncertain`: it may have acted.
       security: [{helperClient: []}]
       requestBody:
@@ -2218,10 +2220,13 @@ paths:
     post:
       operationId: listMyJobSites
       tags: [sites]
-      summary: The signed-in person's own Job Sites
+      summary: The signed-in person's own Job Sites, and those they are linked to
       description: |
         Every Job Site this person owns, with its folders, its servers and
-        who may use which tool, as each site last reported them. A Job Site's
+        who may use which tool, as each site last reported them. Since 2b.3b
+        also every site whose last report links them to an OS account there
+        (`role: linked`), showing only their own: their workspaces, their
+        link and their keys' state. A Job Site's
         owner is the only one who grants its tools (J11), and the site keeps
         that list itself (J6b). Authenticated as `/oidc/sites/*` is: an
         enrolled Workbench client and the person's refresh credential.
@@ -2527,7 +2532,9 @@ paths:
       description: |
         Kept on the machine, read from it on each request (J8). Who asked for
         what, and what the site decided; never a file's contents or a tool's
-        result. Only the site's owner reads it, Eugene's owner never.
+        result. Eugene's owner never reads it. Since 2b.3b any person linked
+        there reads the lines that belong to them, and the site's owner the
+        rest (J80, `SiteAuditEntry`); before, only the site's owner.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2562,8 +2569,9 @@ paths:
         in the browser from the code the person typed (`SitePasskeyBinding`,
         site-host.yaml); the code itself never reaches this root. This root
         carries the public half and the MAC to the site, which pins the
-        passkey only if the MAC checks with the code it showed. Only the
-        site's owner pairs one.
+        passkey only if the MAC checks with the code it showed. Since 2b.3b
+        any person linked there pairs their own, which approves only their
+        own items (J67); before, only the site's owner.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2595,10 +2603,11 @@ paths:
       tags: [sites]
       summary: Remove one of the owner's passkeys at their Job Site, from Workbench
       description: |
-        For a lost phone: the owner need not be at the machine. Removing a
+        For a lost phone: the person need not be at the machine. Removing a
         key only takes it away (`passkey.remove`, site-host.yaml); what it
-        approved stays, and if it was the owner's last key there, no tool
-        runs on the site until they add a key and approve its rules.
+        approved stays, and if it was the person's last key there, nothing
+        runs under their rules until they add a key and approve them (J48,
+        J79). Since 2b.3b any person linked there removes their own.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2626,9 +2635,10 @@ paths:
       tags: [sites]
       summary: What the owner's Job Site holds for their approval, read from the site (J14a.3)
       description: |
-        With `key`, one of the owner's passkeys, each item carries the
+        With `key`, one of the person's passkeys, each item carries the
         canonical envelope to sign with it. The words are the site's own;
-        this root only carries them.
+        this root only carries them. Since 2b.3b, for any person linked
+        there, their own held changes only.
       security: [{helperClient: []}]
       requestBody:
         required: true
@@ -2658,7 +2668,7 @@ paths:
     post:
       operationId: approveMyJobSiteHeld
       tags: [sites]
-      summary: Approve a held change with the owner's passkey (J14a.3)
+      summary: Approve a held change with the person's own passkey (J14a.3; any linked person since 2b.3b)
       description: |
         The assertion is over the envelope `held` listed; the site checks
         it against the passkey it pinned (`SitePasskeyApproval`,
@@ -2711,6 +2721,192 @@ paths:
           description: The site refused it; `detail` says why in the site's words.
         '503':
           description: The site is offline, or it needs an update to take passkeys.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/workspaces:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+    post:
+      operationId: addMyJobSiteWorkspace
+      tags: [sites]
+      summary: Add a workspace of the person's own on a site they own or are linked to (2b.3b)
+      description: |
+        The workspace is the signed-in person's: their own worker on the
+        machine opens it, as their own account, and only they use it unless
+        they own the site and share it (J69). Being linked at the machine is
+        all it takes (J77). The site holds the change until the person
+        approves it with their own key, at the machine or with a passkey from
+        Workbench, and never applies it on this root's word (J68); the site's
+        owner keeps J52's way. This root learns its id and name, never its
+        path (J76).
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteWorkspaceCreate'}
+      responses:
+        '202':
+          description: The site holds the change until the person approves it with their key. Nothing changed yet.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
+        '201':
+          description: The workspace, read live from the site.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteWorkspaceDetail'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site and is linked to none by that id, or it has no such workspace.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to keep each person's workspaces (`SiteSigning.people`).
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/workspaces/list:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+    post:
+      operationId: listMyJobSiteWorkspaces
+      tags: [sites]
+      summary: The person's own workspaces on a site, with their paths and rules, read live (J76)
+      description: |
+        Asked of the site each time (`workspace.list`); this root carries the
+        answer and keeps none of it. Each person sees only their own, the
+        site's owner included.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
+      responses:
+        '200':
+          description: The workspaces.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteWorkspaceList'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site and is linked to none by that id, or it has no such workspace.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to keep each person's workspaces (`SiteSigning.people`).
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/workspaces/{workspace_id}/remove:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+      - {name: workspace_id, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{32}$'}}
+    post:
+      operationId: removeMyJobSiteWorkspace
+      tags: [sites]
+      summary: Remove one of the person's own workspaces
+      description: Only takes access away, so the site applies it at once (J51). Whom it was shared with lose it too.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site and is linked to none by that id, or it has no such workspace.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to keep each person's workspaces (`SiteSigning.people`).
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/workspaces/{workspace_id}/rules:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+      - {name: workspace_id, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{32}$'}}
+    post:
+      operationId: setMyJobSiteWorkspaceRules
+      tags: [sites]
+      summary: The person's own rules in one of their workspaces, and its deny patterns (J70)
+      description: |
+        Allow, ask or deny for reading and searching, and for changing files;
+        path patterns that hide what they match from every tool, for everyone
+        who uses the workspace. A change that is nowhere looser applies at
+        once (J51); any other is held for the person's own key (J68).
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteRulesRequest'}
+      responses:
+        '202':
+          description: The site holds the change until the person approves it with their key. Nothing changed yet.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
+        '200':
+          description: The workspace, read live from the site.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteWorkspaceDetail'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site and is linked to none by that id, or it has no such workspace.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to keep each person's workspaces (`SiteSigning.people`).
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/workspaces/{workspace_id}/people:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+      - {name: workspace_id, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{32}$'}}
+    post:
+      operationId: shareMyJobSiteWorkspace
+      tags: [sites]
+      summary: Whom the site's owner shares one of their workspaces with, and each one's rules there (J69, J70)
+      description: |
+        The site's owner only, for their own workspaces only. Replaces the
+        list. People are named by how they sign in. Each person's `read` and
+        `change` say allow, ask or deny; "ask" is asked of that person in
+        Workbench, when they make the call (§2.6). A change that only takes
+        access away applies at once (J51); any other waits for the owner's
+        key (J14a).
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteWorkspacePeopleRequest'}
+      responses:
+        '202':
+          description: The site holds the change until its owner approves it with their key. Nothing changed yet.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
+        '200':
+          description: The workspace, read live from the site.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteWorkspaceDetail'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or it has no such workspace of theirs, or no such person signs in.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to keep each person's workspaces.
         '504':
           description: The site did not answer in time.
   /oidc/job-sites/{site}/leave:
@@ -2881,6 +3077,12 @@ components:
       $ref: "components/job-sites.yaml#/JobSiteHeldListRequest"
     JobSitePasskeyApproval:
       $ref: "components/job-sites.yaml#/JobSitePasskeyApproval"
+    JobSiteWorkspaceCreate:
+      $ref: "components/job-sites.yaml#/JobSiteWorkspaceCreate"
+    JobSiteRulesRequest:
+      $ref: "components/job-sites.yaml#/JobSiteRulesRequest"
+    JobSiteWorkspacePeopleRequest:
+      $ref: "components/job-sites.yaml#/JobSiteWorkspacePeopleRequest"
     SignedRootTls:
       type: object
       required: [jws]

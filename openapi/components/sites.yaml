@@ -100,8 +100,8 @@ SiteTool:
         Whether the site treats the tool as able to change or delete
         something. True unless the server marks it read-only, or marks it
         `destructiveHint: false`. MCP's own default, so an unmarked tool is
-        destructive. A destructive tool runs only under a standing
-        pre-approval (J6b).
+        destructive. Since 2b.3b a destructive tool is granted `ask` unless
+        the site's owner grants it `allow` (`SiteToolGrant.decision`, J78).
 
 SiteServerKind:
   type: string
@@ -143,14 +143,138 @@ SiteToolGrant:
   required: [name]
   properties:
     name: {type: string, minLength: 1, maxLength: 128}
+    decision:
+      description: |
+        2b.3b (J70, J78): `allow`, the tool runs without asking; `ask`, it
+        runs once the person who made the call approved it in Workbench
+        (`SiteCall.asked`, J72). Absent: `allow` for a tool the site does not
+        treat as destructive, or one granted `standing`; `ask` otherwise.
+        A tool not granted is denied: it is never offered.
+      anyOf:
+        - {$ref: '#/SiteGrantDecision'}
+        - {type: 'null'}
     standing:
       type: boolean
       default: false
       description: |
-        A standing pre-approval: the person may use this destructive tool
-        without the site's owner approving each call. Required for a
-        destructive tool, which is otherwise refused: approving each call at
-        the machine waits for the held channel (J6b).
+        From before 2b.3b: a standing pre-approval, the person may use this
+        destructive tool without being asked. Reads as `decision: allow`.
+        Before 2b.3b it was required for a destructive tool, which was
+        otherwise refused.
+
+SiteDecision:
+  type: string
+  description: |
+    What a rule says of a group of tools (J70). `allow`: runs without
+    asking. `ask`: Workbench asks the person who made the call, and the site
+    runs it only when the call says they approved (`SiteCall.asked`, J72);
+    until person-held call signatures (J14b) the site cannot check that they
+    did, and its audit log says the approval was claimed. `deny`: never
+    offered, and refused.
+  enum: [allow, ask, deny]
+
+SiteGrantDecision:
+  type: string
+  description: A `SiteDecision` for a tool granted by name; a tool not granted is denied.
+  enum: [allow, ask]
+
+SiteRules:
+  type: object
+  additionalProperties: false
+  description: |
+    One person's rules in one workspace, per group of tools (J70). `read`:
+    `list_directory`, `read_text`, `glob` and `grep`. `change`: `write_text`
+    and `edit_text`. The site stores them per tool, so commands (2b.4) add a
+    group of their own. `change` cannot be looser than `deny` in a workspace
+    registered read-only (`writable: false`).
+  required: [read, change]
+  properties:
+    read: {$ref: '#/SiteDecision'}
+    change: {$ref: '#/SiteDecision'}
+
+SiteDenyPattern:
+  type: string
+  minLength: 1
+  maxLength: 256
+  pattern: '^[^!\x00-\x1f]'
+  description: |
+    A path inside a workspace that no tool may touch (J70), in `.gitignore`'s
+    syntax without `!`: `.env`, `secrets/`, `*.pem`. It is hidden from every
+    tool, for everyone who uses the workspace: listings and searches leave it
+    out, and a tool that names it is refused whether or not it exists.
+
+SiteWorkspacePerson:
+  type: object
+  additionalProperties: false
+  description: |
+    Someone the site's owner shares one of their own workspaces with, and
+    their rules there (J69, J70). Only the owner's workspaces are shared.
+  required: [subject, read, change]
+  properties:
+    subject:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: A person's id. Never `operator`; Eugene's owner reaches a site only through `ownerInDevMode`.
+    read: {$ref: '#/SiteDecision'}
+    change: {$ref: '#/SiteDecision'}
+
+SiteWorkspace:
+  type: object
+  additionalProperties: false
+  description: |
+    A workspace, as the site reports it in each poll (2b.3b): a folder on the
+    machine that one linked person, its holder, works in through the file
+    server (J69). Its id and name, never its path (J76): the holder reads the
+    path live (`workspace.list`). The root shows each person only their own,
+    and the people the owner shared theirs with only the ones shared.
+  required: [id, name, holder, writable, rules]
+  properties:
+    id: {type: string, pattern: '^[a-f0-9]{32}$'}
+    name:
+      type: string
+      minLength: 1
+      maxLength: 96
+      description: |
+        The value of the file server's `folder` argument: unique among the
+        workspaces one person may use there, as `Name (2)` when it would not be.
+    holder:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: The linked person it belongs to, whose own account opens it.
+    writable:
+      type: boolean
+      description: Registered for changing files at all. When false, every `change` rule in it reads `deny`.
+    rules: {$ref: '#/SiteRules'}
+    people:
+      type: array
+      maxItems: 256
+      description: For the site owner's workspaces, whom they shared it with (J69). Empty otherwise.
+      items: {$ref: '#/SiteWorkspacePerson'}
+
+SiteWorkspaceDetail:
+  type: object
+  additionalProperties: false
+  description: |
+    One of a person's own workspaces as the site holds it, read live through
+    the root (`workspace.list`, J76) and kept by no one else.
+  required: [id, name, path, holder, writable, rules, deny, people]
+  properties:
+    id: {type: string, pattern: '^[a-f0-9]{32}$'}
+    name: {type: string, minLength: 1, maxLength: 96}
+    path: {type: string, minLength: 1, maxLength: 4096}
+    holder: {type: string, minLength: 1, maxLength: 64}
+    writable: {type: boolean}
+    rules: {$ref: '#/SiteRules'}
+    deny:
+      type: array
+      maxItems: 64
+      items: {$ref: '#/SiteDenyPattern'}
+    people:
+      type: array
+      maxItems: 256
+      items: {$ref: '#/SiteWorkspacePerson'}
 
 SiteAccess:
   type: object
@@ -175,9 +299,12 @@ SiteFolder:
   type: object
   additionalProperties: false
   description: |
-    A folder registered on the machine. Eugene's file server offers it to
-    the people on its list, by its name, as its tools' `folder` argument
-    (J6g).
+    A folder registered on the machine, as a site from before 2b.3b reports
+    it (a newer site reports `SiteWorkspace`, without the path, J76). Eugene's
+    file server offers it to the people on its list, by its name, as its
+    tools' `folder` argument (J6g). Since 2b.3b the site's `folder.add`,
+    `folder.remove` and `folder.people` act on its owner's workspaces, for a
+    root from before then, and answer with this shape.
   required: [id, name, path, identity, writable, people]
   properties:
     id: {type: string, pattern: '^[a-f0-9]{32}$'}
@@ -228,7 +355,7 @@ SiteSummary:
     What a job site holds, as the site itself reports it in each poll. The
     root keeps it as a cache: it answers Workbench's listings from it, and
     the site checks every call against its own copy again (rule 2 of §3.3).
-  required: [owner, ownerInDevMode, folders, servers, access]
+  required: [owner, ownerInDevMode, servers, access]
   properties:
     owner:
       type: string
@@ -241,7 +368,13 @@ SiteSummary:
     folders:
       type: array
       maxItems: 64
+      description: From a site before 2b.3b, which reports folders with their paths. A newer site reports `workspaces` instead.
       items: {$ref: '#/SiteFolder'}
+    workspaces:
+      type: array
+      maxItems: 512
+      description: Every linked person's workspaces, by id and name, never path (2b.3b, J76). The root shows each person only their own and those shared with them.
+      items: {$ref: '#/SiteWorkspace'}
     servers:
       type: array
       maxItems: 96
@@ -302,8 +435,23 @@ SitePersonLink:
     keys:
       type: integer
       minimum: 0
-      maximum: 8
-      description: How many keys this person has pinned at the machine (J14a). Absent from a site older than J14a.
+      maximum: 16
+      description: How many keys this person has here, at the machine and as passkeys (J14a, J67). Absent from a site older than J14a.
+    signing:
+      description: |
+        2b.3b (J67, J68): the state of this person's own workspaces and
+        rules. `unsigned`: they have no key here, so their changes wait for
+        one. `unconfirmed`: rules from before 2b.3b they have not approved
+        with their key (the owner's, J69). `signed`: every rule of theirs
+        here was approved with their own key. Absent from an older site.
+      anyOf:
+        - {$ref: '#/SiteSigningState'}
+        - {type: 'null'}
+    held:
+      type: integer
+      minimum: 0
+      maximum: 64
+      description: Changes the site holds until this person approves them with their own key (2b.3b). Absent from an older site.
 
 SiteSigningState:
   type: string
@@ -313,6 +461,10 @@ SiteSigningState:
     `unconfirmed`: the owner has a key, but has not approved the site's
     current rules with it (J52); no tool runs. `signed`: every rule the site
     holds was approved with its owner's key, at the machine; tools run.
+    Since 2b.3b (J79) the owner's state governs what the owner's rules
+    govern: their own workspaces, what they shared, the local servers and
+    dev mode. Each other linked person's own workspaces run under their own
+    state (`SitePersonLink.signing`).
   enum: [unsigned, unconfirmed, signed]
 
 SiteSigning:
@@ -326,7 +478,7 @@ SiteSigning:
       type: integer
       minimum: 0
       maximum: 64
-      description: Changes the site holds until their person approves them at the machine (J50).
+      description: Changes the site holds until its owner approves them with their key (J50). Since 2b.3b, the owner's alone; each person's own count is on their link.
     approvePage:
       type: [string, 'null']
       maxLength: 256
@@ -341,6 +493,13 @@ SiteSigning:
         The site takes its owner's passkey from Workbench, paired with a code
         shown at the machine, and approvals made with it (J14a.3). Absent
         from a site older than that.
+    people:
+      type: boolean
+      description: |
+        The site keeps each linked person's own workspaces, rules and keys
+        (2b.3b, J67): any linked person pairs a passkey, and adds, changes and
+        approves their own. Absent from an older site, whose root offers
+        these to the owner alone.
 
 SiteAccountLink:
   type: object
@@ -449,8 +608,10 @@ SiteGrantHint:
     One of Eugene's owner's dev-mode folder grants on a site (J13b), carried
     with a call in a list (`grants`). The site honours them only if its
     owner opted in there (J6e) and Eugene is in dev mode. The host checks
-    the folder a call names against them.
-  required: [folderId, name, path, identity, writable]
+    the folder a call names against them. Only the site owner's workspaces
+    can be granted. Since 2b.3b the site matches a grant by `folderId` alone
+    (J76): the root keeps no paths, so a newer root sends none.
+  required: [folderId, name, writable]
   properties:
     folderId: {type: string, minLength: 1, maxLength: 64}
     name:
@@ -458,8 +619,8 @@ SiteGrantHint:
       minLength: 1
       maxLength: 96
       description: The folder's name on this machine, as the `folder` argument takes it. The root makes it unique; a folder that shares a name with an earlier one reads `Name (2)`.
-    path: {type: string, minLength: 1, maxLength: 4096}
-    identity: {type: string, minLength: 1, maxLength: 256}
+    path: {type: [string, 'null'], maxLength: 4096, description: From a root before 2b.3b; a newer site ignores it.}
+    identity: {type: [string, 'null'], maxLength: 256, description: From a root before 2b.3b; a newer site ignores it.}
     writable: {type: boolean}
 
 SiteAuditDecision:
@@ -476,7 +637,11 @@ SiteAuditEntry:
   description: |
     One line of the site's own audit log, kept on the machine and read by
     its owner (J8). It records who asked for what and what the site decided,
-    never a file's contents or a tool's result.
+    never a file's contents or a tool's result. Since 2b.3b (J80) each line
+    belongs to one person, who alone reads it through the root: a call or
+    change in a workspace, to its holder; one about a person's own keys, to
+    them; the rest (the local servers, sharing, settings, and anything not
+    yet tied to a workspace), to the site's owner.
   required: [at, subject, kind, decision]
   properties:
     at: {type: string, format: date-time}
@@ -496,6 +661,17 @@ SiteAuditEntry:
         - {$ref: '#/SiteAnswerStatus'}
         - {type: 'null'}
     reason: {type: [string, 'null'], maxLength: 1024}
+    rule:
+      description: For a tool call since 2b.3b, the rule that applied (J72).
+      anyOf:
+        - {$ref: '#/SiteDecision'}
+        - {type: 'null'}
+    asked:
+      type: [boolean, 'null']
+      description: |
+        For a tool call under an `ask` rule, whether the call said the person
+        approved it. Claimed, not checked, until person-held call signatures
+        (J14b).
 
 SiteLocalServer:
   type: object
@@ -697,6 +873,10 @@ SiteOperation:
       maxItems: 64
       description: For `mcp` to the file server from Eugene's owner, their dev-mode grants (J6e). Empty otherwise.
       items: {$ref: '#/SiteGrantHint'}
+    asked:
+      type: boolean
+      default: false
+      description: For `mcp`, Workbench's word that the person approved this call (`SiteCall.asked`, J72).
     action:
       type: [string, 'null']
       description: For `manage`, the action.
@@ -764,7 +944,11 @@ SiteHeldList:
       maxItems: 8
       description: Their passkeys (J14a.3), for Workbench to choose which one signs.
       items: {$ref: '#/SitePasskey'}
-    state: {$ref: '#/SiteSigningState'}
+    state:
+      description: The site's state for its owner; since 2b.3b, for anyone, the state of their own rules (`SitePersonLink.signing`).
+      anyOf:
+        - {$ref: '#/SiteSigningState'}
+        - {type: 'null'}
     items:
       type: array
       maxItems: 64

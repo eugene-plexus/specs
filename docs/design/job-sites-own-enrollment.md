@@ -1208,6 +1208,66 @@ readers `glob` and `grep` and writers `edit_text`. No new calls.
 sabotage 36/36 once three missing tests were added (record:
 [`workspace-tools-run.md`](../acceptance/workspace-tools-run.md)).
 
+**2b.3b: the contract (2026-10-07), and calls J77-J80 for Troy.** Written
+first, as J67-J76 say; nothing is built on it yet. It follows J77-J80's
+recommendations and changes if Troy answers otherwise.
+- **The site** (`site-host.yaml`, `components/sites.yaml`):
+  - actions `workspace.add`, `workspace.remove`, `rules.set`,
+    `workspace.list` and `audit.read` from any linked person, for their own
+    items; `workspace.people` (sharing) from the owner alone. The passkey
+    actions and `/v1/passkeys/code` serve any linked person (J67);
+  - `SiteRules` (`read`, `change`: `allow`, `ask` or `deny`),
+    `SiteDenyPattern`, `SiteWorkspace` (reported: id, name, holder,
+    rules, whom it is shared with; no path, J76) and `SiteWorkspaceDetail`
+    (live, with the path);
+  - `SiteCall.asked` and `SiteOperation.asked` (J72); the audit line's
+    `rule` and `asked`;
+  - per person: `SitePersonLink.signing` and `held`; `SiteSigning.held` is
+    the owner's alone; `SiteSigning.people` says a site keeps each person's
+    items;
+  - `SiteToolGrant.decision` (J78); `SiteGrantHint` without path (J76).
+- **The root** (`control.yaml`, `components/job-sites.yaml`): routes
+  `/oidc/job-sites/{site}/workspaces` (add), `…/workspaces/list` (live),
+  `…/{id}/remove`, `…/{id}/rules` and `…/{id}/people` (owner only);
+  `JobSite.role` and `workspaces`; `SiteMcpCall.asked`;
+  `SiteServerFolder.mine`. The held, passkey and audit routes open to a
+  person the site's last report links, for their own items.
+
+*Settled without a call* (each follows from a call already taken):
+- **Today's folders become the owner's workspaces with §2.6's defaults**
+  (read `allow`, change `ask`, or `deny` when registered read-only). J11's
+  rule that the owner puts themselves on a folder's list retires: a
+  workspace's holder has rules of their own. The owner sees and approves this
+  in the re-approval J69 already requires. A person on a folder's list keeps
+  what they had: `writable` becomes change `allow` (§2.6: the standing
+  pre-approval), otherwise change `deny`; read `allow`.
+- **`folder.add`, `folder.remove` and `folder.people` stay**, acting on the
+  owner's workspaces, so a newer site works under an older root.
+- **Workspace names are unique per holder**, so nobody learns another
+  person's names by being refused one. Where a person's own name and a
+  shared one meet, their view reads `Name (2)`.
+- **`writable` stays as a workspace's ceiling**: when false, every `change`
+  rule there is `deny`.
+- **Deny patterns** use `.gitignore`'s syntax without `!`, at most 64 of 256
+  characters each. A tool that names a denied path is refused whether or not
+  it exists, so the refusal says nothing about what is there.
+- **Workbench learns which calls to ask about from the site's own tool list**
+  (`_meta` `eugene-plexus/ask` per tool), not from the root: the site is
+  final (rule 2), and the root keeps no rules logic.
+- **A linked person's changes are always held**, even before they have a key
+  (J68); held changes expire after 24 hours, as today.
+- **The owner's held count is theirs alone**, so it says nothing about
+  another person's changes; each person's own count is on their link.
+- **A site without `SiteSigning.people` gets 503** from the new routes, as an
+  older site does for passkeys.
+
+| # | Call | Recommendation | Trade-off |
+|---|---|---|---|
+| J77 | Who may add a workspace | **Any linked person, with no word from the site's owner.** Being linked is the consent: it needs an OS account on the machine and that person at it, and the owner can remove a link from Workbench. A person's workspace reaches only what their own account already can | The owner cannot stop a linked person using Workbench on their own files except by removing the link. The alternative, a list of who may add workspaces, which the owner signs, is one more step before anyone but the owner can work there |
+| J78 | Local servers under allow/ask/deny | **Each tool granted is `allow` or `ask`; a tool not granted is denied.** Default: `allow` for a tool the site does not treat as destructive, `ask` for one it does. Today's `standing: true` reads as `allow`. A destructive tool may now be granted `ask`, where today it is refused without a standing pre-approval | A read-only tool of a local server now runs without a prompt (today Workbench prompts for every call). Its read-only mark is the server's own word; the server was added at the machine by an administrator. The alternative, `ask` for every local tool by default, keeps today's prompts |
+| J79 | Whose approval a call needs (J48, per person) | **A call runs under the approval of the rules it uses.** A person's own workspace needs their own approved rules; a workspace the owner shared, a local server or dev mode needs the owner's. With the owner unsigned or unconfirmed, Jessie's own workspaces still run | J48 said no tool runs on the site until the owner's key approved its rules. That still holds for everything the owner's rules govern, and Jessie is not stopped by the owner's re-approval after the update (J69). The alternative, the owner's state stopping everyone, is simpler to say and makes everyone wait on the owner |
+| J80 | Who reads the audit log | **Each line belongs to one person, who alone reads it through the root**: a call or change in a workspace to its holder; one about a person's keys to them; the local servers, sharing and settings to the owner. Today only the owner reads it, and every line | Without it the owner reads Jessie's file names and searches (§2.6: the owner does not see another person's workspaces). An administrator at the machine can still read the whole file on disk |
+
 ---
 
 ## 4. Calls

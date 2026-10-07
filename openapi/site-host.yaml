@@ -61,18 +61,31 @@ info:
     anything else, so one queued for an earlier enrollment never runs.
 
     **Default deny.** A local server is off until its owner turns it on, and
-    a person may use only the tools the owner named for them there. A folder
-    is open only to the people on its list: to read, or also to change files,
-    which is a standing pre-approval for `write_text` and `edit_text`. The
-    file server lists, in each person's `folder` argument, only the folders
-    they may use, and for `write_text` and `edit_text` only those they may
-    change. Its other tools read and search (`list_directory`, `read_text`
-    of any part of a file, `glob`, `grep`); every answer stays under the
-    70,000 bytes the site carries and says when it stopped short (2b.3a,
-    `job-sites-own-enrollment.md` §3.3). A destructive tool needs a
-    standing pre-approval; approving each call at the machine waits for the
-    held channel of slice 3. A server marked `system` cannot be turned on
-    without an administrator's consent recorded at the machine (J9).
+    a person may use only the tools the owner named for them there. The
+    file server's tools read and search (`list_directory`, `read_text` of any
+    part of a file, `glob`, `grep`) and change files (`write_text`,
+    `edit_text`); every answer stays under the 70,000 bytes the site carries
+    and says when it stopped short (2b.3a, `job-sites-own-enrollment.md`
+    §3.3). A server marked `system` cannot be turned on without an
+    administrator's consent recorded at the machine (J9).
+
+    **Workspaces and rules** (2b.3b, J67-J72, J76-J80). A workspace is a
+    folder one linked person, its holder, works in: they add it
+    (`workspace.add`), and their own worker, as their own account, opens it.
+    Today's folders are the owner's workspaces (J69); only the owner's may
+    be shared (`workspace.people`). Rules say `allow`, `ask` or `deny` per
+    workspace and person, for two groups of tools, read and change (J70,
+    `SiteRules`); path patterns the holder sets can only deny, and hide what
+    they match from every tool (`SiteDenyPattern`). The file server lists, in
+    each person's `folder` argument, only the workspaces whose group allows
+    or asks, and in each tool's `_meta`, under `eugene-plexus/ask`, the
+    workspaces where that tool must be asked about; a local server's tool
+    carries `eugene-plexus/ask: true` when its grant says `ask`. An `ask`
+    call runs only with `SiteCall.asked`. Each person's workspaces and rules
+    are approved with their own key, held until then (J67, J68); the owner's
+    key approves only the owner's (their workspaces, sharing, the local
+    servers, settings). A call runs under the approval of the rules it uses
+    (J79). The root learns a workspace's id and name, never its path (J76).
 
     **The launch environment** (set by whoever starts it):
     `EUGENE_PLEXUS_APP_DATA_DIR` (the site's directory: its enrollment, key,
@@ -113,9 +126,10 @@ info:
     signature, not the courier, is the authority.
 
     **Passkeys from Workbench** (J14a.3, Path B, `person-held-keys.md`
-    §4.2, §12.5). The owner may also hold a passkey, made in Workbench at its
-    HTTPS address. It is pinned with a code this host makes for the owner
-    (`POST /v1/passkeys/code`), which the starter shows at the machine (the
+    §4.2, §12.5). The owner, and since 2b.3b any linked person (J67), may
+    also hold a passkey, made in Workbench at its HTTPS address, which
+    approves only that person's own items. It is pinned with a code this
+    host makes for them (`POST /v1/passkeys/code`), which the starter shows at the machine (the
     loopback page, or the terminal on a Linux system install) and which never
     crosses the root: Workbench sends the passkey's public half with a MAC
     keyed by the code (`passkey.pair`, `SitePasskeyBinding`), and this host
@@ -232,14 +246,15 @@ paths:
   /v1/passkeys/code:
     post:
       operationId: makePasskeyCode
-      summary: A code for pairing the owner's passkey from Workbench, to show at the machine
+      summary: A code for pairing a linked person's passkey from Workbench, to show at the machine
       description: |
         For the starter: the loopback page, or `site-host pair` at a Linux
         system install's terminal. Ten characters from Crockford's base32,
         shown as `XXXXX-XXXXX`; one at a time per person (a new one replaces
         the old), used once, gone after ten minutes or three pairings that
-        do not check. Only the site's owner gets one: theirs are the only
-        keys that approve anything until each person has their own rules.
+        do not check. Any linked person gets one since 2b.3b (J67): each
+        person's keys approve only their own items. Before 2b.3b, only the
+        site's owner.
       security: [{localToken: []}]
       requestBody:
         required: true
@@ -255,7 +270,7 @@ paths:
         '401':
           description: The token is missing or wrong.
         '404':
-          description: Nobody is linked here as `subject`, or they are not the site's owner.
+          description: Nobody is linked here as `subject` (before 2b.3b, also anyone but the site's owner).
   /v1/passkeys:
     get:
       operationId: listPasskeys
@@ -359,19 +374,63 @@ components:
           description: Eugene's owner's dev-mode grants on this site (J6e). Empty otherwise.
           items: {$ref: 'components/sites.yaml#/SiteGrantHint'}
         installMode: {$ref: 'components/sites.yaml#/InstallModeName'}
+        asked:
+          type: boolean
+          default: false
+          description: |
+            Workbench says the person approved this call (J72). A tool whose
+            rule is `ask` is refused without it. The site cannot check it
+            until person-held call signatures (J14b), and its audit log says
+            the approval was claimed.
 
     SiteManageAction:
       type: string
       description: |
-        Each is taken from the owner this site recorded at its join, and from
-        nobody else, Eugene's owner included (J6b).
+        Who may ask for what. Eugene's owner never (J6b).
+        - **A linked person, for their own items** (2b.3b, J67; the owner
+          too): `workspace.add`, `workspace.remove`, `rules.set`,
+          `workspace.list`, `audit.read` (J80), and the passkey actions
+          (`passkey.pair`, `held.list`, `held.approve`, `held.reject`,
+          `passkey.remove`).
+          A change that gives access is held until they approve it with
+          their own key, and never applied on the root's word: with no key
+          yet, it waits for one (J68). The site's owner keeps J52's way: with
+          no key, their changes apply, and no tool runs under them until they
+          approve them as a whole.
+        - **The site's owner alone**, the owner this site recorded at its
+          join: `workspace.people`, `access.set`, `server.enable`,
+          `settings.set`, and, for a root from before 2b.3b,
+          `folder.add`, `folder.remove` and `folder.people`, which act on the
+          owner's workspaces.
+
+        The actions:
+        - `workspace.add` (`SiteWorkspaceAdd`, 2b.3b): add a workspace
+          held by the person who asks, opened by their own worker as their
+          own account, under a name none of their workspaces has. Its rules
+          start as `SiteRules` says unless given. It returns
+          `SiteWorkspaceDetail`, live, to that person.
+        - `workspace.remove` (`SiteWorkspaceRemove`): the holder's own.
+          Only takes access away, so it applies at once (J51).
+        - `workspace.people` (`SiteWorkspacePeople`): whom the owner shares
+          one of their own workspaces with, and each one's rules there,
+          replacing what was there (J69). It returns `SiteWorkspaceDetail`.
+        - `rules.set` (`SiteRulesSet`): the holder's rules in one of their
+          workspaces, and its deny patterns, which bind everyone who uses it.
+          A change that is nowhere looser (no decision looser, no pattern
+          dropped) only takes access away and applies at once (J51).
+        - `workspace.list` (`SiteWorkspaceListRequest`): the person's own
+          workspaces, with their paths, rules and patterns, read live
+          (J76). It returns `SiteWorkspaceList`.
         - `folder.add` (`SiteFolderAdd`):
           register a folder here, under a name no other folder here has. It
-          returns `SiteFolder`, with nobody on its list.
+          returns `SiteFolder`, with nobody on its list. Since 2b.3b, an
+          owner's workspace (for a root from before then).
         - `folder.remove` (`SiteFolderRemove`).
         - `folder.people` (`SiteFolderPeople`):
           who may use one folder, and who may change files in it, replacing
-          what was there. It returns `SiteFolder`.
+          what was there. It returns `SiteFolder`. Since 2b.3b, `writable`
+          reads as `change: allow`, and not as `change: deny`; `read` is
+          `allow`.
         - `access.set` (`SiteAccessSet`): who may
           use one local server, and which tools, replacing what was there.
         - `server.enable` (`SiteServerEnable`): a
@@ -379,24 +438,27 @@ components:
         - `settings.set` (`SiteSettings`).
         - `audit.read` (`SiteAuditRead`): the
           newest entries of the site's audit log.
-        - `passkey.pair` (`SitePasskeyPair`, J14a.3): pin the owner's
-          passkey, made in Workbench, if its MAC checks with the code this
-          site showed at the machine. It returns `SitePasskey`.
-        - `held.list` (`SiteHeldListRequest`): what the owner has waiting,
-          as `/v1/held` lists it, with the envelopes to sign when `key` is
-          one of their passkeys. It returns `SiteHeldList`.
+        - `passkey.pair` (`SitePasskeyPair`, J14a.3): pin the asking
+          person's passkey, made in Workbench, if its MAC checks with the code
+          this site showed them at the machine. It returns `SitePasskey`.
+        - `held.list` (`SiteHeldListRequest`): what the asking person has
+          waiting, as `/v1/held` lists it, with the envelopes to sign when
+          `key` is one of their passkeys. It returns `SiteHeldList`.
         - `held.approve` (`SitePasskeyApproval`): apply a held change (or
           the rules as a whole), approved with a passkey assertion over its
           envelope.
         - `held.reject` (`SiteHeldRejectRequest`): drop a held change.
           Turning a change down only keeps access from being given, so the
           root may ask for it.
-        - `passkey.remove` (`SitePasskeyRemove`): remove one of the owner's
-          passkeys, as at the machine; what it approved stays. Removing a key
-          only takes it away (a lost phone), so the root may ask for it: if it
-          was the owner's last key here, no tool runs until they add a key and
-          approve the rules (J48).
-      enum: [folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read, passkey.pair, held.list, held.approve, held.reject, passkey.remove]
+        - `passkey.remove` (`SitePasskeyRemove`): remove one of the asking
+          person's passkeys, as at the machine; what it approved stays.
+          Removing a key only takes it away (a lost phone), so the root may
+          ask for it: if it was the owner's last key here, no tool runs under
+          the owner's rules until they add a key and approve them (J48, J79).
+        - `audit.read` (`SiteAuditRead`): since 2b.3b, the lines that belong
+          to the asking person (J80), from anyone linked; the owner's include
+          the local servers, sharing and settings.
+      enum: [folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read, passkey.pair, held.list, held.approve, held.reject, passkey.remove, workspace.add, workspace.remove, workspace.people, rules.set, workspace.list]
 
     SiteManage:
       type: object
@@ -436,7 +498,7 @@ components:
         key: {type: string, pattern: '^[a-f0-9]{32}$'}
         act:
           type: string
-          description: A `SiteManageAction` that changes something, or `rules.confirm` (J52), whose `args` are `{"digest"}`, the SHA-256 of the site's whole policy.
+          description: A `SiteManageAction` that changes something, or `rules.confirm` (J52), whose `args` are `{"digest"}`, the SHA-256 of the rules the person's key approves (since 2b.3b, that person's own, J67).
         args: {type: object, additionalProperties: true}
         seq: {type: integer, minimum: 1, description: Greater than the last this person approved here.}
         iat: {type: integer, description: Unix seconds.}
@@ -469,7 +531,7 @@ components:
       additionalProperties: false
       required: [subject]
       properties:
-        subject: {type: string, minLength: 1, maxLength: 64, description: The person the starter serves; the site's owner.}
+        subject: {type: string, minLength: 1, maxLength: 64, description: The linked person the starter serves.}
 
     SitePasskeyCode:
       type: object
@@ -613,10 +675,75 @@ components:
           maxItems: 64
           items: {$ref: 'components/sites.yaml#/SiteToolGrant'}
 
+    SiteWorkspaceAdd:
+      type: object
+      additionalProperties: false
+      required: [name, path]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80, description: Unique among the asking person's own workspaces.}
+        path: {type: string, minLength: 1, maxLength: 4096, description: "Opened by the asking person's own worker, as their own account."}
+        writable: {type: boolean, default: true, description: "Whether files may be changed in it at all. When false, every `change` rule in it is `deny`."}
+        rules:
+          description: "The holder's rules there. Absent, `read: allow` and `change: ask` (§2.6), or `change: deny` when not writable."
+          anyOf:
+            - {$ref: 'components/sites.yaml#/SiteRules'}
+            - {type: 'null'}
+        deny:
+          type: array
+          maxItems: 64
+          items: {$ref: 'components/sites.yaml#/SiteDenyPattern'}
+
+    SiteWorkspaceRemove:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id: {type: string, pattern: '^[a-f0-9]{32}$'}
+
+    SiteWorkspacePeople:
+      type: object
+      additionalProperties: false
+      required: [id, people]
+      properties:
+        id: {type: string, pattern: '^[a-f0-9]{32}$', description: One of the site owner's own workspaces.}
+        people:
+          type: array
+          maxItems: 256
+          description: Each person once, never the owner. A `change` looser than `deny` needs a writable workspace.
+          items: {$ref: 'components/sites.yaml#/SiteWorkspacePerson'}
+
+    SiteRulesSet:
+      type: object
+      additionalProperties: false
+      required: [id, rules, deny]
+      properties:
+        id: {type: string, pattern: '^[a-f0-9]{32}$', description: One of the asking person's own workspaces.}
+        rules: {$ref: 'components/sites.yaml#/SiteRules'}
+        deny:
+          type: array
+          maxItems: 64
+          description: Replaces the workspace's deny patterns.
+          items: {$ref: 'components/sites.yaml#/SiteDenyPattern'}
+
+    SiteWorkspaceListRequest:
+      type: object
+      additionalProperties: false
+      properties: {}
+
+    SiteWorkspaceList:
+      type: object
+      additionalProperties: false
+      required: [workspaces]
+      properties:
+        workspaces:
+          type: array
+          maxItems: 64
+          items: {$ref: 'components/sites.yaml#/SiteWorkspaceDetail'}
+
     SiteAccessSet:
       type: object
       additionalProperties: false
-      description: A local server's list. Eugene's file server is granted per folder (`folder.people`).
+      description: A local server's list. Eugene's file server is granted per workspace (`workspace.people`).
       required: [server, people]
       properties:
         server: {$ref: 'components/sites.yaml#/SiteServerId'}

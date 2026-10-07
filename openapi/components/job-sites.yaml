@@ -36,12 +36,12 @@ SiteFolderOwnerAccess:
 SiteDevFolder:
   type: object
   additionalProperties: false
-  description: A folder on a site, as the site last reported it, with Eugene's owner's own dev-mode access to it.
-  required: [id, name, path, writable, ownerAccess]
+  description: A folder on a site (one of the site owner's workspaces), as the site last reported it, with Eugene's owner's own dev-mode access to it.
+  required: [id, name, writable, ownerAccess]
   properties:
     id: {type: string}
     name: {type: string}
-    path: {type: string}
+    path: {type: [string, 'null'], description: From a site before 2b.3b. A newer site reports no paths (J76).}
     writable: {type: boolean, description: Whether the folder was registered for writing at all.}
     ownerAccess: {$ref: '#/SiteOwnerAccess'}
 
@@ -180,7 +180,9 @@ SiteServerGrant:
   description: >-
     One server on one site that the signed-in person may use. The file
     server (`files`) appears once per site, with the folders the person may
-    use there (J6g).
+    use there (J6g): since 2b.3b, their own workspaces and those the site's
+    owner shared with them. Which calls Workbench asks about is the site's
+    word, in each tool's `_meta` (`eugene-plexus/ask`, site-host.yaml).
   required: [site, label, server, name, kind, available, folders]
   properties:
     site: {$ref: 'sites.yaml#/SiteId'}
@@ -218,10 +220,13 @@ SiteServerFolder:
       type: string
       minLength: 1
       maxLength: 96
-      description: Unique on its site; the `folder` argument's value.
+      description: Unique among the workspaces this person may use on its site; the `folder` argument's value.
     writable:
       type: boolean
-      description: This person may change files in it.
+      description: This person may change files in it (since 2b.3b, their `change` rule there is `allow` or `ask`).
+    mine:
+      type: boolean
+      description: One of this person's own workspaces, rather than one the site's owner shared with them (2b.3b). Absent from an older root.
 
 SiteServerList:
   type: object
@@ -248,6 +253,13 @@ SiteMcpCall:
       maxLength: 64
       pattern: '^[a-zA-Z0-9_-]+$'
       description: Lets `/oidc/sites/cancel` stop it before the site claims it.
+    asked:
+      type: boolean
+      default: false
+      description: |
+        The person approved this call in Workbench (J72), which Workbench
+        sends for a call whose rule is `ask`; the site refuses such a call
+        without it. Carried to the site as is.
 
 SiteMcpAnswer:
   type: object
@@ -288,12 +300,12 @@ JobSiteFolderPerson:
 JobSiteFolder:
   type: object
   additionalProperties: false
-  description: A folder on the site, as the site reports it, and who may use it (J6g).
-  required: [id, name, path, writable, people]
+  description: A folder on the site, as the site reports it, and who may use it (J6g). Since 2b.3b, one of the owner's workspaces, for a Workbench from before then.
+  required: [id, name, writable, people]
   properties:
     id: {type: string}
     name: {type: string, description: Unique on the site; what Workbench and the model call it.}
-    path: {type: string}
+    path: {type: [string, 'null'], description: From a site before 2b.3b. A newer site reports no paths (J76); read them with `workspaces/list`.}
     writable: {type: boolean}
     people:
       type: array
@@ -324,11 +336,24 @@ JobSiteServer:
 JobSite:
   type: object
   additionalProperties: false
-  description: One of the signed-in person's own sites, as Workbench's Job sites page shows it.
+  description: |
+    One of the signed-in person's sites, as Workbench's Job sites page shows
+    it: one they own, or since 2b.3b one they are linked to (`role`). A
+    linked person who does not own it sees only their own: their workspaces,
+    their link, their keys' state; no folders of others, no servers.
   required: [id, label, online, ready, folders, servers]
   properties:
     id: {$ref: 'sites.yaml#/SiteId'}
     label: {$ref: 'sites.yaml#/SiteLabel'}
+    role:
+      $ref: '#/JobSiteRole'
+    workspaces:
+      type: array
+      description: |
+        This person's own workspaces there, and for the owner whom each is
+        shared with, by id and name, as the site last reported them (2b.3b).
+        Paths are read live (`/oidc/job-sites/{site}/workspaces/list`, J76).
+      items: {$ref: '#/JobSiteWorkspace'}
     online: {type: boolean}
     ready: {type: boolean}
     reason: {type: [string, 'null']}
@@ -532,3 +557,112 @@ JobSitePasskeyApproval:
     authenticatorData: {type: string, minLength: 1, maxLength: 4096}
     clientDataJSON: {type: string, minLength: 1, maxLength: 8192}
     signature: {type: string, minLength: 1, maxLength: 1024}
+
+JobSiteRole:
+  type: string
+  description: "`owner`: the person owns the site. `linked`: they are linked to an OS account on its machine (2b.3b). Absent from an older root: `owner`."
+  enum: [owner, linked]
+
+JobSiteWorkspacePerson:
+  type: object
+  additionalProperties: false
+  description: Someone the site's owner shared a workspace with, and their rules there (J69, J70).
+  required: [person, name, read, change]
+  properties:
+    person: {type: string}
+    name: {type: string, description: How the person signs in.}
+    read: {$ref: 'sites.yaml#/SiteDecision'}
+    change: {$ref: 'sites.yaml#/SiteDecision'}
+
+JobSiteWorkspace:
+  type: object
+  additionalProperties: false
+  description: One of the person's own workspaces on a site, as the site last reported it, by id and name (J76).
+  required: [id, name, writable, rules, people]
+  properties:
+    id: {type: string}
+    name: {type: string}
+    writable: {type: boolean}
+    rules: {$ref: 'sites.yaml#/SiteRules'}
+    people:
+      type: array
+      description: Whom it is shared with. Only the owner's workspaces are shared (J69).
+      items: {$ref: '#/JobSiteWorkspacePerson'}
+
+JobSiteWorkspaceDetail:
+  type: object
+  additionalProperties: false
+  description: One of the person's own workspaces, read live from the site through the root, which keeps none of it (J76).
+  required: [id, name, path, writable, rules, deny, people]
+  properties:
+    id: {type: string}
+    name: {type: string}
+    path: {type: string}
+    writable: {type: boolean}
+    rules: {$ref: 'sites.yaml#/SiteRules'}
+    deny:
+      type: array
+      maxItems: 64
+      items: {$ref: 'sites.yaml#/SiteDenyPattern'}
+    people:
+      type: array
+      items: {$ref: '#/JobSiteWorkspacePerson'}
+
+JobSiteWorkspaceList:
+  type: object
+  additionalProperties: false
+  required: [workspaces]
+  properties:
+    workspaces:
+      type: array
+      items: {$ref: '#/JobSiteWorkspaceDetail'}
+
+JobSiteWorkspaceCreate:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, name, path]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    name: {type: string, minLength: 1, maxLength: 80}
+    path: {type: string, minLength: 1, maxLength: 4096}
+    writable: {type: boolean, default: true}
+    rules:
+      anyOf:
+        - {$ref: 'sites.yaml#/SiteRules'}
+        - {type: 'null'}
+    deny:
+      type: array
+      maxItems: 64
+      items: {$ref: 'sites.yaml#/SiteDenyPattern'}
+
+JobSiteRulesRequest:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, rules, deny]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    rules: {$ref: 'sites.yaml#/SiteRules'}
+    deny:
+      type: array
+      maxItems: 64
+      items: {$ref: 'sites.yaml#/SiteDenyPattern'}
+
+JobSiteWorkspaceGrant:
+  type: object
+  additionalProperties: false
+  required: [name, read, change]
+  properties:
+    name: {type: string, minLength: 1, maxLength: 256, description: How the person signs in.}
+    read: {$ref: 'sites.yaml#/SiteDecision'}
+    change: {$ref: 'sites.yaml#/SiteDecision'}
+
+JobSiteWorkspacePeopleRequest:
+  type: object
+  additionalProperties: false
+  required: [refreshToken, people]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    people:
+      type: array
+      maxItems: 256
+      items: {$ref: '#/JobSiteWorkspaceGrant'}
