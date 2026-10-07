@@ -3,8 +3,8 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "44c93913ab7eb66bb850729f4fba6a95dd35931c",
-    "control": "9159ca766689e9c694bc5c8a5c7f9a058af092c1",
+    "agent": "649772161e10e02e4e09bc71a2516a01356c3664",
+    "control": "988628656067f7235dfc41400ee60bc480d761a9",
     "gateway": "271c1a1393ab8750e02d34d199d49e4b9e8fe966",
     "library": "1be1803c5f7cbecfaef1dbc6068fa2d6856c0730",
     "tool-driver": "b30adf8e9de4333c41c6c7816e61fe85969a7421",
