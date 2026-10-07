@@ -1162,6 +1162,23 @@ record (CLAUDE.md's testing policy).
 | J75 | Workbench's own folders, on its own machine | **Unchanged in 2b.3**: they keep three tools. Banked: replace them with a job site on Workbench's own machine, which gives people their own accounts, rules and keys there too | The model has fewer tools on Workbench's own machine than on a site, until the banked idea is taken up |
 | J76 | What the root keeps of a person's workspaces | **The site reports a workspace's name and id, never its path.** A person's paths are read live from the site, through the root, when they open their own workspaces. The root shows each person only their own | One more site action (`workspace.list`), and that page waits on the site. A compromised root still sees what it carries. An honest root keeps no one's paths at rest. It applies to the owner's workspaces too, so Eugene's owner's dev-mode grants name a workspace by id, and the site stops checking the path the root sends with them (`S/host.py:503-510`) |
 
+**Troy's answers (2026-10-07).**
+- **J28: fold**, as *"a unified MCP server"*. Troy had understood today's
+  `files` server not to be MCP. It has been one since J6g: `S/file_server.py`
+  is served by the MCP SDK and speaks MCP 2026-07-28, and Workbench calls it
+  as it calls any MCP server. So folding the new tools into it is the
+  unified server: one MCP server per site carries every file tool now, and
+  `run_command` in 2b.4. MCP servers an administrator adds at the machine
+  stay servers of their own.
+- **J67: as recommended**, both kinds of key for every linked person, each
+  approving only that person's own items.
+- **J68-J76: as recommended.**
+- **The split: two slices, not three.**
+  - **2b.3a, the tools**, as above.
+  - **2b.3b, everything else:** each person's keys, workspaces and rules at
+    the site; Workbench's rules editor; prompting only for "ask"; the limits
+    per answer. Its *done when* is 2b.3b's and 2b.3c's above, together.
+
 ---
 
 ## 4. Calls
@@ -1173,7 +1190,7 @@ record (CLAUDE.md's testing policy).
 | J25 | Windows, while the person is signed out | **Taken (Troy), then revised after measurement (§2.4.1): only while the person is signed in**, with their own session token. Never a stored password |
 | J26 | Several people on one machine | **Taken (Troy): one install serving everyone**, each as their own account |
 | J27 | Whose permissions a person's calls carry | **Taken (Troy): their own local account's**, linked to their Eugene sign-in at the machine. **Also taken:** people with no account there get only folders the owner shares, as the owner, confined |
-| J28 | The workspace server and `files` | **Fold them**: one server, id `files` kept, allow/ask/deny rules, "ask" answered in Workbench. *Awaiting Troy after a clarification (§4.1)* |
+| J28 | The workspace server and `files` | **Taken (Troy, 2026-10-07): fold them**, *"a unified MCP server"*: one MCP server per site, id `files` kept, allow/ask/deny rules, "ask" answered in Workbench (§3.3) |
 | J29 | What waits for person-held keys (J14) | **Widening edits before any release with sites running as their people; commands before commands ship.** J14 designed next |
 | J30 | J9's proof of administrator rights, without a terminal | **Taken (Troy): at join, and later too.** Later: the Windows tray behind a UAC prompt, or the one-liner again; the CLI for experts |
 | J31 | How a site reaches the root | **Like a node:** the LAN address, or the nodes name. **`public_sites` only for machines outside**, on six paths. Site keys stay out of the node bundle |
@@ -1395,7 +1412,7 @@ after 2b.2.
 |---|---|---|
 | J26 | *"One install serving multiple people based on permissions of who is using it."* | One site per machine. J24 is revised to the site host plus a worker per person (§2.4) |
 | J27 | *"Eventually I wanted SSO through Google and other services, and I was hoping that login was attached to the local permissions for that person."* | Links between a sign-in and a local account, made at the machine through a browser sign-in, so they work with single sign-on (§2.2). People without an account there stay a recommendation (J27) |
-| J28 | *"I'm taking 'workspace server' to mean jobsite? If so then this is perfect."* | It is not the job site; it is the job site's file tools (J28). Awaiting Troy |
+| J28 | *"I'm taking 'workspace server' to mean jobsite? If so then this is perfect."* Then (2026-10-07): *"It's supposed to be a unified MCP server."* | It is not the job site; it is the job site's file tools, already an MCP server since J6g. Taken: fold (§3.3) |
 | J30 | *"Let's make sure they can consent later, in case they didn't understand at join time."* | A later path: the Windows tray behind UAC, or the one-liner again (J30) |
 | J34 | *"No migration needed because no one has used the old site policy yet."* | No import and no add-again listing (§2.11) |
 
