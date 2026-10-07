@@ -1342,9 +1342,13 @@ Unit tests: site host 296 (16 new), control 435 (13 new), ui 1727, agent
 code only (`scripts/b23b-sabotage.py`): site host 34/34 once five escapes
 were answered (four missing tests, one spare deleted), control 14/14.
 
-**Landed on `main`, not pinned (2026-10-07):** site host `cc16b8a`, agent
-`12c952f` (pins that site host), control `be2dec1`, ui `db4bf501` (source;
-`dist` not rebuilt), Workbench source. The installers still pin the 2b.3a
+**Landed on `main`, not pinned (2026-10-07):** site host `6773d81`, agent
+`5478366` (pins that site host), control `be2dec1`, ui `db4bf501` (source;
+`dist` not rebuilt), Workbench `f206b8f` (source). The existing
+`--root-wsl` acceptance, run against them, found one regression: an owner
+with no key and no workspace was told *no workspace*, hiding J48's reason.
+Fixed in `6773d81`: with nothing offered, a linked person's own key state
+comes first. It then stops at assertions written for the old wording. The installers still pin the 2b.3a
 set until the acceptance of record: `docs/private/handoff-2b3b.md`.
 
 ---
