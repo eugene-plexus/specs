@@ -1351,6 +1351,35 @@ Fixed in `6773d81`: with nothing offered, a linked person's own key state
 comes first. It then stops at assertions written for the old wording. The installers still pin the 2b.3a
 set until the acceptance of record: `docs/private/handoff-2b3b.md`.
 
+**What the acceptance found (2026-10-07).** Record:
+[`workspaces-people-run.md`](../acceptance/workspaces-people-run.md).
+`--root-wsl` 35 passed with 4 one-account skips; the new scripted browser
+check (`scripts/b3b-browser-check.py`: Chrome in Workbench's page, the real
+gateway with a scripted model, the real site host) 11 of 11, and its
+sabotage pass 5 of 5. Six defects, each with a test that fails without its
+fix; no new calls.
+- **The site host's channel dropped `asked`**, so every approved "ask" call
+  was refused at the site (J72); **a nothing-offered refusal named the first
+  blocked workspace**, not the one asked about (J79); **`check-person` hid
+  the root's reason** (J77). Fixed in site host `26a4f0f`.
+- **Workbench's rules editor showed a held change as in effect**, and the
+  owner's sharing list did the same: after Save, a change that gives more
+  (J68) stayed on screen until a reload. Both now show the person's edits
+  only until Save, then what the machine reads back. **Two sentences said
+  every file operation waits for approval**; on a job site the rules decide
+  (J70), and Workbench's own folders still ask (J75). Fixed in Workbench
+  `9e61bef`, dist `ce2103f`.
+- **Where "deny" is decided:** the person's offer is built without a denied
+  workspace's change tools; the listing's own filter after it is a second
+  guard (a sabotage of the filter alone escapes, since it has nothing to
+  drop).
+
+**Landed and pinned (2026-10-07):** agent `aa2fe11` (site host `26a4f0f`,
+Workbench dist `ce2103f`), control `be2dec1`, ui dist `c595c2a`, in both
+installers. **Not yet:** the Windows two-person run (J1-J6, jessie's key in
+her own Chrome and her files as her Windows account), and the deploy (the
+NAS root first).
+
 ---
 
 ## 4. Calls
