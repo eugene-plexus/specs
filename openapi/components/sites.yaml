@@ -331,7 +331,9 @@ SiteSigning:
       maxLength: 256
       description: |
         Where a person adds a key and approves held changes, on the machine
-        itself. Null where this install has no such page yet (J14a.2, J14a.3).
+        itself: a Windows service install, and a per-user install on Windows,
+        Linux or macOS (J14a.2). Null where this install has no such page yet
+        (a Linux system install, J14a.3).
 
 SiteAccountLink:
   type: object

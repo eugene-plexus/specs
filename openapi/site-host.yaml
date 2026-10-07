@@ -77,7 +77,12 @@ info:
     `SITE_HOST_LINKS_FILE` (`SiteLinkFile`, which it reads and cannot
     write), `SITE_HOST_LOCAL_SERVERS_FILE` (`SiteLocalServerList`, the same),
     `SITE_HOST_CHANNEL` (the pipe's name or the socket's path), and
-    optionally `SITE_HOST_LINK_PAGE` (`SiteSummary.linkPage`). The root's
+    optionally `SITE_HOST_LINK_PAGE` (`SiteSummary.linkPage`, where people
+    link themselves: a Windows service install) and `SITE_HOST_APPROVE_PAGE`
+    (`SiteSigning.approvePage`, where a person adds a key and approves held
+    changes: every install that has the page, a per-user one included, which
+    links nobody and so has no link page; J14a.2). Without the second, the
+    approve page is the link page's `/approve`. The root's
     address and the owner come from the site's own enrollment, never from
     the environment.
 
