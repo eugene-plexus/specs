@@ -516,7 +516,7 @@ components:
       properties:
         credentialId: {type: string, minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$'}
         publicKey: {type: string, minLength: 1, maxLength: 1100, description: 'Base64 of the public key as `SubjectPublicKeyInfo`, DER (`AuthenticatorAttestationResponse.getPublicKey()`).'}
-        alg: {type: integer, enum: [-8, -7, -257]}
+        alg: {$ref: 'components/sites.yaml#/SitePasskeyAlgorithm'}
         rpId: {type: string, minLength: 1, maxLength: 253}
         label: {type: [string, 'null'], maxLength: 128, description: 'How Workbench names it, for the lists at the machine.'}
         mac: {type: string, pattern: '^[A-Za-z0-9_-]{43}$', description: See `SitePasskeyBinding`.}

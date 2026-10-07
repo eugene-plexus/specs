@@ -777,7 +777,12 @@ SitePasskey:
   properties:
     id: {type: string, pattern: '^[a-f0-9]{32}$', description: 'The key id an envelope names: the first 16 bytes of SHA-256 over the public key (`SubjectPublicKeyInfo`, DER), in hex.'}
     credentialId: {type: string, minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$', description: 'The WebAuthn credential id, base64url without padding.'}
-    alg: {type: integer, enum: [-8, -7, -257], description: 'COSE algorithm: EdDSA, ES256 or RS256.'}
+    alg: {$ref: '#/SitePasskeyAlgorithm'}
     rpId: {type: string, minLength: 1, maxLength: 253, description: The WebAuthn relying party id it was made for (Workbench's HTTPS name).}
     label: {type: string, maxLength: 128}
     addedAt: {type: string, format: date-time}
+
+SitePasskeyAlgorithm:
+  type: integer
+  description: 'A passkey''s COSE algorithm: -8 EdDSA, -7 ES256, -257 RS256.'
+  enum: [-8, -7, -257]

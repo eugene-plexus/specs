@@ -506,7 +506,7 @@ JobSitePasskeyPair:
     refreshToken: {type: string, minLength: 1, maxLength: 16384}
     credentialId: {type: string, minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$'}
     publicKey: {type: string, minLength: 1, maxLength: 1100}
-    alg: {type: integer, enum: [-8, -7, -257]}
+    alg: {$ref: 'sites.yaml#/SitePasskeyAlgorithm'}
     rpId: {type: string, minLength: 1, maxLength: 253}
     label: {type: [string, 'null'], maxLength: 128}
     mac: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
