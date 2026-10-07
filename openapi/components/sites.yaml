@@ -218,7 +218,8 @@ SiteFolderPerson:
       type: boolean
       description: |
         The person may change files in it: a standing pre-approval for
-        `write_text` (J6b). Otherwise they may list and read.
+        `write_text` and `edit_text` (J6b). Otherwise they may list, read
+        and search.
 
 SiteSummary:
   type: object

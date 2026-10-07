@@ -1179,6 +1179,35 @@ record (CLAUDE.md's testing policy).
     the site; Workbench's rules editor; prompting only for "ask"; the limits
     per answer. Its *done when* is 2b.3b's and 2b.3c's above, together.
 
+**What building 2b.3a found (2026-10-07).** Built in the site host only:
+`workspace_tools.py` (ranged read, edit, the walk, `glob`, `grep`); each
+platform's folder code lists a directory with each entry's kind, size and
+write time, so a walk skips a link without opening it; `file_server.py`
+offers the six tools and checks every argument itself; the host gives
+readers `glob` and `grep` and writers `edit_text`. No new calls.
+- **The MCP SDK does not check a tool's arguments against its schema.** A
+  40,000-character `oldText` reached the worker's own check. So the
+  worker's check (`file_server.check_arguments`) is the only one between a
+  call and the folder code; Workbench's schema check is the caller's. Before
+  2b.3a the worker checked only the argument names and `path`'s type.
+  `write_text`'s 8,192-character `text` was enforced by Workbench alone. The
+  site host's test for that limit passed for another reason: its call was
+  create-only on a file that existed, and that was refused.
+- **A full read could be refused for its size before 2b.3a.** An MCP answer
+  carries the result twice, as text and as structured content, and escapes
+  the text a second time. A 16,384-character file of quotes made a
+  98,494-byte answer, which the site refuses at 70,000, though `read_text`
+  promised 32 KiB. Every tool now cuts its answer to 60,000 bytes for both
+  copies, says so, and says where to read on.
+- **A search that runs out of time was reported as *it may have acted*.**
+  The site host said that of every timed-out `tools/call`. A file server read
+  or search now fails, saying so.
+
+**2b.3a landed and pinned (2026-10-07):** site host `4f6c075`, agent
+`9cef806`. Acceptance `--root-wsl` 28 passed, 4 one-account skips;
+sabotage 36/36 once three missing tests were added (record:
+[`workspace-tools-run.md`](../acceptance/workspace-tools-run.md)).
+
 ---
 
 ## 4. Calls

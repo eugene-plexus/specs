@@ -2365,9 +2365,9 @@ paths:
         Replaces the folder's list of people, the site's owner included (J11:
         the owner grants their own access too). People are named by how they
         sign in. `writable` lets a person change files without asking each
-        time, a standing pre-approval for `write_text`, and cannot exceed the
-        folder's. The site applies it to its own list and answers with what
-        it holds (J6b, J6g).
+        time, a standing pre-approval for `write_text` and `edit_text`, and
+        cannot exceed the folder's. The site applies it to its own list and
+        answers with what it holds (J6b, J6g).
       security: [{helperClient: []}]
       requestBody:
         required: true

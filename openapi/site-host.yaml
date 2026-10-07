@@ -63,9 +63,13 @@ info:
     **Default deny.** A local server is off until its owner turns it on, and
     a person may use only the tools the owner named for them there. A folder
     is open only to the people on its list: to read, or also to change files,
-    which is a standing pre-approval for `write_text`. The file server lists,
-    in each person's `folder` argument, only the folders they may use, and
-    for `write_text` only those they may change. A destructive tool needs a
+    which is a standing pre-approval for `write_text` and `edit_text`. The
+    file server lists, in each person's `folder` argument, only the folders
+    they may use, and for `write_text` and `edit_text` only those they may
+    change. Its other tools read and search (`list_directory`, `read_text`
+    of any part of a file, `glob`, `grep`); every answer stays under the
+    70,000 bytes the site carries and says when it stopped short (2b.3a,
+    `job-sites-own-enrollment.md` §3.3). A destructive tool needs a
     standing pre-approval; approving each call at the machine waits for the
     held channel of slice 3. A server marked `system` cannot be turned on
     without an administrator's consent recorded at the machine (J9).

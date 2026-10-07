@@ -1298,7 +1298,8 @@ def run(args: argparse.Namespace) -> None:
         assert tools.status_code == 200, tools.text
         offered = {t["name"]: t["inputSchema"]["properties"]["folder"]["enum"]
                    for t in tools.json()["response"]["result"]["tools"]}
-        assert offered == {"list_directory": ["Notes"], "read_text": ["Notes"]}, offered
+        # 2b.3a: a reader may also search; a writer also edits.
+        assert offered == {name: ["Notes"] for name in ("list_directory", "read_text", "glob", "grep")}, offered
         got = mcp(bo, "files", "tools/call", read)
         body = got.json()
         assert got.status_code == 200 and body["status"] == "done", got.text
@@ -1318,6 +1319,12 @@ def run(args: argparse.Namespace) -> None:
             "folder": "Notes", "path": "new.txt", "text": "bo was here", "expectedSha256": ""}})
         assert wrote.json()["status"] == "done", wrote.text
         assert (folder / "new.txt").read_text(encoding="utf-8") == "bo was here"
+        workspace_tools_check(folder, work, lambda params: mcp(bo, "files", "tools/call", params))
+        ok("2b.3a, through the root: bo finds files by name (newest first, .gitignore and a link "
+           "to outside the folder passed over), searches their contents with line numbers, reads "
+           "any part of a 20,000-line file with the whole file's hash, and edits one exact passage "
+           "in place; a stale hash, an ambiguous passage and a pattern that never finishes are "
+           "refused or stopped, and every answer stays under 70,000 bytes")
         log = call(f"job-sites/{site_id}/audit", ada, limit=50)
         assert log.status_code == 200, log.text
         entries = log.json()["entries"]
@@ -1569,6 +1576,81 @@ class Passkey:
         return {"envelope": envelope, "key": self.id, "credentialId": self.credential_id,
                 "authenticatorData": _b64url(auth), "clientDataJSON": _b64url(client),
                 "signature": _b64url(signature)}
+
+
+def workspace_tools_check(folder: Path, work: Path, call_tool: Any) -> None:
+    """2b.3a's tools on a real site, through the root (`job-sites-own-enrollment.md`
+    §3.3): a small repository inside the shared folder, and a link from it to
+    a folder outside, which no tool may follow."""
+    repo = folder / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "build").mkdir()
+    (repo / "src" / "app.py").write_text(
+        "def greet():\n    return 'hello'\n\ndef part():\n    return 'hello'\n",
+        encoding="utf-8", newline="\n",
+    )
+    # Sudo mode: the worker runs as another account, which the folder (0777)
+    # lets change what it may.
+    os.chmod(repo / "src" / "app.py", 0o666)
+    (repo / "build" / "app.py").write_text("hello = 'built'\n", encoding="utf-8", newline="\n")
+    (repo / ".gitignore").write_text("build/\n", encoding="utf-8", newline="\n")
+    long = repo / "long.txt"
+    long.write_text("".join(f'line {n} "quoted"\n' for n in range(1, 20001)),
+                    encoding="utf-8", newline="\n")
+    outside = work / "outside-the-folder"
+    outside.mkdir()
+    (outside / "secret.py").write_text("hello = 'outside'\n", encoding="utf-8", newline="\n")
+    if sys.platform == "win32":
+        import _winapi
+
+        _winapi.CreateJunction(str(outside), str(repo / "linked"))
+    else:
+        (repo / "linked").symlink_to(outside, target_is_directory=True)
+
+    def use(name: str, **arguments: Any) -> tuple[bool, Any]:
+        answer = call_tool({"name": name, "arguments": {"folder": "Notes", **arguments}})
+        assert answer.status_code == 200, answer.text
+        value = answer.json()
+        assert value["status"] == "done", answer.text
+        assert len(json.dumps(value["response"], ensure_ascii=False).encode()) < 70_000
+        result = value["response"]["result"]
+        text = result["content"][0]["text"]
+        return bool(result["isError"]), (text if result["isError"] else json.loads(text))
+
+    error, found = use("glob", pattern="**/*.py", path="repo")
+    assert not error and found["paths"] == ["repo/src/app.py"], found
+    assert found["skipped"] == {"ignored": 1, "links": 1}, found
+    error, lines = use("grep", pattern="hello", path="repo", output="content")
+    assert not error, lines
+    assert lines["lines"] == "repo/src/app.py:2:    return 'hello'\nrepo/src/app.py:5:    return 'hello'", lines
+    digest = hashlib.sha256(long.read_bytes()).hexdigest()
+    error, first = use("read_text", path="repo/long.txt")
+    assert not error and first["sha256"] == digest and first["totalLines"] == 20000, first
+    assert first["toLine"] < 2000 and "size limit" in first["stoppedShort"], first
+    error, last = use("read_text", path="repo/long.txt", offset=19999, limit=5)
+    assert not error and last["text"] == 'line 19999 "quoted"\nline 20000 "quoted"\n', last
+    error, read = use("read_text", path="repo/src/app.py")
+    assert not error, read
+    error, twice = use("edit_text", path="repo/src/app.py", oldText="'hello'",
+                       newText="'hello, bo'", expectedSha256=read["sha256"])
+    assert error and "appears 2 times" in twice, twice
+    before = os.stat(repo / "src" / "app.py").st_ino
+    error, edited = use("edit_text", path="repo/src/app.py", oldText="def greet():\n    return 'hello'",
+                        newText="def greet():\n    return 'hello, bo'", expectedSha256=read["sha256"])
+    assert not error and edited["replaced"] == 1, edited
+    assert (repo / "src" / "app.py").read_text(encoding="utf-8").startswith(
+        "def greet():\n    return 'hello, bo'\n")
+    assert os.stat(repo / "src" / "app.py").st_ino == before
+    error, stale = use("edit_text", path="repo/src/app.py", oldText="part", newText="piece",
+                       expectedSha256=read["sha256"])
+    assert error and "changed" in stale, stale
+    # A pattern that would run for years on this line stops at the search's
+    # own 10 s, under the site host's 25 s for a call (J74).
+    (repo / "slow.txt").write_text("a" * 60 + "\n", encoding="utf-8", newline="\n")
+    started = time.perf_counter()
+    error, stopped = use("grep", pattern="(a|aa)+c", path="repo/slow.txt")
+    assert not error and "stopped after 10 seconds" in stopped["stoppedShort"], stopped
+    assert time.perf_counter() - started < 20
 
 
 def _b64url(data: bytes) -> str:
