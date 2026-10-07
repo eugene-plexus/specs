@@ -20,7 +20,7 @@ info:
     install and update, never the agent's (§2.4). The agent holds none of
     its identity and relays nothing for it: the two enrollments share
     nothing but the machine (J19, J23). It listens on loopback only, for
-    its health and nothing else. It runs in an OS account of its own, or as
+    its health and for its starter's approval API (`/v1/held`, J14a). It runs in an OS account of its own, or as
     the installing person on a per-user install (J38), and **opens no one's
     files** (§3.2).
 
@@ -87,6 +87,21 @@ info:
     site's key and asks the root (`POST /v1/sites/links/check`), and prints
     `SitePersonCheck` as JSON. Root runs it to link someone on a Linux
     system install, then writes the link itself.
+
+    **Person-held keys** (J14a, `docs/design/person-held-keys.md`). A
+    person's key is pinned in the links file, at the machine, by the
+    machine's privileged starter; the root never sees it. Once the site's
+    owner has a key, a change that gives access is not applied from the
+    root's word: the site **holds** it (`held`) until the owner approves it
+    at the machine, where the starter's loopback page signs the canonical
+    `SiteEditEnvelope` the site gave it with the owner's key, and the site
+    checks that signature against the pinned key. A change that only takes
+    access away needs no signature (J51). The rules made before the owner's
+    first key are approved as a whole first (J52), and until they are, no
+    tool runs (J48). The page reaches this host over **`/v1/held`**,
+    authorized by the token the host writes to `local_token` in its own data
+    directory, which its starter can read and nobody else (J53). The
+    signature, not the courier, is the authority.
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -116,7 +131,88 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SiteHostHealth'}
+  /v1/held:
+    get:
+      operationId: listHeld
+      summary: The changes held for one linked person, and the site's rules to approve when its owner must
+      description: |
+        For the starter's loopback page, which serves only the person whose
+        OS account opened it. With `key`, one of that person's pinned keys,
+        each item carries the canonical envelope to sign with it, with a
+        fresh `seq` and `iat`; without it, only the words. When the person is
+        the site's owner and has a key but has not approved the site's
+        current rules (J52), the first item is `rules.confirm`.
+      security: [{localToken: []}]
+      parameters:
+        - {name: subject, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+        - {name: key, in: query, required: false, schema: {type: string, pattern: '^[a-f0-9]{32}$'}}
+      responses:
+        '200':
+          description: The held changes, oldest first.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteHeldList'}
+        '401':
+          description: The token is missing or wrong.
+        '404':
+          description: Nobody is linked here as `subject`, or `key` is not one of theirs.
+  /v1/held/{id}/approve:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, pattern: '^[a-z0-9]{1,32}$'}}
+    post:
+      operationId: approveHeld
+      summary: Apply a held change, signed with its person's key at the machine
+      description: |
+        The site checks the envelope is canonical, every field matches the
+        change it holds and its own enrollment, `seq` is greater than the
+        last it accepted from this person, `iat` is at most ten minutes old,
+        and the signature verifies with a key pinned to the person. Then it
+        applies the change as if just asked, and records the key in its
+        audit log. A refusal changes nothing; the change stays held.
+      security: [{localToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SiteApproval'}
+      responses:
+        '200':
+          description: "`done` with the change's result, or `failed` with why."
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SiteAnswer'}
+        '401':
+          description: The token is missing or wrong.
+        '404':
+          description: Nothing is held under this id for this person.
+  /v1/held/{id}/reject:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, pattern: '^[a-z0-9]{1,32}$'}}
+    post:
+      operationId: rejectHeld
+      summary: Turn a held change down at the machine; it is dropped and recorded
+      security: [{localToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SiteHeldReject'}
+      responses:
+        '204':
+          description: Dropped.
+        '401':
+          description: The token is missing or wrong.
+        '404':
+          description: Nothing is held under this id for this person.
 components:
+  securitySchemes:
+    localToken:
+      type: http
+      scheme: bearer
+      description: |
+        The token in `local_token`, in the site host's own data directory:
+        made by the host at its first start, readable by its starter and by
+        nobody else (J53).
   schemas:
     SiteLocalServerList:
       $ref: 'components/sites.yaml#/SiteLocalServerList'
@@ -213,6 +309,87 @@ components:
           type: object
           additionalProperties: true
           description: The action's arguments; see `SiteManageAction` for each one's schema.
+        names:
+          type: [object, 'null']
+          maxProperties: 256
+          additionalProperties: {type: string, maxLength: 256}
+          description: How the root names the people the arguments name (`SiteOperation.names`). Display only (J54).
+
+    SiteEditEnvelope:
+      type: object
+      additionalProperties: false
+      description: |
+        What a person's key signs to approve one change (J14a,
+        `person-held-keys.md` §12.2). The site host builds it and gives it to
+        the page as canonical JSON (keys sorted, no spaces, UTF-8); the page
+        signs those bytes as given, and the site checks them against what it
+        holds. `typ` and `v` keep the signature from meaning anything else.
+      required: [typ, v, site, enrolledAt, person, key, act, args, seq, iat]
+      properties:
+        typ: {type: string, const: eugene-plexus/site-edit}
+        v: {type: integer, const: 1}
+        site: {$ref: 'components/sites.yaml#/SiteId'}
+        enrolledAt: {type: string, format: date-time}
+        person: {type: string, minLength: 1, maxLength: 64}
+        key: {type: string, pattern: '^[a-f0-9]{32}$'}
+        act:
+          type: string
+          description: A `SiteManageAction` that changes something, or `rules.confirm` (J52), whose `args` are `{"digest"}`, the SHA-256 of the site's whole policy.
+        args: {type: object, additionalProperties: true}
+        seq: {type: integer, minimum: 1, description: Greater than the last this person approved here.}
+        iat: {type: integer, description: Unix seconds.}
+
+    SiteHeldEdit:
+      type: object
+      additionalProperties: false
+      required: [id, action, words, heldAt]
+      properties:
+        id: {type: string, pattern: '^[a-z0-9]{1,32}$'}
+        action: {type: string, maxLength: 64}
+        words:
+          type: array
+          maxItems: 600
+          description: The change in the site host's own words, line by line, as the page shows it.
+          items: {type: string, maxLength: 1024}
+        heldAt: {type: [string, 'null'], format: date-time}
+        expiresAt: {type: [string, 'null'], format: date-time, description: When the site drops it unapproved.}
+        envelope:
+          type: [string, 'null']
+          description: With `key`, the canonical `SiteEditEnvelope` to sign.
+
+    SiteHeldList:
+      type: object
+      additionalProperties: false
+      required: [subject, keys, items]
+      properties:
+        subject: {type: string, maxLength: 64}
+        keys:
+          type: array
+          maxItems: 8
+          description: The ids of the keys pinned to this person.
+          items: {type: string, pattern: '^[a-f0-9]{32}$'}
+        state: {$ref: 'components/sites.yaml#/SiteSigningState'}
+        items:
+          type: array
+          maxItems: 64
+          items: {$ref: '#/components/schemas/SiteHeldEdit'}
+
+    SiteApproval:
+      type: object
+      additionalProperties: false
+      required: [subject, envelope, key, signature]
+      properties:
+        subject: {type: string, minLength: 1, maxLength: 64, description: The person the starter's page serves.}
+        envelope: {type: string, minLength: 2, maxLength: 262144, description: 'The canonical `SiteEditEnvelope`, exactly as listed.'}
+        key: {type: string, pattern: '^[a-f0-9]{32}$'}
+        signature: {type: string, minLength: 1, maxLength: 256, description: Base64 of the signature over the envelope's UTF-8 bytes.}
+
+    SiteHeldReject:
+      type: object
+      additionalProperties: false
+      required: [subject]
+      properties:
+        subject: {type: string, minLength: 1, maxLength: 64}
 
     SiteFolderAdd:
       type: object

@@ -356,6 +356,21 @@ JobSite:
     ownerInDevMode:
       type: [boolean, 'null']
       description: Whether the site lets Eugene's owner in while Eugene is in dev mode (J6e). Null until the site has reported.
+    signing:
+      description: Whether the site checks its owner's changes with the owner's own key (J14a). Absent from a site older than J14a.
+      $ref: 'sites.yaml#/SiteSigning'
+
+JobSiteHeld:
+  type: object
+  additionalProperties: false
+  description: |
+    A change the site holds until its owner approves it at the machine with
+    their key (J14a, J50). Nothing changed yet; `message` says where to
+    approve it, in the site's words.
+  required: [held, message]
+  properties:
+    held: {type: boolean, const: true}
+    message: {type: string, maxLength: 1024}
 
 JobSiteList:
   type: object

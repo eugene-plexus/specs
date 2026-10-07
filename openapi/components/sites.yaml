@@ -68,8 +68,10 @@ SiteAnswerStatus:
     `done`, inside `response`). `failed`: the site refused or could not run
     it, and `message` says why in the site's words; nothing ran. `uncertain`:
     a tool call started and its end could not be established; it may have
-    acted.
-  enum: [done, failed, uncertain]
+    acted. `held` (J14a, J50): a change that gives access, from a person who
+    has a key pinned at the machine; the site keeps it until they approve it
+    there with that key, and `message` says where. Nothing changed yet.
+  enum: [done, failed, uncertain, held]
 
 SiteServerId:
   type: string
@@ -270,6 +272,8 @@ SiteSummary:
       description: |
         Whether this site can serve anyone but its owner. False on macOS,
         which has no folder boundary yet (§2.6). Absent means true.
+    signing:
+      $ref: '#/SiteSigning'
 
 SitePersonLink:
   type: object
@@ -294,6 +298,40 @@ SitePersonLink:
       type: [string, 'null']
       maxLength: 1024
       description: Why not, when it is not, e.g. that they are not signed in on a Windows machine (J25).
+    keys:
+      type: integer
+      minimum: 0
+      maximum: 8
+      description: How many keys this person has pinned at the machine (J14a). Absent from a site older than J14a.
+
+SiteSigningState:
+  type: string
+  description: |
+    `unsigned`: the site's owner has no key pinned at the machine. Its rules
+    are trusted to the root, and no tool runs there as anyone (J48).
+    `unconfirmed`: the owner has a key, but has not approved the site's
+    current rules with it (J52); no tool runs. `signed`: every rule the site
+    holds was approved with its owner's key, at the machine; tools run.
+  enum: [unsigned, unconfirmed, signed]
+
+SiteSigning:
+  type: object
+  additionalProperties: false
+  description: Whether the site checks its owner's changes with the owner's own key (J14a).
+  required: [state, held]
+  properties:
+    state: {$ref: '#/SiteSigningState'}
+    held:
+      type: integer
+      minimum: 0
+      maximum: 64
+      description: Changes the site holds until their person approves them at the machine (J50).
+    approvePage:
+      type: [string, 'null']
+      maxLength: 256
+      description: |
+        Where a person adds a key and approves held changes, on the machine
+        itself. Null where this install has no such page yet (J14a.2, J14a.3).
 
 SiteAccountLink:
   type: object
@@ -325,6 +363,43 @@ SiteAccountLink:
       minLength: 1
       maxLength: 256
     linkedAt: {type: string, format: date-time}
+    keys:
+      type: array
+      maxItems: 8
+      default: []
+      description: |
+        The person's own keys, pinned at the machine (J14a,
+        `person-held-keys.md` §4.1). The site checks every change this
+        person approves against them, never the person the root names.
+      items: {$ref: '#/SitePersonKey'}
+
+SitePersonKeyAlg:
+  type: string
+  description: |
+    `Ed25519`: a raw 32-byte public key and a 64-byte signature. `ES256`:
+    ECDSA on P-256 with SHA-256, for a browser without Ed25519: an
+    uncompressed 65-byte public point and a 64-byte `r||s` signature, as
+    WebCrypto gives it.
+  enum: [Ed25519, ES256]
+
+SitePersonKey:
+  type: object
+  additionalProperties: false
+  description: |
+    A person's own key (J14a, Path A). Its private half was made in the
+    person's browser on the machine's loopback page and cannot leave it;
+    the root never saw either half. Written to the links file by the
+    machine's privileged starter, at the machine.
+  required: [id, alg, publicKey, addedAt]
+  properties:
+    id:
+      type: string
+      pattern: '^[a-f0-9]{32}$'
+      description: The first 16 bytes of SHA-256 over the raw public key, in hex.
+    alg: {$ref: '#/SitePersonKeyAlg'}
+    publicKey: {type: string, minLength: 1, maxLength: 128, description: Base64 of the raw public key.}
+    label: {type: [string, 'null'], maxLength: 120, description: 'Where it was made, for display, e.g. "Chrome on AMISH_STATION".'}
+    addedAt: {type: string, format: date-time}
 
 SiteLinkFile:
   type: object
@@ -619,6 +694,14 @@ SiteOperation:
     arguments:
       type: [object, 'null']
       description: For `manage`, its arguments.
+    names:
+      type: [object, 'null']
+      maxProperties: 256
+      additionalProperties: {type: string, maxLength: 256}
+      description: |
+        For `manage`, how the root names each person the arguments name, by
+        id. Display only: a site shows them on a held change marked as the
+        root's names (J54), and decides nothing by them.
     installMode: {$ref: '#/InstallModeName'}
 
 SiteResult:

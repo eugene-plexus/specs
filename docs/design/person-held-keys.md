@@ -623,6 +623,60 @@ on loopback), but it is a transport weakness worth its own look.
 
 ---
 
+## 12. Building J14a: the slices, and the calls building made (J50-J54)
+
+Started 2026-10-06. §9 named J14a as one slice; it is three, because each
+needs a different ceremony and each must leave edge working:
+
+- **J14a.1 — the site's check, and Path A on a Windows service install.**
+  The site host verifies signed changes, holds unsigned ones, keeps a
+  sequence per person, and refuses every tool until its owner's key has
+  approved its rules (J48). The agent's loopback link page makes and pins
+  the key and is where held changes are approved. Workbench and the root
+  carry the new *held* answer. This is where Troy's own site lives.
+- **J14a.2 — per-user installs** (Windows, Linux, macOS): the same pages,
+  served to the one account the agent runs as, checked from the connection.
+- **J14a.3 — Path B**: a passkey from Workbench, pinned with a code shown at
+  the machine (§4.2). It is also the Linux system install's only path (J46).
+
+**Until J14a.2 and J14a.3 land, a per-user or Linux system site on edge runs
+no tools** (J48: an unsigned site refuses them, and says so). Troy is edge's
+only user and his site is a Windows service install, which pairs in J14a.1.
+
+### 12.1 The calls building made
+
+| # | Call | Taken | Trade-off |
+|---|---|---|---|
+| J50 | Where a Path A change is written and signed | **Written in Workbench as today; the site *holds* it; the person approves it at the machine**, on a loopback page that shows the change in the site host's own words and signs only there. Workbench is told *held, approve it at <machine>*, not *refused*. | A change needs a visit to the machine. The alternatives were an editor at the machine (a second editor to build and keep) and a change carried in a URL from Workbench (the person must be on that machine, and the page would show what root-served code put in the URL). |
+| J51 | Changes that only take access away | **Need no signature**: removing a folder, turning a server off, a folder's or a server's list made smaller, dev mode turned off. They are applied at once and keep the rules approved. | A compromised root can take access away. It could already: availability is the root's (§1). Revocation from a phone stays instant, which matters more. |
+| J52 | The rules made before the owner's first key | **Approved as a whole, at the machine, before any tool runs.** The site signs the digest of its whole policy; the page lists every rule. An empty policy needs nothing. | One extra approval at pairing. Without it, a grant a root forged before the key existed would outlive the key. |
+| J53 | How a signed approval reaches the site host | **Over the site host's loopback API**, with a token it writes in its own data directory, which its starter reads. The signature, not the courier, is the authority: the same verifier will take Path B's approvals through the root. | One more loopback surface. The token keeps the list of held changes (folder paths, names) from other local accounts. |
+| J54 | Names in a held change | **The root sends the names it knows with the change**, and the page marks them *as Eugene names them*; a linked person is named from the link, with the account. | A compromised root can mislabel a person it does not link. The page says which names it can vouch for. |
+
+### 12.2 What J14a.1 signs and checks
+
+The envelope of §5.1, with a type and version so the key's signature over it
+can never be mistaken for anything else:
+
+```
+{"typ": "eugene-plexus/site-edit", "v": 1,
+ "site": <site id>, "enrolledAt": <the enrollment's>,
+ "person": <subject>, "key": <key id>,
+ "act": <the action, or "rules.confirm">, "args": <its arguments>,
+ "seq": <greater than the last this person's key signed here>,
+ "iat": <unix seconds>}
+```
+
+Canonical JSON (`sort_keys`, no spaces, UTF-8) built by the site host, signed
+by the page as given, and checked by the site host against its own record of
+the held change: the bytes must be canonical, every field must match, `seq`
+must be greater than the last accepted for that person, `iat` no older than
+ten minutes, and the signature must verify with a key pinned to that person
+in the links file. Keys are Ed25519, or ECDSA P-256 where a browser lacks
+Ed25519; key id = the first 16 bytes of SHA-256 over the raw public key.
+
+---
+
 ## 11. What this design does not cover
 
 - **Single sign-on itself** (control#4). J14 is built so a passkey and a link

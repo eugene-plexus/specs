@@ -2306,6 +2306,11 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/JobSiteFolderCreate'}
       responses:
+        '202':
+          description: The site holds the change until its owner approves it at the machine with their key (J14a). Nothing changed yet.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
         '201':
           description: The folder, as the site recorded it, with nobody on its list.
           content:
@@ -2370,6 +2375,11 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/JobSitePeopleRequest'}
       responses:
+        '202':
+          description: The site holds the change until its owner approves it at the machine with their key (J14a). Nothing changed yet.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
         '200':
           description: The folder and who may use it, as the site now holds them.
           content:
@@ -2408,6 +2418,11 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/JobSiteAccessRequest'}
       responses:
+        '202':
+          description: The site holds the change until its owner approves it at the machine with their key (J14a). Nothing changed yet.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
         '200':
           description: The server and who may use it, as the site now holds them.
           content:
@@ -2444,6 +2459,11 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/JobSiteServerEnable'}
       responses:
+        '202':
+          description: The site holds the change until its owner approves it at the machine with their key (J14a). Nothing changed yet.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
         '200':
           description: The server, as the site now holds it.
           content:
@@ -2477,6 +2497,11 @@ paths:
           application/json:
             schema: {$ref: '#/components/schemas/JobSiteSettings'}
       responses:
+        '202':
+          description: The site holds the change until its owner approves it at the machine with their key (J14a). Nothing changed yet.
+          content:
+            application/json:
+              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
         '200':
           description: The site.
           content:
@@ -2667,6 +2692,8 @@ components:
       $ref: "components/job-sites.yaml#/JobSite"
     JobSiteList:
       $ref: "components/job-sites.yaml#/JobSiteList"
+    JobSiteHeld:
+      $ref: "components/job-sites.yaml#/JobSiteHeld"
     JobSiteInviteRequest:
       $ref: "components/job-sites.yaml#/JobSiteInviteRequest"
     JobSiteInvite:
