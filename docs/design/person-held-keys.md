@@ -704,6 +704,38 @@ Ed25519; key id = the first 16 bytes of SHA-256 over the raw public key.
   unelevated is the Windows service install itself (the agent as LocalSystem
   reading the site host's token across accounts): that run is owed.
 
+### 12.4 J14a.2: per-user installs (Windows, Linux, macOS)
+
+On a per-user install the agent runs as the one person it serves, linked at
+`site join` (J38). The same loopback pages make and pin that person's key and
+approve what the site holds, and link nobody. The one new question is **who is
+at the other end of the connection** when the agent has no privilege, on each
+platform. Each answer was measured before it was used (2026-10-06):
+
+| Platform | How the account is read, unprivileged | Measured |
+|---|---|---|
+| Windows | the TCP table names the process at the far end (`GetExtendedTcpTable`), and its token names the account; another account's process cannot be opened unelevated, which is a refusal | J14a.1's browser check, unelevated |
+| Linux | `/proc/net/tcp` carries each socket's uid and is readable by any account | WSL2 6.18: one row per connection; uid 1000 for this account, 1001 for a second |
+| macOS | `sysctl net.inet.tcp.pcblist_n` carries each socket's `xsocket_n.so_uid`, readable by any account; `lsof` sees only one's own processes and cannot answer | GitHub's macOS 14.8, 15.7, 26.6 runners: uid 501 and a second account's 502 |
+
+`agent/loopback_peer.py` reads all three, and anything unexpected (no row, two
+rows, a record of another size) is a refusal, never a guess. The page then
+serves only the account the agent itself runs as. The site host is told its
+page by a new launch variable, `SITE_HOST_APPROVE_PAGE`, because a per-user
+install has no link page (Workbench tells people to link there). `site join`
+on a per-user install ends by opening `/link` in the person's browser (Windows
+and macOS; Linux with a desktop session) and always prints it.
+
+**Calls building made (J55-J59), for Troy:**
+
+| # | Call | Taken | Trade-off |
+|---|---|---|---|
+| J55 | Who a per-user page serves | **Only the account the agent runs as**; every other local account is refused, read from the connection on all three platforms, failing closed | None for security |
+| J56 | macOS | **Built**, from the kernel's TCP table, the record's size and loopback addresses checked | An undocumented layout (`netstat` reads it); a macOS that changes it makes pairing refuse until updated |
+| J57 | `site join` opens the key page | **Per-user installs only**: Windows and macOS always, Linux with a desktop; always printed; `--no-browser`. A service install's elevated join opens nothing | A window opens unasked, which is the point |
+| J58 | Removing the link on a per-user page | **Not offered**: the join links the owner, `site leave` unlinks | Handing a per-user site to someone else is leave and join |
+| J59 | Any program running as the person can use the page | **Inherent to Path A** (the proof is "this account, at this machine"), and true of J14a.1's service install too. A tool the owner enabled that can make web requests, driven by root-forged calls, could pin a key. Recommended: accept for J14a.2 and close it in J14b (J47: calls to tools that reach the network or run programs need the person's signature); a browser-only check would be a speed bump, not a fix | Until J14b, no locally added tool that makes web requests for remote use |
+
 ---
 
 ## 11. What this design does not cover

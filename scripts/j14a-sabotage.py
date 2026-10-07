@@ -12,7 +12,13 @@ the way it was, or takes one check out, and names the gate that must notice:
 - `browser`: `j14a-browser-check.py`, the system Chrome against the real
   page script, for what only a browser can show (a key WebCrypto lets out).
 
-Usage: python specs/scripts/j14a-sabotage.py [--gate NAME ...]
+J14a.2 (per-user installs) adds two narrow gates over the code it changed:
+- `agent2`: the connection's account on each platform (`loopback_peer`), the
+  per-user page, the supervisor's approve page, the join's key page, and the
+  service run's worker grant;
+- `site2`: the site host reading its approve page.
+
+Usage: python specs/scripts/j14a-sabotage.py [--gate NAME ...] [--label TEXT ...]
 """
 
 from __future__ import annotations
@@ -42,6 +48,10 @@ CT = "control"
 CT_SITES = "src/eugene_plexus_control/routes/sites.py"
 WB = "workbench"
 WB_REMOTE = "src/eugene_plexus_workbench/node_folders.py"
+SH_SETTINGS = "src/eugene_plexus_site_host/settings.py"
+AG_PEER = "src/eugene_plexus_agent/loopback_peer.py"
+AG_SUPERVISOR = "src/eugene_plexus_agent/site_host.py"
+AG_CLI = "src/eugene_plexus_agent/site_cli.py"
 
 
 def pytest(repo: str, *tests: str) -> list[str]:
@@ -56,6 +66,10 @@ GATES: dict[str, tuple[str, list[str]]] = {
     "control": (CT, pytest(CT, "tests/test_sites.py")),
     "workbench": (WB, pytest(WB, "tests/test_job_sites.py")),
     "browser": ("specs", [sys.executable, str(ROOT / "specs/scripts/j14a-browser-check.py")]),
+    "agent2": (AG, pytest(AG, "tests/test_loopback_peer.py", "tests/test_site_keys_page.py",
+                          "tests/test_site_link_page.py", "tests/test_site_link_cli.py",
+                          "tests/test_site_host.py")),
+    "site2": (SH, pytest(SH, "tests/test_app.py", "tests/test_signing.py")),
 }
 
 # (label, gate, repo, file, old, new)
@@ -197,6 +211,59 @@ SABOTAGES: list[tuple[str, str, str, str, str, str]] = [
      '            for k in ("links", "linkPage", "sharing")'),
     ("Workbench reads the root's 202 as a refusal", "workbench", WB, WB_REMOTE,
      "        if response.status_code == 202:", "        if False:"),
+    # --- J14a.2: who is at the other end, per platform -----------------------------------
+    ("J14a.2 Linux: the server's own row is read as the caller's", "agent2", AG, AG_PEER,
+     "        if fields[1] == local and fields[2] == remote:",
+     "        if fields[2] == local and fields[1] == remote:"),
+    ("J14a.2 Linux: one of several rows is taken", "agent2", AG, AG_PEER,
+     "    if len(uids) != 1:\n        raise PeerUnknown(\"The program that opened this page could not "
+     "be found.\")\n    uid = uids.pop()",
+     "    if not uids:\n        raise PeerUnknown(\"The program that opened this page could not "
+     "be found.\")\n    uid = uids.pop()"),
+    ("J14a.2 macOS: the server end's uid is read as the caller's", "agent2", AG, AG_PEER,
+     "            if (lport, fport) != (client_port, server_port):",
+     "            if lport not in (client_port, server_port):"),
+    ("J14a.2 macOS: the same ports between other addresses count", "agent2", AG, AG_PEER,
+     "            if (\n                not inp[_VFLAG_AT] & 0x1",
+     "            if False and (\n                not inp[_VFLAG_AT] & 0x1"),
+    ("J14a.2 macOS: a socket record of an unknown layout is trusted", "agent2", AG, AG_PEER,
+     "            if len(sock) != _XSOCKET_N_LEN:", "            if False:"),
+    # --- J14a.2: the per-user page ---------------------------------------------------------
+    ("THE FINDING (J14a.2): a per-user page serves any account on the machine", "agent2", AG,
+     AG_PAGE, "        if account != own:", "        if False:"),
+    ("J14a.2: a per-user page links people", "agent2", AG, AG_PAGE,
+     '    """Linking people: a Windows service install only (J36, J38)."""\n'
+     '    supervisor = getattr(request.app.state, "site_host", None)\n'
+     "    return bool(supervisor is not None and supervisor.link_page_offered())",
+     '    """Linking people: a Windows service install only (J36, J38)."""\n'
+     '    supervisor = getattr(request.app.state, "site_host", None)\n'
+     "    return bool(supervisor is not None and supervisor.key_page_offered())"),
+    ("J14a.2: the per-user page offers to remove its only link", "agent2", AG, AG_PAGE,
+     "    if _per_user(request):\n        # Linked at",
+     "    if False:\n        # Linked at"),
+    ("J14a.2: a per-user install offers no key page", "agent2", AG, AG_SUPERVISOR,
+     '            and self.mode() == "user"', '            and self.mode() == "service"'),
+    ("J14a.2: a Linux system install is offered the per-user page", "agent2", AG, AG_SUPERVISOR,
+     '            and self.mode() == "user"', '            and self.mode() in ("user", "root")'),
+    ("J14a.2: the site host is not told its approve page", "agent2", AG, AG_SUPERVISOR,
+     '            environment["SITE_HOST_APPROVE_PAGE"] = page', "            pass"),
+    ("J14a.2: the join names no key page", "agent2", AG, AG_CLI,
+     "    if port is not None and not _system_install(config_dir):", "    if False:"),
+    ("J14a.2: a system install's join opens a browser from its elevated session", "agent2", AG,
+     AG_CLI, "    if port is not None and not _system_install(config_dir):",
+     "    if port is not None:"),
+    ("J14a.2: --no-browser opens one anyway", "agent2", AG, AG_CLI,
+     '        opened = not getattr(args, "no_browser", False)', "        opened = True"),
+    ("the service run's finding: the worker grant goes on uv's link alone", "agent2", AG,
+     AG_SUPERVISOR, "    return named | {Path(os.path.realpath(folder)) for folder in named}",
+     "    return named"),
+    # --- J14a.2: the site host's approve page ------------------------------------------------
+    ("J14a.2: the site host never reads its approve page", "site2", SH, SH_SETTINGS,
+     '        approve_page=values.get("SITE_HOST_APPROVE_PAGE") or None,',
+     "        approve_page=None,"),
+    ("J14a.2: the site names only the link page's approve page", "site2", SH, HOST,
+     "        if self.settings.approve_page:\n            return self.settings.approve_page",
+     "        if False:\n            return self.settings.approve_page"),
 ]
 
 

@@ -148,9 +148,71 @@ test accounts were deleted. New for J14a:
 - On failure the script now keeps the agent's logs and the install folder's
   ACLs in the elevated account's temp folder before it removes its own.
 
+## J14a.2: per-user installs (2026-10-06, night)
+
+Design §12.4; calls J55-J59. Branches `j14a2-per-user` in specs (contract
+`c74744d`, prose only), agent (`f602440`) and site-host (`67cdd0a`).
+
+**Measured first, each on its own platform** (§12.4's table): Linux's
+`/proc/net/tcp` in WSL2 (this account 1000, a second 1001), and macOS's
+`net.inet.tcp.pcblist_n` on GitHub's macOS 14, 15 and 26 runners (501, and a
+second account's 502; an unprivileged `lsof` sees only its own processes).
+
+**The agent's own reader on real macOS** (`j14a2-macos-peer-check.py`, the
+`j14a2-macos-peer` branch's workflow): on all three versions, a connection from
+this account reads 501, one from a second account reads 502, and a port with no
+connection is refused.
+
+**Real Chrome on a per-user page** (`j14a-browser-check.py --per-user`):
+12/12, the account read from the real connection, not stubbed.
+
+**`job-sites-acceptance.py`, a real per-user install**, new in its check 11:
+the agent from this checkout, unelevated as the harness's account and joined as
+a node, installs the site host itself; `site join --no-browser` links ada to
+this account and prints the key page; the site names its approve page and has
+no link page, and refuses a tool until her key, saying where to add it. Then a
+client in this account uses the agent's own `/link` routes as the page script
+does (Chrome's half is the browser check's): it makes and pins a key, the rules
+sent before it are approved as a whole, ada's call runs, and a write grant from
+Workbench is held and approved there.
+- **Windows, this box, root in WSL2: 24 passed, 4 skipped** (the one-account
+  skips; another account's refusal on Windows needs elevation, see Owed).
+- **Linux, WSL2 Ubuntu, root on the same host: 25 passed, 3 skipped**,
+  including **another account refused by the page** (the second WSL user,
+  through `--stranger-command 'wsl.exe -d Ubuntu -u eptest2 --'`).
+- CI's Linux runner has passwordless sudo, so there the stranger is the
+  harness's own throwaway account.
+
+Its first two executions failed on the harness: a tool list before any grant
+is the root's own refusal, never the site's; and the run's folder was
+registered read-only, so no write grant could be given. Nothing in the product
+changed.
+
+**`j14a-sabotage.py --gate agent2 --gate site2` — 17 of 17 caught**, over the
+code J14a.2 changed and the service run's worker-grant fix: each platform's
+reader taking the server's own row, one of several rows, another address's
+connection or an unknown layout; the per-user page serving any account,
+linking people or offering to remove its link; the key page not offered, or
+offered to a Linux system install; the approve page not handed to the site
+host or not read by it; the join naming no page, opening one from a system
+install's elevated session, or ignoring `--no-browser`; the worker grant on
+uv's link alone. Not in the pass, deliberately: *Linux opens a text browser
+with no desktop*, whose test runs on Linux and macOS (CI), not on this box.
+
+Codegen at `c74744d` changed one docstring per consumer. The site host and the
+agent implement the variable and re-pinned (`f4661ed`, `8850a60`); control
+consumes nothing new and was reverted, not re-pinned.
+
+**Workbench needed no change**: it already says *On <machine>, open <page>* for
+any site with an approve page, and *cannot take a key yet* stays for the Linux
+system install (J14a.3).
+
 ## Owed
 
-- J14a.2 (per-user installs) and J14a.3 (Path B, the Linux system install):
-  until they land, those sites on edge run no tool (J48).
+- J14a.3 (Path B, the Linux system install): until it lands, those sites run no
+  tool (J48).
+- **Windows: another account refused by a per-user page**, for real. Unelevated
+  there is no second account to connect from; the agent's tests carry the
+  refusal. One elevated run (a LocalSystem process connecting) would show it.
 - The second-person checks under J14a (a linked person's own key): they need
   a second signed-in account, as 2b.2's run had.

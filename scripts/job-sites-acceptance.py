@@ -98,11 +98,13 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import subprocess
@@ -1437,7 +1439,9 @@ def run(args: argparse.Namespace) -> None:
            "the root does not know it, and the enrollment stays on its disk")
 
         # ---- 11. the agent's `site join` ---------------------------------
-        agent_site_join(python, work, nodes, http, control, people, acc_a if sudo_mode else None)
+        agent_site_join(python, work, nodes)
+        per_user_site(python, work, nodes, http, control, people, workbench, ada, source,
+                      acc_z if sudo_mode else None, args.stranger_command)
 
         # ---- 13-18. slice 2b.2: whose account runs a call ----------------------
         two_b_two(SimpleNamespace(
@@ -1634,15 +1638,10 @@ def local_server_check(
        "an administrator's consent recorded at the machine (J9)")
 
 
-def agent_site_join(
-    python: Path, work: Path, nodes: str, http: Any, control: str, people: dict[str, str],
-    site_account: Account | None,
-) -> None:
-    """The agent's own `site join`, run for real against a site host this
-    script installed. 2b.2 changed it: on a per-user install it needs no
-    elevation and links the owner, at the machine, to the account that ran it
-    (§2.2); only a system install's join, and any local-server change, need an
-    administrator."""
+def agent_site_join(python: Path, work: Path, nodes: str) -> None:
+    """What needs an administrator: a system install's join, and any
+    local-server change. A per-user install's own join needs none and is
+    run for real by `per_user_site` (2b.2, §2.2; J14a.2)."""
     from eugene_plexus_agent import site_cli
     from eugene_plexus_agent.site_host import servers_path
 
@@ -1679,31 +1678,233 @@ def agent_site_join(
     else:
         print("SKIP: the agent's unelevated refusals (this account is elevated here); "
               "the agent's own tests carry them", flush=True)
-    minted = http.post(f"{control}/v1/sites/invitations", json={"owner": people["ada"], "label": "away"})
-    assert minted.status_code == 201, minted.text
-    data = work / "away" / "data"
-    data.mkdir(parents=True)
-    join = ["site", "join", "--url", nodes, "--token", minted.json()["token"],
-            "--owner", "ada", "--label", "away", "--root-key", minted.json()["rootKey"],
-            "--password-stdin", "--python", str(python), "--data-dir", str(data)]
-    if site_account is not None:  # root ran this: name the person's own account
-        join += ["--site-account", site_account.name]
-    done = subprocess.run(
-        agent_command(*join), input=PASSWORD + "\n", capture_output=True, text=True,
-        env=environment, timeout=300,
+    if refusals:
+        ok("unelevated: " + "; ".join(refusals))
+
+
+class PageClient:
+    """The agent's own key page, used as its page script uses it (J14a.2):
+    the cookie and CSRF token the page sets, a key made here (WebCrypto's
+    part, played by `cryptography`; `j14a-browser-check.py` drives Chrome
+    itself), the public half pinned at `/link/key`, and each held change
+    signed exactly as the site host worded it."""
+
+    def __init__(self, base: str) -> None:
+        import httpx
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+        self.http = httpx.Client(base_url=base, trust_env=False, timeout=30)
+        self.key = Ed25519PrivateKey.generate()
+        self.ident = ""
+
+    @staticmethod
+    def csrf(page: str) -> str:
+        found = re.search(r"data-csrf='([^']+)'", page)
+        assert found, page[:500]
+        return found.group(1)
+
+    def post(self, path: str, token: str, body: dict[str, Any]) -> Any:
+        return self.http.post(path, content=json.dumps(body), headers={
+            "Content-Type": "application/json", "X-Eugene-Csrf": token})
+
+    def pin(self) -> str:
+        from cryptography.hazmat.primitives import serialization
+
+        page = self.http.get("/link")
+        assert page.status_code == 200, page.text[:500]
+        raw = self.key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        pinned = self.post("/link/key", self.csrf(page.text),
+                           {"alg": "Ed25519", "publicKey": base64.b64encode(raw).decode()})
+        assert pinned.status_code == 200, pinned.text
+        self.ident = str(pinned.json()["id"])
+        assert self.ident == hashlib.sha256(raw).hexdigest()[:32]
+        return str(page.text)
+
+    def approve_all(self) -> list[dict[str, Any]]:
+        page = self.http.get("/link/approve")
+        assert page.status_code == 200, page.text[:500]
+        token = self.csrf(page.text)
+        listed = self.http.get(f"/link/approve/items?key={self.ident}")
+        assert listed.status_code == 200, listed.text
+        items = list(listed.json()["items"])
+        for item in items:
+            signature = base64.b64encode(self.key.sign(item["envelope"].encode())).decode()
+            done = self.post(f"/link/approve/items/{item['id']}", token,
+                             {"envelope": item["envelope"], "key": self.ident,
+                              "signature": signature})
+            assert done.status_code == 200 and done.json()["status"] == "done", done.text
+        return items
+
+
+def per_user_site(
+    python: Path, work: Path, nodes: str, http: Any, control: str, people: dict[str, str],
+    workbench: Workbench, ada: str, source: str, stranger: Account | None,
+    stranger_command: str | None = None,
+) -> None:
+    """J14a.2, a real per-user install: the agent from this checkout, as this
+    script's own account and unelevated, joined to the root as a node. It
+    installs the site host itself (its own child); `site join` links the
+    owner to this account and names the key page; a client in this account
+    pairs a key through the agent's real `/link` page and approves held
+    changes there, and only then does ada's call run. Another account's
+    connection to the page is refused (sudo mode)."""
+    import httpx
+
+    config = work / "per-user"
+    config.mkdir()
+    port = free_port()
+    env = {
+        **clean_environment(),
+        "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(config / "agent.yaml"),
+        "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
+        "EUGENE_PLEXUS_AGENT_BIND_PORT": str(port),
+        "EUGENE_PLEXUS_AGENT_SITE_HOST_SOURCE": source,
+        "PATH": str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", ""),
+    }
+    join_token = http.post(f"{control}/v1/nodes/join-token", json={}).json()["token"]
+    joined = subprocess.run(
+        agent_command("join", "--control", control, "--token", join_token, "--name", "per-user"),
+        env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120,
     )
-    assert done.returncode == 0, done.stdout + done.stderr
-    record = json.loads((data / "site.json").read_text(encoding="utf-8"))
-    assert record["label"] == "away" and record["owner"] == people["ada"]
-    assert record["site"] in {s["id"] for s in http.get(f"{control}/v1/sites").json()["sites"]}
-    links = json.loads((config / "site" / "links.json").read_text(encoding="utf-8"))["links"]
-    expected = site_account.uid if site_account is not None else account_of(python)
-    assert [(e["subject"], e["account"]) for e in links] == [(people["ada"], expected)], (
-        links, done.stdout,
+    assert joined.returncode == 0, joined.stdout + joined.stderr
+    log = open(config / "agent.out", "wb")  # noqa: SIM115 - closed in the finally
+    agent = subprocess.Popen(
+        agent_command("--unattended"), env=env, stdout=log, stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL, start_new_session=os.name != "nt",
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
     )
-    ok("the agent's `site join`, with no elevation on a per-user install, joined the site host "
-       "it was pointed at as ada's and linked her to the account that ran it, in the links file "
-       "beside its config" + ("; " + "; ".join(refusals) if refusals else ""))
+    base = f"http://127.0.0.1:{port}"
+    try:
+        deadline = time.perf_counter() + 90
+        while True:
+            try:
+                if httpx.get(f"{base}/healthz", trust_env=False, timeout=2).status_code == 200:
+                    break
+            except httpx.HTTPError:
+                pass
+            if agent.poll() is not None or time.perf_counter() > deadline:
+                raise AssertionError("the per-user agent did not start:\n"
+                                     + (config / "agent.out").read_text(errors="replace")[-3000:])
+            time.sleep(0.5)
+        minted = http.post(f"{control}/v1/sites/invitations",
+                           json={"owner": people["ada"], "label": "per-user"})
+        assert minted.status_code == 201, minted.text
+        done = subprocess.run(
+            agent_command("site", "join", "--url", nodes, "--token", minted.json()["token"],
+                          "--owner", "ada", "--label", "per-user", "--root-key",
+                          minted.json()["rootKey"], "--password-stdin", "--no-browser"),
+            input=PASSWORD + "\n", capture_output=True, text=True, env=env, timeout=900,
+        )
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert f"open {base}/link in your browser" in done.stdout, done.stdout
+        links = json.loads((config / "site" / "links.json").read_text(encoding="utf-8"))["links"]
+        mine = account_of(python)
+        assert [(e["subject"], e["account"]) for e in links] == [(people["ada"], mine)], links
+        site_id = json.loads((config / "apps" / "site-host" / "data" / "site.json")
+                             .read_text(encoding="utf-8"))["site"]
+        approve_page = f"{base}/link/approve"
+
+        def view(predicate: Any, what: str, seconds: float = 90) -> dict[str, Any]:
+            deadline = time.perf_counter() + seconds
+            while True:
+                sites = [s for s in workbench.call("job-sites", ada).json()["sites"]
+                         if s["id"] == site_id]
+                if sites and predicate(sites[0]):
+                    return dict(sites[0])
+                if time.perf_counter() > deadline:
+                    raise AssertionError(f"{what}: {sites}\n"
+                                         + (config / "agent.out").read_text(errors="replace")[-3000:])
+                time.sleep(0.5)
+
+        view(lambda s: (s.get("signing") or {}) == {"state": "unsigned", "held": 0,
+                                                     "approvePage": approve_page}
+             and s.get("linkPage") is None, "the site never named its approve page")
+        view(lambda s: any(x["available"] for x in s.get("links") or []), "no worker connected")
+        # Rules sent before the key are the root's word (J48): applied, and no tool runs.
+        folder = work / "per-user-folder"
+        folder.mkdir()
+        (folder / "note.txt").write_text("a note at ada's own desk", encoding="utf-8")
+        added = workbench.call(f"job-sites/{site_id}/folders", ada, name="Desk", path=str(folder),
+                               writable=True)
+        assert added.status_code == 201, added.text
+        folder_id = added.json()["id"]
+        granted = workbench.call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
+                                 people=[{"name": "ada", "writable": False}])
+        assert granted.status_code == 200, granted.text
+        view(lambda s: s["folders"] and s["folders"][0]["people"], "the grant never reported")
+        read_note = {"name": "read_text", "arguments": {"folder": "Desk", "path": "note.txt"}}
+        refused = workbench.mcp(ada, site_id, "files", "tools/call", read_note)
+        assert refused.status_code == 200, refused.text
+        assert refused.json()["status"] == "failed", refused.text
+        assert approve_page in refused.json()["message"], refused.text
+        ok("J14a.2, a real per-user install: the agent, unelevated as this account, installs its "
+           "own site host; `site join` links ada to this account and names the key page; the "
+           "site has an approve page and no link page, and runs no tool until her key, saying "
+           "where to add it")
+
+        # ---- the key, made and pinned through the agent's own page ----------
+        client = PageClient(base)
+        page = client.pin()
+        assert "<title>Your key</title>" in page and "/link/start" not in page
+        pinned = json.loads((config / "site" / "links.json").read_text(encoding="utf-8"))["links"]
+        assert [k["id"] for k in pinned[0]["keys"]] == [client.ident], pinned
+        view(lambda s: s["signing"]["state"] == "unconfirmed", "the rules never awaited the key")
+        (rules,) = client.approve_all()
+        assert rules["id"] == "rules" and rules["action"] == "rules.confirm", rules
+        view(lambda s: s["signing"]["state"] == "signed", "the site never reported itself signed")
+        read = workbench.mcp(ada, site_id, "files", "tools/call", read_note)
+        assert read.json()["status"] == "done", read.text
+        assert "a note at ada's own desk" in json.dumps(read.json()["response"])
+        # A change that gives access is held for her key, then applied.
+        writable = workbench.call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
+                                  people=[{"name": "ada", "writable": True}])
+        assert writable.status_code == 202 and writable.json()["held"] is True, writable.text
+        assert approve_page in writable.json()["message"], writable.text
+        (change,) = client.approve_all()
+        assert change["action"] == "folder.people", change
+        view(lambda s: s["folders"][0]["people"][0]["writable"], "the write grant never reported")
+        ok("J14a.2: through the agent's own page, in this account, a key is made and pinned, the "
+           "rules sent before it are approved as a whole, and ada's call runs; a change from "
+           "Workbench that gives access is held, approved there with that key, and applied")
+
+        # ---- another account on this machine --------------------------------
+        if stranger is None and not stranger_command:
+            print("SKIP: another account's connection to the per-user page is refused (needs a "
+                  "second account: sudo mode, or --stranger-command; the agent's own tests carry "
+                  "the refusal)", flush=True)
+        else:
+            probe = ("import urllib.request,urllib.error\n"
+                     f"try:\n    r=urllib.request.urlopen('{base}/link')\n    print(r.status)\n"
+                     "except urllib.error.HTTPError as e:\n    print(e.code, e.read().decode())\n")
+            if stranger is not None:
+                argv = as_user(stranger, ["/usr/bin/python3", "-c", probe], {})
+                who = stranger.name
+            else:
+                assert stranger_command is not None
+                argv = [*shlex.split(stranger_command), "python3", "-c", probe]
+                who = stranger_command
+            seen = subprocess.run(argv, capture_output=True, text=True, timeout=60,
+                                  stdin=subprocess.DEVNULL)
+            assert seen.stdout.startswith("403") and "serves no one else here" in seen.stdout, (
+                seen.stdout, seen.stderr)
+            ok(f"J14a.2: another account on this machine ({who}) is refused by the per-user "
+               "page, read from its own connection")
+    finally:
+        subprocess.run(agent_command("site", "leave"), env=env, capture_output=True, text=True,
+                       timeout=120, stdin=subprocess.DEVNULL)
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(agent.pid)], capture_output=True)
+        else:
+            import signal
+
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(agent.pid, signal.SIGTERM)
+        try:
+            agent.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            agent.kill()
+        log.close()
 
 
 def two_b_two(c: SimpleNamespace) -> None:
@@ -1921,6 +2122,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--serve-root", type=Path)
     parser.add_argument("--root-wsl", action="store_true")
+    parser.add_argument(
+        "--stranger-command",
+        help="a command prefix that runs a program as another account here, for the per-user "
+        "page's refusal without sudo (in WSL: 'wsl.exe -d Ubuntu -u someone --')",
+    )
     parser.add_argument("--keep", action="store_true")
     parser.add_argument(
         "--no-sudo", action="store_true",

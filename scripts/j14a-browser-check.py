@@ -11,9 +11,13 @@ no account of its own), and the root and Workbench (the change is put in the
 site host's held list as the root's word would leave it). Those are the
 service run's and the CI harness's.
 
+`--per-user` (J14a.2): the page as a per-user install serves it, to the one
+account the agent runs as and linking nobody; the run is otherwise the same,
+so Chrome makes, pins and signs with its key on a per-user page too.
+
 Windows only, unelevated. Usage, from anywhere:
 
-    python specs/scripts/j14a-browser-check.py [--keep DIR]
+    python specs/scripts/j14a-browser-check.py [--per-user] [--keep DIR]
 """
 
 from __future__ import annotations
@@ -75,16 +79,18 @@ from eugene_plexus_agent.routes import site_link
 from eugene_plexus_agent.site_links import LinkStore
 
 config, site_port, port, token_file = Path(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), Path(sys.argv[4])
+MODE = sys.argv[5]
 
 class Supervisor:
     """The agent's supervisor, as far as the page asks of it."""
     def __init__(self):
         self.client = httpx.AsyncClient(trust_env=False, timeout=10)
-    def link_page_offered(self): return True
+    def link_page_offered(self): return MODE == "service"
+    def key_page_offered(self): return True
     def link_store(self): return LinkStore(config)
     def never_linked(self): return frozenset({"S-1-5-18"})
     def links_changed(self): pass
-    def mode(self): return "service"
+    def mode(self): return MODE
     async def held(self, method, path, **kwargs):
         token = token_file.read_text(encoding="utf-8").strip()
         return await self.client.request(method, f"http://127.0.0.1:{site_port}{path}",
@@ -126,6 +132,7 @@ def wait(url: str, seconds: float = 30) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", type=Path)
+    parser.add_argument("--per-user", dest="per_user", action="store_true")
     args = parser.parse_args()
     if sys.platform != "win32":
         print("SKIP: the link page serves a Windows service install")
@@ -203,7 +210,7 @@ def main() -> int:
     )
     page = subprocess.Popen(
         [str(AGENT_PY), str(work / "page.py"), str(config), str(site_port), str(page_port),
-         str(data / "local_token")],
+         str(data / "local_token"), "user" if args.per_user else "service"],
         env=env,
     )
     try:
