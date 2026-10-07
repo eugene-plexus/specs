@@ -1073,10 +1073,12 @@ def run(args: argparse.Namespace) -> None:
             error, grepped = tool_text(bench.tool(jessie, site_id, "grep", folder="Plans",
                                                   pattern="TOKEN", output="content"))
             assert not error and grepped["lines"] == "src/app.py:1:print('TOKEN')", grepped
-            for path in (".env", "secrets/key.txt", "SECRE~1/key.txt", "secrets/none.txt"):
+            # A short name is refused for what it could stand for, in its own words.
+            for path, said in ((".env", "hidden"), ("secrets/key.txt", "hidden"),
+                               ("SECRE~1/key.txt", "short name"), ("secrets/none.txt", "hidden")):
                 error, text = tool_text(bench.tool(jessie, site_id, "read_text", folder="Plans",
                                                    path=path))
-                assert error and "hidden" in text and "TOKEN" not in text, (path, text)
+                assert error and said in text and "TOKEN" not in text, (path, text)
             ok("J4. a path jessie denies is left out of glob and grep run as her account, and "
                "refused by name, its 8.3 short name too, whether or not it exists")
 
