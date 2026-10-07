@@ -210,10 +210,91 @@ consumes nothing new and was reverted, not re-pinned.
 any site with an approve page, and *cannot take a key yet* stays for the Linux
 system install (J14a.3).
 
+## J14a.3: a passkey from Workbench (2026-10-07)
+
+Design: `person-held-keys.md` §12.5 (calls J60-J66). Contract `7c99106`
+(branch `j14a3`): the site host's `/v1/passkeys` loopback API, the site actions
+`passkey.pair`, `held.list`, `held.approve` and `held.reject`, and control's four
+Workbench routes. Every repo is on its own `j14a3` branch, not yet landed.
+
+**Unit tests:** site host 38 new (`tests/test_passkeys.py`: the code's life, the
+MAC against `hashlib`'s PBKDF2, a swapped key, three wrong pairings, every way
+an assertion is wrong refused for its own reason, the sign count, a passkey from
+an earlier link, ES256, EdDSA and RS256), and two older tests that compared
+whole answers taking the new `passkeys` field; agent 7 (the page's code, its
+token, the passkey list and removal, a site host that cannot answer); control 4
+(the code never carried, a site too old for passkeys told to update and sent
+nothing, only the owner); Workbench 2 backend (no RP ID without an https
+address, the relays) and 8 page tests, one of them **the browser's MAC equal,
+byte for byte, to the site host's** for the same code and key.
+
+**The first passkey test found a hole:** `manage` held a change only when the
+owner had a key at the machine, so with only a passkey a change was applied on
+the root's word. Fixed before anything else (`Host.has_key`).
+
+**`j14a3-browser-check.py`: 7/7, first run.** The system Chrome at
+`https://workbench.home.arpa` (a CDP virtual authenticator that verifies the
+person; the certificate trusted by its SPKI pin, as §2 measured that a real
+authenticator needs) runs Workbench's own `passkeys.ts` against the site host's
+own `Host`: Chrome's passkey and its `getPublicKey()` taken; the MAC Chrome
+computed from the code typed in lower case checks, and one wrong character is
+refused; Chrome's assertions approve the rules and a held change, and one over
+another envelope is refused; with verification off, Chrome refuses to sign.
+
+**`job-sites-acceptance.py --root-wsl`: 27 passed, 4 skipped (the one-account
+skips, as at J14a.2), the run of record**, after the removal from Workbench was
+added (contract `a37f9a5`); the root in WSL2 behind its NAT and the site on
+Windows. The new step:
+the owner's key at the machine is taken away (a Linux system install's state)
+and the site runs no tool; the site host's own `pair` (what `--site-pair` runs)
+shows a code; a passkey made with WebAuthn's byte layout pairs through the
+root's route with the MAC over it, after a swapped public key is refused; `pair`
+says it arrived; the code works once; the passkey's assertions, carried by the
+root, approve the rules and a held change, one over another change is refused,
+and a change turned down from Workbench is dropped; the audit log names each and
+never the MAC. Then the passkey is removed from Workbench through the
+root (a lost phone, J60): with no key left the site runs no tool again, and the
+passkey lists and approves nothing. Three earlier runs each stopped on something real:
+
+1. an older per-user check compared the site's `signing` whole, which now
+   carries `passkeys` (the harness, fixed);
+2. **`pair` buffered its output through a pipe**, so the code appeared only when
+   it exited, after it had expired: anyone piping `--site-pair` (`| tee`) would
+   have met it. It flushes now;
+3. **about one join token in 64 begins with `-`** and every join command reads
+   it as an option (agent `join`, `install.sh`, PowerShell's `-Token`, and
+   Workbench's job-site commands). Out of this slice: control#7.
+
+**`j14a-sabotage.py --label J14a.3`: 46 of 46 caught** with the removal from
+Workbench's six (the last pass), after a first pass of
+37 of 40 over six gates (`site3`, `agent3`, `control3`, `workbench3`, `web3`,
+`browser3`). Before that the pass would not start: **vitest started from a
+lower-case `d:` loads jest-dom's matchers onto a second copy of `expect`**, so
+16 of web3's 23 page tests failed at baseline and pass from `D:` (the harness,
+fixed). Each of the three escapes was a missing check, not a second mechanism:
+
+1. *A refused pairing's audit line carries the MAC.* The one audit test paired
+   successfully, and the passkey code records its own line without the MAC; a
+   refusal before it (not the owner) records the outer line. Now a non-owner's
+   pairing and approval are refused and the log holds no MAC, public key or
+   assertion.
+2. *A passkey approval skips the sequence.* The replay test sent the old
+   assertion for a *different* change, which the envelope's arguments refuse
+   anyway. The envelope names the change, not the hold, so the sequence is all
+   that stops the root re-holding a folder the owner approved and then removed,
+   and sending the old approval; a synced passkey's count stays 0, so the
+   counter cannot. That is a test now.
+3. *The root approves a different held change.* Control's test approved only
+   `rules`, so a route that always sends `rules` matched it. It approves a named
+   change now.
+
 ## Owed
 
-- J14a.3 (Path B, the Linux system install): until it lands, those sites run no
-  tool (J48).
+- **J14a.3 with a real passkey**: a hardware key or a phone, from Troy's own
+  Workbench at an https name his devices trust (J42).
+- **`install.sh --site-pair` on a real Linux system install**: its `pair` ran
+  in the harness as the site host's account; the installer wrapper itself has
+  not run (no passwordless sudo in WSL here; CI's sudo mode is where it can).
 - **Windows: another account refused by a per-user page**, for real. Unelevated
   there is no second account to connect from; the agent's tests carry the
   refusal. One elevated run (a LocalSystem process connecting) would show it.

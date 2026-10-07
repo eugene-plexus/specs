@@ -105,6 +105,7 @@ JOIN_ROOT_KEY=
 SITE_ACTION=
 SITE_PERSON=
 SITE_LINK_ACCOUNT=
+SITE_PASSKEY=
 PASSWORD_STDIN=0
 TTY_SAVED=
 JOINED=0
@@ -135,6 +136,9 @@ while [ $# -gt 0 ]; do
         --site-account|--account) SITE_LINK_ACCOUNT=$2; shift 2 ;;
         --site-link) SITE_ACTION=link; shift ;;
         --site-unlink) SITE_ACTION=unlink; shift ;;
+        --site-pair) SITE_ACTION=pair; shift ;;
+        --site-passkeys) SITE_ACTION=passkeys; shift ;;
+        --site-unpair) SITE_ACTION=unpair; SITE_PASSKEY=$2; shift 2 ;;
         --person) SITE_PERSON=$2; shift 2 ;;
         --password-stdin) PASSWORD_STDIN=1; shift ;;
         --update) UPDATE=1; shift ;;
@@ -153,6 +157,9 @@ while [ $# -gt 0 ]; do
             echo "  link a person to their account on a job site (Linux system install, as root):"
             echo "           --site-link --person NAME [--site-account USER] [--password-stdin]"
             echo "           --site-unlink --person NAME"
+            echo "  the owner's passkey from Workbench (Linux system install, as root):"
+            echo "           --site-pair  (shows a code to type into Workbench, and waits)"
+            echo "           --site-passkeys   --site-unpair ID"
             echo "  standalone:  --advertise URL   (the address other devices reach this one at)"
             exit 0 ;;
         *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
@@ -1184,6 +1191,26 @@ site_link_person() {
     say "  and with their own permissions."
 }
 
+# --site-pair (J14a.3): a Linux system install has no page at the machine,
+# so the code for pairing the owner's passkey is shown here, at the terminal
+# the owner is already at. The site host makes it and checks the passkey's
+# MAC with it; this script only asks the running host for it, as the host's
+# own account, which can read the host's loopback token.
+site_host_port() {
+    as_root cat "$SITE_CONF/host.json" 2>/dev/null \
+        | sed -n 's/.*"port"[^0-9]*\([0-9][0-9]*\).*/\1/p' | head -n 1 || true
+}
+
+site_passkey_command() {
+    site_system_preflight "$1"
+    site_require_installed
+    _port=$(site_host_port)
+    [ -n "$_port" ] || die "the job site's port is not recorded in $SITE_CONF/host.json"
+    shift
+    as_site_account "$SITE_PY" -I -m eugene_plexus_site_host "$@" \
+        --data-dir "$SITE_SVC_HOME" --port "$_port"
+}
+
 site_unlink_person() {
     [ -n "$SITE_PERSON" ] || die "--site-unlink needs --person NAME"
     site_system_preflight "--site-unlink"
@@ -1229,6 +1256,9 @@ site_join_system() {
     say "  Anyone else's run in that same worker, confined to the folders $JOIN_OWNER shares."
     say "  To let another person work as their own account here, they or you run, on this machine:"
     say "    curl -fsSL $INSTALLER_URL | sudo sh -s -- --site-link --person NAME --account USER"
+    say "  No tool runs here until $JOIN_OWNER pairs a passkey from Workbench (at its https"
+    say "  address) and approves this machine's rules with it. To show the code for that, run:"
+    say "    curl -fsSL $INSTALLER_URL | sudo sh -s -- --site-pair"
 }
 
 # --- service plumbing -------------------------------------------------
@@ -2162,13 +2192,26 @@ trap 'exit 130' INT TERM
 # privilege to separate: the agent's own `site join` runs as this user and
 # links the owner to this account itself, and the site serves only them (J38).
 if [ -n "$SITE_ACTION" ] && { [ "$JOIN_SITE" = 1 ] || [ "$UPDATE" = 1 ] || [ -n "$JOIN_CONTROL" ]; }; then
-    die "--site-link and --site-unlink are run on their own, not with --job-site, --join or --update"
+    die "--site-link, --site-unlink and --site-pair are run on their own, not with --job-site, --join or --update"
 fi
 if [ "$SITE_ACTION" = link ]; then
     site_link_person
     exit 0
 elif [ "$SITE_ACTION" = unlink ]; then
     site_unlink_person
+    exit 0
+elif [ "$SITE_ACTION" = pair ]; then
+    site_passkey_command "--site-pair" pair || die "no passkey was paired (see above)"
+    exit 0
+elif [ "$SITE_ACTION" = passkeys ]; then
+    site_passkey_command "--site-passkeys" passkeys || die "the passkeys could not be listed (see above)"
+    exit 0
+elif [ "$SITE_ACTION" = unpair ]; then
+    case "$SITE_PASSKEY" in
+        ''|*[!0-9a-f]*) die "--site-unpair needs a passkey's id (--site-passkeys lists them)" ;;
+    esac
+    site_passkey_command "--site-unpair" passkeys --remove "$SITE_PASSKEY" \
+        || die "the passkey was not removed (see above)"
     exit 0
 fi
 

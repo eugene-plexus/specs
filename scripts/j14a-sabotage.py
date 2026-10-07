@@ -18,6 +18,16 @@ J14a.2 (per-user installs) adds two narrow gates over the code it changed:
   service run's worker grant;
 - `site2`: the site host reading its approve page.
 
+J14a.3 (passkeys from Workbench, §12.5) adds gates over the code it changed:
+- `site3`: the codes, the pairing MAC, the passkey store, the assertion
+  checks, the hold counting either key, and the site's actions;
+- `agent3`: the link page's code and passkey list;
+- `control3`: the root's four routes and its update check;
+- `workbench3`: Workbench's relays and its RP ID check;
+- `web3`: Workbench's page: the MAC, the challenge, user verification, the code
+  never sent;
+- `browser3`: `j14a3-browser-check.py`, the system Chrome against the site.
+
 Usage: python specs/scripts/j14a-sabotage.py [--gate NAME ...] [--label TEXT ...]
 """
 
@@ -31,7 +41,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT = Path("d:/py/eugene-plexus")
+# Upper-case drive: vitest started from `d:/...` loads jest-dom's matchers onto
+# a second copy of `expect` and 16 of web3's tests fail at baseline.
+ROOT = Path("D:/py/eugene-plexus")
 TIMEOUT = 900
 
 SH = "site-host"
@@ -52,6 +64,10 @@ SH_SETTINGS = "src/eugene_plexus_site_host/settings.py"
 AG_PEER = "src/eugene_plexus_agent/loopback_peer.py"
 AG_SUPERVISOR = "src/eugene_plexus_agent/site_host.py"
 AG_CLI = "src/eugene_plexus_agent/site_cli.py"
+PK = "src/eugene_plexus_site_host/passkeys.py"
+WB_API = "src/eugene_plexus_workbench/job_sites_api.py"
+WB_PK = "web/src/lib/passkeys.ts"
+WB_JS = "web/src/components/JobSites.tsx"
 
 
 def pytest(repo: str, *tests: str) -> list[str]:
@@ -70,6 +86,17 @@ GATES: dict[str, tuple[str, list[str]]] = {
                           "tests/test_site_link_page.py", "tests/test_site_link_cli.py",
                           "tests/test_site_host.py")),
     "site2": (SH, pytest(SH, "tests/test_app.py", "tests/test_signing.py")),
+    "site3": (SH, pytest(SH, "tests/test_passkeys.py", "tests/test_signing.py",
+                         "tests/test_routing.py")),
+    "agent3": (AG, pytest(AG, "tests/test_site_passkeys_page.py", "tests/test_site_link_page.py",
+                          "tests/test_site_keys_page.py")),
+    "control3": (CT, pytest(CT, "tests/test_sites.py", "-k", "passkey or held")),
+    "workbench3": (WB, pytest(WB, "tests/test_job_sites.py", "-k", "passkey or relying")),
+    # From web/ itself, and under "D:" not "d:": with a lowercase drive vite
+    # loads vitest twice and jest-dom extends the other copy's `expect`.
+    "web3": (f"{WB}/web", ["cmd", "/c", "npm", "test", "--",
+                           "src/lib/passkeys.test.ts", "src/components/JobSites.test.tsx"]),
+    "browser3": ("specs", [sys.executable, str(ROOT / "specs/scripts/j14a3-browser-check.py")]),
 }
 
 # (label, gate, repo, file, old, new)
@@ -264,13 +291,142 @@ SABOTAGES: list[tuple[str, str, str, str, str, str]] = [
     ("J14a.2: the site names only the link page's approve page", "site2", SH, HOST,
      "        if self.settings.approve_page:\n            return self.settings.approve_page",
      "        if False:\n            return self.settings.approve_page"),
+    # --- J14a.3: the site's codes and pairing ------------------------------------------------
+    ("J14a.3 THE FINDING: a change is held only for a key at the machine", "site3", SH, HOST,
+     "                if changes and not reduces and self.has_key(owner):",
+     "                if changes and not reduces and self.keys_of(owner):"),
+    ("J14a.3: the pairing MAC is not checked", "site3", SH, PK,
+     "            if not hmac.compare_digest(wanted, given):", "            if False:"),
+    ("J14a.3: the MAC's key is the code itself, not PBKDF2 over it", "site3", SH, PK,
+     '    return hashlib.pbkdf2_hmac("sha256", normalize(code).encode("ascii"), salt, ITERATIONS, 32)',
+     '    return normalize(code).encode("ascii")'),
+    ("J14a.3: the salt leaves out the person", "site3", SH, PK,
+     '    salt = f"{BINDING_TYPE}:{site}:{person}".encode()',
+     '    salt = f"{BINDING_TYPE}:{site}".encode()'),
+    ("J14a.3: a code works more than once", "site3", SH, PK,
+     "                raise NotSigned(\n                    \"The code does not match the one shown at the machine, or the passkey \"\n"
+     "                    \"was changed on its way here.\"\n                )\n            self._codes.pop(subject, None)",
+     "                raise NotSigned(\n                    \"The code does not match the one shown at the machine, or the passkey \"\n"
+     "                    \"was changed on its way here.\"\n                )"),
+    ("J14a.3: wrong pairings never end the code", "site3", SH, PK,
+     "                if current.tries <= 0:", "                if False:"),
+    ("J14a.3: a code never expires", "site3", SH, PK,
+     "            if found is None or found.expires_at <= time.time():",
+     "            if found is None:"),
+    ("J14a.3: only the owner gets a code, no more", "site3", SH, HOST,
+     "        if subject != self.identity.owner():\n            raise NotHeld(subject)\n        code, expires",
+     "        if False:\n            raise NotHeld(subject)\n        code, expires"),
+    ("J14a.3: a passkey from an earlier link still counts", "site3", SH, HOST,
+     "            if p.account == link.account and p.linked_at == link.linked_at",
+     "            if p.account == link.account"),
+    ("J14a.3: a stored passkey whose id is not its own is kept", "site3", SH, PK,
+     "    return item if key_id(item.public) == item.id else None", "    return item"),
+    ("J14a.3: the summary does not say the site takes passkeys", "site3", SH, HOST,
+     '                "passkeys": True,', '                "passkeys": False,'),
+    ("J14a.3: a refused pairing's audit line carries the MAC", "site3", SH, HOST,
+     '            "arguments": None if name == "audit.read" or name in PASSKEY_ACTIONS else arguments,',
+     '            "arguments": None if name == "audit.read" else arguments,'),
+    # --- J14a.3: the assertion ---------------------------------------------------------------
+    ("J14a.3: the client data's type is not checked", "site3", SH, PK,
+     '    if not isinstance(data, dict) or data.get("type") != "webauthn.get":',
+     "    if not isinstance(data, dict):"),
+    ("J14a.3: the challenge is not checked", "site3", SH, PK,
+     '    if not hmac.compare_digest(str(data.get("challenge") or ""), challenge(envelope_text)):',
+     "    if False:"),
+    ("J14a.3: a cross-origin use is taken", "site3", SH, PK,
+     '    if data.get("crossOrigin") not in (None, False) or "topOrigin" in data:', "    if False:"),
+    ("J14a.3: the origin is not checked", "site3", SH, PK,
+     '    if origin.scheme != "https" or not (', "    if False and not ("),
+    ("J14a.3: a name that merely ends like the RP ID passes", "site3", SH, PK,
+     '        host == passkey.rp_id or host.endswith("." + passkey.rp_id)',
+     "        host == passkey.rp_id or host.endswith(passkey.rp_id)"),
+    ("J14a.3: the RP ID hash is not checked", "site3", SH, PK,
+     "    if len(auth) < 37 or not hmac.compare_digest(",
+     "    if len(auth) < 37 or False and not hmac.compare_digest("),
+    ("J14a.3: user verification is not required", "site3", SH, PK,
+     "    if not flags & _UP or not flags & _UV:", "    if not flags & _UP:"),
+    ("J14a.3: presence is not required", "site3", SH, PK,
+     "    if not flags & _UP or not flags & _UV:", "    if not flags & _UV:"),
+    ("J14a.3: the signature is not verified", "site3", SH, PK,
+     "    if not _verify(passkey.alg, passkey.public, sig, auth + hashlib.sha256(client).digest()):",
+     "    if False:"),
+    ("J14a.3: a counter that goes back is taken", "site3", SH, PK,
+     "    if (count or passkey.sign_count) and count <= passkey.sign_count:", "    if False:"),
+    ("J14a.3: the credential is not matched to the key", "site3", SH, PK,
+     "    if credential_id != passkey.credential_id:", "    if False:"),
+    ("J14a.3: a passkey approval skips the sequence", "site3", SH, HOST,
+     "                last_seq=self.sequence.last(subject),\n            )\n            self.passkeys.counted(found.id, count)",
+     "                last_seq=0,\n            )\n            self.passkeys.counted(found.id, count)"),
+    ("J14a.3: a passkey approval takes the envelope's own args", "site3", SH, HOST,
+     "                args=args,\n                key=approval.key,\n                last_seq=self.sequence.last(subject),\n            )\n            self.passkeys.counted",
+     "                args=json.loads(approval.envelope)[\"args\"],\n                key=approval.key,\n                last_seq=self.sequence.last(subject),\n            )\n            self.passkeys.counted"),
+    # --- J14a.3: the agent's page ------------------------------------------------------------
+    ("J14a.3: a code is shown without the page's token", "agent3", AG, AG_PAGE,
+     "        account, link = _linked(request)\n        await _posted_form(request, account)\n",
+     "        account, link = _linked(request)\n"),
+    ("J14a.3: a passkey is removed without the page's token", "agent3", AG, AG_PAGE,
+     "        form = await _posted_form(request, account)", "        form = await request.form()"),
+    ("J14a.3: any id reaches the site host", "agent3", AG, AG_PAGE,
+     '        if not isinstance(ident, str) or not _KEY_ID.fullmatch(ident):\n            raise NotHere("That passkey',
+     '        if not isinstance(ident, str):\n            raise NotHere("That passkey'),
+    ("J14a.3: the page breaks when the site host cannot say", "agent3", AG, AG_PAGE,
+     "    except HostUnavailable:\n        return \"\"\n    if answer.status_code != 200:\n        return \"\"",
+     "    except ValueError:\n        return \"\"\n    if answer.status_code != 200:\n        return \"\""),
+    # --- J14a.3: the root ---------------------------------------------------------------------
+    ("J14a.3: a site that does not take passkeys is sent the action", "control3", CT, CT_SITES,
+     '    if not (summary.get("signing") or {}).get("passkeys"):', "    if False:"),
+    ("J14a.3: the root names another action", "control3", CT, CT_SITES,
+     '        "passkey.pair",', '        "passkey.add",'),
+    ("J14a.3: the root approves a different held change", "control3", CT, CT_SITES,
+     '    arguments = {"id": ident, **body.model_dump(mode="json", exclude={"refreshToken"})}',
+     '    arguments = {"id": "rules", **body.model_dump(mode="json", exclude={"refreshToken"})}'),
+    # --- J14a.3: Workbench --------------------------------------------------------------------
+    ("J14a.3: a pairing for another RP ID is carried", "workbench3", WB, WB_API,
+     "    if rp is None or body.rpId != rp:", "    if rp is None:"),
+    ("J14a.3: a plain-HTTP Workbench offers a passkey", "workbench3", WB, WB_API,
+     "    return urlsplit(origin).hostname if origin else None",
+     '    return urlsplit(origin).hostname if origin else "workbench.example"'),
+    ("J14a.3: the browser's MAC is over unsorted keys", "web3", WB, WB_PK,
+     "  const sorted = Object.keys(object).sort();", "  const sorted = Object.keys(object);"),
+    ("J14a.3: the browser's PBKDF2 takes fewer rounds", "web3", WB, WB_PK,
+     "export const ITERATIONS = 600_000;", "export const ITERATIONS = 100_000;"),
+    ("J14a.3: the challenge is the envelope, not its hash", "web3", WB, WB_PK,
+     '  const challenge = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(envelope));',
+     "  const challenge = new TextEncoder().encode(envelope);"),
+    ("J14a.3: user verification only preferred", "web3", WB, WB_PK,
+     '      authenticatorSelection: { residentKey: "preferred", userVerification: "required" },',
+     '      authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },'),
+    ("J14a.3: the code is sent with the pairing", "web3", WB, WB_JS,
+     "          label,\n          mac,\n", "          label,\n          mac,\n          code,\n"),
+    ("J14a.3: the browser's salt leaves out the person (in Chrome)", "browser3", WB, WB_PK,
+     "      salt: encoder.encode(`${BINDING_TYPE}:${value.site}:${value.person}`),",
+     "      salt: encoder.encode(`${BINDING_TYPE}:${value.site}`),"),
+    # --- J14a.3 (J60): a passkey removed from Workbench ------------------------------------------
+    ("J14a.3: a passkey removed from Workbench stays", "site3", SH, HOST,
+     '                    await asyncio.to_thread(\n'
+     '                        self.passkey_remove, owner, removed.id, "from Workbench"\n'
+     '                    )',
+     "                    pass"),
+    ("J14a.3: a removal from Workbench is recorded as at the machine", "site3", SH, HOST,
+     'self.passkey_remove, owner, removed.id, "from Workbench"',
+     "self.passkey_remove, owner, removed.id"),
+    ("J14a.3: the root removes a different passkey", "control3", CT, CT_SITES,
+     '"passkey.remove", {"id": ident}', '"passkey.remove", {"id": "0" * 32}'),
+    ("J14a.3: Workbench relays any passkey id", "workbench3", WB, WB_API,
+     "/passkeys/{_passkey(ident)}/remove", "/passkeys/{ident}/remove"),
+    ("J14a.3: the last-key warning never shows", "web3", WB, WB_JS,
+     "  const lastKey = (held?.keys.length ?? 0) <= 1;", "  const lastKey = false;"),
+    ("J14a.3: Remove skips its confirmation", "web3", WB, WB_JS,
+     "onClick={() => setRemoving(p.id)}", "onClick={() => void remove(p.id)}"),
 ]
 
 
 def run_gate(name: str) -> tuple[int, str]:
     repo, argv = GATES[name]
+    where = str(ROOT / repo)
+    where = where[0].upper() + where[1:]
     try:
-        done = subprocess.run(argv, cwd=ROOT / repo, capture_output=True, text=True,
+        done = subprocess.run(argv, cwd=where, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
         return 124, "the gate never returned (hung)"

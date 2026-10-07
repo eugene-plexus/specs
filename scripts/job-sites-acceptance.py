@@ -81,6 +81,17 @@ goes through the real verifier. A change the root forges in the owner's name
 is held, never applied; an old approval replayed against the same change asked
 again is refused.
 
+**J14a.3 (§12.5): a passkey from Workbench, through the root.** The owner's
+key at the machine is taken away, so the site is as a Linux system install
+leaves it (no page at the machine, no key) and runs no tool. The starter asks
+the site host for a code (`/v1/passkeys/code`, as `--site-pair` does); a
+passkey made here as a browser's authenticator makes it (the real byte layout
+of WebAuthn, `j14a3-browser-check.py` drives Chrome's) is paired through the
+root's `/oidc/job-sites/{site}/passkeys` with the MAC over it, and its
+assertions approve the site's rules and a held change through
+`/oidc/job-sites/{site}/held/...`. A root that swaps the public key, and an
+assertion over another change, are refused by the site.
+
 Topologies:
 * Linux, one host (CI): `python job-sites-acceptance.py`.
 * Windows with WSL2 (the doc's stand-in): `python job-sites-acceptance.py
@@ -738,6 +749,17 @@ class SiteHost:
 
     def leave(self) -> subprocess.CompletedProcess[str]:
         return self.run("leave", "--data-dir", str(self.data))
+
+    def pair(self) -> subprocess.Popen[str]:
+        """`pair`, as `install.sh --site-pair` runs it (J14a.3): it shows the
+        code and waits for the passkey."""
+        argv = as_user(self.user, [*self.command, "pair", "--data-dir", str(self.data),
+                                   "--port", str(self.port)], {})
+        return subprocess.Popen(
+            argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            env=clean_environment(), cwd="/" if self.user else self.data,
+            stdin=subprocess.DEVNULL,
+        )
 
     def check_person(self, name: str, password: str) -> subprocess.CompletedProcess[str]:
         return self.run("check-person", "--name", name, "--data-dir", str(self.data),
@@ -1407,6 +1429,10 @@ def run(args: argparse.Namespace) -> None:
            "back in production it stops at once; the opt-in was held for ada's key, turning it "
            "off needed none (J51), and her old approval did not apply it when asked again")
 
+        # ---- J14a.3: a passkey from Workbench, through the root ------------
+        passkey_check(desk, call, forge, settle, site_id, ada, people["ada"])
+        desk.pin(people["ada"])  # the key at the machine again, for the checks below
+
         # ---- 9. a node says which site it hosts (J32) --------------------
         hosting = enroll_node(http, control, "amish")
         hosted = http.put(f"{control}/v1/nodes/amish/hosted-sites",
@@ -1485,6 +1511,180 @@ def run(args: argparse.Namespace) -> None:
             shutil.rmtree(work, ignore_errors=True)
         else:
             print(f"kept {work}")
+
+
+class Passkey:
+    """A passkey as a browser's authenticator holds it (ES256), made for one
+    relying party: what Workbench's page gets from WebAuthn, here."""
+
+    def __init__(self, rp_id: str) -> None:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        self.rp_id = rp_id
+        self.key = ec.generate_private_key(ec.SECP256R1())
+        self.spki = self.key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+        self.id = hashlib.sha256(self.spki).hexdigest()[:32]
+        self.credential_id = _b64url(secrets.token_bytes(16))
+        self.count = 0
+
+    def pairing(self, code: str, site: str, person: str) -> dict[str, Any]:
+        """What Workbench sends: the public half and the MAC its browser
+        computed from the code typed (`SitePasskeyBinding`)."""
+        import hmac
+
+        public = base64.b64encode(self.spki).decode()
+        binding = json.dumps(
+            {"typ": "eugene-plexus/site-passkey", "v": 1, "site": site, "person": person,
+             "credentialId": self.credential_id, "publicKey": public, "alg": -7,
+             "rpId": self.rp_id},
+            sort_keys=True, separators=(",", ":"),
+        )
+        normalized = code.upper().replace("-", "")
+        secret = hashlib.pbkdf2_hmac(
+            "sha256", normalized.encode(), f"eugene-plexus/site-passkey:{site}:{person}".encode(),
+            600_000, 32,
+        )
+        mac = _b64url(hmac.new(secret, binding.encode(), hashlib.sha256).digest())
+        return {"credentialId": self.credential_id, "publicKey": public, "alg": -7,
+                "rpId": self.rp_id, "label": "the harness's passkey", "mac": mac}
+
+    def approval(self, envelope: str) -> dict[str, Any]:
+        """`navigator.credentials.get()` over the envelope, as Workbench sends it."""
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        self.count += 1
+        client = json.dumps({
+            "type": "webauthn.get",
+            "challenge": _b64url(hashlib.sha256(envelope.encode()).digest()),
+            "origin": f"https://{self.rp_id}",
+            "crossOrigin": False,
+        }).encode()
+        auth = (hashlib.sha256(self.rp_id.encode()).digest() + bytes([0x05])
+                + self.count.to_bytes(4, "big"))
+        signature = self.key.sign(auth + hashlib.sha256(client).digest(), ec.ECDSA(hashes.SHA256()))
+        return {"envelope": envelope, "key": self.id, "credentialId": self.credential_id,
+                "authenticatorData": _b64url(auth), "clientDataJSON": _b64url(client),
+                "signature": _b64url(signature)}
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def passkey_check(
+    desk: Any, call: Any, forge: Any, settle: Any, site_id: str, ada: str, subject: str
+) -> None:
+    """J14a.3: the owner without a key at the machine, as a Linux system
+    install leaves them, pairs a passkey from Workbench through the root and
+    approves with it there."""
+    def signing(state: str) -> dict[str, Any]:
+        return settle(lambda s: (s.get("signing") or {}).get("state") == state,
+                      f"the site never reported its signing state as {state}")
+
+    def listed(key: str | None) -> dict[str, Any]:
+        answer = call(f"job-sites/{site_id}/held", ada, **({"key": key} if key else {}))
+        assert answer.status_code == 200, answer.text
+        return dict(answer.json())
+
+    # The key at the machine goes: no page, no key, as a Linux system install.
+    for entry in desk.linked:
+        if entry["subject"] == subject:
+            entry.pop("keys", None)
+    desk.keys.pop(subject, None)
+    desk.write_links()
+    signing("unsigned")
+    assert settle(lambda s: s["signing"].get("passkeys") is True, "passkeys")["signing"]
+    # A change while unsigned is the root's word, so there are rules to approve.
+    opened = call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=True)
+    assert opened.status_code == 200, opened.text
+
+    # The starter's code, as `install.sh --site-pair` shows it: the site
+    # host's own `pair`, as the site host's account, waiting for the passkey.
+    pairing = desk.pair()
+    assert pairing.stdout is not None
+    shown: list[str] = []
+    code = None
+    deadline = time.perf_counter() + 30
+    while code is None and time.perf_counter() < deadline:
+        line = pairing.stdout.readline()
+        if not line:
+            break
+        shown.append(line)
+        found = re.fullmatch(r"\s+([0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5})\s*", line)
+        code = found.group(1) if found else None
+    assert code is not None, "".join(shown)
+    made = {"code": code}
+    passkey = Passkey("workbench.example")
+    honest = passkey.pairing(made["code"].lower(), site_id, subject)
+    swapped = {**honest, "publicKey": base64.b64encode(Passkey("workbench.example").spki).decode()}
+    refused = call(f"job-sites/{site_id}/passkeys", ada, **swapped)
+    assert refused.status_code == 422 and "does not match" in refused.text, refused.text
+    paired = call(f"job-sites/{site_id}/passkeys", ada, **honest)
+    assert paired.status_code == 201 and paired.json()["id"] == passkey.id, paired.text
+    rest, _ = pairing.communicate(timeout=30)
+    assert pairing.returncode == 0 and f"({passkey.id[:8]})" in rest, "".join(shown) + rest
+    signing("unconfirmed")
+    # The code is single use: the same pairing again is refused.
+    again = call(f"job-sites/{site_id}/passkeys", ada, **honest)
+    assert again.status_code == 422 and "No code is waiting" in again.text, again.text
+    assert made["code"] not in desk.all_text(), "the code was written to the site's directory"
+    ok("J14a.3: with no key at the machine (a Linux system install's state) the site runs no "
+       "tool; the code the site host's own `pair` shows (what --site-pair runs), typed into "
+       "Workbench, pairs a passkey through the root, whose MAC the site checks, and `pair` says "
+       "it arrived: a swapped public key is refused, and the code works once")
+
+    held = listed(passkey.id)
+    assert [p["id"] for p in held["passkeys"]] == [passkey.id]
+    rules = next(i for i in held["items"] if i["id"] == "rules")
+    approved = call(f"job-sites/{site_id}/held/rules/approve", ada, **passkey.approval(rules["envelope"]))
+    assert approved.status_code == 200, approved.text
+    signing("signed")
+    off = call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=False)
+    assert off.status_code == 200, off.text  # a reduction (J51)
+    asked = call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=True)
+    assert asked.status_code == 202 and asked.json()["held"] is True, asked.text
+    held = listed(passkey.id)
+    change = next(i for i in held["items"] if i["id"] != "rules")
+    other = change["envelope"].replace('"ownerInDevMode":true', '"ownerInDevMode":false')
+    forged = call(f"job-sites/{site_id}/held/{change['id']}/approve", ada, **passkey.approval(other))
+    assert forged.status_code == 422 and "differs" in forged.text, forged.text
+    done = call(f"job-sites/{site_id}/held/{change['id']}/approve", ada,
+                **passkey.approval(change["envelope"]))
+    assert done.status_code == 200, done.text
+    settle(lambda s: s["ownerInDevMode"] is True, "the approved change never reported")
+    assert call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=False).status_code == 200
+    # Turned down from Workbench: dropped, never applied.
+    assert call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=True).status_code == 202
+    waiting = next(i for i in listed(None)["items"] if i["id"] != "rules")
+    rejected = call(f"job-sites/{site_id}/held/{waiting['id']}/reject", ada)
+    assert rejected.status_code == 204, rejected.text
+    assert settle(lambda s: True, "")["ownerInDevMode"] is False
+    log = call(f"job-sites/{site_id}/audit", ada, limit=50).json()["entries"]
+    reasons = " ".join(e.get("reason") or "" for e in log)
+    assert "paired from Workbench" in reasons and "Approved from Workbench with passkey" in reasons
+    assert "Turned down from Workbench." in reasons and honest["mac"] not in json.dumps(log)
+    ok("J14a.3: the passkey's assertions, carried by the root, approve the site's rules and a "
+       "held change; an assertion over another change is refused; a change turned down from "
+       "Workbench is dropped; the audit log names each, never the MAC")
+
+    # A lost phone (J60): removed from Workbench, through the root, with no
+    # passkey and no visit to the machine. It was the owner's last key, so
+    # the site runs no tool again, and the passkey approves nothing more.
+    removed = call(f"job-sites/{site_id}/passkeys/{passkey.id}/remove", ada)
+    assert removed.status_code == 204, removed.text
+    signing("unsigned")
+    gone = call(f"job-sites/{site_id}/passkeys/{passkey.id}/remove", ada)
+    assert gone.status_code == 422 and "not paired" in gone.text, gone.text
+    stale = call(f"job-sites/{site_id}/held", ada, key=passkey.id)
+    assert stale.status_code == 422, stale.text
+    log = call(f"job-sites/{site_id}/audit", ada, limit=5).json()["entries"]
+    assert any(e.get("reason") == "Removed from Workbench." for e in log), log
+    ok("J14a.3: a passkey removed from Workbench through the root (a lost phone) is gone from "
+       "the site; with no key left it runs no tool, and the passkey lists and approves nothing")
 
 
 def enroll_node(http: Any, control: str, name: str) -> str:
@@ -1829,7 +2029,8 @@ def per_user_site(
                 time.sleep(0.5)
 
         view(lambda s: (s.get("signing") or {}) == {"state": "unsigned", "held": 0,
-                                                     "approvePage": approve_page}
+                                                     "approvePage": approve_page,
+                                                     "passkeys": True}
              and s.get("linkPage") is None, "the site never named its approve page")
         view(lambda s: any(x["available"] for x in s.get("links") or []), "no worker connected")
         # Rules sent before the key are the root's word (J48): applied, and no tool runs.

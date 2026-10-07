@@ -736,6 +736,116 @@ and macOS; Linux with a desktop session) and always prints it.
 | J58 | Removing the link on a per-user page | **Not offered**: the join links the owner, `site leave` unlinks | Handing a per-user site to someone else is leave and join |
 | J59 | Any program running as the person can use the page | **Inherent to Path A** (the proof is "this account, at this machine"), and true of J14a.1's service install too. A tool the owner enabled that can make web requests, driven by root-forged calls, could pin a key. Recommended: accept for J14a.2 and close it in J14b (J47: calls to tools that reach the network or run programs need the person's signature); a browser-only check would be a speed bump, not a fix | Until J14b, no locally added tool that makes web requests for remote use |
 
+### 12.5 J14a.3: a passkey from Workbench (Path B)
+
+Built 2026-10-07 (specs `j14a3` branch, contract `7c99106`). The site's owner
+may hold a passkey as well as, or instead of, the key at the machine. It is the
+**only path on a Linux system install**, which has no page at the machine
+(J46): there the owner's code is printed by `install.sh --site-pair`.
+
+- **Pairing (§4.2).** The site host makes a code for its owner
+  (`POST /v1/passkeys/code`, loopback, the starter's token). The starter shows
+  it: the agent's `/link` page (*Show a code for a passkey*), or
+  `--site-pair` at a Linux system install's terminal (it waits and says when
+  the passkey arrived). In Workbench, at its HTTPS address, *Job sites → the
+  machine → Add a passkey* makes the passkey (`navigator.credentials.create`,
+  RP ID Workbench's name, user verification required), computes the MAC over
+  `SitePasskeyBinding` from the code in the browser, and sends the public half
+  and the MAC. The root carries them (`/oidc/job-sites/{site}/passkeys`, which
+  has no field for a code); the site pins the passkey only if the MAC checks.
+- **Approving.** Workbench lists what is held (`held.list`, through the
+  root), shows the site's own words, and approves with
+  `navigator.credentials.get` whose challenge is SHA-256 of the site's
+  envelope. The site checks the assertion (type, challenge, HTTPS origin under
+  the pinned RP ID, not cross-origin, RP ID hash, UP and UV, a growing sign
+  count, the signature) and then the envelope exactly as for the loopback key:
+  the same envelope, the same sequence per person.
+- **Kept** in the site host's own directory (`passkeys.json`), never the links
+  file; each bound to the link it was paired under, so removing the link or
+  linking the person again leaves it unused. Listed and removed at the machine
+  (the `/link` page; `--site-passkeys`, `--site-unpair ID`), and **removed from
+  Workbench too** (J60 as Troy amended it: a lost phone), through the root's
+  `/oidc/job-sites/{site}/passkeys/{id}/remove` and the site action
+  `passkey.remove` (contract `a37f9a5`). Removing a key only takes it away, so
+  it needs no signature; if it was the owner's last key, no tool runs until
+  they add one and approve the rules, and a change the root makes meanwhile
+  waits for that approval.
+
+**What building found:**
+
+- **The hold counted only the key at the machine.** `manage` held a change
+  only when the owner had a Path A key, so with only a passkey a change was
+  applied on the root's word. The first passkey test caught it; `has_key`
+  now counts both kinds wherever "does the owner have a key" is asked.
+- **Related Origin Requests are not needed yet.** Workbench answers at exactly
+  one HTTPS name (`CanonicalOrigin` returns 421 for any other host), so one RP
+  ID covers it. §9's "across Workbench's names" waits for a Workbench with
+  several names.
+- **A short code alone could be guessed offline.** A root that keeps the MAC
+  could try every 50-bit code against it before the code expires. The MAC's
+  key is PBKDF2 over the code (600000 rounds), which puts that out of reach;
+  the browser spends about half a second on it once.
+- **Chrome enforces user verification.** With `userVerification: "required"`
+  an authenticator that cannot verify the person is refused by Chrome before
+  anything is signed (browser check 7); the site refuses an assertion without
+  UV anyway.
+- **Pairing trusts Workbench's page at that moment (J66).** The code is typed
+  into Workbench's page, which the root's machine serves. A root *component*
+  that swaps the key is caught by the MAC; a root *machine* that replaces
+  Workbench's page while the person pairs could pair its own key instead. That
+  is §1's T2, and for pairing it is a durable key rather than one signature
+  per gesture. The key at the machine (Path A) has no such window.
+
+**Calls building made (J60-J66), for Troy to confirm before landing:**
+
+| # | Call | Taken | Trade-off |
+|---|---|---|---|
+| J60 | Where passkeys are kept | **In the site host's own directory, bound to the link they were paired under**; listed at the machine, removed there **or from Workbench** (amended by Troy) | A second store beside the links file; the site host writes it because it is the one that checked the MAC |
+| J61 | The code | **Ten characters of Crockford's base32, one per person at a time, used once, ten minutes, three wrong pairings void it; MAC key PBKDF2-SHA256, 600000 rounds** | Ten characters to type, once per passkey |
+| J62 | Who pairs a passkey | **The site's owner only**, as only the owner approves until 2b.3 gives each person rules | A linked person cannot hold a passkey yet |
+| J63 | Presence or verification | **User verification required** (fingerprint, face or PIN), checked by the browser and by the site | A security key without a PIN must set one |
+| J64 | What the site checks of the origin | **The RP ID pinned at pairing, any HTTPS origin under it; the sign count must grow when the authenticator counts, and 0 (synced passkeys) is taken** | No list of Workbench's addresses at the site; the browser enforces the origin-to-RP-ID rule |
+| J65 | Turning a held change down from Workbench | **Needs no signature**: it only keeps access from being given (J51's reasoning) | A compromised root can drop held changes; it could already withhold them |
+| J66 | Pairing trusts Workbench's page at that moment | **Accept and say so**, on the pairing screens' words and here: the code is only valid while the person pairs, the passkeys are listed at the machine, and Path A stays the floor | A root that owns its machine and replaces Workbench's page during a pairing gets a durable key. The alternative is no Path B, which leaves a Linux system install with no key at all |
+
+**Troy's answers (2026-10-07).** All seven confirmed, J60 amended:
+- **Security first** removes none. J63 is that rule already applied.
+- **J66: accepted.** A root whose machine is compromised is outside what this
+  code can defend; armor can be added later (Troy). So a terminal approver for
+  the Linux system install, which only J66 motivated, is not pursued.
+- **J64: synced passkeys stay accepted**, by the same reasoning (a cloud
+  account taken over is outside our code), and because they are what lets a
+  phone be the passkey.
+- **Ease of use** amended J60: a passkey can be removed from Workbench, for a
+  lost phone, without a visit to the machine. It also fixed the pairing
+  panel's words: it names the machine's page and *Show a code for a passkey*,
+  or `--site-pair` on a Linux system install, instead of "the key page".
+- **Banked for ease, not built:** a QR code beside the code at the machine
+  that opens Workbench with the code filled in, so a phone scans instead of
+  types; Workbench saying, when its address moves to another domain, that its
+  passkeys must be paired again (WebAuthn ties a passkey to its domain).
+
+**Checked:**
+- unit tests: site host 38 new (every assertion refusal for its own reason,
+  the MAC parameters against `hashlib`, three algorithms), agent 7, control 4,
+  Workbench 2 + 8 (the browser's MAC matches the site host's, byte for byte);
+- `j14a3-browser-check.py`: the system Chrome at `https://workbench.home.arpa`
+  (a CDP virtual authenticator, the certificate trusted by its SPKI pin as §2
+  measured), running Workbench's own `passkeys.ts` against the site host's own
+  `Host`: **7/7, first run**;
+- `job-sites-acceptance.py --root-wsl`: the same through the real root and the
+  real site host, with the key at the machine taken away first;
+- `--root-wsl` **27 passed, 4 skipped** (the one-account skips), with the
+  removal from Workbench through the root;
+- sabotage: **46 of 46** over six gates, after three escapes that were each a
+  missing check (a refused pairing's audit line, the sequence on a passkey
+  approval of the same change re-held, the root sending the named change).
+
+**Owed:** a real hardware or phone passkey from Troy's own Workbench, which
+needs his entry point and a name his devices trust (J42); `--site-pair` on a
+real Linux system install (WSL's sudo needs a password here; CI's sudo mode is
+where it runs).
+
 ---
 
 ## 11. What this design does not cover

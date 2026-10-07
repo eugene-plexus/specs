@@ -254,3 +254,75 @@ from then on.
 
 - Rolling engine (llama.cpp) upgrades (`project_open_threads`).
 - Downgrade or rollback, which `docs/recovery.md` covers by hand.
+
+---
+
+## 5. Edge as a published marker (BANKED 2026-10-07 by Troy: a sketch for later, not started; the calls below were never put)
+
+**Why.** On 2026-10-07 every node named `d8975ed` (2026-09-28) as edge, read
+itself as newer and offered nothing: each node computes edge from GitHub's run
+history, and the filtered listing it read was nine days behind the unfiltered
+one. Agent `44c9391` patched the read, but every node still recomputes edge
+from a list GitHub builds lazily, and two agents can disagree. Troy's idea:
+make edge a fact published once, not a computation done everywhere.
+
+**The shape.**
+
+- **A branch `edge` in this repository**, fast-forwarded by one workflow,
+  `edge.yml`. Nothing else writes it. A ruleset on `edge` forbids force-push
+  and deletion, so the server itself refuses any move that is not forward.
+- **The rule is today's, unchanged:** the newest `main` commit on which every
+  workflow that ran on push concluded `success` on its latest attempt, CI among
+  them. A re-run that passes (A4's flake, specs #16) moves it. A run started by
+  hand (`workflow_dispatch`) neither gates nor counts, as today.
+- **Evaluated from per-commit facts, not a filtered list.** The candidates are
+  `main`'s own history (`git log --first-parent`, from git, not an index),
+  newest first, down to the current marker. Each candidate's runs come from
+  `actions/runs?head_sha=` and are checked against the commit's own check
+  suites (`commits/{sha}/check-suites`, app `github-actions`): a suite with no
+  run in the list means the list is behind, and the commit waits for the next
+  evaluation. Measured 2026-10-07 on `213698c` and `88699c7`: one suite per
+  run, and A4's second attempt shows `success` in both.
+- **When it runs:** on completion of each push-triggered workflow
+  (`workflow_run`, filtered to `main`, event `push`, this repository), daily
+  (so a dropped event heals within a day), and by hand. One at a time
+  (`concurrency`, never cancelled). While a check is still running it exits
+  green with "nothing to move", so the intermediate evaluations do not paint
+  commits red.
+- **It fails visibly** (GitHub mails the owner) only when it should have moved
+  and could not: a push refused, the image retag failed, or the newest green
+  commit is newer than the marker after it ran.
+- **Fork safety:** candidates come only from `main`'s history. The event
+  payload only says "evaluate now"; nothing from it is promoted or executed.
+- **A CI check** fails if a workflow that runs on push to `main` is missing
+  from `edge.yml`'s `workflow_run` list (otherwise the marker would wait for
+  the daily run after that workflow finished last).
+- **The agent** (`updates.newest_edge`) reads `GET commits/edge` (one API call,
+  cached 60 s, instead of today's runs list plus `commits/main`), then
+  `install.sh` at that commit for the pins, as today. It does not recompute.
+- **The image** (call 6): `container.yml` pushes only `:sha-<commit>`, and
+  `edge.yml` retags `:edge` to the image of the newest commit at or before the
+  marker that has one. A registry-side retag of the bytes that passed, not a
+  rebuild. The newest such commit is the right image even when the marker's
+  own commit built none: a commit that ran no container workflow changed no
+  image input.
+
+**The calls.**
+
+| # | Question | Recommended | Against it |
+| --- | --- | --- | --- |
+| 5 | What is the marker? | A branch `edge`, fast-forward only, guarded by a ruleset. Forward-only is enforced by the server, not by the workflow's care. | A force-moved tag `edge` reads as a version and breaks git's "tags do not move" (a clone that fetched it keeps the old one). A JSON file needs a commit or a Pages deploy per move and a third thing to keep consistent. The branch shows GitHub's "recent pushes" banner. |
+| 6 | Does the image move with the marker? | Yes: `:edge` is retagged by `edge.yml`, so an Unraid pull never gets an image whose CI failed, and the container's Versions card agrees with every native node exactly. | Today `:edge` moves when the image's own checks pass; it can be ahead of native edge (`88699c7`: image pushed, CI cancelled). Changing it touches the container workflow. |
+| 7 | When the marker cannot be read | Nothing is offered, and the check says why ("the edge marker is missing"). No fallback computation: one source of truth. | A fallback to `44c9391`'s computation keeps working through a GitHub outage of one endpoint, at the cost of two answers that can disagree, which is what failed. |
+| 8 | Older agents | Nothing beyond `44c9391` (already pinned): each reads the marker after its next update. Four machines exist. | The console could flag a node whose reported edge is older than another node's on the same channel ("this machine's update check is out of date"). A UI change for a case that ends with one update. |
+| 9 | The README and `tailnet.md` one-liners | Install from `specs/edge/...` instead of `specs/main/...`, so a fresh install gets the gated build. The installers' own `INSTALLER_URL` stays `main` (update mode installs a named commit). | Installing a candidate pin before its checks finish then needs the `main` URL typed by hand. |
+| 10 | Monitoring | The daily run fails if the newest green commit on `main` is newer than the marker after it tried. | No monitor: a stuck marker shows only as "no update offered". |
+
+**The test plan** (testing policy): the evaluator is a script
+(`scripts/edge_marker.py`) with fixture tests (green, running, red, cancelled,
+re-run, suite missing from the list). The real environment is GitHub: a trial
+branch whose workflow runs on `push` moves a separate ref, `edge-trial`, and
+reports its verdict on `213698c`/`299ff5a` (moves), `88699c7` (CI cancelled)
+and `14b1998` (CI failed); then, on `main`, the real marker moving on the next
+commit's last completion. The agent's reader gets its unit tests and sabotage of
+the reader only.
