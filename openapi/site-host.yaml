@@ -120,8 +120,9 @@ info:
     envelope (`held.approve`), which the root carries and this host checks
     exactly as it checks the loopback page's signature, plus the
     assertion's own checks. Passkeys are kept in this host's own directory,
-    count only while their person's link exists, and are listed and removed
-    at the machine (`/v1/passkeys`).
+    count only while their person's link exists, and are listed at the
+    machine (`/v1/passkeys`) and removed there or from Workbench
+    (`passkey.remove`).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -386,7 +387,12 @@ components:
         - `held.reject` (`SiteHeldRejectRequest`): drop a held change.
           Turning a change down only keeps access from being given, so the
           root may ask for it.
-      enum: [folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read, passkey.pair, held.list, held.approve, held.reject]
+        - `passkey.remove` (`SitePasskeyRemove`): remove one of the owner's
+          passkeys, as at the machine; what it approved stays. Removing a key
+          only takes it away (a lost phone), so the root may ask for it: if it
+          was the owner's last key here, no tool runs until they add a key and
+          approve the rules (J48).
+      enum: [folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read, passkey.pair, held.list, held.approve, held.reject, passkey.remove]
 
     SiteManage:
       type: object
@@ -556,6 +562,13 @@ components:
       required: [id]
       properties:
         id: {type: string, pattern: '^[a-z0-9]{1,32}$'}
+
+    SitePasskeyRemove:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id: {type: string, pattern: '^[a-f0-9]{32}$', description: The passkey's key id (`SitePasskey.id`).}
 
     SiteFolderAdd:
       type: object

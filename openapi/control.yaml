@@ -2586,6 +2586,38 @@ paths:
           description: The site is offline, or it needs an update to take passkeys.
         '504':
           description: The site did not answer in time.
+  /oidc/job-sites/{site}/passkeys/{id}/remove:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+      - {name: id, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{32}$'}}
+    post:
+      operationId: removeMyJobSitePasskey
+      tags: [sites]
+      summary: Remove one of the owner's passkeys at their Job Site, from Workbench
+      description: |
+        For a lost phone: the owner need not be at the machine. Removing a
+        key only takes it away (`passkey.remove`, site-host.yaml); what it
+        approved stays, and if it was the owner's last key there, no tool
+        runs on the site until they add a key and approve its rules.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site.
+        '422':
+          description: The site refused it (no such passkey); `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to take passkeys.
+        '504':
+          description: The site did not answer in time.
   /oidc/job-sites/{site}/held:
     parameters:
       - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
