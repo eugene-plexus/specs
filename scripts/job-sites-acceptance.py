@@ -1754,8 +1754,13 @@ def per_user_site(
     config = work / "per-user"
     config.mkdir()
     port = free_port()
+    # Started as a person starts one, from a terminal: not as a child of
+    # whatever unit runs this script. CI's runner is a systemd system
+    # service, and an agent that inherits its INVOCATION_ID reads its own
+    # cgroup as a system install's and hosts no site of its own.
+    inherited_unit = ("INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID")
     env = {
-        **clean_environment(),
+        **{k: v for k, v in clean_environment().items() if k not in inherited_unit},
         "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(config / "agent.yaml"),
         "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
         "EUGENE_PLEXUS_AGENT_BIND_PORT": str(port),
@@ -1790,12 +1795,18 @@ def per_user_site(
         minted = http.post(f"{control}/v1/sites/invitations",
                            json={"owner": people["ada"], "label": "per-user"})
         assert minted.status_code == 201, minted.text
-        done = subprocess.run(
-            agent_command("site", "join", "--url", nodes, "--token", minted.json()["token"],
-                          "--owner", "ada", "--label", "per-user", "--root-key",
-                          minted.json()["rootKey"], "--password-stdin", "--no-browser"),
-            input=PASSWORD + "\n", capture_output=True, text=True, env=env, timeout=900,
-        )
+        try:
+            done = subprocess.run(
+                agent_command("site", "join", "--url", nodes, "--token", minted.json()["token"],
+                              "--owner", "ada", "--label", "per-user", "--root-key",
+                              minted.json()["rootKey"], "--password-stdin", "--no-browser"),
+                input=PASSWORD + "\n", capture_output=True, text=True, env=env, timeout=420,
+            )
+        except subprocess.TimeoutExpired:
+            raise AssertionError(
+                "the per-user agent never prepared its site host for `site join`:\n"
+                + (config / "agent.out").read_text(errors="replace")[-3000:]
+            ) from None
         assert done.returncode == 0, done.stdout + done.stderr
         assert f"open {base}/link in your browser" in done.stdout, done.stdout
         links = json.loads((config / "site" / "links.json").read_text(encoding="utf-8"))["links"]

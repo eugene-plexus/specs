@@ -152,7 +152,8 @@ test accounts were deleted. New for J14a:
 
 Design §12.4; calls J55-J59, **approved by Troy as taken (2026-10-07)**.
 **Landed and pinned 2026-10-07**: specs contract `c74744d` (prose only),
-site-host `f4661ed`, agent `70fcd5c` (which pins that site host), in both
+site-host `f4661ed`, agent `70fcd5c` (which pins that site host; `1044f65` fixed a
+test Linux CI caught), in both
 installers. Control did not move (§ codegen below).
 
 **Measured first, each on its own platform** (§12.4's table): Linux's
