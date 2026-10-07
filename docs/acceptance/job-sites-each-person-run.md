@@ -136,6 +136,15 @@ own site-host loop now idles in unit tests, where it raced tests that put a
 host record. One sabotage added for it (283), caught. The installers still
 pin agent `c3a718c`; this rides the next pin.
 
+**The site host's Linux tests hung on GitHub's runner for an hour**, and had
+never run there (each earlier CI run stopped at a lint step). The tests'
+"account nobody holds" was a fixed uid 1001, and **GitHub's runner is uid
+1001**, so every stranger check tested the test's own account; one waited
+for a refusal that never came. WSL (uid 1000) could not show it. It is now
+this uid plus one (site-host `6a5ad13`, `a4121ce`), proved on a throwaway
+branch run on GitHub (181 passed), and the job times out at 15 minutes
+(`f3573e3`). Test code only.
+
 ## Not done, named
 
 - **CI's Linux runner** (a sudo-capable user, not root) runs the
