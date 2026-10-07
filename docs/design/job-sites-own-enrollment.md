@@ -1299,8 +1299,10 @@ account on that machine, at the machine (the owner is linked at the join).
   snapshot.
 - **J78: as recommended.**
 - **J79: as recommended.**
-- **J80: open.** A later per-person permission may let an auditor read
-  everyone's lines (banked, not built).
+- **J80: as recommended (2026-10-07, at the start of the build).** Each
+  line belongs to one person, who alone reads it through the root. A later
+  per-person permission may let an auditor read everyone's lines (banked,
+  not built).
 
 ---
 

@@ -236,8 +236,11 @@ SiteWorkspace:
       minLength: 1
       maxLength: 96
       description: |
-        The value of the file server's `folder` argument: unique among the
-        workspaces one person may use there, as `Name (2)` when it would not be.
+        The name its holder gave it, unique among the holder's own. Each
+        person's `folder` argument names their view: their own workspaces,
+        then those the owner shared with them, in the order reported, and a
+        name already taken there, ignoring case, reads `Name (2)`. The root
+        names a person's view the same way, so its names match the site's.
     holder:
       type: string
       minLength: 1
