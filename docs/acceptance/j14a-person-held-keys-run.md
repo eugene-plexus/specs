@@ -1,9 +1,11 @@
 # J14a.1: the owner's own key, checked at the site — run record
 
 **Date:** 2026-10-06. **Design:** [`person-held-keys.md`](../design/person-held-keys.md)
-§12 (the slices, calls J50-J54, what building found). **Branch:** `j14a-keys`
-in specs, site-host, agent, control and Workbench; **not landed, not pinned**
-(see *Owed*).
+§12 (the slices, calls J50-J54, what building found). **Landed and pinned
+2026-10-06 (night)**: site-host `6fe5fca`, agent `5111bea` (which pins that
+site host and Workbench dist `06b13e7`, built from `f39f453`), control
+`9159ca7`, in both installers. Troy agreed with J50-J54 as taken before
+anything landed.
 
 | Repo | Commit | What |
 |---|---|---|
@@ -11,6 +13,7 @@ in specs, site-host, agent, control and Workbench; **not landed, not pinned**
 | site-host | `cebf319`, `658ef8f`, `6d1b9e6`, `6fe5fca` | `signing.py`; the gate, held changes, J51/J52 in `host.py`; `/v1/held` in `app.py` |
 | agent | `f03251e`, `6a495e4` | the key and approval pages on `/link`; `LinkStore.add_key`; `SiteHostSupervisor.held` |
 | control | `9159ca7` | 202 `JobSiteHeld`; names on a change; `signing` on the site view |
+| agent | `ddb07ea` | the service run's finding: a person's worker can read the interpreter behind uv's version link |
 | Workbench | `f39f453` | 202 carried to the page; the site's signing state in words |
 
 ## What was run
@@ -96,14 +99,58 @@ catches a private half made extractable). The first pass's eight escapes:
 
 Every gate passed again restored, and all four checkouts were left clean.
 
+## The Windows service run (Amish_Station, 2026-10-06, night)
+
+**`scripts/job-sites-windows-acceptance.py` — 10 passed, 3 skipped**, run
+elevated by the one-UAC-click runner (Troy's click; stopped after the runs).
+The agent from this checkout as **LocalSystem**, the real site host as
+`NT SERVICE\EugenePlexusApp-site-host`, a throwaway root in the script, and
+the owner's browser the **system Chrome, started by LocalSystem in Troy's own
+session with his own unelevated token**. The live `EugenePlexusAgent` and
+`node-files` were unchanged before and after. The three skips are the
+second-person checks (3/4, 7, 9): J14a.1's keys are the owner's, and 2b.2's
+test accounts were deleted. New for J14a:
+
+- **K1.** Until the owner's key is pinned no tool runs, and the refusal names
+  `http://127.0.0.1:<port>/link/approve`; the rules the root sent before the
+  key were applied as the root's word (J48). Workbench's view reads
+  `unsigned`, with that page.
+- **K2.** Chrome opens the agent's `/link`; the agent, as LocalSystem, finds
+  the account at the far end of the connection (another session's process)
+  and its link; Chrome makes a key it will not export, and the agent pins it.
+- **K3.** The approve page lists the rules first, as a whole, in the site
+  host's own words, read by LocalSystem over the site host's loopback API
+  with its `local_token`, which only SYSTEM, Administrators and the site
+  host's own account may read; Chrome signs and the site is `signed`.
+- **K4.** A grant from Workbench answers 202 held and changes nothing until
+  Chrome approves it at the machine; bo, with no account there, is named "as
+  Eugene names them" (J54).
+- **K5.** Taking bo's write away applies at once, no approval, still `signed`.
+
+**What the run found** (five executions; the fifth is the run of record):
+
+- **A real defect from 2b.2, in the agent, fixed (`ddb07ea`).** Once the
+  run's install folder was protected as `install.ps1` leaves a service prefix
+  (nothing inherited from ProgramData), **the owner's worker never
+  connected**: it exited five seconds after each start. uv names the site
+  host's interpreter by a link (`pythons\cpython-3.12-…`) to the patch
+  version's folder (`cpython-3.12.14-…`); the agent granted people read on the
+  link, and Windows checks the target. Every person's worker on a real service
+  install would have failed this way. 2b.2's Windows run passed because its
+  folder inherited `Users` read from ProgramData, which a real prefix does
+  not. The grant now goes on each folder and on where it really is; a unit
+  test makes a real junction, and fails with the fix removed.
+- **Two harness defects.** The throwaway install folder inherited
+  ProgramData's ACL (so `local_token` read as everyone's: run 1); it is
+  protected as the installer protects a prefix now, which is what exposed the
+  defect above. And three checks read the site's signing state once rather
+  than waiting for the site's next report (run 4).
+- On failure the script now keeps the agent's logs and the install folder's
+  ACLs in the elevated account's temp folder before it removes its own.
+
 ## Owed
 
-- **The Windows service run.** The agent as LocalSystem pinning a key for a
-  real second account and reading the site host's `local_token` across
-  accounts. Needs elevation (Troy's UAC click, the 2b.2 runner).
-- **Landing and pins.** Push the five branches, rebuild Workbench's `dist`,
-  pin the site host in the agent (`SITE_HOST_COMMIT`) and Workbench in its
-  catalogue, then both installers. **The root first**: a J14a site host is
-  refused by an older root (§12.3).
 - J14a.2 (per-user installs) and J14a.3 (Path B, the Linux system install):
   until they land, those sites on edge run no tool (J48).
+- The second-person checks under J14a (a linked person's own key): they need
+  a second signed-in account, as 2b.2's run had.

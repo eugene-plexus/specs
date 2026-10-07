@@ -1,16 +1,22 @@
 """Job Sites, slice 2b.2 on Windows (docs/design/job-sites-own-enrollment.md §2.2,
 §2.4, §2.4.1, §3.2): each person's calls run as their own Windows account.
 
-Run on a Windows 11 machine with two people signed in, from an **elevated**
-shell (it makes a service and runs things as LocalSystem):
+And J14a.1 on a Windows service install (`person-held-keys.md` §12): the
+owner's own key, made in Chrome at the machine and checked by the site.
 
-    python scripts/job-sites-windows-acceptance.py --person-account jessie
-        --person-windows-password-file <unused> (not needed)
+Run on a Windows 11 machine from an **elevated** shell (it makes a service and
+runs things as LocalSystem), with the agent's venv (it needs httpx, pywin32
+and the control root):
 
-Before starting, `--person-account` (default `jessie`), a local standard
-account, must be signed in (Switch user, sign in, switch back): on Windows a
-person's worker runs only while they are signed in (J25 as revised). The
-account running this script is the site's owner.
+    agent/.venv/Scripts/python.exe scripts/job-sites-windows-acceptance.py
+        [--person-account jessie]
+
+The account running this script is the site's owner, and must be signed in
+at the machine. `--person-account`, a local standard account, adds a second
+person (checks 3, 4, 7 and 9); it must be signed in too (Switch user, sign
+in, switch back): on Windows a person's worker runs only while they are
+signed in (J25 as revised). Without it those four are skipped and say so:
+J14a.1's keys are the owner's, and need no second account.
 
 **What runs, all of it real and all of it throwaway:**
 - a control root, in this process, on a free loopback port;
@@ -52,6 +58,22 @@ Checks (the done-when of §3, 2b.2):
    and the site host's account may only read the links.
 9. Signed out, a person's calls are refused, saying so (J25). This signs the
    second person out, so it runs last.
+
+J14a (between 1 and 2; the owner's browser is the system Chrome, started by
+LocalSystem in the owner's own session with their own unelevated token):
+K1. Until the owner's key is pinned no tool runs, saying where to add it;
+    rules the root sent before the key are applied as the root's word.
+K2. The owner's Chrome opens the agent's `/link`, which finds the account at
+    the far end of the connection (LocalSystem reading another session's
+    process) and the owner's link; Chrome makes a non-extractable key and
+    the agent, as LocalSystem, pins it in the links file.
+K3. The approve page lists the rules made before the key first, as a whole,
+    in the site host's own words, read over its loopback API with a token
+    only LocalSystem and its own account may read; Chrome signs them, the
+    site host's verifier takes it, and the owner's calls run.
+K4. A change from Workbench that gives access answers 202 held and changes
+    nothing until the owner's Chrome approves it at the machine.
+K5. A change that only takes access away applies at once (J51).
 """
 
 from __future__ import annotations
@@ -84,11 +106,17 @@ PASSWORDS = {
 CALLBACK = "http://127.0.0.1:9/callback"
 SITE_HOST_SERVICE = "EugenePlexusApp-site-host"
 PASSES: list[str] = []
+SKIPS: list[str] = []
 
 
 def ok(message: str) -> None:
     PASSES.append(message)
     print(f"PASS {len(PASSES)}. {message}", flush=True)
+
+
+def skip(message: str) -> None:
+    SKIPS.append(message)
+    print(f"SKIP {message}", flush=True)
 
 
 def say(message: str) -> None:
@@ -362,6 +390,79 @@ except Exception as exc:
 json.dump(result, open(out, "w", encoding="utf-8"))
 '''
 
+BROWSER_CLIENT = r'''
+// In the owner's own session, unelevated: the system Chrome on the agent's
+// /link pages. "pair" makes a key and approves what is listed; "approve"
+// approves what is listed with the key this profile already holds.
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+const cfg = JSON.parse(readFileSync(process.argv[2], "utf8"));
+const require = createRequire(cfg.playwright + "/");
+const { chromium } = require(cfg.playwright);
+const out = { problems: [] };
+const chrome = [
+  "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+].find((p) => existsSync(p));
+const stateText = () => document.querySelector("[data-state]")?.textContent || "";
+let context;
+try {
+  context = await chromium.launchPersistentContext(cfg.profile, { executablePath: chrome, headless: true });
+  const page = await context.newPage();
+  page.on("console", (m) => { if (/Content Security Policy|Refused/i.test(m.text())) out.problems.push(m.text()); });
+  page.on("pageerror", (e) => out.problems.push(`pageerror: ${e.message}`));
+  page.on("response", (r) => { if (r.status() >= 500) out.problems.push(`${r.status()} ${new URL(r.url()).pathname}`); });
+  if (cfg.phase === "pair") {
+    await page.goto(`${cfg.base}/link`);
+    out.link = await page.locator("body").innerText();
+    await page.waitForSelector("#site-key [data-make]:not([hidden])", { timeout: 20000 });
+    await page.click("#site-key [data-make]");
+    await page.waitForURL(`${cfg.base}/link/approve`, { timeout: 20000 });
+  } else {
+    await page.goto(`${cfg.base}/link/approve`);
+  }
+  await page.waitForFunction(
+    () => document.querySelector("[data-approve]") ||
+      /Nothing is waiting|could not|holds no key/.test(document.querySelector("[data-state]")?.textContent || ""),
+    null, { timeout: 20000 });
+  out.state = await page.evaluate(stateText);
+  out.cards = await page.locator(".held").evaluateAll((els) => els.map((e) => ({
+    title: e.querySelector("h2").textContent,
+    words: [...e.querySelectorAll("p")].map((p) => p.textContent),
+    id: e.querySelector("[data-approve]")?.dataset.approve,
+  })));
+  if (cfg.phase === "pair") {
+    out.stored = await page.evaluate(async () => {
+      const db = await new Promise((resolve, reject) => {
+        const r = indexedDB.open("eugene-plexus-site-keys", 1);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+      const keys = await new Promise((resolve) => {
+        const r = db.transaction("keys").objectStore("keys").getAll();
+        r.onsuccess = () => resolve(r.result);
+      });
+      let exported = "exported";
+      try { await crypto.subtle.exportKey("pkcs8", keys[0].privateKey); } catch (error) { exported = error.name; }
+      return { count: keys.length, id: keys[0].id, alg: keys[0].alg, extractable: keys[0].privateKey.extractable, exported };
+    });
+  }
+  for (const card of out.cards) {
+    await page.click(`[data-approve="${card.id}"]`, { timeout: 20000 });
+    await page.waitForSelector(`[data-approve="${card.id}"]`, { state: "detached", timeout: 20000 });
+  }
+  await page.waitForFunction(
+    () => /Nothing is waiting/.test(document.querySelector("[data-state]")?.textContent || ""),
+    null, { timeout: 20000 });
+  out.after = await page.evaluate(stateText);
+} catch (error) {
+  out.problems.push(`run: ${error && error.stack ? error.stack : error}`);
+} finally {
+  if (context) await context.close();
+}
+writeFileSync(cfg.out, JSON.stringify(out));
+'''
+
 
 # --------------------------------------------------------------------------- #
 # The root, in this process, and Workbench played by its own credentials
@@ -434,19 +535,52 @@ def text_of(answer: dict[str, Any]) -> str:
 # --------------------------------------------------------------------------- #
 
 
+def keep_evidence(work: Path) -> None:
+    """A failed run's logs and the install folder's ACLs, copied to this
+    account's temp folder before the run's own folder is removed."""
+    import tempfile
+
+    out = Path(tempfile.gettempdir()) / f"ep-windows-acceptance-{work.name}"
+    out.mkdir(parents=True, exist_ok=True)
+    agent = work / "agent"
+    for found in agent.rglob("*"):
+        if not found.is_file() or "site-packages" in found.parts:
+            continue
+        if found.suffix not in (".log", ".jsonl", ".err", ".out", ".json", ".yaml", ".txt"):
+            continue
+        target = out / "-".join(found.relative_to(agent).parts)
+        try:
+            shutil.copyfile(found, target)
+        except OSError as exc:
+            target.with_suffix(".unreadable").write_text(repr(exc), encoding="utf-8")
+    paths = [agent, agent / "apps", agent / "site", *agent.glob("apps/*"),
+             *agent.glob("apps/*/*"), *agent.glob("apps/*/versions/*"),
+             *agent.glob("apps/*/versions/*/venv")]
+    with (out / "acls.txt").open("w", encoding="utf-8") as acls:
+        for path in paths:
+            done = subprocess.run(["icacls", str(path)], capture_output=True, text=True)
+            acls.write(done.stdout + done.stderr + "\n")
+        acls.write(json.dumps(processes("eugene_plexus"), indent=1))
+    print(f"evidence kept in {out}", flush=True)
+
+
 def run(args: argparse.Namespace) -> None:
     import httpx
 
     if not ctypes.windll.shell32.IsUserAnAdmin():
         raise SystemExit("run this from an elevated shell: it makes a service and uses LocalSystem")
-    person_sid = sid_of(args.person_account)
+    person_sid = sid_of(args.person_account) if args.person_account else None
     owner_sid = own_sid()
     signed_in = sessions()
-    if person_sid not in signed_in:
+    if person_sid is not None and person_sid not in signed_in:
         raise SystemExit(
             f"{args.person_account} is not signed in. Switch user, sign in as "
             f"{args.person_account}, switch back, and run this again (J25)."
         )
+    node = shutil.which("node")
+    playwright = REPOS / "ui" / "node_modules" / "playwright-core"
+    if node is None or not playwright.is_dir():
+        raise SystemExit("the owner's browser is driven with node and the ui checkout's playwright-core")
     if owner_sid not in signed_in:
         raise SystemExit("the account running this must be signed in at the machine")
     before = service_state()
@@ -455,14 +589,21 @@ def run(args: argparse.Namespace) -> None:
 
     tag = secrets.token_hex(4)
     work = Path(os.environ.get("ProgramData", r"C:\ProgramData")) / f"EugenePlexusAcceptance-{tag}"
-    for name in ("agent", "root", "results", "scripts", "shared"):
+    for name in ("agent", "root", "results", "scripts", "shared", "browser"):
         (work / name).mkdir(parents=True)
+    # The install's own folder as install.ps1 leaves a service prefix
+    # (Protect-InstallDirectory): nothing inherited from %ProgramData%, whose
+    # default lets every user read; an app's data is private by being in it.
+    icacls(work / "agent", "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F",
+           "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-32-545:RX")
     icacls(work / "results", "/grant", "*S-1-5-32-545:(OI)(CI)M")
     icacls(work / "scripts", "/grant", "*S-1-5-32-545:(OI)(CI)RX")
     icacls(work / "shared", "/grant", "*S-1-5-32-545:(OI)(CI)M")
+    icacls(work / "browser", "/grant", f"*{owner_sid}:(OI)(CI)M")
     scripts = work / "scripts"
     for name, text in (("agent_launcher.py", AGENT_LAUNCHER), ("in_session.py", IN_SESSION),
-                       ("link_client.py", LINK_CLIENT), ("raw_client.py", RAW_CLIENT)):
+                       ("link_client.py", LINK_CLIENT), ("raw_client.py", RAW_CLIENT),
+                       ("browser_client.mjs", BROWSER_CLIENT)):
         (scripts / name).write_text(text, encoding="utf-8")
     python = Path(sys.executable)
     system = System(work, python)
@@ -472,6 +613,7 @@ def run(args: argparse.Namespace) -> None:
     config_file = work / "agent" / "agent.yaml"
     server, thread = start_root(work / "root", root_port)
     say(f"working in {work}; root {control}; agent {agent_url}")
+    finished = False
     try:
         http = httpx.Client(trust_env=False, timeout=60)
         assert http.post(f"{control}/v1/auth/initialize", json={"passphrase": PASSPHRASE}).status_code == 204
@@ -552,7 +694,7 @@ def run(args: argparse.Namespace) -> None:
            "runs as its own virtual account; the links file is SYSTEM's and Administrators' to "
            "write, and the site host's account may only read it")
 
-        # ---- 2. the owner's calls run as the owner ----------------------------
+        # ---- K1. before the owner's key: the root's word, and no tool ----------
         shared = work / "shared"
         (shared / "for-everyone.txt").write_text("hello", encoding="utf-8")
         owner_only = shared / "owner-only.txt"
@@ -562,10 +704,81 @@ def run(args: argparse.Namespace) -> None:
                            path=str(shared), writable=True)
         assert added.status_code == 201, added.text
         folder_id = added.json()["id"]
+        # Bo may only read for now: giving him writes is K4's held change.
+        everyone = [{"name": n, "writable": n != "bo"} for n in PASSWORDS]
         granted = bench.call(f"job-sites/{site_id}/folders/{folder_id}/people", token["troy"],
-                             people=[{"name": n, "writable": True} for n in PASSWORDS])
+                             people=everyone)
         assert granted.status_code == 200, granted.text
         wait_for("the grant never reported", lambda: len(site_view()["folders"][0]["people"]) == 3)
+        approve_page = f"{agent_url}/link/approve"
+        signing = site_view()["signing"]
+        assert signing == {"state": "unsigned", "held": 0, "approvePage": approve_page}, signing
+        before_key = bench.tool(token["troy"], site_id, "write_text", folder="Shared",
+                                path="before-key.txt", text="troy", expectedSha256="")
+        assert before_key["status"] == "failed", before_key
+        assert "has not added their own key" in before_key["message"], before_key
+        assert approve_page in before_key["message"], before_key
+        assert not (shared / "before-key.txt").exists()
+        ok("K1. until the owner's key is pinned no tool runs, and the refusal says where to add "
+           "it; the rules the root sent before the key are applied as the root's word (J48)")
+
+        # ---- K2. the owner's Chrome makes a key at the machine ------------------
+        def browser(phase: str) -> dict[str, Any]:
+            """The system Chrome in the owner's own session, with their own
+            unelevated token, started by LocalSystem as the starter starts a
+            worker; one profile across phases, so the key stays in it."""
+            out = work / "browser" / f"{phase}.json"
+            cfg = work / "browser" / f"{phase}-cfg.json"
+            cfg.write_text(json.dumps({
+                "playwright": str(playwright), "base": agent_url, "phase": phase,
+                "profile": str(work / "browser" / "profile"), "out": str(out)}), encoding="utf-8")
+            ran = system.run(f"EugenePlexusAcceptance-browser-{phase}-{tag}",
+                             scripts / "in_session.py", owner_sid, node,
+                             str(scripts / "browser_client.mjs"), str(cfg), seconds=180)
+            assert ran.get("code") == 0, ran
+            seen = json.loads(out.read_text(encoding="utf-8"))
+            assert not seen["problems"], seen
+            return dict(seen)
+
+        paired = browser("pair")
+        owner_name = subprocess.run(["whoami"], capture_output=True, text=True).stdout.strip()
+        assert owner_name.split("\\")[-1].lower() in paired["link"].lower(), paired["link"]
+        assert "is linked to troy in Eugene" in paired["link"], paired["link"]
+        (owner_link,) = json.loads(links_file.read_text(encoding="utf-8"))["links"]
+        keys = owner_link.get("keys") or []
+        stored = paired["stored"]
+        assert [k["id"] for k in keys] == [stored["id"]], (keys, stored)
+        assert stored["count"] == 1 and stored["extractable"] is False, stored
+        assert stored["exported"] == "InvalidAccessError", stored
+        ok("K2. the owner's Chrome, in their own session and unelevated, opens the agent's /link: "
+           "the agent, as LocalSystem, finds the account at the far end of the connection and "
+           "its link; Chrome makes a key whose private half it will not export, and the agent "
+           "pins the public half in the links file")
+
+        # ---- K3. the rules, approved as a whole, at the machine ----------------
+        (rules,) = paired["cards"]
+        assert rules["id"] == "rules" and rules["title"] == "Approve this machine's rules", paired
+        assert any("“Shared”" in w for w in rules["words"]), rules
+        assert "Nothing is waiting" in paired["after"], paired
+        import win32security
+
+        token_file = work / "agent" / "apps" / "site-host" / "data" / "local_token"
+        dacl = win32security.GetFileSecurity(
+            str(token_file), win32security.DACL_SECURITY_INFORMATION).GetSecurityDescriptorDacl()
+        readers = set()
+        for index in range(dacl.GetAceCount()):
+            (kind, _flags), mask, sid = dacl.GetAce(index)
+            if kind == 0 and mask & (0x1 | 0x80000000 | 0x10000000):
+                readers.add(win32security.ConvertSidToStringSid(sid))
+        assert readers <= {"S-1-5-18", "S-1-5-32-544", host_sid}, readers
+        wait_for("the site never reported itself signed",
+                 lambda: site_view()["signing"]["state"] == "signed")
+        ok("K3. the approve page lists the rules made before the key first, as a whole, in the "
+           "site host's own words, read by LocalSystem over its loopback API with a token the "
+           "owner's own account cannot read; Chrome signs them and the site host's verifier "
+           "takes it: the site is signed")
+
+        # ---- 2. the owner's calls run as the owner ----------------------------
         wrote = bench.tool(token["troy"], site_id, "write_text", folder="Shared",
                            path="by-troy.txt", text="troy", expectedSha256="")
         assert wrote["status"] == "done", wrote
@@ -576,47 +789,76 @@ def run(args: argparse.Namespace) -> None:
            "theirs (a filtered token's user, not Administrators)")
 
         # ---- 3. a second person links at the machine --------------------------
-        password_file = scripts / "person-password.txt"
-        password_file.write_text(PASSWORDS["jessie"], encoding="utf-8")
         site_python = next((work / "agent" / "apps" / "site-host" / "versions").glob("*/venv/Scripts/python.exe"))
-        out = work / "results" / "link.json"
-        result = system.run(f"EugenePlexusAcceptance-link-{tag}", scripts / "in_session.py",
-                            person_sid, str(site_python), "-I", str(scripts / "link_client.py"),
-                            agent_url, "jessie", str(password_file), str(out))
-        assert result.get("code") == 0, result
-        linking = json.loads(out.read_text(encoding="utf-8"))
-        assert "error" not in linking, linking
-        assert args.person_account.lower() in linking["page"].lower(), linking["page"]
-        assert "Link Eugene person" in linking["confirm"] and "Done." in linking["done"], linking
-        links = json.loads(links_file.read_text(encoding="utf-8"))["links"]
-        assert {(x["subject"], x["account"]) for x in links} == {
-            (people["troy"], owner_sid), (people["jessie"], person_sid)}, links
-        wait_for("her worker never started as her", lambda: any(
-            w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
-        wait_for("her worker never connected", lambda: sum(
-            1 for x in site_view().get("links") or [] if x["available"]) == 2, 60)
-        ok("a second person links at the machine, through the agent's own page, from a program "
-           "in her own session signed in to Eugene as herself; her worker starts as her")
+        password_file = scripts / "person-password.txt"
+        if person_sid is None:
+            skip("3, 4. a second person links at the machine, and their calls run as them: "
+                 "give --person-account")
+        else:
+            password_file.write_text(PASSWORDS["jessie"], encoding="utf-8")
+            out = work / "results" / "link.json"
+            result = system.run(f"EugenePlexusAcceptance-link-{tag}", scripts / "in_session.py",
+                                person_sid, str(site_python), "-I", str(scripts / "link_client.py"),
+                                agent_url, "jessie", str(password_file), str(out))
+            assert result.get("code") == 0, result
+            linking = json.loads(out.read_text(encoding="utf-8"))
+            assert "error" not in linking, linking
+            assert args.person_account.lower() in linking["page"].lower(), linking["page"]
+            assert "Link Eugene person" in linking["confirm"] and "Done." in linking["done"], linking
+            links = json.loads(links_file.read_text(encoding="utf-8"))["links"]
+            assert {(x["subject"], x["account"]) for x in links} == {
+                (people["troy"], owner_sid), (people["jessie"], person_sid)}, links
+            wait_for("her worker never started as her", lambda: any(
+                w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
+            wait_for("her worker never connected", lambda: sum(
+                1 for x in site_view().get("links") or [] if x["available"]) == 2, 60)
+            ok("a second person links at the machine, through the agent's own page, from a program "
+               "in her own session signed in to Eugene as herself; her worker starts as her")
 
-        # ---- 4. her calls run as her ------------------------------------------
-        wrote = bench.tool(token["jessie"], site_id, "write_text", folder="Shared",
-                           path="by-jessie.txt", text="jessie", expectedSha256="")
-        assert wrote["status"] == "done", wrote
-        assert file_owner(shared / "by-jessie.txt") == person_sid
-        refused = bench.tool(token["jessie"], site_id, "read_text", folder="Shared",
-                             path="owner-only.txt")
-        assert "owner's alone" not in text_of(refused), refused
-        hers = shared / "hers-only.txt"
-        hers.write_text("hers alone", encoding="utf-8")
-        icacls(hers, "/inheritance:r", "/grant:r", f"*{person_sid}:F", "*S-1-5-18:F")
-        theirs = bench.tool(token["troy"], site_id, "read_text", folder="Shared",
-                            path="hers-only.txt")
-        assert "hers alone" not in text_of(theirs), theirs
-        read = bench.tool(token["jessie"], site_id, "read_text", folder="Shared",
-                          path="hers-only.txt")
-        assert "hers alone" in text_of(read), read
-        ok("her calls run as her: her file is hers, the owner's private file is refused to "
-           "her and hers to the owner, by Windows; nothing was granted by hand")
+            # 4. her calls run as her
+            wrote = bench.tool(token["jessie"], site_id, "write_text", folder="Shared",
+                               path="by-jessie.txt", text="jessie", expectedSha256="")
+            assert wrote["status"] == "done", wrote
+            assert file_owner(shared / "by-jessie.txt") == person_sid
+            refused = bench.tool(token["jessie"], site_id, "read_text", folder="Shared",
+                                 path="owner-only.txt")
+            assert "owner's alone" not in text_of(refused), refused
+            hers = shared / "hers-only.txt"
+            hers.write_text("hers alone", encoding="utf-8")
+            icacls(hers, "/inheritance:r", "/grant:r", f"*{person_sid}:F", "*S-1-5-18:F")
+            theirs = bench.tool(token["troy"], site_id, "read_text", folder="Shared",
+                                path="hers-only.txt")
+            assert "hers alone" not in text_of(theirs), theirs
+            read = bench.tool(token["jessie"], site_id, "read_text", folder="Shared",
+                              path="hers-only.txt")
+            assert "hers alone" in text_of(read), read
+            ok("her calls run as her: her file is hers, the owner's private file is refused to "
+               "her and hers to the owner, by Windows; nothing was granted by hand")
+
+        # ---- K4. a change that gives access is held until the owner approves ----
+        all_write = [{"name": n, "writable": True} for n in PASSWORDS]
+        held = bench.call(f"job-sites/{site_id}/folders/{folder_id}/people", token["troy"],
+                          people=all_write)
+        assert held.status_code == 202 and held.json()["held"] is True, held.text
+        assert "approve it there with your key" in held.json()["message"], held.text
+        wait_for("the held change never reported", lambda: site_view()["signing"]["held"] == 1)
+        waiting = bench.tool(token["bo"], site_id, "write_text", folder="Shared",
+                             path="by-bo.txt", text="bo", expectedSha256="")
+        assert waiting["status"] == "failed", waiting
+        assert not (shared / "by-bo.txt").exists()
+        approved = browser("approve")
+        (change,) = approved["cards"]
+        assert change["title"] == "A change from Workbench", approved
+        assert any("bo (as Eugene names them" in w for w in change["words"]), change
+        assert "Nothing is waiting" in approved["after"], approved
+        wait_for("the approved grant never reported", lambda: all(
+            p["writable"] for p in site_view()["folders"][0]["people"]))
+        signed = {"state": "signed", "held": 0, "approvePage": approve_page}
+        wait_for("the site never reported itself signed with nothing held",
+                 lambda: site_view()["signing"] == signed)
+        ok("K4. a change from Workbench that gives access answers 202 held and changes nothing "
+           "until the owner's Chrome approves it at the machine, where a name the root sent for "
+           "someone with no link here is marked as Eugene's (J50, J54)")
 
         # ---- 5. no link: the owner's worker, inside the folder ----------------
         wrote = bench.tool(token["bo"], site_id, "write_text", folder="Shared",
@@ -629,37 +871,55 @@ def run(args: argparse.Namespace) -> None:
         ok("someone with no link runs as the owner, inside the folder the owner gave them, and "
            "cannot leave it (J27)")
 
+        # ---- K5. a change that only takes access away applies at once (J51) ----
+        taken = bench.call(f"job-sites/{site_id}/folders/{folder_id}/people", token["troy"],
+                           people=everyone)
+        assert taken.status_code == 200, taken.text
+        wait_for("the narrower grant never reported", lambda: not next(
+            p for p in site_view()["folders"][0]["people"] if p["name"] == "bo")["writable"])
+        signed = {"state": "signed", "held": 0, "approvePage": approve_page}
+        wait_for("the site never reported itself signed with nothing held",
+                 lambda: site_view()["signing"] == signed)
+        denied = bench.tool(token["bo"], site_id, "write_text", folder="Shared",
+                            path="by-bo-again.txt", text="bo", expectedSha256="")
+        assert denied["status"] == "failed" and "not change files" in denied["message"], denied
+        ok("K5. a change that only takes access away applies at once, with no approval, and "
+           "the site stays signed (J51)")
+
         # ---- 6. a worker as the wrong account ---------------------------------
         wrong = subprocess.run(
             [str(site_python), "-I", "-m", "eugene_plexus_site_host.worker", "--account",
-             person_sid, "--channel", "\\\\.\\pipe\\nowhere", "--host", host_sid],
+             person_sid or "S-1-5-19", "--channel", "\\\\.\\pipe\\nowhere", "--host", host_sid],
             capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         assert wrong.returncode != 0 and "not the account it was started for" in wrong.stderr, (
             wrong.returncode, wrong.stderr)
         ok("a worker started for an account it does not run as refuses to serve")
 
         # ---- 7. she removes her link from Workbench ----------------------------
-        removed = bench.call("sites/link/remove", token["jessie"], site=site_id)
-        assert removed.status_code == 204, removed.text
-        links = json.loads(links_file.read_text(encoding="utf-8"))["links"]
-        assert [x["account"] for x in links] == [owner_sid], links
-        wait_for("her worker never stopped", lambda: not any(
-            w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
-        wrote = bench.tool(token["jessie"], site_id, "write_text", folder="Shared",
-                           path="jessie-unlinked.txt", text="as the owner", expectedSha256="")
-        assert wrote["status"] == "done", wrote
-        assert file_owner(shared / "jessie-unlinked.txt") == owner_sid
-        from eugene_plexus_agent.site_host import channel_name as name_of
+        if person_sid is None:
+            skip("7. a second person removes their link from Workbench: give --person-account")
+        else:
+            removed = bench.call("sites/link/remove", token["jessie"], site=site_id)
+            assert removed.status_code == 204, removed.text
+            links = json.loads(links_file.read_text(encoding="utf-8"))["links"]
+            assert [x["account"] for x in links] == [owner_sid], links
+            wait_for("her worker never stopped", lambda: not any(
+                w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
+            wrote = bench.tool(token["jessie"], site_id, "write_text", folder="Shared",
+                               path="jessie-unlinked.txt", text="as the owner", expectedSha256="")
+            assert wrote["status"] == "done", wrote
+            assert file_owner(shared / "jessie-unlinked.txt") == owner_sid
+            from eugene_plexus_agent.site_host import channel_name as name_of
 
-        channel_name = name_of(config_file.parent)
-        raw_out = work / "results" / "raw.json"
-        result = system.run(f"EugenePlexusAcceptance-raw-{tag}", scripts / "in_session.py",
-                            person_sid, str(site_python), "-I", str(scripts / "raw_client.py"),
-                            channel_name, host_sid, str(raw_out))
-        raw = json.loads(raw_out.read_text(encoding="utf-8"))
-        assert raw.get("first", {}).get("t") == "refused", raw
-        ok("she removes her link from Workbench: the root asks the agent, her worker stops, her "
-           "calls run as the owner, and her account is refused on the site host's channel")
+            channel_name = name_of(config_file.parent)
+            raw_out = work / "results" / "raw.json"
+            result = system.run(f"EugenePlexusAcceptance-raw-{tag}", scripts / "in_session.py",
+                                person_sid, str(site_python), "-I", str(scripts / "raw_client.py"),
+                                channel_name, host_sid, str(raw_out))
+            raw = json.loads(raw_out.read_text(encoding="utf-8"))
+            assert raw.get("first", {}).get("t") == "refused", raw
+            ok("she removes her link from Workbench: the root asks the agent, her worker stops, her "
+               "calls run as the owner, and her account is refused on the site host's channel")
 
         # ---- 8. no link can be made from the root or the site host ------------
         for method, path in (("POST", "/v1/site/links"), ("PUT", "/v1/site/links/x"),
@@ -673,24 +933,31 @@ def run(args: argparse.Namespace) -> None:
            "site host's account may only read the links file (check 1)")
 
         # ---- 9. signed out, refused -------------------------------------------
-        relinked = system.run(f"EugenePlexusAcceptance-relink-{tag}", scripts / "in_session.py",
-                              person_sid, str(site_python), "-I", str(scripts / "link_client.py"),
-                              agent_url, "jessie", str(password_file), str(out))
-        assert relinked.get("code") == 0, relinked
-        wait_for("her worker never came back", lambda: any(
-            w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
-        session_id = sessions()[person_sid]
-        subprocess.run(["logoff", str(session_id)], check=False)
-        wait_for("her session never ended", lambda: person_sid not in sessions(), 60)
-        wait_for("her worker never ended", lambda: not any(
-            w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
-        signed_out = wait_for("her call was never refused for being signed out", lambda: (
-            lambda a: a if a["status"] == "failed" and "not signed in" in a["message"] else None)(
-                bench.tool(token["jessie"], site_id, "read_text", folder="Shared",
-                           path="for-everyone.txt")), 60)
-        assert signed_out
-        ok("signed out, her calls are refused saying she is not signed in there (J25)")
+        if person_sid is None:
+            skip("9. signed out, a person's calls are refused: give --person-account")
+        else:
+            relinked = system.run(f"EugenePlexusAcceptance-relink-{tag}", scripts / "in_session.py",
+                                  person_sid, str(site_python), "-I", str(scripts / "link_client.py"),
+                                  agent_url, "jessie", str(password_file),
+                                  str(work / "results" / "relink.json"))
+            assert relinked.get("code") == 0, relinked
+            wait_for("her worker never came back", lambda: any(
+                w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
+            session_id = sessions()[person_sid]
+            subprocess.run(["logoff", str(session_id)], check=False)
+            wait_for("her session never ended", lambda: person_sid not in sessions(), 60)
+            wait_for("her worker never ended", lambda: not any(
+                w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
+            signed_out = wait_for("her call was never refused for being signed out", lambda: (
+                lambda a: a if a["status"] == "failed" and "not signed in" in a["message"] else None)(
+                    bench.tool(token["jessie"], site_id, "read_text", folder="Shared",
+                               path="for-everyone.txt")), 60)
+            assert signed_out
+            ok("signed out, her calls are refused saying she is not signed in there (J25)")
+        finished = True
     finally:
+        if not finished:
+            keep_evidence(work)
         say("tearing down")
         try:
             subprocess.run([str(python), "-m", "eugene_plexus_agent", "site", "leave"],
@@ -723,13 +990,13 @@ def run(args: argparse.Namespace) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--person-account", default="jessie")
+    parser.add_argument("--person-account", default=None)
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
     if sys.platform != "win32":
         raise SystemExit("this run is Windows only; job-sites-acceptance.py covers Linux")
     run(args)
-    print(f"{len(PASSES)} checks passed")
+    print(f"{len(PASSES)} checks passed, {len(SKIPS)} skipped")
     return 0
 
 

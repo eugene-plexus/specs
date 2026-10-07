@@ -645,6 +645,8 @@ only user and his site is a Windows service install, which pairs in J14a.1.
 
 ### 12.1 The calls building made
 
+**Troy agreed with all five as taken (2026-10-06, before J14a.1 landed).**
+
 | # | Call | Taken | Trade-off |
 |---|---|---|---|
 | J50 | Where a Path A change is written and signed | **Written in Workbench as today; the site *holds* it; the person approves it at the machine**, on a loopback page that shows the change in the site host's own words and signs only there. Workbench is told *held, approve it at <machine>*, not *refused*. | A change needs a visit to the machine. The alternatives were an editor at the machine (a second editor to build and keep) and a change carried in a URL from Workbench (the person must be on that machine, and the page would show what root-served code put in the URL). |
