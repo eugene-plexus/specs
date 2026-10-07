@@ -332,8 +332,14 @@ SiteSigning:
       description: |
         Where a person adds a key and approves held changes, on the machine
         itself: a Windows service install, and a per-user install on Windows,
-        Linux or macOS (J14a.2). Null where this install has no such page yet
-        (a Linux system install, J14a.3).
+        Linux or macOS (J14a.2). Null where this install has no such page (a
+        Linux system install, whose owner pairs a passkey instead, J14a.3).
+    passkeys:
+      type: boolean
+      description: |
+        The site takes its owner's passkey from Workbench, paired with a code
+        shown at the machine, and approvals made with it (J14a.3). Absent
+        from a site older than that.
 
 SiteAccountLink:
   type: object
@@ -722,3 +728,56 @@ SiteResult:
       anyOf:
         - {$ref: '#/McpResponse'}
         - {type: 'null'}
+
+SiteHeldEdit:
+  type: object
+  additionalProperties: false
+  required: [id, action, words, heldAt]
+  properties:
+    id: {type: string, pattern: '^[a-z0-9]{1,32}$'}
+    action: {type: string, maxLength: 64}
+    words:
+      type: array
+      maxItems: 600
+      description: The change in the site host's own words, line by line, as the page shows it.
+      items: {type: string, maxLength: 1024}
+    heldAt: {type: [string, 'null'], format: date-time}
+    expiresAt: {type: [string, 'null'], format: date-time, description: When the site drops it unapproved.}
+    envelope:
+      type: [string, 'null']
+      description: With `key`, the canonical `SiteEditEnvelope` to sign.
+
+SiteHeldList:
+  type: object
+  additionalProperties: false
+  required: [subject, keys, items]
+  properties:
+    subject: {type: string, maxLength: 64}
+    keys:
+      type: array
+      maxItems: 16
+      description: The ids of the keys pinned to this person, at the machine and as passkeys.
+      items: {type: string, pattern: '^[a-f0-9]{32}$'}
+    passkeys:
+      type: array
+      maxItems: 8
+      description: Their passkeys (J14a.3), for Workbench to choose which one signs.
+      items: {$ref: '#/SitePasskey'}
+    state: {$ref: '#/SiteSigningState'}
+    items:
+      type: array
+      maxItems: 64
+      items: {$ref: '#/SiteHeldEdit'}
+
+SitePasskey:
+  type: object
+  additionalProperties: false
+  description: A passkey pinned to a person here (J14a.3). Its private half is in the person's own authenticator.
+  required: [id, credentialId, alg, rpId, label, addedAt]
+  properties:
+    id: {type: string, pattern: '^[a-f0-9]{32}$', description: 'The key id an envelope names: the first 16 bytes of SHA-256 over the public key (`SubjectPublicKeyInfo`, DER), in hex.'}
+    credentialId: {type: string, minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$', description: 'The WebAuthn credential id, base64url without padding.'}
+    alg: {type: integer, enum: [-8, -7, -257], description: 'COSE algorithm: EdDSA, ES256 or RS256.'}
+    rpId: {type: string, minLength: 1, maxLength: 253, description: The WebAuthn relying party id it was made for (Workbench's HTTPS name).}
+    label: {type: string, maxLength: 128}
+    addedAt: {type: string, format: date-time}

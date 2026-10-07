@@ -2550,6 +2550,137 @@ paths:
           description: The site is offline, its file support is off, or it needs an update.
         '504':
           description: The site did not answer in time.
+  /oidc/job-sites/{site}/passkeys:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+    post:
+      operationId: pairMyJobSitePasskey
+      tags: [sites]
+      summary: Pin the owner's passkey at their Job Site, with the code shown at the machine (J14a.3)
+      description: |
+        Workbench made the passkey at its HTTPS address and computed the MAC
+        in the browser from the code the person typed (`SitePasskeyBinding`,
+        site-host.yaml); the code itself never reaches this root. This root
+        carries the public half and the MAC to the site, which pins the
+        passkey only if the MAC checks with the code it showed. Only the
+        site's owner pairs one.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSitePasskeyPair'}
+      responses:
+        '201':
+          description: Pinned.
+          content:
+            application/json:
+              schema: {$ref: 'components/sites.yaml#/SitePasskey'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or nothing is held under that id.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to take passkeys.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/held:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+    post:
+      operationId: listMyJobSiteHeld
+      tags: [sites]
+      summary: What the owner's Job Site holds for their approval, read from the site (J14a.3)
+      description: |
+        With `key`, one of the owner's passkeys, each item carries the
+        canonical envelope to sign with it. The words are the site's own;
+        this root only carries them.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteHeldListRequest'}
+      responses:
+        '200':
+          description: The held changes, oldest first, and the owner's passkeys.
+          content:
+            application/json:
+              schema: {$ref: 'components/sites.yaml#/SiteHeldList'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or nothing is held under that id.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to take passkeys.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/held/{id}/approve:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+      - {name: id, in: path, required: true, schema: {type: string, pattern: '^[a-z0-9]{1,32}$'}}
+    post:
+      operationId: approveMyJobSiteHeld
+      tags: [sites]
+      summary: Approve a held change with the owner's passkey (J14a.3)
+      description: |
+        The assertion is over the envelope `held` listed; the site checks
+        it against the passkey it pinned (`SitePasskeyApproval`,
+        site-host.yaml) and then applies the change. `id` is `rules` for the
+        site's rules as a whole (J52).
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSitePasskeyApproval'}
+      responses:
+        '200':
+          description: Applied.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobSite'}
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or nothing is held under that id.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to take passkeys.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/held/{id}/reject:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+      - {name: id, in: path, required: true, schema: {type: string, pattern: '^[a-z0-9]{1,32}$'}}
+    post:
+      operationId: rejectMyJobSiteHeld
+      tags: [sites]
+      summary: Turn down a held change from Workbench; it is dropped, never applied
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
+      responses:
+        '204':
+          description: Dropped.
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site, or nothing is held under that id.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to take passkeys.
+        '504':
+          description: The site did not answer in time.
   /oidc/job-sites/{site}/leave:
     parameters:
       - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
@@ -2712,6 +2843,12 @@ components:
       $ref: "components/job-sites.yaml#/JobSiteAuditRequest"
     JobSiteAudit:
       $ref: "components/job-sites.yaml#/JobSiteAudit"
+    JobSitePasskeyPair:
+      $ref: "components/job-sites.yaml#/JobSitePasskeyPair"
+    JobSiteHeldListRequest:
+      $ref: "components/job-sites.yaml#/JobSiteHeldListRequest"
+    JobSitePasskeyApproval:
+      $ref: "components/job-sites.yaml#/JobSitePasskeyApproval"
     SignedRootTls:
       type: object
       required: [jws]

@@ -107,6 +107,21 @@ info:
     authorized by the token the host writes to `local_token` in its own data
     directory, which its starter can read and nobody else (J53). The
     signature, not the courier, is the authority.
+
+    **Passkeys from Workbench** (J14a.3, Path B, `person-held-keys.md`
+    §4.2, §12.5). The owner may also hold a passkey, made in Workbench at its
+    HTTPS address. It is pinned with a code this host makes for the owner
+    (`POST /v1/passkeys/code`), which the starter shows at the machine (the
+    loopback page, or the terminal on a Linux system install) and which never
+    crosses the root: Workbench sends the passkey's public half with a MAC
+    keyed by the code (`passkey.pair`, `SitePasskeyBinding`), and this host
+    pins it only if the MAC checks. Then Workbench lists what is held
+    (`held.list`) and approves it with a WebAuthn assertion over the same
+    envelope (`held.approve`), which the root carries and this host checks
+    exactly as it checks the loopback page's signature, plus the
+    assertion's own checks. Passkeys are kept in this host's own directory,
+    count only while their person's link exists, and are listed and removed
+    at the machine (`/v1/passkeys`).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -209,6 +224,66 @@ paths:
           description: The token is missing or wrong.
         '404':
           description: Nothing is held under this id for this person.
+  /v1/passkeys/code:
+    post:
+      operationId: makePasskeyCode
+      summary: A code for pairing the owner's passkey from Workbench, to show at the machine
+      description: |
+        For the starter: the loopback page, or `site-host pair` at a Linux
+        system install's terminal. Ten characters from Crockford's base32,
+        shown as `XXXXX-XXXXX`; one at a time per person (a new one replaces
+        the old), used once, gone after ten minutes or three pairings that
+        do not check. Only the site's owner gets one: theirs are the only
+        keys that approve anything until each person has their own rules.
+      security: [{localToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SitePasskeyCodeRequest'}
+      responses:
+        '200':
+          description: The code.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SitePasskeyCode'}
+        '401':
+          description: The token is missing or wrong.
+        '404':
+          description: Nobody is linked here as `subject`, or they are not the site's owner.
+  /v1/passkeys:
+    get:
+      operationId: listPasskeys
+      summary: The passkeys pinned to one linked person here, and whether a code is waiting
+      security: [{localToken: []}]
+      parameters:
+        - {name: subject, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        '200':
+          description: The passkeys, oldest first.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SitePasskeyList'}
+        '401':
+          description: The token is missing or wrong.
+        '404':
+          description: Nobody is linked here as `subject`.
+  /v1/passkeys/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{32}$'}}
+    delete:
+      operationId: removePasskey
+      summary: Remove a passkey at the machine (J45); what it approved stays
+      security: [{localToken: []}]
+      parameters:
+        - {name: subject, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
+      responses:
+        '204':
+          description: Removed.
+        '401':
+          description: The token is missing or wrong.
+        '404':
+          description: No such passkey for this person.
 components:
   securitySchemes:
     localToken:
@@ -299,7 +374,19 @@ components:
         - `settings.set` (`SiteSettings`).
         - `audit.read` (`SiteAuditRead`): the
           newest entries of the site's audit log.
-      enum: [folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read]
+        - `passkey.pair` (`SitePasskeyPair`, J14a.3): pin the owner's
+          passkey, made in Workbench, if its MAC checks with the code this
+          site showed at the machine. It returns `SitePasskey`.
+        - `held.list` (`SiteHeldListRequest`): what the owner has waiting,
+          as `/v1/held` lists it, with the envelopes to sign when `key` is
+          one of their passkeys. It returns `SiteHeldList`.
+        - `held.approve` (`SitePasskeyApproval`): apply a held change (or
+          the rules as a whole), approved with a passkey assertion over its
+          envelope.
+        - `held.reject` (`SiteHeldRejectRequest`): drop a held change.
+          Turning a change down only keeps access from being given, so the
+          root may ask for it.
+      enum: [folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read, passkey.pair, held.list, held.approve, held.reject]
 
     SiteManage:
       type: object
@@ -345,39 +432,10 @@ components:
         iat: {type: integer, description: Unix seconds.}
 
     SiteHeldEdit:
-      type: object
-      additionalProperties: false
-      required: [id, action, words, heldAt]
-      properties:
-        id: {type: string, pattern: '^[a-z0-9]{1,32}$'}
-        action: {type: string, maxLength: 64}
-        words:
-          type: array
-          maxItems: 600
-          description: The change in the site host's own words, line by line, as the page shows it.
-          items: {type: string, maxLength: 1024}
-        heldAt: {type: [string, 'null'], format: date-time}
-        expiresAt: {type: [string, 'null'], format: date-time, description: When the site drops it unapproved.}
-        envelope:
-          type: [string, 'null']
-          description: With `key`, the canonical `SiteEditEnvelope` to sign.
+      $ref: 'components/sites.yaml#/SiteHeldEdit'
 
     SiteHeldList:
-      type: object
-      additionalProperties: false
-      required: [subject, keys, items]
-      properties:
-        subject: {type: string, maxLength: 64}
-        keys:
-          type: array
-          maxItems: 8
-          description: The ids of the keys pinned to this person.
-          items: {type: string, pattern: '^[a-f0-9]{32}$'}
-        state: {$ref: 'components/sites.yaml#/SiteSigningState'}
-        items:
-          type: array
-          maxItems: 64
-          items: {$ref: '#/components/schemas/SiteHeldEdit'}
+      $ref: 'components/sites.yaml#/SiteHeldList'
 
     SiteApproval:
       type: object
@@ -395,6 +453,109 @@ components:
       required: [subject]
       properties:
         subject: {type: string, minLength: 1, maxLength: 64}
+
+    SitePasskeyCodeRequest:
+      type: object
+      additionalProperties: false
+      required: [subject]
+      properties:
+        subject: {type: string, minLength: 1, maxLength: 64, description: The person the starter serves; the site's owner.}
+
+    SitePasskeyCode:
+      type: object
+      additionalProperties: false
+      required: [subject, code, expiresAt]
+      properties:
+        subject: {type: string, maxLength: 64}
+        code: {type: string, pattern: '^[0-9A-HJKMNP-TV-Z]{5}-[0-9A-HJKMNP-TV-Z]{5}$', description: 'Shown at the machine and typed into Workbench; never sent to the root.'}
+        expiresAt: {type: string, format: date-time}
+
+    SitePasskey:
+      $ref: 'components/sites.yaml#/SitePasskey'
+
+    SitePasskeyList:
+      type: object
+      additionalProperties: false
+      required: [subject, passkeys]
+      properties:
+        subject: {type: string, maxLength: 64}
+        passkeys:
+          type: array
+          maxItems: 8
+          items: {$ref: '#/components/schemas/SitePasskey'}
+        codeExpiresAt: {type: [string, 'null'], format: date-time, description: When the code waiting for this person expires; null when none is.}
+
+    SitePasskeyBinding:
+      type: object
+      additionalProperties: false
+      description: |
+        What the pairing MAC covers (J14a.3, `person-held-keys.md` §12.5).
+        Workbench builds it, canonical (keys sorted, no spaces, UTF-8), and
+        sends `mac` = base64url(HMAC-SHA256(k, those bytes)) without padding,
+        where `k` = PBKDF2-HMAC-SHA256 over the code (its ten characters,
+        upper case, without the dash) with salt
+        `eugene-plexus/site-passkey:<site>:<person>`, 600000 iterations,
+        32 bytes. The code is the only secret: it never leaves the machine
+        and the browser, so a root that swaps the public key cannot make the
+        MAC check.
+      required: [typ, v, site, person, credentialId, publicKey, alg, rpId]
+      properties:
+        typ: {type: string, const: eugene-plexus/site-passkey}
+        v: {type: integer, const: 1}
+        site: {$ref: 'components/sites.yaml#/SiteId'}
+        person: {type: string, minLength: 1, maxLength: 64}
+        credentialId: {type: string, maxLength: 1366}
+        publicKey: {type: string, maxLength: 1100}
+        alg: {type: integer}
+        rpId: {type: string, maxLength: 253}
+
+    SitePasskeyPair:
+      type: object
+      additionalProperties: false
+      required: [credentialId, publicKey, alg, rpId, mac]
+      properties:
+        credentialId: {type: string, minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$'}
+        publicKey: {type: string, minLength: 1, maxLength: 1100, description: 'Base64 of the public key as `SubjectPublicKeyInfo`, DER (`AuthenticatorAttestationResponse.getPublicKey()`).'}
+        alg: {type: integer, enum: [-8, -7, -257]}
+        rpId: {type: string, minLength: 1, maxLength: 253}
+        label: {type: [string, 'null'], maxLength: 128, description: 'How Workbench names it, for the lists at the machine.'}
+        mac: {type: string, pattern: '^[A-Za-z0-9_-]{43}$', description: See `SitePasskeyBinding`.}
+
+    SiteHeldListRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        key: {type: [string, 'null'], pattern: '^[a-f0-9]{32}$', description: "One of the owner's passkeys; with it, each item carries the envelope to sign."}
+
+    SitePasskeyApproval:
+      type: object
+      additionalProperties: false
+      description: |
+        A held change approved with a passkey. The assertion's challenge is
+        SHA-256 of the envelope's UTF-8 bytes. The site checks the envelope
+        as it checks the loopback page's (`SiteApproval`), then the
+        assertion: `clientDataJSON` is `webauthn.get` with that challenge,
+        from an HTTPS origin, not cross-origin; `authenticatorData` carries
+        the SHA-256 of the passkey's pinned `rpId` and says the person was
+        present and verified (UP and UV); its sign count grows when the
+        authenticator counts; and the signature over `authenticatorData ||
+        SHA-256(clientDataJSON)` verifies with the pinned public key.
+      required: [id, envelope, key, credentialId, authenticatorData, clientDataJSON, signature]
+      properties:
+        id: {type: string, pattern: '^[a-z0-9]{1,32}$', description: 'The held change, or `rules` for the rules as a whole (J52).'}
+        envelope: {type: string, minLength: 2, maxLength: 262144}
+        key: {type: string, pattern: '^[a-f0-9]{32}$'}
+        credentialId: {type: string, minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$'}
+        authenticatorData: {type: string, minLength: 1, maxLength: 4096, description: Base64url.}
+        clientDataJSON: {type: string, minLength: 1, maxLength: 8192, description: Base64url.}
+        signature: {type: string, minLength: 1, maxLength: 1024, description: Base64url.}
+
+    SiteHeldRejectRequest:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id: {type: string, pattern: '^[a-z0-9]{1,32}$'}
 
     SiteFolderAdd:
       type: object

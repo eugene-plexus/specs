@@ -496,3 +496,39 @@ JobSiteAudit:
     entries:
       type: array
       items: {$ref: 'sites.yaml#/SiteAuditEntry'}
+
+JobSitePasskeyPair:
+  type: object
+  additionalProperties: false
+  description: A passkey Workbench made, with the MAC keyed by the code shown at the machine (`SitePasskeyPair`, site-host.yaml).
+  required: [refreshToken, credentialId, publicKey, alg, rpId, mac]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    credentialId: {type: string, minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$'}
+    publicKey: {type: string, minLength: 1, maxLength: 1100}
+    alg: {type: integer, enum: [-8, -7, -257]}
+    rpId: {type: string, minLength: 1, maxLength: 253}
+    label: {type: [string, 'null'], maxLength: 128}
+    mac: {type: string, pattern: '^[A-Za-z0-9_-]{43}$'}
+
+JobSiteHeldListRequest:
+  type: object
+  additionalProperties: false
+  required: [refreshToken]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    key: {type: [string, 'null'], pattern: '^[a-f0-9]{32}$'}
+
+JobSitePasskeyApproval:
+  type: object
+  additionalProperties: false
+  description: A held change approved with a passkey (`SitePasskeyApproval`, site-host.yaml).
+  required: [refreshToken, envelope, key, credentialId, authenticatorData, clientDataJSON, signature]
+  properties:
+    refreshToken: {type: string, minLength: 1, maxLength: 16384}
+    envelope: {type: string, minLength: 2, maxLength: 262144}
+    key: {type: string, pattern: '^[a-f0-9]{32}$'}
+    credentialId: {type: string, minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$'}
+    authenticatorData: {type: string, minLength: 1, maxLength: 4096}
+    clientDataJSON: {type: string, minLength: 1, maxLength: 8192}
+    signature: {type: string, minLength: 1, maxLength: 1024}
