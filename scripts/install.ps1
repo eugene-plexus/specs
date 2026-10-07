@@ -130,8 +130,8 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "aa2fe1114c5e669b535b394629218441034a2fbd"
-    "control"          = "be2dec10809fe59c96e1fd35fe499e007aa1ecb8"
+    "agent"            = "8909eed59324812df59c1bc5fb33a8419c22a6f4"
+    "control"          = "de4c6190ac2259330d3c7bab0698efa31cfbb401"
     "gateway"          = "271c1a1393ab8750e02d34d199d49e4b9e8fe966"
     "inference-driver" = "381edf37550cda2478b12c247042ac7d92e982f9"
     "library"          = "1be1803c5f7cbecfaef1dbc6068fa2d6856c0730"
@@ -1192,18 +1192,24 @@ function Get-EugeneInstall {
     & $consider $Prefix $true
     & $consider (Join-Path $env:ProgramData "EugenePlexus") $false
     & $consider (Join-Path $env:LOCALAPPDATA "EugenePlexus") $false
-    foreach ($hive in @('HKCU:', 'HKLM:')) {
-        Get-ChildItem -Path "$hive\Software\Microsoft\Windows\CurrentVersion\Uninstall\EugenePlexus-*" -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                $registered = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
-                if ($registered.InstallLocation) { & $consider $registered.InstallLocation $false $true }
-            }
-    }
+    foreach ($location in @(Get-RegisteredInstallLocation)) { & $consider $location $false $true }
     return $seen.ToArray()
 }
 
 # Seams, so the Pester suite can drive the set-aside and the restore
 # without a real service on the machine running it.
+function Get-RegisteredInstallLocation {
+    # Where each Apps & features entry says an install is, in either scope.
+    # A seam since specs#15: read for real, the suite found the developer's
+    # own install, and every count was off by one.
+    foreach ($hive in @('HKCU:', 'HKLM:')) {
+        Get-ChildItem -Path "$hive\Software\Microsoft\Windows\CurrentVersion\Uninstall\EugenePlexus-*" -ErrorAction SilentlyContinue |
+            ForEach-Object {
+                $registered = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
+                if ($registered.InstallLocation) { $registered.InstallLocation }
+            }
+    }
+}
 function Remove-AgentServiceRegistration { & sc.exe delete $ServiceName | Out-Null }
 function Get-AgentServiceEnvironment {
     (Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName" `

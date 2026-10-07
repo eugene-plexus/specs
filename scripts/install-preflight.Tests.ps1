@@ -6,7 +6,7 @@ $preflight = [scriptblock]::Create($source.Substring(0, $source.IndexOf('# --- 1
 $ast = [System.Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$null)
 $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
     $node.Name -in @('Say', 'Warn', 'Die', 'Invoke-Native', 'Show-InstallerLog', 'Invoke-ElevatedInstaller', 'Set-ServiceBootstrap', 'Copy-EngineBuilds', 'Protect-InstallDirectory',
-        'Stop-ProcessUnder', 'Test-LooksLikeInstall', 'Test-UnderProgramData', 'Get-EugeneInstall',
+        'Stop-ProcessUnder', 'Test-LooksLikeInstall', 'Test-UnderProgramData', 'Get-EugeneInstall', 'Get-RegisteredInstallLocation',
         'Remove-AgentServiceRegistration', 'Get-AgentServiceEnvironment', 'Get-InstalledPort', 'Register-AgentServiceFrom',
         'Suspend-EugeneInstall', 'Restore-EugeneInstall', 'Show-SetAsideNote', 'Assert-UpgradeableInstall',
         'Get-ServiceConversionSource', 'Get-AutostartExecutable', 'Get-AgentService', 'Get-AgentTask',
@@ -378,6 +378,7 @@ Describe 'A join takes over whatever is here' {
         Mock Stop-Process { throw 'TEST: no process may be stopped' }
         Mock Get-CimInstance { $null }
         Mock Get-AutostartExecutable { $null }
+        Mock Get-RegisteredInstallLocation { @() }
         Mock Get-AgentService { $null }
         Mock Get-ScheduledTask { $null }
         Mock Stop-Service {}
@@ -434,6 +435,15 @@ Describe 'A join takes over whatever is here' {
         $found[2] | Should Be $Prefix
         ($found -contains $machine) | Should Be $true
         ($found -contains $perUser) | Should Be $true
+    }
+
+    It 'finds an install the uninstall registry names, even one that does not look like one' {
+        $listed = Join-Path $Root 'listed'
+        New-Item -ItemType Directory -Force -Path $listed | Out-Null
+        Mock Get-RegisteredInstallLocation { @($listed, (Join-Path $Root 'gone')) }
+        $found = @(Get-EugeneInstall)
+        $found.Count | Should Be 1
+        $found[0] | Should Be $listed
     }
 
     It 'passes over a folder that holds no install, and an empty target' {
@@ -792,6 +802,7 @@ Describe 'Uninstall finds the install wherever it is' {
         Mock Stop-Process { throw 'TEST: no process may be stopped' }
         Mock Get-CimInstance { $null }
         Mock Get-AutostartExecutable { $null }
+        Mock Get-RegisteredInstallLocation { @() }
         Mock Get-AgentService { $null }
         Mock Get-AgentTask { $null }
         Mock Get-ScheduledTask { $null }
