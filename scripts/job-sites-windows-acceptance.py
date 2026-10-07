@@ -57,7 +57,8 @@ Checks (the done-when of §3, 2b.2):
 8. Neither the root nor the site host can make a link: no route makes one,
    and the site host's account may only read the links.
 9. Signed out, a person's calls are refused, saying so (J25). This signs the
-   second person out, so it runs last.
+   second person out, so it runs last, and only with `--sign-out`: the
+   account stays signed in (and in place) between runs otherwise.
 
 J14a (between 1 and 2; the owner's browser is the system Chrome, started by
 LocalSystem in the owner's own session with their own unelevated token):
@@ -1176,6 +1177,11 @@ def run(args: argparse.Namespace) -> None:
             assert relinked.get("code") == 0, relinked
             wait_for("her worker never came back", lambda: any(
                 w["Sid"] == person_sid for w in processes("eugene_plexus_site_host.worker")), 60)
+        if person_sid is not None and not args.sign_out:
+            # Proven in 2b.2's record; signing her out means Troy signs her
+            # in again before the next run (memory feedback_test_accounts_stay).
+            skip("9. signed out, her calls are refused (J25): give --sign-out; it signs her out")
+        elif person_sid is not None:
             session_id = sessions()[person_sid]
             subprocess.run(["logoff", str(session_id)], check=False)
             wait_for("her session never ended", lambda: person_sid not in sessions(), 60)
@@ -1225,6 +1231,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--person-account", default=None)
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--sign-out", action="store_true",
+                        help="run check 9, which signs the second person out (J25)")
     args = parser.parse_args()
     if sys.platform != "win32":
         raise SystemExit("this run is Windows only; job-sites-acceptance.py covers Linux")
