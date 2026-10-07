@@ -391,9 +391,14 @@ class Workbench:
         )
 
     def mcp(
-        self, token: str, site: str, server: str, method: str, params: dict[str, Any] | None = None
+        self, token: str, site: str, server: str, method: str, params: dict[str, Any] | None = None,
+        *, asked: bool = False,
     ) -> Any:
-        return self.call("sites/mcp", token, site=site, server=server, request=rpc(method, params))
+        """`asked`: the person approved this call in Workbench (J72), which
+        Workbench says only for a tool the site lists as asked about."""
+        extra = {"asked": True} if asked else {}
+        return self.call("sites/mcp", token, site=site, server=server, request=rpc(method, params),
+                         **extra)
 
 
 # --------------------------------------------------------------------------- #
@@ -1213,8 +1218,9 @@ def run(args: argparse.Namespace) -> None:
         def call(route: str, token: str, /, **body: Any) -> Any:
             return workbench.call(route, token, **body)
 
-        def mcp(token: str, server: str, method: str, params: dict[str, Any] | None = None) -> Any:
-            return workbench.mcp(token, site_id, server, method, params)
+        def mcp(token: str, server: str, method: str, params: dict[str, Any] | None = None,
+                *, asked: bool = False) -> Any:
+            return workbench.mcp(token, site_id, server, method, params, asked=asked)
 
         def forge(**body: Any) -> Any:
             return http.post(f"{control}/acceptance/forge", json={"site": site_id, **body}, timeout=40)
@@ -1266,13 +1272,18 @@ def run(args: argparse.Namespace) -> None:
         assert mine_only == [], mine_only
         added = call(f"job-sites/{site_id}/folders", ada, name="Notes", path=str(folder), writable=True)
         assert added.status_code == 202 and added.json()["held"] is True, added.text
-        assert "approve it there with your key" in added.json()["message"], added.text
+        assert "approve it with your key" in added.json()["message"], added.text
         assert settle(lambda s: s.get("signing", {}).get("held") == 1, "held")["folders"] == []
         (registered,) = desk.approve(people["ada"])
         folder_id = registered["result"]["id"]
         assert registered["result"]["people"] == []
+        # 2b.3b (J69): the owner's folder is her own workspace, hers at once:
+        # read allow, change ask (it is writable), by id and name, no path (J76).
+        (own,) = settle(lambda s: s.get("workspaces"), "the workspace never reported")["workspaces"]
+        assert own["id"] == folder_id and own["rules"] == {"read": "allow", "change": "ask"}, own
+        assert "path" not in own and own["people"] == [], own
         again = call(f"job-sites/{site_id}/folders", ada, name="notes", path=str(folder))
-        assert again.status_code == 422 and "registered already" in again.text, again.text
+        assert again.status_code == 422 and "named notes already" in again.text, again.text
         settle(lambda s: s["folders"], "the site never reported its folder")
         stranger = call(f"job-sites/{site_id}/folders", bo, name="Mine", path=str(folder))
         assert stranger.status_code == 404, stranger.text
@@ -1287,13 +1298,18 @@ def run(args: argparse.Namespace) -> None:
         # Bo has no account here: his name is the root's, and the page says so (J54).
         assert any("bo (as Eugene names them" in w for w in words["words"]), words
         desk.approve(people["ada"])
-        reported = settle(lambda s: len(s["folders"][0]["people"]) == 2, "the grant never reported")
-        assert {p["name"] for p in reported["folders"][0]["people"]} == {"ada", "bo"}
+        # The older root's way of saying it (J11) names the owner on her own
+        # folder; the site reads it without her, the holder (2b.3b).
+        reported = settle(lambda s: s["folders"][0]["people"], "the grant never reported")
+        assert {p["name"] for p in reported["folders"][0]["people"]} == {"bo"}, reported
+        assert reported["workspaces"][0]["people"] == [
+            {"person": people["bo"], "name": "bo", "read": "allow", "change": "deny"}
+        ], reported
         listed_servers = call("sites/servers", bo).json()["servers"]
         files = next(s for s in listed_servers if s["server"] == "files")
         assert files["site"] == site_id and files["folders"] == [
-            {"id": folder_id, "name": "Notes", "writable": False}
-        ]
+            {"id": folder_id, "name": "Notes", "writable": False, "mine": False}
+        ], files
         tools = mcp(bo, "files", "tools/list")
         assert tools.status_code == 200, tools.text
         offered = {t["name"]: t["inputSchema"]["properties"]["folder"]["enum"]
@@ -1315,6 +1331,8 @@ def run(args: argparse.Namespace) -> None:
                             {"name": "bo", "writable": True}]).status_code == 202
         desk.approve(people["ada"])
         settle(lambda s: any(p["writable"] for p in s["folders"][0]["people"]), "write grant")
+        # Bo's `writable` is change `allow` (§2.6's standing pre-approval).
+        assert settle(lambda s: True, "")["workspaces"][0]["people"][0]["change"] == "allow"
         wrote = mcp(bo, "files", "tools/call", {"name": "write_text", "arguments": {
             "folder": "Notes", "path": "new.txt", "text": "bo was here", "expectedSha256": ""}})
         assert wrote.json()["status"] == "done", wrote.text
@@ -1336,7 +1354,9 @@ def run(args: argparse.Namespace) -> None:
         for someone in (bo, owner):
             assert call(f"job-sites/{site_id}/audit", someone).status_code == 404
         ok("ada registers a folder through Workbench's routes (a name unique on the site), "
-           "nobody else may; default deny holds even when the root itself sends bo's call; "
+           "which is her own workspace at once (read allow, change ask; reported by id and "
+           "name, never path), and nobody else's; default deny holds even when the root itself "
+           "sends bo's call; "
            "after ada gives bo read access he lists and reads the file through /oidc/sites/mcp; "
            "a write needs ada's standing pre-approval; the audit log names who asked and what "
            "was decided, never contents, and only its owner reads it; each grant answered 202 "
@@ -1477,13 +1497,18 @@ def run(args: argparse.Namespace) -> None:
                       acc_z if sudo_mode else None, args.stranger_command)
 
         # ---- 13-18. slice 2b.2: whose account runs a call ----------------------
-        two_b_two(SimpleNamespace(
+        context = SimpleNamespace(
             desk=desk, sudo_mode=sudo_mode, folder=folder, people=people, ada=ada, bo=bo, jo=jo,
             call=call, mcp=mcp, settle=settle, site_id=site_id, folder_id=folder_id, http=http,
-            plain=plain, unverified=unverified, control=control, nodes=nodes,
+            plain=plain, unverified=unverified, control=control, nodes=nodes, forge=forge,
+            work=work, base=base,
             acc_a=acc_a if sudo_mode else None, acc_j=acc_j if sudo_mode else None,
             acc_s=acc_s if sudo_mode else None, acc_z=acc_z if sudo_mode else None,
-        ))
+        )
+        two_b_two(context)
+
+        # ---- B1-B7. slice 2b.3b: each person's own workspaces, rules and keys -----
+        two_b_three_b(context)
 
         # ---- 12. the site leaves ----------------------------------------
         desk.stop_workers()
@@ -1892,20 +1917,35 @@ def local_server_check(
     assert on.status_code == 202, on.text
     (enabled,) = desk.approve(owner_subject)
     assert {t["name"] for t in enabled["result"]["server"]["tools"]} == {"echo", "touch"}
-    plain = call(f"job-sites/{site_id}/servers/notes-tool/access", ada,
-                 people=[{"name": "bo", "tools": [{"name": "touch"}]}])
-    assert plain.status_code == 422 and "standing" in plain.text, plain.text
+    # J78: each tool granted is allow or ask; by default a destructive one
+    # (touch, unmarked) is ask and a read-only one (echo) allow. A tool the
+    # server does not list is refused, never held.
+    unknown = call(f"job-sites/{site_id}/servers/notes-tool/access", ada,
+                   people=[{"name": "bo", "tools": [{"name": "rm"}]}])
+    assert unknown.status_code == 422 and "no tool named 'rm'" in unknown.text, unknown.text
     given = call(f"job-sites/{site_id}/servers/notes-tool/access", ada,
-                 people=[{"name": "bo", "tools": [{"name": "echo"}]}])
+                 people=[{"name": "bo", "tools": [{"name": "echo"}, {"name": "touch"}]}])
     assert given.status_code == 202, given.text
     desk.approve(owner_subject)
-    settle(lambda s: s["servers"][0]["people"], "the tool grant never reported")
+    reported = settle(lambda s: s["servers"][0]["people"], "the tool grant never reported")
+    decisions = {t["name"]: t.get("decision") for t in reported["servers"][0]["people"][0]["tools"]}
+    assert decisions == {"echo": "allow", "touch": "ask"}, reported["servers"]
     mine = call("sites/servers", bo)
     assert any(s["server"] == "notes-tool" and s["kind"] == "local" for s in mine.json()["servers"])
     tools = mcp(bo, "notes-tool", "tools/list")
-    assert [t["name"] for t in tools.json()["response"]["result"]["tools"]] == ["echo"]
+    listing = tools.json()["response"]["result"]["tools"]
+    assert sorted(t["name"] for t in listing) == ["echo", "touch"], listing
+    asks = {t["name"]: (t.get("_meta") or {}).get("eugene-plexus/ask") for t in listing}
+    assert asks["touch"] and not asks["echo"], asks
     echoed = mcp(bo, "notes-tool", "tools/call", {"name": "echo", "arguments": {"text": "hi"}})
     assert echoed.json()["status"] == "done" and "echo: hi" in json.dumps(echoed.json()), echoed.text
+    unasked = mcp(bo, "notes-tool", "tools/call", {"name": "touch", "arguments": {}})
+    assert unasked.json()["status"] == "failed" and "approv" in unasked.json()["message"], unasked.text
+    touched = mcp(bo, "notes-tool", "tools/call", {"name": "touch", "arguments": {}}, asked=True)
+    assert touched.json()["status"] == "done", touched.text
+    lines = call(f"job-sites/{site_id}/audit", ada, limit=10).json()["entries"]
+    touches = [(e["decision"], e.get("rule"), e.get("asked")) for e in lines if e.get("tool") == "touch"]
+    assert touches[:2] == [("allowed", "ask", True), ("refused", "ask", False)], touches
     # J9: a server marked system will not turn on without an administrator's consent.
     servers = yaml.safe_load(servers_path(config).read_text(encoding="utf-8"))
     servers["servers"].append({**servers["servers"][0], "id": "settings-tool",
@@ -1916,8 +1956,10 @@ def local_server_check(
     system = call(f"job-sites/{site_id}/servers/settings-tool/enabled", ada, enabled=True)
     assert system.status_code == 422 and "consent" in system.text.lower(), system.text
     ok("a fifth tool, from a local server added at the machine, works through the same route, "
-       "with no change to control or Workbench; a server marked system will not turn on without "
-       "an administrator's consent recorded at the machine (J9)")
+       "with no change to control or Workbench; granted by default as allow (read-only) or ask "
+       "(destructive, J78), the asked-about tool runs only with Workbench's `asked` (J72) and "
+       "the audit log names the rule; a server marked system will not turn on without an "
+       "administrator's consent recorded at the machine (J9)")
 
 
 def agent_site_join(python: Path, work: Path, nodes: str) -> None:
@@ -2112,7 +2154,7 @@ def per_user_site(
 
         view(lambda s: (s.get("signing") or {}) == {"state": "unsigned", "held": 0,
                                                      "approvePage": approve_page,
-                                                     "passkeys": True}
+                                                     "passkeys": True, "people": True}
              and s.get("linkPage") is None, "the site never named its approve page")
         view(lambda s: any(x["available"] for x in s.get("links") or []), "no worker connected")
         # Rules sent before the key are the root's word (J48): applied, and no tool runs.
@@ -2123,10 +2165,9 @@ def per_user_site(
                                writable=True)
         assert added.status_code == 201, added.text
         folder_id = added.json()["id"]
-        granted = workbench.call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
-                                 people=[{"name": "ada", "writable": False}])
-        assert granted.status_code == 200, granted.text
-        view(lambda s: s["folders"] and s["folders"][0]["people"], "the grant never reported")
+        # 2b.3b: hers at once, as her own workspace (no grant to herself, J69).
+        view(lambda s: [w["id"] for w in s.get("workspaces") or []] == [folder_id],
+             "the workspace never reported")
         read_note = {"name": "read_text", "arguments": {"folder": "Desk", "path": "note.txt"}}
         refused = workbench.mcp(ada, site_id, "files", "tools/call", read_note)
         assert refused.status_code == 200, refused.text
@@ -2150,14 +2191,16 @@ def per_user_site(
         read = workbench.mcp(ada, site_id, "files", "tools/call", read_note)
         assert read.json()["status"] == "done", read.text
         assert "a note at ada's own desk" in json.dumps(read.json()["response"])
-        # A change that gives access is held for her key, then applied.
-        writable = workbench.call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
-                                  people=[{"name": "ada", "writable": True}])
-        assert writable.status_code == 202 and writable.json()["held"] is True, writable.text
-        assert approve_page in writable.json()["message"], writable.text
+        # A change that gives access is held for her key, then applied: her
+        # own rule for changing files, from ask (the default) to allow (J70).
+        looser = workbench.call(f"job-sites/{site_id}/workspaces/{folder_id}/rules", ada,
+                                rules={"read": "allow", "change": "allow"}, deny=[])
+        assert looser.status_code == 202 and looser.json()["held"] is True, looser.text
+        assert approve_page in looser.json()["message"], looser.text
         (change,) = client.approve_all()
-        assert change["action"] == "folder.people", change
-        view(lambda s: s["folders"][0]["people"][0]["writable"], "the write grant never reported")
+        assert change["action"] == "rules.set", change
+        view(lambda s: s["workspaces"][0]["rules"]["change"] == "allow",
+             "the looser rule never reported")
         ok("J14a.2: through the agent's own page, in this account, a key is made and pinned, the "
            "rules sent before it are approved as a whole, and ada's call runs; a change from "
            "Workbench that gives access is held, approved there with that key, and applied")
@@ -2211,8 +2254,12 @@ def two_b_two(c: SimpleNamespace) -> None:
     ada, bo, jo = c.ada, c.bo, c.jo
 
     def write(token: str, name: str, text: str) -> Any:
+        # Ada, the holder, is asked before changing files in her own
+        # workspace (change: ask); Workbench says she was (J72). Bo and jo
+        # have change allow there, from the owner's grant.
         return c.mcp(token, "files", "tools/call", {"name": "write_text", "arguments": {
-            "folder": "Notes", "path": name, "text": text, "expectedSha256": ""}})
+            "folder": "Notes", "path": name, "text": text, "expectedSha256": ""}},
+            asked=token == ada)
 
     def read_file(token: str, name: str) -> Any:
         return c.mcp(token, "files", "tools/call", {"name": "read_text", "arguments": {
@@ -2227,7 +2274,8 @@ def two_b_two(c: SimpleNamespace) -> None:
         {"name": "jo", "writable": True}])
     assert given.status_code == 202, given.text
     desk.approve(people["ada"])
-    c.settle(lambda s: bool(s["folders"]) and sum(p["writable"] for p in s["folders"][0]["people"]) == 3, "write grants")
+    # The owner, named on her own folder, is read without (2b.3b): two grants.
+    c.settle(lambda s: bool(s["folders"]) and sum(p["writable"] for p in s["folders"][0]["people"]) == 2, "write grants")
     for token, name in ((ada, "ada.txt"), (jo, "jo.txt"), (bo, "bo.txt")):
         reply = write(token, name, f"written for {name}")
         assert served(reply), reply.text
@@ -2410,6 +2458,333 @@ def two_b_two(c: SimpleNamespace) -> None:
     ok("through the nodes name the person check reaches the root (check 17 did it for real, "
        "pinned to the root's key): the root's own 401 for an unknown person, and a refusal "
        "without a site's token; every other path stays refused (checks 1 and 7)")
+
+
+#: What the site says of a path a workspace hides (`folder_io.HIDDEN`).
+HIDDEN = "This path is hidden in this workspace."
+
+#: Edits the site's policy file behind its back, as the host's own account
+#: could: one person's rule for writing files, from ask to allow.
+EDIT_POLICY = (
+    "import sys\n"
+    "from eugene_plexus_site_host.policy import Policy\n"
+    "p = Policy.load(__import__('pathlib').Path(sys.argv[1]), sys.argv[2])\n"
+    "for subject in sys.argv[3:]:\n"
+    "    p.own(subject)[0]['rules']['write_text'] = 'allow'\n"
+    "p.save()\n"
+)
+
+
+def two_b_three_b(c: SimpleNamespace) -> None:
+    """Slice 2b.3b, through the root as Workbench calls it (§3.3; J67-J70,
+    J72, J76-J80): jo, a linked person who is not the site's owner, keeps a
+    workspace of her own. `c` carries what `run()` has built.
+
+    One account: there is one worker, so whoever is being checked is linked to
+    this account and the other to an account no worker holds (what
+    `site-host/tests/test_people.py` does), and the starter's links file is
+    rewritten to move it. Sudo mode: jo is `epj` throughout."""
+    desk: SiteHost = c.desk
+    people: dict[str, str] = c.people
+    ada, jo = c.ada, c.jo
+    ada_id, jo_id = people["ada"], people["jo"]
+    call, mcp, settle, site_id = c.call, c.mcp, c.settle, c.site_id
+    if os.name == "nt":
+        nobody = "S-1-5-21-1111111111-2222222222-3333333333-1998"
+    else:
+        nobody = str(os.getuid() + 2)
+
+    def link_up(name: str) -> None:
+        settle(lambda s: {e["subject"]: e for e in s.get("links") or []}
+               .get(people[name], {}).get("available"),
+               f"{name}'s worker never connected")
+
+    def at(name: str) -> None:
+        """One account: `name` is the one with the worker."""
+        if c.sudo_mode:
+            return
+        other = "jo" if name == "ada" else "ada"
+        desk.link(people[name], name, desk.account, "harness")
+        desk.link(people[other], other, nobody, other)
+        desk.write_links()
+        link_up(name)
+
+    def mine(token: str) -> dict[str, Any]:
+        """A person's own view of the site through the root."""
+        sites = [s for s in call("job-sites", token).json()["sites"] if s["id"] == site_id]
+        assert len(sites) == 1, sites
+        return dict(sites[0])
+
+    def view(token: str, predicate: Any, what: str) -> dict[str, Any]:
+        deadline = time.perf_counter() + 30
+        while True:
+            value = mine(token)
+            if predicate(value):
+                return value
+            if time.perf_counter() > deadline:
+                raise AssertionError(f"{what}: {value}")
+            time.sleep(0.3)
+
+    def use(token: str, tool: str, *, asked: bool = False, **arguments: Any) -> tuple[bool, Any]:
+        answer = mcp(token, "files", "tools/call", {"name": tool, "arguments": arguments},
+                     asked=asked)
+        assert answer.status_code == 200, answer.text
+        value = answer.json()
+        assert value["status"] == "done", answer.text
+        result = value["response"]["result"]
+        text = result["content"][0]["text"]
+        return bool(result["isError"]), (text if result["isError"] else json.loads(text))
+
+    def refused(token: str, tool: str, **arguments: Any) -> str:
+        answer = mcp(token, "files", "tools/call", {"name": tool, "arguments": arguments})
+        assert answer.status_code == 200 and answer.json()["status"] == "failed", answer.text
+        return str(answer.json()["message"])
+
+    def restart_after(edit: Any, fresh: Any, what: str) -> None:
+        """The host is stopped, its file edited, and started again with its
+        workers, as an administrator at the machine could. `fresh` says the
+        root's view is from after the restart (its cache keeps the last
+        report from before), and is waited for with jo's worker connected."""
+        desk.stop_workers()
+        desk.stop()
+        edit()
+        desk.start()
+        desk.start_workers()
+        settle(lambda s: fresh(s) and {e["subject"]: e for e in s.get("links") or []}
+               .get(jo_id, {}).get("available"), what)
+
+    # jo's own folder, which her own worker (her account) opens.
+    if c.sudo_mode:
+        space = c.base / "jo"
+        sudo("install", "-d", "-m", "777", str(space))
+    else:
+        space = c.work / "jo-space"
+        space.mkdir()
+    for name, text in (("plan.txt", "jo's plan\n"), (".env", "TOKEN=1\n"),
+                       ("secrets/key.txt", "TOKEN=2\n"), ("src/.env", "TOKEN=3\n"),
+                       ("src/app.py", "print('TOKEN')\n")):
+        (space / name).parent.mkdir(exist_ok=True)
+        (space / name).write_text(text, encoding="utf-8", newline="\n")
+
+    # ---- B1. jo's workspace waits for jo's own key, even before she has one (J68)
+    at("jo")
+    before = mine(ada)["signing"]["held"]
+    linked = view(jo, lambda s: s.get("role") == "linked", "jo never saw the site as linked")
+    assert linked["workspaces"] == [] and linked["signing"]["state"] == "unsigned", linked
+    assert "servers" in linked and linked["servers"] == [], linked
+    added = call(f"job-sites/{site_id}/workspaces", jo, name="Plans", path=str(space))
+    assert added.status_code == 202 and added.json()["held"] is True, added.text
+    assert "Waiting for your own key" in added.json()["message"], added.text
+    view(jo, lambda s: s["signing"]["held"] == 1, "jo's held count never said 1")
+    assert mine(jo)["workspaces"] == []
+    assert mine(ada)["signing"]["held"] == before  # the owner's count is hers alone
+    status, waiting = desk.held_api("GET", f"/v1/held?subject={jo_id}")
+    assert status == 200, status
+    (item,) = waiting["items"]
+    assert item["action"] == "workspace.add" and item["envelope"] is None, item
+    assert item["id"] not in {i["id"] for i in desk.held(ada_id)}
+    ada_key_id, ada_key, _ = desk.keys[ada_id]
+    status, _ = desk.held_api("POST", f"/v1/held/{item['id']}/approve", {
+        "subject": ada_id, "envelope": "{}", "key": ada_key_id,
+        "signature": base64.b64encode(ada_key.sign(b"{}")).decode()})
+    assert status == 404, status
+    ok("2b.3b (J68): jo, linked and with no key yet, adds a workspace through Workbench's route; "
+       "it answers 202 held, waiting for her own key, and nothing changes: her view of the site "
+       "(role linked) counts it, the owner's count does not, and the owner's key neither lists "
+       "nor approves it")
+
+    # ---- B2. neither person's key approves the other's changes (J67) ---------------
+    desk.pin(jo_id)
+    view(jo, lambda s: s["signing"]["state"] == "signed", "jo's key never reported")
+    (item,) = desk.held(jo_id)
+    jo_key_id = desk.keys[jo_id][0]
+    status, answer = desk.held_api("POST", f"/v1/held/{item['id']}/approve", {
+        "subject": jo_id, "envelope": item["envelope"], "key": jo_key_id,
+        "signature": base64.b64encode(ada_key.sign(item["envelope"].encode())).decode()})
+    assert status == 200 and answer["status"] == "failed", (status, answer)
+    assert mine(jo)["workspaces"] == []
+    (done,) = desk.approve(jo_id)
+    workspace = done["result"]["id"]
+    plans = view(jo, lambda s: s["workspaces"], "jo's workspace never reported")["workspaces"]
+    assert [(w["name"], w["rules"]) for w in plans] == [
+        ("Plans", {"read": "allow", "change": "ask"})], plans
+    assert "path" not in plans[0]
+    live = call(f"job-sites/{site_id}/workspaces/list", jo)
+    assert live.status_code == 200, live.text
+    assert [(w["name"], w["path"]) for w in live.json()["workspaces"]] == [("Plans", str(space))]
+    # As B6 looks for it (in JSON, escaped): found where it is meant to be.
+    assert json.dumps(str(space))[1:-1] in json.dumps(live.json())
+    # The owner's change, approved with jo's key: jo is not whom it is held for.
+    assert call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=True).status_code == 202
+    (ada_item,) = [i for i in desk.held(ada_id) if i["id"] != "rules"]
+    jo_key = desk.keys[jo_id][1]
+    status, _ = desk.held_api("POST", f"/v1/held/{ada_item['id']}/approve", {
+        "subject": jo_id, "envelope": ada_item["envelope"], "key": jo_key_id,
+        "signature": base64.b64encode(jo_key.sign(ada_item["envelope"].encode())).decode()})
+    assert status == 404, status
+    assert desk.reject_all(ada_id) == 1
+    assert settle(lambda s: True, "")["ownerInDevMode"] is False
+    ok("2b.3b (J67): jo's change signed with the owner's key in her key's name is refused; her "
+       "own key approves it, and her workspace is hers (read allow, change ask): the root's "
+       "listing names it without its path, her live list has the path; the owner's change is "
+       "not jo's to approve")
+
+    # ---- B3. a rule the root forges is refused; an edited policy file runs nothing --
+    forged = c.forge(kind="manage", subject=jo_id, action="rules.set", arguments={
+        "id": workspace, "rules": {"read": "allow", "change": "allow"}, "deny": []})
+    assert forged.status_code == 200 and forged.json()["status"] == "held", forged.text
+    assert desk.reject_all(jo_id) == 1
+    rules = call(f"job-sites/{site_id}/workspaces/list", jo).json()["workspaces"][0]["rules"]
+    assert rules == {"read": "allow", "change": "ask"}, rules
+    for action, arguments in (
+        ("rules.set", {"id": workspace, "rules": {"read": "allow", "change": "allow"}, "deny": []}),
+        ("workspace.people", {"id": workspace, "people": [
+            {"subject": people["bo"], "read": "allow", "change": "allow"}]}),
+        ("workspace.remove", {"id": workspace}),
+    ):
+        as_owner = c.forge(kind="manage", subject=ada_id, action=action, arguments=arguments)
+        assert as_owner.json()["status"] == "failed", as_owner.text
+        assert "no such workspace" in as_owner.json()["message"], as_owner.text
+    policy = str(desk.data / "policy.json")
+
+    def edit() -> None:
+        done = subprocess.run(
+            as_user(desk.user, [str(desk.python), "-I", "-c", EDIT_POLICY, policy, ada_id,
+                                jo_id, ada_id], {}),
+            capture_output=True, text=True, stdin=subprocess.DEVNULL, env=clean_environment(),
+            timeout=60,
+        )
+        assert done.returncode == 0, done.stderr
+
+    # Only an edited file makes the owner's rules unconfirmed: a view saying
+    # so is from after the restart.
+    restart_after(edit, lambda s: s["signing"]["state"] == "unconfirmed",
+                  "the restarted site never reported the owner's rules unconfirmed")
+    view(jo, lambda s: s["signing"]["state"] == "unconfirmed", "jo's rules never unconfirmed")
+    message = refused(jo, "read_text", folder="Plans", path="plan.txt")
+    assert "approved your rules" in message, message
+    message = refused(jo, "read_text", folder="Notes", path="note.txt")
+    assert "owner has not approved its rules" in message, message
+    (rules_item,) = desk.approve(jo_id)
+    assert use(jo, "read_text", folder="Plans", path="plan.txt")[1]["text"] == "jo's plan\n"
+    message = refused(jo, "read_text", folder="Notes", path="note.txt")
+    assert "owner has not approved its rules" in message, message
+    desk.approve(ada_id)
+    assert not use(jo, "read_text", folder="Notes", path="note.txt")[0]
+    ok("2b.3b: a rule the root forges in jo's name is held, never applied, and she turns it "
+       "down; forged in the owner's name it finds no such workspace (nor can she share or "
+       "remove it); with the policy file edited behind the site's back, jo's own workspace runs "
+       "nothing until her key approves her rules as they are, and the owner's unconfirmed "
+       "rules stop only what the owner shared (J79)")
+
+    # ---- B4. allow runs, ask needs her word, deny is never offered (J70, J72) --------
+    # Back from the edited file's write_text allow to change ask: tighter, at once (J51).
+    reset = call(f"job-sites/{site_id}/workspaces/{workspace}/rules", jo,
+                 rules={"read": "allow", "change": "ask"}, deny=[])
+    assert reset.status_code == 200, reset.text
+    listed = mcp(jo, "files", "tools/list").json()["response"]["result"]["tools"]
+    offered = {t["name"]: t for t in listed}
+    asks = {name: t["_meta"]["eugene-plexus/ask"] for name, t in offered.items()}
+    assert asks["read_text"] == [] and asks["glob"] == [] and "Plans" in asks["write_text"], asks
+    message = refused(jo, "write_text", folder="Plans", path="new.txt", text="x", expectedSha256="")
+    assert "approv" in message and not (space / "new.txt").exists(), message
+    error, wrote = use(jo, "write_text", asked=True, folder="Plans", path="new.txt", text="x",
+                       expectedSha256="")
+    assert not error and (space / "new.txt").read_text(encoding="utf-8") == "x", wrote
+    tighter = call(f"job-sites/{site_id}/workspaces/{workspace}/rules", jo,
+                   rules={"read": "allow", "change": "deny"}, deny=[])
+    assert tighter.status_code == 200 and tighter.json()["rules"]["change"] == "deny", tighter.text
+    listed = mcp(jo, "files", "tools/list").json()["response"]["result"]["tools"]
+    writers = {t["name"]: t["inputSchema"]["properties"]["folder"]["enum"] for t in listed
+               if t["name"] in ("write_text", "edit_text")}
+    assert all("Plans" not in names for names in writers.values()), writers
+    ok("2b.3b (J70, J72) at the site, through the root: read allow runs with no word, change ask "
+       "is listed as asked about and refused until Workbench says she approved the call, and "
+       "change deny (applied at once, J51) is never offered")
+
+    # ---- B5. a denied path is hidden from every tool --------------------------------
+    hid = call(f"job-sites/{site_id}/workspaces/{workspace}/rules", jo,
+               rules={"read": "allow", "change": "deny"}, deny=[".env", "secrets/"])
+    assert hid.status_code == 200 and hid.json()["deny"] == [".env", "secrets/"], hid.text
+    error, names = use(jo, "list_directory", folder="Plans", path=".")
+    assert not error and ".env" not in names["names"] and "secrets" not in names["names"], names
+    error, found = use(jo, "glob", folder="Plans", pattern="**/*")
+    assert not error and sorted(found["paths"]) == ["new.txt", "plan.txt", "src/app.py"], found
+    assert "skipped" not in found, found
+    error, grepped = use(jo, "grep", folder="Plans", pattern="TOKEN", output="content")
+    assert not error and grepped["lines"] == "src/app.py:1:print('TOKEN')", grepped
+    for path in (".env", "src/.env", "secrets/key.txt", "secrets/none.txt"):
+        error, text = use(jo, "read_text", folder="Plans", path=path)
+        assert error and HIDDEN in text and "TOKEN" not in text, (path, text)
+    for tool, arguments in (("glob", {"pattern": "secrets/*"}),
+                            ("grep", {"pattern": "TOKEN", "path": "secrets"})):
+        error, text = use(jo, tool, folder="Plans", **arguments)
+        assert error and HIDDEN in text, (tool, text)
+    looser = call(f"job-sites/{site_id}/workspaces/{workspace}/rules", jo,
+                  rules={"read": "allow", "change": "deny"}, deny=[".env"])
+    assert looser.status_code == 202 and looser.json()["held"] is True, looser.text
+    assert desk.reject_all(jo_id) == 1
+    ok("2b.3b (J70): a path jo denies in her workspace is left out of list_directory, glob and "
+       "grep (and not counted as skipped), and refused by name whether or not it exists; "
+       "denying applies at once, and dropping a pattern is held for her key")
+
+    # ---- B6. the owner sees none of jo's workspaces (J76, J80) -------------------------
+    at("ada")
+    owner = mine(ada)
+    assert [w["name"] for w in owner["workspaces"]] == ["Notes"], owner["workspaces"]
+    assert "Plans" not in json.dumps(owner) and json.dumps(str(space))[1:-1] not in json.dumps(owner), owner
+    own_list = call(f"job-sites/{site_id}/workspaces/list", ada).json()["workspaces"]
+    assert [w["name"] for w in own_list] == ["Notes"], own_list
+    tools = mcp(ada, "files", "tools/list").json()["response"]["result"]["tools"]
+    assert "Plans" not in json.dumps(tools), tools
+    # Refused as a name nobody holds is: the refusal says nothing of jo's.
+    hers_named = refused(ada, "read_text", folder="Plans", path="plan.txt").replace("Plans", "?")
+    none_named = refused(ada, "read_text", folder="Nowhere", path="plan.txt").replace("Nowhere", "?")
+    assert hers_named == none_named, (hers_named, none_named)
+    ada_lines = call(f"job-sites/{site_id}/audit", ada, limit=200).json()["entries"]
+    assert not [e for e in ada_lines if "Plans" in json.dumps(e) and e["subject"] == jo_id]
+    assert not [e for e in ada_lines if e.get("action") in ("workspace.add", "rules.set")
+                and e["subject"] == jo_id], ada_lines
+    jo_lines = call(f"job-sites/{site_id}/audit", jo, limit=200)
+    assert jo_lines.status_code == 200, jo_lines.text
+    jo_lines = jo_lines.json()["entries"]
+    assert any(e.get("tool") == "read_text" and "Plans" in json.dumps(e) for e in jo_lines)
+    assert all(e["subject"] == jo_id for e in jo_lines), {e["subject"] for e in jo_lines}
+    written = [(e["decision"], e.get("rule"), e.get("asked")) for e in jo_lines
+               if e.get("tool") == "write_text" and "Plans" in json.dumps(e)]
+    assert written[:2] == [("allowed", "ask", True), ("refused", "ask", False)], written
+    console = c.http.get(f"{c.control}/v1/sites").json()
+    for seen in (console, owner, mine(jo)):
+        assert json.dumps(str(space))[1:-1] not in json.dumps(seen), seen
+    ok("2b.3b (J76, J80): the site's owner sees none of jo's workspaces: not in her view, her "
+       "live list, her tools or her audit lines, and a call naming one is refused without "
+       "saying it exists; jo reads her own lines (each call's rule, and whether she was asked); "
+       "no report the root keeps carries jo's path")
+
+    # ---- B7. without use-job-sites, no workspace of one's own and no link (J77) --------
+    taken = c.http.patch(f"{c.control}/v1/people/{jo_id}", json={"permissions": ["add-job-sites"]})
+    assert taken.status_code == 200, taken.text
+    assert taken.json()["permissionsInEffect"] == ["add-job-sites"], taken.json()
+    at("jo")
+    more = call(f"job-sites/{site_id}/workspaces", jo, name="More", path=str(space))
+    assert more.status_code == 403 and "use job sites" in more.text, more.text
+    own_call = mcp(jo, "files", "tools/call", {"name": "read_text", "arguments": {
+        "folder": "Plans", "path": "plan.txt"}})
+    assert own_call.status_code == 403 and "use job sites" in own_call.text, own_call.text
+    assert not use(jo, "read_text", folder="Notes", path="note.txt")[0]  # the owner's grant
+    link = desk.check_person("jo", PASSWORD)
+    assert link.returncode != 0 and "use job sites" in link.stdout + link.stderr, (
+        link.returncode, link.stdout, link.stderr)
+    back = c.http.patch(f"{c.control}/v1/people/{jo_id}", json={"permissions": None})
+    assert back.status_code == 200, back.text
+    assert sorted(back.json()["permissionsInEffect"]) == ["add-job-sites", "use-job-sites"]
+    assert desk.check_person("jo", PASSWORD).returncode == 0
+    assert use(jo, "read_text", folder="Plans", path="plan.txt")[1]["text"] == "jo's plan\n"
+    at("ada")
+    ok("2b.3b (J77): with use-job-sites taken away on the People page, jo can neither add a "
+       "workspace nor use her own (403, in the root's words), nor link at a machine (the link "
+       "check the site makes is refused); what the owner shared with her still works; given "
+       "back (the install's default), all of it works again")
 
 
 def main() -> int:

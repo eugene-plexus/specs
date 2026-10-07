@@ -74,6 +74,23 @@ K3. The approve page lists the rules made before the key first, as a whole,
 K4. A change from Workbench that gives access answers 202 held and changes
     nothing until the owner's Chrome approves it at the machine.
 K5. A change that only takes access away applies at once (J51).
+
+2b.3b (`job-sites-own-enrollment.md` §3.3), with the second person, after 6:
+J1. Her workspace, in a folder only she may open, waits for her own key
+    (202 held) before she has one; it is counted on her view, not the owner's.
+J2. Her Chrome, in her session, makes her key at the machine; her approve page
+    lists only her change and the owner's page only his; her workspace runs
+    as her, reading with no word and changing only when Workbench says she
+    was asked (J72).
+J3. A rule the root forges in her name is held, and she turns it down from
+    Workbench; in the owner's name it finds no such workspace.
+J4. A path she denies is hidden from glob and grep, and refused by name
+    (its 8.3 short name too).
+J5. The owner sees none of her workspaces: his view, list, tools and audit
+    lines; the console carries no path of hers.
+J6. Without use-job-sites her sign-in on the link page is refused (J77).
+The policy file edited behind the site's back is `job-sites-acceptance.py`'s
+(the same site host code, run on this machine with `--root-wsl`).
 """
 
 from __future__ import annotations
@@ -362,7 +379,13 @@ try:
     page = plain.open(base + authorize).read().decode()
     request = re.search(r'name="request" value="([^"]+)"', page).group(1)
     form = urllib.parse.urlencode({"request": request, "name": name, "password": password}).encode()
-    callback = where(base + "/oidc/authorize", form)
+    try:
+        callback = where(base + "/oidc/authorize", form)
+    except urllib.error.HTTPError as exc:
+        # Refused at the sign-in (J77: not let use job sites): what it said.
+        result["refused"] = {"code": exc.code, "text": re.sub(r"<[^>]+>", " ", exc.read().decode())}
+        json.dump(result, open(out, "w", encoding="utf-8"))
+        sys.exit(0)
     confirm = plain.open(callback).read().decode()
     result["confirm"] = re.sub(r"<[^>]+>", " ", confirm)
     csrf = re.search(r"name=csrf value='([^']+)'", confirm).group(1)
@@ -475,11 +498,32 @@ def start_root(state: Path, port: int) -> Any:
     from eugene_plexus_control.settings import Settings
 
     app = create_app(Settings(config_file=state / "control.yaml", state_dir=state / "state"))
+    forge_hook(app)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     wait_for("the root did not start", lambda: socket.create_connection(("127.0.0.1", port), 1))
     return server, thread
+
+
+def forge_hook(app: Any) -> None:
+    """Stand in for a root that queues a change in a person's name they never
+    made (rule 2 of §3.3; as `job-sites-acceptance.py`'s hook): the root this
+    script hosts, on its loopback port only."""
+    from types import SimpleNamespace
+
+    from eugene_plexus_control import sites as helpers
+
+    async def forge(body: dict[str, Any]) -> dict[str, Any]:
+        machine = app.state.machine
+        record = machine.state.sites[body["site"]]
+        bound = helpers.binding(record)
+        envelope = helpers.envelope(machine.state, bound, body["subject"], kind="manage",
+                                    action=body["action"], arguments=body["arguments"])
+        broker = helpers.broker(SimpleNamespace(app=app))
+        return await broker.submit(bound, lambda: envelope, write=True)
+
+    app.add_api_route("/acceptance/forge", forge, methods=["POST"])
 
 
 def sign_in(http: Any, control: str, client: dict[str, Any], name: str, password: str) -> str:
@@ -519,11 +563,20 @@ class Workbench:
                               auth=(self.client["client"]["clientId"], self.client["clientSecret"]),
                               json={"refreshToken": token, **body})
 
-    def tool(self, token: str, site: str, name: str, **arguments: Any) -> dict[str, Any]:
+    def tool(self, token: str, site: str, name: str, *, asked: bool = False,
+             **arguments: Any) -> dict[str, Any]:
+        """`asked`: the person approved this call in Workbench (J72)."""
+        extra = {"asked": True} if asked else {}
         answer = self.call("sites/mcp", token, site=site, server="files",
-                           request=rpc("tools/call", {"name": name, "arguments": arguments}))
-        assert answer.status_code in (200, 422, 503), answer.text
+                           request=rpc("tools/call", {"name": name, "arguments": arguments}),
+                           **extra)
+        assert answer.status_code in (200, 403, 422, 503), answer.text
         return dict(answer.json())
+
+    def listing(self, token: str, site: str) -> list[dict[str, Any]]:
+        answer = self.call("sites/mcp", token, site=site, server="files", request=rpc("tools/list"))
+        assert answer.status_code == 200 and answer.json()["status"] == "done", answer.text
+        return list(answer.json()["response"]["result"]["tools"])
 
 
 def text_of(answer: dict[str, Any]) -> str:
@@ -709,31 +762,38 @@ def run(args: argparse.Namespace) -> None:
         granted = bench.call(f"job-sites/{site_id}/folders/{folder_id}/people", token["troy"],
                              people=everyone)
         assert granted.status_code == 200, granted.text
-        wait_for("the grant never reported", lambda: len(site_view()["folders"][0]["people"]) == 3)
+        # The owner, named on her own folder as an older root does (J11), is
+        # read without: a workspace's holder has rules of her own (2b.3b).
+        wait_for("the grant never reported", lambda: len(site_view()["folders"][0]["people"]) == 2)
         approve_page = f"{agent_url}/link/approve"
-        signing = site_view()["signing"]
-        assert signing == {"state": "unsigned", "held": 0, "approvePage": approve_page}, signing
+
+        def signing_is(state: str, held: int) -> bool:
+            seen = site_view()["signing"]
+            return (seen["state"], seen["held"], seen["approvePage"]) == (state, held, approve_page)
+
+        assert signing_is("unsigned", 0), site_view()["signing"]
         before_key = bench.tool(token["troy"], site_id, "write_text", folder="Shared",
-                                path="before-key.txt", text="troy", expectedSha256="")
+                                path="before-key.txt", text="troy", expectedSha256="", asked=True)
         assert before_key["status"] == "failed", before_key
-        assert "has not added their own key" in before_key["message"], before_key
+        assert "not added your own key" in before_key["message"], before_key
         assert approve_page in before_key["message"], before_key
         assert not (shared / "before-key.txt").exists()
         ok("K1. until the owner's key is pinned no tool runs, and the refusal says where to add "
            "it; the rules the root sent before the key are applied as the root's word (J48)")
 
         # ---- K2. the owner's Chrome makes a key at the machine ------------------
-        def browser(phase: str) -> dict[str, Any]:
-            """The system Chrome in the owner's own session, with their own
-            unelevated token, started by LocalSystem as the starter starts a
-            worker; one profile across phases, so the key stays in it."""
-            out = work / "browser" / f"{phase}.json"
-            cfg = work / "browser" / f"{phase}-cfg.json"
+        def browser(phase: str, sid: str = owner_sid, folder: str = "browser") -> dict[str, Any]:
+            """The system Chrome in a person's own session (the owner's unless
+            `sid` says), with their own unelevated token, started by
+            LocalSystem as the starter starts a worker; one profile per person
+            across phases, so the key stays in it."""
+            out = work / folder / f"{phase}.json"
+            cfg = work / folder / f"{phase}-cfg.json"
             cfg.write_text(json.dumps({
                 "playwright": str(playwright), "base": agent_url, "phase": phase,
-                "profile": str(work / "browser" / "profile"), "out": str(out)}), encoding="utf-8")
-            ran = system.run(f"EugenePlexusAcceptance-browser-{phase}-{tag}",
-                             scripts / "in_session.py", owner_sid, node,
+                "profile": str(work / folder / "profile"), "out": str(out)}), encoding="utf-8")
+            ran = system.run(f"EugenePlexusAcceptance-{folder}-{phase}-{tag}",
+                             scripts / "in_session.py", sid, node,
                              str(scripts / "browser_client.mjs"), str(cfg), seconds=180)
             assert ran.get("code") == 0, ran
             seen = json.loads(out.read_text(encoding="utf-8"))
@@ -779,8 +839,9 @@ def run(args: argparse.Namespace) -> None:
            "takes it: the site is signed")
 
         # ---- 2. the owner's calls run as the owner ----------------------------
+        # His own workspace's change rule is ask (2b.3b): Workbench asked him.
         wrote = bench.tool(token["troy"], site_id, "write_text", folder="Shared",
-                           path="by-troy.txt", text="troy", expectedSha256="")
+                           path="by-troy.txt", text="troy", expectedSha256="", asked=True)
         assert wrote["status"] == "done", wrote
         assert file_owner(shared / "by-troy.txt") == owner_sid
         workers = processes("eugene_plexus_site_host.worker")
@@ -840,7 +901,7 @@ def run(args: argparse.Namespace) -> None:
         held = bench.call(f"job-sites/{site_id}/folders/{folder_id}/people", token["troy"],
                           people=all_write)
         assert held.status_code == 202 and held.json()["held"] is True, held.text
-        assert "approve it there with your key" in held.json()["message"], held.text
+        assert "approve it with your key" in held.json()["message"], held.text
         wait_for("the held change never reported", lambda: site_view()["signing"]["held"] == 1)
         waiting = bench.tool(token["bo"], site_id, "write_text", folder="Shared",
                              path="by-bo.txt", text="bo", expectedSha256="")
@@ -853,9 +914,8 @@ def run(args: argparse.Namespace) -> None:
         assert "Nothing is waiting" in approved["after"], approved
         wait_for("the approved grant never reported", lambda: all(
             p["writable"] for p in site_view()["folders"][0]["people"]))
-        signed = {"state": "signed", "held": 0, "approvePage": approve_page}
         wait_for("the site never reported itself signed with nothing held",
-                 lambda: site_view()["signing"] == signed)
+                 lambda: signing_is("signed", 0))
         ok("K4. a change from Workbench that gives access answers 202 held and changes nothing "
            "until the owner's Chrome approves it at the machine, where a name the root sent for "
            "someone with no link here is marked as Eugene's (J50, J54)")
@@ -877,9 +937,8 @@ def run(args: argparse.Namespace) -> None:
         assert taken.status_code == 200, taken.text
         wait_for("the narrower grant never reported", lambda: not next(
             p for p in site_view()["folders"][0]["people"] if p["name"] == "bo")["writable"])
-        signed = {"state": "signed", "held": 0, "approvePage": approve_page}
         wait_for("the site never reported itself signed with nothing held",
-                 lambda: site_view()["signing"] == signed)
+                 lambda: signing_is("signed", 0))
         denied = bench.tool(token["bo"], site_id, "write_text", folder="Shared",
                             path="by-bo-again.txt", text="bo", expectedSha256="")
         assert denied["status"] == "failed" and "not change files" in denied["message"], denied
@@ -895,6 +954,152 @@ def run(args: argparse.Namespace) -> None:
             wrong.returncode, wrong.stderr)
         ok("a worker started for an account it does not run as refuses to serve")
 
+        # ---- J1-J5. 2b.3b: her own workspace, rules and key (§3.3) -------------
+        if person_sid is None:
+            skip("J1-J5. a second person's own workspace, rules and key: give --person-account")
+        else:
+            jessie, troy = token["jessie"], token["troy"]
+
+            def her_view() -> dict[str, Any]:
+                sites = bench.call("job-sites", jessie).json()["sites"]
+                return next(s for s in sites if s["id"] == site_id)
+
+            def tool_text(answer: dict[str, Any]) -> tuple[bool, Any]:
+                assert answer["status"] == "done", answer
+                result = answer["response"]["result"]
+                text = result["content"][0]["text"]
+                return bool(result["isError"]), (text if result["isError"] else json.loads(text))
+
+            # Her folder is hers alone, as one in her own profile would be.
+            space = work / "jessie-space"
+            space.mkdir()
+            icacls(space, "/inheritance:r", "/grant:r", f"*{person_sid}:(OI)(CI)F",
+                   "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F")
+            for name, text in (("plan.txt", "jessie's plan\n"), (".env", "TOKEN=1\n"),
+                               ("secrets/key.txt", "TOKEN=2\n"), ("src/app.py", "print('TOKEN')\n")):
+                (space / name).parent.mkdir(exist_ok=True)
+                (space / name).write_text(text, encoding="utf-8", newline="\n")
+            (work / "browser-jessie").mkdir()
+            icacls(work / "browser-jessie", "/grant", f"*{person_sid}:(OI)(CI)M")
+
+            # J1. held for her own key, even before she has one (J68)
+            assert her_view()["role"] == "linked" and her_view()["workspaces"] == [], her_view()
+            owner_held = site_view()["signing"]["held"]
+            added = bench.call(f"job-sites/{site_id}/workspaces", jessie, name="Plans",
+                               path=str(space))
+            assert added.status_code == 202, added.text
+            assert "Waiting for your own key" in added.json()["message"], added.text
+            wait_for("her held count never said 1", lambda: her_view()["signing"]["held"] == 1)
+            assert her_view()["workspaces"] == [] and site_view()["signing"]["held"] == owner_held
+            # The owner's own change waits too, so each page can be seen to
+            # leave the other's out.
+            opt_in = bench.call(f"job-sites/{site_id}/settings", troy, ownerInDevMode=True)
+            assert opt_in.status_code == 202, opt_in.text
+            wait_for("the owner's change never counted",
+                     lambda: site_view()["signing"]["held"] == owner_held + 1)
+            ok("J1. jessie, linked and with no key yet, adds a workspace from Workbench: it waits "
+               "for her own key (202 held), counted on her view and not the owner's")
+
+            # J2. her key, made in her Chrome at the machine, approves hers alone (J67)
+            hers = browser("pair", person_sid, "browser-jessie")
+            assert "is linked to jessie in Eugene" in hers["link"], hers["link"]
+            (card,) = hers["cards"]
+            assert card["title"] == "A change from Workbench", hers
+            assert any("“Plans”" in w for w in card["words"]), card
+            assert hers["stored"]["extractable"] is False, hers["stored"]
+            links = json.loads(links_file.read_text(encoding="utf-8"))["links"]
+            keys_of = {x["account"]: [k["id"] for k in x.get("keys") or []] for x in links}
+            assert keys_of[person_sid] == [hers["stored"]["id"]], keys_of
+            assert hers["stored"]["id"] not in keys_of[owner_sid], keys_of
+            mine = browser("approve")
+            (only,) = mine["cards"]
+            assert not any("Plans" in w for w in only["words"]), mine
+            wait_for("the owner's opt-in never reported", lambda: site_view()["ownerInDevMode"])
+            off = bench.call(f"job-sites/{site_id}/settings", troy, ownerInDevMode=False)
+            assert off.status_code == 200, off.text
+            wait_for("her workspace never reported",
+                     lambda: [w["name"] for w in her_view()["workspaces"]] == ["Plans"])
+            listed = bench.call(f"job-sites/{site_id}/workspaces/list", jessie).json()["workspaces"]
+            assert [(w["name"], w["path"], w["rules"]) for w in listed] == [
+                ("Plans", str(space), {"read": "allow", "change": "ask"})], listed
+            workspace = listed[0]["id"]
+            # As J5 looks for it (in JSON, escaped): found where it is meant to be.
+            assert json.dumps(str(space))[1:-1] in json.dumps(listed)
+            read = bench.tool(jessie, site_id, "read_text", folder="Plans", path="plan.txt")
+            assert "jessie's plan" in text_of(read), read
+            unasked = bench.tool(jessie, site_id, "write_text", folder="Plans", path="new.txt",
+                                 text="x", expectedSha256="")
+            assert unasked["status"] == "failed" and "approv" in unasked["message"], unasked
+            asked = bench.tool(jessie, site_id, "write_text", folder="Plans", path="new.txt",
+                               text="x", expectedSha256="", asked=True)
+            assert asked["status"] == "done", asked
+            assert file_owner(space / "new.txt") == person_sid
+            ok("J2. her Chrome, in her own session, makes her key at the machine and approves her "
+               "workspace; her page lists only her change and the owner's only his; her workspace "
+               "runs as her account: reading with no word, changing only when Workbench says she "
+               "was asked (J72)")
+
+            # J3. a rule the root forges in her name waits for her, and is turned down
+            forged = http.post(f"{control}/acceptance/forge", json={
+                "site": site_id, "subject": people["jessie"], "action": "rules.set",
+                "arguments": {"id": workspace, "rules": {"read": "allow", "change": "allow"},
+                              "deny": []}}, timeout=60)
+            assert forged.status_code == 200 and forged.json()["status"] == "held", forged.text
+            waiting_items = bench.call(f"job-sites/{site_id}/held", jessie)
+            assert waiting_items.status_code == 200, waiting_items.text
+            (item,) = [i for i in waiting_items.json()["items"] if i["id"] != "rules"]
+            turned_down = bench.call(f"job-sites/{site_id}/held/{item['id']}/reject", jessie)
+            assert turned_down.status_code == 204, turned_down.text
+            rules = bench.call(f"job-sites/{site_id}/workspaces/list", jessie).json()["workspaces"]
+            assert rules[0]["rules"] == {"read": "allow", "change": "ask"}, rules
+            as_owner = http.post(f"{control}/acceptance/forge", json={
+                "site": site_id, "subject": people["troy"], "action": "rules.set",
+                "arguments": {"id": workspace, "rules": {"read": "allow", "change": "allow"},
+                              "deny": []}}, timeout=60)
+            assert as_owner.json()["status"] == "failed", as_owner.text
+            assert "no such workspace" in as_owner.json()["message"], as_owner.text
+            ok("J3. a rule the root forges in jessie's name is held for her key, never applied, "
+               "and she turns it down from Workbench; forged in the owner's name it finds no such "
+               "workspace")
+
+            # J4. a denied path is hidden from every tool, as her account
+            hid = bench.call(f"job-sites/{site_id}/workspaces/{workspace}/rules", jessie,
+                             rules={"read": "allow", "change": "ask"}, deny=[".env", "secrets/"])
+            assert hid.status_code == 200, hid.text
+            error, found = tool_text(bench.tool(jessie, site_id, "glob", folder="Plans",
+                                                pattern="**/*"))
+            assert not error and sorted(found["paths"]) == ["new.txt", "plan.txt", "src/app.py"], found
+            error, grepped = tool_text(bench.tool(jessie, site_id, "grep", folder="Plans",
+                                                  pattern="TOKEN", output="content"))
+            assert not error and grepped["lines"] == "src/app.py:1:print('TOKEN')", grepped
+            for path in (".env", "secrets/key.txt", "SECRE~1/key.txt", "secrets/none.txt"):
+                error, text = tool_text(bench.tool(jessie, site_id, "read_text", folder="Plans",
+                                                   path=path))
+                assert error and "hidden" in text and "TOKEN" not in text, (path, text)
+            ok("J4. a path jessie denies is left out of glob and grep run as her account, and "
+               "refused by name, its 8.3 short name too, whether or not it exists")
+
+            # J5. the owner sees none of her workspaces (J76, J80)
+            view = site_view()
+            assert [w["name"] for w in view["workspaces"]] == ["Shared"], view["workspaces"]
+            assert "Plans" not in json.dumps(view) and json.dumps(str(space))[1:-1] not in json.dumps(view), view
+            own = bench.call(f"job-sites/{site_id}/workspaces/list", troy).json()["workspaces"]
+            assert [w["name"] for w in own] == ["Shared"], own
+            assert "Plans" not in json.dumps(bench.listing(troy, site_id))
+            nowhere = bench.tool(troy, site_id, "read_text", folder="Plans", path="plan.txt")
+            assert "jessie's plan" not in text_of(nowhere), nowhere
+            lines = bench.call(f"job-sites/{site_id}/audit", troy, limit=200).json()["entries"]
+            assert not [e for e in lines
+                        if e["subject"] == people["jessie"] and "Plans" in json.dumps(e)], lines
+            her_lines = bench.call(f"job-sites/{site_id}/audit", jessie, limit=200)
+            assert her_lines.status_code == 200, her_lines.text
+            assert any(e.get("tool") == "write_text" and e.get("asked") is True
+                       for e in her_lines.json()["entries"]), her_lines.text
+            assert json.dumps(str(space))[1:-1] not in json.dumps(http.get(f"{control}/v1/sites").json())
+            ok("J5. the owner sees none of jessie's workspaces: not in his view, his live list, "
+               "his tools or his audit lines, and his call naming one reads nothing; she reads "
+               "her own lines; the root's console carries no path of hers")
+
         # ---- 7. she removes her link from Workbench ----------------------------
         if person_sid is None:
             skip("7. a second person removes their link from Workbench: give --person-account")
@@ -909,6 +1114,10 @@ def run(args: argparse.Namespace) -> None:
                                path="jessie-unlinked.txt", text="as the owner", expectedSha256="")
             assert wrote["status"] == "done", wrote
             assert file_owner(shared / "jessie-unlinked.txt") == owner_sid
+            # Her own workspace is never opened by anyone else's worker.
+            orphan = bench.tool(token["jessie"], site_id, "read_text", folder="Plans",
+                                path="plan.txt")
+            assert orphan.get("status") != "done" and "jessie's plan" not in text_of(orphan), orphan
             from eugene_plexus_agent.site_host import channel_name as name_of
 
             channel_name = name_of(config_file.parent)
@@ -919,7 +1128,8 @@ def run(args: argparse.Namespace) -> None:
             raw = json.loads(raw_out.read_text(encoding="utf-8"))
             assert raw.get("first", {}).get("t") == "refused", raw
             ok("she removes her link from Workbench: the root asks the agent, her worker stops, her "
-               "calls run as the owner, and her account is refused on the site host's channel")
+               "calls in the owner's folder run as the owner, her own workspace is opened by no "
+               "one, and her account is refused on the site host's channel")
 
         # ---- 8. no link can be made from the root or the site host ------------
         for method, path in (("POST", "/v1/site/links"), ("PUT", "/v1/site/links/x"),
@@ -934,8 +1144,31 @@ def run(args: argparse.Namespace) -> None:
 
         # ---- 9. signed out, refused -------------------------------------------
         if person_sid is None:
-            skip("9. signed out, a person's calls are refused: give --person-account")
+            skip("J6, 9. not let use job sites, and signed out: give --person-account")
         else:
+            # J6. without use-job-sites she can neither link nor keep a workspace (J77)
+            taken = http.patch(f"{control}/v1/people/{people['jessie']}",
+                               json={"permissions": ["add-job-sites"]})
+            assert taken.status_code == 200, taken.text
+            refused_out = work / "results" / "link-refused.json"
+            result = system.run(f"EugenePlexusAcceptance-refused-{tag}", scripts / "in_session.py",
+                                person_sid, str(site_python), "-I", str(scripts / "link_client.py"),
+                                agent_url, "jessie", str(password_file), str(refused_out))
+            assert result.get("code") == 0, result
+            seen = json.loads(refused_out.read_text(encoding="utf-8"))
+            assert seen.get("refused", {}).get("code") == 403, seen
+            assert "has not let you use job sites" in seen["refused"]["text"], seen
+            links = json.loads(links_file.read_text(encoding="utf-8"))["links"]
+            assert [x["account"] for x in links] == [owner_sid], links
+            more = bench.call(f"job-sites/{site_id}/workspaces", token["jessie"], name="More",
+                              path=str(work / "jessie-space"))
+            assert more.status_code in (403, 404), more.text  # unlinked: not even her site
+            back = http.patch(f"{control}/v1/people/{people['jessie']}", json={"permissions": None})
+            assert back.status_code == 200, back.text
+            ok("J6. with use-job-sites taken away on the People page, jessie's sign-in on the "
+               "machine's link page is refused in the root's words, and no link is made; given "
+               "back, she links again (below)")
+
             relinked = system.run(f"EugenePlexusAcceptance-relink-{tag}", scripts / "in_session.py",
                                   person_sid, str(site_python), "-I", str(scripts / "link_client.py"),
                                   agent_url, "jessie", str(password_file),
