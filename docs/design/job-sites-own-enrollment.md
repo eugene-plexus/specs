@@ -1304,6 +1304,49 @@ account on that machine, at the machine (the owner is linked at the join).
   per-person permission may let an auditor read everyone's lines (banked,
   not built).
 
+**What building 2b.3b found (2026-10-07).** Built on contract `652ddc5`
+(J80 recorded, and who names a person's view: both ends, the same way). No
+new calls.
+- **Names in a person's view are computed at both ends.** The report is per
+  site, not per person, so it carries each holder's own name, and the site
+  and the root each name a person's view the same way: their own, then what
+  the owner shared, `Name (2)` on a repeat. The root copies the site's
+  `unique_names`; a sabotage that breaks it at the root is caught.
+- **An unlinked holder's workspaces are never served.** Only the holder's
+  own worker opens them; with no link they are refused saying *link*, not
+  passed to the owner's worker. (A key's state would refuse them too, since
+  keys live on the link; the sabotage pass found that second mechanism and
+  the refusal now names the first.)
+- **`pathspec` hides a hidden folder's contents by itself.** The loop over
+  the folders a path is in escaped every sabotage and was deleted. On
+  Windows, matching is caseless, and an 8.3 short name (`SECRE~1`) is
+  refused wherever a workspace hides paths, since Windows opens it as the
+  long name.
+- **Log compatibility.** A person left on the install's defaults carries no
+  `permissions` key, so a standby older than J77 applies their entry as
+  before; only a person given their own list carries one.
+- **`asked` only to a site that gave rules.** Workbench sends it for an
+  approved call whose site listed `_meta` `eugene-plexus/ask`; a site that
+  lists nothing (older than 2b.3b) is asked about every call as before and
+  never told, since an older root refuses the field.
+- **Audit lines carry a `reader`**, stripped before any line leaves the
+  site; lines written before 2b.3b have none and are the owner's.
+- **An older root's `folder.people` naming the owner** (J11) is read
+  without the owner: a workspace's holder has rules of their own.
+- **Workbench's limits (J71):** 200 calls in 50 rounds; calls that ask stay
+  capped at 16. A 40-call answer of allowed reads finishes with no prompt
+  (unit test with the fake site and model).
+
+Unit tests: site host 296 (16 new), control 435 (13 new), ui 1727, agent
+2029, Workbench 71 Python + 97 web in the changed areas. Sabotage, changed
+code only (`scripts/b23b-sabotage.py`): site host 34/34 once five escapes
+were answered (four missing tests, one spare deleted), control 14/14.
+
+**Landed on `main`, not pinned (2026-10-07):** site host `cc16b8a`, agent
+`12c952f` (pins that site host), control `be2dec1`, ui `db4bf501` (source;
+`dist` not rebuilt), Workbench source. The installers still pin the 2b.3a
+set until the acceptance of record: `docs/private/handoff-2b3b.md`.
+
 ---
 
 ## 4. Calls
