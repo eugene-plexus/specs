@@ -1020,6 +1020,148 @@ one-liner again).
 **Then slice 3**, cross-site copy on the held channel (J10), as
 `remote-nodes.md` §5 had it.
 
+#### 3.3 The build of 2b.3 (measured 2026-10-07)
+
+Measured at the J14a.3 pins (site host `2d70ee9`, Workbench `1890294`, agent
+`6497721`, control `9886286`). `S/` is the site host, `W/` Workbench, `AG/`
+the agent, `CT/` control.
+
+**The file tools today.**
+- Three tools (`S/file_server.py:41-63`). A read refuses a file over
+  32 KiB or 16,384 characters (`S/folder_io.py:210-212,280-283`). A write
+  rewrites the file in place, then `fsync`s it, and says *uncertain* if it
+  stops midway (`S/folder_io.py:350-377`).
+- On Windows, each name is opened relative to a held parent handle, and
+  reparse points are refused (`S/folder_windows.py:88-141`). A directory
+  listing asks only for names (`S/folder_windows.py:199-234`). A walk must
+  ask for each entry's attributes instead, so it can skip links without
+  opening them.
+- On Linux, each call runs in a fresh thread under Landlock
+  (`S/folder_linux.py:265-278,322-350`). It does not cross into another
+  mount (`S/folder_linux.py:385-387`).
+- **Size.** An answer over 70,000 bytes is refused after the worker has
+  produced it (`S/host.py:365-371`). The local channel carries 256 KiB a
+  frame (`S/local_channel.py:38`). Workbench cuts a result at 65,536
+  characters (`W/tools.py:515-516`). So the new tools must cut their own
+  answers below these limits, and say that they did.
+- **Time.** The site host waits 25 s for a worker (`S/host.py:99`). It then
+  reports any `tools/call` as *uncertain: it may have acted*
+  (`S/host.py:348-354`). For a search that ran too long, that is the wrong
+  word: a read cannot have acted.
+
+**Who may do what today.**
+- **Owner only:** every management action (`S/host.py:531-536`), every
+  approval (`S/host.py:1084-1085,1099-1100`), and a passkey code
+  (`S/host.py:1247-1254`; the page says so at `AG/routes/site_link.py:772-776`).
+  The root's `/oidc/job-sites/{site}/…` routes are the owner's too
+  (`CT/routes/sites.py:975-1157`).
+- **Already per person:**
+  - Any linked person can make and pin a key at the machine
+    (`AG/routes/site_link.py:638-659`), and the links file keeps each
+    person's keys on their own link (`S/links.py:84-98`).
+  - The sequence and the held changes are kept per person (`S/signing.py`,
+    `S/host.py:964-1014`).
+  - Passkeys are kept per person, bound to that person's link
+    (`S/host.py:764-775`).
+- The policy is one set of rules with one approval digest, the owner's
+  (`S/policy.py:44,92-113`). No tool runs until that digest is approved
+  (`S/host.py:800-816`).
+
+**Workbench today.**
+- Every call asks the person (`W/answers.py:381-412`).
+- An answer stops at 16 calls or 8 rounds (`W/answers.py:353-363,422`). A
+  model that searches and reads as Claude Code does reaches that limit in
+  one task.
+- A site's tools reach the model with their own schemas
+  (`W/tools.py:357-377`), cut to the folders the chat chose through the
+  `folder` argument (`W/tools.py:380-392`). New tools that keep a `folder`
+  argument need no change in Workbench.
+- Workbench's own folders, on its own machine, are a separate copy of the
+  file tools, with the same three (`W/folders.py:31-71`).
+
+**The contract.**
+- `SiteCall` has no field saying whether the person approved the call
+  (`site-host.yaml:338-357`).
+- `SiteManageAction` is described as the owner's alone
+  (`site-host.yaml:359-395`).
+
+**Settled without a call** (each follows from a rule already taken):
+- `edit_text` writes in place, as `write_text` and Claude Code do. Writing
+  a new file and renaming it over the old one would change the file's
+  identity, and drop its permissions on Windows.
+- Links are never followed: a read refuses one, and a walk skips it. Other
+  mounts are not entered.
+- A read-only tool that runs out of time fails, saying so. It is never
+  reported as uncertain.
+- Limits:
+  - files up to 16 MiB for reading and searching, and 1 MiB for editing;
+  - every answer under 48 KiB of text, so it fits the 70,000 bytes once
+    escaped as JSON;
+  - a search stops after 10 s or 20,000 entries.
+
+  Each limit is stated in the tool's description.
+
+**The split, recommended:**
+
+1. **2b.3a, the tools**, on today's `files` server under today's grants:
+   - `read_text` gains `offset` and `limit` in lines, and always returns the
+     whole file's hash;
+   - `edit_text` replaces an exact passage, or every copy of it when asked,
+     and needs that hash;
+   - `glob` and `grep`.
+
+   Built in the site host, with prose in the contract; Workbench is
+   unchanged. It needs J73 and J74.
+
+   *Done when:* on Amish_Station, Workbench's model finds, searches, reads a
+   range of and edits files in a real repository. These are refused: links,
+   another mount, `..`, a stale hash and an ambiguous passage. Every answer
+   that stopped short says so.
+2. **2b.3b, each person's keys, workspaces and rules, at the site** (J67-J70,
+   J72, J76):
+   - a policy per person, each approved with that person's own key;
+   - the actions `workspace.add`, `workspace.remove` and `rules.set`, from
+     any linked person, held for their own key;
+   - passkeys for every linked person;
+   - `SiteCall.asked`;
+   - the root's routes open to a linked person, for their own items only;
+   - in Workbench, just a person's workspaces and approving with their own
+     passkey.
+
+   *Done when* (Troy and Jessie on Amish_Station):
+   - Jessie's new workspace waits until Jessie's own key approves it;
+   - Troy's key cannot approve it, and Jessie's cannot approve Troy's
+     changes;
+   - a rule the root forges for Jessie is refused;
+   - Troy sees none of Jessie's workspaces;
+   - a path that is denied stays hidden from `glob` and `grep`.
+3. **2b.3c, Workbench's rules editor and prompts** (J71): the editor;
+   prompting only for "ask"; the limits per answer.
+
+   *Done when*, in the browser:
+   - "allow" runs without a prompt, "ask" prompts, and "deny" is never
+     offered;
+   - a 40-call search-and-read task finishes;
+   - Stop ends it.
+
+Each slice is landed and pinned before the next, with one acceptance run of
+record (CLAUDE.md's testing policy).
+
+**Calls (J67-J76), for Troy:**
+
+| # | Call | Recommendation | Trade-off |
+|---|---|---|---|
+| J67 | Each linked person's own key (J44; widens J62) | **Every linked person may hold both kinds of key.** A key at the machine works today. A passkey pairs with a code shown on that person's own `/link` page. Each person's key approves only their own workspaces and rules. The owner's key still approves who may use the site. A person's passkey actions from Workbench (pair, list, approve, turn down, remove) reach only that person's own items | J59's gap (any program running as the person can use their key page) now covers every linked person, until J14b. The alternative, the owner approving everyone's rules, means the owner sees their workspaces, which §2.6 forbids. A person's rules would also be signed by someone else's key |
+| J68 | A linked person with no key | **Their workspace changes wait for their key, and never apply on the root's word** (J48, per person). Until then they have only what the owner shared with them. The link page offers to make the key in the same visit as the link | A person must make a key before their first workspace. Linking already takes a visit to the machine, so offering the key then costs no second trip |
+| J69 | Today's folders and the new workspaces | **One word, "workspace"; every workspace belongs to one linked person.** Today's folders become the owner's workspaces, with nothing to convert. Only the owner's workspaces may be shared, with today's people lists (J27) | A linked person who wants to share a folder asks the owner. The owner approves their rules once more after the update, because the shape of the approval digest changes |
+| J70 | The rules | **Allow, ask or deny per workspace, for two groups of tools: read and search, and change files.** The rules are stored per tool, so commands fit later. Path patterns inside a workspace can only *deny*, and a denied path is hidden from every tool, including `list_directory`, `glob` and `grep`. Defaults as §2.6's table | You cannot say "ask before reading `.env`, allow the rest", only deny `.env`. Per-pattern "ask" would make a search stop for approval on each matching result |
+| J71 | How many calls an answer may make | **Calls the rules allow do not count against the prompt limit.** An answer may make up to 200 calls in 50 rounds. Stop ends it at any time, and the gateway's repetition safeguard stays | A runaway model spends tokens on reads until the person stops it. Reads cannot change anything, and today's 16 calls is one task's worth of searching |
+| J72 | Telling the site a call was approved, before J14b | **`SiteCall.asked`, which Workbench sets when the person approved the call.** The site refuses an "ask" tool without it. The audit log records which rule applied, and that the approval was claimed, not checked | A compromised root can set it (J29), which J14b closes. Without the field, the site cannot catch a Workbench bug that runs an "ask" call unasked |
+| J73 | What search skips | **`.gitignore` is honoured and `.git` is always skipped, unless `includeIgnored` is set.** Binary files, files that are not UTF-8 and files over the limit are skipped, and the answer counts them | One small dependency (`pathspec`). Without it, `node_modules` fills every answer to its limit |
+| J74 | A search pattern that never finishes | **Patterns use the `regex` package with a timeout per file, under the 10 s limit for the whole search.** A search that is stopped says so, and returns what it found | One dependency. Python's own `re` cannot be stopped, and the thread would hold one of the worker's eight call slots for good |
+| J75 | Workbench's own folders, on its own machine | **Unchanged in 2b.3**: they keep three tools. Banked: replace them with a job site on Workbench's own machine, which gives people their own accounts, rules and keys there too | The model has fewer tools on Workbench's own machine than on a site, until the banked idea is taken up |
+| J76 | What the root keeps of a person's workspaces | **The site reports a workspace's name and id, never its path.** A person's paths are read live from the site, through the root, when they open their own workspaces. The root shows each person only their own | One more site action (`workspace.list`), and that page waits on the site. A compromised root still sees what it carries. An honest root keeps no one's paths at rest. It applies to the owner's workspaces too, so Eugene's owner's dev-mode grants name a workspace by id, and the site stops checking the path the root sends with them (`S/host.py:503-510`) |
+
 ---
 
 ## 4. Calls
