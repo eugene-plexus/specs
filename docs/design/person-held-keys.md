@@ -726,7 +726,7 @@ install has no link page (Workbench tells people to link there). `site join`
 on a per-user install ends by opening `/link` in the person's browser (Windows
 and macOS; Linux with a desktop session) and always prints it.
 
-**Calls building made (J55-J59), for Troy:**
+**Calls building made (J55-J59). Troy approved all five as taken (2026-10-07), J59 included: closed in J14b, no browser-only check now.**
 
 | # | Call | Taken | Trade-off |
 |---|---|---|---|
