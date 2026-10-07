@@ -69,6 +69,18 @@ host's account (`sudo -u`) when the host runs as another account; the agent's
 the machine, so check 11 runs it for real; the nodes name carries seven paths
 (`POST /v1/sites/links/check`, J36), which check 1 and check 18 assert.
 
+**J14a (person-held-keys.md §12): the owner's own key.** The starter pins the
+owner's key in the links file, as the agent's loopback page does on a Windows
+service install; this script makes it with `cryptography` where a browser
+would make it with WebCrypto (`j14a-browser-check.py` drives the browser
+itself). Until it is pinned the site runs no tool (J48). Once it is, a change
+that gives access answers 202 *held*, and is applied only once this script
+approves it at the machine through the site host's own `/v1/held`, signing
+the envelope the site host gave with the owner's key: so every grant below
+goes through the real verifier. A change the root forges in the owner's name
+is held, never applied; an old approval replayed against the same change asked
+again is refused.
+
 Topologies:
 * Linux, one host (CI): `python job-sites-acceptance.py`.
 * Windows with WSL2 (the doc's stand-in): `python job-sites-acceptance.py
@@ -99,6 +111,8 @@ import tarfile
 import tempfile
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
@@ -561,7 +575,9 @@ class SiteHost:
         self.links_file = self.site_dir / "links.json"
         self.servers_file = self.site_dir / "servers.yaml"
         self.protected: list[str] = []
-        self.linked: list[dict[str, str]] = []
+        self.linked: list[dict[str, Any]] = []
+        self.keys: dict[str, tuple[str, Any, str]] = {}
+        self.last_approval: tuple[str, dict[str, Any]] | None = None
         self.workers: dict[str, Worker] = {}
         if channel is None:
             if os.name == "nt":
@@ -597,9 +613,88 @@ class SiteHost:
 
     def link(self, subject: str, name: str, account: str, account_name: str) -> None:
         self.linked = [e for e in self.linked if e["subject"] != subject]
-        self.linked.append({"subject": subject, "name": name, "account": account,
-                            "accountName": account_name,
-                            "linkedAt": "2026-10-06T00:00:00+00:00"})
+        entry: dict[str, Any] = {"subject": subject, "name": name, "account": account,
+                                 "accountName": account_name,
+                                 "linkedAt": "2026-10-06T00:00:00+00:00"}
+        if subject in self.keys:
+            entry["keys"] = [self._key_entry(subject)]
+        self.linked.append(entry)
+
+    # --- J14a: the person's own key, and approving at the machine ------------------
+
+    def _key_entry(self, subject: str) -> dict[str, Any]:
+        ident, _key, public = self.keys[subject]
+        return {"id": ident, "alg": "Ed25519", "publicKey": public, "label": "the harness",
+                "addedAt": "2026-10-06T00:00:00+00:00"}
+
+    def pin(self, subject: str) -> str:
+        """The starter pins `subject`'s key at the machine (J14a): made here as
+        their browser would make it, its public half on their link."""
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
+        key = Ed25519PrivateKey.generate()
+        raw = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        ident = hashlib.sha256(raw).hexdigest()[:32]
+        self.keys[subject] = (ident, key, base64.b64encode(raw).decode())
+        for entry in self.linked:
+            if entry["subject"] == subject:
+                entry["keys"] = [self._key_entry(subject)]
+        self.write_links()
+        return ident
+
+    def held_api(self, method: str, path: str, body: dict[str, Any] | None = None) -> tuple[int, Any]:
+        """The site host's own `/v1/held`, with the token in its data directory."""
+        token = self.read("local_token").strip()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}", method=method,
+            data=None if body is None else json.dumps(body).encode(),
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=40) as response:
+                raw = response.read()
+                return response.status, json.loads(raw) if raw else None
+        except urllib.error.HTTPError as exc:
+            return exc.code, None
+
+    def held(self, subject: str) -> list[dict[str, Any]]:
+        ident = self.keys[subject][0]
+        status, value = self.held_api(
+            "GET", f"/v1/held?subject={urllib.parse.quote(subject)}&key={ident}"
+        )
+        assert status == 200, status
+        return list(value["items"])
+
+    def approve(self, subject: str) -> list[dict[str, Any]]:
+        """The person approves, at the machine, everything held for them, one
+        at a time: each approval moves their sequence on, so the list is read
+        again after each, as the page does."""
+        ident, key, _ = self.keys[subject]
+        answers: list[dict[str, Any]] = []
+        for _ in range(16):
+            items = self.held(subject)
+            if not items:
+                return answers
+            item = items[0]
+            approval = {
+                "subject": subject, "envelope": item["envelope"], "key": ident,
+                "signature": base64.b64encode(key.sign(item["envelope"].encode())).decode(),
+            }
+            status, answer = self.held_api("POST", f"/v1/held/{item['id']}/approve", approval)
+            assert status == 200 and answer["status"] == "done", (status, answer, item)
+            self.last_approval = (item["id"], approval)
+            answers.append(answer)
+        raise AssertionError("more than 16 changes were held")
+
+    def reject_all(self, subject: str) -> int:
+        items = [i for i in self.held(subject) if i["id"] != "rules"]
+        for item in items:
+            status, _ = self.held_api(
+                "POST", f"/v1/held/{item['id']}/reject", {"subject": subject}
+            )
+            assert status == 204, status
+        return len(items)
 
     def write_links(self) -> None:
         put_file(self.links_file, json.dumps({"version": 1, "links": self.linked}).encode(),
@@ -1125,13 +1220,33 @@ def run(args: argparse.Namespace) -> None:
                 time.sleep(0.5)
 
         workers_up(*(["ada", "jo"] if sudo_mode else ["ada"]))
+
+        def signing(state: str) -> dict[str, Any]:
+            return settle(lambda s: (s.get("signing") or {}).get("state") == state,
+                          f"the site never reported its signing state as {state}")
+
+        # ---- 4b. no tool runs until the owner's key is pinned (J14a, J48) -----
+        # Straight to the site, past the root's own checks: the site's refusal.
+        unsigned = forge(kind="enqueue", subject=people["ada"], server="files",
+                         request=rpc("tools/list"))
+        assert unsigned.json()["status"] == "failed", unsigned.text
+        assert "own key" in unsigned.json()["message"], unsigned.text
+        signing("unsigned")
+        desk.pin(people["ada"])
+        signing("signed")  # no rules yet: nothing to approve as a whole (J52)
+        ok("J14a: until its owner's key is pinned at the machine the site runs no tool and says "
+           "why; with the key and no rules yet it is signed")
+
         read = {"name": "read_text", "arguments": {"folder": "Notes", "path": "note.txt"}}
         mine_only = call("job-sites", bo).json()["sites"]
         assert mine_only == [], mine_only
         added = call(f"job-sites/{site_id}/folders", ada, name="Notes", path=str(folder), writable=True)
-        assert added.status_code == 201, added.text
-        folder_id = added.json()["id"]
-        assert added.json()["people"] == []
+        assert added.status_code == 202 and added.json()["held"] is True, added.text
+        assert "approve it there with your key" in added.json()["message"], added.text
+        assert settle(lambda s: s.get("signing", {}).get("held") == 1, "held")["folders"] == []
+        (registered,) = desk.approve(people["ada"])
+        folder_id = registered["result"]["id"]
+        assert registered["result"]["people"] == []
         again = call(f"job-sites/{site_id}/folders", ada, name="notes", path=str(folder))
         assert again.status_code == 422 and "registered already" in again.text, again.text
         settle(lambda s: s["folders"], "the site never reported its folder")
@@ -1143,9 +1258,13 @@ def run(args: argparse.Namespace) -> None:
         assert forged.json()["status"] == "failed" and "has not given you" in forged.json()["message"]
         granted = call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
                        people=[{"name": "ada", "writable": False}, {"name": "bo", "writable": False}])
-        assert granted.status_code == 200, granted.text
-        assert {p["name"] for p in granted.json()["people"]} == {"ada", "bo"}
-        settle(lambda s: len(s["folders"][0]["people"]) == 2, "the grant never reported")
+        assert granted.status_code == 202, granted.text
+        (words,) = desk.held(people["ada"])
+        # Bo has no account here: his name is the root's, and the page says so (J54).
+        assert any("bo (as Eugene names them" in w for w in words["words"]), words
+        desk.approve(people["ada"])
+        reported = settle(lambda s: len(s["folders"][0]["people"]) == 2, "the grant never reported")
+        assert {p["name"] for p in reported["folders"][0]["people"]} == {"ada", "bo"}
         listed_servers = call("sites/servers", bo).json()["servers"]
         files = next(s for s in listed_servers if s["server"] == "files")
         assert files["site"] == site_id and files["folders"] == [
@@ -1166,8 +1285,10 @@ def run(args: argparse.Namespace) -> None:
         denied = mcp(bo, "files", "tools/call", write)
         assert denied.json()["status"] == "failed" and "not change files" in denied.json()["message"]
         assert (folder / "note.txt").read_text(encoding="utf-8") == "Notes from ada's desk"
-        call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
-             people=[{"name": "ada", "writable": False}, {"name": "bo", "writable": True}])
+        assert call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
+                    people=[{"name": "ada", "writable": False},
+                            {"name": "bo", "writable": True}]).status_code == 202
+        desk.approve(people["ada"])
         settle(lambda s: any(p["writable"] for p in s["folders"][0]["people"]), "write grant")
         wrote = mcp(bo, "files", "tools/call", {"name": "write_text", "arguments": {
             "folder": "Notes", "path": "new.txt", "text": "bo was here", "expectedSha256": ""}})
@@ -1187,7 +1308,8 @@ def run(args: argparse.Namespace) -> None:
            "nobody else may; default deny holds even when the root itself sends bo's call; "
            "after ada gives bo read access he lists and reads the file through /oidc/sites/mcp; "
            "a write needs ada's standing pre-approval; the audit log names who asked and what "
-           "was decided, never contents, and only its owner reads it")
+           "was decided, never contents, and only its owner reads it; each grant answered 202 "
+           "held and was applied only once ada's key approved it at the machine (J14a)")
 
         # ---- 6. editing the root's state is not enough -------------------
         assert forge(kind="owner", owner=people["bo"]).status_code == 200
@@ -1201,6 +1323,15 @@ def run(args: argparse.Namespace) -> None:
         assert manage.status_code == 200, manage.text
         assert manage.json()["status"] == "failed" and "Only this machine's owner" in manage.json()["message"], manage.text
         assert forge(kind="owner", owner=people["ada"]).status_code == 200
+        # J14a: the root forging a grant in the owner's own name is held, never applied.
+        in_her_name = forge(kind="manage", subject=people["ada"], action="folder.people",
+                            arguments={"id": folder_id, "people": [
+                                {"subject": people["ada"], "writable": False},
+                                {"subject": people["bo"], "writable": True},
+                                {"subject": people["jo"], "writable": True}]})
+        assert in_her_name.json()["status"] == "held", in_her_name.text
+        assert desk.reject_all(people["ada"]) == 1
+        assert not any(p["name"] == "jo" for p in settle(lambda s: True, "")["folders"][0]["people"])
         other = forge(kind="enqueue", enrolledAt="2001-01-01T00:00:00+00:00", subject=people["ada"],
                       server="files", request=rpc("tools/call", read))
         assert other.status_code == 200, other.text
@@ -1208,7 +1339,8 @@ def run(args: argparse.Namespace) -> None:
         assert (folder / "new.txt").read_text(encoding="utf-8") == "bo was here"
         ok("rule 2: the root naming bo as the site's owner, an operation queued in his name, and "
            "one bound to an earlier enrollment all get nothing run: the site refuses (its pinned "
-           "owner; 'not for this site')")
+           "owner; 'not for this site'); a grant the root forges in ada's own name is held, not "
+           "applied, and she turns it down at the machine (J14a)")
 
         # ---- 7. the site's token opens its own routes only ---------------
         token = site_token(desk)
@@ -1228,7 +1360,7 @@ def run(args: argparse.Namespace) -> None:
            "refused with it (directly and through the nodes name), and so is minting an invitation")
 
         # ---- a fifth tool, added at the machine --------------------------
-        local_server_check(desk, work, base, call, mcp, settle, site_id, ada, bo)
+        local_server_check(desk, work, base, call, mcp, settle, site_id, ada, bo, people["ada"])
 
         # ---- production, then dev mode (J6e) ---------------------------------
         assert mcp(owner, "files", "tools/call", read).status_code == 403
@@ -1246,7 +1378,10 @@ def run(args: argparse.Namespace) -> None:
         assert closed.status_code == 200 and closed.json()["status"] == "failed", closed.text
         assert "Dev mode alone opens nothing" in closed.json()["message"]
         opted = call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=True)
-        assert opted.status_code == 200 and opted.json()["ownerInDevMode"] is True, opted.text
+        assert opted.status_code == 202, opted.text
+        desk.approve(people["ada"])
+        assert desk.last_approval is not None
+        replay = desk.last_approval[1]
         settle(lambda s: s["ownerInDevMode"], "the opt-in never reported")
         opened = mcp(owner, "files", "tools/call", read)
         assert opened.status_code == 200 and opened.json()["status"] == "done", opened.text
@@ -1255,9 +1390,20 @@ def run(args: argparse.Namespace) -> None:
         assert back.status_code == 200
         assert mcp(owner, "files", "tools/call", read).status_code == 403
         assert [s["dev"] for s in http.get(f"{control}/v1/sites").json()["sites"]] == [None]
+        # J51: turning it off is applied at once; J14a: asked again, the old
+        # approval of the same change does not apply it a second time.
+        off = call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=False)
+        assert off.status_code == 200 and off.json()["ownerInDevMode"] is False, off.text
+        assert call(f"job-sites/{site_id}/settings", ada, ownerInDevMode=True).status_code == 202
+        (again,) = desk.held(people["ada"])
+        status, replayed = desk.held_api("POST", f"/v1/held/{again['id']}/approve", replay)
+        assert status == 200 and replayed["status"] == "failed", (status, replayed)
+        assert "older than one already used" in replayed["message"], replayed
+        assert desk.reject_all(people["ada"]) == 1
         ok("production: Eugene's owner cannot read it, by grant or by listing; dev mode adds a "
            "section to the console and opens only once the site's owner lets them in (J6e); "
-           "back in production it stops at once")
+           "back in production it stops at once; the opt-in was held for ada's key, turning it "
+           "off needed none (J51), and her old approval did not apply it when asked again")
 
         # ---- 9. a node says which site it hosts (J32) --------------------
         hosting = enroll_node(http, control, "amish")
@@ -1416,7 +1562,7 @@ def lan_only_join(
 
 def local_server_check(
     desk: SiteHost, work: Path, base: Path | None, call: Any, mcp: Any, settle: Any, site_id: str,
-    ada: str, bo: str,
+    ada: str, bo: str, owner_subject: str,
 ) -> None:
     """A fifth tool, added the way `eugene-plexus-agent site server add` adds
     one after its elevation check (the check itself is the agent's unit test
@@ -1457,14 +1603,16 @@ def local_server_check(
     assert listed["servers"][0]["server"]["id"] == "notes-tool"
     assert not listed["servers"][0]["server"]["enabled"]
     on = call(f"job-sites/{site_id}/servers/notes-tool/enabled", ada, enabled=True)
-    assert on.status_code == 200, on.text
-    assert {t["name"] for t in on.json()["server"]["tools"]} == {"echo", "touch"}
+    assert on.status_code == 202, on.text
+    (enabled,) = desk.approve(owner_subject)
+    assert {t["name"] for t in enabled["result"]["server"]["tools"]} == {"echo", "touch"}
     plain = call(f"job-sites/{site_id}/servers/notes-tool/access", ada,
                  people=[{"name": "bo", "tools": [{"name": "touch"}]}])
     assert plain.status_code == 422 and "standing" in plain.text, plain.text
     given = call(f"job-sites/{site_id}/servers/notes-tool/access", ada,
                  people=[{"name": "bo", "tools": [{"name": "echo"}]}])
-    assert given.status_code == 200, given.text
+    assert given.status_code == 202, given.text
+    desk.approve(owner_subject)
     settle(lambda s: s["servers"][0]["people"], "the tool grant never reported")
     mine = call("sites/servers", bo)
     assert any(s["server"] == "notes-tool" and s["kind"] == "local" for s in mine.json()["servers"])
@@ -1582,7 +1730,8 @@ def two_b_two(c: SimpleNamespace) -> None:
     given = c.call(f"job-sites/{c.site_id}/folders/{c.folder_id}/people", ada, people=[
         {"name": "ada", "writable": True}, {"name": "bo", "writable": True},
         {"name": "jo", "writable": True}])
-    assert given.status_code == 200, given.text
+    assert given.status_code == 202, given.text
+    desk.approve(people["ada"])
     c.settle(lambda s: bool(s["folders"]) and sum(p["writable"] for p in s["folders"][0]["people"]) == 3, "write grants")
     for token, name in ((ada, "ada.txt"), (jo, "jo.txt"), (bo, "bo.txt")):
         reply = write(token, name, f"written for {name}")

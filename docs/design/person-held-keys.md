@@ -675,6 +675,33 @@ ten minutes, and the signature must verify with a key pinned to that person
 in the links file. Keys are Ed25519, or ECDSA P-256 where a browser lacks
 Ed25519; key id = the first 16 bytes of SHA-256 over the raw public key.
 
+### 12.3 What building J14a.1 found
+
+- **A policy file edited behind the site's back now runs nothing.** The
+  approval is a digest of the whole policy, so a change written to
+  `policy.json` by anything but the site host's own handlers (a restore, an
+  old build, a hand edit) leaves the rules unapproved until the owner approves
+  them at the machine. Before J14a such an edit simply took effect.
+- **The owner's key lives on the owner's link.** Removing the owner's link
+  removes their key, and the site becomes unsigned: no tool runs, a linked
+  person's included. A test that said "a linked person is not held up by the
+  owner's missing link" was rewritten to say the opposite, on purpose (J48).
+- **A grant the server's own tool list refuses is refused before it is held.**
+  Otherwise a destructive tool granted without a standing pre-approval would
+  wait for the owner's approval and then fail.
+- **Deploy order: the root first.** A J14a site host reports `signing` and
+  link `keys`, and may answer `held`; a root older than J14a refuses all three
+  (its contract is closed). A machine that updates before its root goes offline
+  until the root updates. On Troy's install: the NAS container first, then
+  Amish_Station.
+- **The browser half was checked in the browser.** `j14a-browser-check.py`
+  drives the system Chrome against the agent's own routes and page script and
+  the site host's own app: an Ed25519 key, and a P-256 one with Ed25519 withheld,
+  each made, pinned, and accepted by the site host's verifier; WebCrypto refuses
+  to export the private half to the page's own script. What it cannot do
+  unelevated is the Windows service install itself (the agent as LocalSystem
+  reading the site host's token across accounts): that run is owed.
+
 ---
 
 ## 11. What this design does not cover
