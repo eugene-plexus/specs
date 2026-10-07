@@ -1209,8 +1209,8 @@ sabotage 36/36 once three missing tests were added (record:
 [`workspace-tools-run.md`](../acceptance/workspace-tools-run.md)).
 
 **2b.3b: the contract (2026-10-07), and calls J77-J80 for Troy.** Written
-first, as J67-J76 say; nothing is built on it yet. It follows J77-J80's
-recommendations and changes if Troy answers otherwise.
+first, as J67-J76 say; nothing is built on it yet. It follows J77 as
+revised, J78 and J79 as taken, and J80's recommendation, which is open.
 - **The site** (`site-host.yaml`, `components/sites.yaml`):
   - actions `workspace.add`, `workspace.remove`, `rules.set`,
     `workspace.list` and `audit.read` from any linked person, for their own
@@ -1232,6 +1232,9 @@ recommendations and changes if Troy answers otherwise.
   `JobSite.role` and `workspaces`; `SiteMcpCall.asked`;
   `SiteServerFolder.mine`. The held, passkey and audit routes open to a
   person the site's last report links, for their own items.
+- **People** (`control.yaml`, J77 revised): `PersonPermission`
+  (`add-job-sites`, `use-job-sites`), `Person.permissions` and
+  `permissionsInEffect`.
 
 *Settled without a call* (each follows from a call already taken):
 - **Today's folders become the owner's workspaces with §2.6's defaults**
@@ -1263,10 +1266,41 @@ recommendations and changes if Troy answers otherwise.
 
 | # | Call | Recommendation | Trade-off |
 |---|---|---|---|
-| J77 | Who may add a workspace | **Any linked person, with no word from the site's owner.** Being linked is the consent: it needs an OS account on the machine and that person at it, and the owner can remove a link from Workbench. A person's workspace reaches only what their own account already can | The owner cannot stop a linked person using Workbench on their own files except by removing the link. The alternative, a list of who may add workspaces, which the owner signs, is one more step before anyone but the owner can work there |
+| J77 | Who may add a workspace | *Revised in discussion (below).* Was: any linked person, with no word from the site's owner | Was: one answer for every install; different installs want different answers |
 | J78 | Local servers under allow/ask/deny | **Each tool granted is `allow` or `ask`; a tool not granted is denied.** Default: `allow` for a tool the site does not treat as destructive, `ask` for one it does. Today's `standing: true` reads as `allow`. A destructive tool may now be granted `ask`, where today it is refused without a standing pre-approval | A read-only tool of a local server now runs without a prompt (today Workbench prompts for every call). Its read-only mark is the server's own word; the server was added at the machine by an administrator. The alternative, `ask` for every local tool by default, keeps today's prompts |
 | J79 | Whose approval a call needs (J48, per person) | **A call runs under the approval of the rules it uses.** A person's own workspace needs their own approved rules; a workspace the owner shared, a local server or dev mode needs the owner's. With the owner unsigned or unconfirmed, Jessie's own workspaces still run | J48 said no tool runs on the site until the owner's key approved its rules. That still holds for everything the owner's rules govern, and Jessie is not stopped by the owner's re-approval after the update (J69). The alternative, the owner's state stopping everyone, is simpler to say and makes everyone wait on the owner |
 | J80 | Who reads the audit log | **Each line belongs to one person, who alone reads it through the root**: a call or change in a workspace to its holder; one about a person's keys to them; the local servers, sharing and settings to the owner. Today only the owner reads it, and every line | Without it the owner reads Jessie's file names and searches (§2.6: the owner does not see another person's workspaces). An administrator at the machine can still read the whole file on disk |
+
+**Who is who** (asked by Troy before answering): *Eugene's owner* holds the
+install's passphrase, is not on the People list and owns no site. *The
+site's owner* is the person from the People list who ran the join at that
+machine and confirmed with their own password; the site records them once.
+*A linked person* is a person from the People list who also linked an OS
+account on that machine, at the machine (the owner is linked at the join).
+
+**Troy's answers (2026-10-07).**
+- **J77, revised: permissions per Eugene person.** Troy: different
+  environments need different answers, so define permissions per Eugene
+  user. Taken as proposed: `Person.permissions` at the root, set where People
+  are managed, null meaning the install's defaults (the root's settings
+  `peopleMayAddJobSites` and `peopleMayUseJobSites`, both on, so a household
+  needs no setup and an organisation turns them off and grants person by
+  person). `add-job-sites` gates `/oidc/job-sites/invite` (J9);
+  `use-job-sites` gates linking at a machine (the link page's sign-in and the
+  Linux link check) and keeping workspaces of one's own. They only narrow:
+  the site's floor (an OS account, a link at the machine, the person's own
+  key) stays, so a root that sets one wrongly gives no one more than the
+  machine allows, and they need no signature at the site. The site's owner
+  gets no per-site say on top for now (the OS account is the per-machine
+  gate). A folder the owner shares is the owner's grant, not governed by
+  `use-job-sites`. Taking it away leaves a link inert, not removed.
+  Contract: `PersonPermission`, `Person.permissions` and
+  `permissionsInEffect` (settings never lie), on create, update and the
+  snapshot.
+- **J78: as recommended.**
+- **J79: as recommended.**
+- **J80: open.** A later per-person permission may let an auditor read
+  everyone's lines (banked, not built).
 
 ---
 

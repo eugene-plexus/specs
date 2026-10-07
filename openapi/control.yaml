@@ -364,8 +364,9 @@ paths:
         `job-sites-own-enrollment.md` §3.2): the agent's link page on a
         site's machine. It is public, with no secret, and its only redirect
         is a loopback one, `http://127.0.0.1:<port>/link/callback` with any
-        port (RFC 8252 §7.3). Every person may use it, and Eugene's owner may
-        not. It is never in the client list and cannot be edited or removed.
+        port (RFC 8252 §7.3). Every person with `use-job-sites` may use it
+        (J77; before 2b.3b every person), and Eugene's owner may not. It is
+        never in the client list and cannot be edited or removed.
       parameters:
         - {name: response_type, in: query, required: true, schema: {type: string, enum: [code]}}
         - {name: client_id, in: query, required: true, schema: {type: string}}
@@ -537,7 +538,7 @@ paths:
       - {name: id, in: path, required: true, schema: {type: string}}
     patch:
       operationId: updatePerson
-      summary: Change a person's name, apps, or whether they are disabled
+      summary: Change a person's name, apps, permissions, or whether they are disabled
       description: Operator only. Disabling refuses their next sign-in and their apps' next refresh.
       requestBody:
         required: true
@@ -1951,7 +1952,7 @@ paths:
         '401':
           description: Not an enrolled site's token, or the name or password is wrong.
         '403':
-          description: The person is disabled, or is Eugene's owner, who is not a person on a site.
+          description: The person is disabled, lacks `use-job-sites` (J77), or is Eugene's owner, who is not a person on a site.
         '429':
           description: Too many failed checks; try again shortly.
         '503':
@@ -2259,8 +2260,9 @@ paths:
       tags: [sites]
       summary: A join command for one of the signed-in person's own machines
       description: |
-        Self-service (J9): any signed-in person may add a Job Site for a
-        machine of their own. Mints a site invitation naming them, valid 15
+        Self-service (J9): any signed-in person with `add-job-sites` (J77,
+        on by default) may add a Job Site for a machine of their own; 403
+        without it. Mints a site invitation naming them, valid 15
         minutes, at most three outstanding per person. The machine must
         already be a node (J21); the join command, run there, adds the site
         without reinstalling the node (J35), and the person confirms with
@@ -2733,8 +2735,8 @@ paths:
       description: |
         The workspace is the signed-in person's: their own worker on the
         machine opens it, as their own account, and only they use it unless
-        they own the site and share it (J69). Being linked at the machine is
-        all it takes (J77). The site holds the change until the person
+        they own the site and share it (J69). It takes a link at the machine
+        and `use-job-sites` (J77); the site's owner is not asked. The site holds the change until the person
         approves it with their own key, at the machine or with a passkey from
         Workbench, and never applies it on this root's word (J68); the site's
         owner keeps J52's way. This root learns its id and name, never its
@@ -2758,6 +2760,8 @@ paths:
               schema: {$ref: 'components/job-sites.yaml#/JobSiteWorkspaceDetail'}
         '401':
           description: Workbench client or person sign-in is invalid.
+        '403':
+          description: The person lacks `use-job-sites` (J77).
         '404':
           description: The person owns no such site and is linked to none by that id, or it has no such workspace.
         '422':
@@ -2791,6 +2795,8 @@ paths:
               schema: {$ref: 'components/job-sites.yaml#/JobSiteWorkspaceList'}
         '401':
           description: Workbench client or person sign-in is invalid.
+        '403':
+          description: The person lacks `use-job-sites` (J77).
         '404':
           description: The person owns no such site and is linked to none by that id, or it has no such workspace.
         '422':
@@ -2819,6 +2825,8 @@ paths:
           description: Removed.
         '401':
           description: Workbench client or person sign-in is invalid.
+        '403':
+          description: The person lacks `use-job-sites` (J77).
         '404':
           description: The person owns no such site and is linked to none by that id, or it has no such workspace.
         '422':
@@ -2859,6 +2867,8 @@ paths:
               schema: {$ref: 'components/job-sites.yaml#/JobSiteWorkspaceDetail'}
         '401':
           description: Workbench client or person sign-in is invalid.
+        '403':
+          description: The person lacks `use-job-sites` (J77).
         '404':
           description: The person owns no such site and is linked to none by that id, or it has no such workspace.
         '422':
@@ -4069,6 +4079,10 @@ components:
         apps:
           type: [array, 'null']
           items: {type: string}
+        permissions:
+          type: [array, 'null']
+          items: {type: string}
+          description: Since 2b.3b (J77). Absent in a snapshot written before then, which reads as null, the install's defaults.
         disabled: {type: boolean}
         createdAt: {type: string, format: date-time}
         passwordChangedAt: {type: string, format: date-time}
@@ -4116,9 +4130,43 @@ components:
           type: [array, 'null']
           items: {type: string}
           description: The `clientId`s they may sign in to. Null is every app on the install.
+        permissions:
+          type: [array, 'null']
+          maxItems: 16
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/PersonPermission'}
+          description: |
+            Exactly these permissions (J77). Null is the install's defaults,
+            the root's settings `peopleMayAddJobSites` and
+            `peopleMayUseJobSites`, so changing a default changes everyone
+            left on it.
+        permissionsInEffect:
+          type: array
+          items: {$ref: '#/components/schemas/PersonPermission'}
+          description: What applies now, from `permissions` or, when it is null, the install's defaults.
         disabled: {type: boolean}
         createdAt: {type: string, format: date-time}
         passwordChangedAt: {type: string, format: date-time}
+
+    PersonPermission:
+      type: string
+      description: |
+        What a person may do with job sites (J77, `job-sites-own-enrollment.md`
+        §3.3). Kept at the root, set where People are managed. They only
+        narrow: whatever they say, a site still needs the person's OS
+        account on the machine, a link made there, and their own key on
+        their own changes, so a root that sets one wrongly gives no one more
+        than the machine allows.
+        - `add-job-sites`: add a machine of their own as a job site
+          (`/oidc/job-sites/invite`, J9).
+        - `use-job-sites`: link themselves at a site's machine (the link
+          page's sign-in and `/v1/sites/links/check`), and keep workspaces
+          of their own there (`/oidc/job-sites/{site}/workspaces…`, and calls
+          into those workspaces). Taking it away leaves a link on the machine
+          inert: the root refuses its workspaces and calls, and the person or
+          the site's owner can remove the link. A folder the site's owner
+          shares with them is the owner's grant and is not governed by it.
+      enum: [add-job-sites, use-job-sites]
 
     PersonList:
       type: object
@@ -4143,6 +4191,16 @@ components:
         apps:
           type: [array, 'null']
           items: {type: string}
+        permissions:
+          type: [array, 'null']
+          maxItems: 16
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/PersonPermission'}
+          description: |
+            Exactly these permissions (J77). Null is the install's defaults,
+            the root's settings `peopleMayAddJobSites` and
+            `peopleMayUseJobSites`, so changing a default changes everyone
+            left on it.
 
     PersonUpdateRequest:
       type: object
@@ -4157,6 +4215,16 @@ components:
         apps:
           type: [array, 'null']
           items: {type: string}
+        permissions:
+          type: [array, 'null']
+          maxItems: 16
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/PersonPermission'}
+          description: |
+            Exactly these permissions (J77). Null is the install's defaults,
+            the root's settings `peopleMayAddJobSites` and
+            `peopleMayUseJobSites`, so changing a default changes everyone
+            left on it.
         disabled: {type: boolean}
 
     PersonPasswordRequest:
