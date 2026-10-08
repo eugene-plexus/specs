@@ -104,6 +104,8 @@ EL_MODELS = [
      "can_do_text_to_speech": False},
 ]
 EL_VOICES = ["21m00Tcm4TlvDq8ikWAM", "EXAVITQu4vr4xnSDxMaL"]
+#: The names ElevenLabs gives them: its ids say nothing (2026-10-08).
+EL_VOICE_NAMES = {"21m00Tcm4TlvDq8ikWAM": "Rachel", "EXAVITQu4vr4xnSDxMaL": "Sarah"}
 #: ElevenLabs' speech-to-text models: named by nothing but its refusal of an
 #: unknown model id (measured 2026-09-28, P3-1).
 EL_STT = ["scribe_v1", "scribe_v2"]
@@ -436,7 +438,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
         @app.get("/el/v1/voices")
         async def el_voices(request: Request):
             return el_key(request, permission="voices_read") or {
-                "voices": [{"voice_id": v, "name": v[:6]} for v in EL_VOICES]}
+                "voices": [{"voice_id": v, "name": EL_VOICE_NAMES[v]} for v in EL_VOICES]}
 
         @app.post("/el/v1/speech-to-text")
         async def el_transcribe(request: Request):
@@ -809,6 +811,8 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         assert listed["router/acme/flux"].get("voices") is None
         assert listed["router/acme/chat"]["surfaces"] == ["chat"]
         assert listed["eleven/eleven_flash_v2_5"]["voices"] == EL_VOICES
+        assert listed["eleven/eleven_flash_v2_5"]["voice_names"] == EL_VOICE_NAMES
+        assert listed["router/acme/kokoro"].get("voice_names") is None
         assert listed["eleven/eleven_flash_v2_5"]["speech_formats"] == ["mp3", "opus", "wav", "pcm"]
         assert "eleven/eleven_multilingual_sts_v2" not in listed
         # A key that cannot read voices still speaks: none listed, which is
@@ -816,7 +820,8 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         assert listed["voiceless/eleven_flash_v2_5"].get("voices") is None
         assert not [m for m in listed if m.startswith("scoped/")], sorted(listed)
         ok("GET /v1/models lists each speech model with the voices its provider names (none where it names "
-           "none) and the formats it can be given in; ElevenLabs' speech-to-speech model is not offered")
+           "none), ElevenLabs' names beside its ids, and the formats it can be given in; ElevenLabs' "
+           "speech-to-speech model is not offered")
 
         info = call("scoped", "GET", "/v1/info", operator).json()
         error = (info.get("catalogue") or {}).get("error") or ""

@@ -60,7 +60,9 @@ is refused before anything is sent (M10); a Chrome recording (WebM) is
 kept, sent unchanged, and its transcript kept beside what the model heard
 (the fixture hears 1.5 s of 3.07, as OpenRouter's whisper did to kokoro's
 MP3). `--openrouter-live` adds a real kokoro clip transcribed back by
-whisper (SL; a fraction of a cent).
+whisper (SL; a fraction of a cent). An ElevenLabs account (the real
+`elevenlabs` provider on the fixture) lists voices by id; S7 checks their
+names reach the Speech screen beside them.
 
 `--browser` adds the system Chrome driving Workbench's page itself
 (`c3-workbench-browser.mjs`, Playwright from `ui/node_modules`).
@@ -123,6 +125,10 @@ KEYS_FILE = Path(os.environ.get("EP_KEYS", "C:/Users/troyc/.eugene-plexus-secret
 IMAGES = "images"
 LIVE_IMAGE = "black-forest-labs/flux.2-klein-4b"
 LIVE_AUDIO = ["hexgrad/kokoro-82m", "openai/whisper-large-v3-turbo"]
+#: An ElevenLabs account's driver name, and its voices: ids that say nothing,
+#: named by ElevenLabs (`GET /v1/voices`), as P3 measured them.
+ELEVEN = "eleven"
+EL_VOICES = {"21m00Tcm4TlvDq8ikWAM": "Rachel", "EXAVITQu4vr4xnSDxMaL": "Sarah"}
 
 
 def png(width: int, height: int) -> bytes:
@@ -296,6 +302,15 @@ def fixture_app(state_file: Path):
         # it heard the first 1.5 s of 3.1.
         return {"text": " The bench is ready.", "usage": {"seconds": 1.525}}
 
+    @app.get("/el/v1/models")
+    async def el_models():
+        return [{"model_id": "eleven_flash_v2_5", "name": "Eleven Flash v2.5",
+                 "can_do_text_to_speech": True}]
+
+    @app.get("/el/v1/voices")
+    async def el_voices():
+        return {"voices": [{"voice_id": v, "name": n} for v, n in EL_VOICES.items()]}
+
     @app.get("/router/v1/images/models")
     async def router_images():
         return {"data": [{"id": model_id, **entry} for model_id, entry in OR_IMAGES.items()]}
@@ -396,7 +411,7 @@ def serve(kind: str, directory: Path, port: int) -> None:
         kind = "agent"
     if kind == "fixture":
         app = fixture_app(directory / "fixture.json")
-    elif kind in (IMAGES, "openrouter"):
+    elif kind in (IMAGES, "openrouter", ELEVEN):
         # An account's driver, started here and registered with the agent,
         # as P4's run does: the real provider, with its own bootstrap.
         from eugene_plexus_inference_driver.app import create_app
@@ -536,7 +551,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
     for name in [k for k in os.environ if k.startswith("EUGENE_PLEXUS_")]:
         del os.environ[name]
     ports = free_ports(["control", "agent", "console", "fixture", "gateway", "model", "searx",
-                        "engine", IMAGES, "openrouter"])
+                        "engine", IMAGES, "openrouter", ELEVEN])
     url = {k: f"http://127.0.0.1:{v}" for k, v in ports.items()}
     lan = routable_address()
     client = httpx.Client(timeout=120, trust_env=False)
@@ -671,7 +686,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         trust = NodeTrust(identity, agent_dir / "trust_bundle.json")
         trust.load()
 
-        def account(name: str, config: dict, key: str) -> None:
+        def account(name: str, config: dict, key: str, env: str = "OPENAI_API_KEY") -> None:
             directory = work / name
             directory.mkdir(exist_ok=True)
             token, _ = trust.mint_service(sub="inference-driver", audience=trust.recipient)
@@ -680,12 +695,14 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
                 "trust_authority": trust.authority, "auth_recipient": trust.recipient,
                 "service_token": token}), encoding="utf-8")
             (directory / "driver.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
-            start(name, {"OPENAI_API_KEY": key})
+            start(name, {env: key})
             call("agent", "POST", "/v1/components", operator, json={
                 "name": name, "kind": "inference-driver", "url": url[name]}).raise_for_status()
 
         account(IMAGES, {"provider": "openrouter", "baseUrl": url["fixture"] + "/router"},
                 "fixture-not-a-key")
+        account(ELEVEN, {"provider": "elevenlabs", "baseUrl": url["fixture"] + "/el"},
+                "fixture-not-a-key", env="ELEVENLABS_API_KEY")
         if openrouter_live:
             account("openrouter", {"provider": "openrouter", "catalogueInclude": [LIVE_IMAGE, *LIVE_AUDIO]},
                     provider_key("OPENROUTER_API_KEY"))
@@ -1128,6 +1145,14 @@ def audio_run(*, ada: Browser, call, wait, app_id: str, operator: str, live: boo
           voice["voices"] == ["af_heart", "af_bella"] and voice["formats"] == ["mp3", "wav"]
           and voice["locality"] == "external" and hears["translates"] is False,
           {"speech": voice, "transcription": hears})
+
+    eleven = f"{ELEVEN}/eleven_flash_v2_5"
+    wait(lambda: eleven in {m["id"] for m in doors()["speech"]["models"]},
+         "the ElevenLabs account's speech model reaches Workbench", 90)
+    named = next(m for m in doors()["speech"]["models"] if m["id"] == eleven)
+    check("S7", "ElevenLabs voices reach the Speech screen with their names beside their ids",
+          named["voices"] == list(EL_VOICES) and named["voiceNames"] == EL_VOICES,
+          {"voices": named["voices"], "voiceNames": named.get("voiceNames")})
 
     item = speak()
     files = item.get("files") or []

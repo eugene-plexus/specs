@@ -548,9 +548,22 @@ passed 47 of 47.
 - **The half-heard clip is reproducible, and specific.** OpenRouter's
   whisper-turbo heard 1.525 s of kokoro's 3.07 s MP3 three times out of
   three, as `json` and as `verbose_json`. It heard the same speech whole
-  as WebM, and whisper-1 heard the MP3 whole. It looks like that
-  provider's MP3 decoding, not the audio. The upstream report is Troy's to
-  make, if he wants one.
+  as WebM, and whisper-1 heard the MP3 whole. The upstream report is
+  Troy's to make, if he wants one.
+  - **Why, measured the same day:** kokoro's MP3 is two LAME streams
+    joined end to end (frames 0-66 and 67-130), each opening with its
+    own Xing/LAME header frame. The first header says 66 frames, with 576 samples
+    of encoder delay and 840 of padding. 66 × 576 − 576 − 840 = 36,600
+    samples at 24 kHz, which is exactly 1.525 s.
+  - libsndfile 1.2.2 (mpg123) believes that header: it decodes 36,600
+    samples, the provider's figure to the millisecond. ffmpeg, OpenAI's
+    whisper-1 and ElevenLabs decode every frame (3.07 s).
+  - Chrome's `<audio>` reports 2.86 s for the clip, while
+    `decodeAudioData` gives 3.07 s, so Workbench's player shows a short
+    length for kokoro clips. The page measures an upload's length with
+    `decodeAudioData`, so the shortfall it reports is right.
+  - Which OpenRouter provider made the clip (DeepInfra or Together) and
+    which transcribed it (DeepInfra or Groq) was not recorded.
 - **"Heard" is only a claim when it falls short.**
   - `verbose_json` carries `duration` on three of the four backends, but
     OpenAI's gpt-4o-mini-transcribe refuses it (its own 400).
@@ -579,9 +592,13 @@ Workbench `27b36f7` (below), shipped as `dist` `53004e4` from agent
   voices still passes the voice through.
 - **P3's sabotage script had two dead anchors** from earlier refactors
   (specs#17). It refuses to start until they are re-anchored.
-- **ElevenLabs lists voices by id** (`CwhRBWXzGAHq8TQ4Fs17`). The picker
-  shows what the listing has. Names need a contract change, the voices'
-  names beside their ids, which is banked for Troy.
+- **ElevenLabs lists voices by id** (`CwhRBWXzGAHq8TQ4Fs17`). Troy
+  approved a contract field for names the same day, and it is built:
+  specs `37baa39` (`DriverModel.voiceNames`, `ModelRoutingInfo.voice_names`),
+  driver `5c500be`, gateway `d275bba`. Workbench `f4238a5` and the
+  console's speech door (ui `904d0a9`) show a voice's name, with the id
+  only where two share a name, and still send the id
+  ([record](../acceptance/workbench-media-speech-run.md#voice-names)).
 - **A recording is measured by the clock; an upload by decoding.**
   Chrome's WebM recordings carry no duration, so the page times a
   recording itself, and decodes an upload with `decodeAudioData`. Either

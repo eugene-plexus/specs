@@ -102,3 +102,51 @@ seconds, each a small fraction of a cent.
   adds a provider account (`workbench-media-screens.md` §0).
 - specs CI on the pin commit (checked next session). Workbench `27b36f7`
   and agent `33e2c9a` CI passed before it.
+
+## Voice names
+
+**2026-10-08, the same day. Built, run and pinned.** ElevenLabs lists voices
+by id (`21m00Tcm4TlvDq8ikWAM`), and Troy approved a contract field for their
+names after slice 2 landed.
+
+| Repo | Commit |
+|---|---|
+| specs (contract) | `37baa39` |
+| inference-driver | `5c500be` |
+| gateway | `d275bba` |
+| workbench (`main`) | `f4238a5` |
+| workbench (`dist`) | `e26adc4` |
+| ui (`main`) | `904d0a9` |
+| ui (`dist`) | `ac6f816` |
+| agent (catalogue) | `c5a195a` |
+
+- **The field:** `DriverModel.voiceNames` and `ModelRoutingInfo.voice_names`,
+  each a map from a voice's id to its provider's name. It is additive, and
+  the id is still what a request sends.
+  - The driver reads the names from ElevenLabs' `GET /v1/voices`.
+  - The gateway lists the names from the backends that list voices. The
+    first backend's name wins, and a name for a voice not listed is not
+    carried.
+- **Shown as:** Workbench's Speech screen and the console's speech door show
+  the name. They add the id only where two voices share a name. In
+  Workbench, *Find a voice* matches either.
+- **The run of record:** `c3-workbench-acceptance.py --browser`, with no
+  live spend: **53 of 53 passed**.
+  - Workbench was installed from the catalogue's `dist` archive `e26adc4`.
+  - New check **S7**: an ElevenLabs account (the real `elevenlabs`
+    provider on the fixture) lists two voices by id. Workbench's Speech
+    screen received both with their names, *Rachel* and *Sarah*.
+- **P3:** check 1 now asserts the ElevenLabs model's `voice_names`, and
+  that kokoro's are absent. 27 of 27 passed.
+- **Every CI acceptance script passed locally before the pins** (the same
+  21 as above).
+- **Unit suites:** driver 979, gateway 1,250, Workbench pytest 228 and
+  vitest 186, UI vitest 1,726. Static checks are clean in all four.
+- **Sabotage: 14 of 14 caught.**
+  - Driver and gateway: 6 of 6, with a scratch script.
+  - Workbench: 5 of 5, added to `check-media-sabotage.py`.
+  - Console door: 3 of 3, with a scratch script.
+- **specs#17**, the P3 sabotage script's two dead anchors, was fixed the
+  same day (`a6cdd4a`). The full pass ran against driver `334954a` and
+  gateway `48f5d59`: 67 of 67 caught, and the 2 cases the script expects
+  to escape did.
