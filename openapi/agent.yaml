@@ -3828,6 +3828,14 @@ components:
           description: The control root this node answers to.
         standby:
           $ref: '#/components/schemas/LocalStandby'
+        hostsControl:
+          type: boolean
+          description: |
+            This agent supervises the install's active control root. The
+            root reads it from its probe of each node to know its own
+            machine, which can never be its standby
+            (`docs/design/warm-standby.md`). A standby this agent runs does
+            not count.
         epoch:
           type: integer
           format: int64
