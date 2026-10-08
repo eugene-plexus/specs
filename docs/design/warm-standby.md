@@ -1,6 +1,8 @@
 # A warm standby that follows (control#5)
 
-**2026-10-08. Designed; calls SB1–SB4 taken by Troy the same day.** Not built.
+**2026-10-08. Designed; calls SB1–SB4 taken by Troy the same day.** Built
+the same day; §7 says what building changed. Record:
+[`warm-standby-run.md`](../acceptance/warm-standby-run.md).
 
 Issue: [control#5](https://github.com/eugene-plexus/control/issues/5).
 Background:
@@ -243,3 +245,58 @@ the changed code only.
   test it.
 - That a Windows worker can hold the standby's data directory privately,
   as it does every component's.
+
+## 7. What building found
+
+- **The root could not tell its own machine.** Every node record says
+  `role: agent`, so "never the active root's own node" had nothing to check.
+  `NodeIdentity.hostsControl` (specs `c65170f`) is the agent's answer, read
+  by the root's probe. The agent doesn't count its own standby entry. The
+  route refuses the root's node by its own `node_name` setting or by the
+  probe's `hostsControl`, and says why (409).
+- **A promotion must name its node.** The standby learns its machine's name
+  from its agent (`EUGENE_PLEXUS_CONTROL_NODE_NAME`), so `promote` can drop
+  that node's own `standby` grant and record it as the root.
+- **A promotion takes the grant too, so losing it is ambiguous.** An owner
+  removed it, or this copy is now the root. The agent asks the local
+  control's `/healthz` for `details.role` before it stops or deletes
+  anything: `standby` → stop it and delete `standby-state/`; `control` →
+  keep it, and say so once; no answer → keep it and ask again at the next
+  bundle.
+- **The planner sets `ROLE` and `ACTIVE_URL` only while the grant holds.**
+  A promoted copy that restarts therefore starts as the root, not as a
+  standby of the root it replaced.
+- **`StandbyStatus.url` is optional** (specs `62ef542`): a node may have
+  no recorded address, and the status still names it by `node`.
+- **The agent's report is `{component, url, status, following}`,** not the
+  applied index and last pull §3.3 planned. The root already holds the
+  position (SB4), and the standby's own status has the rest.
+- **A locked root still serves its standby.** `require_replica` checks the
+  grant in applied state, which needs no unsealed key.
+- **"Settings → replication links to Machines" (§3.5) is dropped.** With
+  `standbyUrls` retired, no replication setting is left to link from.
+- **The token module is six copies vendored from `platform/1.0.0/`,** not
+  five kept level by hand (§3.2). The source changes first; each consumer's
+  `VENDORED.json` carries its hash, and its CI refuses an edited copy.
+- **The copy lives in `standby-state/` beside `agent.yaml`,** on a port
+  walked up from 8083, bound to loopback (it pulls; nothing dials it).
+- **§6, the promoted root's `securityMode`.** The mode is replicated config,
+  so the promoted root has the old root's. Nothing new asks:
+  - `prompt_on_startup` (the acceptance): locked at each start until a
+    sign-in.
+  - `passphrase_file`: unlocks by itself if the same file is mounted on the
+    standby's machine.
+  - `os_keyring`: the first start finds no key on the new host, logs that
+    it is locked until a sign-in, and the sign-in stores the key.
+
+  Only the first is run end to end; the other two are the existing startup
+  paths, not run on a promoted copy.
+- **§6, a private directory on Windows.** The copy inherits the agent's
+  config directory, which `install.ps1` protects. Not checked on an
+  installed worker: the acceptance uses temporary directories.
+- **Found, not fixed (banked):** after a promotion, only the promoted
+  machine reaches the new root. The copy stays bound to loopback, and no
+  agent learns a new root address: m5 §9 step 4 says agents learn "the new
+  epoch and endpoint", but nothing carries an endpoint. The banked step
+  that turns a promoted copy into the install's `control` entry has to
+  answer both.

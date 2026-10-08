@@ -245,6 +245,8 @@ jobs:
         run: python specs/scripts/c2-sign-in-acceptance.py
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
         run: python specs/scripts/c3-workbench-acceptance.py
+      - name: Verify the warm standby is granted, follows, is revoked and promotes (control#5)
+        run: python specs/scripts/standby-acceptance.py
       - name: Verify Job Sites through the public node route, real Caddy and a joined site
         # The entry point is the Linux container's; the Windows topology (the
         # root in WSL2) is run by hand with --root-wsl.

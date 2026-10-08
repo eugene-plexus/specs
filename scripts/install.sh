@@ -59,13 +59,13 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=af6c3714067055308e3a56a3d20a85ecba9452fc
-PIN_CONTROL=de4c6190ac2259330d3c7bab0698efa31cfbb401
-PIN_GATEWAY=d9e2226c959d455dcd2a8d80ee6fe2dd19d0f53f
-PIN_DRIVER=2b1850b88434f708f14566d1bdbf611cd109bb7e
-PIN_LIBRARY=1be1803c5f7cbecfaef1dbc6068fa2d6856c0730
-PIN_TOOL_DRIVER=b30adf8e9de4333c41c6c7816e61fe85969a7421
-PIN_UI=ac6f816f410921d6bc4a9e39bc638830f598d7f9   # branch `dist`, not `main`
+PIN_AGENT=cd8880edffaad8f5e6facf426119732ad615898c
+PIN_CONTROL=c4a5a6f5c8a48510b4a47b0e6392d0b1c957fd44
+PIN_GATEWAY=3c27ceb3a12be36c5f864ebf78ed0bd36c9c802f
+PIN_DRIVER=d549ad9fae5107259c1b16f10732523e2f2ee49a
+PIN_LIBRARY=ae9e2d06b536bba3e24e4fe759ead76004a904d7
+PIN_TOOL_DRIVER=9a8c79e1b65bc5cd4625d81837550a476b13d39b
+PIN_UI=e8b0a1f48104544567c1a8f012ae5b229a64c7a1   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
