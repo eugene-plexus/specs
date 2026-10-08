@@ -1,6 +1,8 @@
 # Workbench: kept versions of an answer
 
-**Status: designed 2026-10-08, on Troy's six calls (§1).** This is roadmap
+**Status: built 2026-10-08** (Workbench `5aa04f7`, `dist` `a61af14`,
+agent `47a2e5f`), on Troy's six calls (§1); what building found is §8a.
+This is roadmap
 A6's next Workbench item ([`workbench-v1.md`](workbench-v1.md) W1 and §6,
 [`audience-roadmap.md`](audience-roadmap.md) A6).
 
@@ -209,6 +211,44 @@ conversation, with no versions.
    while running, and the owner's arrows.
 4. The Chrome check and the sabotage pass.
 5. Workbench `dist`, then the agent's catalogue pin and the specs pin.
+
+## 8a. What building found (2026-10-08)
+
+- **Adding or choosing a version puts its whole branch on the path**, not
+  only its own group. A tab one step behind can ask to try again on an
+  answer that is no longer shown; the new answer must still be on the path,
+  or it would run where nobody sees it. `Store._choose` walks up from the
+  message and changes only the groups that are not already right, so the
+  usual case is one statement.
+- **The path is worked out from one read of the chat's rows**, in Python,
+  rather than a recursive query. `versions()` comes from the same read, so
+  a message's `{index, count, ids}` never disagrees with the path it is on.
+- **The redaction walks the tree once, in `seq` order** (`hidden_from_owner`).
+  A parent is always an earlier row, so a message is hidden when its parent
+  is, or when it holds a job-site result. A hidden message keeps its
+  `versions`, so the owner's arrows still reach a sibling branch that never
+  touched a job site.
+- **The owner's arrows are not held by a running answer.** They only look,
+  so nothing they do can move a running answer or its approval off the
+  person's path.
+- **The `path` event is sent before the new answer starts**, so a tab hears
+  it before the answer's first piece and reloads into it.
+- **The chat-level `/retry` is Try again on the last answer shown**, so it
+  now follows V2 (stops a running answer and keeps it) instead of refusing.
+- **An edit is still refused while an answer runs**, as before. V2 is about
+  Try again; the Edit button stays hidden while one runs.
+- **An event's message carries no `versions`.** The page keeps the ones it
+  had, as it already did for files; without that, the arrows vanished from
+  an answer the moment it finished.
+- **The edit box and the composer share the label *Your message*.** The
+  Chrome check had to scope its locator to the message. Not changed here.
+
+Checks: store, API and owner-view tests in `tests/test_versions.py` and
+`tests/test_job_sites.py`; page tests in `MessageView.test.tsx`,
+`useChat.test.ts` and `Conveniences.test.tsx`; the Chrome run in
+`tests/test_versions_browser.py`; sabotage in
+`scripts/check-versions-sabotage.py`, 17/17 caught (2 in Chrome). The whole
+suite: pytest 190 passed, vitest 158.
 
 ## 9. Not in this slice
 
