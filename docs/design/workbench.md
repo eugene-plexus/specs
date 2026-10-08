@@ -566,6 +566,15 @@ mascot already does, under the repo's Apache-2.0 licence.
   `scripts/check-scenes-sabotage.py` caught 20 of 20 (16 in the unit tests,
   4 in Chrome), restoring exact bytes. Its first run stopped on a mutation
   that no longer compiled, which proves nothing; that one now compiles.
+- **All seven scenes, the same day,** after Troy approved scene 1's style
+  (and caught its one drawing error: the hand lay across the tape's face
+  while the case hid the cuff; the arm is now in front and grips the case's
+  edge). Each is 15-16 KB, loops in 2-4 s, and keeps moving across any 0.7 s
+  (the browser check looks twice that far apart). The arms that move pivot
+  where a person's would: a pivot is written as a point on the drawing and
+  turned into a `fill-box` origin from the group's measured box. A tool that
+  must not tilt as the arm swings (the saw, the sanding block) counter-turns
+  about the grip, so it slides instead.
 
 ---
 
