@@ -1376,9 +1376,12 @@ fix; no new calls.
 
 **Landed and pinned (2026-10-07):** agent `aa2fe11` (site host `26a4f0f`,
 Workbench dist `ce2103f`), control `be2dec1`, ui dist `c595c2a`, in both
-installers. **Not yet:** the Windows two-person run (J1-J6, jessie's key in
-her own Chrome and her files as her Windows account), and the deploy (the
-NAS root first).
+installers. **Deployed** 2026-10-07 (the NAS root, then Amish_Station).
+**The Windows two-person run passed 2026-10-08:** 19 passed, check 9 skipped
+without `--sign-out`; J1-J6 ran for the first time and all passed (jessie's
+key made in her own Chrome, her workspace's files read and written as her
+Windows account, a denied path hidden by its 8.3 name too, nothing of hers
+visible to the owner, J77 refused at the link page). No defects found.
 
 ---
 

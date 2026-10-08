@@ -3,10 +3,10 @@
 **Date:** 2026-10-07. **Design:**
 [`job-sites-own-enrollment.md`](../design/job-sites-own-enrollment.md) §3.3
 (J67-J80, *What building 2b.3b found*, *What the acceptance found*).
-**Landed and pinned 2026-10-07**, without the Windows two-person run, which
-waits until Troy is at Amish_Station (Troy, 2026-10-07: land now, run it
-later). Not deployed: the root on the NAS goes first, then Amish_Station,
-when Troy is there.
+**Landed and pinned 2026-10-07**, without the Windows two-person run (Troy,
+2026-10-07: land now, run it later). **Deployed** by Troy the same day (the
+NAS root, then Amish_Station). **The Windows two-person run passed
+2026-10-08** (below).
 
 2b.3b gives each linked person their own workspaces on a job site, their own
 allow/ask/deny rules, approved with their own key, and Workbench's rules
@@ -23,6 +23,34 @@ editor and prompts: "allow" runs without asking, "ask" asks each time,
 | specs | this push | contract `652ddc5`; `job-sites-acceptance.py` (B1-B7), `job-sites-windows-acceptance.py` (J1-J6), `b3b-browser-check.py`/`.mjs` (new), `b3b-browser-sabotage.py` (new), `b23b-sabotage.py`; both installers, `release/manifest.json` |
 
 ## What was run
+
+**`scripts/job-sites-windows-acceptance.py --person-account jessie --keep` —
+19 passed, 1 skipped** (2026-10-08, run 1 of the elevated runner, 07:07 to
+07:08; the run of record). On Amish_Station, from an elevated shell, against
+the checkouts at their pins: agent `47a2e5f`, site host `26a4f0f`, control
+`de4c619`. The agent ran as LocalSystem as a service install would, on its own
+ports and folder; the site host as its own virtual account; troyc the owner
+and `jessie`, a standard local account signed in and switched away from, the
+second person. J1-J6 ran for the first time, all passing:
+
+| Check | What passed |
+|---|---|
+| J1 | jessie, linked with no key yet, adds a workspace from Workbench: 202 held, counted on her view and not the owner's |
+| J2 | her Chrome, in her own session, makes her key at the machine and approves it; her approve page lists only her change and the owner's only his; her workspace runs as her account, reading with no word and changing only when Workbench says she was asked (J72) |
+| J3 | a rule the root forges in her name is held for her key, never applied, and she turns it down from Workbench; in the owner's name it finds no such workspace |
+| J4 | a path she denies is left out of `glob` and `grep` run as her account, and refused by name, its 8.3 short name too, whether or not it exists |
+| J5 | the owner sees none of her workspaces: not his view, live list, tools or audit lines, and his call naming one reads nothing; the root's console carries no path of hers |
+| J6 | with `use-job-sites` taken away on the People page, her sign-in on the machine's link page is refused in the root's words and no link is made; given back, she links again |
+
+The 2b.2 and J14a checks in the same run passed too (1-8, K1-K5). Check 9
+(signed out, her calls are refused) is skipped without `--sign-out`, which
+signs her out. Afterwards the runner's cleanup removed the run's folder and
+processes; no `EugenePlexusAcceptance-*` task or site host service was left,
+and the machine's own `EugenePlexusAgent` was still running.
+
+**CI, Linux sudo mode (specs `59195b0`, run 37681026593) —
+`job-sites-acceptance.py` 36 passed**, B1-B7 included, with the host, ada and
+jo each their own account.
 
 **`scripts/job-sites-acceptance.py --root-wsl` — 35 passed, 4 one-account
 skips** (run 5; the root in WSL2 behind the real Caddy, the site host and a
@@ -114,15 +142,10 @@ positive control where the path is expected.
 
 ## Not done
 
-- **The Windows two-person run** (`job-sites-windows-acceptance.py
-  --person-account jessie`, checks J1-J6, never run): jessie's key made in her
-  own Chrome at the agent's page, and her workspace's files written as her
-  Windows account. It needs the standard local account `jessie`, signed in
-  once and left signed in, and Troy at the machine for the elevated runner.
-  The account is not made yet (two UAC prompts timed out over Remote
-  Desktop).
-- **The deploy**: the root (NAS container) first, since an older root
-  refuses a 2b.3b site's report, then Amish_Station.
+- **Check 9 on Windows** (`--sign-out`): it signs jessie out, and she stays
+  signed in between runs.
+- **The fixes landed after the deploy** (control#7, agent#8, agent#9) reach
+  the NAS root and Amish_Station with their next update, root first.
 - The browser check runs one person on one account; two people in one
   browser each seeing only their own is `--root-wsl`'s B6 through the root's
   routes, not through Workbench's page.
