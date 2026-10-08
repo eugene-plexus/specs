@@ -294,6 +294,19 @@ the changed code only.
 - **§6, a private directory on Windows.** The copy inherits the agent's
   config directory, which `install.ps1` protects. Not checked on an
   installed worker: the acceptance uses temporary directories.
+- **A pushed bundle that could not be written was lost.** Windows refuses
+  to replace a file any process has open, and every component reads
+  `trust_bundle.json`. The agent kept the new bundle in memory, logged one
+  warning, and never wrote it again. After a promotion that matters: the
+  new root pushes once, and the agent's pulls still go to the root that
+  stopped. Now a write refused this way is retried briefly, and then before
+  every trust pull until it lands (agent `trust.save_pending`). Found by the
+  acceptance on Windows, after promotion. The other reader was not
+  identified: either its own polling of the file every 0.25 s, or
+  antivirus.
+- **After a revoke and a new grant, the standby may come back on a
+  different port.** Linux still holds the old one for a moment, and the
+  agent walks past it. The acceptance reads the port from B's report.
 - **Found, not fixed (banked):** after a promotion, only the promoted
   machine reaches the new root. The copy stays bound to loopback, and no
   agent learns a new root address: m5 §9 step 4 says agents learn "the new

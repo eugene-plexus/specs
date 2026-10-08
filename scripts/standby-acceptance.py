@@ -50,6 +50,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 import jwt
@@ -319,6 +320,16 @@ def exercise(root: Path) -> int:
             assert response.status_code == 200, f"B /v1/node: {response.status_code}"
             return response.json().get("standby")
 
+        def follow_standby_port(session_b: str) -> None:
+            """Dial the standby where B's agent says it listens. The agent
+            walks up from the port it was given past one still held, as
+            Linux holds a port just closed, so a standby started again may
+            not be where the first one was."""
+            url = str((standby_of(session_b) or {}).get("url") or "")
+            port = urlparse(url).port
+            assert port is not None and port >= ports["standby"], url
+            ports["standby"] = port
+
         def reported(session: str) -> list[dict]:
             response = call("control", "GET", "/v1/control/status", session)
             assert response.status_code == 200, f"status: {response.status_code}"
@@ -453,6 +464,7 @@ def exercise(root: Path) -> int:
                 )
 
             wait_for(caught_up, "the standby to catch up", 60)
+            follow_standby_port(session_b)
             local = standby_of(session_b) or {}
             assert str(local.get("following", "")).rstrip("/") == base("control"), local
             ok(
@@ -533,7 +545,8 @@ def exercise(root: Path) -> int:
                 bundle_bound,
             )
             wait_for(caught_up, "the standby to catch up again", 60)
-            epoch = call("control", "GET", "/v1/control/status", session_root).json()[
+            follow_standby_port(session_b)
+            epoch =call("control", "GET", "/v1/control/status", session_root).json()[
                 "epoch"
             ]
             stop("control")

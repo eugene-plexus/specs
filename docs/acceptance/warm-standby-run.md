@@ -15,11 +15,12 @@ stops the standby and deletes its copy of the replication set.
 |---|---|---|
 | specs | `1e76272`, `c65170f`, `62ef542` | contract: `TrustGrant.standby`, `makeStandby`/`stopStandby`, `LogOp.setStandby`, `TrustChange` reason `standby` and `standbyNode`, `StandbyStatus.node` (its `url` optional), `LocalStandby`, `NodeIdentity.standby` and `hostsControl` |
 | control | `c4b5e40`, `c4a5a6f` | `setStandby`, the two node routes, `require_replica`, the follower's `StandbyToken`, `standby_reports`, status from the grant, `promote` takes the grant, `standbyUrls` retired |
-| agent | `e87f5d3`, `cd8880e` | `standby.py` (`reconcile`), the planner's standby wiring and spawn token, `mint_service` for `sub: standby`, `GET /v1/node` `hostsControl` and `standby` |
+| agent | `e87f5d3`, `cd8880e`, `bbc6aaf` | `standby.py` (`reconcile`), the planner's standby wiring and spawn token, `mint_service` for `sub: standby`, `GET /v1/node` `hostsControl` and `standby`; then a refused bundle write kept and written later (below) |
 | gateway, library, inference-driver, tool-driver | `2044974` `3c27ceb`, `49c6652` `ae9e2d0`, `3a161f8` `d549ad9`, `e0da783` `9a8c79e` | the shared token module (`GRANT_STANDBY`, `SUB_STANDBY`, the rule in `_check_grants`), regenerated at `c65170f` |
 | ui (`main`) | `5203605` | `StandbyPanel` on Machines, "· standby" in the Role column, `standbyUrls` gone from Settings |
 | ui (`dist`) | `e8b0a1f` | the build of `5203605` |
-| specs | this commit | `platform/1.0.0/tokens.py`; `scripts/standby-acceptance.py` and its CI step; `scripts/standby-sabotage.py`; the pins in `release/manifest.json` and both installers |
+| specs | `e17c1a6` | `platform/1.0.0/tokens.py`; `scripts/standby-acceptance.py` and its CI step; `scripts/standby-sabotage.py`; the pins in `release/manifest.json` and both installers |
+| specs | this commit | agent re-pinned to `bbc6aaf`; the acceptance reads the standby's port from B; three more sabotage cases |
 
 **The second commit in each Python repo is `VENDORED.json`.** `tokens.py`
 is vendored from specs `platform/1.0.0/`, and the build edited the six copies
@@ -54,6 +55,44 @@ ports the OS picks (the standby's too, never 8083), temporary state, and no
 `EUGENE_PLEXUS_*` variable from the calling shell. It runs in specs CI after
 c3.
 
+### Specs CI failed on `e17c1a6`, and what that found
+
+Specs CI on `e17c1a6` failed at this script, on Ubuntu, at check 7. The
+Windows twin passed. Because `edge` is the newest all-green specs commit,
+Amish_Station's in-app update stayed at the previous pins (agent
+`af6c371`). The NAS container image is built on every push, so it got
+`cd8880e`, and Eugene correctly warned that the versions differed.
+
+1. **The acceptance assumed the standby's port.** After the revoke and the
+   second grant, Linux still held the first standby's port, so B's agent
+   walked to the next one (47065 → 47066), as every component does. The
+   script dialled the old port. It now reads the port from B's own report
+   (`GET /v1/node` → `standby.url`). Not a product defect.
+2. **A rerun on Windows then failed at the same check, for a product
+   defect.** The promoted root pushed its bundle to B (200), but B's agent
+   could not replace `trust_bundle.json`: `[WinError 5] Access is denied`.
+   Windows refuses to replace a file any process has open. The agent kept
+   the bundle in memory, logged one warning and never wrote it again, and
+   B's pulls went to the root that had stopped. So the file stayed at
+   epoch 1, and anything reading it (the components, or the agent after a
+   restart) would have trusted the old root. The other reader was not
+   identified: either the acceptance's own polling of that file every
+   0.25 s, or antivirus.
+
+   **Fixed in agent `bbc6aaf`** (Troy agreed the product fix over making
+   the test read the epoch over HTTP). A write refused with
+   `PermissionError` is retried after 50 and 150 ms. Any write that still
+   fails is held, said with its cause, and written again before every trust
+   pull until it lands. Four tests in `test_trust.py` each fail without the
+   fix, one of them holding a real open handle on Windows. The acceptance
+   still polls the file, so it keeps exercising this.
+
+After both: **8 of 8 on Windows** (`agent/.venv`), and **8 of 8 on Linux**
+(WSL Ubuntu, a venv importing the same working trees). The first WSL run
+printed all eight PASS lines and its summary, with no traceback, but the
+one-line wrapper around it reported exit 1. A second run, with the exit
+code captured on its own line, exited 0.
+
 ## Sabotage: `scripts/standby-sabotage.py`
 
 29 cases across control (15), agent (10) and ui (4), on the changed code
@@ -74,13 +113,17 @@ baseline of the 20 named checks passes before and after.
 - **Second pass, the run of record: 29 of 29**, baseline and restored
   baseline passing, and the three working trees byte-identical before and
   after.
+- **Three cases for the bundle fix, 3 of 3 caught:** *a bundle file held
+  open is not waited out*, *a bundle the file refused is forgotten*, *the
+  trust pull never writes a held bundle*. That makes 32 cases in the script.
 
 ## Suites and checks
 
 - **control:** pytest 449 passed, 2 skipped (POSIX file modes); ruff, ruff
   format, `mypy src/` and `mypy --platform linux src/` clean.
 - **agent:** pytest 2040 passed, 18 skipped (platform); the same four checks
-  clean.
+  clean. With the bundle fix (`bbc6aaf`): 2044 passed, 18 skipped; ruff,
+  format, both mypy runs and `check-vendored.py` clean.
 - **ui:** vitest 141 files, 1730 tests; lint clean. `typecheck` and
   `format:check` found two faults in the new files: an unnarrowed
   `NODES[0]` in `StandbyPanel.test.tsx`, and one long line in
@@ -125,12 +168,24 @@ Not run here:
 Product code didn't change between these runs and the pins. The six
 `VENDORED.json` commits came after the batch started.
 
+**Rerun on agent `bbc6aaf`** (the bundle fix), the same way: all 32 passed,
+standby 8/8, and every working tree was clean afterwards. The batch also
+included `embed-uninstall.py --check` and `test_uninstall.py`, from the
+offline-removal job. The retry path didn't fire in that run: neither *could
+not keep* nor *kept trust bundle* appears in its log. The unit tests are
+what exercise it.
+
 ## Deploying
 
-Not deployed yet. The NAS root goes first (an older root refuses a node
-report that carries `hostsControl` or `standby`: `extra=forbid`), then this
-PC. Old components read grants as plain strings, so a bundle that carries
-`standby` breaks nothing. Making Amish_Station the standby is Troy's call.
+The NAS root goes first (an older root refuses a node report that carries
+`hostsControl` or `standby`: `extra=forbid`), then this PC. Old components
+read grants as plain strings, so a bundle that carries `standby` breaks
+nothing. Making Amish_Station the standby is Troy's call.
+
+Troy updated both on 2026-10-08, while specs CI on `e17c1a6` was red. The
+NAS container got agent `cd8880e`; Amish_Station's `edge` stayed at
+`af6c371` (above). Once CI is green on this commit, both update to
+`bbc6aaf`: the NAS by its container image, Amish_Station from the console.
 
 ## Left open
 

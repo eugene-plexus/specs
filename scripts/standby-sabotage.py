@@ -33,6 +33,7 @@ A_TRUST = "src/eugene_plexus_agent/trust.py"
 A_SUP = "src/eugene_plexus_agent/supervisor.py"
 A_SB = "src/eugene_plexus_agent/standby.py"
 A_NODE = "src/eugene_plexus_agent/routes/node.py"
+A_APP = "src/eugene_plexus_agent/app.py"
 U_PANEL = "src/components/StandbyPanel.tsx"
 U_WORDS = "src/lib/standby.ts"
 
@@ -40,6 +41,7 @@ CT = "tests/test_tokens.py::test_a_standby_token_reaches_control_only_and_only_f
 CS = "tests/test_standby.py::"
 CC = "tests/test_config.py::"
 AS = "tests/test_standby.py::"
+AT = "tests/test_trust.py::"
 UP = "src/components/StandbyPanel.test.tsx::"
 
 # (label, repo, file, before, after, kind, check)
@@ -133,6 +135,17 @@ CASES: list[tuple[str, str, str, str, str, str, str]] = [
     ("the copy outlives the grant", "agent", A_SB,
      "            shutil.rmtree(copy)\n", "            copy.stat()\n", "pytest",
      AS + "test_the_grant_starts_the_standby_and_its_removal_deletes_the_copy"),
+    ("a bundle file held open is not waited out", "agent", A_TRUST,
+     "            for delay in (*SAVE_RETRY_DELAYS_SECONDS, None):\n",
+     "            for delay in (None,):\n", "pytest",
+     AT + "test_a_bundle_file_held_open_for_a_moment_is_written_anyway"),
+    ("a bundle the file refused is forgotten", "agent", A_TRUST,
+     "        self.save_pending()\n",
+     "        self.save_pending()\n        self._unsaved = None\n", "pytest",
+     AT + "test_a_bundle_the_file_refused_is_written_at_the_next_chance"),
+    ("the trust pull never writes a held bundle", "agent", A_APP,
+     "            trust.save_pending()\n", "", "pytest",
+     AT + "test_the_trust_pull_writes_a_held_bundle_while_the_root_does_not_answer"),
     ("Make acts without asking", "ui", U_PANEL,
      'onClick={() => setAsking("make")}', "onClick={() => void act(true)}", "vitest",
      UP + "asks first, saying what the copy holds"),
