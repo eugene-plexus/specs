@@ -548,8 +548,11 @@ passed 47 of 47.
 - **The half-heard clip is reproducible, and specific.** OpenRouter's
   whisper-turbo heard 1.525 s of kokoro's 3.07 s MP3 three times out of
   three, as `json` and as `verbose_json`. It heard the same speech whole
-  as WebM, and whisper-1 heard the MP3 whole. The upstream report is
-  Troy's to make, if he wants one.
+  as WebM, and whisper-1 heard the MP3 whole.
+  - **Troy, 2026-10-08: no upstream report for now.** One report to
+    OpenRouter, covering both findings below with the clip and the
+    arithmetic, is banked for later. The clip, its frame dump and the
+    measurement logs are kept in `docs/private/kokoro-mp3/` (gitignored).
   - **Why, measured the same day:** kokoro's MP3 is two LAME streams
     joined end to end (frames 0-66 and 67-130), each opening with its
     own Xing/LAME header frame. The first header says 66 frames, with 576 samples
