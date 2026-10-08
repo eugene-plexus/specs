@@ -3260,6 +3260,66 @@ components:
         firstFrame:
           type: boolean
           description: Whether it takes a first frame (image-to-video).
+        prices:
+          type:
+            - array
+            - 'null'
+          items:
+            $ref: '#/components/schemas/VideoPrice'
+          description: |
+            Its price list, read from OpenRouter's `pricing_skus`, in the
+            lines a request can be priced by (`gateway.yaml`'s
+            `ModelRoutingInfo.video_prices` says how). Null when the listing
+            has no line for a second of output. Added 2026-10-08.
+
+    VideoPriceUnit:
+      type: string
+      enum: [second, input_image, minimum]
+      description: |
+        What one unit of a `VideoPrice` is: a second of video made, one
+        image sent in (a first frame), or the least a job is billed.
+
+    VideoPrice:
+      type: object
+      additionalProperties: false
+      required: [sku, per, usd]
+      description: |
+        One line of a video model's price list, in US dollars. Only lines
+        that price what a request asks for are carried: a second of
+        output, an input image, a job's minimum. Lines in units a request
+        cannot be counted in (video tokens, megapixel-seconds, a
+        continuation of a video sent in, a reference) are left out.
+      properties:
+        sku:
+          type: string
+          description: The provider's own name for the line (`cents_per_video_output_second_480p`).
+        per:
+          $ref: '#/components/schemas/VideoPriceUnit'
+        usd:
+          type: number
+          minimum: 0
+          description: Dollars per unit; a price listed in cents is divided by 100.
+        resolution:
+          type: string
+          description: |
+            The provider's resolution class (`480p`, `720p`, `1080p`, `2K`,
+            `4K`). Absent: the line holds at every resolution.
+        sizes:
+          type: array
+          items:
+            type: string
+          description: |
+            The model's listed sizes of that resolution: those whose
+            shorter side is its height (480p: 480; 2K: 1440; 4K: 2160).
+            Absent when `resolution` is, or when the model lists no sizes.
+        audio:
+          type: boolean
+          description: True holds only with sound, false only without. Absent holds either way.
+        firstFrame:
+          type: boolean
+          description: |
+            True holds only with a first frame (image to video), false
+            only without one. Absent holds either way.
 
     ImageCapabilities:
       type: object
