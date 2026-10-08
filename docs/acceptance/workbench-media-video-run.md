@@ -117,8 +117,6 @@ debug the new checks, and is not a second record.
 - Deploying to Troy's install. Its gateway lists no video model, so the
   Video tab does not show there, and the media area shows the empty state
   until he adds a provider account (`workbench-media-screens.md` §0).
-- specs CI on the pin commit (checked next session).
-
 ## CI
 
 - Agent `6628f10`, gateway `6780d6c`, inference-driver `2b1850b` and
@@ -129,3 +127,5 @@ debug the new checks, and is not a second record.
   development script, so nothing that ships changed and `dist` `d1db51c`
   (built from `91c8b37`) stands. Every other job passed, the page's
   build and tests among them.
+- **specs `c8ef763`** (the pins): CI, A4 macOS and the container image
+  green. Workbench `97e59f1`: green.
