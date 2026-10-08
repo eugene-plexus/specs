@@ -52,6 +52,16 @@ removes the file. `--openrouter-live` adds one real flux.2-klein-4b image
 at 512x512 (about half a cent) with the key in
 `C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env`.
 
+**Slice 2, speech and transcription** (checks S1-S6): the same account
+lists a speech model with its voices and a transcription model, as P3
+measured OpenRouter's. The Speech screen lists the voices and the formats
+a browser plays; a clip is spoken and kept; a voice the model does not list
+is refused before anything is sent (M10); a Chrome recording (WebM) is
+kept, sent unchanged, and its transcript kept beside what the model heard
+(the fixture hears 1.5 s of 3.07, as OpenRouter's whisper did to kokoro's
+MP3). `--openrouter-live` adds a real kokoro clip transcribed back by
+whisper (SL; a fraction of a cent).
+
 `--browser` adds the system Chrome driving Workbench's page itself
 (`c3-workbench-browser.mjs`, Playwright from `ui/node_modules`).
 
@@ -112,6 +122,7 @@ KEYS_FILE = Path(os.environ.get("EP_KEYS", "C:/Users/troyc/.eugene-plexus-secret
 #: The image account's driver name, so its models are `images/<id>`.
 IMAGES = "images"
 LIVE_IMAGE = "black-forest-labs/flux.2-klein-4b"
+LIVE_AUDIO = ["hexgrad/kokoro-82m", "openai/whisper-large-v3-turbo"]
 
 
 def png(width: int, height: int) -> bytes:
@@ -129,6 +140,11 @@ def png(width: int, height: int) -> bytes:
             + part(b"IEND", b""))
 
 
+#: What the fixture's speech model answers: an MP3 as kokoro sends one, an
+#: ID3 tag and then frames.
+SPOKEN = b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"\xff\xfb\x90\x00" + bytes(400)
+#: A Chrome recording's first bytes: WebM's EBML header (media screens §0).
+RECORDED = b"\x1a\x45\xdf\xa3" + bytes(200)
 #: What the fixture's image models answer, whatever size is asked: 3x2, so
 #: what was asked and what came back differ (media screens §2.4).
 MADE = png(3, 2)
@@ -252,7 +268,33 @@ def fixture_app(state_file: Path):
              "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["image"]},
              "supported_parameters": []}
             for model_id in OR_IMAGES
+        ] + [
+            # Speech and transcription as P3 measured OpenRouter's (slice 2).
+            {"id": "acme/kokoro", "name": "acme/kokoro", "context_length": 4096,
+             "architecture": {"input_modalities": ["text"], "output_modalities": ["speech"]},
+             "supported_parameters": [], "supported_voices": ["af_heart", "af_bella"]},
+            {"id": "acme/whisper", "name": "acme/whisper", "context_length": 4096,
+             "architecture": {"input_modalities": ["audio"], "output_modalities": ["transcription"]},
+             "supported_parameters": []},
         ]}
+
+    @app.post("/router/v1/audio/speech")
+    async def router_speech(request: Request):
+        body = await request.json()
+        count("router-speech", body)
+        return Response(content=SPOKEN, media_type="audio/mpeg")
+
+    @app.post("/router/v1/audio/transcriptions")
+    async def router_hear(request: Request):
+        form = await request.form()
+        upload = form.get("file")
+        data = await upload.read() if upload is not None and not isinstance(upload, str) else b""
+        count("router-hear", {"fields": {k: form.get(k) for k in form if k != "file"},
+                              "filename": getattr(upload, "filename", None), "size": len(data),
+                              "head": data[:4].hex()})
+        # What OpenRouter's whisper did to kokoro's MP3 (measured 2026-10-08):
+        # it heard the first 1.5 s of 3.1.
+        return {"text": " The bench is ready.", "usage": {"seconds": 1.525}}
 
     @app.get("/router/v1/images/models")
     async def router_images():
@@ -645,7 +687,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         account(IMAGES, {"provider": "openrouter", "baseUrl": url["fixture"] + "/router"},
                 "fixture-not-a-key")
         if openrouter_live:
-            account("openrouter", {"provider": "openrouter", "catalogueInclude": [LIVE_IMAGE]},
+            account("openrouter", {"provider": "openrouter", "catalogueInclude": [LIVE_IMAGE, *LIVE_AUDIO]},
                     provider_key("OPENROUTER_API_KEY"))
 
         say("Workbench from the catalogue")
@@ -851,6 +893,8 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         media_run(ada=ada, owner=owner, call=call, wait=wait, console=console, hop=hop,
                   app_id=app_id, operator=operator, person=made["ada"]["id"],
                   data=agent_dir / "apps" / app_id / "data", live=openrouter_live)
+        audio_run(ada=ada, call=call, wait=wait, app_id=app_id, operator=operator,
+                  live=openrouter_live)
 
         person_id = made["ada"]["id"]
         call("control", "PATCH", f"/v1/people/{person_id}", root, json={"disabled": True}).raise_for_status()
@@ -1043,6 +1087,109 @@ def media_run(*, ada: Browser, owner: Browser, call, wait, console: str, hop: st
               made["status"] == "done" and len(files) == 1 and files[0]["width"] == 512
               and files[0]["mediaType"] in ("image/jpeg", "image/png"),
               {"status": made["status"], "files": files, "error": made.get("error")})
+
+
+def audio_run(*, ada: Browser, call, wait, app_id: str, operator: str, live: bool) -> None:
+    """The Speech and Transcription screens, slice 2, through Workbench's own
+    API as its page calls it (workbench-media-screens.md §4)."""
+    say("media screens: speech and transcription")
+    kokoro, whisper = f"{IMAGES}/acme/kokoro", f"{IMAGES}/acme/whisper"
+
+    def doors() -> dict:
+        return ada.get("/api/media/doors").json()["doors"]
+
+    def finished(media_id: str, seconds: float = 90) -> dict:
+        deadline = time.perf_counter() + seconds
+        while time.perf_counter() < deadline:
+            item = ada.get(f"/api/media/{media_id}").json()
+            if item["status"] != "running":
+                return item
+            time.sleep(0.2)
+        raise Abort("a speech or transcription request did not finish")
+
+    def seen(name: str) -> list:
+        return call("fixture", "GET", f"/seen?name={name}").json()
+
+    def speak(**fields) -> dict:
+        sent = ada.post("/api/media/speech", json={
+            "model": kokoro, "input": "The bench is ready.", "voice": "af_heart", **fields})
+        if sent.status_code != 201:
+            raise Abort(f"speaking: {sent.status_code} {sent.text[:300]}")
+        return finished(sent.json()["id"])
+
+    wait(lambda: kokoro in {m["id"] for m in doors()["speech"]["models"]}
+         and whisper in {m["id"] for m in doors()["transcription"]["models"]},
+         "the account's speech and transcription models reach Workbench", 90)
+    listed = doors()
+    voice = next(m for m in listed["speech"]["models"] if m["id"] == kokoro)
+    hears = next(m for m in listed["transcription"]["models"] if m["id"] == whisper)
+    check("S1", "the Speech screen lists the model's own voices and the formats a browser plays; "
+          "the Transcription screen lists the model, which does not translate",
+          voice["voices"] == ["af_heart", "af_bella"] and voice["formats"] == ["mp3", "wav"]
+          and voice["locality"] == "external" and hears["translates"] is False,
+          {"speech": voice, "transcription": hears})
+
+    item = speak()
+    files = item.get("files") or []
+    got = ada.get(f"/api/files/{files[0]['id']}").content if files else b""
+    asked = seen("router-speech")[-1] if seen("router-speech") else {}
+    check("S2", "a clip is spoken through the gateway and kept in the bin as it came back",
+          item["status"] == "done" and got == SPOKEN and files[0]["mediaType"] == "audio/mpeg"
+          and item.get("units") == {"characters": 19} and (item.get("served") or {}).get("driver") == IMAGES
+          and asked.get("voice") == "af_heart" and asked.get("response_format") == "mp3",
+          {"status": item["status"], "files": files, "served": item.get("served"), "sent": asked})
+
+    before = len(seen("router-speech"))
+    refused = speak(voice="alloy")
+    error = refused.get("error") or {}
+    check("S3", "a voice the model does not list is refused in the gateway's words, naming the "
+          "field and the voices it has, and nothing reaches the provider",
+          refused["status"] == "failed" and error.get("param") == "voice"
+          and "af_heart, af_bella" in error.get("message", "")
+          and "Nothing was sent" in error.get("message", "") and len(seen("router-speech")) == before,
+          error)
+
+    sent = ada.post("/api/media/transcription",
+                    data={"model": whisper, "clipSeconds": "3.07", "language": "en"},
+                    files={"file": ("recording.webm", RECORDED, "audio/webm")})
+    heard = finished(sent.json()["id"]) if sent.status_code == 201 else {}
+    reached = seen("router-hear")[-1] if seen("router-hear") else {}
+    check("S4", "a Chrome recording is kept, sent to the model unchanged, and its transcript kept "
+          "beside what the model heard and the clip's own length",
+          heard.get("status") == "done" and heard.get("text") == "The bench is ready."
+          and (heard.get("units") or {}).get("heardSeconds") == 1.525
+          and (heard.get("units") or {}).get("clipSeconds") == 3.07
+          and reached.get("filename") == "recording.webm" and reached.get("head") == "1a45dfa3"
+          and reached.get("size") == len(RECORDED) and (reached.get("fields") or {}).get("language") == "en",
+          {"status": heard.get("status"), "units": heard.get("units"), "reached": reached,
+           "error": heard.get("error")})
+
+    clip = heard.get("files") or []
+    kept = ada.get(f"/api/files/{clip[0]['id']}").content if clip else b""
+    check("S5", "the recording stays in the bin, to play again", kept == RECORDED, len(kept))
+
+    rows = call("agent", "GET", "/api/proxy/gateway/v1/metrics/requests", operator,
+                params={"limit": 200}).json().get("requests") or []
+    doors_seen = {r.get("door") for r in rows if r.get("clientKeyName") == f"app:{app_id}@{NODE}"}
+    check("S6", "the gateway records the clip and the transcript under the app's key",
+          {"speech", "transcription"} <= doors_seen, sorted(map(str, doors_seen)))
+
+    if live:
+        real_voice, real_ear = "openrouter/hexgrad/kokoro-82m", "openrouter/openai/whisper-large-v3-turbo"
+        wait(lambda: real_voice in {m["id"] for m in doors()["speech"]["models"]}
+             and real_ear in {m["id"] for m in doors()["transcription"]["models"]},
+             "the live OpenRouter speech and transcription models", 120)
+        made = speak(model=real_voice, input="The bench is ready. Bring your project.")
+        audio = made.get("files") or []
+        spoken = ada.get(f"/api/files/{audio[0]['id']}").content if audio else b""
+        back = ada.post("/api/media/transcription", data={"model": real_ear},
+                        files={"file": ("speech.mp3", spoken, "audio/mpeg")})
+        text = finished(back.json()["id"]) if back.status_code == 201 else {}
+        check("SL", "a real OpenRouter clip is spoken, kept, and transcribed back",
+              made["status"] == "done" and audio and audio[0]["mediaType"] == "audio/mpeg"
+              and "bench" in (text.get("text") or "").lower(),
+              {"speech": made["status"], "text": text.get("text"), "units": text.get("units"),
+               "error": text.get("error") or made.get("error")})
 
 
 def browser_run(work: Path, *, ui: str, passphrase: str, fixture: str, call, live: bool) -> None:

@@ -3,7 +3,10 @@
 **Status: designed 2026-10-08; Troy took all eleven calls (§1) as
 recommended the same day. Slice 1 (images and the shared frame) is built
 and pinned the same day** ([record](../acceptance/workbench-media-images-run.md);
-what building found is §10a). Speech and transcription are next.
+what building found is §10a). **Slice 2 (speech and transcription) is
+built and pinned the same day too**
+([record](../acceptance/workbench-media-speech-run.md); §10b). Video is
+next.
 This is roadmap A6's last Workbench item ([`audience-roadmap.md`](audience-roadmap.md)
 A6, [`workbench.md`](workbench.md) §5 and §8, [`workbench-v1.md`](workbench-v1.md)
 §6). It covers images, speech, transcription and video as screens of their own.
@@ -533,6 +536,63 @@ passed 47 of 47.
 - **A sent image waits in the new chat's composer.** *Send to a chat*
   creates the chat with the copy attached on the server; the page opens it
   with that file already pending, so the person writes the question.
+
+## 10b. What building slice 2 found (2026-10-08)
+
+**Measured first** (throwaway install, Troy's keys; under $0.02):
+
+- **A Chrome recording works everywhere measured.** Chrome's
+  `MediaRecorder` makes `audio/webm;codecs=opus`. OpenRouter's
+  whisper-turbo, OpenAI's whisper-1 and gpt-4o-mini-transcribe, and
+  ElevenLabs' scribe_v2 each transcribed a 3.07 s recording correctly.
+- **The half-heard clip is reproducible, and specific.** OpenRouter's
+  whisper-turbo heard 1.525 s of kokoro's 3.07 s MP3 three times out of
+  three, as `json` and as `verbose_json`. It heard the same speech whole
+  as WebM, and whisper-1 heard the MP3 whole. It looks like that
+  provider's MP3 decoding, not the audio. The upstream report is Troy's to
+  make, if he wants one.
+- **"Heard" is only a claim when it falls short.**
+  - `verbose_json` carries `duration` on three of the four backends, but
+    OpenAI's gpt-4o-mini-transcribe refuses it (its own 400).
+  - OpenAI's `json` counts whole seconds rounded up: 4.0 for 3.07 s.
+  - So Workbench asks `json`, and says *heard N s of M s* only when N is
+    short of M by more than a quarter second. Otherwise it gives only the
+    clip's length.
+- **OpenAI's voices differ by model family.** `tts-1` (and `-hd`, dated)
+  takes nine voices and refuses `ballad`, `cedar`, `marin` and `verse`.
+  `gpt-4o-mini-tts` takes all thirteen. The driver lists them per family
+  (inference-driver `334954a`). A TTS id outside those families still
+  lists none.
+
+**Built:** specs `902b737` (the speech door's contract wording),
+inference-driver `334954a` (OpenAI's voices per family), gateway
+`48f5d59` (the voice check; sabotage 6 of 6, with the driver's), and
+Workbench `27b36f7` (below), shipped as `dist` `53004e4` from agent
+`33e2c9a`'s catalogue. The C3 run passed 54 of 54
+([record](../acceptance/workbench-media-speech-run.md)).
+
+- **The voice check changed one of P3's checks.** P3's acceptance check 6
+  asserted P3-3's pass-through: `alloy` to an ElevenLabs model that lists
+  its voices, relayed as ElevenLabs' own 404. Under M10 the gateway now
+  refuses it first, naming the voices, and nothing is sent. The check now
+  asserts that, and the P3 run passes 27 of 27. A model that lists no
+  voices still passes the voice through.
+- **P3's sabotage script had two dead anchors** from earlier refactors
+  (specs#17). It refuses to start until they are re-anchored.
+- **ElevenLabs lists voices by id** (`CwhRBWXzGAHq8TQ4Fs17`). The picker
+  shows what the listing has. Names need a contract change, the voices'
+  names beside their ids, which is banked for Troy.
+- **A recording is measured by the clock; an upload by decoding.**
+  Chrome's WebM recordings carry no duration, so the page times a
+  recording itself, and decodes an upload with `decodeAudioData`. Either
+  way the length rides the request as `clipSeconds`.
+- **A transcript goes to a chat as the new chat's unsent text.** It is
+  saved as that chat's draft. No server copy is needed, since text is not
+  a file.
+- **Recording needs a secure context.** HTTPS, or `localhost` on the
+  machine itself. The Chrome check records with Chrome's fake microphone
+  on `127.0.0.1`. Over plain LAN HTTP, the page says why there is no
+  Record button.
 
 ## 11. Not in this design
 

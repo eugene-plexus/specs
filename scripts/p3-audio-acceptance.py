@@ -913,15 +913,20 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
            "instructions to ElevenLabs (which would drop them) and stream_format sse are 400s naming the "
            "field and what would work; no upstream is called")
 
-        # --- 6. voices pass through, and the provider's refusal names them ---
+        # --- 6. a voice the model does not list is refused before sending ---
+        # M10 (workbench-media-screens.md, 2026-10-08): until then the voice
+        # passed through and ElevenLabs' own 404 was relayed; OpenRouter's
+        # refusal of an unknown voice named nothing ("Provider returned 400").
         before = counts()
         response = speak(key, "eleven/eleven_flash_v2_5", voice="alloy")
         assert response.status_code == 400, response.text[:300]
-        message = error_of(response).get("message", "")
-        assert "alloy" in message and "not found" in message, message
-        assert counts().get("eleven_flash_v2_5", 0) == before.get("eleven_flash_v2_5", 0) + 1
-        ok(f"the SDK's default voice alloy is passed to ElevenLabs, which does not know it, and its refusal is "
-           f"relayed as the caller's 400: {message[:110]!r}")
+        error = error_of(response)
+        message = error.get("message", "")
+        assert error.get("param") == "voice", error
+        assert "alloy" in message and EL_VOICES[0] in message and "Nothing was sent" in message, message
+        assert counts() == before, (before, counts())
+        ok(f"the SDK's default voice alloy, which this ElevenLabs model does not list, is refused before "
+           f"sending, naming the voices it does: {message[:110]!r}")
 
         # --- 7. the wrong door ----------------------------------------------
         before = counts()
