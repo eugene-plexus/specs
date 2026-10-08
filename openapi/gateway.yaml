@@ -3733,6 +3733,18 @@ components:
             returned 400"*, measured 2026-10-08). OpenAI's TTS models list
             the voices measured for their family that day. Added
             2026-10-08 (Workbench media screens, M10).
+        voice_names:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            For a `speech` model: a display name for each voice in
+            `voices` that its provider names, keyed by the voice's id
+            (ElevenLabs: `21m00Tcm4TlvDq8ikWAM` is *Rachel*), from the
+            backends that list `voices`. A request still sends the id; a
+            voice with no name here is shown by its id. Absent when no
+            backend names any. Added 2026-10-08 (Workbench media screens:
+            ElevenLabs voices showed as ids).
         speech_formats:
           type: array
           items:
