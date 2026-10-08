@@ -523,6 +523,50 @@ mascot already does, under the repo's Apache-2.0 licence.
 - **With reduced motion requested** (S9), the loop is replaced by the still
   *working* pose. The phrase stays.
 
+**Calls taken (Troy, 2026-10-07):**
+
+1. **One scene first, then the rest.** *Measuring twice…* is drawn, gated and
+   wired first; the other six follow once Troy has approved its style.
+2. **It runs whenever the plain progress line shows**, not only until the
+   first token: a search running, the model reading what it found, reasoning
+   folded away. **It stops while the person is asked to approve tool calls**,
+   since that is waiting on them, not work.
+3. **A long wait moves to the next scene every 12 seconds** (about three
+   loops), starting from a random one.
+4. **It appears only after 0.6 seconds.** The plain line shows at once, so a
+   fast answer never flashes Eugene.
+
+**What building found (2026-10-07):**
+
+- **The gate is a test of its own.** `web/src/sceneGate.ts` reads each file,
+  and `web/src/scenes.test.ts` runs it over `web/public/scenes/` and over a
+  good file broken 32 ways, one rule each. Beyond the four rules above it
+  holds the brief: no SMIL (`<animate>` ignores the reduced-motion rule), one
+  animation per named `<g>` with no `transform` attribute (the animation would
+  replace it), `transform-box: fill-box` and a `transform-origin`, one loop
+  length per file of 2-4 s, no delay, `infinite`, and only `transform` and
+  `opacity` in keyframes. The reduced-motion rule must say
+  `animation: none !important`: in a `*` rule without it, an id rule outranks
+  it and keeps running.
+- **A scene file is its file plus a line in `web/src/lib/scenes.ts`** (file
+  and phrase); the gate fails on either alone.
+- **Scenes get their own policy.** The page's `style-src 'self'` would block a
+  scene's inline `<style>` in a browser that applies an image's own policy.
+  Chrome does not (probed), and no other browser was at hand, so
+  `/scenes/*.svg` is served with `default-src 'none'; style-src
+  'unsafe-inline'` and nothing else gets it.
+- **Chrome does not pass an emulated reduced-motion setting into an image's
+  document.** The file's own rule is proved by opening the scene as a
+  document under reduced motion; the page proves the still pose. Whether the
+  real OS setting reaches an image was not tested.
+- **The face is the website's, byte for byte**, spliced from
+  `eugene-working.svg` into a `#head` group; the laptop becomes a bench, a
+  board, a tape and a pencil. 15.5 KB.
+- **Checked:** the browser check (`tests/test_scenes_browser.py`) passes;
+  `scripts/check-scenes-sabotage.py` caught 20 of 20 (16 in the unit tests,
+  4 in Chrome), restoring exact bytes. Its first run stopped on a mutation
+  that no longer compiled, which proves nothing; that one now compiles.
+
 ---
 
 ## 7. C4: Open WebUI in the registry
