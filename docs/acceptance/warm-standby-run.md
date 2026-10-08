@@ -184,8 +184,11 @@ nothing. Making Amish_Station the standby is Troy's call.
 
 Troy updated both on 2026-10-08, while specs CI on `e17c1a6` was red. The
 NAS container got agent `cd8880e`; Amish_Station's `edge` stayed at
-`af6c371` (above). Once CI is green on this commit, both update to
-`bbc6aaf`: the NAS by its container image, Amish_Station from the console.
+`af6c371` (above). With `452bc34` green, both are on `bbc6aaf`: the NAS by
+its container image, Amish_Station from the console. Amish_Station's first
+try was refused by GitHub's rate limit, probably used up by this slice's two
+local acceptance batches ([specs#19](https://github.com/eugene-plexus/specs/issues/19));
+it went through once the hour reset. No machine is the standby yet.
 
 ## Left open
 
