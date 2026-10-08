@@ -39,6 +39,19 @@ What it proves, in order:
 - uninstalling from the console removes its sign-in at the root, and the
   console stays signed in.
 
+**The media screens, slice 1** (`docs/design/workbench-media-screens.md`
+§9, checks M1-M8): a second inference-driver, the real `openrouter`
+provider, its `baseUrl` the fixture playing OpenRouter's image API as P4
+measured it (flux makes one image at a time; mini up to ten, with
+qualities). Through Workbench's own API, as its page calls it: the Images
+screen lists what the gateway's listing says; an image is made, kept and
+read back from its bytes; a refusal is the gateway's words with the field
+it names; an edit from a brought-in image; a copy sent to a chat that the
+model sees; the owner reads it only while the business allows it; delete
+removes the file. `--openrouter-live` adds one real flux.2-klein-4b image
+at 512x512 (about half a cent) with the key in
+`C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env`.
+
 `--browser` adds the system Chrome driving Workbench's page itself
 (`c3-workbench-browser.mjs`, Playwright from `ui/node_modules`).
 
@@ -95,6 +108,53 @@ DRAFTED = "C3-DRAFT: an answer written before searching."
 PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 )
+KEYS_FILE = Path(os.environ.get("EP_KEYS", "C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env"))
+#: The image account's driver name, so its models are `images/<id>`.
+IMAGES = "images"
+LIVE_IMAGE = "black-forest-labs/flux.2-klein-4b"
+
+
+def png(width: int, height: int) -> bytes:
+    """A real PNG of this size: a browser and Workbench both read it."""
+    import struct
+    import zlib
+
+    def part(tag: bytes, data: bytes) -> bytes:
+        body = tag + data
+        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body))
+
+    rows = b"".join(b"\x00" + b"\xcc\x55\x22" * width for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n" + part(b"IHDR", header) + part(b"IDAT", zlib.compress(rows))
+            + part(b"IEND", b""))
+
+
+#: What the fixture's image models answer, whatever size is asked: 3x2, so
+#: what was asked and what came back differ (media screens §2.4).
+MADE = png(3, 2)
+#: OpenRouter's account listing and `GET /images/models`, as P4 measured
+#: them (`p4-images-acceptance.py`): the typed descriptors are the only real
+#: settings.
+OR_IMAGES = {
+    "acme/flux": {"supported_parameters": {
+        "output_format": {"type": "enum", "values": ["png", "jpeg"]},
+        "n": {"type": "range", "min": 1, "max": 1},
+        "input_references": {"type": "range", "min": 0, "max": 4}},
+        "supports_streaming": False},
+    "acme/mini": {"supported_parameters": {
+        "quality": {"type": "enum", "values": ["auto", "low", "medium", "high"]},
+        "n": {"type": "range", "min": 1, "max": 10},
+        "input_references": {"type": "range", "min": 0, "max": 16}},
+        "supports_streaming": False},
+}
+
+
+def provider_key(name: str) -> str:
+    for line in KEYS_FILE.read_text(encoding="utf-8-sig").splitlines():
+        key, _, value = line.partition("=")
+        if key.strip() == name:
+            return value.strip().strip('"').strip("'")
+    raise SystemExit(f"no {name} in {KEYS_FILE}")
 
 RESULTS: list[tuple[str, str, bool, str]] = []
 
@@ -183,6 +243,39 @@ def fixture_app(state_file: Path):
         count("searx", dict(request.query_params))
         return answer
 
+    # --- OpenRouter's image API, as P4 measured it (media screens) ----------
+
+    @app.get("/router/v1/models/user")
+    async def router_listing():
+        return {"data": [
+            {"id": model_id, "name": model_id, "context_length": 4096,
+             "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["image"]},
+             "supported_parameters": []}
+            for model_id in OR_IMAGES
+        ]}
+
+    @app.get("/router/v1/images/models")
+    async def router_images():
+        return {"data": [{"id": model_id, **entry} for model_id, entry in OR_IMAGES.items()]}
+
+    @app.post("/router/v1/images")
+    @app.post("/router/v1/images/generations")
+    async def router_generate(request: Request):
+        from fastapi.responses import JSONResponse
+
+        body = await request.json()
+        refs = body.get("input_references") or []
+        count("router", {"body": {k: v for k, v in body.items() if k != "input_references"},
+                         "references": [(r.get("image_url") or {}).get("url", "")[:30]
+                                        for r in refs if isinstance(r, dict)]})
+        params = OR_IMAGES[body["model"]]["supported_parameters"]
+        if body.get("n", 1) > params["n"]["max"]:
+            return JSONResponse({"error": {"message": f"No provider supports n {body['n']}.",
+                                           "code": 400}}, status_code=400)
+        return {"created": 0, "usage": {"prompt_tokens": 6, "completion_tokens": 1024},
+                "data": [{"b64_json": base64.b64encode(MADE).decode(), "media_type": "image/png"}
+                         for _ in range(body.get("n", 1))]}
+
     @app.get("/model/props")
     async def props():
         return {"default_generation_settings": {"n_ctx": 32768}, "modalities": {"vision": True}}
@@ -261,6 +354,14 @@ def serve(kind: str, directory: Path, port: int) -> None:
         kind = "agent"
     if kind == "fixture":
         app = fixture_app(directory / "fixture.json")
+    elif kind in (IMAGES, "openrouter"):
+        # An account's driver, started here and registered with the agent,
+        # as P4's run does: the real provider, with its own bootstrap.
+        from eugene_plexus_inference_driver.app import create_app
+        from eugene_plexus_inference_driver.settings import Settings
+
+        bootstrap = json.loads((directory / "bootstrap.json").read_text(encoding="utf-8"))
+        app = create_app(settings=Settings(config_file=directory / "driver.yaml", **bootstrap))
     elif kind == "control":
         from eugene_plexus_control.app import create_app
         from eugene_plexus_control.settings import Settings
@@ -387,12 +488,13 @@ def uv_binary() -> str:
 
 
 def exercise(work: Path, *, source: str | None, browser: bool, engine: str | None = None,
-             gguf: str | None = None, searxng: str | None = None) -> None:
+             gguf: str | None = None, searxng: str | None = None,
+             openrouter_live: bool = False) -> None:
     live = engine is not None
     for name in [k for k in os.environ if k.startswith("EUGENE_PLEXUS_")]:
         del os.environ[name]
     ports = free_ports(["control", "agent", "console", "fixture", "gateway", "model", "searx",
-                        "engine"])
+                        "engine", IMAGES, "openrouter"])
     url = {k: f"http://127.0.0.1:{v}" for k, v in ports.items()}
     lan = routable_address()
     client = httpx.Client(timeout=120, trust_env=False)
@@ -415,12 +517,13 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
             time.sleep(0.25)
         raise Abort(f"timed out: {label} ({last!r})")
 
-    def start(name: str) -> None:
+    def start(name: str, extra_env: dict[str, str] | None = None) -> None:
         directory = work / name
         directory.mkdir(exist_ok=True)
         env = {k: v for k, v in os.environ.items() if not k.startswith("EUGENE_PLEXUS_")}
         env.pop("OPENAI_API_KEY", None)
         env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
+        env.update(extra_env or {})
         processes.append(subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), "--serve", name, "--directory",
              str(directory), "--port", str(ports[name])],
@@ -515,6 +618,35 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
 
         for name in ("gateway", "model", "searx"):
             wait(lambda name=name: component_running(name), f"the agent runs {name}", 90)
+
+        # An image account (media screens): the real openrouter provider over
+        # the fixture, and with --openrouter-live the real one too.
+        from eugene_plexus_agent.node_identity import NodeIdentityStore
+        from eugene_plexus_agent.trust import NodeTrust
+
+        identity = NodeIdentityStore(agent_dir / "node.yaml")
+        identity.load()
+        trust = NodeTrust(identity, agent_dir / "trust_bundle.json")
+        trust.load()
+
+        def account(name: str, config: dict, key: str) -> None:
+            directory = work / name
+            directory.mkdir(exist_ok=True)
+            token, _ = trust.mint_service(sub="inference-driver", audience=trust.recipient)
+            (directory / "bootstrap.json").write_text(json.dumps({
+                "agent_url": url["agent"], "trust_bundle_file": str(trust.bundle_path),
+                "trust_authority": trust.authority, "auth_recipient": trust.recipient,
+                "service_token": token}), encoding="utf-8")
+            (directory / "driver.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+            start(name, {"OPENAI_API_KEY": key})
+            call("agent", "POST", "/v1/components", operator, json={
+                "name": name, "kind": "inference-driver", "url": url[name]}).raise_for_status()
+
+        account(IMAGES, {"provider": "openrouter", "baseUrl": url["fixture"] + "/router"},
+                "fixture-not-a-key")
+        if openrouter_live:
+            account("openrouter", {"provider": "openrouter", "catalogueInclude": [LIVE_IMAGE]},
+                    provider_key("OPENROUTER_API_KEY"))
 
         say("Workbench from the catalogue")
         catalogue = call("agent", "GET", "/v1/app-catalogue", operator).json()
@@ -716,6 +848,10 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         call("console", "PATCH", hop + f"/v1/apps/{app_id}/config", console, json={"ownerReadsChats": None})
         check("21", "turned back off, the owner cannot", owner.get(f"/api/chats/{mine}").status_code == 404)
 
+        media_run(ada=ada, owner=owner, call=call, wait=wait, console=console, hop=hop,
+                  app_id=app_id, operator=operator, person=made["ada"]["id"],
+                  data=agent_dir / "apps" / app_id / "data", live=openrouter_live)
+
         person_id = made["ada"]["id"]
         call("control", "PATCH", f"/v1/people/{person_id}", root, json={"disabled": True}).raise_for_status()
         # Ten minutes is the ID token's life (C2 D6); stand in for it by
@@ -790,6 +926,125 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
                 process.kill()
 
 
+def media_run(*, ada: Browser, owner: Browser, call, wait, console: str, hop: str, app_id: str,
+              operator: str, person: str, data: Path, live: bool) -> None:
+    """The media screens, slice 1, through Workbench's own API as its page
+    calls it (workbench-media-screens.md §9)."""
+    import hashlib
+
+    say("media screens: images")
+    flux, mini = f"{IMAGES}/acme/flux", f"{IMAGES}/acme/mini"
+    app_key = f"app:{app_id}@{NODE}"
+
+    def models() -> dict:
+        doors = ada.get("/api/media/doors").json()
+        return {m["id"]: m for m in doors["doors"]["images"]["models"]}
+
+    def finished(media_id: str, seconds: float = 90) -> dict:
+        deadline = time.perf_counter() + seconds
+        while time.perf_counter() < deadline:
+            item = ada.get(f"/api/media/{media_id}").json()
+            if item["status"] != "running":
+                return item
+            time.sleep(0.2)
+        raise Abort("an image request did not finish")
+
+    def make(body: dict) -> dict:
+        sent = ada.post("/api/media/images", json=body)
+        if sent.status_code != 201:
+            raise Abort(f"making an image: {sent.status_code} {sent.text[:300]}")
+        return finished(sent.json()["id"])
+
+    def seen() -> list:
+        return call("fixture", "GET", "/seen?name=router").json()
+
+    wait(lambda: {flux, mini} <= set(models()), "the image account reaches Workbench", 90)
+    listed = models()
+    check("M1", "the Images screen lists the account's image models with the settings the gateway "
+          "enforces, and where they run; the chat model is not among them",
+          (listed[flux]["maxImages"], listed[flux]["qualities"], listed[flux]["outputFormats"],
+           listed[flux]["maxReferences"]) == (1, [], ["png", "jpeg"], 4)
+          and (listed[mini]["maxImages"], listed[mini]["qualities"]) == (10, ["auto", "low", "medium", "high"])
+          and listed[flux]["locality"] == "external" and listed[flux]["provider"] == "OpenRouter"
+          and MODEL not in listed, {k: listed[k] for k in (flux, mini)})
+
+    item = make({"model": flux, "prompt": "a red barn", "size": "512x512"})
+    files = item.get("files") or []
+    got = ada.get(f"/api/files/{files[0]['id']}").content if files else b""
+    check("M2", "an image is made through the gateway, kept, and read back from its own bytes "
+          "beside the size asked",
+          item["status"] == "done" and got == MADE and (files[0]["width"], files[0]["height"]) == (3, 2)
+          and item["request"].get("size") == "512x512" and (item.get("served") or {}).get("driver") == IMAGES
+          and seen()[-1]["body"].get("prompt") == "a red barn",
+          {"status": item["status"], "served": item.get("served"), "files": files, "error": item.get("error")})
+
+    before = len(seen())
+    refused = make({"model": flux, "prompt": "two barns", "n": 2})
+    error = refused.get("error") or {}
+    check("M3", "a setting the model does not take is refused in the gateway's words, naming the "
+          "field, and nothing reaches the provider",
+          refused["status"] == "failed" and error.get("param") == "n" and "at most 1" in error.get("message", "")
+          and "Nothing was sent" in error.get("message", "") and len(seen()) == before, error)
+
+    brought = ada.post("/api/media/images/upload", files={"file": ("photo.png", png(4, 4), "image/png")})
+    ref = brought.json()["files"][0]["id"] if brought.status_code == 201 else ""
+    edited = make({"model": flux, "prompt": "make it blue", "references": [ref]}) if ref else {}
+    refs = seen()[-1].get("references") if edited else []
+    check("M4", "an image brought into the bin edits the next one: it reaches the provider as a "
+          "reference image",
+          brought.status_code == 201 and edited.get("status") == "done"
+          and len(refs) == 1 and refs[0].startswith("data:image/png;base64,"),
+          {"upload": brought.status_code, "refs": refs})
+
+    sent = ada.post(f"/api/media/{item['id']}/to-chat", json={"fileId": files[0]["id"]})
+    copy = sent.json() if sent.status_code == 201 else {}
+    answer = ada.ask(copy["chatId"], "What is this?", attachments=[copy["attachment"]["id"]],
+                     model=MODEL) if copy else {}
+    check("M5", "Send to a chat makes a copy the chat's model sees",
+          sent.status_code == 201 and answer.get("content", "").startswith(SAW_IMAGE),
+          {"to-chat": sent.text[:200], "answer": answer.get("content", "")[:80]})
+
+    blocked = (owner.get(f"/api/media/{item['id']}").status_code,
+               owner.get(f"/api/people/{person}/media", params={"door": "images"}).status_code)
+    call("console", "PATCH", hop + f"/v1/apps/{app_id}/config", console, json={"ownerReadsChats": True})
+    theirs = owner.get(f"/api/people/{person}/media", params={"door": "images"}).json().get("items", [])
+    opened = owner.get(f"/api/files/{files[0]['id']}").status_code
+    cannot = owner.http.delete(owner.base + f"/api/media/{item['id']}", headers=owner._headers()).status_code
+    call("console", "PATCH", hop + f"/v1/apps/{app_id}/config", console, json={"ownerReadsChats": None})
+    after = owner.get(f"/api/media/{item['id']}").status_code
+    check("M6", "the owner reads Ada's images only while the business allows it, and never "
+          "deletes them",
+          blocked == (404, 403) and item["id"] in [i["id"] for i in theirs]
+          and all(i.get("readOnly") for i in theirs) and opened == 200 and cannot == 404 and after == 404,
+          {"before": blocked, "listed": len(theirs), "file": opened, "delete": cannot, "after": after})
+
+    on_disk = data / "files" / hashlib.sha256(person.encode("utf-8")).hexdigest()[:32] / files[0]["id"]
+    existed = on_disk.is_file()
+    deleted = ada.http.delete(ada.base + f"/api/media/{item['id']}", headers=ada._headers()).status_code
+    kept = ada.get(f"/api/files/{copy['attachment']['id']}").content if copy else b""
+    check("M7", "Delete removes the result's file from Workbench's data; the chat keeps its copy",
+          existed and deleted == 204 and not on_disk.is_file() and kept == MADE,
+          {"existed": existed, "delete": deleted, "still": on_disk.is_file()})
+
+    rows = call("agent", "GET", "/api/proxy/gateway/v1/metrics/requests", operator,
+                params={"limit": 200}).json().get("requests") or []
+    images = [r for r in rows if r.get("door") == "images"]
+    check("M8", "the gateway records each image under the app's key",
+          len([r for r in images if r.get("outcome") == "served"]) >= 2
+          and {r.get("clientKeyName") for r in images} == {app_key},
+          [(r.get("outcome"), r.get("clientKeyName")) for r in images])
+
+    if live:
+        real = f"openrouter/{LIVE_IMAGE}"
+        wait(lambda: real in models(), "the live OpenRouter image model", 120)
+        made = make({"model": real, "prompt": "a red barn in snow, pencil sketch", "size": "512x512"})
+        files = made.get("files") or []
+        check("ML", "a real OpenRouter image is made, kept, and its size read from its bytes",
+              made["status"] == "done" and len(files) == 1 and files[0]["width"] == 512
+              and files[0]["mediaType"] in ("image/jpeg", "image/png"),
+              {"status": made["status"], "files": files, "error": made.get("error")})
+
+
 def browser_run(work: Path, *, ui: str, passphrase: str, fixture: str, call, live: bool) -> None:
     cfg = work / "browser.json"
     result = work / "browser-result.json"
@@ -829,6 +1084,8 @@ def main() -> None:
     parser.add_argument("--engine", help="a llama-server to run a real model with (live)")
     parser.add_argument("--gguf", help="the model file for --engine")
     parser.add_argument("--searxng", help="a real SearXNG to search with, e.g. http://127.0.0.1:8888")
+    parser.add_argument("--openrouter-live", action="store_true",
+                        help="also make one real OpenRouter image (about half a cent)")
     args = parser.parse_args()
     if args.serve:
         serve(args.serve, Path(args.directory), args.port)
@@ -837,7 +1094,7 @@ def main() -> None:
     print(f"working in {work}")
     try:
         exercise(work, source=args.source, browser=args.browser, engine=args.engine,
-                 gguf=args.gguf, searxng=args.searxng)
+                 gguf=args.gguf, searxng=args.searxng, openrouter_live=args.openrouter_live)
     finally:
         if not args.keep:
             shutil.rmtree(work, ignore_errors=True)

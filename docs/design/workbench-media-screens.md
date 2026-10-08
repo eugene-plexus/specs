@@ -1,7 +1,9 @@
 # Workbench: media screens
 
 **Status: designed 2026-10-08; Troy took all eleven calls (§1) as
-recommended the same day. Nothing is built; slice 1 is next (§10).**
+recommended the same day. Slice 1 (images and the shared frame) is built
+and pinned the same day** ([record](../acceptance/workbench-media-images-run.md);
+what building found is §10a). Speech and transcription are next.
 This is roadmap A6's last Workbench item ([`audience-roadmap.md`](audience-roadmap.md)
 A6, [`workbench.md`](workbench.md) §5 and §8, [`workbench-v1.md`](workbench-v1.md)
 §6). It covers images, speech, transcription and video as screens of their own.
@@ -488,6 +490,49 @@ is run once against a sabotaged copy to prove it can fail.
 4. **The `dist` branch,** then the agent's catalogue at that commit.
 5. **Pins:** the gateway, and both installers.
 6. **One acceptance run of record**, then the slice's sabotage pass.
+
+## 10a. What building slice 1 found (2026-10-08)
+
+Built the same day the calls were taken: specs `9e6125f` (contract),
+gateway `e7488dc`, Workbench `09d2e62` (`dist` `eff62e2`), agent `e1ea390`.
+The run of record (`c3-workbench-acceptance.py --browser --openrouter-live`)
+passed 47 of 47.
+
+- **The gateway lists what it already enforced.** `_image_listing` in
+  `routing.py` builds every image field from the drivers'
+  `ImageCapabilities`, the same values `rules_out` routes on. A slot lists
+  what *some* backend takes (the largest limit, the union of choices) and
+  null once one backend leaves a field to its own API, because a request
+  routes to any backend that takes it. The first tests covered only
+  single models; the sabotage pass found that a slot mixing flux with an
+  OpenAI model, and a chat model's `image_min_references`, went unchecked.
+  Both are tested now (7 of 7 caught).
+- **A file is guarded by what it belongs to, and by its own owner.**
+  `GET /api/files/{id}` reads a chat's file through the chat and a media
+  file through its row, and either way checks the file's own `owner`
+  matches. It now streams from disk with `FileResponse`, which answers
+  `Range` (206), where it used to read the whole file into memory.
+- **Schema 7 makes `files` again.** SQLite cannot drop `NOT NULL`, so
+  migration 7 copies the table. A store from before attachments had no
+  `files` table at all, so the migration creates schema 1's first.
+- **A graceful restart never exercised the boot sweep.** Shutdown marks
+  its own running requests `interrupted` (`MediaJobs.aclose`), so the
+  first restart test passed with the boot sweep removed; the sabotage
+  pass found it. Only a row left `running` while Workbench was stopped,
+  as a crash leaves one, tests the sweep.
+- **One watcher set per person.** The first build kept watchers in a set
+  of dataclasses, which are unhashable by default; the event-stream test
+  caught it (`eq=False`).
+- **"Bins" passes the copy gate only with its plain meaning.** The page's
+  workshop-name test (`words.test.ts`) now holds each built name to its
+  pair, *Toolbox · Tools* and *Bins · Media*. It reads comments too, and
+  caught one in `ChatView.tsx`.
+- **Back now resets every screen.** The address handling for
+  `/media/<door>` fixed workbench#4 on the way: `popstate` did not reset
+  the Job sites screen.
+- **A sent image waits in the new chat's composer.** *Send to a chat*
+  creates the chat with the copy attached on the server; the page opens it
+  with that file already pending, so the person writes the question.
 
 ## 11. Not in this design
 
