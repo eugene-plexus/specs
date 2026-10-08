@@ -186,6 +186,42 @@ try {
       && (cfg.live ? text.trim().length > 0 : text.includes("fixture model.")), text.slice(0, 80));
   await mode("plain");
 
+  // 11. Video (media screens slice 3): sending asks first, with the price
+  // from the listing; the job runs on the server; the video plays.
+  await page.getByTestId("open-media").click();
+  await page.getByRole("tab", { name: "Video" }).click();
+  await page.waitForURL(/\/media\/video$/);
+  await page.getByTestId("video-model").selectOption("images/acme/grok-video");
+  await page.getByTestId("video-prompt").fill("a red ball bouncing, from Chrome");
+  await page.getByTestId("make-video").click();
+  const quote = (await page.getByTestId("video-quote").textContent()) ?? "";
+  await page.getByTestId("confirm-video").click();
+  const working = page.locator('[data-testid="media-item"][data-status="running"]');
+  const workingSaid =
+    (await working
+      .getByTestId("media-status")
+      .filter({ hasText: /^Working, \d+ s so far\./ })
+      .textContent({ timeout: 20000 })
+      .catch(() => "")) ?? "";
+  check("B12", "the Video screen asks first, with the price from the listing, then says how long the job has run",
+    quote === "1 s at 480p. About $0.05, billed to OpenRouter." && workingSaid !== "",
+    { quote, workingSaid });
+  const made = page.locator('[data-testid="media-item"][data-status="done"]').first();
+  await made.getByTestId("bin-video").waitFor({ timeout: 60000 });
+  await page.waitForFunction(
+    () => document.querySelector('[data-testid="bin-video"]')?.readyState >= 1,
+    undefined,
+    { timeout: 20000 },
+  );
+  const sizeSaid = (await made.getByTestId("video-words").textContent().catch(() => "")) ?? "";
+  const billedSaid = (await made.getByTestId("billed-words").textContent().catch(() => "")) ?? "";
+  check("B13", "the finished video plays in Work orders, with what came back beside what was asked and what was billed",
+    sizeSaid === "Asked 1 s at 854 × 480, got 1.0 s at 160 × 90"
+      && billedSaid === "The provider billed $0.05 for this.",
+    { sizeSaid, billedSaid });
+  await page.screenshot({ path: `${cfg.shots}/5-video.png`, fullPage: true });
+  await page.getByRole("button", { name: "Back to chat" }).click();
+
   // 8. Nothing the policy refused, no page error.
   check("B8", "no Content Security Policy refusal, page error or server error in any tab",
     out.problems.length === 0, out.problems.slice(0, 5));

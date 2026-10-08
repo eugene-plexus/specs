@@ -5,8 +5,10 @@ recommended the same day. Slice 1 (images and the shared frame) is built
 and pinned the same day** ([record](../acceptance/workbench-media-images-run.md);
 what building found is §10a). **Slice 2 (speech and transcription) is
 built and pinned the same day too**
-([record](../acceptance/workbench-media-speech-run.md); §10b). Video is
-next.
+([record](../acceptance/workbench-media-speech-run.md); §10b), **and so is
+slice 3, video as a work order**
+([record](../acceptance/workbench-media-video-run.md); §10c). All four
+screens are built.
 This is roadmap A6's last Workbench item ([`audience-roadmap.md`](audience-roadmap.md)
 A6, [`workbench.md`](workbench.md) §5 and §8, [`workbench-v1.md`](workbench-v1.md)
 §6). It covers images, speech, transcription and video as screens of their own.
@@ -613,6 +615,81 @@ Workbench `27b36f7` (below), shipped as `dist` `53004e4` from agent
   machine itself. The Chrome check records with Chrome's fake microphone
   on `127.0.0.1`. Over plain LAN HTTP, the page says why there is no
   Record button.
+
+## 10c. What building slice 3 found (2026-10-08)
+
+**Measured first** (OpenRouter's public `GET /videos/models`, free):
+
+- **`pricing_skus` is a flat map of OpenRouter's own line names to decimal
+  strings, in at least six units across 30 models:**
+  - cents per output second, by resolution (grok: `cents_per_video_output_second_480p`);
+  - dollars per second, the `duration_seconds` family: by resolution, with
+    or without sound (Veo), text or image to video (Kling, Wan);
+  - per video token (all five Seedance models);
+  - per megapixel-second (Flux upscale);
+  - lines for what no request here sends: a reference, a continuation of
+    a video sent in;
+  - a job's minimum (Runway Aleph), and an input image (grok, 0.2¢).
+- **So `video_prices` is not the raw map.** The driver reads it into lines
+  a request can be priced by (`VideoPrice`: a second, an input image, a
+  minimum; each with its resolution, the listed sizes of that resolution,
+  and whether it holds with sound or with a first frame), in dollars.
+  Lines in other units are left out; **a model with no price for a second
+  lists none** rather than a partial price. 24 of 30 models are priced;
+  the five Seedance models and Flux upscale are not.
+- **A resolution is bound to sizes by the shorter side** (`854x480` and
+  `480x854` are 480p; 2K is 1440, 4K 2160). Grok's 14 sizes all fall in its
+  two classes.
+- **The wording when no price is listed changed from the design's.**
+  *Billed per second by OpenRouter* would be false for Seedance, which
+  bills video tokens. The screen says *No price is listed for this;
+  OpenRouter bills it to that account.*
+
+**Built:**
+
+- **The gateway lists a model's prices only when every backend serving it
+  lists the same ones.** A request may land on any of them, so differing
+  lists, or one backend with none, list nothing (*no price listed*, never
+  free).
+- **The page prices the request it is about to send** (`videoQuote`): the
+  `second` line for the size sent (else one with no resolution), times the
+  seconds, plus a first frame's `input_image`, and at least the `minimum`.
+  Lines that stay open, such as sound (a provider's default) or the
+  resolution when no size is sent, give a range: *About $0.80 to $1.60*.
+  The form offers the model's shortest length and smallest size first,
+  and any change after the price is shown asks again.
+- **`x_eugene_plexus.cost_usd` rides the poll that finds a job ended,**
+  when the provider says what it billed. Workbench keeps it as the
+  result's `costUsd`: *The provider billed $0.05 for this.*
+- **The Foreman is the server's, never the screen's.** The words gate
+  keeps it off the page; *Work orders · Long jobs* is built and joins
+  *Toolbox · Tools* and *Bins · Media* as a workshop name with its plain
+  meaning.
+- **A job with a handle is never marked `interrupted`.** At a graceful
+  shutdown its row stays `running` with its last poll, and at boot
+  `MediaJobs.resume` polls every such row again. Only a job the gateway had
+  not yet accepted ends `interrupted`.
+- **A poll that can be asked again is said on the job, and asked again.**
+  The gateway's 503 says *Poll again once it is; the job is not lost*, so
+  ending the job on it, as *a failed poll ends the job* read literally
+  would, would lose a paid video. A 400, 401, 403 or 404 ends it in the
+  gateway's words; a 404 (*"No video job … for this key."*) adds that the
+  provider may still make and bill it. Stop says the same.
+- **Again is not offered on a video.** It would send a paid job without
+  the price; *Edit and send* fills the form, and sending asks first.
+- **The video is streamed to disk, never held in memory,** and checked as
+  an MP4 (`ftyp`) from its first bytes. A part written before a failure is
+  removed. The page reads the video's own length and size once it loads
+  and sets them beside what was asked (*Asked 1 s at 854 × 480, got 1.0 s
+  at 160 × 90* on the fixture's clip).
+
+**Built:** specs `eb9a1f2` (the contract), inference-driver `2b1850b`,
+gateway `6780d6c` (and a test, `d9e2226`), and Workbench `91c8b37`,
+shipped as `dist` `d1db51c` from agent `6628f10`'s catalogue. The C3 run
+passed 65 of 65, with one real grok video, 1 s at 480p, priced at $0.05
+from the listing and billed $0.05
+([record](../acceptance/workbench-media-video-run.md)). Sabotage caught
+39 of 39.
 
 ## 11. Not in this design
 

@@ -64,6 +64,20 @@ whisper (SL; a fraction of a cent). An ElevenLabs account (the real
 `elevenlabs` provider on the fixture) lists voices by id; S7 checks their
 names reach the Speech screen beside them.
 
+**Slice 3, video as a work order** (checks V1-V7, design §5 and M11): the
+same account lists a video model with OpenRouter's `/videos/models` entry,
+`pricing_skus` included, and plays its video API as P5 measured it: a job
+answers `pending`, then `completed` with `usage.cost` (the gateway says
+`queued`, progress 0 then 100, `prompt: null`). The Video screen lists the
+model's lengths, sizes and price; a job runs on Workbench's server and its
+MP4 is kept the moment it is done, with what the provider billed; a length
+no listing makes is refused unsent; a first frame reaches the provider; Stop
+ends the polling. **V5 is the one that matters most: Workbench is stopped,
+a running row is written holding a handle the gateway issued to the app's
+key, as a crash leaves one, and the next start polls it and keeps the
+video.** `--openrouter-live` adds one real grok-imagine-video job, 1 s at
+480p (VL; about 5 cents).
+
 `--browser` adds the system Chrome driving Workbench's page itself
 (`c3-workbench-browser.mjs`, Playwright from `ui/node_modules`).
 
@@ -125,6 +139,9 @@ KEYS_FILE = Path(os.environ.get("EP_KEYS", "C:/Users/troyc/.eugene-plexus-secret
 IMAGES = "images"
 LIVE_IMAGE = "black-forest-labs/flux.2-klein-4b"
 LIVE_AUDIO = ["hexgrad/kokoro-82m", "openai/whisper-large-v3-turbo"]
+#: The one live video (slice 3): the cheapest OpenRouter lists, 5 cents a
+#: second at 480p (measured 2026-10-08).
+LIVE_VIDEO = "x-ai/grok-imagine-video"
 #: An ElevenLabs account's driver name, and its voices: ids that say nothing,
 #: named by ElevenLabs (`GET /v1/voices`), as P3 measured them.
 ELEVEN = "eleven"
@@ -154,6 +171,22 @@ RECORDED = b"\x1a\x45\xdf\xa3" + bytes(200)
 #: What the fixture's image models answer, whatever size is asked: 3x2, so
 #: what was asked and what came back differ (media screens §2.4).
 MADE = png(3, 2)
+#: What the fixture's video jobs answer: a real 1 s H.264 clip, 160x90, so
+#: a browser plays it, and what came back differs from the 854x480 asked.
+CLIP = FIXTURES / "c3-clip-160x90.mp4"
+#: OpenRouter's `GET /videos/models` entry for grok, as listed on 2026-10-08
+#: (sizes trimmed): its lengths, sizes, first frame and price list.
+OR_VIDEO = {
+    "supported_durations": list(range(1, 16)),
+    "supported_sizes": ["854x480", "1280x720", "480x854", "720x1280"],
+    "supported_resolutions": ["480p", "720p"],
+    "supported_frame_images": ["first_frame"],
+    "pricing_skus": {"cents_per_image_input": "0.2", "cents_per_video_output_second_480p": "5",
+                     "cents_per_video_output_second_720p": "7"},
+}
+#: How long the fixture's video job is `pending` (P5 measured 25 s); `[long]`
+#: in a prompt holds it longer, to outlast a restart.
+MAKING, LONG = 7.0, 20.0
 #: OpenRouter's account listing and `GET /images/models`, as P4 measured
 #: them (`p4-images-acceptance.py`): the typed descriptors are the only real
 #: settings.
@@ -282,7 +315,63 @@ def fixture_app(state_file: Path):
             {"id": "acme/whisper", "name": "acme/whisper", "context_length": 4096,
              "architecture": {"input_modalities": ["audio"], "output_modalities": ["transcription"]},
              "supported_parameters": []},
+            # Video as P5 measured OpenRouter's (slice 3).
+            {"id": "acme/grok-video", "name": "acme/grok-video", "context_length": 4096,
+             "architecture": {"input_modalities": ["text", "image"], "output_modalities": ["video"]},
+             "supported_parameters": []},
         ]}
+
+    videos: dict[str, dict] = {}
+
+    @app.get("/router/v1/videos/models")
+    async def router_video_models():
+        return {"data": [{"id": "acme/grok-video", **OR_VIDEO}]}
+
+    @app.post("/router/v1/videos")
+    async def router_video(request: Request):
+        from fastapi.responses import JSONResponse
+
+        body = await request.json()
+        frames = body.get("frame_images") or []
+        count("router-video", {"body": {k: v for k, v in body.items() if k != "frame_images"},
+                               "frames": [{"frame_type": f.get("frame_type"),
+                                           "url": ((f.get("image_url") or {}).get("url") or "")[:30]}
+                                          for f in frames]})
+        job = f"gen-vid-c3-{len(videos) + 1}"
+        prompt = body.get("prompt") or ""
+        videos[job] = {"at": time.perf_counter(), "polls": 0,
+                       "making": LONG if "[long]" in prompt else MAKING,
+                       "fail": "[fail]" in prompt}
+        return JSONResponse({"id": job, "polling_url": f"/v1/videos/{job}", "status": "pending"},
+                            status_code=202)
+
+    @app.get("/router/v1/videos/{job}")
+    async def router_video_poll(job: str):
+        from fastapi.responses import JSONResponse
+
+        found = videos.get(job)
+        count("router-video-poll", {"job": job})
+        if found is None:
+            return JSONResponse({"error": {"message": f"Job {job} not found", "code": 404}},
+                                status_code=404)
+        found["polls"] += 1
+        if time.perf_counter() - found["at"] < found["making"]:
+            return {"id": job, "generation_id": job, "status": "pending"}
+        if found["fail"]:
+            return {"id": job, "status": "failed", "usage": {"cost": 0.05},
+                    "error": "The prompt was refused by the provider's moderation."}
+        return {"id": job, "generation_id": job, "status": "completed",
+                "unsigned_urls": [f"/v1/videos/{job}/content?index=0"],
+                "usage": {"cost": 0.05, "is_byok": False}}
+
+    @app.get("/router/v1/videos/{job}/content")
+    async def router_video_content(job: str):
+        from fastapi.responses import JSONResponse
+
+        if job not in videos:
+            return JSONResponse({"error": {"message": f"Job {job} not found", "code": 404}},
+                                status_code=404)
+        return Response(content=CLIP.read_bytes(), media_type="video/mp4")
 
     @app.post("/router/v1/audio/speech")
     async def router_speech(request: Request):
@@ -704,7 +793,8 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         account(ELEVEN, {"provider": "elevenlabs", "baseUrl": url["fixture"] + "/el"},
                 "fixture-not-a-key", env="ELEVENLABS_API_KEY")
         if openrouter_live:
-            account("openrouter", {"provider": "openrouter", "catalogueInclude": [LIVE_IMAGE, *LIVE_AUDIO]},
+            account("openrouter", {"provider": "openrouter",
+                                   "catalogueInclude": [LIVE_IMAGE, *LIVE_AUDIO, LIVE_VIDEO]},
                     provider_key("OPENROUTER_API_KEY"))
 
         say("Workbench from the catalogue")
@@ -912,6 +1002,9 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
                   data=agent_dir / "apps" / app_id / "data", live=openrouter_live)
         audio_run(ada=ada, call=call, wait=wait, app_id=app_id, operator=operator,
                   live=openrouter_live)
+        video_run(ada=ada, call=call, wait=wait, app_id=app_id, operator=operator,
+                  data=agent_dir / "apps" / app_id / "data", gateway=url["gateway"],
+                  person=made["ada"]["id"], live=openrouter_live)
 
         person_id = made["ada"]["id"]
         call("control", "PATCH", f"/v1/people/{person_id}", root, json={"disabled": True}).raise_for_status()
@@ -1217,6 +1310,163 @@ def audio_run(*, ada: Browser, call, wait, app_id: str, operator: str, live: boo
                "error": text.get("error") or made.get("error")})
 
 
+def video_run(*, ada: Browser, call, wait, app_id: str, operator: str, data: Path, gateway: str,
+              person: str, live: bool) -> None:
+    """The Video screen, slice 3, through Workbench's own API as its page
+    calls it (workbench-media-screens.md §5, M11)."""
+    say("media screens: video, as a work order")
+    grok = f"{IMAGES}/acme/grok-video"
+
+    def doors() -> dict:
+        return ada.get("/api/media/doors").json()["doors"]
+
+    def finished(media_id: str, seconds: float = 120) -> dict:
+        deadline = time.perf_counter() + seconds
+        while time.perf_counter() < deadline:
+            item = ada.get(f"/api/media/{media_id}").json()
+            if item["status"] != "running":
+                return item
+            time.sleep(0.5)
+        raise Abort("a video job did not end")
+
+    def make(**fields) -> dict:
+        sent = ada.post("/api/media/video", json={
+            "model": grok, "prompt": "a red ball bouncing", "seconds": 1, "size": "854x480", **fields})
+        if sent.status_code != 201:
+            raise Abort(f"making a video: {sent.status_code} {sent.text[:300]}")
+        return sent.json()
+
+    def seen(name: str) -> list:
+        return call("fixture", "GET", f"/seen?name={name}").json()
+
+    def polls(job: str) -> int:
+        return sum(1 for p in seen("router-video-poll") if p["job"] == job)
+
+    wait(lambda: grok in {m["id"] for m in doors()["video"]["models"]},
+         "the account's video model reaches Workbench", 90)
+    listed = next(m for m in doors()["video"]["models"] if m["id"] == grok)
+    line = next((p for p in listed.get("prices") or [] if p.get("resolution") == "480p"), {})
+    check("V1", "the Video screen lists the model's lengths, sizes and first frame, and the price "
+          "OpenRouter lists, read into dollars for the sizes it prices",
+          listed["durations"] == list(range(1, 16)) and "854x480" in (listed["sizes"] or [])
+          and listed["firstFrame"] is True and listed["locality"] == "external"
+          and line.get("usd") == 0.05 and line.get("sizes") == ["854x480", "480x854"]
+          and any(p.get("per") == "input_image" and p.get("usd") == 0.002 for p in listed["prices"]),
+          {"durations": listed["durations"], "sizes": listed["sizes"], "prices": listed.get("prices")})
+
+    started = make()
+    running = ada.get(f"/api/media/{started['id']}").json()
+    item = finished(started["id"])
+    files = item.get("files") or []
+    got = ada.get(f"/api/files/{files[0]['id']}").content if files else b""
+    asked = seen("router-video")[-1] if seen("router-video") else {}
+    job = f"gen-vid-c3-{len(seen('router-video'))}"
+    check("V2", "a video job runs on Workbench's server, is polled through the gateway until done, "
+          "and its MP4 is kept with what the provider billed",
+          started["status"] == "running" and running["status"] == "running"
+          and item["status"] == "done" and got == CLIP.read_bytes()
+          and files[0]["mediaType"] == "video/mp4"
+          and (item.get("units") or {}).get("costUsd") == 0.05
+          and (item.get("units") or {}).get("seconds") == 1
+          and asked.get("body", {}).get("duration") == 1 and asked["body"].get("size") == "854x480"
+          and polls(job) >= 2 and (item.get("served") or {}).get("driver") == IMAGES,
+          {"status": item["status"], "units": item.get("units"), "job": item.get("job"),
+           "polls": polls(job), "sent": asked.get("body"), "error": item.get("error")})
+
+    before = len(seen("router-video"))
+    refused = finished(make(seconds=99)["id"])
+    error = refused.get("error") or {}
+    check("V3", "a length no listing makes is refused in the gateway's words, naming the field, and "
+          "nothing reaches the provider",
+          refused["status"] == "failed" and error.get("param") == "seconds"
+          and "Nothing was sent" in error.get("message", "") and len(seen("router-video")) == before,
+          error)
+
+    brought = ada.post("/api/media/images/upload", files={"file": ("frame.png", png(8, 8), "image/png")})
+    frame = brought.json()["files"][0]["id"] if brought.status_code == 201 else ""
+    framed = finished(make(firstFrame=frame, prompt="the ball from this frame")["id"]) if frame else {}
+    frames = seen("router-video")[-1].get("frames") if framed else []
+    check("V4", "an image from the bin reaches the provider as the video's first frame",
+          framed.get("status") == "done" and len(frames) == 1
+          and frames[0]["frame_type"] == "first_frame"
+          and frames[0]["url"].startswith("data:image/png;base64,"),
+          {"status": framed.get("status"), "frames": frames})
+
+    # V5: the check that matters most. Stop Workbench; write a running row
+    # holding a handle the gateway issued to the app's key, as a crash leaves
+    # one (a graceful stop would not test the boot path); start it again.
+    key = (data / "client_key").read_text(encoding="utf-8").strip()
+    submitted = httpx.post(f"{gateway}/v1/videos", headers={"Authorization": f"Bearer {key}"},
+                           json={"model": grok, "prompt": "[long] a ball after a crash",
+                                 "seconds": "1", "size": "854x480"}, trust_env=False, timeout=60)
+    handle = submitted.json().get("id") if submitted.status_code == 200 else None
+    crashed_job = f"gen-vid-c3-{len(seen('router-video'))}"
+    stopped = call("agent", "POST", f"/v1/apps/{app_id}/stop", operator)
+    wait(lambda: call("agent", "GET", f"/v1/apps/{app_id}", operator).json()["status"] != "running",
+         "Workbench stopped", 60)
+    with sqlite3.connect(data / "workbench.sqlite3") as db:
+        db.execute(
+            "INSERT INTO media (id, owner, door, kind, status, created_at, model, request, job) "
+            "VALUES ('c3-crashed', ?, 'video', 'made', 'running', ?, ?, ?, ?)",
+            (person, time.time(), grok,
+             json.dumps({"model": grok, "prompt": "a ball after a crash", "seconds": 1,
+                         "size": "854x480"}),
+             json.dumps({"handle": handle, "status": "queued", "progress": 0, "polls": 1,
+                         "polledAt": time.time(), "problem": None})))
+    submits = len(seen("router-video"))
+    call("agent", "POST", f"/v1/apps/{app_id}/start", operator)
+    wait(lambda: call("agent", "GET", f"/v1/apps/{app_id}", operator).json()["status"] == "running",
+         "Workbench running again", 90)
+    wait(lambda: ada.get("/api/me").status_code == 200, "Workbench answering again", 60)
+    resumed = finished("c3-crashed", 120)
+    kept = resumed.get("files") or []
+    check("V5", "after a crash, the next start polls the running job again and keeps its video; "
+          "nothing is sent twice",
+          stopped.status_code == 200 and handle is not None and resumed["status"] == "done"
+          and kept and ada.get(f"/api/files/{kept[0]['id']}").content == CLIP.read_bytes()
+          and polls(crashed_job) >= 1 and len(seen("router-video")) == submits,
+          {"stop": stopped.status_code, "handle": bool(handle), "status": resumed["status"],
+           "polls": polls(crashed_job), "error": resumed.get("error")})
+
+    long_job = make(prompt="[long] a ball nobody waits for")
+    wait(lambda: polls(f"gen-vid-c3-{len(seen('router-video'))}") >= 1, "the job's first poll", 30)
+    this = f"gen-vid-c3-{len(seen('router-video'))}"
+    ada.post(f"/api/media/{long_job['id']}/stop")
+    ended = ada.get(f"/api/media/{long_job['id']}").json()
+    at_stop = polls(this)
+    time.sleep(12)
+    check("V6", "Stop ends a running job and its polling", ended["status"] == "stopped"
+          and polls(this) == at_stop, {"status": ended["status"], "polls": (at_stop, polls(this))})
+
+    rows = call("agent", "GET", "/api/proxy/gateway/v1/metrics/requests", operator,
+                params={"limit": 300}).json().get("requests") or []
+    jobs = [r for r in rows if r.get("door") == "videos"]
+    check("V7", "the gateway records the video jobs under the app's key, and no other",
+          len([r for r in jobs if r.get("outcome") == "served"]) >= 3
+          and {r.get("clientKeyName") for r in jobs} == {f"app:{app_id}@{NODE}"},
+          [(r.get("outcome"), r.get("clientKeyName")) for r in jobs])
+
+    if live:
+        real = f"openrouter/{LIVE_VIDEO}"
+        wait(lambda: real in {m["id"] for m in doors()["video"]["models"]},
+             "the live OpenRouter video model", 120)
+        model = next(m for m in doors()["video"]["models"] if m["id"] == real)
+        price = next((p for p in model.get("prices") or []
+                      if p.get("per") == "second" and "854x480" in (p.get("sizes") or [])), {})
+        sent = ada.post("/api/media/video", json={
+            "model": real, "prompt": "a red ball bouncing on a wooden workbench",
+            "seconds": 1, "size": "854x480"})
+        made = finished(sent.json()["id"], 300) if sent.status_code == 201 else {}
+        video = made.get("files") or []
+        body = ada.get(f"/api/files/{video[0]['id']}").content if video else b""
+        check("VL", "a real OpenRouter video, 1 s at 480p, is priced from the listing before it is "
+              "sent, made, kept as an MP4, and its billed cost kept",
+              price.get("usd") == 0.05 and made.get("status") == "done" and body[4:8] == b"ftyp"
+              and isinstance((made.get("units") or {}).get("costUsd"), float),
+              {"price": price, "status": made.get("status"), "units": made.get("units"),
+               "bytes": len(body), "error": made.get("error"), "job": made.get("job")})
+
+
 def browser_run(work: Path, *, ui: str, passphrase: str, fixture: str, call, live: bool) -> None:
     cfg = work / "browser.json"
     result = work / "browser-result.json"
@@ -1238,7 +1488,8 @@ def browser_run(work: Path, *, ui: str, passphrase: str, fixture: str, call, liv
     check("B9", "the image an answer named was never fetched", canary == 0, f"{canary} fetches")
     if out.get("error"):
         check("B0", "Chrome ran every step", False, out["error"][:600])
-    expected = {"B1", "B2", "B5", "B6", "B7", "B8", "B10"} | (set() if live else {"B3", "B4"})
+    expected = ({"B1", "B2", "B5", "B6", "B7", "B8", "B10", "B12", "B13"}
+                | (set() if live else {"B3", "B4"}))
     missing = expected - {number for number, *_ in out.get("checks", [])}
     if missing:
         check("B11", "every browser step reported", False, sorted(missing))

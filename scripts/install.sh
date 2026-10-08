@@ -59,10 +59,10 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=c5a195a1750bb9d86977122c9eaa2725adb7bb4a
+PIN_AGENT=6628f1023d7ece48f8106a10010b77322821c923
 PIN_CONTROL=de4c6190ac2259330d3c7bab0698efa31cfbb401
-PIN_GATEWAY=d275bba89c9808e4cde36034f52861b5688cb175
-PIN_DRIVER=5c500beac80ff6214728a98bc88848e5b7b310f3
+PIN_GATEWAY=d9e2226c959d455dcd2a8d80ee6fe2dd19d0f53f
+PIN_DRIVER=2b1850b88434f708f14566d1bdbf611cd109bb7e
 PIN_LIBRARY=1be1803c5f7cbecfaef1dbc6068fa2d6856c0730
 PIN_TOOL_DRIVER=b30adf8e9de4333c41c6c7816e61fe85969a7421
 PIN_UI=ac6f816f410921d6bc4a9e39bc638830f598d7f9   # branch `dist`, not `main`
