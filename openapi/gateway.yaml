@@ -3725,6 +3725,14 @@ components:
             provider's own ids (P3a). Absent when the provider does not say,
             which is not the same as having none -- any voice is passed
             through and an unknown one is the provider's 400 (P3-3).
+
+            **When every backend that would speak the request lists its
+            voices, a voice none of them lists is refused before anything
+            is sent** (400, `param: voice`), naming the listed ones: a
+            provider's own refusal named nothing (OpenRouter: *"Provider
+            returned 400"*, measured 2026-10-08). OpenAI's TTS models list
+            the voices measured for their family that day. Added
+            2026-10-08 (Workbench media screens, M10).
         speech_formats:
           type: array
           items:
@@ -4223,7 +4231,10 @@ components:
           type: string
           minLength: 1
           maxLength: 128
-          description: The provider's own voice id, passed through (P3-3).
+          description: |
+            The provider's own voice id, passed through (P3-3) -- or refused
+            before sending when the model lists its voices and this is not
+            one of them (`ModelRoutingInfo.voices`, M10).
         response_format:
           $ref: './components/common.yaml#/components/schemas/SpeechFormat'
         speed:
