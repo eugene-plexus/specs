@@ -134,10 +134,10 @@
   [record](../acceptance/c6-folder-tools-run.md)). Existing host folders
   need administrator-provisioned OS access. Local MCP programs remain
   owner-only. **The working animation is built and pinned 2026-10-07**
-  (`workbench.md` §6.1). **Answer versions are designed 2026-10-08** as a
-  branching tree ([`workbench-answer-versions.md`](workbench-answer-versions.md)),
-  and are next to build. **Remaining after them:** dedicated media screens;
-  local media engines also need their own admission design.
+  (`workbench.md` §6.1). **Answer versions are built and pinned 2026-10-08**
+  as a branching tree ([`workbench-answer-versions.md`](workbench-answer-versions.md)).
+  **Remaining:** dedicated media screens, next; local media engines also
+  need their own admission design.
 - Not scheduled without Troy: PB2's remainder (the model's row saying so
   when fit places a built profile differently at launch; Home's "make it
   faster", call 6, later).
@@ -188,7 +188,7 @@ first:**
 | A3 | MoE-aware fit in the library, Discover, the starter set and admission's estimate, plus the **Low** preset | [`moe-aware-fit.md`](moe-aware-fit.md) (calls A-C taken 2026-09-30; **A3a-A3d built**) | Troy: a separate slice. M6 in the design says why: an 8 GB card is never offered the 30B-A3B that runs at 46 tok/s |
 | A4 | Mac / MLX out of experimental | [`mlx-engine.md`](mlx-engine.md) (A4 section), B1 | **Built on GitHub's macOS runners 2026-09-30**; the rented-Mac list is in the record, and dropping the `experimental` flag is Troy's call |
 | A5 | Tool-call repair for local models | [`tool-call-repair.md`](tool-call-repair.md) | **Measured and built 2026-09-30.** Almost nothing to repair. The one repair, a named `tool_choice` answered by structured output on llama-server, is pinned |
-| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **C1–C6 built; C6 pinned 2026-10-03.** App accounts, Eugene sign-in, Workbench chat/search, Open WebUI, network/local MCP tools and person-specific folder tools with approval. Working animation built 2026-10-07; answer versions designed 2026-10-08; media screens remain |
+| A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **C1–C6 built; C6 pinned 2026-10-03.** App accounts, Eugene sign-in, Workbench chat/search, Open WebUI, network/local MCP tools and person-specific folder tools with approval. Working animation built 2026-10-07; answer versions built 2026-10-08; media screens remain |
 | **A7** | **The prompt cache: keep each engine's cache warm across doors, replicas and hosted backends** | [`prompt-cache.md`](prompt-cache.md) ([record](../acceptance/prompt-cache-measurement.md)) | **Troy, 2026-10-02: high priority before going public** (*"at the core of what Eugene is: managing multiple backends efficiently"*). Measured the same day; **PC1-PC5 built and pinned 2026-10-02** (Troy took the four calls: PC1-PC5 before public, affinity the default, the system-message fold an operator setting, client breakpoints only). PC6-PC7 after the release |
 | **A8** | **Experimental engines, starting with Strata** | [`experimental-engines.md`](experimental-engines.md), [`strata-engine.md`](strata-engine.md) | **First Strata implementation on Edge 2026-10-04.** Recognition, install/uninstall, start/stop, model switching and text inference; [verification](../acceptance/strata-engine-run.md). Real-model GPU validation remains. The experimental label persists after hardware validation. NInfer and imp are subsequent candidates. |
 | **A9** | **Job Sites, slice 1: Workbench's four file tools on a person's machines outside the LAN, with the new access model** | [`remote-nodes.md`](remote-nodes.md) §5 (every call, J1-J18, taken 2026-10-05) | **Built 2026-10-05** ([record](../acceptance/job-sites-run.md): 17 of 17 with the root behind WSL2's NAT, sabotage 45 of 45). Then slice 2 (MCP between site and root, site-final policy) and slice 3 (cross-site copy) |
