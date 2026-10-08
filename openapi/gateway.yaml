@@ -3748,6 +3748,51 @@ components:
           description: |
             For an `image` model: at least one backend honours `mask`
             (OpenAI's API only, measured).
+        image_max_images:
+          type: integer
+          minimum: 1
+          description: |
+            For an `image` model: the largest `n` a request may ask for,
+            across the backends serving it. Null when any of them checks
+            `n` itself (an OpenAI account's, whose API lists nothing per
+            model), which is not the same as no limit: the backend's own
+            refusal is relayed. A larger `n` is refused before anything
+            is sent. Added 2026-10-08 (Workbench media screens, so a form
+            can offer what the gateway would take).
+        image_qualities:
+          type: array
+          items:
+            type: string
+          description: |
+            For an `image` model: the `quality` values its backends take.
+            Null when any backend checks `quality` itself; empty when none
+            takes one. `auto` is always taken. Added 2026-10-08.
+        image_backgrounds:
+          type: array
+          items:
+            type: string
+          description: For an `image` model, the `background` values taken, with the same null and empty as `image_qualities`. Added 2026-10-08.
+        image_output_formats:
+          type: array
+          items:
+            type: string
+          description: For an `image` model, the `output_format` values taken, with the same null and empty as `image_qualities`. Added 2026-10-08.
+        image_min_references:
+          type: integer
+          minimum: 0
+          description: |
+            For an `image` model: the fewest reference images some backend
+            serving it needs. 1 for a model that only edits; 0 when one
+            makes images from a prompt alone. Added 2026-10-08.
+        image_max_references:
+          type: integer
+          minimum: 0
+          description: |
+            For an `image` model: the most reference images some backend
+            serving it takes; 0 cannot edit. Null when any backend checks
+            the count itself. Added 2026-10-08.
+        locality:
+          $ref: '#/components/schemas/ModelLocality'
         video_durations:
           type: array
           items:
@@ -3827,6 +3872,20 @@ components:
             True when a request for this model may have to wait for a
             runtime to start — every eligible backend is `stopped` and
             at least one declared `startOnDemand`.
+
+    ModelLocality:
+      type: string
+      enum: [local, external, unknown]
+      description: |
+        Where a request for this model may run, from the serving drivers'
+        own `locality` (their configured trust classification): `local`
+        only when every backend serving it is local, `external` when any
+        is (a cloud API, a subscription, someone else's server), and
+        `unknown` otherwise. A client can say *runs on <account>* before
+        it sends. External is not the same as billed; it names where the
+        request goes, not what it costs. A `localOnly` key sees only
+        local backends, so it sees `local`. Added 2026-10-08 (Workbench
+        media screens).
 
     ChatCompletionRequest:
       type: object
