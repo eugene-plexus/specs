@@ -71,7 +71,8 @@ and keeps it.
   the answer *interrupted*, with that word on screen.
 - **Try again** replaces the last answer. **Editing a message** replaces
   it and everything after it, then asks again. Kept versions of an
-  answer are a later change.
+  answer are a later change, designed in
+  [`workbench-answer-versions.md`](workbench-answer-versions.md).
 
 ### W2. Signing in
 
@@ -275,7 +276,8 @@ and the WSL SearXNG.
 
 ## 6. Not in this slice
 
-- Kept versions of an answer (W1).
+- Kept versions of an answer (W1; designed 2026-10-08 in
+  [`workbench-answer-versions.md`](workbench-answer-versions.md)).
 - Deleting a former person's chats (W4).
 - Per-person usage at the gateway (sign-in call 1).
 - Images, speech, transcription and video as their own screens. The
