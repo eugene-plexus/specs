@@ -100,5 +100,5 @@ seconds, each a small fraction of a cent.
 - Deploying to Troy's install. His gateway lists no speech or
   transcription model, so both screens there show the empty state until he
   adds a provider account (`workbench-media-screens.md` §0).
-- CI on the pushed commits (Workbench and agent were running at the push;
-  checked next session).
+- specs CI on the pin commit (checked next session). Workbench `27b36f7`
+  and agent `33e2c9a` CI passed before it.
