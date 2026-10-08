@@ -118,7 +118,7 @@ SABOTAGES: list[Sabotage] = [
     ),
     Sabotage(
         "OpenRouter is asked for wav, which it does not make",
-        ((COMPAT, '        made_here = asked is SpeechFormat.wav and self._catalogue_source == "openrouter"\n',
+        ((COMPAT, '        made_here = asked is SpeechFormat.wav and self._dialect.catalogue == "openrouter"\n',
           "        made_here = False\n"),),
     ),
     Sabotage(
@@ -242,8 +242,8 @@ SABOTAGES: list[Sabotage] = [
     # --- P3b: transcription, in the gateway -------------------------------------
     Sabotage(
         "text is sent as JSON",
-        ((ROUTE, "    if fmt == \"text\":\n        return PlainTextResponse(result.text)\n",
-          "    if fmt == \"text\":\n        return JSONResponse(content={\"text\": result.text})\n"),),
+        ((ROUTE, "    if fmt == \"text\":\n        return PlainTextResponse(result.text, headers=headers)\n",
+          "    if fmt == \"text\":\n        return JSONResponse(content={\"text\": result.text}, headers=headers)\n"),),
     ),
     Sabotage(
         "a transcription is handed to a model that only chats",
