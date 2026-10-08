@@ -3819,7 +3819,6 @@ components:
         says so with no `lastContactAt`.
       required:
         - node
-        - url
       properties:
         node:
           type: string
@@ -3827,7 +3826,7 @@ components:
         url:
           type: string
           format: uri
-          description: That node's address, as `Node.url` records it.
+          description: That node's address, as `Node.url` records it. Absent when none is recorded.
         appliedIndex:
           type: integer
           format: int64
