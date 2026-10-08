@@ -3755,6 +3755,34 @@ components:
 
     # -------- This node --------
 
+    LocalStandby:
+      type: object
+      description: |
+        The warm standby this agent runs because its node holds the
+        `standby` grant (`docs/design/warm-standby.md`, SB3). Absent when it
+        does not. The agent starts it when the grant arrives in the trust
+        bundle and stops it, deleting its copy of the replication set, when
+        the grant goes. How far behind it is, the active root says
+        (`ControlStatus.standbys`).
+      required:
+        - component
+        - url
+        - status
+      properties:
+        component:
+          type: string
+          description: Its id among this agent's components.
+        url:
+          type: string
+          format: uri
+          description: Where it listens on this machine.
+        status:
+          $ref: '#/components/schemas/ComponentStatus'
+        following:
+          type: string
+          format: uri
+          description: The active root it follows, this node's `controlUrl`.
+
     NodeIdentity:
       type: object
       description: |
@@ -3798,6 +3826,8 @@ components:
           type: string
           format: uri
           description: The control root this node answers to.
+        standby:
+          $ref: '#/components/schemas/LocalStandby'
         epoch:
           type: integer
           format: int64

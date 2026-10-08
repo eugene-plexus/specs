@@ -1089,9 +1089,13 @@ paths:
         ordering**, so clock skew between hosts cannot affect
         correctness.
 
-        **An operator session only.** The entries include the ones that
-        wrote the install's key material, so this is the same door as
-        `readSnapshot` and takes the same level; see there for why.
+        **An operator session, or the standby's own token.** The entries
+        include the ones that wrote the install's key material, so this is
+        the same door as `readSnapshot` and takes the same credentials; see
+        there for why.
+
+        Each read by the standby records where it is: `after` is the index
+        it has applied (`ControlStatus.standbys`).
       parameters:
         - in: query
           name: after
@@ -1143,18 +1147,21 @@ paths:
         which are sealed on the hosts that read them and never travel
         here.
 
-        **An operator session only** (2026-09-25), narrower than every
-        other read on this root and deliberately so. What comes back
+        **An operator session, or the standby's own token**, narrower than
+        every other read on this root and deliberately so. What comes back
         includes `sealedSigningKey`, `salt` and `passphraseVerifier`, so
         any other holder gains an **offline attack on the operator's
         passphrase** by reading it. Until 2026-09-25 a year-long
         `service:control` token opened it, and this root handed one to
-        every node on every poll. Service tokens are addressed to one
-        machine now, and none is addressed here for this.
+        every node on every poll.
 
-        **Known gap:** a standby that follows the log unattended needs a
-        credential of its own, and no production path has ever given it
-        one. It is recorded in the design (§5), not solved here.
+        **The standby's token** (2026-10-08,
+        `docs/design/warm-standby.md`): a `sub: standby` service token,
+        addressed to `control`, signed by the key of the one node that
+        holds the `standby` grant (`makeStandby`). It is checked against
+        this root's applied state on every request, so removing the grant
+        shuts the next pull out while the token still has time left. No
+        other node, and no other token kind, opens this or the log.
       responses:
         '200':
           description: Snapshot at an index.
@@ -2025,6 +2032,99 @@ paths:
         '422':
           description: Write access to a folder registered read-only.
 
+  /v1/nodes/{name}/standby:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: {type: string}
+    put:
+      operationId: makeStandby
+      tags: [nodes, control]
+      summary: Make this node the install's warm standby
+      description: |
+        One `setStandby` entry (`on: true`) that gives the node the
+        `standby` grant (`docs/design/warm-standby.md`, SB1). The new trust
+        bundle is pushed to every node. The node's agent then starts a
+        standby control root that follows this one with a `sub: standby`
+        token (SB2, SB3).
+
+        **What the standby holds.** It keeps a copy of the replication set:
+        the sealed keys, the salt and the passphrase verifier. Its node key
+        (until the grant is removed) or its disk is enough to try guessing
+        the passphrase offline. Promotion still needs the passphrase.
+
+        A session holding the `membership` capability. Doing it again for
+        the node that already holds the grant changes nothing and answers
+        the same.
+      responses:
+        '202':
+          description: The node holds the grant; the new bundle is being pushed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustChange'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: |
+            Another node is already the standby (one at a time; the problem
+            names it), the node is this root's own, or this host is a
+            standby and accepts no writes. Nothing changed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '503':
+          description: |
+            Locked: the identity key that signs the bundle is not in
+            memory. Nothing changed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+    delete:
+      operationId: stopStandby
+      tags: [nodes, control]
+      summary: Stop this node being the standby
+      description: |
+        One `setStandby` entry (`on: false`). The node's next pull is
+        refused, whatever its token's remaining life, because the
+        replication routes check the applied state on every request. Its
+        agent stops the standby and deletes its copy of the replication
+        set when the new bundle reaches it.
+
+        A session holding the `membership` capability. A node that is not
+        the standby answers the same, and nothing is appended.
+      responses:
+        '202':
+          description: The grant is gone; the new bundle is being pushed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustChange'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: This host is a standby and accepts no writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '503':
+          description: Locked. Nothing changed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
   /v1/nodes/{name}/hosted-sites:
     parameters:
       - name: name
@@ -2975,7 +3075,9 @@ components:
         `POST /v1/auth/token`, or a service token addressed to `control`
         and signed by a key in the trust bundle (`common.yaml`,
         `TrustBundle`). Mutations take a session; the reads that say
-        so also take an `agent` or `gateway` service token.
+        so also take an `agent` or `gateway` service token. The two
+        replication reads (`readLog`, `readSnapshot`) take a session or the
+        standby's `sub: standby` token, and no other service token.
 
   parameters:
     SubjectToken:
@@ -3698,6 +3800,9 @@ components:
             cannot be promoted without losing the difference, and an
             operator should see that before a failure rather than during
             one.
+
+            Since 2026-10-08, the node that holds the `standby` grant, from
+            applied state; the `standbyUrls` setting is no longer read.
         activeUrl:
           type: string
           format: uri
@@ -3707,15 +3812,28 @@ components:
 
     StandbyStatus:
       type: object
+      description: |
+        What the active root knows of its standby, from the standby's own
+        pulls (`docs/design/warm-standby.md`, SB4), never from probing it.
+        A root that has restarted knows nothing until the next pull, and
+        says so with no `lastContactAt`.
       required:
+        - node
         - url
       properties:
+        node:
+          type: string
+          description: The node that holds the `standby` grant.
         url:
           type: string
           format: uri
+          description: That node's address, as `Node.url` records it.
         appliedIndex:
           type: integer
           format: int64
+          description: |
+            The index the standby had applied at its last pull: the `after`
+            of its last log read, or the index of its last snapshot.
         lagEntries:
           type: integer
           format: int64
@@ -3727,8 +3845,14 @@ components:
         lastContactAt:
           type: string
           format: date-time
+          description: When the standby last pulled. Absent until it has, since this root started.
         reachable:
           type: boolean
+          description: |
+            The standby pulled within the last three follow intervals.
+            False when it has not pulled since this root started, which
+            `lastContactAt` being absent tells apart from a standby that
+            stopped.
 
     LogPage:
       type: object
@@ -3825,7 +3949,13 @@ components:
         - removeSite
         - setSiteHost
         - setSiteDevGrants
+        - setStandby
       description: |
+        **`setStandby` (2026-10-08)** gives one node the `standby` grant
+        (`on: true`) or takes it away (`on: false`); `promote` takes it from
+        the node it promotes (`docs/design/warm-standby.md`). At most one
+        node holds it.
+
         **The four Job Site operations (slice 2b.1, 2026-10-06)** are
         `enrollSite`, `removeSite`, `setSiteHost` (a node's display-only
         claim to host a site, J32) and `setSiteDevGrants` (Eugene's owner's
@@ -3948,7 +4078,9 @@ components:
             compaction. A promoted standby that came up without
             `standbyUrls` would silently have no standbys of its own,
             which is the failure mode where the second failover is the
-            one that hurts.
+            one that hurts. (Since 2026-10-08 the standby is the node with
+            the `standby` grant, which is in `nodes`, and `standbyUrls` is
+            no longer read.)
         signingKeyId:
           type: string
           description: |
@@ -4377,10 +4509,16 @@ components:
           description: The bundle version this change produced.
         reason:
           type: string
-          enum: [revocation, rotation]
+          enum: [revocation, rotation, standby]
+          description: '`standby`: a `makeStandby` or `stopStandby` (2026-10-08).'
         revokedNode:
           type: string
           description: 'Set when `reason: revocation`.'
+        standbyNode:
+          type: string
+          description: |
+            Set when `reason: standby`: the node that holds the grant now.
+            Absent when no node does.
         nodesBehind:
           type: array
           items:
