@@ -1,6 +1,7 @@
 # Google Search as a search account, beside Brave
 
-**Status:** designed 2026-10-09; every call taken by Troy (GS1-GS9); building.
+**Status:** designed 2026-10-09; every call taken by Troy (GS1-GS9); built and
+pinned 2026-10-09, one live search with Troy's key (`docs/acceptance/google-search-run.md`).
 **Issue:** inference-driver#6 (the search half; code execution is its own
 slice, GS2). Follows `gemini-provider.md` (G6) and P8's
 `server-run-tools.md`.
