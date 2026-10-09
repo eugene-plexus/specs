@@ -621,8 +621,8 @@ components:
         `llama_cpp` drives upstream `llama-server` and loads GGUF.
         `vllm` drives upstream `vllm serve` and loads safetensors.
         `mlx` drives upstream `mlx_lm.server` and loads MLX-format
-        safetensors, on Apple silicon only — experimental until a
-        physical Mac run is recorded. We never ship an engine — every
+        safetensors, on Apple silicon only; not experimental since its
+        run on GitHub's macOS runners (A4, 2026-09-30). We never ship an engine — every
         one of them is an upstream project we wrap and track.
 
         They differ in far more than argv, and that is why readiness
@@ -714,7 +714,8 @@ components:
           description: |
             The model's `architecture` must be one of these: GGUF's
             `general.architecture`, or a safetensors folder's
-            `architectures[0]`. Absent means any.
+            `architectures[0]`. Absent means any. Can be long: llama.cpp
+            declares every architecture its installed build knows.
         quantizations:
           type: array
           items:
@@ -810,6 +811,55 @@ components:
           items:
             $ref: "#/components/schemas/ModelRequirement"
 
+    EligibilityCandidate:
+      type: object
+      description: |
+        A model not in the library yet, judged by its facts
+        (library-sources-and-engines.md, LS2): a version in a catalogue
+        repo, a starter entry, or a search row. The library's catalogue
+        answers carry these ready to send back (`CatalogueCandidate.facts`,
+        `StarterModel.facts`, `CatalogueSearchResult.facts`), so a caller
+        derives nothing itself.
+
+        The same terms as a library model's, with one difference: here an
+        absent fact is *not known yet*, where on a library model it means
+        *unreadable*. A term that constrains a fact nobody knows cannot be
+        checked, so a match resting on it is at best `may_run` (an
+        `after_preparation` match stays one), its reason names what was
+        assumed, and the answer is `approximate`.
+      required:
+        - id
+        - format
+      properties:
+        id:
+          type: string
+          description: |
+            The caller's handle for it, echoed as `ModelEligibility.modelId`.
+            Opaque; unique within one request.
+        format:
+          $ref: "#/components/schemas/ModelFormat"
+        architecture:
+          type: string
+          description: |
+            GGUF's `general.architecture`, as the hub read it from the
+            repo's GGUF, or a safetensors folder's `architectures[0]`, from
+            its remote `config.json`.
+        quantization:
+          type: string
+          description: The GGUF quantization, from the file's name (the scan's own fallback).
+        mlxQuantized:
+          type: boolean
+          description: |
+            Whether the folder's `config.json` carries MLX's quantization
+            block (`MlxQuantizationRule`). Absent: not known.
+        approximate:
+          type: boolean
+          default: false
+          description: |
+            Guessed from a search row's tags and the hub's repo-level
+            metadata rather than read from one version's files: a repo can
+            hold many versions, and only its detail lists them.
+
     EligibilityRequest:
       type: object
       required:
@@ -819,7 +869,16 @@ components:
           type: array
           items:
             type: string
-          description: Library model ids to judge. Absent means every model.
+          description: |
+            Library model ids to judge. Absent means every model, unless
+            `candidates` are sent: then none.
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/EligibilityCandidate"
+          description: |
+            Models not in the library yet, judged by their facts (LS2).
+            Answered after `models`, in the order sent.
         engines:
           type: array
           items:
@@ -834,9 +893,10 @@ components:
         - "no"
       description: |
         One model against one engine. `runs`: a requirement with authority
-        `eugene` matches. `may_run`: only the engine can tell, at load.
-        `after_preparation`: it runs once the engine prepares it. `no`:
-        no requirement matches, and `reason` says which term failed.
+        `eugene` matches. `may_run`: only the engine can tell, at load, or
+        (for an `EligibilityCandidate`) a term rests on a fact not known
+        yet. `after_preparation`: it runs once the engine prepares it.
+        `no`: no requirement matches, and `reason` says which term failed.
 
     EngineVerdict:
       type: object
@@ -896,8 +956,15 @@ components:
       properties:
         modelId:
           type: string
+          description: A library model's id, or an `EligibilityCandidate`'s `id`.
         level:
           $ref: "#/components/schemas/EligibilityLevel"
+        approximate:
+          type: boolean
+          default: false
+          description: |
+            The facts were a guess (`EligibilityCandidate.approximate`), or
+            a term could not be checked. Said beside the dot, never hidden.
         engines:
           type: array
           items:

@@ -5353,7 +5353,11 @@ components:
             (`POST /v1/eligibility`; library-sources-and-engines.md, LS1).
             Finer than `modelFormats`: the MLX marker, architectures, a
             preparation step, and whether only the engine can tell. A
-            property of the engine, not of this host.
+            property of the engine, and for llama.cpp of its build: the
+            architectures its installed build knows, read from upstream's
+            source at that build's tag once and kept; until then, or for
+            a build not installed, the list Eugene ships with *may run*
+            for the rest (LS2).
         experimental:
           type: boolean
           default: false

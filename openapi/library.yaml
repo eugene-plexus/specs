@@ -281,6 +281,12 @@ paths:
         marker) against them and answers a verdict per engine, in words,
         and a level per model (`EligibilityLevel`).
 
+        Since LS2 it also judges models not downloaded yet
+        (`candidates`): Discover's search rows, a repo's versions and the
+        starter set, by the facts the catalogue answers already carry.
+        The same rules, so a model's dot does not change when it lands
+        on the disk unless its files say something the hub did not.
+
         Pure: it reads what the library already knows of each model and
         calls nothing. A model id it does not know is left out of the
         answer rather than failing the rest.
@@ -858,6 +864,12 @@ paths:
         * **Says what the operator already owns**, by path, so a 16 GB
           download of a file already on the disk is visible before it
           starts rather than after.
+        * **Carries each candidate's facts** for `POST /v1/eligibility`
+          (`CatalogueCandidate.facts`, LS2). For a safetensors folder that
+          means reading its remote `config.json` (a few kilobytes, one
+          ranged read per folder, as preflight reads a GGUF's header), so
+          an MLX-quantized folder is told from a plain one, and the
+          architecture is known, before anything is downloaded.
 
         The `repo` is a query parameter because it contains a slash and
         may be one or two segments (`unsloth/Qwen3.8-27B-GGUF`, but
@@ -2785,6 +2797,16 @@ components:
             What this repo appears to serve, from its tags and library
             metadata. Approximate at search time — a repo can hold both
             formats, and only the detail call reads the file list.
+        facts:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/EligibilityCandidate'
+          description: |
+            One per format in `formats`, for `POST /v1/eligibility`
+            (LS2), always `approximate`: the format and MLX marker from
+            tags, the architecture from the hub's repo-level GGUF
+            metadata. The row's dot is the best of them; the detail call
+            judges each version.
         gated:
           $ref: '#/components/schemas/GateKind'
         private:
@@ -3047,6 +3069,15 @@ components:
           description: |
             Convenience copy of the repo's gate, on the row the operator
             is about to click.
+        facts:
+          $ref: 'components/common.yaml#/components/schemas/EligibilityCandidate'
+          description: |
+            This version's facts for `POST /v1/eligibility` (LS2): its
+            format; its architecture (the hub's read of the repo's GGUF,
+            or the folder's own remote `config.json`); its quantization,
+            from its name; and, for a folder, whether `config.json`
+            carries MLX's quantization block. A fact that could not be
+            read is absent, which the judge says.
 
     CatalogueFile:
       type: object
@@ -3311,6 +3342,12 @@ components:
             not fit in system memory.
         alreadyOwned:
           $ref: '#/components/schemas/AlreadyOwned'
+        facts:
+          $ref: 'components/common.yaml#/components/schemas/EligibilityCandidate'
+          description: |
+            This entry's facts for `POST /v1/eligibility` (LS2), from what
+            the review recorded: a GGUF of `architecture`, at `label`.
+            No upstream call, like the rest of this answer.
 
     StarterRecommendation:
       type: object
