@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import httpx
 from eugene_plexus_agent.admission import LibraryFitClient
+from eugene_plexus_agent.preparation import PreparationJobs
 from eugene_plexus_agent.run_worker import RunWorker, runtime_spec
 from eugene_plexus_library._generated.models import LibraryModel
 from eugene_plexus_library.routes.run_operations import router
@@ -29,6 +30,8 @@ class Engine:
         self.declarations = {}
         self.starts = 0
         self.crash_after_launch = False
+        # The worker stops preparations whose operation went away (LS5).
+        self.preparations = PreparationJobs()
 
     async def engines(self):
         return [
@@ -66,7 +69,8 @@ async def check(directory):
     app = FastAPI(title="Eugene Plexus durable run protocol", version="1.0.0")
     app.include_router(router)
     actual = app.openapi()
-    canonical = json.loads((ROOT / "openapi/run-operations.json").read_text())
+    # UTF-8, as it is written: Windows reads cp1252 by default (LS5's CI).
+    canonical = json.loads((ROOT / "openapi/run-operations.json").read_text(encoding="utf-8"))
     assert actual["paths"] == canonical["paths"], "run protocol paths drifted"
     assert actual["components"] == canonical["components"], "run protocol schemas drifted"
     app.state.auth_state = SimpleNamespace(auth_disabled=True)
