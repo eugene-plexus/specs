@@ -755,10 +755,9 @@ components:
       enum:
         - eugene
         - engine
-      default: eugene
       description: |
-        Who can say a match will load. `eugene`: the fields above are the
-        whole rule, so a match is `runs`. `engine`: the engine decides
+        Who can say a match will load. Absent means `eugene`. `eugene`:
+        the fields above are the whole rule, so a match is `runs`. `engine`: the engine decides
         when it loads (vLLM's model registry, for one), so a match is
         only `may_run` (Troy's L4).
 

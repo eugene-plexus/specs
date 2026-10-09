@@ -5341,8 +5341,9 @@ components:
             format support on the library would give the library a copy
             of it, and the copy would be the one that went stale.
 
-            **Kept for consoles older than `accepts`;** it is the set of
-            formats `accepts` names.
+            **Kept for consoles older than `accepts`;** it is the formats
+            of the requirements in `accepts` that need no preparation, so
+            an older console never offers Strata for every GGUF.
         accepts:
           type: array
           items:
