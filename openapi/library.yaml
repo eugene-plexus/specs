@@ -240,6 +240,8 @@ paths:
     $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}~1checkpoint"
   /v1/run-operations/{id}/profile:
     $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}~1profile"
+  /v1/run-operations/{id}/prepared:
+    $ref: "./run-operations.json#/paths/~1v1~1run-operations~1{id}~1prepared"
 
   # -------- Models --------
 

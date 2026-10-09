@@ -813,6 +813,16 @@ components:
         note:
           type: string
           description: What the step makes, in words.
+        diskBytes:
+          type: integer
+          minimum: 0
+          description: |
+            About how much the preparation writes beside the files, by the
+            engine's own rule on the node that reported it (LS5): set on an
+            engine's `supportedModels`, where the model is known. Strata's
+            setup counts 8 GB, more when the node's RAM is short of the
+            model's experts. The agent checks free space against it before
+            the preparation starts. Absent: not known.
 
     PreparedProvenance:
       type: object

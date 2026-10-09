@@ -173,7 +173,7 @@ prerequisite that is missing. It shows progress and can be cancelled. Run
 operations already chain download, profile and launch; preparation becomes a
 step between download and launch. For Strata the recipe wraps upstream's
 setup non-interactively, as the install does today. The original GGUF is
-never altered.
+never altered. Built in LS5 (§6.6).
 
 ## 5. Slices
 
@@ -480,6 +480,104 @@ installed on the picked node runs a hub's models as they are, with
 - The hub client was reconfigured on `PATCH` for downloads' sake; now every
   hub call, a download's transfer included, resolves its hub from live
   config, and the settings sabotage pass follows the token there.
+
+## 6.6 LS5: preparation is a job on the engine's node (building, 2026-10-09)
+
+Read off upstream's `setup.py` at the commit the adapter pins (`6f32ec0`):
+with `--gguf-dir` and `--data-dir` it checks the PC, installs its Python
+packages (`requirements.txt`) into the interpreter running it, takes the
+engine already in its own `engine/` folder (the release zip's `BUILD.json`
+is there), downloads llama.cpp's source at the commit it pins (for
+`gguf-py`), builds the pack and tokenizer from the GGUF (`tools/iq_pack.py`,
+seconds), fetches the MTP draft layer from the original checkpoint (~5 GB,
+once per data folder, SHA-256 checked) and writes `strata-<tag>.json` and a
+start script into its **own** folder, with absolute paths. With `--yes` it
+asks nothing and takes its own recommendation for every question.
+
+**The recipe.** The run operation gains a step, `preparing`, between
+*checking* (and *installing*, when Strata is not installed) and *settings*,
+when the intent asks for it (`preparation: {engine, contextSize?}`). The
+agent on the operation's node runs upstream's setup with the engine's own
+Python, non-interactively, then makes its result a Library model; the
+operation's model becomes the prepared one, and settings, launch and loading
+continue as for Run.
+
+**Calls building made**, for Troy's veto:
+
+- **B43. Where the files go.** Strata's data folder is `Strata-data` at the
+  top of the Library folder holding the GGUF, as the engine's node reaches it:
+  one per Library folder, so the MTP helper (the same for every model) is
+  fetched once. Strata's configuration and the provenance file sit in it; the
+  entry is relative, and the configuration's paths are relative to it where
+  they share a drive, so the folder travels.
+- **B44. The scan skips an engine's own folder.** A directory holding
+  `.eugene-engine-files` (written before setup starts) is an engine's own:
+  the scan lists the provenance files in it and nothing else, and does not
+  descend. Without it Strata's MTP helper, itself a GGUF
+  (`mtp/mtp-q2_0.gguf`), would be listed as a model.
+- **B45. Upstream's setup is the recipe**, run as `setup.py --family F
+  --model M --gguf-dir <the GGUF's folder> --data-dir <Strata-data> --vision
+  no --experimental-speed-projection off --no-browser --no-start --yes
+  [--context N] [--gpu N]`. Setup makes every choice it makes for a person
+  (KV cache, the low-RAM mode, the RAM budget, KV streaming, pool workers);
+  Eugene reimplements none. Each run gets a fresh, empty `APPDATA` (and
+  `XDG_CONFIG_HOME`), so setup's settings file never remembers a data folder
+  and its "move an earlier install's files here" step finds nothing to move:
+  a person's own Strata install is never touched.
+- **B46.** Setup leaves `<shard>.done` beside each shard (its *checked whole*
+  mark). The GGUF itself is unchanged.
+- **B47. Preparation tools arrive with the first preparation, not the
+  install.** The install stays the runtime subset, which an adopted model
+  needs no more than. Before setup runs, the agent fetches llama.cpp's source
+  at the commit Strata pins (39.6 MB, SHA-256 pinned) and unpacks only
+  `gguf-py/` and `ggml/` into setup's `third_party/llama.cpp`: unpacked whole
+  under the engine's folder, its deepest path is about 281 characters, past
+  Windows' 260. Setup's own pip step then adds `requirements.txt` (numpy,
+  pyyaml, tqdm, requests, cmake, ninja, pillow) to the engine's environment;
+  the pins the install already has are left as they are.
+- **B48. After setup** its `strata-<tag>.json` moves from the engine's folder
+  into `Strata-data` with `cwd` dropped and the model's paths made relative;
+  its expert profile (196 KB, in the engine's folder) is copied beside the
+  pack, so a prepared model survives an engine reinstall; the start script is
+  removed.
+- **B49. Text, one GPU.** `--vision no` (the integration is text only) and the
+  experimental speed projection off (a refusal-direction projection, whose
+  flags the adapter refuses). On a node with several NVIDIA cards, `--gpu`
+  names the one with the most memory, as setup's single-card default does: a
+  layer split is not prepared, since the adapter does not run one.
+- **B50. Context: setup's recommendation unless the person picks one** of
+  setup's own sizes (8K to 512K). Preparing the same choice again replaces its
+  configuration in seconds (the pack and MTP helper are kept); that is how a
+  prepared model's context is changed. Setup's warnings (its `[!]` lines) are
+  kept on the operation.
+- **B51. Disk before anything starts.** Each supported model's
+  `preparation.diskBytes` is setup's own rule on this node: 8 GB; plus the
+  experts written into one file (their size plus 1 GB) when this node's RAM
+  is under their size plus 10 GB; plus 40 GB for Q2_0, which setup repacks on
+  an AVX-512 CPU (counted always: the CPU feature is not read). The agent
+  checks free space on Strata-data's drive before setup starts and names both
+  numbers when it is short.
+- **B52. One preparation at a time per node**, since setup writes into the
+  engine's own folder; a second waits and says so. Uninstalling Strata during
+  one is refused (409), as during a running runtime.
+- **B53. Cancel** stops setup and everything it started (the process tree).
+  Setup's own marks let a later preparation carry on where it stopped. An
+  agent restart starts the job again at the next claim, and setup skips what
+  is done.
+- **B54. Preparation is asked for, never implied.** Run still picks an engine
+  that runs a model as it is. *Prepare for Strata* (a Library GGUF on Strata's
+  list) and *Download and prepare* (an entry of Strata's list in Discover)
+  carry `preparation`. A Run whose only engines would need to prepare the
+  model fails at checking and names the action. *Skip* is not an answer to
+  *install Strata?* in a preparation: without the engine nothing can be made.
+- **B55. The Library writes the provenance file**
+  (`POST /v1/run-operations/{id}/prepared`, the assigned agent under its
+  lease), as *Add a prepared model* does, and the operation's model becomes
+  the prepared one. A provenance file the same recipe wrote for the same
+  entry is replaced; any other file of that name is a 409.
+- **B56. Progress** is setup's step in its own words (its `=== Step N` lines),
+  the bytes Strata-data has grown by against `diskBytes`, and setup's last
+  line; when it stops, its last lines are the failure's cause.
 
 ## 7. Found while mapping (not part of this design)
 
