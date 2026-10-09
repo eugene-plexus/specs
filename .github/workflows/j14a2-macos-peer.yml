@@ -26,7 +26,7 @@ jobs:
       matrix:
         os: [macos-14, macos-15, macos-26]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: A second account for the run
         run: |
           sudo sysadminctl -addUser eptest2 -password "$(openssl rand -hex 16)" -shell /bin/zsh
@@ -34,14 +34,14 @@ jobs:
           sudo chmod -R o+rx "$GITHUB_WORKSPACE/scripts" || true
       - name: Measure, as the runner's own account
         run: python3 scripts/j14a2-macos-peer-measure.py --other eptest2 | tee peer.json
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: main
           path: agent
       - name: The agent's own reader, against this account and a second one
         run: EP_AGENT="$GITHUB_WORKSPACE/agent" python3 scripts/j14a2-macos-peer-check.py --other eptest2
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: peer-${{ matrix.os }}
           path: peer.json

@@ -23,8 +23,8 @@ jobs:
       matrix:
         os: [macos-15]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: mlx-lm at the agent's pin
@@ -63,7 +63,7 @@ jobs:
           kill %1 || true
       - name: Keep the readings and the engine logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: prompt-cache-${{ matrix.os }}
           path: |

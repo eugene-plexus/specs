@@ -43,8 +43,8 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Open WebUI from the registry
@@ -55,7 +55,7 @@ jobs:
         run: python scripts/c4-open-webui-acceptance.py --report c4-report.json
       - name: Keep the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: c4-${{ matrix.os }}
           path: c4-report.json
