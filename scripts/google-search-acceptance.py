@@ -445,6 +445,17 @@ def exercise(directory: Path, *, live: bool) -> None:
     def proxy(target, method, path, token, **kwargs):
         return call("agent", method, f"/api/proxy/{target}{path}", token, **kwargs)
 
+    def suggested(item: dict) -> str | None:
+        return ((item or {}).get("x_eugene_plexus") or {}).get("search_suggestions")
+
+    def said_last() -> str:
+        """What the model last read from a search, and which accounts ran:
+        enough to tell a search that went elsewhere from a door that lost
+        the suggestions (a CI failure, 2026-10-09)."""
+        messages = (seen("model") or [{}])[-1].get("messages") or []
+        tool = next((m for m in reversed(messages) if m.get("role") == "tool"), {})
+        return f"model read: {_text(tool)[:400]!r}; fixture counts: {stats()}"
+
     try:
         # --- a signed one-node install ----------------------------------------
         start("control")
@@ -586,13 +597,13 @@ def exercise(directory: Path, *, live: bool) -> None:
         for result in (responses, responses_stream):
             assert result["status"] == 200, result
             calls = [i for i in result["output"] if i["type"] == "web_search_call"]
-            assert calls and calls[0]["x_eugene_plexus"]["search_suggestions"] == SUGGESTIONS, calls
+            assert calls and suggested(calls[0]) == SUGGESTIONS, (result["status"], calls, said_last())
         done = [i for i in responses_stream["done_items"] if i["type"] == "web_search_call"]
-        assert done and done[0]["x_eugene_plexus"]["search_suggestions"] == SUGGESTIONS, done
+        assert done and suggested(done[0]) == SUGGESTIONS, (done, said_last())
         for result in (messages, messages_stream):
             assert result["status"] == 200, result
             blocks = [b for b in result["content"] if b["type"] == "web_search_tool_result"]
-            assert blocks and blocks[0]["x_eugene_plexus"]["search_suggestions"] == SUGGESTIONS, blocks
+            assert blocks and suggested(blocks[0]) == SUGGESTIONS, (blocks, said_last())
         ok("Responses (a web_search_call item, final and streamed) and Anthropic messages (a "
            "web_search_tool_result block, plain and streamed) each carry the Search Suggestions unmodified")
 
@@ -646,6 +657,14 @@ def exercise(directory: Path, *, live: bool) -> None:
 
         (directory / "summary.json").write_text(json.dumps({"passed": passed}, indent=2), encoding="utf-8")
         print(f"{passed} PASS", flush=True)
+    except BaseException:
+        # What each process said, so a failure on a CI runner can be read.
+        for log in sorted(directory.rglob("*.log")):
+            text = log.read_text(encoding="utf-8", errors="replace").strip()
+            if text:
+                print(f"--- {log.relative_to(directory)} (last 40 lines)", flush=True)
+                print("\n".join(text.splitlines()[-40:]), flush=True)
+        raise
     finally:
         for name in reversed(list(processes)):
             process = processes.pop(name)
