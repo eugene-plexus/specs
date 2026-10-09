@@ -1,7 +1,8 @@
 # Library: many model sources, many engines
 
 **Status: calls L1-L11 taken by Troy 2026-10-09 (§6); v0.2.0 is LS1-LS6
-(L1). LS1 built and pinned 2026-10-09 (§6.2); LS2 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
+(L1). LS1 built and pinned 2026-10-09 (§6.2); LS2 built and pinned
+2026-10-09 (§6.3); LS3 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
 a GGUF profile offered llama.cpp alone: *"We have introduced a separation
 between installing the engine and installing the model through the Library.
 I think it makes sense to keep that separation, but that also means our
@@ -270,19 +271,79 @@ Record: [ls1-eligibility-run.md](../acceptance/ls1-eligibility-run.md), 11/11.
   Python that warned on every serialization; *absent means eugene* instead.
 - library#7 (above, in the record).
 
+## 6.3 LS2 built (2026-10-09)
+
+Record: [ls2-discover-run.md](../acceptance/ls2-discover-run.md).
+
+**Calls building made**, for Troy's veto:
+
+- **B8 (B5 settled).** llama.cpp's architectures come from the build actually
+  installed. Eugene installs upstream's newest build, not a pinned one, and
+  the binary cannot be asked, so the agent reads that build's own
+  `src/llama-arch.cpp` at its tag once, in the background, and keeps it
+  beside the builds by tag (`<engine root>/llama_cpp/architectures/`). With
+  it, an architecture the build does not name is *no*. Until then (not
+  installed, not read yet, offline, a build with no tag) the agent declares
+  the list it ships (`b11530`, 156 names, refreshed by
+  `agent/scripts/llama-cpp-architectures.py`) as *runs* and anything else as
+  *may run*: upstream adds architectures and does not drop them.
+- **B9.** The Library makes each candidate's facts (`facts` on search rows,
+  versions and starter entries) and the console sends them back unread, so
+  no rule lives in the console (L2).
+- **B10.** On a candidate an absent fact is *not known yet*: a term resting
+  on it is at best *may run* (*after preparation* stays), the reason names
+  what was assumed, and the answer is marked approximate. On a library model
+  it stays *unreadable*, as in LS1.
+- **B11.** A search row is judged from the same search call: the GGUF
+  architecture from the hub's repo-level GGUF block, the MLX marker from the
+  `mlx` tag, always approximate. A row's dot is its best format's.
+- **B12.** A GGUF version's quantization is the name a file's own metadata
+  would use (the scan's filename rule), so a publisher tier such as
+  `UD-Q4_K_XL` is *not known* rather than a second vocabulary. No engine
+  declares quantizations yet.
+- **B13.** *Works here now* shows green only, *Works with another engine*
+  amber only, *Everything* (the default) all, green then amber then red, the
+  hub's order within each, rows with no verdict last. A filter whose engines
+  load one format asks the hub for that format, so thirty results are not
+  mostly hidden; what was hidden is counted beside *Show everything*.
+- **B14.** The stored GGUF format preference is not carried over: it was a
+  default, not a choice.
+- **B15.** Rows and versions show the short words (B7); the suggestion cards
+  Troy's full phrase; every dot opens each engine's verdict and reason.
+- **B16.** A Library older than LS2 (422 on `candidates`) or LS1 (404): no
+  dots, and a line saying every model is listed.
+- **B17.** library#7 fixed in the Library: `local` (an unjoined agent's
+  tokens) and `null` (its console) name one node, at submit and at claim.
+  LS1's acceptance now submits `null`, as the console does.
+
+**What building found:**
+
+- **Upstream llama.cpp now names `qwen4exp`** (b11530): llama.cpp itself
+  loads Qwen3.8-Flash-Next GGUFs, so on a machine with a current llama.cpp
+  such a GGUF is green, with Strata's *after preparation* beside it. Whether
+  it fits is LS6's question.
+- The hub's `expand[]` replaces `full=true` rather than adding to it, so a
+  search names every field it shows (`hub.SEARCH_FIELDS`); `siblings`, which
+  no row used, is no longer fetched. A thirty-row search is about 230-340 KB
+  between the Library and the hub (chat templates in the GGUF block), up
+  from about 85 KB, and cached for 60 s.
+- The hub's own `config` reports an MLX repo's quantization as
+  `quantization_config: {bits}`, the key GPTQ and AWQ use too, so it cannot
+  tell MLX apart; the detail call reads the folder's `config.json` instead.
+
 ## 7. Found while mapping (not part of this design)
 
-Inferred from the code, not yet reproduced. Each goes in a GitHub issue on
-the owning repo once confirmed:
+Inferred from the code while mapping; settled during LS2:
 
-- A safetensors candidate probably never shows *already on disk*: `_owned`
-  compares a weights file name to the model path, which is the folder
-  (`library/.../catalogue.py:328-332`).
-- `tokenizer.model` is missing from the safetensors companion files
-  (`catalogue.py:76-86`).
-- A Kev repo downloaded through Discover probably does not scan (no
-  `adapter_config.json` or `head.pt` in the companion list).
-- A node's own model copy handles one file; shards, projectors and
-  safetensors folders are not copied (`agent/.../model_copies.py`).
-- Stale contract text: `common.yaml:689-691` says nothing serves safetensors
-  yet; `run-operations.json` still calls MLX experimental.
+- ~~A safetensors candidate never shows *already on disk*~~: fixed in LS2
+  (matched on the first weights file inside the folder and the weights'
+  size).
+- ~~`tokenizer.model` is missing from the safetensors companion files~~: fixed
+  in LS2.
+- A Kev repo downloaded through Discover does not scan:
+  [library#8](https://github.com/eugene-plexus/library/issues/8).
+- A node's own model copy takes one file, so a split GGUF's copy is used
+  without its shards: [agent#10](https://github.com/eugene-plexus/agent/issues/10).
+- ~~Stale contract text~~: `common.yaml`'s safetensors line was fixed in LS1;
+  MLX is no longer called experimental (LS2, and `run-operations.json` with
+  it).

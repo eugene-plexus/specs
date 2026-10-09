@@ -288,11 +288,11 @@ def main() -> int:
             )
 
             # E3 -----------------------------------------------------------
-            # The node this agent's tokens name. Unjoined, that is `local`,
-            # while the console sends `null`, which the Library never hands to
-            # anyone (library#7, found by this run): named here so E3
-            # tests the judge, not that.
-            node = client.get("/v1/node").json().get("name") or "local"
+            # The node as the console names it: `identity.name ?? null`, so
+            # `null` on this unjoined agent, whose tokens say `local`. The
+            # Library never handed such a run to anyone (library#7, found by
+            # this run; fixed in LS2), so E3 also proves that fix.
+            node = client.get("/v1/node").json().get("name")
 
             def run(name: str, op: str) -> dict[str, Any]:
                 put = client.put(

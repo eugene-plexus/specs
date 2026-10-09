@@ -225,6 +225,8 @@ jobs:
         run: python specs/scripts/r8-profile-acceptance.py
       - name: Verify engines declare what they accept and the Library judges (LS1)
         run: python specs/scripts/ls1-eligibility-acceptance.py
+      - name: Verify Discover's verdicts before download, against a fake hub on loopback (LS2)
+        run: python specs/scripts/ls2-discover-acceptance.py
       - name: Verify A3 client-key revocation and outage bounds across five processes
         run: python specs/scripts/a3-client-keys-acceptance.py
       - name: Verify A5 scoped keys, shared limits, cancellation and usage across gateways
