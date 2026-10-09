@@ -2,8 +2,10 @@
 
 library-sources-and-engines.md, slice LS5 (§4.6, calls B43-B56 in §6.6). A
 throwaway standalone agent on free loopback ports supervises its own Library
-over a folder holding both shards of the GGUF Strata's list names IQ2_XS
-(headers only). Strata is a borrowed installation (`strataServer`) whose
+over a folder holding the three shards of the GGUF Strata's list names
+unsloth-UD-IQ4_XS (headers only): a RAM-budget choice, whose disk by setup's
+rule is 8 GB on any machine. IQ2_XS on a 16 GB runner needs its low-RAM file
+too, 44 GB, which the Windows runner's 31 GB refused (2026-10-09). Strata is a borrowed installation (`strataServer`) whose
 `setup.py` is a stand-in taking upstream's arguments and writing what
 upstream's writes, where it writes it: the pack, tokenizer and MTP helper
 (itself a GGUF) into the data folder, `strata-<tag>.json` with absolute paths
@@ -59,10 +61,13 @@ import yaml
 
 FAILURES: list[str] = []
 SUFFIX = ".eugene-prepared.json"
-REPO = "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF"
-FIRST = "Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00001-of-00002.gguf"
-SECOND = "Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf"
-PREPARED = "qwen3.8-flash-next-iq2_xs"
+REPO = "unsloth/Qwen3.8-Flash-Next-GGUF"
+SHARDS = [f"Qwen3.8-Flash-Next-UD-IQ4_XS-{i:05d}-of-00003.gguf" for i in (1, 2, 3)]
+FIRST = SHARDS[0]
+LISTED = "Qwen3.8-Flash-Next-UD-IQ4_XS"  # a split GGUF is listed without its shard
+CHOICE = "unsloth-UD-IQ4_XS"  # Strata's list id, setup's tag
+TAG = "unsloth-ud-iq4_xs"
+PREPARED = "qwen3.8-flash-next-unsloth-ud-iq4_xs"
 
 # Upstream's setup, standing in: its arguments, its outputs where it puts
 # them, its `[!]`/`[X]`/`=== Step` lines. A `SLOW` file in the data folder
@@ -111,7 +116,7 @@ rt.mkdir(parents=True, exist_ok=True)
 # The MTP helper is itself a GGUF, as upstream's is.
 head = b"GGUF" + (3).to_bytes(4, "little") + (0).to_bytes(8, "little") + (0).to_bytes(8, "little")
 (data / "mtp" / "mtp-q2_0.gguf").write_bytes(head)
-shards = sorted(gguf.glob("*IQ2_XS-*-of-*.gguf"))
+shards = sorted(gguf.glob(f"*{a.model}-*-of-*.gguf"))
 for s in shards:
     s.with_name(s.name + ".done").write_text("whole")
 args = ["--pack", str(pack), "--native", str(shards[0]), "--ple-gguf", str(shards[-1]),
@@ -250,8 +255,8 @@ def main() -> int:
         folder = models / REPO.replace("/", os.sep)
         folder.mkdir(parents=True)
         kv = {"general.architecture": "qwen4exp", "general.name": "Flash Next", "general.file_type": 20}
-        write_gguf(folder / FIRST, kv)
-        write_gguf(folder / SECOND, {"general.architecture": "qwen4exp"})
+        for shard in SHARDS:
+            write_gguf(folder / shard, kv if shard == FIRST else {"general.architecture": "qwen4exp"})
         original = (folder / FIRST).read_bytes()
         strata_root = directory / "strata"
         server = fake_strata(strata_root)
@@ -336,7 +341,7 @@ def main() -> int:
                 )
                 return {m["name"]: m for m in client.get(f"{proxy}/v1/models").json()["models"]}
 
-            gguf_name = "Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS"  # a split GGUF is named without its shard
+            gguf_name = LISTED
             listed = wait(lambda: (lambda ms: ms if gguf_name in ms else None)(scanned()), "the GGUF is listed")
             gguf = listed[gguf_name]
             node = client.get("/v1/node").json().get("name")
@@ -345,7 +350,7 @@ def main() -> int:
             # E1 -----------------------------------------------------------
             engines = {e["engine"]: e for e in client.get("/v1/engines").json()["engines"]}
             strata = engines["strata"]
-            entry = next((m for m in strata.get("supportedModels") or [] if m["id"] == "IQ2_XS"), {})
+            entry = next((m for m in strata.get("supportedModels") or [] if m["id"] == CHOICE), {})
             preparation = entry.get("preparation") or {}
             check(
                 "E1 Strata is available from its borrowed install and publishes each preparation's disk and contexts",
@@ -406,11 +411,11 @@ def main() -> int:
             argv = calls[0]["argv"] if calls else []
             pairs = dict(zip(argv[::2], argv[1::2]))
             check(
-                "P2 setup ran non-interactively for IQ2_XS at 32K, text only, with its own settings folder",
+                "P2 setup ran non-interactively for its choice at 32K, text only, with its own settings folder",
                 "--yes" in argv
                 and "--no-start" in argv
-                and pairs.get("--family") == "qwen"
-                and pairs.get("--model") == "IQ2_XS"
+                and pairs.get("--family") == "unsloth"
+                and pairs.get("--model") == "UD-IQ4_XS"
                 and argv[argv.index("--context") + 1] == "32768"
                 and argv[argv.index("--vision") + 1] == "no"
                 and argv[argv.index("--experimental-speed-projection") + 1] == "off"
@@ -420,22 +425,22 @@ def main() -> int:
             )
 
             # P3 -----------------------------------------------------------
-            config_path = data / "strata-iq2_xs.json"
+            config_path = data / f"strata-{TAG}.json"
             config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
             args = config.get("args") or []
             check(
                 "P3 Strata-data has the marker and Strata's configuration, paths relative, no cwd",
                 (data / ".eugene-engine-files").is_file()
                 and "cwd" not in config
-                and args[args.index("--pack") + 1] == "packs/iq2_xs"
+                and args[args.index("--pack") + 1] == f"packs/{TAG}"
                 and args[args.index("--native") + 1] == f"../{REPO}/{FIRST}"
-                and config.get("tokenizer") == "packs/iq2_xs/tokenizer",
+                and config.get("tokenizer") == f"packs/{TAG}/tokenizer",
                 config,
             )
             check(
                 "P3 the expert profile is copied beside the pack, nothing is left in the engine's folder",
-                (data / "packs" / "iq2_xs" / "expert-profile.bin").read_bytes() == b"\1" * 256
-                and args[args.index("--expert-profile") + 1] == "packs/iq2_xs/expert-profile.bin"
+                (data / "packs" / TAG / "expert-profile.bin").read_bytes() == b"\1" * 256
+                and args[args.index("--expert-profile") + 1] == f"packs/{TAG}/expert-profile.bin"
                 and not list(strata_root.glob("strata-*.json"))
                 and not list(strata_root.glob("run-*.bat")),
                 sorted(p.name for p in strata_root.iterdir()),
@@ -455,7 +460,7 @@ def main() -> int:
                 prepared.get("format") == "prepared"
                 and prepared.get("status") == "present"
                 and (prepared.get("prepared") or {}).get("sourceModelId") == gguf["id"]
-                and provenance.get("entry") == "strata-iq2_xs.json"
+                and provenance.get("entry") == f"strata-{TAG}.json"
                 and provenance.get("recipe") == "strata-prepare"
                 and provenance.get("recipeVersion") == "v0.1.39"
                 and (provenance.get("source") or {}).get("repoId") == REPO
@@ -479,7 +484,7 @@ def main() -> int:
                 [p["engine"] for p in profiles] == ["strata"]
                 and Path(runtime.get("modelPath") or "") == provenance_path
                 and runtime.get("status") == "ready"
-                and same(handed[handed.index("--pack") + 1], data / "packs" / "iq2_xs")
+                and same(handed[handed.index("--pack") + 1], data / "packs" / TAG)
                 and same(handed[handed.index("--native") + 1], folder / FIRST)
                 and handed[handed.index("--max-context") + 1] == "32768",
                 {"profiles": profiles, "runtime": runtime, "handed": handed},

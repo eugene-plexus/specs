@@ -8,8 +8,12 @@ library, agent and ui commits are in the pin's message.
 
 `scripts/ls5-preparation-acceptance.py` on Amish_Station (Windows 11, Python
 3.14, editable agent and library), **15 of 15**. A throwaway standalone agent
-on free loopback ports supervises its own Library over a folder holding both
-shards of the GGUF Strata's list names IQ2_XS (headers only). Strata is a
+on free loopback ports supervises its own Library over a folder holding the
+three shards of the GGUF Strata's list names unsloth-UD-IQ4_XS (headers only).
+That is a RAM-budget choice, whose disk by setup's own rule is 8 GB on any
+machine. The first CI run used IQ2_XS. On the Windows runner (16 GB of RAM)
+that also needs the low-RAM file, 44 GB in all, and the runner's 31 GB free
+was refused before setup started. The check was right; the fixture moved. Strata is a
 borrowed installation (`strataServer`) whose `setup.py` is a stand-in taking
 upstream's arguments and writing what upstream's writes, where it writes it:
 the pack, tokenizer and MTP helper (itself a GGUF) into the data folder,
