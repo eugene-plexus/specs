@@ -5317,9 +5317,9 @@ components:
             grey out a launch button and name the missing engine instead
             of offering one that fails.
 
-            `strata` lists no catalogue model formats: it requires a
-            prepared JSON configuration and is offered through the
-            experimental prepared-model form, not arbitrary GGUF launch.
+            `strata` lists only `prepared`: it loads models it prepared,
+            never an arbitrary GGUF, so a console that knows no
+            `prepared` model offers it for none.
 
             `vllm` does **not** list `gguf`, though upstream has a path
             for it. That path is documented as highly experimental and
@@ -5553,11 +5553,16 @@ components:
             rename, or hash-address a model file; a runtime points at
             where the user put it.
 
-            For `strata`, this is a prepared Strata JSON configuration
-            in a Library folder on the target node. It references the
-            existing weights, pack, tokenizer and optional MTP assets.
-            It is not copied into the node's model cache. The adapter
-            writes a private launch config and preserves this original.
+            For `strata`, this is a prepared model's provenance file
+            (`<name>.eugene-prepared.json`, `PreparedProvenance`), the
+            `path` of a `prepared` library model; at every launch the
+            agent reads it and resolves its `entry`, Strata's JSON
+            configuration, which references the existing weights, pack,
+            tokenizer and optional MTP assets. A declaration from before
+            LS3 may name that JSON configuration directly, and still
+            launches. Neither is copied into the node's model cache. The
+            adapter writes a private launch config and preserves the
+            originals.
 
             For a sharded GGUF this is the *first* shard
             (`…-00001-of-0000N.gguf`), which is what the engine expects.

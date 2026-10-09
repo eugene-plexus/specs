@@ -304,6 +304,54 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/EligibilityList'
 
+  /v1/models/prepared:
+    post:
+      tags: [models]
+      operationId: addPreparedModel
+      summary: Adopt a model an engine has prepared, by writing its provenance file.
+      description: |
+        Troy's L6 (library-sources-and-engines.md §4.5, LS3): a model an
+        engine prepared for itself (Strata's pack, lookup table and MTP
+        helper, with its JSON configuration) becomes a library model with
+        profiles, a row, Run and switching like any other. The library
+        writes one small file, `<name>.eugene-prepared.json`
+        (`PreparedProvenance`), into a Library folder, then lists the
+        model from it as the scan does. It never reads, copies or moves
+        the engine's files, and the person can write the same file by
+        hand: the scan finds it either way.
+
+        The library cannot tell whether the named engine loads prepared
+        models; the engines are the agent's knowledge, and the judge
+        (`POST /v1/eligibility`) says it per engine once the model is
+        listed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreparedModelRequest'
+      responses:
+        '201':
+          description: Written and listed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LibraryModel'
+        '400':
+          description: |
+            No Library folder is configured, `root` is not one, the
+            subdirectory leaves the root, or the folder cannot be written.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '409':
+          description: A file of that name is already there. Nothing was written.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/models/{id}:
     parameters:
       - in: path
@@ -606,6 +654,17 @@ paths:
           $ref: 'components/common.yaml#/components/responses/Problem'
         '409':
           $ref: 'components/common.yaml#/components/responses/Problem'
+        '422':
+          description: |
+            Fit not estimated: a `prepared` model. The engine's files are
+            not read, and this arithmetic is llama.cpp's, which is wrong
+            for an engine that keeps its experts in RAM and a table on
+            the SSD (library-sources-and-engines.md §6.1). Each engine's
+            own fit model is LS6.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
 
   # -------- Scan --------
 
@@ -1777,8 +1836,8 @@ components:
       description: |
         One launchable model on this host.
 
-        The format-independent facts are here; exactly one of `gguf` or
-        `safetensors` carries the rest. That split is not tidiness — a
+        The format-independent facts are here; exactly one of `gguf`,
+        `safetensors`, `kev` or `prepared` carries the rest. That split is not tidiness — a
         quant tier is a GGUF concept and an exact parameter count is a
         safetensors one, and flattening both into one object would
         produce a schema half of whose fields are null for any given
@@ -1818,8 +1877,9 @@ components:
             a handle.
 
             A `.gguf` file for GGUF (the **first** shard when split), a
-            directory for safetensors. This is what goes on a runtime's
-            `modelPath`.
+            directory for safetensors, the provenance file
+            (`<name>.eugene-prepared.json`) for `prepared`. This is what
+            goes on a runtime's `modelPath`.
 
             **A path on the host this library runs on** — inside its
             container, if it runs in one. A node that runs the engine
@@ -1840,8 +1900,9 @@ components:
         name:
           type: string
           description: |
-            The filename with its extension stripped, or the directory
-            name for safetensors. **Not derived from metadata**: the
+            The filename with its extension stripped, the directory
+            name for safetensors, or the provenance file's name without
+            `.eugene-prepared.json` for `prepared`. **Not derived from metadata**: the
             file's own name is what the operator downloaded, what they
             call it, and what `Runtime.modelAlias` defaults to — so
             plainly-named files mean the obvious name is already the
@@ -1865,6 +1926,10 @@ components:
             that answers "will this fit on the drive I am copying it
             to", which is why it is a sum rather than the weights file
             alone.
+
+            Absent for `prepared`: the engine's own files are not read,
+            so their size is not known, and the provenance file's few
+            bytes are not the model's size.
         fileCount:
           type: integer
           minimum: 1
@@ -1920,6 +1985,8 @@ components:
           $ref: '#/components/schemas/SafetensorsDetail'
         kev:
           $ref: '#/components/schemas/KevCheckpointDetail'
+        prepared:
+          $ref: '#/components/schemas/PreparedDetail'
         profileCount:
           type: integer
           minimum: 0
@@ -2239,6 +2306,102 @@ components:
         revision:
           type: string
           description: Snapshot revision, when the checkpoint sits in a HF cache.
+
+    PreparedDetail:
+      type: object
+      description: |
+        A prepared model's provenance, as its file
+        (`PreparedProvenance`) says it, and what the library made of it.
+        Present iff `format` is `prepared` and the file could be read.
+
+        The engine's own files are not read (experimental-engines.md:
+        prepared files stay usable without the library parsing them), so
+        a prepared model has no architecture, context, size or fit here:
+        the engine says what it loaded when it is ready
+        (`RuntimeCapabilities`), and fit waits for the engine's own fit
+        model (LS6). `files` lists the provenance file (`index`) and the
+        entry file (`config`) when the library's host can see it.
+      required:
+        - engine
+        - entry
+      properties:
+        engine:
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+        entry:
+          type: string
+          description: The entry file as the provenance file writes it.
+        entryPath:
+          type: string
+          description: |
+            `entry` resolved against the folder holding the provenance
+            file, on this library's host; the same as `entry` when that
+            is absolute.
+        entryFound:
+          type: boolean
+          description: |
+            Whether this library's host sees the entry file. A relative
+            entry that is not there makes the model `unreadable`. An
+            absolute entry not seen here is not an error: it is a path on
+            the node that runs the model (an engine's prepared files
+            belong on that node's own fast drive, which only its agent
+            sees), and the agent checks it when the model starts, naming
+            any missing file.
+        recipe:
+          type: string
+          description: As `PreparedProvenance.recipe`; absent means prepared outside Eugene.
+        recipeVersion:
+          type: string
+        source:
+          $ref: 'components/common.yaml#/components/schemas/PreparedSource'
+        sourceModelId:
+          type: string
+          description: |
+            The library model it was prepared from, when `source.path`
+            names one this library lists. Absent when it does not, or
+            names none.
+        preparedAt:
+          type: string
+          format: date-time
+
+    PreparedModelRequest:
+      type: object
+      description: |
+        Adopt a model an engine has prepared: the library writes its
+        provenance file, `<name>.eugene-prepared.json`, into a Library
+        folder and lists it (library-sources-and-engines.md §4.5). Nothing
+        else is written, copied or moved; the engine's files stay where
+        they are.
+      required:
+        - name
+        - provenance
+      properties:
+        name:
+          type: string
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$'
+          description: |
+            The model's name: the provenance file is
+            `<name>.eugene-prepared.json`, and like any model file's name
+            it is what `Runtime.modelAlias` defaults to.
+        root:
+          type: string
+          description: |
+            Which Library folder (`modelRoots`) to write into. Must be one
+            of them. Absent: the folder the entry file is in, when that
+            is inside a Library folder, so the provenance sits beside what
+            it describes; otherwise the first Library folder.
+        subdirectory:
+          type: string
+          description: |
+            Relative destination under `root`. Path traversal is
+            rejected; the result must stay inside the root.
+        provenance:
+          $ref: 'components/common.yaml#/components/schemas/PreparedProvenance'
+          description: |
+            What to write. `entry` is what the person gave: the library
+            writes it relative to the provenance file when it lies inside
+            that file's folder, so the two move together, and as given
+            otherwise. `formatVersion` is written as 1 and `preparedAt`
+            as now when absent.
 
     RecommendedSampling:
       type: object
