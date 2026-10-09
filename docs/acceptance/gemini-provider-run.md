@@ -54,7 +54,9 @@ driver, not for the gateway's table, and on Linux a routing refresh had run
 while the driver was down and dropped its models. The wait now waits for
 the gateway to route them again, two refresh periods after the driver is up
 (the script's fault, not the product's; the replay then reached Google as
-before).
+before). **Green at `104d413`** on both, with every step after it (C2, C3
+Workbench at its new pin, standby, Job Sites, A7); CI green in the driver,
+gateway, ui, Workbench and agent at their pins.
 
 **Unit tests:** inference-driver 1,044 passed and 5 skipped before the last
 three tests were added; `tests/test_gemini.py` 65 passed after. gateway
