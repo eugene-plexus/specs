@@ -1,7 +1,7 @@
 # Library: many model sources, many engines
 
-**Status: calls L1-L10 taken by Troy 2026-10-09 (§6); L11 explained, his
-answer pending. v0.2.0 waits for this work (L1).** Nothing here is built. Troy (2026-10-09), after installing Strata on Amish_Station and finding
+**Status: calls L1-L11 taken by Troy 2026-10-09 (§6); v0.2.0 is LS1-LS6
+(L1). LS1 built and pinned 2026-10-09 (§6.2); LS2 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
 a GGUF profile offered llama.cpp alone: *"We have introduced a separation
 between installing the engine and installing the model through the Library.
 I think it makes sense to keep that separation, but that also means our
@@ -204,7 +204,7 @@ runs.
 | L8 | Where does preparation run? | On the agent with the engine installed |
 | L9 | `EngineKind` | Closed enum |
 | L10 | Which engine Run picks when several can | The adapter's `preference`, then the person's default per format in Settings |
-| L11 | Fit for engines without a fit model | Open: Troy asked whether llama.cpp's fit can serve any GGUF or HF model (§6.1) |
+| L11 | Fit for engines without a fit model | Each engine owns its fit model; *Fit not estimated* until it has one; LS6 is in v0.2 (§6.1; approved with the v0.2 bar) |
 
 ### 6.1 L11: why llama.cpp's fit cannot stand in for every engine
 
@@ -235,6 +235,40 @@ next easiest (weights plus KV within its reserved share). Strata's comes from
 its documented RAM-per-size table. Until an engine has one, it says *Fit not
 estimated* and admission treats it as unknown. LS6 becomes part of the v0.2
 work, not after it.
+
+## 6.2 LS1 built (2026-10-09)
+
+Record: [ls1-eligibility-run.md](../acceptance/ls1-eligibility-run.md), 11/11.
+
+**Calls building made**, for Troy's veto:
+
+- **B1.** The request and answer shapes live in `common.yaml`: the agent's Run
+  calls the judge as well as the console.
+- **B2.** The Library names engines only by kind; the console words them
+  ("llama.cpp", "Strata"). Engine names stay engine knowledge.
+- **B3.** A Library older than the judge answers 404, and Run and the console
+  fall back to the format rule: a container root can lag its workers.
+- **B4.** L10's per-format default in Settings is not built yet: no format has
+  two engines that can both run it as it is on one machine (vLLM and MLX never
+  share one; Strata's GGUFs need preparation). It arrives with the first that
+  does; the adapter's `preference` orders Run now.
+- **B5.** llama.cpp declares no architecture list yet, so any GGUF `runs`, as
+  before. The pinned build's list (the starter review already extracts it)
+  comes with LS2, where Discover judges remote models of new architectures.
+- **B6.** `modelFormats` is the formats of the requirements needing no
+  preparation, so an older console never offers Strata for every GGUF.
+- **B7.** A list row shows the dot with short words (*works here*, *other
+  engine*, *not here*); the model's page shows Troy's full phrase and each
+  engine's reason.
+
+**What building found:**
+
+- `run-operations.json` copies `ModelFormat`'s description, so editing that
+  description means regenerating the file from the Library's router and
+  re-vendoring it into agent, library and ui.
+- An enum `default` in the contract generated a plain-string default in
+  Python that warned on every serialization; *absent means eugene* instead.
+- library#7 (above, in the record).
 
 ## 7. Found while mapping (not part of this design)
 
