@@ -558,6 +558,9 @@ def rpc(method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
 class Workbench:
     def __init__(self, http: Any, control: str, client: dict[str, Any]) -> None:
         self.http, self.control, self.client = http, control, client
+        #: How each person signs at the machine what the site holds for them
+        #: (J14b): their own Chrome on the machine's page, once they have a key.
+        self.signers: dict[str, Any] = {}
 
     def call(self, route: str, token: str, /, **body: Any) -> Any:
         return self.http.post(f"{self.control}/oidc/{route}", timeout=60,
@@ -565,13 +568,23 @@ class Workbench:
                               json={"refreshToken": token, **body})
 
     def tool(self, token: str, site: str, name: str, *, asked: bool = False,
-             **arguments: Any) -> dict[str, Any]:
-        """`asked`: the person approved this call in Workbench (J72)."""
-        extra = {"asked": True} if asked else {}
-        answer = self.call("sites/mcp", token, site=site, server="files",
-                           request=rpc("tools/call", {"name": name, "arguments": arguments}),
-                           **extra)
+             sign: bool = True, **arguments: Any) -> dict[str, Any]:
+        """`asked`: the person approved this call in Workbench (J72). What the
+        site holds for the person's own signature (J14b) is signed at the
+        machine, on its page in their Chrome, and sent again, unless `sign`
+        is False."""
+        extra: dict[str, Any] = {"asked": True} if asked else {}
+        request = rpc("tools/call", {"name": name, "arguments": arguments})
+        answer = self.call("sites/mcp", token, site=site, server="files", request=request, **extra)
         assert answer.status_code in (200, 403, 422, 503), answer.text
+        for _ in range(2):
+            value = answer.json()
+            if not sign or value.get("status") != "held" or token not in self.signers:
+                break
+            self.signers[token]()
+            answer = self.call("sites/mcp", token, site=site, server="files", request=request,
+                               approval={"held": value["held"]["id"]}, **extra)
+            assert answer.status_code in (200, 403, 422, 503), answer.text
         return dict(answer.json())
 
     def listing(self, token: str, site: str) -> list[dict[str, Any]]:
@@ -802,6 +815,8 @@ def run(args: argparse.Namespace) -> None:
             return dict(seen)
 
         paired = browser("pair")
+        # From here the owner has a key: his calls are signed at the machine.
+        bench.signers[token["troy"]] = lambda: browser("approve")
         owner_name = subprocess.run(["whoami"], capture_output=True, text=True).stdout.strip()
         assert owner_name.split("\\")[-1].lower() in paired["link"].lower(), paired["link"]
         assert "is linked to troy in Eugene" in paired["link"], paired["link"]
@@ -1003,6 +1018,7 @@ def run(args: argparse.Namespace) -> None:
 
             # J2. her key, made in her Chrome at the machine, approves hers alone (J67)
             hers = browser("pair", person_sid, "browser-jessie")
+            bench.signers[jessie] = lambda: browser("approve", person_sid, "browser-jessie")
             assert "is linked to jessie in Eugene" in hers["link"], hers["link"]
             (card,) = hers["cards"]
             assert card["title"] == "A change from Workbench", hers
@@ -1022,23 +1038,24 @@ def run(args: argparse.Namespace) -> None:
                      lambda: [w["name"] for w in her_view()["workspaces"]] == ["Plans"])
             listed = bench.call(f"job-sites/{site_id}/workspaces/list", jessie).json()["workspaces"]
             assert [(w["name"], w["path"], w["rules"]) for w in listed] == [
-                ("Plans", str(space), {"read": "allow", "change": "ask"})], listed
+                ("Plans", str(space), {"read": "allow", "change": "ask", "command": "ask"})], listed
             workspace = listed[0]["id"]
             # As J5 looks for it (in JSON, escaped): found where it is meant to be.
             assert json.dumps(str(space))[1:-1] in json.dumps(listed)
             read = bench.tool(jessie, site_id, "read_text", folder="Plans", path="plan.txt")
             assert "jessie's plan" in text_of(read), read
-            unasked = bench.tool(jessie, site_id, "write_text", folder="Plans", path="new.txt",
-                                 text="x", expectedSha256="")
-            assert unasked["status"] == "failed" and "approv" in unasked["message"], unasked
-            asked = bench.tool(jessie, site_id, "write_text", folder="Plans", path="new.txt",
-                               text="x", expectedSha256="", asked=True)
-            assert asked["status"] == "done", asked
+            unsigned = bench.tool(jessie, site_id, "write_text", folder="Plans", path="new.txt",
+                                  text="x", expectedSha256="", asked=True, sign=False)
+            assert unsigned["status"] == "held", unsigned
+            assert not (space / "new.txt").exists()
+            signed = bench.tool(jessie, site_id, "write_text", folder="Plans", path="new.txt",
+                                text="x", expectedSha256="")
+            assert signed["status"] == "done", signed
             assert file_owner(space / "new.txt") == person_sid
             ok("J2. her Chrome, in her own session, makes her key at the machine and approves her "
                "workspace; her page lists only her change and the owner's only his; her workspace "
-               "runs as her account: reading with no word, changing only when Workbench says she "
-               "was asked (J72)")
+               "runs as her account: reading in the window she signed, changing only once she "
+               "signs that call on the machine's page, Workbench's word not being enough (J14b)")
 
             # J3. a rule the root forges in her name waits for her, and is turned down
             forged = http.post(f"{control}/acceptance/forge", json={
@@ -1052,7 +1069,7 @@ def run(args: argparse.Namespace) -> None:
             turned_down = bench.call(f"job-sites/{site_id}/held/{item['id']}/reject", jessie)
             assert turned_down.status_code == 204, turned_down.text
             rules = bench.call(f"job-sites/{site_id}/workspaces/list", jessie).json()["workspaces"]
-            assert rules[0]["rules"] == {"read": "allow", "change": "ask"}, rules
+            assert rules[0]["rules"] == {"read": "allow", "change": "ask", "command": "ask"}, rules
             as_owner = http.post(f"{control}/acceptance/forge", json={
                 "site": site_id, "subject": people["troy"], "action": "rules.set",
                 "arguments": {"id": workspace, "rules": {"read": "allow", "change": "allow"},
@@ -1096,7 +1113,7 @@ def run(args: argparse.Namespace) -> None:
                         if e["subject"] == people["jessie"] and "Plans" in json.dumps(e)], lines
             her_lines = bench.call(f"job-sites/{site_id}/audit", jessie, limit=200)
             assert her_lines.status_code == 200, her_lines.text
-            assert any(e.get("tool") == "write_text" and e.get("asked") is True
+            assert any(e.get("tool") == "write_text" and e.get("signed")
                        for e in her_lines.json()["entries"]), her_lines.text
             assert json.dumps(str(space))[1:-1] not in json.dumps(http.get(f"{control}/v1/sites").json())
             ok("J5. the owner sees none of jessie's workspaces: not in his view, his live list, "

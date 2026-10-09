@@ -59,8 +59,8 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=bbc6aaf55f7a758c1a055fed7e5f08174a7358cc
-PIN_CONTROL=c4a5a6f5c8a48510b4a47b0e6392d0b1c957fd44
+PIN_AGENT=16edbac8bb9a9ca82420d2e64dfe81dc70f4b241
+PIN_CONTROL=2b2ae246fbfa48a5306a695e6c9ca104ca4a1ead
 PIN_GATEWAY=3c27ceb3a12be36c5f864ebf78ed0bd36c9c802f
 PIN_DRIVER=d549ad9fae5107259c1b16f10732523e2f2ee49a
 PIN_LIBRARY=ae9e2d06b536bba3e24e4fe759ead76004a904d7
@@ -72,7 +72,7 @@ PIN_UI=aa2234fb1df27dfcd05c6e5fc0fa4d8499c3cc01   # branch `dist`, not `main`
 # block above: it is not one of the seven packages in the agent's prefix. It
 # must equal SITE_HOST_COMMIT in agent/src/eugene_plexus_agent/site_host.py,
 # and it moves at landing, with the agent's pin.
-PIN_SITE_HOST=26a4f0f292068a78251367a26066e2dec7db80e6
+PIN_SITE_HOST=db20f3eb7d1483ad24a043d9bdbd7f54ca34cb3a
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
@@ -106,6 +106,7 @@ SITE_ACTION=
 SITE_PERSON=
 SITE_LINK_ACCOUNT=
 SITE_PASSKEY=
+SITE_COMMANDS=
 PASSWORD_STDIN=0
 TTY_SAVED=
 JOINED=0
@@ -139,6 +140,8 @@ while [ $# -gt 0 ]; do
         --site-pair) SITE_ACTION=pair; shift ;;
         --site-passkeys) SITE_ACTION=passkeys; shift ;;
         --site-unpair) SITE_ACTION=unpair; SITE_PASSKEY=$2; shift 2 ;;
+        --site-commands) SITE_COMMANDS=yes; shift ;;
+        --site-no-commands) SITE_COMMANDS=no; shift ;;
         --person) SITE_PERSON=$2; shift 2 ;;
         --password-stdin) PASSWORD_STDIN=1; shift ;;
         --update) UPDATE=1; shift ;;
@@ -160,6 +163,9 @@ while [ $# -gt 0 ]; do
             echo "  the owner's passkey from Workbench (Linux system install, as root):"
             echo "           --site-pair  (shows a code to type into Workbench, and waits)"
             echo "           --site-passkeys   --site-unpair ID"
+            echo "  commands from Workbench on a job site (Linux system install, as root; J9):"
+            echo "           --site-commands  (allow them)   --site-no-commands  (take it back)"
+            echo "           also answers the join's question ahead, with --job-site"
             echo "  standalone:  --advertise URL   (the address other devices reach this one at)"
             exit 0 ;;
         *) echo "install.sh: unknown option $1" >&2; exit 2 ;;
@@ -661,6 +667,43 @@ SITE_PORT=
 # file replaced whole (a temporary file in the same folder, then a rename)
 # so a reader never sees half of one. No apostrophes in it: it sits in
 # single quotes.
+# J9's proof for commands (2b.4, J30, J89): the administrator's consent, in
+# the protected list beside the local servers, which the site host and every
+# worker read and cannot write. Run as root by this installer only.
+SITE_CONSENT_PY='
+import datetime, os, sys, tempfile
+
+import yaml
+
+path, answer, by = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path, encoding="utf-8") as handle:
+        value = yaml.safe_load(handle) or {}
+except FileNotFoundError:
+    value = {}
+if not isinstance(value, dict):
+    sys.stderr.write("error: " + path + " is not a list of local servers; fix it first\n")
+    sys.exit(1)
+value.setdefault("servers", [])
+if answer == "yes":
+    value["commands"] = {
+        "consentedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "by": by,
+    }
+else:
+    value.pop("commands", None)
+info = os.stat(path) if os.path.exists(path) else None
+fd, temporary = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".servers.")
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    yaml.safe_dump(value, handle, sort_keys=False, allow_unicode=True)
+    handle.flush()
+    os.fsync(handle.fileno())
+if info is not None:
+    os.chown(temporary, info.st_uid, info.st_gid)
+    os.chmod(temporary, info.st_mode & 0o777)
+os.replace(temporary, path)
+'
+
 SITE_LINK_PY='
 import json, os, sys, tempfile, time
 
@@ -1152,6 +1195,38 @@ site_resolve_account() {
 
 site_link_py() { as_site_root "$SITE_PY" -I -c "$SITE_LINK_PY" "$@"; }
 
+# Commands from Workbench (J9, J30): the administrator's answer, recorded in
+# the protected list; the site host and the workers restart to read it (a
+# worker reads its copy of the list when it starts).
+site_commands_set() {
+    as_root "$SITE_PY" -I -c "$SITE_CONSENT_PY" "$SITE_CONF/servers.yaml" "$1" "${SUDO_USER:-root}" \
+        || die "the answer about commands was not recorded (see above)"
+    as_root systemctl try-restart eugene-plexus-site-host.service >/dev/null 2>&1 || true
+    as_root systemctl try-restart 'eugene-plexus-site-worker@*.service' >/dev/null 2>&1 || true
+    if [ "$1" = yes ]; then
+        say "commands from Workbench may run on this machine now, each signed by its person,"
+        say "  in their own workspaces whose rules ask about them. Take it back: --site-no-commands"
+    else
+        say "commands from Workbench do not run on this machine. Allow them later: --site-commands"
+    fi
+}
+
+# J30's one question at the join, asked of the administrator running it,
+# unless --site-commands or --site-no-commands answered it ahead. Nobody at a
+# terminal is a no.
+site_commands_ask() {
+    if [ -z "$SITE_COMMANDS" ]; then
+        SITE_COMMANDS=no
+        if ( : </dev/tty ) 2>/dev/null; then
+            printf "Allow tools that change this machine's settings or run programs? [y/N] " >/dev/tty
+            _answer=
+            IFS= read -r _answer </dev/tty || true
+            case "$_answer" in [yY]|[yY][eE][sS]) SITE_COMMANDS=yes ;; esac
+        fi
+    fi
+    site_commands_set "$SITE_COMMANDS"
+}
+
 # What every --job-site / --site-link / --site-unlink on a system install
 # needs first.
 site_system_preflight() {
@@ -1251,6 +1326,7 @@ site_join_system() {
     as_root systemctl restart eugene-plexus-site-host.service \
         || warn "the job-site host did not start: sudo journalctl -u eugene-plexus-site-host"
     site_reconcile
+    site_commands_ask
     say "done: $SITE_LABEL is a job site of $JOIN_OWNER. Its owner manages it from Workbench (Job sites)."
     say "  $JOIN_OWNER's calls on this machine run as the account $SITE_UNAME, in their own files."
     say "  Anyone else's run in that same worker, confined to the folders $JOIN_OWNER shares."
@@ -2193,6 +2269,15 @@ trap 'exit 130' INT TERM
 # links the owner to this account itself, and the site serves only them (J38).
 if [ -n "$SITE_ACTION" ] && { [ "$JOIN_SITE" = 1 ] || [ "$UPDATE" = 1 ] || [ -n "$JOIN_CONTROL" ]; }; then
     die "--site-link, --site-unlink and --site-pair are run on their own, not with --job-site, --join or --update"
+fi
+# Alone, --site-commands / --site-no-commands give or take back J9's consent
+# later (J30); with --job-site they answer the join's question ahead.
+if [ -n "$SITE_COMMANDS" ] && [ -z "$SITE_ACTION" ] && [ "$JOIN_SITE" != 1 ] \
+        && [ "$UPDATE" != 1 ] && [ -z "$JOIN_CONTROL" ]; then
+    site_system_preflight "allowing commands on a job site"
+    as_root test -f "$SITE_CONF/host.env" || die "this machine is not a job site yet"
+    site_commands_set "$SITE_COMMANDS"
+    exit 0
 fi
 if [ "$SITE_ACTION" = link ]; then
     site_link_person

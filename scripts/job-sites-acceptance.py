@@ -308,6 +308,7 @@ def forge_hook(app: Any) -> None:
                 "server": body["server"],
                 "request": body["request"],
                 "grants": body.get("grants") or [],
+                "approval": body.get("approval"),
             }
         )
         envelope = helpers.envelope(machine.state, named, body["subject"], **fields)
@@ -392,11 +393,15 @@ class Workbench:
 
     def mcp(
         self, token: str, site: str, server: str, method: str, params: dict[str, Any] | None = None,
-        *, asked: bool = False,
+        *, asked: bool = False, approval: dict[str, Any] | None = None,
     ) -> Any:
         """`asked`: the person approved this call in Workbench (J72), which
-        Workbench says only for a tool the site lists as asked about."""
-        extra = {"asked": True} if asked else {}
+        Workbench says only for a tool the site lists as asked about.
+        `approval`: a call the site held for the person's signature, sent
+        again (J14b)."""
+        extra: dict[str, Any] = {"asked": True} if asked else {}
+        if approval is not None:
+            extra["approval"] = approval
         return self.call("sites/mcp", token, site=site, server=server, request=rpc(method, params),
                          **extra)
 
@@ -704,6 +709,19 @@ class SiteHost:
             self.last_approval = (item["id"], approval)
             answers.append(answer)
         raise AssertionError("more than 16 changes were held")
+
+    def sign_held(self, subject: str, ident: str) -> dict[str, Any]:
+        """The person signs one held call or window at the machine (J14b,
+        J83), as the page does: the item the site lists, signed with their
+        key, sent to the site host's own `/v1/held`."""
+        ident_key, key, _ = self.keys[subject]
+        item = next((i for i in self.held(subject) if i["id"] == ident), None)
+        assert item is not None and item["envelope"], (ident, self.held(subject))
+        status, answer = self.held_api("POST", f"/v1/held/{ident}/approve", {
+            "subject": subject, "envelope": item["envelope"], "key": ident_key,
+            "signature": base64.b64encode(key.sign(item["envelope"].encode())).decode()})
+        assert status == 200 and answer["status"] == "done", (status, answer)
+        return dict(answer)
 
     def reject_all(self, subject: str) -> int:
         items = [i for i in self.held(subject) if i["id"] != "rules"]
@@ -1218,9 +1236,27 @@ def run(args: argparse.Namespace) -> None:
         def call(route: str, token: str, /, **body: Any) -> Any:
             return workbench.call(route, token, **body)
 
+        subjects = {ada: people["ada"], bo: people["bo"], jo: people["jo"]}
+
         def mcp(token: str, server: str, method: str, params: dict[str, Any] | None = None,
-                *, asked: bool = False) -> Any:
-            return workbench.mcp(token, site_id, server, method, params, asked=asked)
+                *, asked: bool = False, sign: bool = True,
+                approval: dict[str, Any] | None = None) -> Any:
+            """A call through the root. What the site holds for the caller's
+            own signature (J14b) is signed at the machine with their key, as
+            they would on its page, and the call sent again; `sign=False`
+            leaves it held."""
+            answer = workbench.mcp(token, site_id, server, method, params, asked=asked,
+                                   approval=approval)
+            subject = subjects.get(token)
+            for _ in range(2):
+                if (not sign or answer.status_code != 200 or subject not in desk.keys
+                        or answer.json().get("status") != "held"):
+                    return answer
+                held = answer.json()["held"]
+                desk.sign_held(subject, held["id"])
+                answer = workbench.mcp(token, site_id, server, method, params, asked=asked,
+                                       approval={"held": held["id"]})
+            return answer
 
         def forge(**body: Any) -> Any:
             return http.post(f"{control}/acceptance/forge", json={"site": site_id, **body}, timeout=40)
@@ -1280,7 +1316,8 @@ def run(args: argparse.Namespace) -> None:
         # 2b.3b (J69): the owner's folder is her own workspace, hers at once:
         # read allow, change ask (it is writable), by id and name, no path (J76).
         (own,) = settle(lambda s: s.get("workspaces"), "the workspace never reported")["workspaces"]
-        assert own["id"] == folder_id and own["rules"] == {"read": "allow", "change": "ask"}, own
+        assert own["id"] == folder_id and own["rules"] == {
+            "read": "allow", "change": "ask", "command": "deny"}, own
         assert "path" not in own and own["people"] == [], own
         again = call(f"job-sites/{site_id}/folders", ada, name="notes", path=str(folder))
         assert again.status_code == 422 and "named notes already" in again.text, again.text
@@ -1509,6 +1546,9 @@ def run(args: argparse.Namespace) -> None:
 
         # ---- B1-B7. slice 2b.3b: each person's own workspaces, rules and keys -----
         two_b_three_b(context)
+
+        # ---- C1-C6. J14b + 2b.4: signed calls and commands ---------------------------
+        signed_calls(context)
 
         # ---- 12. the site leaves ----------------------------------------
         desk.stop_workers()
@@ -2188,7 +2228,15 @@ def per_user_site(
         (rules,) = client.approve_all()
         assert rules["id"] == "rules" and rules["action"] == "rules.confirm", rules
         view(lambda s: s["signing"]["state"] == "signed", "the site never reported itself signed")
-        read = workbench.mcp(ada, site_id, "files", "tools/call", read_note)
+        # J14b: with her key, her read waits for a window she opens on the
+        # agent's own page, which lists it and signs it there (J83).
+        held = workbench.mcp(ada, site_id, "files", "tools/call", read_note)
+        assert held.json()["status"] == "held", held.text
+        assert held.json()["held"]["kind"] == "window", held.text
+        (window,) = client.approve_all()
+        assert window["action"] == "window.open", window
+        read = workbench.mcp(ada, site_id, "files", "tools/call", read_note,
+                             approval={"held": held.json()["held"]["id"]})
         assert read.json()["status"] == "done", read.text
         assert "a note at ada's own desk" in json.dumps(read.json()["response"])
         # A change that gives access is held for her key, then applied: her
@@ -2607,7 +2655,7 @@ def two_b_three_b(c: SimpleNamespace) -> None:
     workspace = done["result"]["id"]
     plans = view(jo, lambda s: s["workspaces"], "jo's workspace never reported")["workspaces"]
     assert [(w["name"], w["rules"]) for w in plans] == [
-        ("Plans", {"read": "allow", "change": "ask"})], plans
+        ("Plans", {"read": "allow", "change": "ask", "command": "ask"})], plans
     assert "path" not in plans[0]
     live = call(f"job-sites/{site_id}/workspaces/list", jo)
     assert live.status_code == 200, live.text
@@ -2635,7 +2683,7 @@ def two_b_three_b(c: SimpleNamespace) -> None:
     assert forged.status_code == 200 and forged.json()["status"] == "held", forged.text
     assert desk.reject_all(jo_id) == 1
     rules = call(f"job-sites/{site_id}/workspaces/list", jo).json()["workspaces"][0]["rules"]
-    assert rules == {"read": "allow", "change": "ask"}, rules
+    assert rules == {"read": "allow", "change": "ask", "command": "ask"}, rules
     for action, arguments in (
         ("rules.set", {"id": workspace, "rules": {"read": "allow", "change": "allow"}, "deny": []}),
         ("workspace.people", {"id": workspace, "people": [
@@ -2686,9 +2734,13 @@ def two_b_three_b(c: SimpleNamespace) -> None:
     offered = {t["name"]: t for t in listed}
     asks = {name: t["_meta"]["eugene-plexus/ask"] for name, t in offered.items()}
     assert asks["read_text"] == [] and asks["glob"] == [] and "Plans" in asks["write_text"], asks
-    message = refused(jo, "write_text", folder="Plans", path="new.txt", text="x", expectedSha256="")
-    assert "approv" in message and not (space / "new.txt").exists(), message
-    error, wrote = use(jo, "write_text", asked=True, folder="Plans", path="new.txt", text="x",
+    # jo has a key, so Workbench's word is not her approval (J14b): held, unrun.
+    held = mcp(jo, "files", "tools/call", {"name": "write_text", "arguments": {
+        "folder": "Plans", "path": "new.txt", "text": "x", "expectedSha256": ""}},
+        asked=True, sign=False)
+    assert held.status_code == 200 and held.json()["status"] == "held", held.text
+    assert held.json()["held"]["kind"] == "call" and not (space / "new.txt").exists(), held.text
+    error, wrote = use(jo, "write_text", folder="Plans", path="new.txt", text="x",
                        expectedSha256="")
     assert not error and (space / "new.txt").read_text(encoding="utf-8") == "x", wrote
     tighter = call(f"job-sites/{site_id}/workspaces/{workspace}/rules", jo,
@@ -2698,9 +2750,10 @@ def two_b_three_b(c: SimpleNamespace) -> None:
     writers = {t["name"]: t["inputSchema"]["properties"]["folder"]["enum"] for t in listed
                if t["name"] in ("write_text", "edit_text")}
     assert all("Plans" not in names for names in writers.values()), writers
-    ok("2b.3b (J70, J72) at the site, through the root: read allow runs with no word, change ask "
-       "is listed as asked about and refused until Workbench says she approved the call, and "
-       "change deny (applied at once, J51) is never offered")
+    ok("2b.3b (J70) and J14b at the site, through the root: read allow runs in her signed "
+       "window, change ask is listed as asked about and held, unrun, even with Workbench's word, "
+       "until she signs that call at the machine, and change deny (applied at once, J51) is "
+       "never offered")
 
     # ---- B5. a denied path is hidden from every tool --------------------------------
     hid = call(f"job-sites/{site_id}/workspaces/{workspace}/rules", jo,
@@ -2750,15 +2803,17 @@ def two_b_three_b(c: SimpleNamespace) -> None:
     jo_lines = jo_lines.json()["entries"]
     assert any(e.get("tool") == "read_text" and "Plans" in json.dumps(e) for e in jo_lines)
     assert all(e["subject"] == jo_id for e in jo_lines), {e["subject"] for e in jo_lines}
-    written = [(e["decision"], e.get("rule"), e.get("asked")) for e in jo_lines
-               if e.get("tool") == "write_text" and "Plans" in json.dumps(e)]
-    assert written[:2] == [("allowed", "ask", True), ("refused", "ask", False)], written
+    # Her write, signed and run, and before it the same call held unsigned (J14b).
+    written = [(e["decision"], e.get("rule"), e.get("outcome"), bool(e.get("signed")))
+               for e in jo_lines if e.get("tool") == "write_text" and "Plans" in json.dumps(e)]
+    assert written[0] == ("allowed", "ask", "done", True), written
+    assert ("allowed", "ask", "held", False) in written, written
     console = c.http.get(f"{c.control}/v1/sites").json()
     for seen in (console, owner, mine(jo)):
         assert json.dumps(str(space))[1:-1] not in json.dumps(seen), seen
     ok("2b.3b (J76, J80): the site's owner sees none of jo's workspaces: not in her view, her "
        "live list, her tools or her audit lines, and a call naming one is refused without "
-       "saying it exists; jo reads her own lines (each call's rule, and whether she was asked); "
+       "saying it exists; jo reads her own lines (each call's rule, and how it was signed); "
        "no report the root keeps carries jo's path")
 
     # ---- B7. without use-job-sites, no workspace of one's own and no link (J77) --------
@@ -2785,6 +2840,191 @@ def two_b_three_b(c: SimpleNamespace) -> None:
        "workspace nor use her own (403, in the root's words), nor link at a machine (the link "
        "check the site makes is refused); what the owner shared with her still works; given "
        "back (the install's default), all of it works again")
+
+
+def signed_calls(c: SimpleNamespace) -> None:
+    """J14b + 2b.4 through the root as Workbench calls it
+    (`person-held-keys.md` §13, J81-J91): ada's calls are checked against her
+    own key, a command runs only with her signature, and a command the root
+    forges never runs. `c` carries what `run()` has built."""
+    import yaml
+
+    desk: SiteHost = c.desk
+    ada, ada_id = c.ada, c.people["ada"]
+    call, mcp, settle, site_id, forge = c.call, c.mcp, c.settle, c.site_id, c.forge
+    windows = os.name == "nt"
+
+    def answer(token: str, tool: str, *, sign: bool = True, **arguments: Any) -> dict[str, Any]:
+        done = mcp(token, "files", "tools/call", {"name": tool, "arguments": arguments},
+                   sign=sign)
+        assert done.status_code == 200, done.text
+        return dict(done.json())
+
+    def result(value: dict[str, Any]) -> dict[str, Any]:
+        assert value["status"] == "done", value
+        outcome = value["response"]["result"]
+        assert outcome["isError"] is False, outcome
+        return dict(outcome["structuredContent"])
+
+    def tools(token: str) -> dict[str, Any]:
+        listed = mcp(token, "files", "tools/list").json()["response"]["result"]["tools"]
+        return {t["name"]: t for t in listed}
+
+    def audit(predicate: Any) -> dict[str, Any]:
+        entries = call(f"job-sites/{site_id}/audit", ada, limit=50).json()["entries"]
+        found = next((e for e in entries if predicate(e)), None)
+        assert found is not None, entries[:5]
+        return dict(found)
+
+    def servers_list() -> dict[str, Any]:
+        if not desk.servers_file.exists():
+            return {"servers": []}
+        return dict(yaml.safe_load(desk.servers_file.read_text(encoding="utf-8")) or {"servers": []})
+
+    def consent(at: str | None) -> None:
+        value = servers_list()
+        value.setdefault("servers", [])
+        if at is None:
+            value.pop("commands", None)
+        else:
+            value["commands"] = {"consentedAt": at, "by": "the administrator"}
+        put_file(desk.servers_file, yaml.safe_dump(value, sort_keys=False).encode(),
+                 root=desk.user is not None)
+
+    # ada's own workspace for commands, its rules asking about them (J88).
+    if c.sudo_mode:
+        code = c.base / "code"
+        sudo("install", "-d", "-m", "777", str(code))
+    else:
+        code = c.work / "ada-code"
+        code.mkdir()
+    (code / "hello.txt").write_text("hello from ada's code\n", encoding="utf-8", newline="\n")
+    added = call(f"job-sites/{site_id}/workspaces", ada, name="Code", path=str(code),
+                 rules={"read": "allow", "change": "ask", "command": "ask"})
+    assert added.status_code == 202, added.text
+    desk.approve(ada_id)
+    settle(lambda s: any(w["name"] == "Code" and w["rules"].get("command") == "ask"
+                         for w in s.get("workspaces") or []),
+           "ada's Code workspace never reported with its command rule")
+
+    # ---- C1. a read waits for a window she signs; inside it, reads run (J81, J82) --
+    closed = call(f"job-sites/{site_id}/window/close", ada)
+    assert closed.status_code == 204, closed.text
+    held = answer(ada, "read_text", sign=False, folder="Code", path="hello.txt")
+    assert held["status"] == "held" and held["held"]["kind"] == "window", held
+    assert held["held"]["minutes"] == 60 and held.get("windowUntil") is None, held
+    desk.sign_held(ada_id, held["held"]["id"])
+    ran = mcp(ada, "files", "tools/call", {"name": "read_text", "arguments": {
+        "folder": "Code", "path": "hello.txt"}}, sign=False, approval={"held": held["held"]["id"]})
+    assert result(ran.json())["text"] == "hello from ada's code\n", ran.text
+    assert ran.json()["windowUntil"], ran.text
+    again = answer(ada, "read_text", sign=False, folder="Code", path="hello.txt")
+    assert result(again)["text"] == "hello from ada's code\n"
+    line = audit(lambda e: e.get("tool") == "read_text" and e.get("signed"))
+    assert line["signed"].startswith("In the window signed at the machine with key"), line
+    settle(lambda s: any(e["subject"] == ada_id and e.get("windowUntil")
+                         for e in s.get("links") or []),
+           "the root never showed ada's open window")
+    ok("J14b (J81, J82): with her window closed, a read of ada's is held for a 60-minute window "
+       "and runs once she signs it at the machine and Workbench sends it again; inside it reads "
+       "run with no further signature, the audit line names the window her key opened, and the "
+       "root's listing shows when it ends")
+
+    # ---- C2. no commands without an administrator's consent at the machine (J9, J89)
+    consent(None)
+    listed = tools(ada)
+    assert "run_command" not in listed, sorted(listed)
+    refused = answer(ada, "run_command", folder="Code", command="echo hi")
+    assert refused["status"] == "failed" and "has not allowed commands" in refused["message"], (
+        refused)
+    site = settle(lambda s: (s.get("commands") or {}).get("allowed") is False,
+                  "the root never showed commands not allowed")
+    assert "administrator" in site["commands"]["reason"], site["commands"]
+    consent("2026-10-08T12:00:00+00:00")
+    listed = tools(ada)
+    assert listed["run_command"]["inputSchema"]["properties"]["folder"]["enum"] == ["Code"], listed
+    shell = "Windows PowerShell 5.1" if windows else "bash"
+    assert shell in listed["run_command"]["description"], listed["run_command"]["description"]
+    settle(lambda s: (s.get("commands") or {}).get("allowed") is True,
+           "the root never showed commands allowed")
+    ok("2b.4 (J9, J89): without the administrator's consent in the machine's protected list "
+       "run_command is not offered and a call to it is refused saying so; with it, it is "
+       "offered in ada's own workspace whose rules ask about commands, named for its shell, "
+       "without a restart")
+
+    # ---- C3. a command the root forges never runs, and is recorded (J86, J91) ------
+    forged_call = {"name": "run_command", "arguments": {
+        "folder": "Code", "command": "echo forged > forged.txt"}}
+    forged = forge(kind="enqueue", subject=ada_id, server="files",
+                   request=rpc("tools/call", forged_call))
+    assert forged.status_code == 200 and forged.json()["status"] == "held", forged.text
+    ident = forged.json()["held"]["id"]
+    assert any("echo forged > forged.txt" in w for w in forged.json()["held"]["words"]), forged.text
+    claimed = forge(kind="enqueue", subject=ada_id, server="files",
+                    request=rpc("tools/call", forged_call), approval={"held": ident})
+    assert claimed.json()["status"] == "held", claimed.text
+    bad = forge(kind="enqueue", subject=ada_id, server="files",
+                request=rpc("tools/call", forged_call),
+                approval={"held": ident, "envelope": "{}", "key": "f" * 32,
+                          "credentialId": "AAAA", "authenticatorData": "AAAA",
+                          "clientDataJSON": "AAAA", "signature": "AAAA"})
+    assert bad.json()["status"] == "failed" and "passkey" in bad.json()["message"], bad.text
+    time.sleep(1)
+    assert not (code / "forged.txt").exists()
+    refusal = audit(lambda e: e.get("tool") == "run_command" and e["decision"] == "refused")
+    assert "passkey" in refusal["reason"], refusal
+    holding = audit(lambda e: e.get("tool") == "run_command" and e.get("outcome") == "held")
+    assert "forged.txt" in (holding.get("arguments") or ""), holding
+    assert desk.reject_all(ada_id) >= 1
+    ok("J14b (J86, J91): a command the root forges in ada's name is held, never run; naming "
+       "the held call without a signature leaves it held, and a forged signature is refused; "
+       "the audit log records the held call with its command and the refusal with its reason, "
+       "and she turns it down at the machine")
+
+    # ---- C4. signed at the machine, it runs as her, and says how it ended (J84, J87) -
+    write = "Set-Content -Path signed.txt -Value signed" if windows else "echo signed > signed.txt"
+    held = answer(ada, "run_command", sign=False, folder="Code", command=write + "; echo done")
+    assert held["status"] == "held" and held["held"]["kind"] == "call", held
+    assert not (code / "signed.txt").exists()
+    ran_command = result(answer(ada, "run_command", folder="Code",
+                                command=write + "; echo done"))
+    assert ran_command["exitCode"] == 0 and "done" in ran_command["output"], ran_command
+    assert (code / "signed.txt").exists()
+    failed = result(answer(ada, "run_command", folder="Code", command="echo oops; exit 3"))
+    assert failed["exitCode"] == 3 and "oops" in failed["output"], failed
+    line = audit(lambda e: e.get("tool") == "run_command" and e.get("signed")
+                 and "Exit code 3" in (e.get("reason") or ""))
+    assert line["signed"].startswith("Signed at the machine with key"), line
+    ok("2b.4 (J84, J87): a command held until ada signs it at the machine runs once she has, "
+       "in her workspace, and answers its output and exit code (0, then 3); the audit line "
+       "names the key that signed it and how it ended")
+
+    # ---- C5. a long command answers with a handle, is followed and stopped (J84) ----
+    sleep = "Start-Sleep -Seconds 120" if windows else "sleep 120"
+    started = time.perf_counter()
+    long = result(answer(ada, "run_command", folder="Code", command="echo begun; " + sleep))
+    took = time.perf_counter() - started
+    assert long["running"] is True and "begun" in long["output"] and took < 40, (long, took)
+    more = result(answer(ada, "command_output", handle=long["handle"], wait=1))
+    assert more["running"] is True, more
+    stopped = result(answer(ada, "command_stop", handle=long["handle"]))
+    assert stopped["running"] is False and stopped["stopped"] == "stop", stopped
+    ok(f"2b.4 (J84): a command still running after {took:.0f} s answers what it printed and a "
+       "handle; command_output reads on while it runs, and command_stop ends it and everything "
+       "it started")
+
+    # ---- C6. the owner takes the consent back; a later consent counts (J30, J89) ----
+    withdrawn = call(f"job-sites/{site_id}/commands/withdraw", ada)
+    assert withdrawn.status_code == 204, withdrawn.text
+    assert "run_command" not in tools(ada)
+    turned_off = answer(ada, "run_command", folder="Code", command="echo hi")
+    assert "turned commands off" in turned_off["message"], turned_off
+    consent("2026-10-09T08:00:00+00:00")
+    assert "run_command" in tools(ada)
+    consent(None)
+    ok("2b.4 (J30): the owner turns commands off from Workbench's route and run_command goes, "
+       "refused in the site's words; an administrator's later consent at the machine counts "
+       "again")
 
 
 def main() -> int:

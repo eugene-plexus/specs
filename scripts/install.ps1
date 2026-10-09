@@ -114,6 +114,9 @@ param(
     [string]$Owner,
     [string]$RootKey,
     [string]$SiteAccount,
+    # J30: answer the join's question about commands ahead (J9).
+    [switch]$SiteCommands,
+    [switch]$SiteNoCommands,
     [switch]$Update
 )
 
@@ -130,8 +133,8 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "bbc6aaf55f7a758c1a055fed7e5f08174a7358cc"
-    "control"          = "c4a5a6f5c8a48510b4a47b0e6392d0b1c957fd44"
+    "agent"            = "16edbac8bb9a9ca82420d2e64dfe81dc70f4b241"
+    "control"          = "2b2ae246fbfa48a5306a695e6c9ca104ca4a1ead"
     "gateway"          = "3c27ceb3a12be36c5f864ebf78ed0bd36c9c802f"
     "inference-driver" = "d549ad9fae5107259c1b16f10732523e2f2ee49a"
     "library"          = "ae9e2d06b536bba3e24e4fe759ead76004a904d7"
@@ -1811,6 +1814,10 @@ this machine is not a node yet.
     $siteArgs = @("site", "join", "--url", $Join, "--token", $Token, "--owner", $Owner, "--label", $siteLabel)
     if ($RootKey) { $siteArgs += @("--root-key", $RootKey) }
     if ($SiteAccount) { $siteArgs += @("--site-account", $SiteAccount) }
+    # Otherwise the join asks the administrator at this console (J30); the
+    # tray's Allow commands, behind UAC, answers later.
+    if ($SiteCommands) { $siteArgs += "--commands" }
+    elseif ($SiteNoCommands) { $siteArgs += "--no-commands" }
     Say "adding $siteLabel as a job site of $Owner"
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @siteArgs
