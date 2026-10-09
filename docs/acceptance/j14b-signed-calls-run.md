@@ -41,6 +41,12 @@ workers on Windows, interpreter the agent's venv). The new checks:
 | C5 | a command still running after 15 s answers what it printed and a handle; `command_output` reads on, `command_stop` ends it |
 | C6 | the owner turns commands off from Workbench's route; an administrator's later consent counts again |
 
+**In CI, at the pins** (specs `624c768`, [run 37884207292](https://github.com/eugene-plexus/specs/actions/runs/37884207292)):
+the same script on Linux with passwordless sudo, so the site host, ada's and
+jo's workers each run as their own throwaway account: **42 passed**, C1-C6
+included, the commands running as ada's account. Every component's CI, A4
+macOS and the container image passed at the same pins.
+
 B4 and B6 were rewritten for J14b (with a key, Workbench's word is not an
 approval: the write is held until signed), and J14a.2's per-user check now
 signs ada's window **through the agent's own approve page** (`PageClient`),
