@@ -1,10 +1,11 @@
 # Tested configurations and support boundaries
 
-This matrix describes the evidence included in `v0.1.0-alpha.5` as of 2026-09-29.
-Earlier alphas remain frozen builds; use their release notes
-([alpha.1](releases/v0.1.0-alpha.1.md), [alpha.2](releases/v0.1.0-alpha.2.md),
-[alpha.3](releases/v0.1.0-alpha.3.md), [alpha.4](releases/v0.1.0-alpha.4.md)) for those builds' limits. A passing fixture or one owner's machine is not
-platform certification.
+This matrix describes the evidence on `main` as of 2026-10-08, after
+[v0.1.0](releases/v0.1.0.md). Rows marked *since v0.1.0* are not in that
+release. Released builds remain frozen; use their release notes
+([v0.1.0](releases/v0.1.0.md), [alpha.6](releases/v0.1.0-alpha.6.md),
+[alpha.5](releases/v0.1.0-alpha.5.md) and earlier) for those builds' limits.
+A passing fixture or one owner's machine is not platform certification.
 
 **Measured** means a real process/device performed the stated task.
 **Simulated** means automated fixtures supplied platform or hardware facts.
@@ -58,6 +59,23 @@ These labels apply to individual promises, not an entire operating system.
 | Conservative failover and cancellation | **Measured:** [A6b](acceptance/a6b-failover-safety-run.md) real gateway/driver processes with controlled HTTP/CLI failure fixtures. Ambiguous work is not automatically replayed. A cancelled remote request is not proof that a provider stopped computing. |
 | Recovery after a failed update | **Measured:** [A7](acceptance/a7-recovery-run.md) Windows and container replacement, authentication, profiles, policy, revocations and a real completion. Use the [public recovery guide](https://eugeneplexus.com/recovery/). Manual service registration, same OS/architecture, accessible recorded assets and online package reconstruction are required. |
 | Stable business production readiness | **Not established.** Limited pilot evidence is distinct from certification, HA, disaster recovery across every topology or a universal capacity guarantee. |
+
+## Workbench and Job Sites (since v0.1.0)
+
+| Promise | Evidence / limits |
+| --- | --- |
+| Workbench's tools: network MCP servers, the owner's local tools, folders granted to a named person | **Measured** on disposable GitHub Windows and Ubuntu runners with real service accounts: [C5 MCP](acceptance/c5-mcp-run.md), [C5 local tools](acceptance/c5-local-tools-run.md) 64/64 each, [C6 folders](acceptance/c6-folder-tools-run.md) 91/91 and 92/92. **Simulated:** the model is scripted. **Unsupported:** MCP OAuth, resources and prompts; local tools on a per-user install; folder tools need Landlock ABI 3+ on Linux, and there is no undo, delete or rename. |
+| Workbench's image, speech and video screens | **Measured** live once each, billed: a real image ([images](acceptance/workbench-media-images-run.md)), a speech round trip ([speech](acceptance/workbench-media-speech-run.md); the recognizer dropped a second sentence) and a 1 s video ([video](acceptance/workbench-media-video-run.md)); the rest against fixtures. **Pending:** Troy's install has no image, speech or video model, so none ran there. |
+| Workbench on the NAS container (uid 99, `HOME=/`) | **Measured** in a disposable uid-99 container ([NAS cache run](acceptance/nas-workbench-cache-run.md)). **Pending:** a re-install on the physical NAS recorded. |
+| A person's machine as a job site: joining, the site's own enrollment, MCP between site and root | **Measured:** a Windows site with the root in WSL2 behind real Caddy ([slice 1](acceptance/job-sites-run.md) 17/17, [slice 2](acceptance/job-sites-mcp-run.md) 23/23, [2b.1](acceptance/job-sites-own-enrollment-run.md) 15/15), and Linux in CI. **Pending:** a machine behind Nginx Proxy Manager besides Troy's own; a forcing proxy. **Unsupported:** a machine that is only a site (the standalone install, J21). |
+| Each person's calls as their own OS account; their own workspaces and rules | **Measured** on Amish_Station, elevated, with two real accounts ([2b.2](acceptance/job-sites-each-person-run.md) 9/9; [2b.3b](acceptance/workspaces-people-run.md) 19 passed, 1 skipped) and in CI's Linux sudo run (36 passed). **Unsupported:** Windows calls while the person is signed out (they wait for sign-in); Entra ID, domain accounts and network shares are untested. |
+| Changes held for the person's own key, at the machine or with a passkey | **Measured** with Chrome at the machine and on a Windows service install ([J14a](acceptance/j14a-person-held-keys-run.md)). **Simulated:** the passkey is Chrome's virtual authenticator. **Pending:** a real phone or hardware passkey at an HTTPS name; `install.sh --site-pair` on a real Linux install. |
+| Signed calls, and commands run as the person | **Measured** with the root in WSL2 and the site on Windows ([J14b + 2b.4](acceptance/j14b-signed-calls-run.md), 41 passed, 4 one-account skips): a command the root forges is held and never runs; a signed one runs and reports its exit code. **Pending:** the remote passkey path, the elevated two-person Windows run, the tray's *Allow commands* behind UAC, Linux `--site-commands` on a real machine. Commands are off on a machine until an administrator allows them there. |
+| A warm standby control root | **Measured** with real processes on Windows and WSL2 Linux, 8/8 each ([warm standby](acceptance/warm-standby-run.md)), and deployed (Amish_Station follows the NAS root). **Unsupported:** after a promotion, only the promoted machine reaches the new root. |
+| One HTTPS port for the container | **Measured:** real Caddy in isolated Linux, container checks 35/35 then 36-37 ([single port](acceptance/single-port-entrypoint-run.md)); one live migration on Troy's NAS. **Simulated:** ACME against Pebble. **Pending:** a public Let's Encrypt certificate; Traefik. |
+| Removal from Windows' Installed Apps, a Mac app, offline cleanup | **Measured:** the POSIX remover in WSL2, the Windows remover on this box ([uninstall](acceptance/uninstall-run.md)). **Pending:** the Windows GUI on a disposable service install; the Mac app, launchd and Keychain. |
+| Repetition protection (observe-only by default) | **Measured** once on local llama.cpp with Qwen3.8-27B ([repetition](acceptance/repetition-protection-run.md)): a looping prompt stopped at 5.5 s. **Simulated:** 4 of 6 loops caught and 1 of 10 normal answers stopped, in a synthetic replay; the production false-stop rate is unknown. |
+| Strata engine (experimental) | **Measured:** the pinned install and its removal on Windows ([Strata](acceptance/strata-engine-run.md)). **Pending:** everything on a real NVIDIA GPU. |
 
 ## Choose a pilot configuration
 

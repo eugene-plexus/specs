@@ -1,12 +1,12 @@
 # Job Sites slice 3: copying between machines
 
-**Status:** a design, 2026-10-09. Nothing in it is built. **Calls J92-J99
+**Status:** a design, 2026-10-08. Nothing in it is built. **Calls J92-J99
 (§6) are Troy's to take.** It is J10 (`remote-nodes.md` §3.5): copy a folder
 from one machine to another, site A → root → site B, the job people otherwise
 hand to Dropbox or OneDrive. It builds on J14b's signed calls
 (`person-held-keys.md` §13) and does not reopen J1-J91.
 
-Code anchors are at the pins of 2026-10-09: control `2b2ae24` (`CT/`),
+Code anchors are at the pins of 2026-10-08: control `2b2ae24` (`CT/`),
 site-host `db20f3e` (`SH/`), agent `16edbac` (`AG/`), library (`LB/`).
 
 ---
@@ -42,7 +42,7 @@ skipped and why.
 
 ---
 
-## 1. What exists today (measured 2026-10-09)
+## 1. What exists today (measured 2026-10-08)
 
 | What | Today | Where |
 |---|---|---|

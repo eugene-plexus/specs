@@ -1,6 +1,6 @@
 # J14b + 2b.4: signed calls and commands — run record
 
-**Date:** 2026-10-08/09. **Design:**
+**Date:** 2026-10-08. **Design:**
 [`person-held-keys.md`](../design/person-held-keys.md) §13 (J81-J91, *What
 building found*). Built while Troy was away, from
 `docs/private/handoff-2b4-commands.md`; J29, J30, J47 and J9 taken before,
@@ -28,7 +28,7 @@ machine.
 ## What was run
 
 **`scripts/job-sites-acceptance.py --root-wsl` — 41 passed, 4 skipped** (the
-one-account skips: a second OS account needs CI's sudo run), 2026-10-09, the
+one-account skips: a second OS account needs CI's sudo run), 2026-10-08, the
 run of record, against the working trees (root in WSL2, site host and
 workers on Windows, interpreter the agent's venv). The new checks:
 
