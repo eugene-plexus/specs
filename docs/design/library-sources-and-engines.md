@@ -1,7 +1,7 @@
 # Library: many model sources, many engines
 
-**Status: proposed 2026-10-09; calls L1-L11 are Troy's.** Nothing here is
-built. Troy (2026-10-09), after installing Strata on Amish_Station and finding
+**Status: calls L1-L10 taken by Troy 2026-10-09 (§6); L11 explained, his
+answer pending. v0.2.0 waits for this work (L1).** Nothing here is built. Troy (2026-10-09), after installing Strata on Amish_Station and finding
 a GGUF profile offered llama.cpp alone: *"We have introduced a separation
 between installing the engine and installing the model through the Library.
 I think it makes sense to keep that separation, but that also means our
@@ -112,9 +112,24 @@ is not installed on Amish_Station"*.
   approximate; the detail view gets the full one. For safetensors the detail
   reads the remote `config.json` (one Range read, as preflight does for GGUF),
   so MLX and vLLM are told apart before 20 GB is downloaded.
-- **The format filter becomes an engine filter:** *Runs on Amish_Station*
-  (default), *Any engine I can install*, *Everything*. GGUF stops being a
-  default for its own sake.
+- **Three levels, one dot (L5, Troy).** Every model and candidate carries a
+  dot with its words beside it (never colour alone), and a popover naming the
+  engines and what to do:
+
+  | Dot | Words (Troy's) | When |
+  | --- | --- | --- |
+  | green | *Will work on this machine now* | an engine installed here runs it as it is (`runs`, or `may_run`, whose popover says *may*) |
+  | amber | *Will work with a different engine* | an engine this machine can run, but has not installed, runs it; or an installed engine runs it after preparation (popover: *Strata can run it after preparing it, about 12 GB more*) |
+  | red | *Can not work on this machine* | no engine that can run on this hardware accepts it; or every engine that would accept it has a fit of `no` |
+
+  Calls building made, for Troy's veto: preparation counts as amber (one
+  more step, like an install); `may_run` counts as green with *may* in the
+  popover; red includes *does not fit for any engine that would load it*,
+  but never *fit unknown*. `tight` and `split` stay green, with the fit badge
+  saying how it would run.
+- **The format filter becomes a filter on those levels:** *Works here now*,
+  *Works with another engine*, *Everything* (the default, ordered green,
+  amber, red). GGUF stops being a default for its own sake.
 - **Fit names its engine.** Fit becomes a per-engine answer; an engine with no
   fit model says *Fit not estimated*, never llama.cpp's number in its place.
 
@@ -170,21 +185,56 @@ never altered.
 Each slice ends with the real-environment acceptance on Amish_Station with
 llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
 
-## 6. Calls for Troy
+**v0.2.0 waits for this work (L1).** Proposed bar: LS1-LS6, so Strata is
+found, prepared, profiled, run and fitted from the console. LS5's
+preparation needs Troy's go for the ~80 GB download when its acceptance
+runs.
 
-| # | Question | Recommendation | Main trade-off |
-| --- | --- | --- | --- |
-| L1 | When? | Settle the design now; build LS1-LS2 after v0.2.0 | LS1 changes the engine and Library contracts in four repos, against the stability release. Before v0.2 instead: Discover is right at release, and the release moves later |
-| L2 | Where is eligibility judged? | The Library, one endpoint (§4.2) | Every judgment is a call to the Library; the agent's Run depends on it already |
-| L3 | Rules as data, or a per-engine check the agent runs? | Data (`accepts`) | Data cannot express everything; `authority: engine` and `may_run` cover what only a load can tell. A code check per engine is flexible but chatty, and opaque to the UI |
-| L4 | A verdict only a load can make | Shown as *may run (vLLM checks the architecture when it loads)* | Honest, but less definite than people expect |
-| L5 | Discover's default | Everything that matches, runnable here first, with chips; filter *Runs on this machine* one click away | Defaulting to the filter hides what an engine you could install would run |
-| L6 | Prepared models in the Library | Yes, through the provenance file (§4.5) | A new file beside the person's models; the alternative keeps every engine's prepared form outside profiles |
-| L7 | Who publishes an engine's model list? | Its adapter, in the agent | The list then changes with an agent release, not a Library one |
-| L8 | Where does preparation run? | On the agent with the engine installed, into a Library folder | A preparation can only run on a node with the engine, which is where its result runs anyway |
-| L9 | `EngineKind` | Stays a closed enum | Each engine is a contract change, but each engine is also new adapter code in the same change |
-| L10 | Which engine Run picks when several can | The adapter's `preference`, then the person's default per format in Settings | Today's registry order is invisible and nobody chose it |
-| L11 | Fit for engines without a fit model | *Fit not estimated*; admission treats it as unknown, as Strata's is today | Fewer green badges until each engine gets a model |
+## 6. Calls (Troy, 2026-10-09)
+
+| # | Question | Troy's call |
+| --- | --- | --- |
+| L1 | When? | **Before v0.2.0.** *"Move the v0.2 release until after, since using Strata was to be a noted feature of v0.2."* |
+| L2 | Where is eligibility judged? | The Library, one endpoint (§4.2) |
+| L3 | Rules as data, or a per-engine check the agent runs? | Data (`accepts`) |
+| L4 | A verdict only a load can make | *May run*, for now; may be revisited |
+| L5 | Discover's default | A dot with three levels (§4.3): *Can not work on this machine*, *Will work on this machine now*, *Will work with a different engine* |
+| L6 | Prepared models in the Library | Yes, through the provenance file (§4.5) |
+| L7 | Who publishes an engine's model list? | Its adapter, in the agent |
+| L8 | Where does preparation run? | On the agent with the engine installed |
+| L9 | `EngineKind` | Closed enum |
+| L10 | Which engine Run picks when several can | The adapter's `preference`, then the person's default per format in Settings |
+| L11 | Fit for engines without a fit model | Open: Troy asked whether llama.cpp's fit can serve any GGUF or HF model (§6.1) |
+
+### 6.1 L11: why llama.cpp's fit cannot stand in for every engine
+
+- **Any GGUF on llama.cpp: yes, and it stays.** The Library reads the GGUF
+  header (layers, KV heads, context, expert bytes) and computes a real fit.
+- **A Hugging Face safetensors model on llama.cpp: no file to fit.**
+  llama.cpp loads only GGUF; a safetensors folder must be converted first,
+  and the result's size depends on the quantization chosen. The fit the
+  Library reports for safetensors today is weights at their dtype plus a KV
+  estimate, labelled an estimate, and is used for vLLM and MLX.
+- **Other engines use memory differently, so llama.cpp's verdict is wrong for
+  them in both directions:**
+  - **vLLM** reserves a fixed share of each GPU up front
+    (`gpuMemoryUtilization`, 0.9 by default) and fills the rest with KV cache.
+    It does not spill to system RAM by default, and splits evenly across
+    cards. llama.cpp's *split, experts in RAM* is *will not start* on vLLM.
+  - **Strata** is built to keep every expert in RAM and a lookup table on
+    the SSD. For its 125B model on a 32 GB card, llama.cpp's arithmetic says
+    *no*; Strata's own table says IQ2_XS runs with 48 GB of RAM.
+  - **MLX** on a Mac uses unified memory, of which macOS lets the GPU wire
+    only part; neither VRAM nor RAM in llama.cpp's sense.
+  - Admission today calls the same fit for vLLM and MLX as for llama.cpp, so
+    their admission numbers carry this error now.
+
+**Recommendation:** each engine owns its fit model, declared beside its
+`accepts` (L3: data where it can be). llama.cpp keeps today's. vLLM's is the
+next easiest (weights plus KV within its reserved share). Strata's comes from
+its documented RAM-per-size table. Until an engine has one, it says *Fit not
+estimated* and admission treats it as unknown. LS6 becomes part of the v0.2
+work, not after it.
 
 ## 7. Found while mapping (not part of this design)
 
