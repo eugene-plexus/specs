@@ -2,7 +2,7 @@
 
 **Status:** designed and taken 2026-10-09 (Troy, G1-G4); built and pinned
 2026-10-09 against a fixture (`docs/acceptance/gemini-provider-run.md`);
-the live run waits for a key. G5-G15 are building's calls, for Troy.
+the live run waits for a key. G8, G11 and G13 confirmed by Troy; G5-G7, G9, G10, G12, G14 and G15 are building's calls, for him.
 **Issue:** inference-driver#4. The Gemini *door* on the gateway (gateway#5) is
 separate. **OpenRouter's Gemini models keep working as they do.**
 
@@ -73,7 +73,7 @@ separate. **OpenRouter's Gemini models keep working as they do.**
 - **G6:** Google Search grounding and code execution are not offered in this
   slice; the gateway's own web search stays the one search.
 - **G7:** the signature cache keeps 4,096 calls for 24 hours.
-- **G8:** `reasoning_effort` maps to Gemini 3's `thinkingLevel` (`none` →
+- **G8 (confirmed by Troy, 2026-10-09):** `reasoning_effort` maps to Gemini 3's `thinkingLevel` (`none` →
   `minimal`, the lowest Gemini 3 takes; `xhigh`/`max` → `high`) and to
   2.5's `thinkingBudget` (`none` 0, `low` 1,024, `medium` 8,192, `high`
   24,576, or 32,768 on Pro). Offered only where the listing says
@@ -84,14 +84,14 @@ separate. **OpenRouter's Gemini models keep working as they do.**
 - **G10:** a region refusal ("User location is not supported") is the
   account's, as a refused key is: nothing was done, so the request may go
   to another backend.
-- **G11:** an OpenAI `/v1/audio/speech` request that names no format gets
+- **G11 (confirmed by Troy, 2026-10-09):** an OpenAI `/v1/audio/speech` request that names no format gets
   mp3 where the model makes mp3, and otherwise the model's first format
   (wav for Gemini); one that *names* mp3 on Gemini is refused, naming wav
   and pcm (gateway).
 - **G12:** speech `instructions` and `speed` are refused (Gemini takes style
   only inside the text). Image `size`, `quality`, `n` > 1, masks and the
   other OpenAI image settings are refused. Up to 14 reference images.
-- **G13:** every Gemini chat model is also offered for transcription (it
+- **G13 (confirmed by Troy, 2026-10-09):** every Gemini chat model is also offered for transcription (it
   hears audio); Gemma gets no tools or attachments, and its system prompt
   goes in front of the first user turn.
 - **G14:** carried: `temperature`, `top_p`, `top_k`, `seed`, `stop`, the
