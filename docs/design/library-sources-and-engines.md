@@ -3,7 +3,8 @@
 **Status: calls L1-L11 taken by Troy 2026-10-09 (§6); v0.2.0 is LS1-LS6
 (L1). LS1 built and pinned 2026-10-09 (§6.2); LS2 built and pinned
 2026-10-09 (§6.3); LS3 built and pinned 2026-10-09 (§6.4); LS4 built and
-pinned 2026-10-09 (§6.5); LS5 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
+pinned 2026-10-09 (§6.5); LS5 built and pinned 2026-10-09 (§6.6), its real-model
+run waiting for Troy's go; LS6 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
 a GGUF profile offered llama.cpp alone: *"We have introduced a separation
 between installing the engine and installing the model through the Library.
 I think it makes sense to keep that separation, but that also means our
@@ -481,7 +482,9 @@ installed on the picked node runs a hub's models as they are, with
   hub call, a download's transfer included, resolves its hub from live
   config, and the settings sabotage pass follows the token there.
 
-## 6.6 LS5: preparation is a job on the engine's node (building, 2026-10-09)
+## 6.6 LS5 built (2026-10-09): preparation is a job on the engine's node
+
+Record: [ls5-preparation-run.md](../acceptance/ls5-preparation-run.md).
 
 Read off upstream's `setup.py` at the commit the adapter pins (`6f32ec0`):
 with `--gguf-dir` and `--data-dir` it checks the PC, installs its Python
@@ -578,6 +581,26 @@ continue as for Run.
 - **B56. Progress** is setup's step in its own words (its `=== Step N` lines),
   the bytes Strata-data has grown by against `diskBytes`, and setup's last
   line; when it stops, its last lines are the failure's cause.
+- **B57.** The context sizes a preparation offers are the engine's to publish
+  (`ModelPreparation.contexts`, a second contract commit), so the console
+  lists setup's sizes without knowing the engine.
+
+**What building found:**
+
+- Setup unpacks llama.cpp's whole source under its own folder; under a
+  Windows install's engine folder the deepest path is about 281 characters,
+  past the 260 Windows allows without long paths (B47).
+- The v0.1.39 release's `BUILD.json` lists sm_75, 86, 89 and 120 with PTX, so
+  on an RTX 50 setup takes the engine already installed and compiles nothing.
+- With `--yes` on two or more cards, setup recommends a layer split, whose
+  configuration key (`layer_split`) the adapter refuses: hence `--gpu` (B49).
+- Setup writes its configuration into its own folder, and its expert profile
+  is a path inside it (B48).
+- A Windows tool ends its lines with `\r\n`; the first reading took the text
+  after the last `\r` and lost every line (caught by the unit test).
+- On an install whose Library folder is on another machine (Troy's NAS), the
+  GGUF and Strata's pack are read over the network while Strata answers:
+  [agent#12](https://github.com/eugene-plexus/agent/issues/12), for Troy.
 
 ## 7. Found while mapping (not part of this design)
 

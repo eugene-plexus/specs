@@ -12,21 +12,38 @@ do not include it.
    **install**. Eugene verifies pinned source and native archives, then creates
    a private Python environment with the server and CUDA dependencies. Model
    downloads and preparation are separate. macOS has no install recipe.
-2. Prepare a compatible model with [Strata's setup instructions](https://github.com/Niko1221/Strata/blob/v0.1.39/docs/INSTALL.md).
-   Select text-only operation (`--vision no`) and one request at a time
-   (`--parallel 1`) when preparing it.
-   Keep its weights, pack, tokenizer and optional MTP assets in your own folders,
-   on the node that runs Strata (its lookup table wants a fast local drive).
-   The JSON configuration's paths must resolve on that node. If you move the
-   JSON, keep its `cwd` pointing at the original directory or use absolute
-   asset paths.
-3. Open **Library**, pick that node in the header and choose **add prepared
-   model**. Enter the JSON configuration's path on the node, a name (clients
-   request the model by it) and the Library folder to keep its record in;
-   optionally the Library model it was made from. Eugene writes one small file,
-   `<name>.eugene-prepared.json`, into that folder and lists the model. Nothing
-   of Strata's is copied or changed. A file of that shape written by hand is
-   found by the next scan just the same.
+2. Prepare a model. In **Discover**, pick the node, open an entry of
+   *Strata's list* and choose **Download and prepare for Strata**: one action
+   downloads its files at the revision Strata pins, prepares them with
+   Strata's own setup on that node, and starts the result. A GGUF on the list
+   that is already in the Library has **Prepare for Strata** on its Library
+   page instead. Before it starts, each says how much more disk Strata's setup
+   needs on that node, by setup's own rule, and offers setup's context sizes
+   (its recommendation for the machine by default; the context is fixed when
+   the model is prepared, and preparing it again with another one takes
+   seconds). The run's line in the task tray shows setup's own step, what it
+   has written and its warnings; **Cancel** stops setup. The first
+   preparation also fetches Strata's preparation tools (its Python packages
+   and llama.cpp's `gguf-py`) and its MTP helper (about 5 GB,
+   once per Library folder).
+
+   The prepared files go into `Strata-data` at the top of the Library folder
+   holding the GGUF: Strata's configuration, its pack, tokenizer and MTP helper,
+   and the model's `<name>.eugene-prepared.json`. The GGUF itself is not
+   changed (setup leaves a `.done` mark beside each shard). Strata reads the
+   GGUF and its pack while it answers, so they belong on a fast drive of the
+   node that runs it; a Library folder on another machine works, slowly
+   (agent#12).
+3. A model prepared outside Eugene with
+   [Strata's setup](https://github.com/Niko1221/Strata/blob/v0.1.39/docs/INSTALL.md)
+   (text only, `--vision no`; one request at a time, `--parallel 1`) can be
+   adopted instead: open **Library**, pick that node in the header and choose
+   **add prepared model**. Enter the JSON configuration's path on the node, a
+   name (clients request the model by it) and the Library folder to keep its
+   record in; optionally the Library model it was made from. Eugene writes one
+   small file, `<name>.eugene-prepared.json`, into that folder and lists the
+   model. Nothing of Strata's is copied or changed. A file of that shape
+   written by hand is found by the next scan just the same.
 4. Select the model and choose **Run**. Like any Library model it gets a
    profile, a runtime and a row on Inference; it is offered for inference only
    after Strata reports that its model is loaded. Loading errors, including a
@@ -64,8 +81,8 @@ have start on demand disabled.
 ## Stop and remove
 
 Use **stop** to release a model's memory while retaining its saved configuration.
-Stop all runtimes for an engine and finish or cancel any installation before
-choosing **uninstall** on its engine entry. The confirmation explains that
+Stop all runtimes for an engine, and finish or cancel any installation and any
+preparation, before choosing **uninstall** on its engine entry. The confirmation explains that
 Eugene-managed builds will be removed. Model files, saved runtimes, borrowed
 installations and shared dependencies remain. Install again to use the saved
 runtimes later. Removing a saved runtime also leaves the model files intact.
@@ -80,13 +97,12 @@ an operator session.
 
 - Text chat, streaming, reasoning text and reported token usage; one concurrent
   request per managed runtime.
-- Prepared model configurations only. Arbitrary GGUFs, automatic conversion,
-  preparation and tuning are not offered by this integration. Discover lists
-  the nine models Strata's own setup offers (*Strata's list*: the original
-  Qwen3.8-Flash-Next in four sizes, Swift 1.5 in two, the Coder, Unsloth's
-  two), each at the revision Strata pins, and can download their files; Strata
-  prepares only those files, by name, as its setup does. Preparing them from
-  Eugene is the next step (LS5).
+- Prepared models only, made from the nine models Strata's own setup offers
+  (*Strata's list*: the original Qwen3.8-Flash-Next in four sizes, Swift 1.5
+  in two, the Coder, Unsloth's two), each at the revision Strata pins; Strata
+  prepares only those files, by name, as its setup does. Preparation is text
+  only, on one GPU (the one with the most memory), with the experimental speed
+  projection off. Setup's tuning (`--calibrate`) is not run.
 - Memory fit is **unknown**. The JSON file's size is never treated as the model's
   memory footprint. Automatic wake and eviction are disabled for Strata.
 - No tools, structured output, media, embeddings, raw completions or llama.cpp
