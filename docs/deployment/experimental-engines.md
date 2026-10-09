@@ -15,15 +15,24 @@ do not include it.
 2. Prepare a compatible model with [Strata's setup instructions](https://github.com/Niko1221/Strata/blob/v0.1.39/docs/INSTALL.md).
    Select text-only operation (`--vision no`) and one request at a time
    (`--parallel 1`) when preparing it.
-   Keep its weights, pack, tokenizer and optional MTP assets in your own folders.
-   Put the prepared JSON configuration in a folder registered in Eugene's
-   Library. Its paths must resolve on the selected node. If you move the JSON,
-   keep its `cwd` pointing at the original directory or use absolute asset paths.
-3. Choose **Add prepared Strata model**, enter a saved name, a unique public
-   model alias and the JSON path. **Save model** creates a stopped runtime.
-4. Use that model's **start** button. It is offered for inference only after
-   Strata reports that its model is loaded. Loading errors appear on the model's
-   row and in its engine log. The model alias is the name clients should request.
+   Keep its weights, pack, tokenizer and optional MTP assets in your own folders,
+   on the node that runs Strata (its lookup table wants a fast local drive).
+   The JSON configuration's paths must resolve on that node. If you move the
+   JSON, keep its `cwd` pointing at the original directory or use absolute
+   asset paths.
+3. Open **Library**, pick that node in the header and choose **add prepared
+   model**. Enter the JSON configuration's path on the node, a name (clients
+   request the model by it) and the Library folder to keep its record in;
+   optionally the Library model it was made from. Eugene writes one small file,
+   `<name>.eugene-prepared.json`, into that folder and lists the model. Nothing
+   of Strata's is copied or changed. A file of that shape written by hand is
+   found by the next scan just the same.
+4. Select the model and choose **Run**. Like any Library model it gets a
+   profile, a runtime and a row on Inference; it is offered for inference only
+   after Strata reports that its model is loaded. Loading errors, including a
+   file the configuration names that is not there, appear on the run and the
+   model's row. To remove the model from the Library, delete its
+   `.eugene-prepared.json` file; Strata's files are not touched.
 
 An existing installation can be borrowed: set **Strata server (experimental)**
 in the node's Settings to its `serve/server.py`. That checkout must contain
@@ -39,8 +48,8 @@ assets and the supported native settings; Eugene captures the engine's output.
 
 ## Switch models
 
-Save each model separately. With one ready and another stopped, use **Switch
-model** in the Strata section. Eugene checks the target's prepared assets and
+Add and Run each model separately from the Library. With one ready and
+another stopped, use **Switch model** in the Strata section of **Inference**. Eugene checks the target's prepared assets and
 engine environment before stopping the source. It waits up to 30 seconds for requests through
 its gateway to finish, then stops the source and starts the target. If draining
 times out, the source stays running. The target's row reports loading, ready or

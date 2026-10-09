@@ -340,7 +340,9 @@ paths:
         '400':
           description: |
             No Library folder is configured, `root` is not one, the
-            subdirectory leaves the root, or the folder cannot be written.
+            subdirectory leaves the root, the folder cannot be written, or
+            the entry lies in a Library folder (so on this host) and is
+            not there. Nothing is written.
           content:
             application/problem+json:
               schema:

@@ -222,12 +222,15 @@ def main() -> int:
                 all(e.get("accepts") for e in engines),
                 [e["engine"] for e in engines if not e.get("accepts")],
             )
-            strata = (by.get("strata") or {}).get("accepts") or [{}]
+            # Since LS3 Strata also loads the models it prepared, so old
+            # consoles see `prepared`: still never every GGUF.
+            strata = {r["format"]: r for r in (by.get("strata") or {}).get("accepts") or []}
+            gguf = strata.get("gguf") or {}
             check(
-                "E1 Strata accepts a qwen4exp GGUF after preparation, and old consoles see no format",
-                strata[0].get("architectures") == ["qwen4exp"]
-                and bool(strata[0].get("preparation"))
-                and by["strata"]["modelFormats"] == [],
+                "E1 Strata accepts a qwen4exp GGUF after preparation, and old consoles see no GGUF",
+                gguf.get("architectures") == ["qwen4exp"]
+                and bool(gguf.get("preparation"))
+                and "gguf" not in by["strata"]["modelFormats"],
                 by.get("strata"),
             )
             vllm = (by.get("vllm") or {}).get("accepts") or [{}]

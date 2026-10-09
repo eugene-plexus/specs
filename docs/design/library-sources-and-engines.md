@@ -2,7 +2,7 @@
 
 **Status: calls L1-L11 taken by Troy 2026-10-09 (§6); v0.2.0 is LS1-LS6
 (L1). LS1 built and pinned 2026-10-09 (§6.2); LS2 built and pinned
-2026-10-09 (§6.3); LS3 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
+2026-10-09 (§6.3); LS3 built and pinned 2026-10-09 (§6.4); LS4 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
 a GGUF profile offered llama.cpp alone: *"We have introduced a separation
 between installing the engine and installing the model through the Library.
 I think it makes sense to keep that separation, but that also means our
@@ -330,6 +330,62 @@ Record: [ls2-discover-run.md](../acceptance/ls2-discover-run.md).
 - The hub's own `config` reports an MLX repo's quantization as
   `quantization_config: {bits}`, the key GPTQ and AWQ use too, so it cannot
   tell MLX apart; the detail call reads the folder's `config.json` instead.
+
+## 6.4 LS3 built (2026-10-09)
+
+Record: [ls3-prepared-run.md](../acceptance/ls3-prepared-run.md).
+
+**Calls building made**, for Troy's veto:
+
+- **B18.** The provenance file is the model's path, so it is also the
+  runtime's `modelPath`; the agent reads its `entry` at every launch.
+  Re-adopting a model with a new entry keeps its identity and profiles.
+- **B19.** An absolute `entry` is a path on the node that runs the model,
+  used as written; a relative one travels with its folder through the node's
+  `pathMappings`. The Library checks only an entry on its own host (relative,
+  or inside a Library folder). On Troy's install the Library is in the NAS
+  container and Strata's files are on Amish_Station's own drive, so such an
+  entry is listed with *not on the Library's machine*, never unreadable, and
+  the agent checks it at Run, naming any missing file.
+- **B20.** *Add a prepared model* writes the file beside the entry when the
+  entry is in a Library folder (entry written relative), otherwise into the
+  Library folder the person picks (the console starts on the first).
+- **B21.** `preparedFor` absent means the engine declaring the requirement;
+  an engine may name another engine's preparation to load it.
+- **B22.** A prepared model has no size, architecture, context or
+  capabilities in the Library, since the engine's files are not read. Fit
+  answers *Fit not estimated* (422) until LS6; the console never asks
+  llama.cpp's arithmetic about it.
+- **B23.** Strata's `modelFormats` is `["prepared"]` (B6's rule), so an older
+  console still never offers it for a GGUF.
+- **B24.** A Library older than LS3 refuses (422) an eligibility request
+  carrying `prepared`; Run and the console fall back to the format rule, as
+  B3 does for 404. Deploy the root first all the same.
+- **B25.** The Inference page's *Add prepared Strata model* form is gone;
+  *Switch model* stays there. A runtime declared before LS3 on a Strata JSON
+  configuration still launches.
+- **B26.** *Made from* offers the Library models the engine prepares from
+  (its *after preparation* verdicts), linked by path; otherwise *not known*.
+  No repo field in the form: LS4 and LS5 fill sources themselves.
+- **B27.** No remove button: deleting the `.eugene-prepared.json` file
+  removes the model, as deleting a GGUF does; *forget* clears a missing entry
+  as before. The model's page says so.
+- **B28.** A profile can *add stopped* (declare with `autoStart: false`), for
+  any engine. Switching needs a second Strata model declared but not loaded,
+  which the old form gave and Run does not. Such a runtime also stays stopped
+  when Eugene restarts (compare agent#11).
+- **B29.** The provenance file is versioned (`formatVersion` 1). A reader
+  that meets a higher one lists the model unreadable, saying a newer Eugene
+  wrote it; fields it does not know are ignored.
+
+**What building found:**
+
+- Switching between two Strata models was only reachable through the
+  runtime-only form (B28).
+- Run's hint promised *settings that fit* for a model whose fit is not
+  estimated; reworded for prepared models.
+- LS1's acceptance asserted Strata's pre-LS3 declaration (`modelFormats: []`
+  and the GGUF requirement first); updated in the same push as the pins.
 
 ## 7. Found while mapping (not part of this design)
 
