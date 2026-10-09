@@ -15,7 +15,7 @@ signatures a Gemini 3 model needs kept by the driver (G2).
 | Repo | Commit | What |
 |---|---|---|
 | specs | `7c6178c` | contract: `gemini_api` in `BackendKind`; the design |
-| inference-driver | `2fc66c7` | the `gemini` provider and `gemini_api` engine (`engines/gemini_api.py`, `engines/_gemini_wire.py`), `GEMINI_API_KEY` fallback, `/v1/speak` defaults to the engine's own format; 65 tests (`tests/test_gemini.py`) |
+| inference-driver | `2fc66c7`, `7d22ac9` | the `gemini` provider and `gemini_api` engine (`engines/gemini_api.py`, `engines/_gemini_wire.py`), `GEMINI_API_KEY` fallback, `/v1/speak` defaults to the engine's own format; 65 tests (`tests/test_gemini.py`) |
 | gateway | `b08efe0` | an unnamed speech format on a model with no mp3 gets the model's own (G11); regenerated |
 | ui | `1b85f24`, dist `cfaa45d` | "Google Gemini API" in Add backend and on Inference; regenerated (dist `137fe64` and `3605321` under it carried main's source by mistake and are not pinned) |
 | workbench | `1238dbe`, dist `2e52108` | the media screens name a Gemini account "Google Gemini" |
@@ -66,18 +66,31 @@ the mp3 default back). ui `tsc`, `eslint` and 1,081 vitest tests. ruff,
 gateway; gitleaks clean over the five trees (one fake key in a test marked
 `gitleaks:allow`).
 
-## Not yet run
+## The live run
 
-**The live run.** With `GEMINI_API_KEY` added to
-`C:/Users/troyc/.eugene-plexus-secrets/provider-keys.env`:
+**`scripts/gemini-acceptance.py --live` — 12 passed**, 2026-10-09, with
+Troy's key read into the live driver's environment only (the run of record:
+the 8 fixture checks, then 4 against Google). Picked from the key's own
+listing (32 chat, 3 embeddings, 6 image, 5 speech, 21 transcription, 3
+video models): `gemini-3.5-flash`, `gemini-embedding-001`,
+`gemini-3.1-flash-image`, `gemini-3.8-flash-tts`, `gemini-3.5-transcribe`,
+`veo-3.1-lite-generate-preview`.
 
-    agent/.venv/Scripts/python.exe specs/scripts/gemini-acceptance.py --live
+| Check | What passed against Google |
+|---|---|
+| L1 | a tool round trip on `gemini-3.5-flash` with `reasoning_effort: low`, plain and streamed: the call made, its result sent back with the thought signature the driver kept, and Google answered the second turn ("The weather in Paris is currently sunny with a temperature of 21 degrees Celsius."); usage with the thoughts counted |
+| L2 | embeddings of 3,072 dimensions; a speech clip (WAV, 121 KB) from `gemini-3.8-flash-tts`, heard back by `gemini-3.5-transcribe` as "Hello from Eugene Plexus." |
+| L3 | an image from `gemini-3.1-flash-image` |
+| L4 | a 4-second 720p video from Veo 3.1 Lite (1.2 MB, 37 s), polled and downloaded |
 
-It reads the key into the driver's environment only, and makes a tool round
-trip on a thinking model (plain and streamed), embeddings, one image, one
-speech clip transcribed back, and one 4-second 720p video on Veo 3.1 Lite
-(`--live-no-video` leaves it out). Expected cost at Google's published
-prices of 2026-10: about $0.20 for the video, $0.045 for the image, under
-a cent for the rest. Veo and image generation may need a billed project.
-It also settles the wire details the documentation did not
-(*What building found* in the design).
+**What the live runs found** (two runs before the one of record, each
+stopped at a wire detail Google's documentation did not show; fixed in
+inference-driver `7d22ac9`, with unit tests on the shapes Google sent):
+
+- `gemini-3.5-transcribe` answers in an `audioTranscription: {text}` part,
+  not `text`: every transcript read as empty.
+- Veo refuses `durationSeconds` as a string ("needs to be a number"),
+  before making anything. The fixture now refuses it as Google does.
+
+**Spent:** about $0.30 over the three runs (two images, one 4-second
+video, and a few cents of chat, embeddings and speech).

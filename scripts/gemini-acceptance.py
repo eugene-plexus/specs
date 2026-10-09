@@ -408,6 +408,11 @@ def serve(kind: str, directory: Path, port: int) -> None:
                 return {"embeddings": [{"values": [float(i), float(len(r["content"]["parts"][0]["text"])), 0.5]}
                                        for i, r in enumerate(body["requests"])]}
             if method == "predictLongRunning":
+                # Google's own refusal, measured live (2026-10-09).
+                if isinstance((body.get("parameters") or {}).get("durationSeconds"), str):
+                    return error(400, "INVALID_ARGUMENT",
+                                 "The value type for `durationSeconds` needs to be a number. "
+                                 "Please adjust your request accordingly.")
                 name = f"models/{model}/operations/op{len(operations) + 1}"
                 operations[name] = 0
                 return {"name": name}
@@ -425,7 +430,8 @@ def serve(kind: str, directory: Path, port: int) -> None:
                                {"inlineData": {"mimeType": "image/png",
                                                "data": base64.b64encode(png).decode()}}])
             if model == TRANSCRIBE:
-                return answer([{"text": "Eugene Plexus says hello.\n"}])
+                # A part of its own, as Google answered live (2026-10-09).
+                return answer([{"audioTranscription": {"text": "Eugene Plexus says hello.\n"}}])
             if model == CHAT:
                 return chat(body, stream)
             return error(404, "NOT_FOUND", f"models/{model} is not found")
@@ -761,7 +767,7 @@ def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
         submitted = [s for s in seen(VEO) if s["method"] == "predictLongRunning"][-1]["body"]
         assert submitted["instances"] == [{"prompt": "a red ball rolling"}], submitted
         assert submitted["parameters"]["aspectRatio"] == "16:9" and submitted["parameters"]["resolution"] == "720p"
-        assert str(submitted["parameters"]["durationSeconds"]) == "4", submitted
+        assert submitted["parameters"]["durationSeconds"] == 4, submitted
         assert stats()["storage"] == 1 and stats()["storage_with_key"] == 0, stats()
         ok("a 4-second 720p Veo video as a polled job, downloaded through a redirect to storage that was "
            "followed without the key")

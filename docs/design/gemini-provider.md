@@ -130,6 +130,13 @@ them), Imagen (`:predict`).
   redirect; whether `batchEmbedContents` reports usage; Google's exact
   words for a missing signature.
 
+**The live run (2026-10-09)** settled them: `thinkingLevel: low` on
+`gemini-3.5-flash`, `parametersJsonSchema` and the thought signature
+round trip, the speech request and its PCM answer, Veo's `image`-less
+submit, poll and redirected download all work as built. Two did not:
+`gemini-3.5-transcribe` answers in an `audioTranscription` part, and Veo
+takes `durationSeconds` only as a number (inference-driver `7d22ac9`).
+
 ## 6. Proof
 
 Unit tests against a fixture shaped from the docs; then one live run with

@@ -94,15 +94,21 @@ Commands stay off on a machine until an administrator allows them there:
 *Allow commands from Workbench...* in the tray (Windows), or the install
 command again with `--site-commands` (Linux).
 
+## The Windows run (2026-10-09, Troy at the machine)
+
+**`job-sites-windows-acceptance.py --person-account jessie` — 19 passed, 1
+skipped**, elevated (one UAC click), against the pins of this push; then
+**with `--sign-out` — 20 passed, 0 skipped**, J25 included (signed out,
+jessie's calls are refused saying she is not signed in there). J1-J6 ran
+with each person's calls signed in their own Chrome on the machine's page,
+J2's change only once she signed that call (J14b).
+
 ## Owed
 
 - **The remote passkey path (J47) on Troy's own Workbench**
   (`https://workbench.screamingamish.com/`): a passkey on his phone (synced
   passkeys are accepted, J64), paired with a code from Amish_Station, signing
   a command from away from the machine.
-- **`job-sites-windows-acceptance.py --person-account jessie`**, elevated: it
-  is updated for J14b (each person's calls are signed in their own Chrome on
-  the machine's page) and has not been run.
 - **The tray's *Allow commands from Workbench…*** behind a real UAC prompt,
   and **the join's question** at a console: both need a person at the
   machine.
