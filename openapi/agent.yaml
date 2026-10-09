@@ -5358,6 +5358,21 @@ components:
             source at that build's tag once and kept; until then, or for
             a build not installed, the list Eugene ships with *may run*
             for the rest (LS2).
+        supportedModels:
+          type: array
+          items:
+            $ref: "components/common.yaml#/components/schemas/SupportedModel"
+          description: |
+            The models this adapter publishes as supported (LS4,
+            library-sources-and-engines.md §4.4): each names its files on a
+            hub at a pinned revision, and the preparation they need. A
+            property of the adapter, not of this host: listed whether or
+            not the engine is installed, so Discover can show what an
+            engine would run before it is. Read off the engine's own setup
+            at the version the adapter pins (Strata v0.1.39: nine choices).
+            Empty for an engine that loads whatever its requirements
+            accept. The console sends it to the library's search
+            (`POST /v1/catalogue/search`), which lists it as a source.
         experimental:
           type: boolean
           default: false

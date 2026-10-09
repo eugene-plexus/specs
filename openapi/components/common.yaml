@@ -736,6 +736,18 @@ components:
           items:
             type: string
           description: The GGUF quantization must be one of these. Absent means any.
+        files:
+          type: array
+          items:
+            type: string
+          description: |
+            The model's file must have one of these names: a GGUF's first
+            shard, as the hub and the disk both name it, without its
+            folder. Absent means any. For an engine that runs only the files
+            it names (LS4): Strata's own setup accepts a GGUF by its name
+            and refuses every other one of the same architecture, so its
+            adapter fills this from its `supportedModels`, and a Flash-Next
+            K-quant from another publisher is `no`, naming the list.
         mlxQuantization:
           $ref: "#/components/schemas/MlxQuantizationRule"
         preparedFor:
@@ -886,6 +898,93 @@ components:
           type: string
           description: The repo commit.
 
+    SupportedModel:
+      type: object
+      description: |
+        One model an engine's adapter publishes as supported
+        (library-sources-and-engines.md §4.4, LS4): which files on a hub,
+        and what the engine does with them. Read off the engine's own
+        documentation and setup at the version the adapter pins, never
+        written from memory. The list ships with the adapter in the agent
+        (Troy's L7, `EngineDescriptor.supportedModels`), so a new engine
+        brings its own and a node's list is the one its adapter would
+        prepare and run. A caller hands it to the library's search
+        (`EngineModelList`), which shows it as one source among the others
+        (`CatalogueSourceKind` `engine_list`).
+      required:
+        - id
+        - title
+        - format
+        - source
+      properties:
+        id:
+          type: string
+          minLength: 1
+          description: |
+            Unique within the engine's list and stable across versions of
+            it, e.g. Strata's own name for the choice (`coder-IQ1_M`).
+        title:
+          type: string
+          description: What to call it, e.g. `Qwen3.8-Flash-Next IQ2_XS`.
+        about:
+          type: string
+          description: The engine's own words for it, from its documentation.
+        publisher:
+          type: string
+          description: Who made the files, e.g. `Qwen; GSQ-RCO quants by ISTA-DASLab`.
+        license:
+          type: string
+          description: |
+            When the files carry a licence of their own the person should
+            read before downloading, the engine's words for it.
+        format:
+          $ref: "#/components/schemas/ModelFormat"
+        architecture:
+          type: string
+          description: As the hub reads the files (`general.architecture` for a GGUF).
+        quantization:
+          type: string
+          description: The engine's name for the size, e.g. `IQ2_XS`.
+        source:
+          $ref: "#/components/schemas/PreparedSource"
+          description: |
+            Where the files are, all three named: `repoId`, `file` (a
+            GGUF's first shard, repo-relative) and the `revision` the engine
+            pins. What a preparation records as its source (LS5).
+        sizeBytes:
+          type: integer
+          minimum: 0
+          description: Every file of it summed, as the hub lists them at `source.revision`.
+        preparation:
+          $ref: "#/components/schemas/ModelPreparation"
+          description: What the engine does to the files before it runs them, if anything.
+        recommended:
+          type: boolean
+          default: false
+          description: The engine's own documentation recommends it.
+        experimental:
+          type: boolean
+          default: false
+          description: The engine's own documentation calls it experimental.
+
+    EngineModelList:
+      type: object
+      description: |
+        One engine's `supportedModels`, as a caller sends it to the
+        library's search (`CatalogueSearchRequest.engines`): the console the
+        picked node's, as it sends that node's `accepts` to the judge, so the
+        library calls no agent.
+      required:
+        - engine
+        - models
+      properties:
+        engine:
+          $ref: "#/components/schemas/EngineKind"
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/SupportedModel"
+
     EligibilityEngine:
       type: object
       description: |
@@ -954,6 +1053,12 @@ components:
         quantization:
           type: string
           description: The GGUF quantization, from the file's name (the scan's own fallback).
+        file:
+          type: string
+          description: |
+            The file's name without its folder: a GGUF's first shard
+            (`ModelRequirement.files`, LS4). Absent: not known yet, as on a
+            search row, which names a repo rather than a file.
         mlxQuantized:
           type: boolean
           description: |
@@ -1298,6 +1403,19 @@ components:
         report, and reusing `path_list` or `url_list` would tell every UI
         to open a directory picker or an address field. UIs render it as
         an add/remove list of text fields.
+
+        `catalogue_sources` (LS4, 2026-10-09) is an ordered JSON array of
+        the library's `CatalogueSource` — `{"id", "kind", "label",
+        "enabled", "address", "token", "engine"}`: where Discover finds
+        models (library-sources-and-engines.md §4.4). Its one user is the
+        library's `catalogueSources`, which replaced the single hub
+        address and token. Like `share_credentials`, entries hold a
+        secret: an `hf_hub` entry's `token` is redacted in `GET` (as
+        `null`, with `hasToken` saying whether one is stored), accepted in
+        `PATCH`, and an entry that omits it keeps the token stored under
+        the same `id`; `""` clears it. UIs render it as rows of a source,
+        with the token a password input, and must not display a redacted
+        token as though none were stored.
       enum:
         - string
         - integer
@@ -1317,6 +1435,7 @@ components:
         - library_folders # ordered {path, mounts[]} library folders; see the description
         - share_credentials # ordered {host, username, password} file-server logins
         - string_list # ordered list of plain strings; see the description
+        - catalogue_sources # ordered library catalogue sources; see the description
 
     ConfigField:
       type: object

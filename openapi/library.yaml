@@ -156,6 +156,15 @@ tags:
       outbound-network surface in this component, and the only one that
       can be switched off entirely (`catalogueEnabled`) for an
       air-gapped install.
+
+      Since LS4 the catalogue is a list of sources
+      (`catalogueSources`): Hugging Face-compatible hubs, and the lists
+      of models engines publish as supported. `POST
+      /v1/catalogue/search` searches the chosen sources together and
+      every result names its source; the calls about one repo (detail,
+      card, preflight, download) take `source`, the `hf_hub` source the
+      repo is on, and without it use the first enabled `hf_hub` source,
+      which is what a console older than LS4 meant.
   - name: downloads
     description: |
       Fetching a model into a directory the operator chose. A
@@ -188,18 +197,29 @@ tags:
       replaces it, and clearing the list returns to it. It is never
       written to the config file.
 
-      The discovery and download half adds six fields to that same
-      trio and needs no new renderer for any of them: `hfToken` (a
-      `secret` — gated repos, higher upstream rate limits, and faster
-      transfers even for public files, which is upstream's own advice),
-      `catalogueEnabled` (the air-gap switch: off means no outbound
-      request is ever made and search says so rather than timing out),
-      `catalogueBaseUrl` (enterprise hubs and regional mirrors both
-      exist), `downloadLayout` (`publisher_repo` or `flat`),
+      The discovery and download half adds five fields to that same
+      trio: `catalogueSources` (LS4, a `catalogue_sources` list: where
+      Discover finds models, each source with an id, a kind and its own
+      settings — see `CatalogueSource`), `catalogueEnabled` (the air-gap
+      switch: off means no outbound request is ever made, from any
+      source, and search says so rather than timing out),
+      `downloadLayout` (`publisher_repo` or `flat`),
       `maxConcurrentDownloads` (default 1), and
       `guidanceContextLength` — the context every fit verdict is
       computed at unless a caller passes one, and therefore the single
       number that decides which quant gets recommended.
+
+      `catalogueSources` replaced `catalogueBaseUrl` and `hfToken`, the
+      single hub's address and token (a `secret` — gated repos, higher
+      upstream rate limits, and faster transfers even for public files,
+      which is upstream's own advice). A config file that has only those
+      becomes one `hf_hub` source with that address and that token, the
+      token moved still sealed; the file keeps both old keys beside the
+      list, mirroring the first `hf_hub` source, so a library older than
+      LS4 reading the same file keeps its hub and token. `PATCH` still
+      accepts either old key, as the first `hf_hub` source's address or
+      token; neither is in the schema any more, so the settings page
+      shows one place for each.
   - name: meta
     description: Health, version, and restart.
 
@@ -801,6 +821,10 @@ paths:
         seconds and search-as-you-type will exceed that inside two
         minutes. Responses are cached server-side for a short window;
         the client is still expected not to fire on every keystroke.
+
+        **One source: the first enabled `hf_hub` source** (LS4), so a
+        console older than the sources list keeps the answer it had.
+        `POST` on this path searches the chosen sources together.
       parameters:
         - name: q
           in: query
@@ -894,6 +918,67 @@ paths:
           $ref: 'components/common.yaml#/components/responses/Problem'
         '503':
           $ref: 'components/common.yaml#/components/responses/Problem'
+    post:
+      tags: [catalogue]
+      operationId: searchCatalogueSources
+      summary: Search the chosen catalogue sources together.
+      description: |
+        Discover's search since LS4 (library-sources-and-engines.md
+        §4.4): every enabled source in `catalogueSources`, or the ones
+        named, in one answer, each result naming the source it came from
+        (`CatalogueSearchResult.source`).
+
+        * An `hf_hub` source is searched as `GET` searches the hub,
+          with the same filters and the same caching. A pasted link is
+          looked up on the source whose address has the link's host, or
+          else on the first enabled `hf_hub` source.
+        * An `engine_list` source lists the models engines publish as
+          supported (`SupportedModel`), from the lists the caller sends
+          (`engines`): the console sends the picked node's, as it sends
+          that node's `accepts` to the judge, so the library calls no
+          agent and the list is the one that node's adapter would prepare
+          and run. A model is listed when every word of `q` is in its
+          title, its engine's words for it, its publisher, its repo or
+          its size, and `format` and `author` filter it as they filter a
+          hub. Its facts are exact (a named file at a pinned revision), so
+          its dot is not approximate.
+
+        Results: the engines' lists first, in the engines' own order, then
+        each hub's in its own order. `sources` says what each source
+        answered, and a source that failed names its cause there while
+        the others still answer: one hub down is not an empty search.
+
+        A later page (`cursor`) asks only the hubs that had more; the
+        engines' lists are on the first page whole.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CatalogueSearchRequest'
+      responses:
+        '200':
+          description: The results of every source searched, and what each answered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogueSearchPage'
+        '400':
+          description: |
+            `cursor` is not one this library made, or `sources` names a
+            source this library does not have.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          description: |
+            `q` was a repo URL and the source it was looked up on cannot
+            see that repo (as `GET`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
 
   /v1/catalogue/model:
     get:
@@ -944,6 +1029,7 @@ paths:
           schema:
             type: string
           description: Upstream repo id, e.g. `unsloth/Qwen3.8-27B-GGUF`.
+        - $ref: '#/components/parameters/CatalogueSourceParam'
         - name: revision
           in: query
           schema:
@@ -1058,6 +1144,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: '#/components/parameters/CatalogueSourceParam'
         - name: revision
           in: query
           schema:
@@ -1213,6 +1300,7 @@ paths:
           required: true
           schema:
             type: string
+        - $ref: '#/components/parameters/CatalogueSourceParam'
         - name: revision
           in: query
           schema:
@@ -1796,6 +1884,21 @@ components:
         Session token from the agent's `POST /v1/auth/login`, or a
         component service token threaded in at spawn time. Reads are
         open to either; mutations are operator-only.
+
+  parameters:
+    CatalogueSourceParam:
+      name: source
+      in: query
+      schema:
+        type: string
+      description: |
+        The `hf_hub` source the repo is on (`CatalogueSource.id`, as a
+        search result's `source` names it, LS4). Absent: the first
+        enabled `hf_hub` source, which is what a console older than the
+        sources list meant. An `engine_list` result's files are on that
+        default source too: an engine's list names repos on the public
+        hub, which a mirror serves under the same names. `404` for an id
+        this library does not have; `409` for a source switched off.
 
   schemas:
 
@@ -2932,6 +3035,162 @@ components:
             results are cached for a short window to stay inside the
             500-request/300-second API budget, and a client showing
             popularity numbers should know they are minutes old.
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogueSourceStatus'
+          description: |
+            What each source asked answered (`POST` only, LS4), in
+            `catalogueSources` order. A source that failed says why here,
+            while the others' results stand.
+
+    CatalogueSourceKind:
+      type: string
+      enum:
+        - hf_hub
+        - engine_list
+      description: |
+        Where a catalogue source's models come from (LS4,
+        library-sources-and-engines.md §4.4).
+
+        * `hf_hub`: a Hugging Face-compatible hub — the public one, a
+          regional mirror or an enterprise instance — at its own address,
+          with its own token.
+        * `engine_list`: the models engines publish as supported
+          (`SupportedModel`), each pointing at hub files and the
+          preparation it needs. The list ships with the engine's adapter
+          in the agent; the caller of a search sends the picked node's.
+
+        The Library folders are a source too in the design's words, and
+        stay `modelRoots`: they are scanned, not searched. ModelScope,
+        the Ollama registry or a direct address would be further kinds;
+        none is in v0.2.
+
+    CatalogueSource:
+      type: object
+      description: |
+        One entry of the library's `catalogueSources` config (a
+        `catalogue_sources` value, LS4). The default list is the public
+        hub (`huggingface`) and every engine's list (`engines`).
+      required:
+        - id
+        - kind
+      properties:
+        id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+          description: |
+            Stable: results, downloads and a later page name their source
+            by it, and an entry's stored token is kept under it.
+        kind:
+          $ref: '#/components/schemas/CatalogueSourceKind'
+        label:
+          type: string
+          description: "What the person calls it. Absent: the id."
+        enabled:
+          type: boolean
+          default: true
+          description: |
+            Off: not searched, and a call naming it answers 409. Distinct
+            from `catalogueEnabled`, which stops every outbound request.
+        address:
+          type: string
+          description: |
+            `hf_hub` only: the hub's address. Absent:
+            `https://huggingface.co`.
+        token:
+          type: [string, "null"]
+          description: |
+            `hf_hub` only: a token from the person's account on that hub,
+            for gated and private repos and higher rate limits. Sealed at
+            rest; `GET` answers `null` and says whether one is stored in
+            `hasToken`. A `PATCH` entry without it keeps the token stored
+            under the same `id`; `""` clears it.
+        hasToken:
+          type: boolean
+          description: "Read-only, in `GET`: whether a token is stored for this entry."
+        engine:
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+          description: |
+            `engine_list` only: whose list. Absent: every engine that
+            publishes one, including engines added later.
+
+    CatalogueSourceStatus:
+      type: object
+      required:
+        - id
+        - kind
+        - searched
+      properties:
+        id:
+          type: string
+        kind:
+          $ref: '#/components/schemas/CatalogueSourceKind'
+        label:
+          type: string
+        searched:
+          type: boolean
+          description: Whether it was asked. False for one switched off, or not named.
+        results:
+          type: integer
+          minimum: 0
+          description: How many results it gave, after filters.
+        problem:
+          type: string
+          description: |
+            Why it gave none, in words naming the observed cause: the hub
+            refused, could not be reached, or is switched off; no engine
+            list came with the search (a node older than LS4).
+
+    CatalogueSortDirection:
+      type: string
+      enum: [asc, desc]
+      default: desc
+      description: Hub order, highest first (`desc`) or lowest first.
+
+    CatalogueSearchRequest:
+      type: object
+      description: |
+        `POST /v1/catalogue/search` (LS4). The filters mean what they
+        mean on `GET`, for every source.
+      properties:
+        q:
+          type: string
+          description: |
+            Free text, or a pasted repo link (looked up, as on `GET`).
+            Absent: every source's listing by `sort`.
+        format:
+          $ref: 'components/common.yaml#/components/schemas/ModelFormat'
+        author:
+          type: string
+        sort:
+          $ref: '#/components/schemas/CatalogueSort'
+        direction:
+          $ref: '#/components/schemas/CatalogueSortDirection'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 25
+          description: Rows per hub source. An engine's list is never cut short.
+        cursor:
+          type: string
+          description: |
+            A previous answer's `nextCursor`: this library's own token,
+            naming each hub's continuation, never a hub's raw cursor.
+        sources:
+          type: array
+          items:
+            type: string
+          description: "Which sources to search, by id. Absent: every enabled one."
+        engines:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/EngineModelList'
+          description: |
+            The engines' lists for the `engine_list` sources: the picked
+            node's `EngineDescriptor.supportedModels`, as its agent reports
+            them. Absent: those sources list nothing, and say so.
 
     CatalogueSearchResult:
       type: object
@@ -2945,6 +3204,27 @@ components:
         repo:
           type: string
           description: Full repo id, e.g. `unsloth/Qwen3.8-27B-GGUF`.
+        source:
+          type: string
+          description: |
+            The `CatalogueSource.id` this result came from (`POST`, LS4).
+            Absent on `GET`: the first enabled `hf_hub` source.
+        hubSource:
+          type: string
+          description: |
+            The `hf_hub` source to ask about this repo (detail, card,
+            preflight, download, as `source`): the result's own source for
+            a hub's result; the first enabled `hf_hub` source for an
+            engine's list. Absent when no `hf_hub` source is enabled.
+        engine:
+          $ref: 'components/common.yaml#/components/schemas/EngineKind'
+          description: An `engine_list` result's engine.
+        supported:
+          $ref: 'components/common.yaml#/components/schemas/SupportedModel'
+          description: |
+            An `engine_list` result: the engine's entry, naming the one
+            version of `repo` it is (`supported.source.file`) at its
+            revision. `name` is its title and `facts` its exact facts.
         owner:
           type: string
           description: |
@@ -3692,6 +3972,13 @@ components:
         repo:
           type: string
           description: Upstream repo id.
+        source:
+          type: string
+          description: |
+            The `hf_hub` source to fetch from (`CatalogueSource.id`, a
+            search result's `hubSource`, LS4). Absent: the first enabled
+            `hf_hub` source. Kept on the record, so a resume asks the same
+            hub with the same token.
         revision:
           type: string
           default: main
@@ -3769,6 +4056,12 @@ components:
           $ref: '#/components/schemas/DownloadState'
         repo:
           type: string
+        source:
+          type: string
+          description: |
+            The `hf_hub` source it fetches from (LS4). Absent on a record
+            from before LS4, or when none was named: the first enabled
+            `hf_hub` source.
         revision:
           type: string
         resolvedCommit:
