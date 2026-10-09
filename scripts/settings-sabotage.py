@@ -36,7 +36,7 @@ GW_CONFIG = src("gateway", "eugene_plexus_gateway", "config.py")
 GW_APP = src("gateway", "eugene_plexus_gateway", "app.py")
 GW_ROUTING = src("gateway", "eugene_plexus_gateway", "routing.py")
 LIB_CONFIG = src("library", "eugene_plexus_library", "config.py")
-LIB_ROUTES = src("library", "eugene_plexus_library", "routes", "config.py")
+LIB_SOURCES = src("library", "eugene_plexus_library", "catalogue_sources.py")
 CTL_CONFIG = src("control", "eugene_plexus_control", "config.py")
 CTL_ROUTES = src("control", "eugene_plexus_control", "routes", "config.py")
 DRV_CONFIG = src("inference-driver", "eugene_plexus_inference_driver", "config.py")
@@ -189,12 +189,18 @@ SABOTAGES: list[Sabotage] = [
         "            refresh_seconds if callable(refresh_seconds) else (lambda: float(refresh_seconds))\n",
         "            (lambda v=(refresh_seconds() if callable(refresh_seconds) else refresh_seconds): (lambda: float(v)))()\n"),
     # --- the library -------------------------------------------------------------------
-    one("an empty hub token reads as saved", "library", LIB_CONFIG,
-        "        and field.valueType in (ConfigValueType.secret, ConfigValueType.url)\n",
-        "        and False\n"),
-    one("a saved token does not reach the hub client", "library", LIB_ROUTES,
-        '    if client is not None and {"hfToken", "catalogueBaseUrl", "catalogueEnabled"} & set(\n',
-        '    if client is None and {"hfToken", "catalogueBaseUrl", "catalogueEnabled"} & set(\n'),
+    # LS4: a hub's token lives in `catalogueSources`, per entry. An empty
+    # one forgets it; one a round trip never saw is kept; a saved one
+    # reaches the hub's client, downloads included, at once.
+    one("forgetting a hub's token keeps it", "library", LIB_SOURCES,
+        "            if token is None:\n                old = previous.get(entry[\"id\"])\n",
+        "            if not token:\n                old = previous.get(entry[\"id\"])\n"),
+    one("a hub's token is lost in a round trip that never saw it", "library", LIB_SOURCES,
+        "                if old:\n                    kept[\"token\"] = old\n",
+        "                if False:\n                    kept[\"token\"] = old\n"),
+    one("a saved token does not reach the hub client", "library", LIB_SOURCES,
+        "            token=source.token or None,\n",
+        "            token=None,\n"),
     one("the library's restart result is not per PATCH", "library", LIB_CONFIG,
         "                if field.requiresRestart and self._values.get(key) != self._started.get(key):\n                    pending_restart.append(key)\n",
         "                if field.requiresRestart:\n                    pending_restart.append(key)\n"),

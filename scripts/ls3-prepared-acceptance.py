@@ -117,6 +117,12 @@ def _gguf_string(text: str) -> bytes:
     return struct.pack("<Q", len(raw)) + raw
 
 
+#: The GGUF a Strata bundle was made from, by the name Strata's own setup
+#: gives it: Strata prepares only the files on its own list (LS4).
+FLASH_NAME = "Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS"
+FLASH_FILE = f"{FLASH_NAME}-00001-of-00002.gguf"
+
+
 def write_gguf(path: Path, kv: dict[str, Any]) -> None:
     body = bytearray(b"GGUF" + struct.pack("<I", 3) + struct.pack("<Q", 0) + struct.pack("<Q", len(kv)))
     for key, value in kv.items():
@@ -151,7 +157,7 @@ def as_console_sends(engines: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def prepared_bundle(
-    folder: Path, *, gguf: str = "Flash-Next-IQ2_XS.gguf", extra: list[str] | None = None
+    folder: Path, *, gguf: str = FLASH_FILE, extra: list[str] | None = None
 ) -> Path:
     """What Strata's setup leaves: its JSON configuration naming the GGUF it
     was made from, a pack and a tokenizer. Relative to its own folder."""
@@ -209,7 +215,7 @@ def main() -> int:
         models = directory / "models"
         models.mkdir()
         entry = prepared_bundle(models / "strata-bundle")
-        source = entry.parent / "Flash-Next-IQ2_XS.gguf"
+        source = entry.parent / FLASH_FILE
         broken_entry = prepared_bundle(
             models / "broken-bundle", gguf="Other-IQ2_XS.gguf", extra=["--mtp", "mtp-not-there"]
         )
@@ -296,7 +302,7 @@ def main() -> int:
                 )
                 return {m["name"]: m for m in client.get(f"{proxy}/v1/models").json()["models"]}
 
-            listed = wait(lambda: (lambda ms: ms if "Flash-Next-IQ2_XS" in ms else None)(scanned()), "the GGUF is listed")
+            listed = wait(lambda: (lambda ms: ms if FLASH_NAME in ms else None)(scanned()), "the GGUF is listed")
             print(f"agent :{agent_port}, library :{library_port}, models {sorted(listed)}", flush=True)
 
             # A1 -----------------------------------------------------------
@@ -307,7 +313,7 @@ def main() -> int:
                     "provenance": {
                         "engine": "strata",
                         "entry": str(entry),
-                        "source": {"path": listed["Flash-Next-IQ2_XS"]["path"]},
+                        "source": {"path": listed[FLASH_NAME]["path"]},
                     },
                 },
             )
@@ -330,7 +336,7 @@ def main() -> int:
                 and model.get("path") == str(written)
                 and model.get("sizeBytes") is None
                 and prepared.get("entryFound") is True
-                and prepared.get("sourceModelId") == listed["Flash-Next-IQ2_XS"]["id"],
+                and prepared.get("sourceModelId") == listed[FLASH_NAME]["id"],
                 model,
             )
             again = client.post(
@@ -387,7 +393,7 @@ def main() -> int:
             # J1 -----------------------------------------------------------
             answer = client.post(
                 f"{proxy}/v1/eligibility",
-                json={"engines": as_console_sends(engines), "models": [ids["qwen-flash"], ids["Flash-Next-IQ2_XS"]]},
+                json={"engines": as_console_sends(engines), "models": [ids["qwen-flash"], ids[FLASH_NAME]]},
             )
             judged = {m["modelId"]: m for m in answer.json().get("models", [])}
 
@@ -405,8 +411,8 @@ def main() -> int:
             )
             check(
                 "J1 the GGUF it came from stays *after preparation* for Strata",
-                verdict("Flash-Next-IQ2_XS", "strata")["verdict"] == "after_preparation",
-                judged.get(ids["Flash-Next-IQ2_XS"]),
+                verdict(FLASH_NAME, "strata")["verdict"] == "after_preparation",
+                judged.get(ids[FLASH_NAME]),
             )
 
             # F1 -----------------------------------------------------------

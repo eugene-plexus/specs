@@ -2,7 +2,8 @@
 
 **Status: calls L1-L11 taken by Troy 2026-10-09 (§6); v0.2.0 is LS1-LS6
 (L1). LS1 built and pinned 2026-10-09 (§6.2); LS2 built and pinned
-2026-10-09 (§6.3); LS3 built and pinned 2026-10-09 (§6.4); LS4 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
+2026-10-09 (§6.3); LS3 built and pinned 2026-10-09 (§6.4); LS4 built and
+pinned 2026-10-09 (§6.5); LS5 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
 a GGUF profile offered llama.cpp alone: *"We have introduced a separation
 between installing the engine and installing the model through the Library.
 I think it makes sense to keep that separation, but that also means our
@@ -129,8 +130,10 @@ is not installed on Amish_Station"*.
   but never *fit unknown*. `tight` and `split` stay green, with the fit badge
   saying how it would run.
 - **The format filter becomes a filter on those levels:** *Works here now*,
-  *Works with another engine*, *Everything* (the default, ordered green,
-  amber, red). GGUF stops being a default for its own sake.
+  *Works with another engine*, *Everything* (ordered green, amber, red).
+  GGUF stops being a default for its own sake. The default was *Everything*
+  until LS4; Troy then made it *Works here now* wherever an installed engine
+  runs a hub's models as they are (§6.5, B39).
 - **Fit names its engine.** Fit becomes a per-engine answer; an engine with no
   fit model says *Fit not estimated*, never llama.cpp's number in its place.
 
@@ -392,6 +395,91 @@ Record: [ls3-prepared-run.md](../acceptance/ls3-prepared-run.md).
   is, the hub was asked for `format=prepared` and ignored it; with llama.cpp
   too, the search stopped narrowing to GGUF and most rows were hidden.
   Fixed in ui `2cfec94` (dist `c7f3a78`): no hub model is prepared.
+
+## 6.5 LS4 built (2026-10-09)
+
+Record: [ls4-sources-run.md](../acceptance/ls4-sources-run.md).
+
+**Troy's call this slice:** Discover opens on *Works here now* when an engine
+installed on the picked node runs a hub's models as they are, with
+*Everything* one click away; otherwise on *Everything* (§4.3 changed).
+
+**Calls building made**, for Troy's veto:
+
+- **B30.** The list rides on the engine descriptor
+  (`EngineDescriptor.supportedModels`), and the caller sends it with the
+  search (`POST /v1/catalogue/search`, `engines`), as it sends `accepts` to the
+  judge. The Library calls no agent, and the list is the picked node's: the
+  adapter version that would prepare and run it.
+- **B31.** Strata's list is upstream setup's **nine** choices, not the seven
+  §4.4 guessed: the original Qwen3.8-Flash-Next in Q2_0, IQ2_XS, IQ3_XXS and
+  IQ3_S; Swift 1.5 in IQ2_XS and IQ3_XXS (its Q2_0 files exist, but setup
+  cannot prepare them, upstream #171); the Coder's IQ1_M; Unsloth's UD-IQ4_XS
+  and UD-Q4_K_XL (experimental). Each is setup's own tag as its id, setup's
+  words, the repo commit setup pins, and the size the hub lists at that
+  commit (checked 2026-10-09: every first shard there, every one `qwen4exp`).
+  IQ2_XS carries *recommended* (`docs/MODELS.md`).
+- **B32.** Strata prepares only the files on its list, by name
+  (`ModelRequirement.files`, filled from the list), as upstream's setup does:
+  a `qwen4exp` GGUF by any other name (an Unsloth K-quant, a renamed copy) is
+  *no* for Strata, naming its list. A search row names no file, so it stays
+  *after preparation*, approximate. Names are compared ignoring case.
+- **B33.** `catalogueEnabled` stays the switch that stops every outbound
+  request, from any source; a source's own on/off stops searching it. The
+  Library folders stay `modelRoots` (scanned, not searched), not an entry in
+  the list.
+- **B34.** The keys LS4 replaced: a file with only `catalogueBaseUrl` and
+  `hfToken` becomes the first hub with both, the token moved still sealed;
+  the file keeps both keys beside the list, mirroring the first hub, so an
+  older Library reading it (a rollback) keeps its hub and token; `PATCH`
+  still takes either, as the first hub's; neither is in the schema, so the
+  settings page shows one place for each.
+- **B35.** The default list is the public hub and one `engine_list` naming no
+  engine, which covers every engine's list, engines added later included. A
+  person can add one per engine to switch them separately.
+- **B36.** One search answers the engines' lists first (each in its engine's
+  own order), then each hub in the list's order; Discover then orders by the
+  dot. A later page asks only the hubs that had more, and the lists are whole
+  on the first. A pasted link is looked up on the hub at its host, else on
+  the first enabled hub.
+- **B37.** `GET /v1/catalogue/search` stays the first enabled hub alone, so an
+  older console is unchanged. The calls about one repo (detail, card,
+  preflight, download) take `source`, absent meaning the first enabled hub;
+  an engine's list names repos on the public hub, so its rows' `hubSource` is
+  that default hub.
+- **B38.** A hub that fails says why in `sources[].problem` while the others
+  answer, and Discover shows the sentence above the rows. A hub switched off
+  is not shown as a problem on each search: it was the person's choice.
+- **B39.** Troy's default (above) counts an installed engine with a
+  requirement that is not `prepared` and needs no preparation: Strata alone
+  opens on *Everything*, or it would open on nothing. The filter is
+  remembered only once chosen (`chosenLevel`); the stored `level` from before
+  is not read, since it was written on every visit (B14's reasoning).
+- **B40.** A hub's row names its source; an engine's row says *Strata's list*,
+  its size and the engine's *recommended* or *experimental*. Opening it opens
+  the repo at the revision the entry pins, with the entry in the engine's own
+  words above the versions, and any repo's table marks the versions an
+  engine's list names (*on Strata's list*).
+- **B41.** A download records its hub, the default resolved to its id, so a
+  resume asks the same hub after the list is reordered, and a hub removed
+  since says so (404) rather than another hub being asked.
+- **B42.** A list entry's facts take the quantization by the scan's filename
+  rule, as every candidate's do (B12): Unsloth's `UD-IQ4_XS` is *not known*
+  there; the engine's own name for the size is `supported.quantization`.
+
+**What building found:**
+
+- §4.4 counted seven Strata variants; upstream's setup offers nine (B31).
+- Strata's GGUF requirement, since LS1, accepted every `qwen4exp` GGUF;
+  upstream's setup refuses all but its own files (`gguf_unsupported`,
+  `SUPPORTED_GGUFS`). Fixed by B32. LS1's and LS3's acceptances used
+  off-list fixture names for the Flash-Next GGUF; they now use the name
+  Strata's setup gives IQ2_XS's first shard.
+- The Library keeps a hub's search answer for 60 s, so a hub that went down
+  since still answers that same search; the acceptance's S8 searches anew.
+- The hub client was reconfigured on `PATCH` for downloads' sake; now every
+  hub call, a download's transfer included, resolves its hub from live
+  config, and the settings sabotage pass follows the token there.
 
 ## 7. Found while mapping (not part of this design)
 

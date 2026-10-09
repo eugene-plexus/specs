@@ -81,7 +81,12 @@ an operator session.
 - Text chat, streaming, reasoning text and reported token usage; one concurrent
   request per managed runtime.
 - Prepared model configurations only. Arbitrary GGUFs, automatic conversion,
-  download/preparation and tuning are not offered by this integration.
+  preparation and tuning are not offered by this integration. Discover lists
+  the nine models Strata's own setup offers (*Strata's list*: the original
+  Qwen3.8-Flash-Next in four sizes, Swift 1.5 in two, the Coder, Unsloth's
+  two), each at the revision Strata pins, and can download their files; Strata
+  prepares only those files, by name, as its setup does. Preparing them from
+  Eugene is the next step (LS5).
 - Memory fit is **unknown**. The JSON file's size is never treated as the model's
   memory footprint. Automatic wake and eviction are disabled for Strata.
 - No tools, structured output, media, embeddings, raw completions or llama.cpp

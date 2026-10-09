@@ -63,6 +63,11 @@ def _gguf_string(text: str) -> bytes:
     return struct.pack("<Q", len(raw)) + raw
 
 
+#: A Flash-Next GGUF by the name Strata's own setup gives its first shard:
+#: Strata prepares only the files on its own list (LS4), as upstream does.
+FLASH = "Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS"
+
+
 def write_gguf(path: Path, kv: dict[str, Any]) -> None:
     body = bytearray(b"GGUF" + struct.pack("<I", 3) + struct.pack("<Q", 0) + struct.pack("<Q", len(kv)))
     for key, value in kv.items():
@@ -133,7 +138,7 @@ def main() -> int:
         models = directory / "models"
         models.mkdir()
         write_gguf(models / "small-llama-Q4_K_M.gguf", gguf_kv("Small Llama", "llama", 15))
-        write_gguf(models / "flash-next-IQ2_XS.gguf", gguf_kv("Flash Next", "qwen4exp", 20))
+        write_gguf(models / f"{FLASH}-00001-of-00002.gguf", gguf_kv("Flash Next", "qwen4exp", 20))
         write_hf_folder(models / "mlx-model", mlx=True)
         write_hf_folder(models / "plain-model", mlx=False)
         (directory / "engines").mkdir()
@@ -271,9 +276,9 @@ def main() -> int:
             )
             check(
                 "E2 a Flash-Next GGUF: Strata runs it after preparation, llama.cpp as it is",
-                verdict("flash-next-IQ2_XS", "strata")["verdict"] == "after_preparation"
-                and verdict("flash-next-IQ2_XS", "llama_cpp")["verdict"] == "runs",
-                judged[ids["flash-next-IQ2_XS"]],
+                verdict(FLASH, "strata")["verdict"] == "after_preparation"
+                and verdict(FLASH, "llama_cpp")["verdict"] == "runs",
+                judged[ids[FLASH]],
             )
             check(
                 "E2 an MLX folder: MLX runs it, vLLM cannot load its weights",
