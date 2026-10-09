@@ -461,14 +461,23 @@ def main() -> int:
             seen = json.loads(seen_path.read_text(encoding="utf-8")) if seen_path.exists() else {}
             config = seen.get("config") or {}
             argv = config.get("args") or []
+
+            def names(given: str, expected: Path) -> bool:
+                # The same file, however spelled: on a Windows runner the temp
+                # folder is `RUNNER~1` here and `runneradmin` once resolved.
+                try:
+                    return Path(given).is_absolute() and os.path.samefile(given, expected)
+                except OSError:
+                    return False
+
             check(
                 "L1 Strata was handed the entry's assets as absolute paths, under the model's name",
                 seen.get("engine") == "strata"
                 and config.get("model_name") == "qwen-flash"
                 and "--pack" in argv
-                and Path(argv[argv.index("--pack") + 1]) == entry.parent / "pack"
-                and Path(argv[argv.index("--native") + 1]) == source
-                and Path(config.get("tokenizer") or "") == entry.parent / "tokenizer",
+                and names(argv[argv.index("--pack") + 1], entry.parent / "pack")
+                and names(argv[argv.index("--native") + 1], source)
+                and names(config.get("tokenizer") or "", entry.parent / "tokenizer"),
                 seen,
             )
             check("L1 Strata's own configuration is untouched", entry.read_bytes() == original)

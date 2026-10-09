@@ -30,6 +30,11 @@ nothing executes. No real Strata, no model, no GPU.
 | L1 ×2 | What Strata was handed: `--pack`, `--native` and the tokenizer as absolute paths beside the entry, `model_name` `qwen-flash`; Strata's own configuration byte-for-byte unchanged |
 | N1 | A second prepared model whose configuration names a missing MTP file fails at Run naming it, and the stand-in is never started |
 
+Its first specs CI run (488fa95) failed L1 on windows-latest only, on the
+instrument: the runner's temp folder is `RUNNER~1` as the script spells it and
+`runneradmin` as the agent resolves it, so equal paths compared unequal. L1
+now compares the files themselves (`os.path.samefile`).
+
 `scripts/ls1-eligibility-acceptance.py` changed in the same push: its E1
 asserted Strata's pre-LS3 declaration (`modelFormats: []`, the GGUF
 requirement first). Both run in specs CI against the pinned components.
