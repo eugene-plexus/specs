@@ -258,8 +258,16 @@ SiteMcpCall:
       default: false
       description: |
         The person approved this call in Workbench (J72), which Workbench
-        sends for a call whose rule is `ask`; the site refuses such a call
-        without it. Carried to the site as is.
+        sends for a call whose rule is `ask`; for a person with no key the
+        site refuses such a call without it. Carried to the site as is.
+    approval:
+      description: |
+        A call the site held for the person's signature, sent again (J14b,
+        J86): its id, and the passkey assertion when signed in Workbench.
+        Carried to the site as is; the site checks it.
+      anyOf:
+        - {$ref: 'sites.yaml#/SiteCallApproval'}
+        - {type: 'null'}
 
 SiteMcpAnswer:
   type: object
@@ -274,6 +282,15 @@ SiteMcpAnswer:
         - {type: 'null'}
     installMode:
       $ref: 'sites.yaml#/InstallModeName'
+    held:
+      description: With `held`, what the person signs for the call to run (J86).
+      anyOf:
+        - {$ref: 'sites.yaml#/SiteHeldCall'}
+        - {type: 'null'}
+    windowUntil:
+      type: [string, 'null']
+      format: date-time
+      description: When the person's open window on that site ends; null when none is open (J81). Absent from an older site.
 
 InstallMode:
   type: object
@@ -384,6 +401,9 @@ JobSite:
     signing:
       description: Whether the site checks its owner's changes with the owner's own key (J14a). Absent from a site older than J14a.
       $ref: 'sites.yaml#/SiteSigning'
+    commands:
+      description: Whether the machine runs commands from Workbench (2b.4, J89). Absent from a site older than 2b.4.
+      $ref: 'sites.yaml#/SiteCommands'
 
 JobSiteHeld:
   type: object

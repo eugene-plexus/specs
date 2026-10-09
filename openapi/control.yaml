@@ -2197,7 +2197,10 @@ paths:
         sign-in; the site's own policy decides (J8). A destructive tool runs
         only under the site owner's standing pre-approval. Since 2b.3b each
         call runs under its workspace's rule (J70): `allow` at once, `ask` only
-        with `asked` (J72), which this root carries and does not check. The
+        with `asked` (J72), which this root carries and does not check. Since
+        J14b, for a person with a key, the site answers `held` (`held` says
+        what to sign) until the call comes again with `approval`, signed by
+        the person; this root carries it and cannot make one. The
         request is at most 40,000 bytes; the answer at most 70,000. A `tools/call` the site
         claimed but did not confirm is `uncertain`: it may have acted.
       security: [{helperClient: []}]
@@ -3017,6 +3020,67 @@ paths:
           description: The site refused it; `detail` says why in the site's words.
         '503':
           description: The site is offline, or it needs an update to keep each person's workspaces.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/window/close:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+    post:
+      operationId: closeMyJobSiteWindow
+      tags: [sites]
+      summary: Close the person's open window on a Job Site now
+      description: |
+        The window the person opened with their key (J14b, J81), in which
+        their `allow` tools run without a signature each. Closing only takes
+        access away, so it needs no signature (J90). Any person linked there.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
+      responses:
+        '204':
+          description: Closed, or none was open.
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site and is linked to none by that id.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to check signed calls.
+        '504':
+          description: The site did not answer in time.
+  /oidc/job-sites/{site}/commands/withdraw:
+    parameters:
+      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
+    post:
+      operationId: withdrawMyJobSiteCommands
+      tags: [sites]
+      summary: The site's owner takes back the consent to commands on their machine
+      description: |
+        An administrator consented at the machine (J9, J89); the site's owner
+        may take it back from here (J30). It only takes access away, so it
+        needs no signature. Giving it again is done at the machine: the
+        Windows tray, or the one-liner again.
+      security: [{helperClient: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobSiteRequest'}
+      responses:
+        '204':
+          description: Withdrawn.
+        '401':
+          description: Workbench client or person sign-in is invalid.
+        '404':
+          description: The person owns no such site.
+        '422':
+          description: The site refused it; `detail` says why in the site's words.
+        '503':
+          description: The site is offline, or it needs an update to run commands.
         '504':
           description: The site did not answer in time.
   /oidc/job-sites/{site}/leave:

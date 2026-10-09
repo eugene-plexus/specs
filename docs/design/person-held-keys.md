@@ -848,6 +848,134 @@ where it runs).
 
 ---
 
+## 13. Building J14b with 2b.4: signed calls and commands (2026-10-08)
+
+Started 2026-10-08 from `docs/private/handoff-2b4-commands.md`, at site-host
+`26a4f0f`, Workbench `14bf1cf`, agent `bbc6aaf`, control `c4a5a6f`, specs
+`61b888b`. J29, J30, J47 and J9 are taken and not reopened here.
+
+### 13.1 What measuring found
+
+- **A site operation gets 20 s at the root** (`CT/sites.py:38`,
+  `JOB_SECONDS`). The worker is given 25 s and a `SiteCall` lives at most 30 s
+  (`SH/host.py:121, 311`). A command must answer inside that.
+- **Reads are `allow` by default, changes `ask`** (`SH/policy.py:64`). So a
+  signed window over *ask* reads would cover nothing by default, and a root
+  could read every workspace whenever it liked.
+- **Workbench's code is the root's to serve** (§1, T2). If the machine's page
+  signed whatever Workbench handed it without a click, the root could forge
+  any command at the machine. §8's "silent per-call signing for free" is
+  withdrawn: Path A signs per call **with a click on the machine's own page**,
+  which shows the call, so at the machine T2's residual goes away.
+- **`asked` is Workbench's word today** (`SH/host.py:466-474`, `WB/node_folders.py`).
+  Every `tools/call` from Workbench is sent `acting=True`; control counts any
+  `tools/call` as a write (`CT/routes/sites.py:705`).
+- **The worker already runs as the person, unelevated**: on Windows with
+  their session's limited token, in a Job object that kills it with the
+  agent, and with their own environment block (`AG/site_workers.py:343-380`);
+  on Linux as `User=%i` with `NoNewPrivileges` (`install.sh`'s worker unit), so
+  `sudo` cannot work from a command. Landlock confines only a disposable
+  thread per file call (`SH/folder_linux.py:1-45`); a program the worker starts
+  from its loop is not confined.
+- **Windows PowerShell 5.1** is on every Windows 10/11 machine; it starts in
+  0.15-0.22 s here; it does not pass a native program's exit code through
+  `-Command` (`cmd /c exit 7` gave 1), so the wrapper must. Its output is
+  UTF-8 on this box (system code page 65001); the wrapper sets UTF-8 itself
+  for machines on an OEM code page.
+- **The site host** runs as an account of its own, unprivileged, on both
+  platforms: `NT SERVICE\EugenePlexusApp-site-host` on a Windows service
+  install (`AG/site_cli.py`), its own system account on Linux. A command is
+  the first thing the host asks a worker to run that is not a file tool or
+  an administrator's server (§13.4, residual).
+- **asyncio's `Process.wait()` returns only once every pipe is closed**
+  (measured on Linux, Python 3.12): a command that left a child holding its
+  output would seem to run as long as the child. The runner watches the exit
+  code itself, then stops the whole process group.
+
+### 13.2 Troy's answers (2026-10-08)
+
+| # | Call | Taken |
+|---|---|---|
+| J81 | What a signed window covers | **Every `allow` tool of that person**: reads by default, and writes only where they set writes to allow. Nothing runs for a person with a key outside an open window. `ask` tools need a signature per call |
+| J82 | How long a window lasts | **60 minutes** (recommended 30). Renewing is one signature; closing needs none |
+| J83 | Path A's per-call signature | **A click on the machine's own page**, which shows the exact call. Never silent |
+| J84 | Commands longer than the 20 s an operation gets | **Start, then poll**: `run_command` waits about 15 s, then returns what it has and a handle; `command_output` and `command_stop`; a hard limit |
+
+### 13.3 The calls building made (J85-J91)
+
+Taken so the build can go on while Troy is away; each is the conventional or
+the more secure choice. Troy may reverse any of them.
+
+| # | Call | Taken | Trade-off |
+|---|---|---|---|
+| J85 | Who signs a call | **The caller, with their own key.** A caller with no key (a person with no link, a linked person who has not paired a key and uses only what the owner shared, Eugene's owner in dev mode) stays as 2b.3b had it: root-trusted, `asked` claimed and recorded so. **`run_command` is never offered to a caller with no key** | A keyless person's calls can be forged by the root, as their identity already can (J27, §5.2): the owner's share is what bounds them |
+| J86 | An unsigned call from a person with a key | **Held, not refused**: the site answers `held` with the item and its words (and an envelope per passkey the person holds). It is listed on the machine's page and in Workbench. It runs only when Workbench sends it again with a valid passkey signature (Path B), or after the click at the machine (Path A), within 30 minutes. A signature that does not verify is refused and recorded | A forged call shows on the person's page, which they may click. The page says the call came from Eugene and shows it whole |
+| J87 | What a command is | **Windows: Windows PowerShell 5.1** (`powershell.exe -NoLogo -NoProfile -NonInteractive`, UTF-8 out, the exit code passed through). **Linux and macOS: `bash -c`, else `sh -c`.** It starts in a workspace (or a folder inside it), with the worker's own environment less `EUGENE_PLEXUS_*`, no input, stdout and stderr together. It waits 15 s, keeps at most 1 MiB of output (the middle is dropped beyond that), shows up to 24,000 bytes an answer (the answer carries it twice, as text and as data, inside the 60,000-byte budget), and is stopped at 10 minutes. At most 4 run at once per person. The whole process tree is stopped: a Job object on Windows, a process group on POSIX. A command ends when its person's worker does (sign-out on Windows) | Fixed limits rather than settings; each is named in the tool's description so the model and the person know them |
+| J88 | Where commands sit in the rules | **A third group, "run commands", `ask` or `deny` only** (J47: never `allow`). Workspaces from before read `deny`, so no approved rules change. A new writable workspace starts at `ask`; a read-only one is `deny` and stays so | A person turns commands on per workspace with one signed rules change |
+| J89 | Where J9's consent is kept | **In the administrator-only list of local servers** (`servers.yaml`, `commands.consentedAt`), written only elevated: by the join one-liner's question, the tray's *Allow commands…* behind UAC (Windows), the one-liner again (Linux, macOS), or the elevated `site consent` CLI. Taking it back is the owner's switch in Workbench, kept in the site's own directory; a later consent at the machine replaces it. Without consent, `run_command` is not listed, and the site's page says how to give it | The host and each worker read the list again when it changes, so consent given later counts at once. On a node the agent restarts the site host when the list changes (`SITE_HOST_SERVERS_STAMP`), which closes open windows; Linux workers read their copy of it at start, so the one-liner restarts them |
+| J90 | The window itself | **Per site and person, opened by a signed `window.open`** (`args {"minutes": 60}`), kept in memory: a site host restart closes it. Workbench shows the time left and Close. Signing an `ask` call does not open one | A restart asks again |
+| J91 | What the audit log records | **Held** (with the site's words), **refused** with the reason the signature failed (not this call, older than one used, too old, not a key of this person), **allowed** with which key signed it and where. A command's line carries the command (cut at 1,024 characters), its folder, exit code and time | — |
+
+### 13.4 The shape
+
+- **Envelope:** §5.1's, `act: "call"` with `args {server, tool, arguments}`,
+  or `act: "window.open"` with `args {minutes}`. The same per-person sequence
+  as J14a: a page or Workbench that waited too long asks again.
+- **The site, for `tools/call` from a person with a key:** after the rules,
+  `ask` (and every `run_command`) needs the call's own signature, and `allow`
+  needs an open window. Missing, it is held (J86). The call comes back with
+  `approval {held, …passkey assertion}`; the site checks the held item is this
+  call, verifies, spends the sequence, and runs it.
+- **Commands** run in the person's worker (J87), with a registry there that
+  `command_output` and `command_stop` read by handle, for the same person only.
+- **The machine's page** lists held calls and windows with the held changes,
+  and signs on a click. Workbench links to it ("Approve on Amish_Station") and
+  polls the call; with a passkey it signs in place.
+- **Residual, stated:** the site host is its own unprivileged account, and a
+  command is the host's to pass to a person's worker. The worker starts one
+  only while the administrator's consent stands in the list it reads itself,
+  so a compromised site host on a machine without that consent runs nothing;
+  on a machine with it, a compromised site host reaches every linked person's
+  account, where before it reached their workspaces. The worker checking the
+  person's signature itself is banked.
+
+### 13.5 What building found
+
+- **A root newer than its sites must not send what they do not know.** The
+  first full control run caught the root passing `"command": null` in a
+  workspace's rules; a site older than J14b refuses the whole action for it
+  (`extra=forbid`). The root and Workbench now leave an absent rule out.
+- **A command's exit is watched, not awaited** (§13.1): with `wait()` a
+  command that started a background child ran until the child did.
+- **PowerShell's `-EncodedCommand` writes errors as CLIXML** to a redirected
+  stream. The command is passed as base64 into a script block instead, so
+  errors read as text and quoting cannot change it.
+- **Polling is not recording.** Workbench sends a held call again every 4 s
+  while the person signs at the machine; the site records the call when it
+  is first held, and not on each ask.
+- **What the machine's page lists changes while it is open**: it now looks
+  again every 5 s, so a call Workbench holds after the page was opened shows
+  without a reload.
+
+### 13.6 Slices
+
+- **J14b.1, the site:** the contract; the envelope, held calls, the window,
+  the signature checks and their audit lines; `run_command`,
+  `command_output`, `command_stop` in the worker; the rules' third group; J9's
+  consent read from the list. Unit tests.
+- **J14b.2, the rest:** control relays `approval` and `held`, `window.close`
+  and `commands.withdraw`; Workbench signs calls and windows (passkey), links
+  to the machine's page and polls, shows the window and the consent state, and
+  its rules editor gains the third group; the agent's page shows calls and
+  windows, the tray gains *Allow commands…* behind UAC, the `site consent` CLI,
+  and the join one-liner asks J30's question.
+- **J14b.3, proof:** `job-sites-acceptance.py --root-wsl` with a root-forged
+  command held and never run, a forged signature refused and recorded, a signed
+  command run, a read outside the window held and inside it run; sabotage of
+  the changed code; the record; the pins.
+
+---
+
 ## 11. What this design does not cover
 
 - **Single sign-on itself** (control#4). J14 is built so a passkey and a link

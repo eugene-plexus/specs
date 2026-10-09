@@ -71,6 +71,9 @@ SiteAnswerStatus:
     acted. `held` (J14a, J50): a change that gives access, from a person who
     has a key pinned at the machine; the site keeps it until they approve it
     there with that key, and `message` says where. Nothing changed yet.
+    Since J14b (J86), also a tool call from a person with a key that needs
+    their signature (an `ask` rule, a command) or an open window (an `allow`
+    rule): `held` (`SiteHeldCall`) says what to sign. Nothing ran.
   enum: [done, failed, uncertain, held]
 
 SiteServerId:
@@ -146,8 +149,9 @@ SiteToolGrant:
     decision:
       description: |
         2b.3b (J70, J78): `allow`, the tool runs without asking; `ask`, it
-        runs once the person who made the call approved it in Workbench
-        (`SiteCall.asked`, J72). Absent: `allow` for a tool the site does not
+        runs once the person who made the call approved it: with their
+        signature over the call when they have a key (J14b), else on
+        Workbench's word (`SiteCall.asked`, J72). Absent: `allow` for a tool the site does not
         treat as destructive, or one granted `standing`; `ask` otherwise.
         A tool not granted is denied: it is never offered.
       anyOf:
@@ -166,12 +170,20 @@ SiteDecision:
   type: string
   description: |
     What a rule says of a group of tools (J70). `allow`: runs without
-    asking. `ask`: Workbench asks the person who made the call, and the site
-    runs it only when the call says they approved (`SiteCall.asked`, J72);
-    until person-held call signatures (J14b) the site cannot check that they
-    did, and its audit log says the approval was claimed. `deny`: never
-    offered, and refused.
+    asking; for a person with a key, only inside a window they opened with
+    it (J14b, J81). `ask`: runs only with the person's signature over the
+    call when they have a key (J14b); for a person without one, when the
+    call says they approved (`SiteCall.asked`, J72), which the audit log
+    records as claimed. `deny`: never offered, and refused.
   enum: [allow, ask, deny]
+
+SiteCommandDecision:
+  type: string
+  description: |
+    What a rule says of running commands (2b.4, J88): `ask`, each command
+    runs only with its person's own signature over it (J47: never `allow`);
+    `deny`, never offered.
+  enum: [ask, deny]
 
 SiteGrantDecision:
   type: string
@@ -184,13 +196,18 @@ SiteRules:
   description: |
     One person's rules in one workspace, per group of tools (J70). `read`:
     `list_directory`, `read_text`, `glob` and `grep`. `change`: `write_text`
-    and `edit_text`. The site stores them per tool, so commands (2b.4) add a
-    group of their own. `change` cannot be looser than `deny` in a workspace
-    registered read-only (`writable: false`).
+    and `edit_text`. `command` (2b.4, J88): `run_command`, in a workspace
+    the person holds; absent reads `deny`, as it does for a workspace from
+    before 2b.4. `change` and `command` cannot be looser than `deny` in a
+    workspace registered read-only (`writable: false`).
   required: [read, change]
   properties:
     read: {$ref: '#/SiteDecision'}
     change: {$ref: '#/SiteDecision'}
+    command:
+      anyOf:
+        - {$ref: '#/SiteCommandDecision'}
+        - {type: 'null'}
 
 SiteDenyPattern:
   type: string
@@ -411,6 +428,49 @@ SiteSummary:
         which has no folder boundary yet (§2.6). Absent means true.
     signing:
       $ref: '#/SiteSigning'
+    commands:
+      $ref: '#/SiteCommands'
+
+SiteCommands:
+  type: object
+  additionalProperties: false
+  description: |
+    Whether this machine runs commands from Workbench (2b.4, J9, J30, J89).
+    An administrator consents at the machine; the site's owner may take it
+    back from Workbench. Absent from a site older than 2b.4.
+  required: [allowed]
+  properties:
+    allowed:
+      type: boolean
+      description: Commands may run here now (each still under its person's rules and signature).
+    consentedAt:
+      type: [string, 'null']
+      format: date-time
+      description: When an administrator consented at the machine.
+    withdrawnAt:
+      type: [string, 'null']
+      format: date-time
+      description: When the site's owner took the consent back; a later consent at the machine replaces it.
+    reason:
+      type: [string, 'null']
+      maxLength: 1024
+      description: Why not, and how to give consent, in the site's words.
+
+SiteCommandConsent:
+  type: object
+  additionalProperties: false
+  description: |
+    An administrator's consent to commands on this machine (J9, J89),
+    recorded only by an elevated process at the machine: the join's
+    question, the Windows tray behind UAC, the one-liner again, or the
+    elevated `site consent` CLI.
+  required: [consentedAt]
+  properties:
+    consentedAt: {type: string, format: date-time}
+    by:
+      type: [string, 'null']
+      maxLength: 256
+      description: The administrator's account, for display.
 
 SitePersonLink:
   type: object
@@ -455,6 +515,10 @@ SitePersonLink:
       minimum: 0
       maximum: 64
       description: Changes the site holds until this person approves them with their own key (2b.3b). Absent from an older site.
+    windowUntil:
+      type: [string, 'null']
+      format: date-time
+      description: When this person's open window ends (J14b, J81); null when none is open. Absent from an older site.
 
 SiteSigningState:
   type: string
@@ -672,9 +736,14 @@ SiteAuditEntry:
     asked:
       type: [boolean, 'null']
       description: |
-        For a tool call under an `ask` rule, whether the call said the person
-        approved it. Claimed, not checked, until person-held call signatures
-        (J14b).
+        For a tool call under an `ask` rule from a person with no key,
+        whether the call said they approved it: claimed, not checked.
+    signed:
+      type: [string, 'null']
+      maxLength: 256
+      description: |
+        For a call from a person with a key (J14b, J91): which of their keys
+        signed it and where, or the window it ran in.
 
 SiteLocalServer:
   type: object
@@ -730,6 +799,11 @@ SiteLocalServerList:
       type: array
       maxItems: 32
       items: {$ref: '#/SiteLocalServer'}
+    commands:
+      description: The administrator's consent to commands here (2b.4, J89); absent, none.
+      anyOf:
+        - {$ref: '#/SiteCommandConsent'}
+        - {type: 'null'}
 
 InstallModeName:
   type: string
@@ -880,6 +954,11 @@ SiteOperation:
       type: boolean
       default: false
       description: For `mcp`, Workbench's word that the person approved this call (`SiteCall.asked`, J72).
+    approval:
+      description: For `mcp`, the person's approval of a held call (J14b, `SiteCallApproval`), carried as Workbench sent it.
+      anyOf:
+        - {$ref: '#/SiteCallApproval'}
+        - {type: 'null'}
     action:
       type: [string, 'null']
       description: For `manage`, the action.
@@ -912,6 +991,80 @@ SiteResult:
       anyOf:
         - {$ref: '#/McpResponse'}
         - {type: 'null'}
+    held:
+      description: With `held` for an MCP request (J86), what the person signs for it to run.
+      anyOf:
+        - {$ref: '#/SiteHeldCall'}
+        - {type: 'null'}
+    windowUntil:
+      type: [string, 'null']
+      format: date-time
+      description: For an MCP request from a person with a key, when their open window ends; null when none is open (J81).
+
+SiteHeldCallKind:
+  type: string
+  description: |
+    `call`: this one tool call, signed per call (an `ask` rule, or a
+    command). `window`: a window of `minutes` in which every `allow` tool of
+    the person's runs without a signature each (J81, J90); the call that
+    asked for it runs once it is open.
+  enum: [call, window]
+
+SiteHeldCall:
+  type: object
+  additionalProperties: false
+  description: |
+    A tool call the site holds for its person's signature (J14b, J86). The
+    person signs at the machine, on its page, which lists it with the held
+    changes, or from Workbench with a passkey over one of `envelopes`. Either
+    way the call runs only when Workbench sends it again with `approval`
+    naming this id, before `expiresAt`.
+  required: [id, kind, words, expiresAt]
+  properties:
+    id: {type: string, pattern: '^[a-z0-9]{1,32}$'}
+    kind: {$ref: '#/SiteHeldCallKind'}
+    minutes:
+      type: [integer, 'null']
+      minimum: 1
+      maximum: 60
+      description: For `window`, how long it stays open once signed.
+    words:
+      type: array
+      maxItems: 64
+      description: What is signed, in the site's own words, line by line.
+      items: {type: string, maxLength: 1024}
+    expiresAt: {type: string, format: date-time, description: When the site drops it unsigned.}
+    approved:
+      type: boolean
+      default: false
+      description: Signed at the machine already; sending the call again with this id runs it.
+    envelopes:
+      type: object
+      maxProperties: 8
+      description: For each of the person's passkeys here, by key id, the canonical `SiteEditEnvelope` to sign.
+      additionalProperties: {type: string, maxLength: 262144}
+    approvePage:
+      type: [string, 'null']
+      maxLength: 256
+      description: Where the person signs it at the machine (`SiteSigning.approvePage`).
+
+SiteCallApproval:
+  type: object
+  additionalProperties: false
+  description: |
+    A held call sent again (J14b). With `held` alone, it runs if it was
+    signed at the machine. With a passkey assertion over one of its
+    envelopes (as `SitePasskeyApproval` describes), the site checks it and
+    runs it.
+  required: [held]
+  properties:
+    held: {type: string, pattern: '^[a-z0-9]{1,32}$'}
+    envelope: {type: [string, 'null'], minLength: 2, maxLength: 262144}
+    key: {type: [string, 'null'], pattern: '^[a-f0-9]{32}$'}
+    credentialId: {type: [string, 'null'], minLength: 1, maxLength: 1366, pattern: '^[A-Za-z0-9_-]+$'}
+    authenticatorData: {type: [string, 'null'], minLength: 1, maxLength: 4096}
+    clientDataJSON: {type: [string, 'null'], minLength: 1, maxLength: 8192}
+    signature: {type: [string, 'null'], minLength: 1, maxLength: 1024}
 
 SiteHeldEdit:
   type: object
@@ -919,7 +1072,10 @@ SiteHeldEdit:
   required: [id, action, words, heldAt]
   properties:
     id: {type: string, pattern: '^[a-z0-9]{1,32}$'}
-    action: {type: string, maxLength: 64}
+    action:
+      type: string
+      maxLength: 64
+      description: The held change's action; `call` or `window.open` for a held call (J14b).
     words:
       type: array
       maxItems: 600

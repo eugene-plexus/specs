@@ -141,6 +141,23 @@ info:
     count only while their person's link exists, and are listed at the
     machine (`/v1/passkeys`) and removed there or from Workbench
     (`passkey.remove`).
+
+    **Signed calls and commands** (J14b, 2b.4, `person-held-keys.md` §13).
+    For a person with a key, the site checks their calls too, not only their
+    changes: a tool whose rule is `ask`, and every `run_command`, runs only
+    with their signature over that call (`act: call`); a tool whose rule is
+    `allow` runs only inside a window they opened with it (`act:
+    window.open`, at most 60 minutes, J81, J82). A call without one is held
+    (`SiteHeldCall`, J86) and listed at the machine's page with the held
+    changes; it runs when the call comes again with `SiteCall.approval`,
+    signed at the machine (a click on the page, J83) or with a passkey. A
+    person with no key keeps 2b.3b's way (`asked`, claimed) and is never
+    offered commands (J85). Commands run only where an administrator
+    consented at the machine (`SiteLocalServerList.commands`, J9, J89), in
+    a workspace the caller holds whose rules say `command: ask`, as the
+    caller's own account: Windows PowerShell on Windows, `bash` (else `sh`)
+    elsewhere. One waits about 15 s and then answers with what it has and a
+    handle for `command_output` and `command_stop` (J84, J87).
   license:
     name: Apache-2.0
     identifier: Apache-2.0
@@ -180,7 +197,10 @@ paths:
         each item carries the canonical envelope to sign with it, with a
         fresh `seq` and `iat`; without it, only the words. When the person is
         the site's owner and has a key but has not approved the site's
-        current rules (J52), the first item is `rules.confirm`.
+        current rules (J52), the first item is `rules.confirm`. Since J14b
+        the held calls come first (`call`, `window.open`), newest first:
+        approving one marks it signed, and it runs when Workbench sends it
+        again (J86).
       security: [{localToken: []}]
       parameters:
         - {name: subject, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 64}}
@@ -378,10 +398,16 @@ components:
           type: boolean
           default: false
           description: |
-            Workbench says the person approved this call (J72). A tool whose
-            rule is `ask` is refused without it. The site cannot check it
-            until person-held call signatures (J14b), and its audit log says
-            the approval was claimed.
+            Workbench says the person approved this call (J72). For a person
+            with no key, a tool whose rule is `ask` is refused without it; the
+            site cannot check it, and its audit log says the approval was
+            claimed. For a person with a key it means nothing: their
+            signature does (J14b).
+        approval:
+          description: A held call sent again (J14b, J86), with its signature when made with a passkey.
+          anyOf:
+            - {$ref: 'components/sites.yaml#/SiteCallApproval'}
+            - {type: 'null'}
 
     SiteManageAction:
       type: string
@@ -389,9 +415,9 @@ components:
         Who may ask for what. Eugene's owner never (J6b).
         - **A linked person, for their own items** (2b.3b, J67; the owner
           too): `workspace.add`, `workspace.remove`, `rules.set`,
-          `workspace.list`, `audit.read` (J80), and the passkey actions
-          (`passkey.pair`, `held.list`, `held.approve`, `held.reject`,
-          `passkey.remove`).
+          `workspace.list`, `audit.read` (J80), `window.close` (J14b), and
+          the passkey actions (`passkey.pair`, `held.list`, `held.approve`,
+          `held.reject`, `passkey.remove`).
           A change that gives access is held until they approve it with
           their own key, and never applied on the root's word: with no key
           yet, it waits for one (J68). The site's owner keeps J52's way: with
@@ -399,7 +425,8 @@ components:
           approve them as a whole.
         - **The site's owner alone**, the owner this site recorded at its
           join: `workspace.people`, `access.set`, `server.enable`,
-          `settings.set`, and, for a root from before 2b.3b,
+          `settings.set`, `commands.withdraw` (2b.4), and, for a root from
+          before 2b.3b,
           `folder.add`, `folder.remove` and `folder.people`, which act on the
           owner's workspaces.
 
@@ -458,7 +485,14 @@ components:
         - `audit.read` (`SiteAuditRead`): since 2b.3b, the lines that belong
           to the asking person (J80), from anyone linked; the owner's include
           the local servers, sharing and settings.
-      enum: [folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read, passkey.pair, held.list, held.approve, held.reject, passkey.remove, workspace.add, workspace.remove, workspace.people, rules.set, workspace.list]
+        - `window.close` (`SiteWindowClose`, J14b): close the asking
+          person's window now. It only takes access away, so it needs no
+          signature (J90).
+        - `commands.withdraw` (`SiteCommandsWithdraw`, 2b.4, J89): the
+          site's owner takes back the administrator's consent to commands
+          here. It only takes access away; a later consent at the machine
+          gives it again.
+      enum: [folder.add, folder.remove, folder.people, access.set, server.enable, settings.set, audit.read, passkey.pair, held.list, held.approve, held.reject, passkey.remove, workspace.add, workspace.remove, workspace.people, rules.set, workspace.list, window.close, commands.withdraw]
 
     SiteManage:
       type: object
@@ -498,7 +532,13 @@ components:
         key: {type: string, pattern: '^[a-f0-9]{32}$'}
         act:
           type: string
-          description: A `SiteManageAction` that changes something, or `rules.confirm` (J52), whose `args` are `{"digest"}`, the SHA-256 of the rules the person's key approves (since 2b.3b, that person's own, J67).
+          description: |
+            A `SiteManageAction` that changes something, or `rules.confirm`
+            (J52), whose `args` are `{"digest"}`, the SHA-256 of the rules the
+            person's key approves (since 2b.3b, that person's own, J67). Since
+            J14b also `call`, whose `args` are `{"server", "tool",
+            "arguments"}`, one tool call; and `window.open`, whose `args` are
+            `{"minutes"}`.
         args: {type: object, additionalProperties: true}
         seq: {type: integer, minimum: 1, description: Greater than the last this person approved here.}
         iat: {type: integer, description: Unix seconds.}
@@ -772,6 +812,28 @@ components:
       additionalProperties: false
       properties:
         limit: {type: integer, minimum: 1, maximum: 200, default: 50}
+
+    SiteWindowClose:
+      type: object
+      additionalProperties: false
+      description: "`window.close` takes no arguments."
+
+    SiteCommandsWithdraw:
+      type: object
+      additionalProperties: false
+      description: "`commands.withdraw` takes no arguments."
+
+    SiteHeldCall:
+      $ref: 'components/sites.yaml#/SiteHeldCall'
+
+    SiteCallApproval:
+      $ref: 'components/sites.yaml#/SiteCallApproval'
+
+    SiteCommands:
+      $ref: 'components/sites.yaml#/SiteCommands'
+
+    SiteCommandConsent:
+      $ref: 'components/sites.yaml#/SiteCommandConsent'
 
     SiteAuditPage:
       type: object
