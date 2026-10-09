@@ -1,6 +1,8 @@
 # A Gemini provider: a Google account of the user's own
 
-**Status:** designed and taken 2026-10-09 (Troy, G1-G4); building.
+**Status:** designed and taken 2026-10-09 (Troy, G1-G4); built and pinned
+2026-10-09 against a fixture (`docs/acceptance/gemini-provider-run.md`);
+the live run waits for a key. G5-G15 are building's calls, for Troy.
 **Issue:** inference-driver#4. The Gemini *door* on the gateway (gateway#5) is
 separate. **OpenRouter's Gemini models keep working as they do.**
 
@@ -106,7 +108,28 @@ embedding `dimensions` (the contract carries none), a video part in chat
 (the contract has none), signatures on text parts (Google does not enforce
 them), Imagen (`:predict`).
 
-## 5. Proof
+## 5. What building found
+
+- **The gateway refused every Gemini speech request that named no
+  format.** It always sends OpenAI's default, mp3, and Gemini makes none;
+  hence G11.
+- **A region refusal read as "outcome unknown".** Google answers it with
+  400 `FAILED_PRECONDITION` and no word the taxonomy knew; it is now the
+  account's, like a refused key (G10).
+- **The video fetch insisted on https**, so the fixture could not serve it;
+  the rule is now "the base URL's own scheme, host and port", which is
+  what keeps the key with Google.
+- **Not confirmed in Google's documentation of 2026-10-09** (pages had
+  moved to its Interactions API), so the live run checks them: which
+  `thinkingLevel` values each Gemini 3 model takes; whether
+  `responseJsonSchema` and `parametersJsonSchema` are accepted everywhere;
+  whether the penalties are; the speech request and its
+  `audio/L16;rate=24000` answer; Veo's `durationSeconds` type, its
+  `image.inlineData` first frame and its answer's fields; the video
+  redirect; whether `batchEmbedContents` reports usage; Google's exact
+  words for a missing signature.
+
+## 6. Proof
 
 Unit tests against a fixture shaped from the docs; then one live run with
 Troy's key (chat with a tool round trip on a thinking model, embeddings, one

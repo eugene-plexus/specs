@@ -243,6 +243,8 @@ jobs:
         run: python specs/scripts/p6-acceptance.py
       - name: Verify P8 web search through agent-spawned search accounts and the unchanged OpenAI and Anthropic SDKs
         run: python specs/scripts/p8-search-acceptance.py
+      - name: Verify a Gemini account (native API, thought signatures, every surface) through signed processes and the unchanged OpenAI SDK
+        run: python specs/scripts/gemini-acceptance.py
       - name: Verify C2 sign-in with Eugene through an agent, with a real OpenID Connect client
         run: python specs/scripts/c2-sign-in-acceptance.py
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
