@@ -1,9 +1,16 @@
 # Audience roadmap
 
 **Status: the order of work from 2026-09-30.**
-- **▶ A9, JOB SITES SLICE 1, IS BUILT (2026-10-05;**
-  [record](../acceptance/job-sites-run.md)**). The pickup is slice 2: MCP
-  between site and root (J6) and site-final policy (J8).** Slice 1 made
+- **▶ A9, JOB SITES: SLICES 1, 2 AND 2b.1-2b.4 WITH J14a AND J14b ARE BUILT
+  (2026-10-08, [the last record](../acceptance/j14b-signed-calls-run.md)).**
+  Each person's calls run as their own account, are signed with their own key,
+  and commands run where an administrator allowed them. **The pickup is slice
+  3, cross-site copy: designed, with calls J92-J99 waiting for Troy**
+  ([design](job-sites-cross-site-copy.md)). Then the physical checks, a doc
+  refresh and the release (Troy, 2026-10-08: the Job Sites roadmap finishes
+  before the next release).
+- **A9's first slice (2026-10-05;**
+  [record](../acceptance/job-sites-run.md)**).** Slice 1 made
   central Workbench's four file tools work on a person's own machines outside
   the LAN:
   - a node-only public route, with the root's certificate pinned at join and
@@ -201,7 +208,7 @@ first:**
 | A6 | A chat screen beginners stay in, as an app in the registry, plus Open WebUI beside it | [`workbench.md`](workbench.md), on [`apps-and-spokes.md`](apps-and-spokes.md) | **C1–C6 built; C6 pinned 2026-10-03.** App accounts, Eugene sign-in, Workbench chat/search, Open WebUI, network/local MCP tools and person-specific folder tools with approval. Working animation built 2026-10-07; answer versions built 2026-10-08; media screens designed and built 2026-10-08 (Images, Speech/Transcription, Video as a work order) |
 | **A7** | **The prompt cache: keep each engine's cache warm across doors, replicas and hosted backends** | [`prompt-cache.md`](prompt-cache.md) ([record](../acceptance/prompt-cache-measurement.md)) | **Troy, 2026-10-02: high priority before going public** (*"at the core of what Eugene is: managing multiple backends efficiently"*). Measured the same day; **PC1-PC5 built and pinned 2026-10-02** (Troy took the four calls: PC1-PC5 before public, affinity the default, the system-message fold an operator setting, client breakpoints only). PC6-PC7 after the release |
 | **A8** | **Experimental engines, starting with Strata** | [`experimental-engines.md`](experimental-engines.md), [`strata-engine.md`](strata-engine.md) | **First Strata implementation on Edge 2026-10-04.** Recognition, install/uninstall, start/stop, model switching and text inference; [verification](../acceptance/strata-engine-run.md). Real-model GPU validation remains. The experimental label persists after hardware validation. NInfer and imp are subsequent candidates. |
-| **A9** | **Job Sites, slice 1: Workbench's four file tools on a person's machines outside the LAN, with the new access model** | [`remote-nodes.md`](remote-nodes.md) §5 (every call, J1-J18, taken 2026-10-05) | **Built 2026-10-05** ([record](../acceptance/job-sites-run.md): 17 of 17 with the root behind WSL2's NAT, sabotage 45 of 45). Then slice 2 (MCP between site and root, site-final policy) and slice 3 (cross-site copy) |
+| **A9** | **Job Sites, slice 1: Workbench's four file tools on a person's machines outside the LAN, with the new access model** | [`remote-nodes.md`](remote-nodes.md) §5 (every call, J1-J18, taken 2026-10-05) | **Built 2026-10-05** ([record](../acceptance/job-sites-run.md): 17 of 17 with the root behind WSL2's NAT, sabotage 45 of 45). Slice 2, 2b.1-2b.4, J14a and J14b built by 2026-10-08 ([J14b record](../acceptance/j14b-signed-calls-run.md)). Slice 3 (cross-site copy) designed 2026-10-08, calls J92-J99 for Troy ([design](job-sites-cross-site-copy.md)) |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 
 ## Not scheduled without Troy
