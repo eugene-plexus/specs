@@ -386,6 +386,12 @@ Record: [ls3-prepared-run.md](../acceptance/ls3-prepared-run.md).
   estimated; reworded for prepared models.
 - LS1's acceptance asserted Strata's pre-LS3 declaration (`modelFormats: []`
   and the GGUF requirement first); updated in the same push as the pins.
+- **Found on the live install after the update (Troy):** Discover's *Works
+  here now* found none of 30. Its narrowing to one hub format (B13) counted
+  Strata's `prepared`: with Strata the only engine running anything as it
+  is, the hub was asked for `format=prepared` and ignored it; with llama.cpp
+  too, the search stopped narrowing to GGUF and most rows were hidden.
+  Fixed in ui `2cfec94` (dist `c7f3a78`): no hub model is prepared.
 
 ## 7. Found while mapping (not part of this design)
 
