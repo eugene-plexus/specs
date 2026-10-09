@@ -2,7 +2,8 @@
 
 **Status:** designed and taken 2026-10-09 (Troy, G1-G4); built and pinned
 2026-10-09 against a fixture (`docs/acceptance/gemini-provider-run.md`);
-the live run waits for a key. G8, G11 and G13 confirmed by Troy; G5-G7, G9, G10, G12, G14 and G15 are building's calls, for him.
+the live run waits for a key. Troy confirmed G5 (for now), G7-G15, and asked for G6's
+grounding and code execution next.
 **Issue:** inference-driver#4. The Gemini *door* on the gateway (gateway#5) is
 separate. **OpenRouter's Gemini models keep working as they do.**
 
@@ -66,40 +67,40 @@ separate. **OpenRouter's Gemini models keep working as they do.**
   speech through `generateContent` with an audio response (PCM, served as
   WAV); transcription through `generateContent` with audio input.
 
-## 4. Calls building makes (for Troy to confirm)
+## 4. Calls building made (Troy confirmed them all, 2026-10-09)
 
-- **G5:** speech is offered as `wav` (and raw `pcm`) only, Gemini's PCM
-  wrapped; other formats are refused rather than converted.
-- **G6:** Google Search grounding and code execution are not offered in this
-  slice; the gateway's own web search stays the one search.
-- **G7:** the signature cache keeps 4,096 calls for 24 hours.
+- **G5 (confirmed by Troy, 2026-10-09), for now:** speech is offered as `wav` (and raw `pcm`) only, Gemini's PCM
+  wrapped; other formats are refused rather than converted. Converting to mp3 and opus is a later slice (Troy).
+- **G6 (Troy, 2026-10-09: add them next):** Google Search grounding and code
+  execution are not offered in this slice; they are the next one.
+- **G7 (confirmed by Troy, 2026-10-09):** the signature cache keeps 4,096 calls for 24 hours.
 - **G8 (confirmed by Troy, 2026-10-09):** `reasoning_effort` maps to Gemini 3's `thinkingLevel` (`none` →
   `minimal`, the lowest Gemini 3 takes; `xhigh`/`max` → `high`) and to
   2.5's `thinkingBudget` (`none` 0, `low` 1,024, `medium` 8,192, `high`
   24,576, or 32,768 on Pro). Offered only where the listing says
   `thinking`. Thoughts are always asked for, so they come back as reasoning.
-- **G9:** an answer Google stops with no text (`SAFETY` and kin) is
+- **G9 (confirmed by Troy, 2026-10-09):** an answer Google stops with no text (`SAFETY` and kin) is
   `finish_reason: content_filter`, with Google's reason as the content; a
   blocked prompt is a 400 naming its `blockReason`.
-- **G10:** a region refusal ("User location is not supported") is the
+- **G10 (confirmed by Troy, 2026-10-09):** a region refusal ("User location is not supported") is the
   account's, as a refused key is: nothing was done, so the request may go
   to another backend.
 - **G11 (confirmed by Troy, 2026-10-09):** an OpenAI `/v1/audio/speech` request that names no format gets
   mp3 where the model makes mp3, and otherwise the model's first format
   (wav for Gemini); one that *names* mp3 on Gemini is refused, naming wav
   and pcm (gateway).
-- **G12:** speech `instructions` and `speed` are refused (Gemini takes style
+- **G12 (confirmed by Troy, 2026-10-09):** speech `instructions` and `speed` are refused (Gemini takes style
   only inside the text). Image `size`, `quality`, `n` > 1, masks and the
   other OpenAI image settings are refused. Up to 14 reference images.
 - **G13 (confirmed by Troy, 2026-10-09):** every Gemini chat model is also offered for transcription (it
   hears audio); Gemma gets no tools or attachments, and its system prompt
   goes in front of the first user turn.
-- **G14:** carried: `temperature`, `top_p`, `top_k`, `seed`, `stop`, the
+- **G14 (confirmed by Troy, 2026-10-09):** carried: `temperature`, `top_p`, `top_k`, `seed`, `stop`, the
   two penalties, tools and `tool_choice`, `response_format` (as
   `responseJsonSchema`). Refused: `min_p`, `logprobs`, `logit_bias`,
   `verbosity`, `prediction`, `web_search_options`, and an explicit
   `parallel_tool_calls: false`.
-- **G15:** a Veo job's id is the base64url of Google's operation name; the
+- **G15 (confirmed by Troy, 2026-10-09):** a Veo job's id is the base64url of Google's operation name; the
   video is fetched with the key only from Google's API host, and a
   redirect (to its storage) is followed without the key.
 
