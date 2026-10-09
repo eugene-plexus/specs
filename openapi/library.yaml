@@ -267,6 +267,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/LibraryModelList'
 
+  /v1/eligibility:
+    post:
+      tags: [models]
+      operationId: judgeEligibility
+      summary: Which engines can run each model, and the one dot it carries.
+      description: |
+        The one judge of model against engine (Troy's L2, 2026-10-09):
+        the console's Library page and the agent's Run both ask here, so
+        no rule is written twice. The caller sends the engines as a node
+        reported them, each with its `accepts`; the library matches each
+        model's own facts (format, architecture, quantization, the MLX
+        marker) against them and answers a verdict per engine, in words,
+        and a level per model (`EligibilityLevel`).
+
+        Pure: it reads what the library already knows of each model and
+        calls nothing. A model id it does not know is left out of the
+        answer rather than failing the rest.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: 'components/common.yaml#/components/schemas/EligibilityRequest'
+      responses:
+        '200':
+          description: A verdict per model and engine.
+          content:
+            application/json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/EligibilityList'
+
   /v1/models/{id}:
     parameters:
       - in: path

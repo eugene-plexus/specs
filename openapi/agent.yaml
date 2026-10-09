@@ -5340,6 +5340,19 @@ components:
             It lives here because engine knowledge lives here. Putting
             format support on the library would give the library a copy
             of it, and the copy would be the one that went stale.
+
+            **Kept for consoles older than `accepts`;** it is the set of
+            formats `accepts` names.
+        accepts:
+          type: array
+          items:
+            $ref: "components/common.yaml#/components/schemas/ModelRequirement"
+          description: |
+            What this engine loads, as data the library judges
+            (`POST /v1/eligibility`; library-sources-and-engines.md, LS1).
+            Finer than `modelFormats`: the MLX marker, architectures, a
+            preparation step, and whether only the engine can tell. A
+            property of the engine, not of this host.
         experimental:
           type: boolean
           default: false

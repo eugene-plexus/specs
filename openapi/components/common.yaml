@@ -684,11 +684,240 @@ components:
           `ModelCapabilities.decision`, never `chat`.
 
         Shared because it appears on both sides of a join: a library
-        entry declares what a model *is*, and
-        `EngineDescriptor.modelFormats` declares what an engine can
-        *load*. Nothing can serve a safetensors model until the vLLM
-        adapter lands, and that answer comes from the engine's
-        descriptor rather than from anything the library knows.
+        entry declares what a model *is*, and an engine's
+        `ModelRequirement`s declare what it can *load*. The format is
+        the first term of that join, not the whole of it
+        (library-sources-and-engines.md).
+
+    ModelRequirement:
+      type: object
+      description: |
+        One kind of model an engine loads, declared by its adapter
+        (`EngineDescriptor.accepts`) and judged by the library
+        (`POST /v1/eligibility`). Data, not code (Troy's L3, 2026-10-09):
+        a model meets a requirement when every field present matches;
+        an absent field matches anything.
+
+        An engine lists several when it loads several kinds: MLX loads
+        an MLX-quantized folder outright, and a plain Hugging Face folder
+        only if mlx-lm knows its architecture, which only a load can
+        tell (`authority: engine`).
+      required:
+        - format
+      properties:
+        format:
+          $ref: "#/components/schemas/ModelFormat"
+        architectures:
+          type: array
+          items:
+            type: string
+          description: |
+            The model's `architecture` must be one of these: GGUF's
+            `general.architecture`, or a safetensors folder's
+            `architectures[0]`. Absent means any.
+        quantizations:
+          type: array
+          items:
+            type: string
+          description: The GGUF quantization must be one of these. Absent means any.
+        mlxQuantization:
+          $ref: "#/components/schemas/MlxQuantizationRule"
+        preparation:
+          $ref: "#/components/schemas/ModelPreparation"
+        authority:
+          $ref: "#/components/schemas/ModelRequirementAuthority"
+        preference:
+          type: integer
+          default: 100
+          description: |
+            Among the engines that run a model, lower is offered first and
+            is what Run picks, unless the person has chosen a default
+            engine for the format (Troy's L10).
+        note:
+          type: string
+          description: |
+            Words for the person beside a match, in the engine's own terms:
+            "vLLM checks the architecture when it loads".
+
+    MlxQuantizationRule:
+      type: string
+      enum:
+        - required
+        - forbidden
+      description: |
+        The one marker the library reads that decides an engine: a
+        safetensors folder whose `config.json` carries MLX's
+        quantization block packs its weights as integers only MLX reads.
+        `required`: only such a folder matches; `forbidden`: never one.
+
+    ModelRequirementAuthority:
+      type: string
+      enum:
+        - eugene
+        - engine
+      default: eugene
+      description: |
+        Who can say a match will load. `eugene`: the fields above are the
+        whole rule, so a match is `runs`. `engine`: the engine decides
+        when it loads (vLLM's model registry, for one), so a match is
+        only `may_run` (Troy's L4).
+
+    ModelPreparation:
+      type: object
+      description: |
+        A match that runs only after the engine prepares it (Strata builds
+        an expert pack, a lookup table and an MTP helper from a GGUF). The
+        verdict is `after_preparation`; the original file is never
+        changed.
+      required:
+        - recipe
+      properties:
+        recipe:
+          type: string
+          description: The adapter's name for the step, e.g. `strata-prepare`.
+        note:
+          type: string
+          description: What the step makes, in words.
+
+    EligibilityEngine:
+      type: object
+      description: |
+        One engine as a node reported it, sent to the library to be judged
+        against. The caller sends what it holds (the console the picked
+        node's `GET /v1/engines`, the agent its own) so the library needs
+        no call to any agent.
+      required:
+        - engine
+        - available
+        - accepts
+      properties:
+        engine:
+          $ref: "#/components/schemas/EngineKind"
+        available:
+          type: boolean
+          description: Installed and usable on that node now.
+        installable:
+          type: boolean
+          default: false
+          description: |
+            Not available, but this node could have it: Eugene can install
+            it here, or the agent wrote an install command for this
+            hardware. False for an engine that cannot run on this hardware.
+        experimental:
+          type: boolean
+          default: false
+        accepts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelRequirement"
+
+    EligibilityRequest:
+      type: object
+      required:
+        - engines
+      properties:
+        models:
+          type: array
+          items:
+            type: string
+          description: Library model ids to judge. Absent means every model.
+        engines:
+          type: array
+          items:
+            $ref: "#/components/schemas/EligibilityEngine"
+
+    EngineVerdictKind:
+      type: string
+      enum:
+        - runs
+        - may_run
+        - after_preparation
+        - "no"
+      description: |
+        One model against one engine. `runs`: a requirement with authority
+        `eugene` matches. `may_run`: only the engine can tell, at load.
+        `after_preparation`: it runs once the engine prepares it. `no`:
+        no requirement matches, and `reason` says which term failed.
+
+    EngineVerdict:
+      type: object
+      required:
+        - engine
+        - verdict
+        - available
+        - reason
+      properties:
+        engine:
+          $ref: "#/components/schemas/EngineKind"
+        verdict:
+          $ref: "#/components/schemas/EngineVerdictKind"
+        available:
+          type: boolean
+        installable:
+          type: boolean
+          default: false
+        experimental:
+          type: boolean
+          default: false
+        reason:
+          type: string
+          description: The verdict in words, naming the term that decided it.
+        preparation:
+          $ref: "#/components/schemas/ModelPreparation"
+        preference:
+          type: integer
+          description: From the requirement that matched; absent on `no`.
+
+    EligibilityLevel:
+      type: string
+      enum:
+        - works_here
+        - other_engine
+        - not_here
+      description: |
+        The one dot a model carries (Troy's L5, 2026-10-09), in his words:
+
+        * `works_here`: *Will work on this machine now*. An available
+          engine `runs` or `may_run` it.
+        * `other_engine`: *Will work with a different engine*. An engine
+          this node could install would run it, or an available engine
+          runs it after preparation.
+        * `not_here`: *Can not work on this machine*. No engine this
+          hardware can have accepts it.
+
+        Whether it fits in memory is a separate answer (`Fit`), until each
+        engine has its own fit (LS6).
+
+    ModelEligibility:
+      type: object
+      required:
+        - modelId
+        - level
+        - engines
+      properties:
+        modelId:
+          type: string
+        level:
+          $ref: "#/components/schemas/EligibilityLevel"
+        engines:
+          type: array
+          items:
+            $ref: "#/components/schemas/EngineVerdict"
+          description: |
+            Every engine sent, best first: available before not, then
+            `runs`, `may_run`, `after_preparation`, `no`, then
+            `preference`. The first available `runs` or `may_run` is what
+            Run would pick when the person has set no default.
+
+    EligibilityList:
+      type: object
+      required:
+        - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelEligibility"
 
     Problem:
       type: object
