@@ -934,10 +934,12 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         slow = owner.post("/api/chats", json={"model": MODEL}).json()["id"]
         owner.post(f"/api/chats/{slow}/messages", json={
             "content": "Take your time" if not live else "Write a long story about a carpenter."})
+        # Wait for a word, not for a guessed time: a slow runner once took
+        # longer than a fixed 1.6 s to the first one, and kept '' (2026-10-08).
+        wait(lambda: owner.get(f"/api/chats/{slow}").json()["messages"][-1]["content"],
+             "a first word", 60)
         if live:
-            wait(lambda: owner.get(f"/api/chats/{slow}").json()["messages"][-1]["content"],
-                 "a first word", 60)
-        time.sleep(1.6)
+            time.sleep(1.6)
         owner.post(f"/api/chats/{slow}/stop")
         stopped = owner.answer(slow)
         check("14", "Stop ends an answer and keeps what had arrived",
