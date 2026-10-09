@@ -691,6 +691,13 @@ def exercise(directory: Path, *, live: bool, live_video: bool) -> None:
         start("gem", {"GEMINI_API_KEY": fake_key})
         wait(lambda: call("gem", "GET", "/v1/info", operator).json()["catalogue"].get("exposed") == 6,
              "the restarted driver lists its models")
+        # The subject is the gateway's table, not the driver: a refresh that
+        # ran while the driver was down dropped its models (CI, 2026-10-09).
+        # Two refresh periods after the driver is up, every refresh begun
+        # while it was down has landed, and the models are back.
+        up = time.perf_counter()
+        wait(lambda: time.perf_counter() - up > 5 and wanted <= set(listing()),
+             "the gateway routes the restarted driver's models again", 40)
         replay = sdk(token, [{"kind": "chat", "model": f"gem/{CHAT}", "with_tools": True,
                               "messages": trips[0]["messages"]}])[0]
         assert replay["status"] == 400, replay

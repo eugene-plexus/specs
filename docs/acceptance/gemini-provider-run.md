@@ -48,6 +48,14 @@ fixture quoted the key as `key=…`, which a second pattern also redacts;
 the fixture now quotes it bare), a redirect followed with the key
 (check 7), the gateway's mp3 default back (check 6). All caught.
 
+**CI, first run at the pins (`efd5424`):** Windows passed; Linux failed
+check 4 with a 404 `model_not_found`. The script waited for the restarted
+driver, not for the gateway's table, and on Linux a routing refresh had run
+while the driver was down and dropped its models. The wait now waits for
+the gateway to route them again, two refresh periods after the driver is up
+(the script's fault, not the product's; the replay then reached Google as
+before).
+
 **Unit tests:** inference-driver 1,044 passed and 5 skipped before the last
 three tests were added; `tests/test_gemini.py` 65 passed after. gateway
 1,254 passed, 1 skipped; the new speech test sabotaged once (fails with
