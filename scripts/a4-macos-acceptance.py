@@ -640,9 +640,16 @@ def phase_upstream_claims(ctx: dict) -> None:
             status, _ = api("GET", f"{base}/health", timeout=1)
             if status == 200:
                 first_health = first_health or time.perf_counter() - started
+                # Short only until /health has been seen answering with no token
+                # yet (the claim 38 records). After that one generation is
+                # waited for: mlx_lm.server answers one request at a time, and
+                # on a slow runner (macos-14, specs#16) requests given up after
+                # 0.3 s piled up behind a first generation slower than that, so
+                # no token ever came and 40 and 41 had nothing to read.
                 status, body = api("POST", f"{base}/v1/chat/completions", body={
                     "model": "default_model", "max_tokens": 1, "temperature": 0,
-                    "messages": [{"role": "user", "content": "ok"}]}, timeout=0.3)
+                    "messages": [{"role": "user", "content": "ok"}]},
+                    timeout=0.3 if health_only == 0 else 60)
                 if status == 200:
                     first_token = time.perf_counter() - started
                     ctx["raw_completion"] = body
@@ -653,7 +660,8 @@ def phase_upstream_claims(ctx: dict) -> None:
              (round(first_health or -1, 2), round(first_token or -1, 2)))
         check("38", "mlx_lm.server answers /health before it can generate (why readiness asks for a token)",
               first_health is not None and first_token is not None and health_only >= 1,
-              f"{health_only} polls with /health ok and no token")
+              f"{health_only} polls with /health ok and no token"
+              + ("" if first_token is not None else "; no token came at all, so 40 reads nothing"))
         status, models = api("GET", f"{base}/v1/models")
         fact("raw /v1/models", (status, models))
         ids = [m.get("id") for m in (models or {}).get("data", [])] if isinstance(models, dict) else []
