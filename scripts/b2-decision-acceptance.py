@@ -356,6 +356,7 @@ def exercise(directory: Path) -> None:
             yaml.safe_dump(
                 {
                     "firstRunComplete": True,
+                    "updateChecks": False,
                     "advertiseUrl": url("agent-a"),
                     "securityMode": "prompt_on_startup",
                     "components": [],

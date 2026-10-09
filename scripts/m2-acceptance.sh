@@ -113,6 +113,7 @@ win_path() { printf '%s' "$1" | sed 's|/|\\|g'; }
 # what the library is for.
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: gateway
     kind: gateway

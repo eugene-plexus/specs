@@ -157,6 +157,7 @@ STATIC_NORM=$(cygpath -w "$STATIC" 2>/dev/null | tr '\\' '/' | tr '[:upper:]' '[
 
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

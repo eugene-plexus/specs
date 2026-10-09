@@ -211,6 +211,7 @@ note "stub's own median round trip: ${STUB_MS}ms"
 say "3. the fleet: agent spawns gateway and driver"
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: gateway
     kind: gateway

@@ -113,6 +113,7 @@ win_path() { printf '%s' "$1" | sed 's|/|\\|g'; }
 # the install produces on its own.
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

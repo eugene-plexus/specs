@@ -57,6 +57,7 @@ def main(args: argparse.Namespace) -> None:
             yaml.safe_dump(
                 {
                     "engineBinaryRoots": [str(server.parent)],
+                    "updateChecks": False,
                     "securityMode": "prompt_on_startup",
                     # `--fit off` is a raw extraArg, which is an expert setting.
                     "allowUnrestrictedEngineLaunch": True,

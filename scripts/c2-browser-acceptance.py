@@ -91,6 +91,7 @@ def main() -> None:
     agent_dir.mkdir()
     (agent_dir / "agent.yaml").write_text(yaml.safe_dump({
         "firstRunComplete": True,
+        "updateChecks": False,
         "securityMode": "prompt_on_startup",
         "components": [{
             "name": "control", "kind": "control",

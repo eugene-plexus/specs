@@ -710,6 +710,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         (agent_dir / "searx.yaml").write_text("{}\n", encoding="utf-8")
         (agent_dir / "agent.yaml").write_text(yaml.safe_dump({
             "firstRunComplete": True,
+            "updateChecks": False,
             "advertiseUrl": f"http://{lan}:{ports['agent']}",
             "securityMode": "prompt_on_startup",
             "uvBinary": uv_binary(),
@@ -735,6 +736,7 @@ def exercise(work: Path, *, source: str | None, browser: bool, engine: str | Non
         console_dir.mkdir()
         (console_dir / "agent.yaml").write_text(yaml.safe_dump({
             "firstRunComplete": True,
+            "updateChecks": False,
             "advertiseUrl": f"http://{lan}:{ports['console']}",
             "securityMode": "prompt_on_startup",
             "components": [],

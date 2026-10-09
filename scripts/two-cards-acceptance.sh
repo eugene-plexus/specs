@@ -117,6 +117,7 @@ STUB_PATH="$WORK/stub:$PATH"
 write_topology() {
   cat > "$WORK/agent.yaml" <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: library
     kind: library

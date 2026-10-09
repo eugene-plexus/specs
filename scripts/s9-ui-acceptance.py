@@ -36,7 +36,8 @@ def check(root: Path, engine: Path, model: Path, *, browser: Path | None = None,
                      (sock.getsockname()[1] for sock in sockets)))
     urls = {name: f"http://127.0.0.1:{port}" for name, port in ports.items()}
     configs = {
-        "agent": {"firstRunComplete": True, "securityMode": "prompt_on_startup",
+        "agent": {"firstRunComplete": True, "updateChecks": False,
+                  "securityMode": "prompt_on_startup",
                   "components": [{"name": name, "kind": "inference-driver" if name == "driver" else name,
                                   "url": urls[name], "spawn": {"configFile": f"{name}.yaml"}}
                                  for name in ("control", "gateway", "library", "driver")]},

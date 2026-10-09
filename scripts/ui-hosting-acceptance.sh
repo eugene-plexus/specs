@@ -146,6 +146,7 @@ say "start the agent; it declares control, gateway and library itself"
 cd "$WORK" || exit 1
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

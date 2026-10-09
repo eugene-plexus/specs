@@ -147,6 +147,7 @@ def acceptance(agent_port: int, engine_port: int) -> None:
             yaml.safe_dump(
                 {
                     "firstRunComplete": True,
+                    "updateChecks": False,
                     "components": [],
                     "runtimes": [
                         {

@@ -159,6 +159,7 @@ PY
 say "1. the agent comes up and takes a passphrase"
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components: []
 YAML
 (exec env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$WORK_NATIVE/agent.yaml" \

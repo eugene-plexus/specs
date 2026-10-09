@@ -102,6 +102,7 @@ STATIC="$UI_DIR/python/eugene_plexus_ui/static"
 
 cat > a/agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 advertiseUrl: $A_URL
 components:
   - name: control
@@ -124,7 +125,7 @@ YAML
 printf 'logLevel: INFO\nroutingRefreshSeconds: 3\n' > a/gateway.yaml
 echo "logLevel: INFO" > a/control.yaml
 printf "logLevel: INFO\nmodelRoots:\n  - path: '%s'\n    mounts: []\n" "$LIB_ROOT_BS" > a/library.yaml
-printf "firstRunComplete: true\nengineBinaryRoots:\n  - '%s'\ncomponents: []\nruntimes: []\n" \
+printf "firstRunComplete: true\nupdateChecks: false\nengineBinaryRoots:\n  - '%s'\ncomponents: []\nruntimes: []\n" \
   "$(dirname "$LLAMA")" > b/agent.yaml
 BIND=()
 [ "$ADV_HOST" != "127.0.0.1" ] && BIND=(EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0)

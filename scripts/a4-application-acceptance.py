@@ -64,6 +64,7 @@ def start(args):
     urls = {name: f"http://127.0.0.1:{port}" for name, port in ports.items()}
     config = {
         "firstRunComplete": True,
+        "updateChecks": False,
         "securityMode": "prompt_on_startup",
         "components": [],
         "engineBinaryRoots": [str(Path(args.engine).resolve().parent)],

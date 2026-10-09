@@ -205,6 +205,7 @@ def exercise(args):
                 yaml.safe_dump(
                     {
                         "firstRunComplete": True,
+                        "updateChecks": False,
                         "securityMode": "prompt_on_startup",
                         "advertiseUrl": url(name),
                         "components": components,

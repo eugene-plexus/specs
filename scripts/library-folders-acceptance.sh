@@ -131,6 +131,7 @@ STATIC="$UI_DIR/python/eugene_plexus_ui/static"
 
 cat > a/agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 advertiseUrl: $A_URL
 components:
   - name: control
@@ -165,7 +166,7 @@ modelRoots:
 YAML
 # B: enrolled, no library, and NOTHING about paths.
 # R7: an agent launches engine binaries only from the directories it trusts.
-printf "firstRunComplete: true\nengineBinaryRoots:\n  - '%s'\ncomponents: []\nruntimes: []\n" \
+printf "firstRunComplete: true\nupdateChecks: false\nengineBinaryRoots:\n  - '%s'\ncomponents: []\nruntimes: []\n" \
   "$(dirname "$LLAMA")" > b/agent.yaml
 
 BIND=()

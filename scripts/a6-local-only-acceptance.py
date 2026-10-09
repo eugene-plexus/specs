@@ -318,6 +318,7 @@ def exercise(directory: Path) -> None:
             "agent.yaml",
             {
                 "firstRunComplete": True,
+                "updateChecks": False,
                 "advertiseUrl": url("agent"),
                 "securityMode": "prompt_on_startup",
                 "components": [],

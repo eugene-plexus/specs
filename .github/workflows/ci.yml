@@ -102,6 +102,8 @@ jobs:
           python-version: "3.12"
       - name: Check shared bandwidth cap and installer isolation guards
         run: python scripts/s10-checks.py
+      - name: Acceptance agents never check GitHub for updates (specs#19)
+        run: python scripts/acceptance-isolation-checks.py --sabotage
       - name: Verify generated release inputs
         run: python scripts/release-inputs.py --check
       - name: Verify deterministic platform vendoring and drift detection

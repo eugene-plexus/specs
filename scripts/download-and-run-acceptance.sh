@@ -117,6 +117,7 @@ YAML
 
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

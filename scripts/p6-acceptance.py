@@ -503,7 +503,8 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None,
         call("control", "POST", "/v1/auth/initialize", json={"passphrase": passphrase}).raise_for_status()
         root_session = login("control")
         write("agent", "agent.yaml", {
-            "firstRunComplete": True, "advertiseUrl": url("agent"),
+            "firstRunComplete": True, "updateChecks": False,
+            "advertiseUrl": url("agent"),
             "securityMode": "prompt_on_startup", "components": [],
         })
         start("agent")

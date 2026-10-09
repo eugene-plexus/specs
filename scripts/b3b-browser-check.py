@@ -352,6 +352,7 @@ def run(args: argparse.Namespace) -> int:
             "backendLocality": "local"}), encoding="utf-8")
         (agent_dir / "agent.yaml").write_text(yaml.safe_dump({
             "firstRunComplete": True,
+            "updateChecks": False,
             "advertiseUrl": url["agent"],
             "securityMode": "prompt_on_startup",
             "uvBinary": uv_binary(),

@@ -214,6 +214,7 @@ def exercise(root: Path) -> int:
         yaml.safe_dump(
             {
                 "firstRunComplete": True,
+                "updateChecks": False,
                 "advertiseUrl": base("agent-a"),
                 "securityMode": "prompt_on_startup",
                 "components": [
@@ -243,6 +244,7 @@ def exercise(root: Path) -> int:
         yaml.safe_dump(
             {
                 "firstRunComplete": True,
+                "updateChecks": False,
                 "advertiseUrl": base("agent-b"),
                 "securityMode": "prompt_on_startup",
                 "components": [],

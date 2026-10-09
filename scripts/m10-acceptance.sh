@@ -97,6 +97,7 @@ rm -rf "$WORK"; mkdir -p "$WORK"; cd "$WORK" || exit 1
 WORK_NATIVE=$(cygpath -w "$WORK" 2>/dev/null || printf '%s' "$WORK")
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

@@ -200,6 +200,7 @@ cd "$EP_WORKDIR" || exit 1
 # things in when they wire the driver first.
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: gateway
     kind: gateway

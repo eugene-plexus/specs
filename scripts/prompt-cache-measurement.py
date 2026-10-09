@@ -515,7 +515,8 @@ class Bench:
         self.start("control")
         self.call("control", "POST", "/v1/auth/initialize", json={"passphrase": self.passphrase}).raise_for_status()
         root = self.login("control")
-        self.write("agent", "agent.yaml", {"firstRunComplete": True, "advertiseUrl": self.url("agent"),
+        self.write("agent", "agent.yaml", {"firstRunComplete": True, "updateChecks": False,
+                                           "advertiseUrl": self.url("agent"),
                                            "securityMode": "prompt_on_startup", "components": []})
         self.start("agent")
         self.call("agent", "POST", "/v1/auth/initialize", json={"passphrase": self.passphrase}).raise_for_status()

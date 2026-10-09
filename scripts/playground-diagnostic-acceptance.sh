@@ -120,6 +120,7 @@ if [ -z "$LEAKED" ]; then ok "no ambient EUGENE_PLEXUS_* variable survives into 
 
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

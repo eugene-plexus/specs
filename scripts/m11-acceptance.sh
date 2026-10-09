@@ -118,6 +118,7 @@ ok "library root $LIB_ROOT holds the model; B's mount $MOUNT holds the same byte
 
 cat > a/agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 advertiseUrl: $A_URL
 components:
   - name: control
@@ -145,7 +146,7 @@ YAML
 printf 'logLevel: INFO\nroutingRefreshSeconds: 3\nidleCheckSeconds: 5\nswapWaitSeconds: 120\n' > a/gateway.yaml
 echo "logLevel: INFO" > a/control.yaml
 printf 'logLevel: INFO\nmodelRoots:\n  - %s\n' "$(printf '%s' "$LIB_ROOT" | sed 's|/|\\|g')" > a/library.yaml
-printf 'firstRunComplete: true\ncomponents: []\nruntimes: []\n' > b/agent.yaml
+printf 'firstRunComplete: true\nupdateChecks: false\ncomponents: []\nruntimes: []\n' > b/agent.yaml
 
 BIND=()
 [ "$ADV_HOST" != "127.0.0.1" ] && BIND=(EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0)

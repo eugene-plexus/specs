@@ -224,6 +224,7 @@ def exercise(directory: Path, lan: str | None) -> None:
                 yaml.safe_dump(
                     {
                         "firstRunComplete": True,
+                        "updateChecks": False,
                         "advertiseUrl": advertised(name),
                         "securityMode": "prompt_on_startup",
                         "components": [],

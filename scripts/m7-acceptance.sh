@@ -219,6 +219,7 @@ WIN_WORKDIR="$(pwd -W)"
 
 cat > a/agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 ${EP_ADVERTISE_A:+advertiseUrl: $EP_ADVERTISE_A}
 components:
   - name: control
@@ -251,10 +252,10 @@ echo "logLevel: INFO" > a/control.yaml
 printf 'logLevel: INFO\nmodelRoots:\n  - %s\n' "$(win_path "$(dirname "$EP_MODEL")")" > a/library.yaml
 if [ -n "$EP_COMPANION_PORT_B" ]; then
   mkdir -p b/drivers
-  printf "firstRunComplete: true\nengineBinaryRoots:\n  - '%s'\ncomponents:\n  - name: %s-driver\n    kind: inference-driver\n    url: http://127.0.0.1:%s\n    spawn:\n      configFile: drivers/%s-driver.yaml\nruntimes: []\n" \
+  printf "firstRunComplete: true\nupdateChecks: false\nengineBinaryRoots:\n  - '%s'\ncomponents:\n  - name: %s-driver\n    kind: inference-driver\n    url: http://127.0.0.1:%s\n    spawn:\n      configFile: drivers/%s-driver.yaml\nruntimes: []\n" \
     "$EP_ENGINE_DIR_B" "$RT" "$EP_COMPANION_PORT_B" "$RT" > b/agent.yaml
 else
-  printf "firstRunComplete: true\nengineBinaryRoots:\n  - '%s'\ncomponents: []\nruntimes: []\n" "$EP_ENGINE_DIR_B" > b/agent.yaml
+  printf "firstRunComplete: true\nupdateChecks: false\nengineBinaryRoots:\n  - '%s'\ncomponents: []\nruntimes: []\n" "$EP_ENGINE_DIR_B" > b/agent.yaml
 fi
 
 # --- 1. agent A and its fleet --------------------------------------------------

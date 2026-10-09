@@ -155,6 +155,7 @@ STATIC_NORM=$(win_path "$STATIC" | tr '\\' '/' | tr '[:upper:]' '[:lower:]')
 MISSING_DIR="$WORK/not-mounted"
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

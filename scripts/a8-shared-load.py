@@ -339,6 +339,7 @@ def exercise(args):
             yaml.safe_dump(
                 {
                     "firstRunComplete": True,
+                    "updateChecks": False,
                     "securityMode": "prompt_on_startup",
                     "components": [],
                     "engineBinaryRoots": [str(args.engine.resolve().parent)],

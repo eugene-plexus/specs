@@ -76,6 +76,7 @@ export EP_WORK="$WORK"
 export EP_GATEWAY_SRC="${EP_GATEWAY_SRC:-$EP_ROOT/gateway/src}"
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

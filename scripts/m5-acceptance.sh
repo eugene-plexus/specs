@@ -107,6 +107,7 @@ win_path() { printf '%s' "$1" | sed 's|/|\\|g'; }
 # trust root is supervised like anything else.
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

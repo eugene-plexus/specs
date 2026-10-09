@@ -313,6 +313,7 @@ fi
 say "6. the golden path: a real agent's admission asks that real library"
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: library
     kind: library

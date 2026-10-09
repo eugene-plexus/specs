@@ -159,6 +159,7 @@ say "1. the library names the models, this node says where they are here"
 # every worker in a real install does.
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 modelCopyEnabled: true
 modelCopyDir: "$(json_path "$WORK/copies")"
 modelCopyMinFreeGb: 0

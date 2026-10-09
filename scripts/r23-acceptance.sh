@@ -132,6 +132,7 @@ STUB_DIR="$WORK/stub"
 write_topology() {
   cat > "$WORK/agent.yaml" <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: library
     kind: library

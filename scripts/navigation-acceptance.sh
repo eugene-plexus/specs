@@ -81,6 +81,7 @@ grep -qr 'data-tree-sel' "$STATIC/_next/static/chunks" 2>/dev/null \
 
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: control
     kind: control

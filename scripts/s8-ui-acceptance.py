@@ -40,7 +40,8 @@ def serve(root: Path, port: int) -> None:
 def check(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=False)
     (root / "agent.yaml").write_text(yaml.safe_dump({
-        "firstRunComplete": True, "securityMode": "prompt_on_startup",
+        "firstRunComplete": True, "updateChecks": False,
+        "securityMode": "prompt_on_startup",
     }), encoding="utf-8")
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))

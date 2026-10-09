@@ -164,7 +164,7 @@ def exercise(directory: Path) -> None:
         work = directory / "agent-a"
         work.mkdir(exist_ok=True)
         (work / "agent.yaml").write_text(yaml.safe_dump(
-            {"firstRunComplete": True, "advertiseUrl": url("agent-a"),
+            {"firstRunComplete": True, "updateChecks": False, "advertiseUrl": url("agent-a"),
              "securityMode": "prompt_on_startup", "components": []}), encoding="utf-8")
         start("agent-a", "agent")
         assert call("agent-a", "POST", "/v1/auth/initialize", json={"passphrase": passphrase}).status_code == 200

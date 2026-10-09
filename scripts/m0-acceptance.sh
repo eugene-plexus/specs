@@ -93,6 +93,7 @@ win_path() { printf '%s' "$1" | sed 's|/|\\|g'; }
 
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: gateway
     kind: gateway

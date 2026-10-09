@@ -89,6 +89,7 @@ ok "ambient EUGENE_PLEXUS_* cleared; ports $OWNED_PORTS free; model $MODEL"
 
 cat > "$WORK/agent.yaml" <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: library
     kind: library

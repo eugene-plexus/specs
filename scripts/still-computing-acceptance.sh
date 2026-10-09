@@ -604,6 +604,7 @@ mkdir -p agentdir
 AGENT_DIR_NATIVE=$(win_path "$WORK/agentdir")
 cat > agentdir/agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components: []
 runtimes:
   - name: r25-runtime

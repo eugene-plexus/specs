@@ -100,6 +100,7 @@ def exercise(directory: Path, engine: Path, model: Path) -> int:
         yaml.safe_dump(
             {
                 "firstRunComplete": True,
+                "updateChecks": False,
                 "securityMode": "prompt_on_startup",
                 "components": [
                     {

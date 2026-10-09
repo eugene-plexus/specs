@@ -104,6 +104,7 @@ cd "$EP_WORKDIR" || exit 1
 # here launches one.
 cat > agent.yaml <<YAML
 firstRunComplete: true
+updateChecks: false
 components:
   - name: library
     kind: library

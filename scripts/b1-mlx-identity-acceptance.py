@@ -405,6 +405,7 @@ def exercise(directory: Path) -> None:
                 yaml.safe_dump(
                     {
                         "firstRunComplete": True,
+                        "updateChecks": False,
                         "advertiseUrl": url(name),
                         "securityMode": "prompt_on_startup",
                         "components": [],
