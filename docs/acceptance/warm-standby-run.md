@@ -191,8 +191,21 @@ reset. What used up the limit is not known. The first suspect was this
 slice's local acceptance batches
 ([specs#19](https://github.com/eugene-plexus/specs/issues/19)), but a
 measurement doesn't support it: a c3 run, the longest-lived, left this
-machine's API usage unchanged (2 before, 2 after). No machine is the standby
-yet.
+machine's API usage unchanged (2 before, 2 after).
+
+**Amish_Station is the standby (Troy, from the NAS console, 2026-10-08).**
+Checked from Amish_Station: a control root on `127.0.0.1:8083` answers
+`/healthz` with `role: standby`, applied index 79, lag 0 and the active root
+reachable. Its copy is at `C:\ProgramData\EugenePlexus\standby-state`, and
+the installing person's own unelevated session is refused even reading its
+ACL (`icacls`: *Access is denied*).
+
+Troy looked for the standby in Settings first and found nothing, since
+`standbyUrls` is retired and the panel lives on Machines. Settings search now
+answers *standby*, *replication*, *backup* and similar with a link to
+Machines → Standby (ui `a9a9fad`, dist `aa2234f`). Only that file's tests ran
+(53, with the panel's and the copy gate), plus typecheck, lint and format, at
+Troy's request to keep small changes off the long runs.
 
 ## Left open
 
@@ -203,5 +216,5 @@ yet.
 - The promoted root's `securityMode` is run end to end only for
   `prompt_on_startup`; `os_keyring` and `passphrase_file` use the existing
   startup paths (design §7).
-- The standby's directory on an installed Windows worker inherits the agent's
-  protected ACL, which was not checked here.
+- ~~The standby's directory on an installed Windows worker~~: checked on
+  Amish_Station once it became the standby (above).

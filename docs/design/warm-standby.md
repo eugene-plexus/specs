@@ -292,8 +292,9 @@ the changed code only.
   Only the first is run end to end; the other two are the existing startup
   paths, not run on a promoted copy.
 - **§6, a private directory on Windows.** The copy inherits the agent's
-  config directory, which `install.ps1` protects. Not checked on an
-  installed worker: the acceptance uses temporary directories.
+  config directory, which `install.ps1` protects. Checked on Amish_Station,
+  the live standby: the installing person's unelevated session cannot even
+  read the folder's ACL.
 - **A pushed bundle that could not be written was lost.** Windows refuses
   to replace a file any process has open, and every component reads
   `trust_bundle.json`. The agent kept the new bundle in memory, logged one

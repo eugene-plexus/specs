@@ -65,7 +65,7 @@ PIN_GATEWAY=3c27ceb3a12be36c5f864ebf78ed0bd36c9c802f
 PIN_DRIVER=d549ad9fae5107259c1b16f10732523e2f2ee49a
 PIN_LIBRARY=ae9e2d06b536bba3e24e4fe759ead76004a904d7
 PIN_TOOL_DRIVER=9a8c79e1b65bc5cd4625d81837550a476b13d39b
-PIN_UI=e8b0a1f48104544567c1a8f012ae5b229a64c7a1   # branch `dist`, not `main`
+PIN_UI=aa2234fb1df27dfcd05c6e5fc0fa4d8499c3cc01   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
