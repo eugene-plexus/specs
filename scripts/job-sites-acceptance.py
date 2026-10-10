@@ -1221,10 +1221,10 @@ def run(args: argparse.Namespace) -> None:
         except OSError:
             pass
         ok("started, the site host polls the root with its own key; the console lists it online "
-           "with its owner and last contact, shows no folders in production (dev is null), and "
+           "with its owner and last contact, shows no dev section in production (dev is null), and "
            "the host listens on loopback only")
 
-        # ---- 5. ada's folders, bo's read, the audit log -------------------
+        # ---- 5. ada's workspace, bo's read, the audit log -------------------
         if sudo_mode:
             assert base is not None
             folder = base / "shared"  # root's, mode 0777: what the OS lets each account do is its own
@@ -1306,39 +1306,40 @@ def run(args: argparse.Namespace) -> None:
         read = {"name": "read_text", "arguments": {"folder": "Notes", "path": "note.txt"}}
         mine_only = call("job-sites", bo).json()["sites"]
         assert mine_only == [], mine_only
-        added = call(f"job-sites/{site_id}/folders", ada, name="Notes", path=str(folder), writable=True)
+        added = call(f"job-sites/{site_id}/workspaces", ada, name="Notes", path=str(folder), writable=True,
+                     rules={"read": "allow", "change": "ask", "command": "deny"})
         assert added.status_code == 202 and added.json()["held"] is True, added.text
         assert "approve it with your key" in added.json()["message"], added.text
-        assert settle(lambda s: s.get("signing", {}).get("held") == 1, "held")["folders"] == []
+        assert settle(lambda s: s.get("signing", {}).get("held") == 1, "held")["workspaces"] == []
         (registered,) = desk.approve(people["ada"])
         folder_id = registered["result"]["id"]
         assert registered["result"]["people"] == []
-        # 2b.3b (J69): the owner's folder is her own workspace, hers at once:
-        # read allow, change ask (it is writable), by id and name, no path (J76).
+        # 2b.3b (J69): the owner's workspace is her own, hers at once:
+        # read allow, change ask (it is writable), command deny (the rules she
+        # sent; a workspace given none asks before commands, J88), by id and
+        # name, no path (J76).
         (own,) = settle(lambda s: s.get("workspaces"), "the workspace never reported")["workspaces"]
         assert own["id"] == folder_id and own["rules"] == {
             "read": "allow", "change": "ask", "command": "deny"}, own
         assert "path" not in own and own["people"] == [], own
-        again = call(f"job-sites/{site_id}/folders", ada, name="notes", path=str(folder))
+        again = call(f"job-sites/{site_id}/workspaces", ada, name="notes", path=str(folder))
         assert again.status_code == 422 and "named notes already" in again.text, again.text
-        settle(lambda s: s["folders"], "the site never reported its folder")
-        stranger = call(f"job-sites/{site_id}/folders", bo, name="Mine", path=str(folder))
+        stranger = call(f"job-sites/{site_id}/workspaces", bo, name="Mine", path=str(folder))
         assert stranger.status_code == 404, stranger.text
         assert mcp(bo, "files", "tools/list").status_code == 403
         forged = forge(kind="enqueue", subject=people["bo"], server="files", request=rpc("tools/call", read))
         assert forged.status_code == 200, forged.text
         assert forged.json()["status"] == "failed" and "has not given you" in forged.json()["message"]
-        granted = call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
-                       people=[{"name": "ada", "writable": False}, {"name": "bo", "writable": False}])
+        granted = call(f"job-sites/{site_id}/workspaces/{folder_id}/people", ada,
+                       people=[{"name": "bo", "read": "allow", "change": "deny"}])
         assert granted.status_code == 202, granted.text
         (words,) = desk.held(people["ada"])
         # Bo has no account here: his name is the root's, and the page says so (J54).
         assert any("bo (as Eugene names them" in w for w in words["words"]), words
         desk.approve(people["ada"])
-        # The older root's way of saying it (J11) names the owner on her own
-        # folder; the site reads it without her, the holder (2b.3b).
-        reported = settle(lambda s: s["folders"][0]["people"], "the grant never reported")
-        assert {p["name"] for p in reported["folders"][0]["people"]} == {"bo"}, reported
+        # The site reports the grant by id and name; the owner, the holder, is
+        # never named on her own workspace (2b.3b).
+        reported = settle(lambda s: s["workspaces"][0]["people"], "the grant never reported")
         assert reported["workspaces"][0]["people"] == [
             {"person": people["bo"], "name": "bo", "read": "allow", "change": "deny"}
         ], reported
@@ -1363,12 +1364,12 @@ def run(args: argparse.Namespace) -> None:
         denied = mcp(bo, "files", "tools/call", write)
         assert denied.json()["status"] == "failed" and "not change files" in denied.json()["message"]
         assert (folder / "note.txt").read_text(encoding="utf-8") == "Notes from ada's desk"
-        assert call(f"job-sites/{site_id}/folders/{folder_id}/people", ada,
-                    people=[{"name": "ada", "writable": False},
-                            {"name": "bo", "writable": True}]).status_code == 202
+        assert call(f"job-sites/{site_id}/workspaces/{folder_id}/people", ada,
+                    people=[{"name": "bo", "read": "allow", "change": "allow"}]).status_code == 202
         desk.approve(people["ada"])
-        settle(lambda s: any(p["writable"] for p in s["folders"][0]["people"]), "write grant")
-        # Bo's `writable` is change `allow` (§2.6's standing pre-approval).
+        settle(lambda s: any(p["change"] == "allow" for p in s["workspaces"][0]["people"]),
+               "write grant")
+        # Bo's change `allow` is §2.6's standing pre-approval.
         assert settle(lambda s: True, "")["workspaces"][0]["people"][0]["change"] == "allow"
         wrote = mcp(bo, "files", "tools/call", {"name": "write_text", "arguments": {
             "folder": "Notes", "path": "new.txt", "text": "bo was here", "expectedSha256": ""}})
@@ -1376,7 +1377,7 @@ def run(args: argparse.Namespace) -> None:
         assert (folder / "new.txt").read_text(encoding="utf-8") == "bo was here"
         workspace_tools_check(folder, work, lambda params: mcp(bo, "files", "tools/call", params))
         ok("2b.3a, through the root: bo finds files by name (newest first, .gitignore and a link "
-           "to outside the folder passed over), searches their contents with line numbers, reads "
+           "to outside the workspace passed over), searches their contents with line numbers, reads "
            "any part of a 20,000-line file with the whole file's hash, and edits one exact passage "
            "in place; a stale hash, an ambiguous passage and a pattern that never finishes are "
            "refused or stopped, and every answer stays under 70,000 bytes")
@@ -1390,8 +1391,8 @@ def run(args: argparse.Namespace) -> None:
         assert "bo was here" not in json.dumps(entries) and "Notes from ada" not in json.dumps(entries)
         for someone in (bo, owner):
             assert call(f"job-sites/{site_id}/audit", someone).status_code == 404
-        ok("ada registers a folder through Workbench's routes (a name unique on the site), "
-           "which is her own workspace at once (read allow, change ask; reported by id and "
+        ok("ada registers a workspace through Workbench's routes (a name unique on the site), "
+           "which is her own workspace at once (read allow, change ask, command deny; reported by id and "
            "name, never path), and nobody else's; default deny holds even when the root itself "
            "sends bo's call; "
            "after ada gives bo read access he lists and reads the file through /oidc/sites/mcp; "
@@ -1403,23 +1404,23 @@ def run(args: argparse.Namespace) -> None:
         assert forge(kind="owner", owner=people["bo"]).status_code == 200
         time.sleep(2)  # a poll or two, each naming bo
         assert desk.record()["owner"] == people["ada"]
-        taken = call(f"job-sites/{site_id}/folders/{folder_id}/people", bo,
-                     people=[{"name": "bo", "writable": True}])
+        taken = call(f"job-sites/{site_id}/workspaces/{folder_id}/people", bo,
+                     people=[{"name": "bo", "read": "allow", "change": "allow"}])
         assert taken.status_code == 422 and "Only this machine's owner" in taken.text, taken.text
-        manage = forge(kind="manage", subject=people["bo"], action="folder.people",
-                       arguments={"id": folder_id, "people": [{"subject": people["bo"], "writable": True}]})
+        manage = forge(kind="manage", subject=people["bo"], action="workspace.people",
+                       arguments={"id": folder_id, "people": [
+                           {"subject": people["bo"], "read": "allow", "change": "allow"}]})
         assert manage.status_code == 200, manage.text
         assert manage.json()["status"] == "failed" and "Only this machine's owner" in manage.json()["message"], manage.text
         assert forge(kind="owner", owner=people["ada"]).status_code == 200
         # J14a: the root forging a grant in the owner's own name is held, never applied.
-        in_her_name = forge(kind="manage", subject=people["ada"], action="folder.people",
+        in_her_name = forge(kind="manage", subject=people["ada"], action="workspace.people",
                             arguments={"id": folder_id, "people": [
-                                {"subject": people["ada"], "writable": False},
-                                {"subject": people["bo"], "writable": True},
-                                {"subject": people["jo"], "writable": True}]})
+                                {"subject": people["bo"], "read": "allow", "change": "allow"},
+                                {"subject": people["jo"], "read": "allow", "change": "allow"}]})
         assert in_her_name.json()["status"] == "held", in_her_name.text
         assert desk.reject_all(people["ada"]) == 1
-        assert not any(p["name"] == "jo" for p in settle(lambda s: True, "")["folders"][0]["people"])
+        assert not any(p["name"] == "jo" for p in settle(lambda s: True, "")["workspaces"][0]["people"])
         other = forge(kind="enqueue", enrolledAt="2001-01-01T00:00:00+00:00", subject=people["ada"],
                       server="files", request=rpc("tools/call", read))
         assert other.status_code == 200, other.text
@@ -2201,7 +2202,7 @@ def per_user_site(
         folder = work / "per-user-folder"
         folder.mkdir()
         (folder / "note.txt").write_text("a note at ada's own desk", encoding="utf-8")
-        added = workbench.call(f"job-sites/{site_id}/folders", ada, name="Desk", path=str(folder),
+        added = workbench.call(f"job-sites/{site_id}/workspaces", ada, name="Desk", path=str(folder),
                                writable=True)
         assert added.status_code == 201, added.text
         folder_id = added.json()["id"]
@@ -2317,13 +2318,15 @@ def two_b_two(c: SimpleNamespace) -> None:
         return bool(reply.status_code == 200 and reply.json()["status"] == "done")
 
     # ---- 13. a call runs as the person -------------------------------------
-    given = c.call(f"job-sites/{c.site_id}/folders/{c.folder_id}/people", ada, people=[
-        {"name": "ada", "writable": True}, {"name": "bo", "writable": True},
-        {"name": "jo", "writable": True}])
+    given = c.call(f"job-sites/{c.site_id}/workspaces/{c.folder_id}/people", ada, people=[
+        {"name": "bo", "read": "allow", "change": "allow"},
+        {"name": "jo", "read": "allow", "change": "allow"}])
     assert given.status_code == 202, given.text
     desk.approve(people["ada"])
-    # The owner, named on her own folder, is read without (2b.3b): two grants.
-    c.settle(lambda s: bool(s["folders"]) and sum(p["writable"] for p in s["folders"][0]["people"]) == 2, "write grants")
+    # The owner is never named on her own workspace (2b.3b): two grants.
+    c.settle(lambda s: bool(s["workspaces"])
+             and sum(p["change"] == "allow" for p in s["workspaces"][0]["people"]) == 2,
+             "write grants")
     for token, name in ((ada, "ada.txt"), (jo, "jo.txt"), (bo, "bo.txt")):
         reply = write(token, name, f"written for {name}")
         assert served(reply), reply.text
