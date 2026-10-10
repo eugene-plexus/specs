@@ -5894,12 +5894,16 @@ components:
           minimum: 1
           description: The `max_tokens` sent.
         source:
-          type: string
-          enum: [request, profile, install]
-          description: |
-            `request`: the caller's own `max_tokens`. `profile`: the
-            model's default Library profile (Maximum output tokens).
-            `install`: the gateway's `defaultMaxTokens`.
+          $ref: '#/components/schemas/OutputCapSource'
+
+    OutputCapSource:
+      type: string
+      enum: [request, profile, install]
+      description: |
+        Where an `OutputCap` came from. `request`: the caller's own
+        `max_tokens`. `profile`: the model's default Library profile
+        (Maximum output tokens). `install`: the gateway's
+        `defaultMaxTokens`.
 
     StreamProgress:
       type: object
