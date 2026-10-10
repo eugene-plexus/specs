@@ -33,8 +33,8 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install the acceptance client
@@ -46,7 +46,7 @@ jobs:
         run: python scripts/node-file-helpers-service-acceptance.py --report helper-service.json
       - name: Keep the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: helper-service-${{ matrix.os }}
           path: helper-service.json
@@ -61,30 +61,30 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           path: specs
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/agent
           ref: ${{ inputs.agent_ref }}
           path: agent
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/control
           ref: ${{ inputs.control_ref }}
           path: control
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/workbench
           ref: ${{ inputs.workbench_ref }}
           path: workbench
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: eugene-plexus/site-host
           ref: ${{ inputs.site_host_ref }}
           path: site-host
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install runtime consumers and acceptance tools
