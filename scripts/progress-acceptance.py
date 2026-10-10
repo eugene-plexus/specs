@@ -19,8 +19,13 @@ the gateway's stream as it arrives:
   3. unasked: nothing of the kind, and the same silence the tester saw
   4. the gateway's time-to-first-token is the first word, not the first
      progress frame
-  5. a hosted API that has no /props is never sent llama.cpp's flag, and
-     still says it has the request, and keeps saying so at its keepalives
+  4b. while it writes (2026-10-10): llama.cpp's own running count reaches
+      the caller between the words, rising and never past the usage; the
+      final frame names the cap sent and where it came from, the request's
+      own and then the install's
+  5. a hosted API that has no /props is never sent llama.cpp's flags, never
+     says it is writing, still says it has the request, and keeps saying
+     so at its keepalives
   6. unasked, the hosted API sends nothing extra either
   7. (EP_CLAUDE=1) the real Claude Code CLI: a tool it runs, and its
      thinking, reach the caller before its answer. Spends a Haiku call.
@@ -200,7 +205,13 @@ def serve(port: int) -> None:
 
 
 def stream(
-    model: str, content: str, *, progress: bool, timeout: float = 600, max_tokens: int | None = 48
+    model: str,
+    content: str,
+    *,
+    progress: bool,
+    timeout: float = 600,
+    max_tokens: int | None = 48,
+    usage: bool = False,
 ) -> list[dict]:
     """Every data frame, stamped with seconds since the request was sent.
 
@@ -218,6 +229,8 @@ def stream(
         body["max_tokens"] = max_tokens
     if progress:
         body["stream_options"] = {"include_progress": True}
+    if usage:
+        body.setdefault("stream_options", {})["include_usage"] = True
     frames: list[dict] = []
     started = time.perf_counter()
     with httpx.Client(timeout=timeout, trust_env=False) as client:
@@ -446,17 +459,86 @@ def main() -> int:
         else:
             bad(f"no retained first-token times to compare: {firsts}")
 
+        say("4b. while it writes: the backend's own count, and the cap it was sent")
+
+        def final_routing(frames: list[dict]) -> dict:
+            for f in reversed(frames):
+                chunk = f["frame"]
+                if any((c or {}).get("finish_reason") for c in chunk.get("choices") or []):
+                    return chunk.get("x_eugene_plexus") or {}
+            return {}
+
+        def final_usage(frames: list[dict]) -> dict:
+            for f in reversed(frames):
+                if f["frame"].get("usage"):
+                    return f["frame"]["usage"]
+            return {}
+
+        writing_frames = stream(
+            LOCAL,
+            "Count from one to forty in words, one per line.",
+            progress=True,
+            max_tokens=200,
+            usage=True,
+        )
+        writes, written_out = split(writing_frames)
+        counts = [w for w in writes if w.get("stage") == "generating"]
+        numbers = [w.get("generated_tokens") or 0 for w in counts]
+        completion = final_usage(writing_frames).get("completion_tokens")
+        if len(counts) >= 2 and numbers == sorted(set(numbers)) and numbers[0] > 0:
+            ok(f"{len(counts)} counts while it wrote, rising: {numbers[0]} ... {numbers[-1]}")
+        else:
+            bad(f"expected rising counts while it wrote, got {numbers}")
+        # The first count can come a moment before the first word: llama.cpp
+        # counts the token that opens its thinking on a frame with no text.
+        if len(counts) >= 2 and any(counts[0]["t"] < o["t"] < counts[-1]["t"] for o in written_out):
+            ok("the counts came between the words, as it wrote")
+        else:
+            bad("the counts did not come between the words")
+        if numbers and completion and numbers[-1] <= completion:
+            ok(f"the last count, {numbers[-1]}, is within the usage's {completion}")
+        else:
+            bad(f"last count {numbers[-1] if numbers else None} against usage {completion}")
+        speeds = [w.get("tokens_per_second") for w in counts if w.get("tokens_per_second")]
+        ok(f"and the backend's own speed: {speeds[-1]} tok/s") if speeds else bad("no speed said")
+        cap = final_routing(writing_frames).get("output_cap")
+        if cap == {"tokens": 200, "source": "request"}:
+            ok("the final frame says the cap was the request's own 200")
+        else:
+            bad(f"the final frame's output_cap: {cap}")
+        patched = httpx.patch(
+            f"{GW}/v1/config", json={"defaultMaxTokens": 24}, timeout=10, trust_env=False
+        )
+        try:
+            capped = stream(LOCAL, "Name ten rivers.", progress=False, max_tokens=None)
+        finally:
+            httpx.patch(f"{GW}/v1/config", json={"defaultMaxTokens": None}, timeout=10, trust_env=False)
+        ended = next(
+            (
+                c.get("finish_reason")
+                for f in reversed(capped)
+                for c in f["frame"].get("choices") or []
+                if c.get("finish_reason")
+            ),
+            None,
+        )
+        cap = final_routing(capped).get("output_cap")
+        if patched.status_code == 200 and ended == "length" and cap == {"tokens": 24, "source": "install"}:
+            ok("a reply stopped by the install's cap says it was the install's 24 (Troy's case)")
+        else:
+            bad(f"install cap: PATCH {patched.status_code}, finish {ended}, output_cap {cap}")
+
         say("5. a hosted API: never sent llama.cpp's flag, and still heard from")
         HOSTED_BODIES.clear()
         hosted = stream(HOSTED_MODEL, "hello", progress=True)
         h_reads, h_output = split(hosted)
         streamed = [b for b in HOSTED_BODIES if b.get("stream")]
-        if streamed and "return_progress" not in streamed[-1]:
-            ok("the hosted API was not sent return_progress, which it would refuse")
+        if streamed and not {"return_progress", "timings_per_token"} & streamed[-1].keys():
+            ok("the hosted API was not sent return_progress or timings_per_token, which it would refuse")
         else:
             bad(f"the hosted API's body: {streamed[-1] if streamed else None}")
         stages = [r.get("stage") for r in h_reads]
-        if stages and set(stages) == {"working"} and 2 <= len(stages) <= 3:
+        if stages and set(stages) == {"working"} and 2 <= len(stages) <= 3:  # never `generating`
             ok(f"'working' when it opened and at its keepalives, throttled: {len(stages)} for 5")
         else:
             bad(f"expected 2-3 working chunks, got {stages}")
