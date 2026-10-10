@@ -218,7 +218,14 @@ def main() -> int:
                 {
                     "logLevel": "INFO",
                     "modelRoots": [str(models)],
-                    "catalogueBaseUrl": f"http://127.0.0.1:{hub_port}",
+                    "catalogueSources": [
+                        {
+                            "id": "huggingface",
+                            "kind": "hf_hub",
+                            "label": "Hub",
+                            "address": f"http://127.0.0.1:{hub_port}",
+                        }
+                    ],
                 }
             ),
             encoding="utf-8",
@@ -306,7 +313,7 @@ def main() -> int:
             sent = as_console_sends(engines)
 
             # D2 -----------------------------------------------------------
-            page = client.get(f"{proxy}/v1/catalogue/search", params={"q": "x"}).json()
+            page = client.post(f"{proxy}/v1/catalogue/search", json={"q": "x"}).json()
             rows = {r["repo"]: r for r in page["results"]}
             searches = [q for path, q, _ in HUB_REQUESTS if path == "/api/models"]
             check(

@@ -7,9 +7,9 @@ The Library starts from a config file written before LS4: one hub address
 and one token, the keys LS4 replaced. Nothing is started but the agent and
 its Library; one 2 KiB file is downloaded from the second fake hub.
 
-  S1  the old file's hub address and token become the first hub, the
-      token kept and never shown, and the file keeps the old keys beside the
-      list for an older Library;
+  S1  the hub and its token are read from the source list, the token never
+      shown, and the file holds the list alone (v0.2: nothing mirrored for an
+      older Library);
   S2  the agent's GET /v1/engines publishes Strata's own list: upstream
       setup's nine choices, each a named first shard at a pinned revision,
       and Strata's GGUF requirement names exactly those files;
@@ -28,8 +28,8 @@ its Library; one 2 KiB file is downloaded from the second fake hub.
   S8  the second hub down: the search still answers, and says why that hub
       gave nothing;
   S9  a hub switched off is not asked and says so; its token survives the
-      round trip that switched it off; an older console's GET still searches
-      the one default hub.
+      round trip that switched it off; the GET search kept for consoles
+      before LS4 is gone.
 
 Clears every ambient EUGENE_PLEXUS_* variable, so it is safe beside a live
 install. Run with the agent and library installed (editable is fine).
@@ -281,14 +281,22 @@ def main() -> int:
         models = directory / "models"
         models.mkdir()
         library_yaml = directory / "library.yaml"
-        # Written before LS4: one hub, one token.
+        # The engines' lists and one hub with its token, as Settings saves them.
         library_yaml.write_text(
             yaml.safe_dump(
                 {
                     "logLevel": "INFO",
                     "modelRoots": [str(models)],
-                    "catalogueBaseUrl": public,
-                    "hfToken": "tok-public",
+                    "catalogueSources": [
+                        {"id": "engines", "kind": "engine_list", "label": "Engines' own lists"},
+                        {
+                            "id": "huggingface",
+                            "kind": "hf_hub",
+                            "label": "Hugging Face",
+                            "address": public,
+                            "token": "tok-public",
+                        },
+                    ],
                 }
             ),
             encoding="utf-8",
@@ -369,15 +377,14 @@ def main() -> int:
             sources = config.get("catalogueSources") or []
             first = next((s for s in sources if s.get("kind") == "hf_hub"), {})
             check(
-                "S1a the old file's hub and token are the first hub, the token never shown; "
-                "the engines' lists ahead of it, as the default list has them (LS7)",
+                "S1 the hub and its token are read from the list, the token never shown; the "
+                "engines' lists ahead of it, as the default list has them (LS7)",
                 first.get("id") == "huggingface"
                 and first.get("kind") == "hf_hub"
                 and first.get("address") == public
                 and first.get("token") is None
                 and first.get("hasToken") is True
                 and [s.get("kind") for s in sources] == ["engine_list", "hf_hub"]
-                and "hfToken" not in config
                 and "tok-public" not in json.dumps(config),
                 sources,
             )
@@ -427,13 +434,13 @@ def main() -> int:
                 (patched, after),
             )
             check(
-                "S1b the file keeps the old keys beside the list, for an older Library",
-                on_disk.get("catalogueBaseUrl") == public
-                and bool(on_disk.get("hfToken"))
-                # Sealed alike, or plain alike when the Library holds no key.
-                and type(on_disk.get("hfToken")) is type(on_disk["catalogueSources"][1]["token"])
+                "S3 the file holds the list alone, each token as the Library stores it (v0.2: "
+                "no older keys mirrored beside it)",
+                "catalogueBaseUrl" not in on_disk
+                and "hfToken" not in on_disk
+                and bool(on_disk["catalogueSources"][1].get("token"))
                 and "hasToken" not in on_disk["catalogueSources"][1],
-                {k: on_disk.get(k) for k in ("catalogueBaseUrl", "hfToken")},
+                {k: v for k, v in on_disk.items() if k != "catalogueSources"},
             )
 
             # S4 -----------------------------------------------------------
@@ -603,18 +610,16 @@ def main() -> int:
             ).json()
             off_status = {s["id"]: s for s in off_page.get("sources") or []}
             kept = {s["id"]: s for s in client.get(f"{proxy}/v1/config").json()["catalogueSources"]}
-            older = client.get(f"{proxy}/v1/catalogue/search", params={"limit": 30}).json()
+            gone = client.get(f"{proxy}/v1/catalogue/search", params={"limit": 30})
             check(
-                "S9 a hub switched off is not asked and says so; its token survives; an older "
-                "console's GET still searches the default hub",
+                "S9 a hub switched off is not asked and says so; its token survives; the GET "
+                "search kept for consoles before LS4 is gone (v0.2)",
                 off_status["corp"]["searched"] is False
                 and "switched off" in (off_status["corp"].get("problem") or "")
                 and kept["corp"].get("hasToken") is True
                 and kept["corp"].get("enabled") is False
-                and [r["repo"] for r in older.get("results") or []]
-                == ["org/Small-GGUF", OTHER_REPO]
-                and all(r.get("source") is None for r in older.get("results") or []),
-                (off_status.get("corp"), kept.get("corp"), older.get("results")),
+                and gone.status_code == 405,
+                (off_status.get("corp"), kept.get("corp"), gone.status_code),
             )
         finally:
             # Asked to stop, not killed: a hard kill on Windows skips the

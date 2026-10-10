@@ -16,6 +16,7 @@ from eugene_plexus_agent.preparation import PreparationJobs
 from eugene_plexus_agent.run_worker import RunWorker, runtime_spec
 from eugene_plexus_library._generated.models import LibraryModel
 from eugene_plexus_library.routes.run_operations import router
+from eugene_plexus_library.routes.models import router as models_router
 from eugene_plexus_library.run_operations import Journal
 from eugene_plexus_library.store import StateStore
 from fastapi import FastAPI
@@ -39,6 +40,7 @@ class Engine:
                 "engine": "llama_cpp",
                 "available": self.installed,
                 "modelFormats": ["gguf"],
+                "accepts": [{"format": "gguf", "preference": 10}],
                 "acquisition": {"installable": True},
             }
         ]
@@ -66,13 +68,18 @@ class Engine:
 
 
 async def check(directory):
-    app = FastAPI(title="Eugene Plexus durable run protocol", version="1.0.0")
-    app.include_router(router)
-    actual = app.openapi()
+    protocol = FastAPI(title="Eugene Plexus durable run protocol", version="1.0.0")
+    protocol.include_router(router)
+    actual = protocol.openapi()
     # UTF-8, as it is written: Windows reads cp1252 by default (LS5's CI).
     canonical = json.loads((ROOT / "openapi/run-operations.json").read_text(encoding="utf-8"))
     assert actual["paths"] == canonical["paths"], "run protocol paths drifted"
     assert actual["components"] == canonical["components"], "run protocol schemas drifted"
+    # The Library the worker talks to: the run protocol, and the judge it asks
+    # which engine runs the model (POST /v1/eligibility, LS1).
+    app = FastAPI()
+    app.include_router(router)
+    app.include_router(models_router)
     app.state.auth_state = SimpleNamespace(auth_disabled=True)
     store = StateStore(directory / "state.json")
     store.load()

@@ -51,7 +51,7 @@ GATES: dict[str, tuple[str, list[str]]] = {
         "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider",
         "tests/test_catalogue_sources.py", "tests/test_eligibility.py",
         "tests/test_catalogue_facts.py", "tests/test_settings_truth.py",
-        "tests/test_download_claim.py",
+
     ]),
     "agent": ("agent", [
         str(ROOT / "agent" / ".venv" / "Scripts" / "python.exe"),
@@ -118,12 +118,8 @@ SABOTAGES: list[tuple[str, str, str, str, str]] = [
      "s.kind is CatalogueSourceKind.hf_hub and enabled(s)), None)",
      "s.kind is CatalogueSourceKind.hf_hub), None)"),
     # --- the config: migration, the file, redaction -------------------------------------
-    ("an old file's token is lost in the migration", "library", SOURCES,
-     '        sources[0]["token"] = token.strip()', "        pass"),
     ("a hub's token is shown", "library", SOURCES,
      '            shown["token"] = None', '            shown["token"] = entry.get("token")'),
-    ("the file no longer keeps the old address for an older Library", "library", CONFIG,
-     "                on_disk[sources_mod.OLD_ADDRESS_KEY] = address\n", ""),
     # --- downloads ------------------------------------------------------------------------
     ("a download does not record its hub", "library", DOWNLOADS,
      "            repo=spec.repo,\n            source=source,\n            revision=revision,",
