@@ -190,6 +190,7 @@ never altered. Built in LS5 (§6.6).
 | **LS6** | Fit per engine | library, agent, ui |
 | **LS7** | A node runs a prepared model from its own copy of the Library's files (§6.8; agent#12, agent#10) | agent, ui |
 | **LS8** | Delete a model from the Library, any format, with everything it owns (§6.8, Troy) | library, agent, ui |
+| **LS9** | The best route for this machine: Run recommends, and defaults to, preparing when fit says the preparing engine suits the machine better (§6.8, Troy) | library, agent, ui |
 
 Each slice ends with the real-environment acceptance on Amish_Station with
 llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
@@ -197,7 +198,7 @@ llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
 **v0.2.0 waits for this work (L1).** Proposed bar: LS1-LS6, so Strata is
 found, prepared, profiled, run and fitted from the console. LS5's
 preparation needs Troy's go for the ~80 GB download when its acceptance
-runs. Troy, 2026-10-09: LS7 and LS8 too, before v0.2.0 (§6.8), and then a cleanup
+runs. Troy, 2026-10-09: LS7, LS8 and LS9 too, before v0.2.0 (§6.8), and then a cleanup
 of every compatibility shim for versions before v0.2, which is the oldest
 supported (*I do not value compatibility with v0.1*; specs#22).
 
@@ -810,6 +811,20 @@ config*.
   drive's kind beside the folder in Settings; and a warning naming the drive
   when a Strata model is about to run from one. (Troy's own copy folder on
   Amish_Station is on a spinning disk.)
+- **B55 and B56 approved. B54 changes** (Troy: a newcomer who presses Run
+  and gets llama.cpp never learns Strata suits the machine better): preparing
+  is never silent, but whenever fit says the preparing engine suits this
+  machine better, it is recommended and is Run's default. The rule rests on
+  fit, not on speeds nobody measured: the engine Run would pick has to run
+  part of the model from system memory (`split`) or cannot fit it (`no`),
+  and the preparing engine's own fit says `fits` (or its low-RAM mode); when
+  the as-is engine fits entirely on the card, no nudge. Run asks with the
+  recommendation selected (*Best on this machine: prepare for Strata, about
+  N minutes and N GB more, then run; or run now with llama.cpp: part of the
+  model runs from system memory, slower*); the model page and Discover say
+  *Faster here with Strata after preparing* beside the dot. Measured speeds
+  (the profile builder measures tok/s) can replace the rule later. LS9,
+  after LS8, before the cleanup.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
