@@ -195,10 +195,7 @@ info:
     driver does not know its name. The same driver name on two machines
     is therefore one account served from both, a replica per model,
     exactly as a model alias on two machines is today. Every request the
-    gateway sends a driver names its `model`, unprefixed, and a driver
-    from before P1 — which would ignore that field and answer with its
-    one model — is routed nothing and listed in
-    `RoutingTableView.outdated_drivers` instead.
+    gateway sends a driver names its `model`, unprefixed.
 
     Each driver is joined to the engine runtime it follows by the
     `runtime` it reports on `/v1/info` — by **(node, name)**, never by alias,
@@ -3500,7 +3497,7 @@ components:
           description: |
             How many models this driver serves (`DriverInfo.models`).
             One for a single-model driver; hundreds for an aggregator
-            account. Absent for an outdated driver.
+            account.
         account:
           type: boolean
           description: |
@@ -3519,13 +3516,6 @@ components:
           description: |
             Why the account's most recent catalogue read failed, in the
             backend's words. The previous list stays in force.
-        outdated:
-          type: boolean
-          description: |
-            True when the driver answered `/v1/info` without a `models`
-            list: a driver from before P1, on a machine that has not
-            been updated. It routes nothing until updated, and appears
-            in `RoutingTableView.outdated_drivers`.
         runtime:
           type: string
           description: |
@@ -6080,17 +6070,6 @@ components:
           items:
             type: string
           description: Drivers in the topology that did not answer `/v1/info`.
-        outdated_drivers:
-          type: array
-          items:
-            $ref: '#/components/schemas/OutdatedDriver'
-          description: |
-            Drivers that answered `/v1/info` in the shape from before P1
-            (a single `modelId`, no `models`). The gateway routes nothing
-            to one: it would ignore the `model` a request names and
-            answer with its own. Listed so the console can say which
-            machine to update, rather than a model silently vanishing
-            after its gateway was updated and its worker was not.
         control_root:
           $ref: '#/components/schemas/ControlRootView'
         search_accounts:
@@ -6143,29 +6122,6 @@ components:
           description: |
             `order` when `webSearchOrder` names it, `default` when it is
             placed by the default rule after the named ones.
-
-    OutdatedDriver:
-      type: object
-      required:
-        - name
-      properties:
-        name:
-          type: string
-          description: The driver's name, as its agent declares it.
-        node:
-          type:
-            - string
-            - 'null'
-          description: The machine it runs on; null on a standalone install.
-        url:
-          type: string
-          format: uri
-        version:
-          type: string
-          description: The driver's own version, as it reported it.
-        modelId:
-          type: string
-          description: The one model it said it serves, so the console can name what is missing.
 
     ControlRootView:
       type: object
