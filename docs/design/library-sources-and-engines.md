@@ -742,6 +742,17 @@ config*.
 - **No shims for versions before v0.2** (Troy, the same day): B3, B6, B16,
   B23, B24, B25, B34, B37 and B67 serve only older versions and go in the
   cleanup slice after LS7 (specs#22).
+- **B22 is replaced** (Troy: the Library exists to impart knowledge on the
+  person's behalf, so it does not shrug). A prepared model shows what is
+  known of it: recorded at preparation in its provenance file (the source
+  model, the context it was prepared for, the engine's mode on that node,
+  each file it wrote and its size), inherited from its source model
+  (architecture, parameters, trained context, capabilities: the source GGUF
+  in the Library, else the engine's list entry), read from the engine's own
+  configuration where it is text (Strata's is JSON; every open-source engine
+  that prepares models keeps a text configuration beside its weights), and
+  measured (the size of the files it names). A fact that cannot be had is
+  named with why, never a bare *unknown*. Part of LS7.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
