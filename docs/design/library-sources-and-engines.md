@@ -802,7 +802,14 @@ config*.
 - **B48 and B50 approved. B49 approved for v0.2 only:** text only, the
   speed projection off and one GPU are all to be reversed after v0.2
   ([agent#14](https://github.com/eugene-plexus/agent/issues/14)).
-- **B51-B53 approved.**
+- **B51-B53 approved.** Raised by B51 (Troy): Strata reads from disk while
+  it answers, so the drive matters. The node's model-copy folder is where a
+  person chooses the fast drive; LS7 adds knowing which drives are SSDs: a
+  warning when Strata is installed and the node's copy folder (or, with no
+  copy, the Library folder) is on a spinning disk or a network share; the
+  drive's kind beside the folder in Settings; and a warning naming the drive
+  when a Strata model is about to run from one. (Troy's own copy folder on
+  Amish_Station is on a spinning disk.)
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
