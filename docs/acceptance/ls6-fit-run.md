@@ -71,3 +71,12 @@ when its facts were read off the hub (it now follows the candidate's own
 `approximate`, with a test each way), and no test reached Run's skipping of
 vLLM's context (`test_run_worker.py` now does, and is in the agent gate).
 Full suites before the push: library 743 passed, agent 2,152, ui 1,817.
+
+## After the pin: A4 macOS
+
+The pin's A4 macOS run failed one check on all three runners: 42, *admission
+answers for an MLX runtime on the Metal device*. MLX's *not estimated*
+answer returned before admission placed the launch, so it named no device.
+Fixed in agent `b362ee4` (placed first, still admitted on faith), with a
+unit assertion and a sabotage entry (62/62); `ls6-fit-acceptance.py` 17/17
+again for the change.
