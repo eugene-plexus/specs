@@ -188,6 +188,7 @@ never altered. Built in LS5 (§6.6).
 | **LS4** | Sources as a list; `engine_list` with Strata's variants | specs, library, agent, ui |
 | **LS5** | Preparation jobs, Strata first (the ~80 GB path in one action) | agent, library, ui |
 | **LS6** | Fit per engine | library, agent, ui |
+| **LS7** | A node runs a prepared model from its own copy of the Library's files (§6.8; agent#12, agent#10) | agent, ui |
 
 Each slice ends with the real-environment acceptance on Amish_Station with
 llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
@@ -195,7 +196,7 @@ llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
 **v0.2.0 waits for this work (L1).** Proposed bar: LS1-LS6, so Strata is
 found, prepared, profiled, run and fitted from the console. LS5's
 preparation needs Troy's go for the ~80 GB download when its acceptance
-runs.
+runs. Troy, 2026-10-09: LS7 too, before v0.2.0 (§6.8).
 
 ## 6. Calls (Troy, 2026-10-09)
 
@@ -346,14 +347,16 @@ Record: [ls3-prepared-run.md](../acceptance/ls3-prepared-run.md).
 - **B18.** The provenance file is the model's path, so it is also the
   runtime's `modelPath`; the agent reads its `entry` at every launch.
   Re-adopting a model with a new entry keeps its identity and profiles.
-- **B19.** An absolute `entry` is a path on the node that runs the model,
+- **B19 (amended by Troy's principle, §6.8: a prepared model's files must be in a
+  Library folder).** An absolute `entry` is a path on the node that runs the model,
   used as written; a relative one travels with its folder through the node's
   `pathMappings`. The Library checks only an entry on its own host (relative,
   or inside a Library folder). On Troy's install the Library is in the NAS
   container and Strata's files are on Amish_Station's own drive, so such an
   entry is listed with *not on the Library's machine*, never unreadable, and
   the agent checks it at Run, naming any missing file.
-- **B20.** *Add a prepared model* writes the file beside the entry when the
+- **B20 (amended, §6.8: the entry must be in a Library folder).** *Add a prepared
+  model* writes the file beside the entry when the
   entry is in a Library folder (entry written relative), otherwise into the
   Library folder the person picks (the console starts on the first).
 - **B21.** `preparedFor` absent means the engine declaring the requirement;
@@ -711,6 +714,31 @@ Library, an older console) may want a cleanup pass later ([specs#22](https://git
 - The Library page said *Fit not estimated* while the node's engines were
   still unknown, and would have printed llama.cpp's *runs from system
   memory* on vLLM's panel; both caught by the suite before they shipped.
+
+## 6.8 Troy's principle: the Library is the home of a model's files (2026-10-09)
+
+Vetoing B18-B20, Troy gave the rule rather than the details (he has not run
+Strata): **every model's files and configs live with it in a Library folder,
+and a node only ever holds a copy.** So nothing is lost when a node goes
+down or an engine is updated, uninstalled or reinstalled, and several
+identical nodes share one setup: *saving it in the library propagates the
+config*.
+
+- **B18** stands.
+- **B19 and B20 change:** *Add a prepared model* accepts only an entry inside
+  a Library folder, and says to move the engine's folder there; an entry on a
+  node's own disk is refused. (LS5's preparations already write everything,
+  the expert profile included, into `Strata-data` in the Library folder.)
+  A runtime declared before LS3 on a JSON configuration stays a shim
+  (specs#22).
+- **agent#12 is option 1:** a node that copies a model to run it copies a
+  prepared model's whole set (the provenance file, the engine's
+  configuration, the pack, the MTP helper and the GGUF shards it names),
+  keeping their layout, as a cache it can always rebuild from the Library.
+  That closes agent#10 (a split GGUF copied without its shards). Option 2,
+  preparing onto the node's own disk, is ruled out.
+- **LS7 builds it, before v0.2.0** (Troy). Kickoff:
+  `docs/private/next-session-ls7.md`.
 
 ## 7. Found while mapping (not part of this design)
 
