@@ -778,6 +778,10 @@ config*.
   entry the installed build cannot prepare is amber, *needs Strata vX: update
   Strata on this node*, one click from the update, never a failure halfway
   through a preparation.
+- **B33 and B35 approved; B34 goes** in the cleanup (check the NAS's own
+  Library config has moved to `catalogueSources` first). Troy means to
+  explore Stable Diffusion-style image models after v0.2 (not designed):
+  sources, fit and Delete stay general enough for them.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
