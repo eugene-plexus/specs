@@ -799,6 +799,9 @@ config*.
   the engine's install (llama.cpp's `gguf-py/` and `ggml/` at Strata's pinned
   commit, and setup's `requirements.txt` packages), so a first preparation
   never stops to fetch them and works offline. In LS7.
+- **B48 and B50 approved. B49 approved for v0.2 only:** text only, the
+  speed projection off and one GPU are all to be reversed after v0.2
+  ([agent#14](https://github.com/eugene-plexus/agent/issues/14)).
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
