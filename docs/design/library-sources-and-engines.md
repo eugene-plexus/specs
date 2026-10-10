@@ -829,6 +829,65 @@ config*.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
+## 6.9 LS7a built (2026-10-09 night): a node runs a prepared model from its own copy
+
+Record: [ls7-copy-run.md](../acceptance/ls7-copy-run.md). LS7 is split: LS7a
+is the node's side (below); LS7b is what the Library knows of a prepared
+model (B22 replaced, B26, B30's version check, the source list's order).
+
+**Calls building made**, for Troy's veto:
+
+- **B70. A copy is a whole model or nothing.** The node's copy of a model is
+  every file it is made of: a GGUF with all its shards (agent#10), or a
+  prepared model's set (agent#12): its provenance file, the engine's
+  configuration and every file that names, the source GGUF's shards
+  included, each kept at its place relative to the Library folder so the
+  relative paths between them hold. The runtime opens the copy only once
+  every file is current; a copy stopped halfway carries on from the files
+  already whole. Setup's intermediates the configuration does not name (the
+  MTP helper's `tensors/`, about 5 GB) are not copied.
+- **B71. Which files a prepared model is made of is the engine's knowledge**
+  (`EngineAdapter.prepared_files`; Strata reads its configuration's path
+  arguments and tokenizer), so the copy itself knows no engine. A set that
+  cannot be read, or a file outside the model's Library folder, means no
+  copy: the model runs from where it is, as before.
+- **B72. Strata's stored configuration is node-neutral.** A preparation drops
+  setup's `exe`, `log`, `lib_dirs`, `port`, `model_name` and the like from
+  the file it moves into the Library (B48); a launch writes its own.
+  Setup's GPU choice stays (identical nodes pick the same card).
+- **B73. The preparation tools come with Strata's install** (B47 reversed by
+  Troy): llama.cpp's `gguf-py/` and `ggml/` at Strata's pinned commit and
+  setup's own `requirements.txt` packages. A preparation on an install made
+  before LS7 stops, naming the fix (*reinstall Strata*), with no fetch
+  halfway through: Troy's live Strata on Amish_Station needs that reinstall
+  before its first preparation.
+- **B74. Which drive.** The agent asks the operating system (Windows: the
+  seek-penalty property, and `GetDriveTypeW` for shares; Linux: the mount's
+  file system and `queue/rotational`), never guesses, and says nothing when
+  it cannot tell. Settings names the copy folder's drive (*On an SSD*, or a
+  warning for a spinning disk or a share); Strata's install ends with a
+  warning when the copy folder is on a slow drive; a Strata start warns,
+  naming the drive, when the files it would open are on one. With copying
+  off, the install says nothing (the start still does). On Amish_Station both
+  local disks read as SSDs (an NVMe 990 PRO and an MP510), matching
+  Windows' own inventory; Y: and Z: are shares.
+- **B75.** A copy is used only while it matches the Library's file (size and
+  modification time, as before); with the Library unreachable the node does
+  not run from a copy it cannot check. Unchanged from the node-copy design.
+- **B76.** *Add a prepared model* refuses an entry outside the Library folder
+  it goes into (400, saying to move the engine's folder in), and the form
+  says so before it is sent; a provenance file written by hand that points
+  outside is listed unreadable with the same words (B19/B20 amended).
+
+**What building found:**
+
+- The node's copy skipped every `.json` path, so a prepared model was never
+  copied, and a split GGUF was copied as its first shard alone.
+- The Strata start check resolved the model path without the copy, unlike
+  admission and the launch; it now asks the same seam.
+- Troy's earlier copy folder on Amish_Station was on a share (Y: or Z:), not
+  a local spinning disk: the warning would have said *a network share*.
+
 ## 7. Found while mapping (not part of this design)
 
 Inferred from the code while mapping; settled during LS2:

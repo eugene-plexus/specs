@@ -359,11 +359,13 @@ def main() -> int:
                 json={"name": "broken", "provenance": {"engine": "strata", "entry": str(broken_entry)}},
             )
             listed = scanned()
+            # LS7 (Troy's principle): an entry outside the Library folders is
+            # listed unreadable, saying to move the engine's folder in.
             check(
-                "A2 a full rescan keeps it, and finds a provenance file written by hand",
+                "A2 a full rescan keeps it; one written by hand pointing outside the Library is unreadable, saying why",
                 (listed.get("qwen-flash") or {}).get("status") == "present"
-                and (listed.get("by-hand") or {}).get("status") == "present"
-                and ((listed.get("by-hand") or {}).get("prepared") or {}).get("entryFound") is False,
+                and (listed.get("by-hand") or {}).get("status") == "unreadable"
+                and "outside the Library folder" in ((listed.get("by-hand") or {}).get("error") or ""),
                 {k: listed.get(k) for k in ("qwen-flash", "by-hand")},
             )
             check(
