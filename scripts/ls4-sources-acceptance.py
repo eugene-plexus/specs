@@ -7,7 +7,7 @@ The Library starts from a config file written before LS4: one hub address
 and one token, the keys LS4 replaced. Nothing is started but the agent and
 its Library; one 2 KiB file is downloaded from the second fake hub.
 
-  S1  the old file's hub address and token become the first source, the
+  S1  the old file's hub address and token become the first hub, the
       token kept and never shown, and the file keeps the old keys beside the
       list for an older Library;
   S2  the agent's GET /v1/engines publishes Strata's own list: upstream
@@ -367,15 +367,16 @@ def main() -> int:
             # S1 -----------------------------------------------------------
             config = client.get(f"{proxy}/v1/config").json()
             sources = config.get("catalogueSources") or []
-            first = sources[0] if sources else {}
+            first = next((s for s in sources if s.get("kind") == "hf_hub"), {})
             check(
-                "S1a the old file's hub and token are the first source, the token never shown",
+                "S1a the old file's hub and token are the first hub, the token never shown; "
+                "the engines' lists ahead of it, as the default list has them (LS7)",
                 first.get("id") == "huggingface"
                 and first.get("kind") == "hf_hub"
                 and first.get("address") == public
                 and first.get("token") is None
                 and first.get("hasToken") is True
-                and [s.get("kind") for s in sources] == ["hf_hub", "engine_list"]
+                and [s.get("kind") for s in sources] == ["engine_list", "hf_hub"]
                 and "hfToken" not in config
                 and "tok-public" not in json.dumps(config),
                 sources,
@@ -421,7 +422,7 @@ def main() -> int:
                 "S3 a second hub is saved with its own token; both tokens stay hidden",
                 patched.get("applied") == ["catalogueSources"]
                 and [(s["id"], s.get("hasToken")) for s in after]
-                == [("huggingface", True), ("engines", None), ("corp", True)]
+                == [("engines", None), ("huggingface", True), ("corp", True)]
                 and "tok-corp" not in json.dumps(after),
                 (patched, after),
             )
@@ -430,8 +431,8 @@ def main() -> int:
                 on_disk.get("catalogueBaseUrl") == public
                 and bool(on_disk.get("hfToken"))
                 # Sealed alike, or plain alike when the Library holds no key.
-                and type(on_disk.get("hfToken")) is type(on_disk["catalogueSources"][0]["token"])
-                and "hasToken" not in on_disk["catalogueSources"][0],
+                and type(on_disk.get("hfToken")) is type(on_disk["catalogueSources"][1]["token"])
+                and "hasToken" not in on_disk["catalogueSources"][1],
                 {k: on_disk.get(k) for k in ("catalogueBaseUrl", "hfToken")},
             )
 
@@ -446,13 +447,13 @@ def main() -> int:
             order = [(r.get("source"), r.get("repo")) for r in results]
             statuses = {s["id"]: s for s in page.get("sources") or []}
             check(
-                "S4a every source answers together, the engines' lists first, each result "
-                "naming its source",
+                "S4a every source answers together in the list's order (the engines' lists "
+                "first, as this list has them), each result naming its source",
                 order[:9] == [("engines", m["source"]["repoId"]) for m in listed]
                 and order[9:] == [("huggingface", "org/Small-GGUF"), ("huggingface", OTHER_REPO),
                                   ("corp", CORP_REPO)]
                 and all(r.get("engine") == "strata" for r in results[:9])
-                and [s["results"] for s in statuses.values()] == [2, 9, 1],
+                and [s["results"] for s in statuses.values()] == [9, 2, 1],
                 (order, statuses),
             )
             check(

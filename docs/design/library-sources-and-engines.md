@@ -188,7 +188,7 @@ never altered. Built in LS5 (§6.6).
 | **LS4** | Sources as a list; `engine_list` with Strata's variants | specs, library, agent, ui |
 | **LS5** | Preparation jobs, Strata first (the ~80 GB path in one action) | agent, library, ui |
 | **LS6** | Fit per engine | library, agent, ui |
-| **LS7** | A node runs a prepared model from its own copy of the Library's files (§6.8; agent#12, agent#10) | agent, ui |
+| **LS7** | A node runs a prepared model from its own copy of the Library's files (§6.8; agent#12, agent#10); the Library says what is known of a prepared model (B22 replaced, B26, B30, the source list's order) | specs, agent, library, ui |
 | **LS8** | Delete a model from the Library, any format, with everything it owns (§6.8, Troy) | library, agent, ui |
 | **LS9** | The best route for this machine: Run recommends, and defaults to, preparing when fit says the preparing engine suits the machine better (§6.8, Troy) | library, agent, ui |
 
@@ -887,6 +887,79 @@ model (B22 replaced, B26, B30's version check, the source list's order).
   admission and the launch; it now asks the same seam.
 - Troy's earlier copy folder on Amish_Station was on a share (Y: or Z:), not
   a local spinning disk: the warning would have said *a network share*.
+
+## 6.10 LS7b built (2026-10-10 night): the Library says what is known of a prepared model
+
+Record: [ls7b-facts-run.md](../acceptance/ls7b-facts-run.md). Troy replaced
+B22 (*the point of the Library is to impart experience and knowledge*) and
+asked for B26, B30's fix and the source list's order in LS7.
+
+**Calls building made**, for Troy's veto:
+
+- **B77. The engine's adapter reads its own entry file; the Library never
+  does** (B2 kept). The agent's `POST /v1/engines/{engine}/prepared/inspect`
+  answers a draft provenance file. Strata's: `--native` names the source
+  GGUF, and its list entry gives the title, architecture and size;
+  `--max-context` the context it was prepared for; setup's own flags say
+  how it holds the experts (*every expert in RAM*, *a RAM budget of N GiB
+  of its experts, the rest read from the SSD*, or the low-RAM mode's two
+  variants); every path it names beside the source's shards is a file of
+  its own, the entry first, the MTP helper's marked `shared`. A file it
+  names that is not there is a 422 naming it.
+- **B78. A preparation records the same facts by the same reading**: after
+  setup's configuration is moved into the Library (B48), the adapter reads
+  it back, so a prepared model and an added one say the same things.
+- **B79. Measured, not trusted.** The Library sizes each recorded file on its
+  own host; `diskBytes` (and the model's size in lists) is the provenance
+  file and those files, not the source model, which is counted as its own
+  model. When a recorded file is not there, the size is not given and the
+  reason names the first missing file.
+- **B80. Inherited from the source** when the Library lists it (linked by
+  `source.path` only, as before): its architecture when the provenance
+  records none, its parameter count and size label. The provenance keeps
+  the architecture for when the source is deleted.
+- **B81. What is not known is named, with why**: its files, its size, its
+  source, its architecture, its context. A provenance file from before LS7b
+  (only test installs have one) says *add it again or prepare it again*; no
+  migration (v0.2 is the floor).
+- **B82. *Add a prepared model* asks the picked node's agent** what the file
+  is, 0.4 s after the path stops changing and only once it is in a Library
+  folder; it shows what was read in one line and chooses *Made from* for
+  the model the file names (the person can change it; B26). A file the
+  engine refuses cannot be added; a node that cannot be asked still allows
+  adding, saying the Library will name what it does not know. The draft's
+  files are relative to the entry's folder; the Library rewrites them
+  relative to the provenance file when the person keeps it elsewhere.
+- **B83. Inspect reads only a file in a Library folder**, by the same check
+  a launch uses, and only for a signed-in operator.
+- **B84. B30: the oldest engine an entry needs** is setup's own per-model
+  floor (`MODELS[m]["engine"]`): only UD-IQ4_XS names one (v0.1.38);
+  setup's overall `MIN_ENGINE` is the adapter's pinned version. Each node
+  judges its own installed engine (`engineTooOld`: the installed version),
+  so two nodes on different versions answer differently. *Prepare* then
+  says *This needs Strata v0.1.38 or newer, and <node> has v0.1.37: update
+  Strata on <node> from Backends first*, and does not start. A node without
+  the engine says nothing: installing it brings the pinned version.
+- **B85. The source list's order is the answer's order**, whatever a
+  source's kind; the default list puts the engines' lists first, then the
+  public hub; Settings has ↑ and ↓ on each source. A file from before LS4
+  migrates its hub into the hub entry, wherever that is in the list. **Troy:
+  if your Library's saved list has the hub first, Discover now shows the
+  hub's results first; move *Engines' own lists* up in Settings.**
+- **B86. The model page** says *runs with* (the mode, *on the machine that
+  prepared it*), the shared files and their size, the context *as prepared;
+  preparing it again changes it*, the size as *its own files*, and each
+  missing fact as *not known: why*.
+
+**What building found:**
+
+- LS7a's CI was red twice: the copy planner indexed a Windows-shaped path's
+  parents on Linux (agent 052f196: a single file plans no set, and a set's
+  Library folder is found in the path's own convention), and the LS7a
+  acceptance compared a runner's 8.3 short temp name with the long name the
+  agent resolves (specs b2e43ac).
+- The LS4 acceptance asserted the old order; it now reads the default list
+  as the engines' lists first.
 
 ## 7. Found while mapping (not part of this design)
 
