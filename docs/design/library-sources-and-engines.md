@@ -3,8 +3,9 @@
 **Status: calls L1-L11 taken by Troy 2026-10-09 (§6); v0.2.0 is LS1-LS6
 (L1). LS1 built and pinned 2026-10-09 (§6.2); LS2 built and pinned
 2026-10-09 (§6.3); LS3 built and pinned 2026-10-09 (§6.4); LS4 built and
-pinned 2026-10-09 (§6.5); LS5 built and pinned 2026-10-09 (§6.6), its real-model
-run waiting for Troy's go; LS6 next.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
+pinned 2026-10-09 (§6.5); LS5 built and pinned 2026-10-09 (§6.6), with
+Strata's real-model run; LS6 built 2026-10-09 (§6.7): v0.2's six slices are
+done.** Troy (2026-10-09), after installing Strata on Amish_Station and finding
 a GGUF profile offered llama.cpp alone: *"We have introduced a separation
 between installing the engine and installing the model through the Library.
 I think it makes sense to keep that separation, but that also means our
@@ -137,6 +138,7 @@ is not installed on Amish_Station"*.
   runs a hub's models as they are (§6.5, B39).
 - **Fit names its engine.** Fit becomes a per-engine answer; an engine with no
   fit model says *Fit not estimated*, never llama.cpp's number in its place.
+  Built in LS6 (§6.7).
 
 ### 4.4 Sources are a list
 
@@ -612,6 +614,101 @@ continue as for Run.
   output. Fixed in agent `e03ea78`. Second, a runtime reads *stopped* a
   moment before Strata's native engine has exited:
   [agent#13](https://github.com/eugene-plexus/agent/issues/13).
+
+## 6.7 LS6 built (2026-10-09): each engine owns its fit model
+
+Record: [ls6-fit-run.md](../acceptance/ls6-fit-run.md).
+
+**The shape.** `EngineDescriptor.fit` (`EngineFitModel`) sits beside
+`accepts`, one of three kinds (`FitModelKind`):
+
+- `spill`, llama.cpp: today's arithmetic, unchanged.
+- `reserved_share`, vLLM: read off its own `request_memory` (upstream main):
+  it takes `gpuMemoryUtilization` of each card's **total** memory, refuses to
+  start with less free, splits the model evenly across its cards, and moves
+  nothing to system memory. `fits`, `tight` (less than its share is free) or
+  `no`; never `split`.
+- `engine_table`, Strata: its setup's own `--check` answer for each model on
+  its list, applied to the node by the adapter (`EngineFitModel.table`).
+
+The judge answers each engine's fit when asked (`EligibilityRequest.fit`,
+`EngineVerdict.fit`), `GET /v1/models/{id}/fit` takes `fitModel`, and
+admission measures a launch by its engine's own model.
+
+**Calls building made**, for Troy's veto:
+
+- **B58. Data where it can be.** The kind and its numbers are data on the
+  descriptor; the `spill` and `reserved_share` arithmetic is the Library's
+  (one per kind, never per engine); Strata's table is worked out by its
+  adapter on its node, as B51's disk is, so setup's rules stay in the agent
+  and the Library only relays a row. The Library still names no engine (B2).
+- **B59. Strata's verdict is setup's own.** `--check` at the pinned commit,
+  on the node's total RAM as setup reads it and the card setup would take
+  alone (the most memory, NVIDIA or AMD): *fits* and the RAM-budget mode are
+  `fits`, the low-RAM mode `split` (it runs, part of the experts from the
+  SSD), *tight* `tight` (a few GB short: the system pages), *does not fit*
+  `no`; a node with no card Strata can use is `unknown`. Under 12 GB of VRAM
+  the words add setup's *it will be slow*.
+- **B60. Strata at admission.** `no` and `tight` refuse, as setup stops by
+  default (`?force=true` overrides); the low-RAM mode admits. In the mode
+  that copies every expert into RAM, less RAM free now than the experts is
+  `tight`. Strata fills its card with its expert cache, so the ledger holds
+  the card's free memory while it loads; an unknown holds nothing. A model
+  made outside Eugene that names no source on the list is admitted on faith.
+- **B61. vLLM's share is 0.92**, vLLM's own default on upstream main (§6.1
+  said 0.9, the older default); a launch's `gpuMemoryUtilization` wins.
+  `tight` refuses whatever `gpuLayers` says (vLLM refuses to start), the
+  ledger holds the whole share, the buffers are llama.cpp's flat 1 GiB per
+  card (not measured for vLLM), the KV term for a safetensors folder stays
+  the labelled estimate (the scan does not read `config.json`'s heads yet),
+  and its context is `maxModelLen`.
+- **B62. MLX and Kev declare none:** *Fit not estimated*, admission
+  `unknown`. MLX was already `unknown` in practice (Metal reports no free
+  memory); Kev loses a file-size verdict that was llama.cpp's shape.
+- **B63. The dot (§4.3, built now).** An engine whose fit is a measured `no`
+  counts as one that cannot run the model: too large for llama.cpp but run
+  by Strata after preparing it is amber; red only when every engine that
+  would run it says `no`. *Not estimated* and `unknown` never count. Without
+  the question, the level is as before (an older console).
+- **B64. Sizes.** A version, a starter entry and an engine's list entry carry
+  `sizeBytes` in their facts; a search row names no file and gets no fit. A
+  fit resting on guessed facts (a search row's) is approximate, as is a KV
+  term from a share of the weights.
+- **B65.** A `spill` engine under a caller's budget compares free memory, as
+  `GET /fit` with `vramBytes` alone does; the total in the question is for a
+  share-taking engine, so the popover never says `tight` where the panel
+  says `split`.
+- **B66. Whose fit is shown.** The Library page's panel shows the engine Run
+  would pick (its `preference`, unchanged by fit); every engine's fit is a
+  line under its verdict there and in each dot's popover; Discover's version
+  column shows the dot's engine: llama.cpp's detailed badge for a GGUF it
+  scores, otherwise that engine's own answer, named. Until the node says
+  which engines it has, no fit is shown.
+- **B67.** A Library older than LS6 refuses the fit fields (422): the console
+  asks again without them, so the dots stay engine-only rather than vanish.
+- **B68. Run and vLLM's context.** Run suggests a context only to an engine
+  whose flags have `contextSize`: a vLLM profile carries none, vLLM takes the
+  model's own length, and admission measures that by its share, naming
+  `maxModelLen` and the longest its share holds when it refuses. Picking a
+  vLLM context from Run is [library#9](https://github.com/eugene-plexus/library/issues/9).
+- **B69.** Strata's table reads the node's devices at most once a minute:
+  `GET /v1/engines` is polled, and the totals do not move.
+
+**What building found:**
+
+- vLLM's default share moved to 0.92 on upstream main; the agent's flag help
+  already said so, §6.1 did not.
+- §4.3's red-for-*does-not-fit* was written down in LS2 and never built: a
+  fit of `no` did not touch a dot.
+- A Run of a vLLM model failed at launch whenever it suggested a context: the
+  profile it wrote carried `contextSize`, which a vLLM spec refuses (B68,
+  library#9). Admission asked vLLM about `contextSize`, which it never has.
+- With a 32 GB card, setup's rule runs IQ2_XS on 16 GB of RAM in the low-RAM
+  mode (the card holds about 76% of the experts): the table, not a guess,
+  says Strata is green there.
+- The Library page said *Fit not estimated* while the node's engines were
+  still unknown, and would have printed llama.cpp's *runs from system
+  memory* on vLLM's panel; both caught by the suite before they shipped.
 
 ## 7. Found while mapping (not part of this design)
 
