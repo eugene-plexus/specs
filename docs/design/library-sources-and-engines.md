@@ -189,6 +189,7 @@ never altered. Built in LS5 (§6.6).
 | **LS5** | Preparation jobs, Strata first (the ~80 GB path in one action) | agent, library, ui |
 | **LS6** | Fit per engine | library, agent, ui |
 | **LS7** | A node runs a prepared model from its own copy of the Library's files (§6.8; agent#12, agent#10) | agent, ui |
+| **LS8** | Delete a model from the Library, any format, with everything it owns (§6.8, Troy) | library, agent, ui |
 
 Each slice ends with the real-environment acceptance on Amish_Station with
 llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
@@ -196,7 +197,7 @@ llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
 **v0.2.0 waits for this work (L1).** Proposed bar: LS1-LS6, so Strata is
 found, prepared, profiled, run and fitted from the console. LS5's
 preparation needs Troy's go for the ~80 GB download when its acceptance
-runs. Troy, 2026-10-09: LS7 too, before v0.2.0 (§6.8), and then a cleanup
+runs. Troy, 2026-10-09: LS7 and LS8 too, before v0.2.0 (§6.8), and then a cleanup
 of every compatibility shim for versions before v0.2, which is the oldest
 supported (*I do not value compatibility with v0.1*; specs#22).
 
@@ -756,6 +757,18 @@ config*.
 - **B21 approved. B24 and B25 go** in the pre-v0.2 cleanup. **B26 changes**
   (LS7): *Made from* is read from the engine's configuration (Strata's names
   the GGUF it was made from), with the picker only when that fails.
+- **B28 and B29 approved. B27 is replaced by a Delete for every model**
+  (Troy chose it over a Delete for prepared models alone, 2026-10-09): LS8,
+  after LS7, before the cleanup. Today no model has one (files are deleted
+  outside Eugene; *Forget* drops a missing entry). Building's starting
+  points, for his veto in LS8: one button per model removes every file it
+  owns (a GGUF and its shards, a folder, a prepared model's own files);
+  files another model still uses stay (a projector shared by quants,
+  Strata's MTP helper); the confirmation lists every file, its size and the
+  saved profiles before anything goes; a GGUF a prepared model is made from
+  (Strata reads it while it runs) names that model and offers both; refused
+  while the model runs on any node or is downloading; nodes' copies follow
+  on their own.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
