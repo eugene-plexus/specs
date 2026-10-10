@@ -39,6 +39,7 @@ AG = "agent/src/eugene_plexus_agent/"
 WORKER = AG + "run_worker.py"
 JOBS = AG + "preparation.py"
 RECIPE = AG + "engines/strata_prepare.py"
+STRATA = AG + "engines/strata.py"
 MODELS = AG + "engines/strata_models.py"
 ROUTES = AG + "routes/runtimes.py"
 STORE = "ui/src/lib/oneClickRun.ts"
@@ -59,7 +60,7 @@ GATES: dict[str, tuple[str, list[str]]] = {
         str(ROOT / "agent" / ".venv" / "Scripts" / "python.exe"),
         "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider",
         "tests/test_strata_prepare.py", "tests/test_run_preparation.py",
-        "tests/test_engines.py", "tests/test_run_worker.py",
+        "tests/test_engines.py", "tests/test_run_worker.py", "tests/test_strata.py",
     ]),
     "ui": ("ui", [
         "cmd", "/c", "npx", "vitest", "run", "src/components/PrepareModel.test.tsx",
@@ -192,6 +193,11 @@ SABOTAGES: list[tuple[str, str, str, str, str]] = [
      "    return min(cards, key=lambda c: (-round(c[1] / 1024), c[0]))[0]", "    return cards[0][0]"),
     ("one card is named with --gpu", "agent", RECIPE,
      "    if len(cards) < 2:\n        return None", "    if not cards:\n        return None"),
+    # --- the real run's finding: a failed start names the engine's reason ----------------
+    ("a launch names no log, so Strata cannot say why it failed", "agent", STRATA,
+     '        config["log"] = str(launch.with_suffix(".log"))', "        pass"),
+    ("Strata's own reason is not lifted into lastError", "agent", STRATA,
+     "        at = output_tail.rfind(marker)", "        at = -1"),
     # --- the agent: the list as this node reports it -----------------------------------
     ("disk ignores the low-RAM file", "agent", MODELS,
      "        if ram_gib < choice.arena_gb + LOW_RAM_HEADROOM_GB:", "        if False:"),

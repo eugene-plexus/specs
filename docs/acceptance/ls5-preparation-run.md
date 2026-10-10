@@ -68,14 +68,14 @@ step could finish between two reports. The stand-in's step is now 6 s.
   `RunDialog.test.tsx` (no *Skip*), the Library page (3) and Discover (1).
   Full suite 1,802 passed; tsc, eslint, prettier clean.
 - Sabotage of the changed code (`scripts/ls5-sabotage.py`), each restored
-  from a copy: **61 of 61 caught** (library 13, agent 39, ui 9). The first
+  from a copy: **63 of 63 caught** (library 13, agent 41, ui 9). The first
   pass caught 58 of 60. One Library test passed for the wrong reason: its
   entry *outside every Library folder* did not exist, so *not there*
   answered first. It now exists, and the refusal names the folder. One
   sabotage was dropped: taking `/T` out of the cancel's `taskkill`. CPython's
   venv launcher puts its child in a kill-on-close job, so ending the
   launcher alone ends setup too; no check can tell the two apart. Two
-  entries came later: an unreachable Library folder, and the Discover fix
+  entries came later: an unreachable Library folder and the Discover fix
   below.
 
 ## Found on the live install meanwhile (LS4)
@@ -94,8 +94,52 @@ never saw this: its fake hubs answered any direction. That one plain-string
 default (`CatalogueSearchRequest.direction`) is the only enum field with a
 string default in the Library's or the agent's generated models.
 
+## The real-model run (Troy's go, 2026-10-09)
+
+`scripts/ls5-strata-real-run.py --folder C:\ls5-strata` on Amish_Station:
+RTX 5090 (32 GB), 93.6 GiB RAM, the 990 PRO NVMe. A throwaway agent and
+Library on free ports; the live install untouched. Troy stopped the live
+install's llama.cpp model first: it held 30.5 GB of VRAM. The baseline after
+that was 2.3 GB of VRAM and 65 GB of RAM free. **18 of 19** checks passed,
+18:30 to 19:18.
+
+| | Measured |
+| --- | --- |
+| I1 install (real recipe, from upstream) | 24 s |
+| D1 IQ2_XS: download (68 GB, pinned revision) | 13.7 min |
+| D1 preparing (setup: tools, packages, pack, the 5 GB MTP helper) | 6.7 min; Strata-data 7.9 GB (setup's rule: 8) |
+| D1 settings to ready | 30 s |
+| Setup's own choices for this PC | 128K context, 8-bit KV, KV streaming, one GPU; no warnings |
+| G1 short answer (17 × 23) | 391, 1.2 s |
+| G1 long streamed answer | 1,500 tokens in 17.1 s: **87.8 tok/s**, first token 0.48 s, no repetition |
+| G1 MTP (Strata's `/v1/status`) | 791 of 1,229 drafted tokens accepted (64%) |
+| G1 cancelled stream, then a prompt | answered in 0.56 s |
+| Loaded | VRAM 31.9 GB; RAM free 27.8 GiB |
+| S1 the Coder IQ1_M: download (58 GB) / preparing / to ready | 23.9 min / **15 s** (MTP helper shared) / 21 s |
+| S1 switching (stop one, start the other) | Coder to IQ2_XS 18 s, back 15 s; the stopped one's processes gone each time |
+| F1 a prepared model with an empty pack | fails before ready, and the run says so |
+| X1 stop | server and native engine gone; VRAM 31.4 GB to 1.6 GB |
+| U1 | uninstall refused while running; after a stop it removes the engine and keeps the prepared files; reinstall runs the same model again |
+
+**The one failure (S1, first stop):** the runtime read *stopped* while the
+native `strata.exe` was still exiting. It was gone moments later (X1, after
+five seconds, found nothing left), and both switches loaded fine.
+[agent#13](https://github.com/eugene-plexus/agent/issues/13): the supervisor
+waits only for the process it started, a venv launcher two levels above the
+engine.
+
+**Found and fixed: a failed start did not say why** (agent `e03ea78`). F1's
+runtime said only *"exited with code 1"*. Eugene's launch configuration named
+no `log`, so Strata's server sent the native engine's error output to
+`DEVNULL`. It now names a log beside the launch configuration. Strata's error
+then ends *"the engine log's last lines: strata generate: cannot open
+...\empty-pack/index.txt"*, checked by running the real server on F1's
+configuration, and the adapter's `explain_exit` makes that the runtime's
+`lastError`. Two more sabotages, both caught (63 of 63).
+
 ## Not covered
 
-- The real Strata with a real model: `scripts/ls5-strata-real-run.py`, which
-  needs Troy's go (about 76 GB on the chosen drive).
+- Preparation and running through the live install's console. Its Library
+  folder is on the NAS, so this would be the network case (agent#12).
 - A Library folder on another machine: works, slowly (agent#12).
+- Setup's tuning (`--calibrate`), vision, several GPUs (not offered: B49).

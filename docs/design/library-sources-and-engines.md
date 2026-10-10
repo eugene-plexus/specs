@@ -601,6 +601,17 @@ continue as for Run.
 - On an install whose Library folder is on another machine (Troy's NAS), the
   GGUF and Strata's pack are read over the network while Strata answers:
   [agent#12](https://github.com/eugene-plexus/agent/issues/12), for Troy.
+- The CI acceptance first used IQ2_XS. The Windows runner has 16 GB of RAM,
+  so by setup's rule IQ2_XS also needs its low-RAM file there: 44 GB, against
+  31 GB free. The disk check refused it, rightly. The fixture is now
+  Unsloth's UD-IQ4_XS, a RAM-budget choice whose rule is 8 GB anywhere.
+- The real run (Troy's go; 18 of 19, record §"The real-model run"): from
+  download to running in one action, 87.8 tok/s with MTP. Two findings.
+  First, a failed start did not name its cause: no `log` in the launch
+  configuration, so Strata's server discarded the native engine's error
+  output. Fixed in agent `e03ea78`. Second, a runtime reads *stopped* a
+  moment before Strata's native engine has exited:
+  [agent#13](https://github.com/eugene-plexus/agent/issues/13).
 
 ## 7. Found while mapping (not part of this design)
 

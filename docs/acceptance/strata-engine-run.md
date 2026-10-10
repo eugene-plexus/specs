@@ -83,7 +83,20 @@ eligible for in-app updates only after every workflow on its installer commit
 passes. The container workflow verifies the built image before publishing
 `ghcr.io/eugene-plexus/control-plane:edge`. Published v0.1.0 assets remain unchanged.
 
-## Still required before claiming real-model validation
+## Real-model validation: done 2026-10-09 (LS5)
+
+On Amish_Station (RTX 5090, 93.6 GiB RAM), through Eugene end to end:
+install, download and prepare (IQ2_XS and the Coder IQ1_M, with Strata's own
+setup), load, a correct answer, a long answer at 87.8 tok/s with MTP
+accepting 64% of drafted tokens, a cancelled stream followed by a prompt
+answer, switching between the two prepared models both ways, a failed load
+that names its cause (after agent `e03ea78`), a stop that frees the VRAM
+(31.4 GB to 1.6 GB), and uninstall and reinstall around a prepared model.
+Record: [ls5-preparation-run.md](ls5-preparation-run.md). Open: agent#13 (a
+runtime reads *stopped* a moment before Strata's native engine has exited).
+Strata remains Experimental.
+
+## What was still required before that (2026-10-04)
 
 A prepared model on supported NVIDIA hardware: initial load, MTP generation,
 stream cancellation, complete server/native-child shutdown, switching between

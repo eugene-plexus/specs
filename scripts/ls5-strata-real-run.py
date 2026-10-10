@@ -1,10 +1,10 @@
 """LS5's real-environment run: Strata, a real model, a real GPU (operator-run, not CI).
 
 library-sources-and-engines.md §5: LS5's acceptance is Strata's owed real-model
-validation (strata-engine-run.md, "Still required"). It needs about 76 GB on
-the chosen drive and downloads about 68 GB (Qwen3.8-Flash-Next IQ2_XS at the
-revision Strata pins) plus Strata's MTP helper (~5 GB) and its tools; run it
-only with Troy's go.
+validation (strata-engine-run.md, "Still required"). It needs about 135 GB
+on the chosen drive and downloads about 126 GB (Qwen3.8-Flash-Next IQ2_XS and
+the Coder IQ1_M, at the revisions Strata pins) plus Strata's MTP helper
+(~5 GB) and its tools; Troy's go, 2026-10-09: C:, with a second model.
 
 A throwaway standalone agent on free loopback ports supervises its own
 Library, whose one folder is `<folder>/models` on the drive chosen, with
@@ -16,8 +16,8 @@ engines installed into `<folder>/engines`. The live install is not touched.
   G1  answers through the engine: a short answer, a long streamed answer
       (tokens/s), a cancelled stream followed by a prompt answer, what
       `/v1/status` says about speculative decoding (MTP);
-  S1  switching between two prepared models (a second configuration of the
-      same files at 8K, adopted as *Add a prepared model* does) and back;
+  S1  a second real model (the Coder IQ1_M, about 58 GB more), downloaded
+      and prepared beside the first, and switching between the two and back;
   F1  a prepared model whose pack is empty fails to load and says why;
   X1  stopping it ends the server and the native engine, and frees the VRAM;
   U1  uninstall is refused while it runs; after a stop, uninstall keeps the
@@ -55,6 +55,12 @@ FILES = [
     "IQ2_XS/Qwen3.8-Flash-Next-GSQ-RCO-IQ2_XS-00002-of-00002.gguf",
 ]
 PREPARED = "qwen3.8-flash-next-iq2_xs"
+CODER_REPO = "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-Coder-GGUF"
+CODER_REVISION = "5348543e0147355ac9cbcb031184a3546350988e"
+CODER_FILES = [
+    "IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00001-of-00002.gguf",
+    "IQ1_M/Qwen3.8-Flash-Next-GSQ-RCO-IQ1_M-00002-of-00002.gguf",
+]
 REPORT: dict[str, Any] = {"started": time.strftime("%Y-%m-%d %H:%M:%S")}
 FAILURES: list[str] = []
 
@@ -231,37 +237,40 @@ def main() -> int:
         note("entry", entry, folder)
 
         # D1 --------------------------------------------------------------
-        op = "ls5-real"
-        put = client.put(f"{proxy}/v1/run-operations/{op}", json={
-            "node": node,
-            "download": {"repo": REPO, "files": FILES, "revision": REVISION},
-            "preparation": {"engine": "strata"},
-        })
-        check("D1 Download and prepare is accepted", put.status_code == 202, put.text[:300])
-        phases: dict[str, float] = {}
-        last_line = ""
-        t0 = time.perf_counter()
-        while True:
-            record = client.get(f"{proxy}/v1/run-operations/{op}").json()
-            step = record["step"]
-            phases.setdefault(step, round(time.perf_counter() - t0))
-            line = step
-            if step == "downloading" and record.get("download"):
-                d = record["download"]
-                line += f" {(d.get('bytesDownloaded') or 0) / 1e9:.1f}/{(d.get('bytesTotal') or 0) / 1e9:.1f} GB"
-            if step == "preparing" and record.get("preparation"):
-                p = record["preparation"]
-                line += f" {p.get('step')} · {(p.get('bytesWritten') or 0) / 1e9:.1f}/{(p.get('bytesNeeded') or 0) / 1e9:.0f} GB · {p.get('message')}"
-            if line != last_line:
-                say(line)
-                last_line = line
-            if step in ("ready", "failed", "cancelled", "skipped"):
-                break
-            time.sleep(5)
-        note("operation", {"phasesStartedAtSeconds": phases, "record": record}, folder)
-        check("D1 downloaded, prepared and loaded: ready on Strata",
-              record["step"] == "ready" and record.get("engine") == "strata",
-              {k: record.get(k) for k in ("step", "failedStep", "error")})
+        def download_and_prepare(op: str, repo: str, files: list[str], revision: str) -> dict[str, Any]:
+            put = client.put(f"{proxy}/v1/run-operations/{op}", json={
+                "node": node,
+                "download": {"repo": repo, "files": files, "revision": revision},
+                "preparation": {"engine": "strata"},
+            })
+            check(f"D1 Download and prepare is accepted ({op})", put.status_code == 202, put.text[:300])
+            phases: dict[str, float] = {}
+            last_line = ""
+            t0 = time.perf_counter()
+            while True:
+                record: dict[str, Any] = client.get(f"{proxy}/v1/run-operations/{op}").json()
+                step = record["step"]
+                phases.setdefault(step, round(time.perf_counter() - t0))
+                line = step
+                if step == "downloading" and record.get("download"):
+                    d = record["download"]
+                    line += f" {(d.get('bytesDownloaded') or 0) / 1e9:.1f}/{(d.get('bytesTotal') or 0) / 1e9:.1f} GB"
+                if step == "preparing" and record.get("preparation"):
+                    p = record["preparation"]
+                    line += f" {p.get('step')} · {(p.get('bytesWritten') or 0) / 1e9:.1f}/{(p.get('bytesNeeded') or 0) / 1e9:.0f} GB · {p.get('message')}"
+                if line != last_line:
+                    say(line)
+                    last_line = line
+                if step in ("ready", "failed", "cancelled", "skipped"):
+                    break
+                time.sleep(5)
+            note(op, {"phasesStartedAtSeconds": phases, "record": record}, folder)
+            check(f"D1 downloaded, prepared and loaded: ready on Strata ({op})",
+                  record["step"] == "ready" and record.get("engine") == "strata",
+                  {k: record.get(k) for k in ("step", "failedStep", "error")})
+            return record
+
+        record = download_and_prepare("ls5-real", REPO, FILES, REVISION)
         if record["step"] != "ready":
             return 1
         name = record["runtime"]
@@ -332,38 +341,57 @@ def main() -> int:
         check("G1 after a cancelled stream the next prompt is answered", after.status_code == 200, after.text[:300])
 
         # S1 --------------------------------------------------------------
+        # A second real model (Troy, 2026-10-09): the Coder, its own files,
+        # prepared beside the first in the same Strata-data (the MTP helper
+        # is shared), then switched to and back with the agent's stop/start.
         data = models / "Strata-data"
         own = json.loads((data / "strata-iq2_xs.json").read_text(encoding="utf-8"))
-        small = dict(own, args=list(own["args"]))
-        small["args"][small["args"].index("--max-context") + 1] = "8192"
-        (data / "strata-iq2_xs-8k.json").write_text(json.dumps(small, indent=1), encoding="utf-8")
-        adopted = client.post(f"{proxy}/v1/models/prepared", json={
-            "name": "qwen-iq2_xs-8k",
-            "provenance": {"engine": "strata", "entry": str(data / "strata-iq2_xs-8k.json")},
-        })
-        check("S1 a second configuration is adopted as a prepared model", adopted.status_code == 201, adopted.text[:300])
-        second = client.post("/v1/runtimes", json={
-            "name": "strata-8k", "engine": "strata", "modelPath": adopted.json().get("path"), "autoStart": False,
-        })
-        check("S1 a runtime is declared on it, stopped", second.status_code in (200, 201), second.text[:300])
         a_tree = list(process_tree(int(runtime(name)["pid"])))
         client.post(f"/v1/runtimes/{name}/stop")
         until_status(name, ("stopped",), 300)
+        check("S1 stopping the first ends its processes", not alive(a_tree), alive(a_tree))
+        coder = download_and_prepare("ls5-real-coder", CODER_REPO, CODER_FILES, CODER_REVISION)
+        if coder["step"] != "ready":
+            return 1
+        second = coder["runtime"]
+        b = runtime(second)
+        b_health = httpx.get(str(b["url"]).rstrip("/") + "/health", timeout=30, trust_env=False).json()
+        b_engine = httpx.Client(base_url=str(b["url"]).rstrip("/"), timeout=600, trust_env=False)
+        coded = b_engine.post("/v1/chat/completions", json={
+            "model": "coder", "max_tokens": 200, "temperature": 0,
+            "messages": [{"role": "user", "content": "Write a Python function that returns the n-th Fibonacci number."}],
+        })
+        note("coder", {"runtime": b, "health": b_health, "status": coded.status_code,
+                       "answer": coded.text[:2000], "vramUsedMiB": vram_used_mib(),
+                       "ramAvailableGiB": ram_available_gib(),
+                       "prepared": sorted(p.name for p in data.glob("*.eugene-prepared.json"))}, folder)
+        check("S1 the Coder, prepared beside the first, loads and answers",
+              b.get("status") == "ready" and coded.status_code == 200 and "def " in coded.text,
+              {"status": b.get("status"), "answer": coded.text[:300]})
+        timings: dict[str, float] = {}
+        b_tree = list(process_tree(int(b["pid"])))
+        client.post(f"/v1/runtimes/{second}/stop")
+        until_status(second, ("stopped",), 300)
         t1 = time.perf_counter()
-        client.post("/v1/runtimes/strata-8k/start")
-        b = until_status("strata-8k", ("ready", "crashed"), 1800)
-        b_health = httpx.get(str(b["url"]).rstrip("/") + "/health", timeout=30, trust_env=False).json() if b.get("url") else {}
-        note("switch", {"toSecondSeconds": round(time.perf_counter() - t1), "second": b, "health": b_health,
-                        "firstStillRunning": alive(a_tree)}, folder)
-        check("S1 the second loads at 8K, the first is gone",
-              b.get("status") == "ready" and b_health.get("max_context") == 8192 and not alive(a_tree),
-              {"status": b.get("status"), "health": b_health, "alive": alive(a_tree)})
-        b_tree = list(process_tree(int(b["pid"]))) if b.get("pid") else []
-        client.post("/v1/runtimes/strata-8k/stop")
-        until_status("strata-8k", ("stopped",), 300)
         client.post(f"/v1/runtimes/{name}/start")
         back = until_status(name, ("ready", "crashed"), 1800)
-        check("S1 and back to the first", back.get("status") == "ready" and not alive(b_tree), back.get("lastError"))
+        timings["toFirstSeconds"] = round(time.perf_counter() - t1)
+        check("S1 switching back to the first: the Coder is gone, the first ready",
+              back.get("status") == "ready" and not alive(b_tree), back.get("lastError"))
+        a_tree = list(process_tree(int(back["pid"])))
+        client.post(f"/v1/runtimes/{name}/stop")
+        until_status(name, ("stopped",), 300)
+        t1 = time.perf_counter()
+        client.post(f"/v1/runtimes/{second}/start")
+        again = until_status(second, ("ready", "crashed"), 1800)
+        timings["toCoderSeconds"] = round(time.perf_counter() - t1)
+        note("switch", timings, folder)
+        check("S1 and to the Coder again: the first is gone, the Coder ready",
+              again.get("status") == "ready" and not alive(a_tree), again.get("lastError"))
+        client.post(f"/v1/runtimes/{second}/stop")
+        until_status(second, ("stopped",), 300)
+        client.post(f"/v1/runtimes/{name}/start")
+        until_status(name, ("ready", "crashed"), 1800)
 
         # F1 --------------------------------------------------------------
         (data / "empty-pack").mkdir(exist_ok=True)
