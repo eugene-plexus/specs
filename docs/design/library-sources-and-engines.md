@@ -790,7 +790,10 @@ config*.
   older console goes in the cleanup. Adding a hub of one's own (any
   Hugging Face-compatible address, its own token and on/off) was already in
   LS4; other kinds (ModelScope, the Ollama registry, Civitai) are not built.
-- **B39-B41 approved.**
+- **B39-B44 approved.** B43 is the rule for every engine that prepares
+  models, not Strata's alone (Troy): an engine named Tom writes `Tom-data`
+  at the top of the Library folder holding the source model, marked as an
+  engine's own folder (B44), with relative paths, so the folder travels.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
