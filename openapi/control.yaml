@@ -2397,114 +2397,6 @@ paths:
           description: Authentication, current permission, state, or availability refused the request.
         '503':
           description: Authentication, current permission, state, or availability refused the request.
-  /oidc/job-sites/{site}/folders:
-    parameters:
-      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
-    post:
-      operationId: addMyJobSiteFolder
-      tags: [sites]
-      summary: Register an existing folder on the person's own Job Site
-      description: |
-        The site registers the folder itself (J6b): its host opens the folder,
-        records its identity, and offers it through its one file server by
-        its name, which must be unused on that machine (J6g). Nobody is
-        granted anything.
-      security: [{helperClient: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/JobSiteFolderCreate'}
-      responses:
-        '202':
-          description: The site holds the change until its owner approves it at the machine with their key (J14a). Nothing changed yet.
-          content:
-            application/json:
-              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
-        '201':
-          description: The folder, as the site recorded it, with nobody on its list.
-          content:
-            application/json:
-              schema: {$ref: 'components/job-sites.yaml#/JobSiteFolder'}
-        '401':
-          description: Authentication, current permission, state, or availability refused the request.
-        '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '404':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /oidc/job-sites/{site}/folders/{folder_id}/remove:
-    parameters:
-      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
-      - {name: folder_id, in: path, required: true, schema: {type: string}}
-    post:
-      operationId: removeMyJobSiteFolder
-      tags: [sites]
-      summary: Remove a folder from the person's own Job Site
-      security: [{helperClient: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/JobSiteRequest'}
-      responses:
-        '204':
-          description: Removed, with every grant to it.
-        '401':
-          description: Authentication, current permission, state, or availability refused the request.
-        '403':
-          description: Authentication, current permission, state, or availability refused the request.
-        '404':
-          description: Authentication, current permission, state, or availability refused the request.
-        '409':
-          description: Authentication, current permission, state, or availability refused the request.
-        '503':
-          description: Authentication, current permission, state, or availability refused the request.
-  /oidc/job-sites/{site}/folders/{folder_id}/people:
-    parameters:
-      - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
-      - {name: folder_id, in: path, required: true, schema: {type: string}}
-    post:
-      operationId: grantMyJobSiteFolder
-      tags: [sites]
-      summary: Say who may use a folder on the person's own Job Site
-      description: |
-        Replaces the folder's list of people, the site's owner included (J11:
-        the owner grants their own access too). People are named by how they
-        sign in. `writable` lets a person change files without asking each
-        time, a standing pre-approval for `write_text` and `edit_text`, and
-        cannot exceed the folder's. The site applies it to its own list and
-        answers with what it holds (J6b, J6g).
-      security: [{helperClient: []}]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {$ref: '#/components/schemas/JobSitePeopleRequest'}
-      responses:
-        '202':
-          description: The site holds the change until its owner approves it at the machine with their key (J14a). Nothing changed yet.
-          content:
-            application/json:
-              schema: {$ref: 'components/job-sites.yaml#/JobSiteHeld'}
-        '200':
-          description: The folder and who may use it, as the site now holds them.
-          content:
-            application/json:
-              schema: {$ref: 'components/job-sites.yaml#/JobSiteFolder'}
-        '401':
-          description: Workbench client or person sign-in is invalid.
-        '404':
-          description: The person owns no such site, or it has no such folder, or no such person signs in.
-        '422':
-          description: The site refused it; `detail` says why in the site's words.
-        '503':
-          description: The site is offline, its file support is off, or it needs an update.
-        '504':
-          description: The site did not answer in time.
   /oidc/job-sites/{site}/servers/{server}/access:
     parameters:
       - {name: site, in: path, required: true, schema: {$ref: 'components/sites.yaml#/SiteId'}}
@@ -2514,8 +2406,8 @@ paths:
       tags: [sites]
       summary: Say who may use which tools of one local server on the person's own Job Site
       description: |
-        For a local server only; folders are granted through
-        `/oidc/job-sites/{site}/folders/{folder_id}/people` (J6g). Replaces
+        For a local server only; workspaces are shared through the site's
+        own workspace actions (2b.3b). Replaces
         the server's list of people, the site's owner included (J11: the
         owner grants their own access too). People are named by how they
         sign in. The site applies it to its own list and answers with what it
@@ -3233,8 +3125,6 @@ components:
       $ref: "components/job-sites.yaml#/JobSiteInviteRequest"
     JobSiteInvite:
       $ref: "components/job-sites.yaml#/JobSiteInvite"
-    JobSiteFolderCreate:
-      $ref: "components/job-sites.yaml#/JobSiteFolderCreate"
     JobSitePeopleRequest:
       $ref: "components/job-sites.yaml#/JobSitePeopleRequest"
     JobSiteAccessRequest:

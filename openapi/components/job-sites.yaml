@@ -456,16 +456,6 @@ JobSiteInvite:
     rootKey: {type: string, description: The root's identity key the machine pins.}
     owner: {type: string, description: The sign-in name the machine will ask for.}
 
-JobSiteFolderCreate:
-  type: object
-  additionalProperties: false
-  required: [refreshToken, name, path]
-  properties:
-    refreshToken: {type: string, minLength: 1, maxLength: 16384}
-    name: {type: string, minLength: 1, maxLength: 80}
-    path: {type: string, minLength: 1, maxLength: 4096}
-    writable: {type: boolean, default: false}
-
 JobSitePeopleRequest:
   type: object
   additionalProperties: false
