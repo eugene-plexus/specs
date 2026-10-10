@@ -196,7 +196,9 @@ llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
 **v0.2.0 waits for this work (L1).** Proposed bar: LS1-LS6, so Strata is
 found, prepared, profiled, run and fitted from the console. LS5's
 preparation needs Troy's go for the ~80 GB download when its acceptance
-runs. Troy, 2026-10-09: LS7 too, before v0.2.0 (§6.8).
+runs. Troy, 2026-10-09: LS7 too, before v0.2.0 (§6.8), and then a cleanup
+of every compatibility shim for versions before v0.2, which is the oldest
+supported (*I do not value compatibility with v0.1*; specs#22).
 
 ## 6. Calls (Troy, 2026-10-09)
 
@@ -737,6 +739,9 @@ config*.
   keeping their layout, as a cache it can always rebuild from the Library.
   That closes agent#10 (a split GGUF copied without its shards). Option 2,
   preparing onto the node's own disk, is ruled out.
+- **No shims for versions before v0.2** (Troy, the same day): B3, B6, B16,
+  B23, B24, B25, B34, B37 and B67 serve only older versions and go in the
+  cleanup slice after LS7 (specs#22).
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
