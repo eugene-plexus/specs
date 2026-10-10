@@ -4201,11 +4201,13 @@ components:
               description: |
                 **An Eugene Plexus extension, not OpenAI's.** With streaming,
                 true adds progress chunks saying what the backend is doing
-                while it is not producing output: `choices: []` and an
-                `x_eugene_plexus` carrying only `progress`. Local and cloud
-                backends alike report what they can observe -- llama.cpp how
-                far it has read the prompt, any HTTP backend that the service
-                has the request, Claude Code and Codex the tools they run.
+                while it is not producing output, and how far it has written
+                while it is: `choices: []` and an `x_eugene_plexus` carrying
+                only `progress`. Local and cloud backends alike report what
+                they can observe -- llama.cpp how far it has read the prompt
+                and how many tokens it has written, any HTTP backend that the
+                service has the request, Claude Code and Codex the tools they
+                run.
                 See `StreamProgress`. A client that sets it must tolerate a
                 chunk with no choices, as it already must for
                 `include_usage`.
@@ -5419,8 +5421,9 @@ components:
             Absent on every earlier frame, because the values are not
             known until the completion is done. **One exception, asked
             for:** with `stream_options.include_progress`, a progress
-            chunk before the first token carries an `x_eugene_plexus`
-            holding only `progress`, with `choices: []`.
+            chunk before or between output chunks carries an
+            `x_eugene_plexus` holding only `progress`, with
+            `choices: []`.
 
             Added at M8. Until then a streaming client could see no
             routing information at all: the non-streaming response
@@ -5856,6 +5859,8 @@ components:
             refusal is exact and is passed straight through as a 400.
         progress:
           $ref: '#/components/schemas/StreamProgress'
+        output_cap:
+          $ref: '#/components/schemas/OutputCap'
         cost_usd:
           type: number
           minimum: 0
@@ -5867,22 +5872,53 @@ components:
             never free.** Added 2026-10-08 (Workbench's video screen; the
             gateway's first money).
 
+    OutputCap:
+      type: object
+      required:
+        - tokens
+        - source
+      description: |
+        The output cap the gateway sent to the backend that answered, and
+        where it came from. Absent when none was sent: the answer was then
+        bounded only by the model's context window, the request deadline
+        and the backend's own rules. On the chat door's final frame and on
+        its non-streamed response.
+
+        **Why (2026-10-10).** A Strata answer stopped mid-thought at 4,096
+        tokens, and Workbench told Troy to raise his chat's own setting.
+        The cap was his install's `defaultMaxTokens`, saved long before.
+        Whoever shows a length stop can now name the setting that made it.
+      properties:
+        tokens:
+          type: integer
+          minimum: 1
+          description: The `max_tokens` sent.
+        source:
+          type: string
+          enum: [request, profile, install]
+          description: |
+            `request`: the caller's own `max_tokens`. `profile`: the
+            model's default Library profile (Maximum output tokens).
+            `install`: the gateway's `defaultMaxTokens`.
+
     StreamProgress:
       type: object
       required:
         - stage
       description: |
-        What the backend is doing while it is not producing output, on a
-        progress chunk (`stream_options.include_progress`). The only
-        thing such a chunk carries: its `x_eugene_plexus` has this and
-        nothing else, and its `choices` is empty. It can arrive at any
-        point before the final chunk -- an agent backend runs a tool
-        between two bursts of thinking.
+        What the backend is doing while it is not producing output, or
+        how far it has written while it is, on a progress chunk
+        (`stream_options.include_progress`). The only thing such a chunk
+        carries: its `x_eugene_plexus` has this and nothing else, and its
+        `choices` is empty. It can arrive at any point before the final
+        chunk -- an agent backend runs a tool between two bursts of
+        thinking, and `generating` comes between output chunks.
 
         What each backend can report is in `inference-driver.yaml`'s
-        `StreamProgress`: llama.cpp's prompt reading, a hosted API
-        accepting the request and its keepalives, Claude Code's and
-        Codex's own tools. Nothing is estimated here.
+        `StreamProgress`: llama.cpp's prompt reading and its running count
+        of tokens written, a hosted API accepting the request and its
+        keepalives, Claude Code's and Codex's own tools. Nothing is
+        estimated here.
 
         **Why it exists (2026-09-27).** Until the first token a stream
         said nothing. On the processor a long prompt takes minutes to
@@ -5892,15 +5928,31 @@ components:
       properties:
         stage:
           type: string
-          enum: [prompt, working, tool]
+          enum: [prompt, working, tool, generating]
           description: |
             `prompt`: reading the prompt, with the token counts below.
             `working`: the backend says it is working and not how far.
             `tool`: an agent backend is running one of its own tools,
             named in `tool`.
+            `generating`: writing, thinking included, with the backend's
+            own count so far in `generated_tokens`. Only from a backend
+            that counts as it writes (llama.cpp), at most every half
+            second.
         tool:
           type: string
           description: On `tool`, the tool's name as the backend gives it.
+        generated_tokens:
+          type: integer
+          minimum: 0
+          description: |
+            On `generating`: tokens written so far, reasoning included, as
+            the backend counted them.
+        tokens_per_second:
+          type: number
+          minimum: 0
+          description: |
+            On `generating`: the backend's own writing speed so far, when
+            it reports one.
         phase:
           type: string
           enum: [started, finished]
