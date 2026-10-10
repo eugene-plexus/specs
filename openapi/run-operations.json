@@ -2775,7 +2775,7 @@
           "entry"
         ],
         "title": "PreparedDetail",
-        "description": "A prepared model's provenance, as its file\n(`PreparedProvenance`) says it, and what the library made of it.\nPresent iff `format` is `prepared` and the file could be read.\n\nThe engine's own files are not read (experimental-engines.md:\nprepared files stay usable without the library parsing them), so\na prepared model has no architecture, context, size or fit here:\nthe engine says what it loaded when it is ready\n(`RuntimeCapabilities`), and fit waits for the engine's own fit\nmodel (LS6). `files` lists the provenance file (`index`) and the\nentry file (`config`) when the library's host can see it."
+        "description": "A prepared model's provenance, as its file\n(`PreparedProvenance`) says it, and what the library made of it.\nPresent iff `format` is `prepared` and the file could be read.\n\nThe library does not read the engine's own files\n(experimental-engines.md: prepared files stay usable without the\nlibrary parsing them). What it knows of a prepared model (LS7,\nB22 replaced: the Library imparts what is known and names what is\nnot) is what the engine's adapter read off those files when it\nwas prepared or added and the provenance file records (`title`,\n`contextLength`, `mode`, `files`), measured on this host; what it\ninherits from the model it was made from when the library lists\nthat (`LibraryModel.architecture`, `parameters`, `sizeLabel`);\nand in `missing`, each fact it cannot give, with why. Fit is the\nengine's own (LS6). `LibraryModel.files` lists the provenance\nfile (`index`), the entry file (`config`) and the files it\nrecords, and `LibraryModel.sizeBytes` is `diskBytes`."
       },
       "PreparedFactMissing": {
         "properties": {
@@ -2984,7 +2984,7 @@
               }
             ],
             "title": "Files",
-            "description": "Every file the model is made of beside its source model, as the\npreparation left them: what a node copies with it and what is\nthe model's own on disk. The source model's files are its own\nmodel's, not listed.\n"
+            "description": "Every file the model is made of beside its source model and\nthis provenance file, the entry first, as the engine's adapter\nread them off its entry file: what is the model's own on disk.\nThe source model's files are its own model's, not listed.\n"
           }
         },
         "additionalProperties": true,
