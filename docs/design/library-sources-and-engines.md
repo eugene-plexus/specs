@@ -794,6 +794,11 @@ config*.
   models, not Strata's alone (Troy): an engine named Tom writes `Tom-data`
   at the top of the Library folder holding the source model, marked as an
   engine's own folder (B44), with relative paths, so the folder travels.
+- **B45 and B46 approved. B47 is reversed** (Troy: Strata runs only prepared
+  models, so preparing is part of using it): the preparation tools come with
+  the engine's install (llama.cpp's `gguf-py/` and `ggml/` at Strata's pinned
+  commit, and setup's `requirements.txt` packages), so a first preparation
+  never stops to fetch them and works offline. In LS7.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
