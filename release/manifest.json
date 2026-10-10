@@ -3,13 +3,13 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "0f8b327453fc98c89852314c5e06e97f1912984a",
+    "agent": "5666b395714bc9f24854c01c7d156450f3a300b7",
     "control": "bf4675801c70e39dd44f5c786e4f10d241c22a14",
-    "gateway": "e4e2b5202fb92b14b16238d9d7e19561ee544412",
+    "gateway": "e4a3ac41d0025e5e42bfe8ff6c065235a03d887c",
     "library": "9493ce78a73953eb16bea886d803d72b7ff209a5",
     "tool-driver": "7081c79ad655cae5916ddf0007cdf519718a5698",
-    "ui": "5a5d3279c5786dafe21cba94056ad61b8f23e46e",
-    "inference-driver": "7d22ac92317d536e5e1ffa028fb51eb6881bb072"
+    "ui": "a484c2635be254dbceb30288c0350a271717b666",
+    "inference-driver": "d63c5c186609cea3658fa032dea500af5f5b1160"
   },
   "dependenciesSha256": "3a4a32641e201cf2c2ad0082ccb537c396c5b27582cd254a6c2b6b292832e24b"
 }

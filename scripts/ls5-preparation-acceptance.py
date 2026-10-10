@@ -49,6 +49,14 @@ is made one this account cannot write in, as a NAS share is for a node
   L4  a failed setup's log is sent, and the failure names the Library's copy;
   L5  uninstalling Strata takes this node's preparation folders.
 
+And through the gateway (2026-10-10: every Strata runtime's companion driver
+came up degraded, so nothing ever reached Strata through the gateway, and no
+acceptance had a gateway in front of it):
+
+  W1  the gateway reaches the Strata runtime's companion driver, which
+      reports no error;
+  W2  a chat through the gateway is answered by Strata.
+
 Clears every ambient EUGENE_PLEXUS_* variable, so it is safe beside a live
 install. Run with the agent and library installed (editable is fine).
 """
@@ -161,6 +169,32 @@ config = json.loads(Path(args.config).read_text(encoding="utf-8"))
 
 
 class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get("content-length") or 0)
+        asked = json.loads(self.rfile.read(length) or b"{}")
+        if self.path != "/v1/chat/completions":
+            self.send_response(404)
+            self.end_headers()
+            return
+        body = {
+            "id": "chatcmpl-standin",
+            "object": "chat.completion",
+            "created": 0,
+            "model": asked.get("model") or config["model_name"],
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "Hello from the stand-in Strata."},
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12},
+        }
+        raw = json.dumps(body).encode("utf-8")
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def do_GET(self):
         if self.path == "/health":
             body = {"service": "strata", "loaded": True, "max_context": 32768}
@@ -288,7 +322,7 @@ def same(given: str, expected: Path) -> bool:
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="ep-ls5-", ignore_cleanup_errors=True) as raw:
         directory = Path(raw)
-        agent_port, library_port = free_ports(2)
+        agent_port, library_port, gateway_port = free_ports(3)
         models = directory / "models"
         folder = models / REPO.replace("/", os.sep)
         folder.mkdir(parents=True)
@@ -304,6 +338,9 @@ def main() -> int:
         (directory / "library.yaml").write_text(
             yaml.safe_dump({"logLevel": "INFO", "modelRoots": [str(models)]}), encoding="utf-8"
         )
+        (directory / "gateway.yaml").write_text(
+            yaml.safe_dump({"routingRefreshSeconds": 2}), encoding="utf-8"
+        )
         (directory / "agent.yaml").write_text(
             yaml.safe_dump(
                 {
@@ -316,7 +353,13 @@ def main() -> int:
                             "kind": "library",
                             "url": f"http://127.0.0.1:{library_port}",
                             "spawn": {"configFile": str(directory / "library.yaml")},
-                        }
+                        },
+                        {
+                            "name": "gateway",
+                            "kind": "gateway",
+                            "url": f"http://127.0.0.1:{gateway_port}",
+                            "spawn": {"configFile": str(directory / "gateway.yaml")},
+                        },
                     ],
                     "runtimes": [],
                 }
@@ -576,6 +619,47 @@ def main() -> int:
                 "P5 setup's warnings are kept on the operation",
                 "Windows' page file is 2.0 GB" in ((done.get("preparation") or {}).get("warnings") or []),
                 done.get("preparation"),
+            )
+
+            # W1 + W2 (through the gateway) --------------------------------
+            companion = f"{done.get('runtime')}-driver"
+
+            def seen_by_gateway() -> dict[str, Any] | None:
+                listed = client.get("/api/proxy/gateway/v1/admin/drivers").json().get("drivers") or []
+                found = next((d for d in listed if d.get("name") == companion), None)
+                return found if found and found.get("reachable") and not found.get("error") else None
+
+            try:
+                seen = wait(seen_by_gateway, "the gateway sees Strata's driver serving", 90)
+            except AssertionError:
+                seen = {}
+            listed = client.get("/api/proxy/gateway/v1/admin/drivers").json().get("drivers") or []
+            check(
+                "W1 the gateway reaches the Strata runtime's companion driver, which reports no error",
+                bool(seen),
+                [d for d in listed if d.get("name") == companion] or listed,
+            )
+            alias = (runtime.get("modelAlias") or PREPARED) if runtime else PREPARED
+            try:
+                wait(
+                    lambda: any(
+                        m.get("id") == alias
+                        for m in client.get("/api/proxy/gateway/v1/models").json().get("data") or []
+                    ),
+                    "the gateway lists the prepared model",
+                    60,
+                )
+            except AssertionError:
+                pass
+            chat = client.post(
+                "/api/proxy/gateway/v1/chat/completions",
+                json={"model": alias, "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 16},
+            )
+            said = ((chat.json().get("choices") or [{}])[0].get("message") or {}).get("content") if chat.status_code == 200 else None
+            check(
+                "W2 a chat through the gateway is answered by Strata",
+                said == "Hello from the stand-in Strata.",
+                (chat.status_code, chat.text[:400]),
             )
 
             # R1 -----------------------------------------------------------
