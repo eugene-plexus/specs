@@ -63,9 +63,9 @@ PIN_AGENT=4118c5e696e7e867269e3c1e1fe46925886c4a32
 PIN_CONTROL=2b2ae246fbfa48a5306a695e6c9ca104ca4a1ead
 PIN_GATEWAY=a1e61884c1fdea066d531a50b5c556e342e950c7
 PIN_DRIVER=7d22ac92317d536e5e1ffa028fb51eb6881bb072
-PIN_LIBRARY=33e69c160d9b183f0bd2a07837f443cfc8804905
+PIN_LIBRARY=08eb569078de47a6edf5afefb4bb1b64e6e8c24a
 PIN_TOOL_DRIVER=7081c79ad655cae5916ddf0007cdf519718a5698
-PIN_UI=da81d198ec31484b3152fd62cbbdce00205f615f   # branch `dist`, not `main`
+PIN_UI=d49f4f903f17f3475decbce007ad817dc9b9c9ed   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated

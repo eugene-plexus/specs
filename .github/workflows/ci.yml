@@ -239,6 +239,8 @@ jobs:
         run: python specs/scripts/ls7-copy-acceptance.py
       - name: Verify the Library says what is known of a prepared model (LS7b)
         run: python specs/scripts/ls7b-facts-acceptance.py
+      - name: Verify a model is deleted from the Library, any format, all or nothing (LS8)
+        run: python specs/scripts/ls8-delete-acceptance.py
       - name: Verify A3 client-key revocation and outage bounds across five processes
         run: python specs/scripts/a3-client-keys-acceptance.py
       - name: Verify A5 scoped keys, shared limits, cancellation and usage across gateways

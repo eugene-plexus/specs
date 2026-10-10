@@ -189,7 +189,7 @@ never altered. Built in LS5 (§6.6).
 | **LS5** | Preparation jobs, Strata first (the ~80 GB path in one action) | agent, library, ui |
 | **LS6** | Fit per engine | library, agent, ui |
 | **LS7** | A node runs a prepared model from its own copy of the Library's files (§6.8; agent#12, agent#10); the Library says what is known of a prepared model (B22 replaced, B26, B30, the source list's order) | specs, agent, library, ui |
-| **LS8** | Delete a model from the Library, any format, with everything it owns (§6.8, Troy) | library, agent, ui |
+| **LS8** | Delete a model from the Library, any format, with everything it owns (§6.8, §6.11, Troy) | specs, library, ui |
 | **LS9** | The best route for this machine: Run recommends, and defaults to, preparing when fit says the preparing engine suits the machine better (§6.8, Troy) | library, agent, ui |
 
 Each slice ends with the real-environment acceptance on Amish_Station with
@@ -960,6 +960,62 @@ asked for B26, B30's fix and the source list's order in LS7.
   agent resolves (specs b2e43ac).
 - The LS4 acceptance asserted the old order; it now reads the default list
   as the engines' lists first.
+
+## 6.11 LS8 built (2026-10-10 night): Delete a model from the Library, any format
+
+Record: [ls8-delete-run.md](../acceptance/ls8-delete-run.md). Troy replaced
+B27 with a Delete for every model (*3 now*), and asked that shared parts
+follow one general rule so image models' VAEs and text encoders fit later.
+
+**Calls building made**, for Troy's veto:
+
+- **B87. Two steps: the Library plans, then deletes what was shown.**
+  `GET /v1/models/{id}/deletion` answers every file Delete removes and its
+  size, the files kept and for whom, the saved profiles, the prepared models
+  made from it, any refusal, and a token naming the plan; `POST
+  /v1/models/{id}/delete` takes that token and refuses (409, nothing
+  deleted) when the files changed since. `DELETE /v1/models/{id}` stays
+  *Forget* for a missing model.
+- **B88. One rule for shared parts:** a file the model is made of is kept
+  when any other listed model names the same file (`LibraryModel.files`).
+  That covers a projector several quants pair with, Strata's MTP helper,
+  and later an image model's VAE, with no case per format or engine. The
+  last model using a shared file takes it with it.
+- **B89. What a model is made of** is what the scan lists for it: a GGUF's
+  shards and its projector; a safetensors folder's every file (READMEs and
+  all), then the folder; a prepared model's provenance file, its entry and
+  the files it records (LS7b). Setup's intermediates a prepared model does
+  not record stay (Strata's `mtp/tensors`, its cache for preparing again),
+  as does the engine-files marker.
+- **B90. All or nothing.** Each file is moved aside under a hidden name
+  first; if one cannot be (Windows refuses while a running engine holds it)
+  the others are put back and nothing is deleted, naming the file and
+  *stop the model on every machine running it*. Then the files go, and the
+  folders left empty, up to the Library folder.
+- **B91. Prepared models made from a GGUF** are named in its confirmation
+  (Strata reads the GGUF while it runs them), each with a checkbox, off by
+  default; ticked ones go in the same delete.
+- **B92. Refused now, saying why:** a download still writing into its files
+  or folder, or a Run still preparing or starting it (the Library knows
+  both); the console adds any node running it (it reads every node's
+  runtimes), naming the node. A node it cannot ask also blocks, naming it,
+  rather than deleting under a runtime it cannot see.
+- **B93. Nothing points at a file that is gone:** after the files go, the
+  console removes the runtimes declared for the model on every node; a
+  node's copy follows when the node next tidies its copies (unchanged).
+- **B94.** Operators only, like every other change to the Library.
+
+**What building found:**
+
+- No model could be deleted from Eugene before this: files went outside it,
+  and *Forget* dropped an entry only once its files were gone.
+- The scan pairs a lone projector with every model in its folder, so two
+  quants of one model both name it: the general rule keeps it without a
+  projector case.
+- Python opens a file without Windows' delete-sharing flag, as llama.cpp
+  does, so a file held open refuses the move aside on Windows; on Linux a
+  file can be moved while open, so the console's check for a running node is
+  what stops a delete under a running engine there.
 
 ## 7. Found while mapping (not part of this design)
 
