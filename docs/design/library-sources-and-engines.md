@@ -790,6 +790,7 @@ config*.
   older console goes in the cleanup. Adding a hub of one's own (any
   Hugging Face-compatible address, its own token and on/off) was already in
   LS4; other kinds (ModelScope, the Ollama registry, Civitai) are not built.
+- **B39-B41 approved.**
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
