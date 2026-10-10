@@ -769,6 +769,15 @@ config*.
   (Strata reads it while it runs) names that model and offers both; refused
   while the model runs on any node or is downloading; nodes' copies follow
   on their own.
+- **LS4: B31 and B32 approved; B30 approved with a fix in LS7.** The list is
+  written by Eugene in the engine's adapter, read off the engine's own setup
+  at the version the agent pins, and changes when the agent updates. Because
+  an older engine build can stay installed after an agent update, each entry
+  will carry the oldest engine version it needs (setup states it, e.g.
+  UD-IQ4_XS needs v0.1.38), each node reports its installed version, and an
+  entry the installed build cannot prepare is amber, *needs Strata vX: update
+  Strata on this node*, one click from the update, never a failure halfway
+  through a preparation.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
