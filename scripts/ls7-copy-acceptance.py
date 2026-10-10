@@ -132,7 +132,9 @@ def lay_out(models: Path) -> Path:
 def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
     with tempfile.TemporaryDirectory(prefix="ep-ls7-", ignore_cleanup_errors=True) as raw:
-        directory = Path(raw)
+        # Long names: a CI runner's temp folder is its 8.3 short name
+        # (RUNNER~1), which the agent spells long once it resolves a path.
+        directory = Path(raw).resolve()
         agent_port, library_port = ls3.free_ports(2)
         models = directory / "share"
         models.mkdir()
