@@ -828,26 +828,6 @@ paths:
         '503':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
-  /v1/auth/client-keys/revoked:
-    get:
-      tags: [auth]
-      operationId: listRevokedClientKeys
-      summary: The ids of client keys that must no longer be accepted.
-      description: |
-        Compatibility endpoint for older gateways. Enrolled agents return the
-        active control root's revoked identifiers. New gateways use /policy,
-        which also registers permitted identifiers and bounds cache age.
-        An operator session, or a `gateway` service token. No empty fallback on authority failure.
-      responses:
-        "200":
-          description: The revoked ids.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ClientKeyRevocations"
-        "401":
-          $ref: "components/common.yaml#/components/responses/Problem"
-
   /v1/auth/client-keys/{id}:
     delete:
       tags: [auth]
@@ -4119,16 +4099,13 @@ components:
         newest -- installed from `main` while it follows `releases`, or
         from a commit whose checks are still running -- is never told an
         older one is an update.
-      required: [enabled, channelSource, available, behind, apply]
+      required: [enabled, channel, channelSource, available, behind, apply]
       properties:
         enabled:
           type: boolean
         channel:
           $ref: "#/components/schemas/UpdateChannel"
-          description: |
-            The channel this machine follows. Absent only while
-            `channelSource` is `pending`: which one it follows has not been
-            decided yet, and a value here would be a guess.
+          description: The channel this machine follows.
         channelSource:
           $ref: "#/components/schemas/UpdateChannelSource"
         checkedAt:
@@ -4258,24 +4235,13 @@ components:
 
     UpdateChannelSource:
       type: string
-      enum: [setting, default, pending, inferred]
+      enum: [setting, default]
       description: |
         `setting`: `updateChannel` is saved on this agent's config.
 
         `default`: not saved, so the default: `releases`, or what this
         install's environment names (`EUGENE_PLEXUS_AGENT_DEFAULT_UPDATE_CHANNEL`,
         which the `:edge` container image sets to `edge`).
-
-        `pending`: an install from before 2026-09-30 that never saved a
-        channel, whose first update check since has not yet read the
-        release list. That check saves the channel the machine followed
-        until then -- `releases` when its commits are exactly one of the
-        recent releases, `edge` otherwise -- so updating the agent never
-        moves a machine to another channel. `channel` is absent meanwhile.
-
-        `inferred`: sent only by agents before 2026-09-30, which worked an
-        unset channel out afresh at every check. Kept so a console can
-        still read one.
 
     UpdateOutcome:
       type: string
@@ -4860,29 +4826,6 @@ components:
 
     ClientKeyPolicy:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyPolicy'
-
-    ClientKeyRevocations:
-      type: object
-      description: |
-        What the gateway polls. Ids only, and the revision at which the
-        set last changed.
-      required:
-        - ids
-        - revision
-      properties:
-        ids:
-          type: array
-          items:
-            type: string
-          description: |
-            `jti`s to refuse. Excludes keys whose `expiresAt` has passed:
-            those are refused by expiry, and keeping them here would
-            make this list grow forever.
-        revision:
-          type: integer
-          description: |
-            Increments whenever the set changes. A reader logs on a
-            change rather than on every poll.
 
     AuthInitializeRequest:
       type: object

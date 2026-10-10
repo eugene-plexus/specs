@@ -333,12 +333,13 @@ info:
     after sign-in. A key scoped to the front door can be handed out,
     written into a config file, and revoked one at a time.
 
-    **Revocation is a list this gateway polls, and it is bounded rather
+    **Revocation is a policy this gateway polls, and it is bounded rather
     than instant.** A client token carries a `jti`; the agent on this
-    gateway's own node keeps the records and serves the revoked ids at
-    `GET /v1/auth/client-keys/revoked`. This gateway re-reads that list
-    when its copy is older than the routing refresh interval, so
-    revoking a key stops it here within about that interval. **If the
+    gateway's own node relays the control root's client-key policy (the
+    revoked ids, the permitted identifiers and how old a copy may be) at
+    `GET /v1/auth/client-keys/policy`. This gateway re-reads it within the
+    age the policy allows, so revoking a key stops it here within about
+    that interval. **If the
     agent cannot be reached the previous list keeps being used and
     requests keep being served** -- taking every harness in an install
     down because the local agent restarted would be a worse failure than
