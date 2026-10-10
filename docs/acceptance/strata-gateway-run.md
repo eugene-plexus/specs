@@ -73,6 +73,14 @@ PASS  W1 the gateway reaches the Strata runtime's companion driver, which report
 PASS  W2 a chat through the gateway is answered by Strata
 ```
 
+On ubuntu CI at specs `3752b8f`, W2 failed once with a 503 *still coming
+up: … (starting)*. The chat came 50 ms after the agent said `ready`. It met
+the gateway's routing snapshot, which can be one refresh behind, and the
+gateway re-reads only a snapshot at least 1 s old. W2 now waits on that
+snapshot itself (`/v1/admin/routing`: the Strata driver eligible for the
+model) before it chats. W1 alone could not show this, because a driver is
+reachable while its runtime is still starting. The rerun here: 23/23.
+
 ## Unit tests
 
 - inference-driver: `tests/test_provider_registry.py` (16), and two in

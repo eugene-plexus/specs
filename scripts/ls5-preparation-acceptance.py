@@ -640,17 +640,24 @@ def main() -> int:
                 [d for d in listed if d.get("name") == companion] or listed,
             )
             alias = (runtime.get("modelAlias") or PREPARED) if runtime else PREPARED
-            try:
-                wait(
-                    lambda: any(
-                        m.get("id") == alias
-                        for m in client.get("/api/proxy/gateway/v1/models").json().get("data") or []
-                    ),
-                    "the gateway lists the prepared model",
-                    60,
+
+            # Wait on the gateway's own snapshot, the one requests are routed
+            # from: it can be a refresh behind the agent's `ready` (ubuntu CI,
+            # 2026-10-10: a chat 50 ms after `ready` met `starting`).
+            def routable() -> bool:
+                view = client.get("/api/proxy/gateway/v1/admin/routing").json()
+                return any(
+                    b.get("driver") == companion and b.get("eligible")
+                    for s in view.get("slots") or []
+                    if s.get("model") == alias
+                    for t in s.get("tiers") or []
+                    for b in t.get("backends") or []
                 )
+
+            try:
+                wait(routable, "the gateway routes the prepared model to Strata's driver", 60)
             except AssertionError:
-                pass
+                print("NOTE  the gateway never routed the prepared model to Strata's driver within 60 s")
             chat = client.post(
                 "/api/proxy/gateway/v1/chat/completions",
                 json={"model": alias, "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 16},
