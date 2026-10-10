@@ -191,6 +191,7 @@ never altered. Built in LS5 (§6.6).
 | **LS7** | A node runs a prepared model from its own copy of the Library's files (§6.8; agent#12, agent#10); the Library says what is known of a prepared model (B22 replaced, B26, B30, the source list's order) | specs, agent, library, ui |
 | **LS8** | Delete a model from the Library, any format, with everything it owns (§6.8, §6.11, Troy) | specs, library, ui |
 | **LS9** | The best route for this machine: Run recommends, and defaults to, preparing when fit says the preparing engine suits the machine better (§6.8, §6.12, Troy) | ui |
+| **LS10** | The Library writes a preparation's files: the node prepares in a folder of its own and sends the result (§6.13, Troy, agent#16) | specs, agent, library |
 
 Each slice ends with the real-environment acceptance on Amish_Station with
 llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
@@ -1060,6 +1061,98 @@ Run's default.
   29.9 GiB free on the card) and Strata's table says it *fits* (about 48 GB
   of RAM for its 35.5 GB of experts): the rule recommends preparing, as Troy
   expected.
+
+## 6.13 LS10 built (2026-10-10): the Library writes a preparation's files
+
+Record: [ls10-library-writes-run.md](../acceptance/ls10-library-writes-run.md).
+
+**Found on the live install (Troy, 2026-10-10).** Troy chose *Download and
+prepare for Strata* on Amish_Station. The Library, in the NAS container,
+downloaded both shards (68 GB). Then setup failed: `PermissionError` writing
+`<shard>.done` beside the GGUF on `\\192.168.16.252\downloads\models`.
+The container downloads at umask 022, so the model's folder is 0755 and its
+shards 0644. No SMB user but the container's own could create a file there:
+not Amish_Station's service, and not `troyc` either (probed). The node wrote
+into the Library folder over the share: setup's marks beside the shards, all
+of `Strata-data`. A Windows service reaches a share as the machine account,
+which a workgroup NAS treats as its guest, so letting it write there means
+letting guest write. Troy, on making the folder world-writable: *I can see
+that being a problem in SMB installations*. He asked for this before v0.2
+([agent#16](https://github.com/eugene-plexus/agent/issues/16)).
+
+**Calls building made**, for Troy's veto:
+
+- **B101. A node never writes in a Library folder.** A preparation runs in
+  a folder of the node's own, under the engines' folder:
+  `<engines>/preparing/<engine>/<key>/`, where the key is the Library folder
+  as the Library spells it, hashed. That folder is laid out as the Library
+  folder is, so the configuration's relative paths come out as they will be
+  there. Troy's principle (§6.8) holds: the result's home is the Library; the
+  node's folder is scratch. §6.8 ruled out preparing onto a node's disk *as
+  the model's home*. This is not that.
+- **B102. The GGUF is read where it is.** Setup gets the node's view of the
+  GGUF's folder. Each shard there is a symbolic link to the Library's file
+  (a Windows service may make one; Linux and macOS always may), else a hard
+  link on the same drive. On Windows with neither, the view is a junction to
+  the GGUF's folder when that is on a local drive this node can write; that
+  is the same machine, and setup's marks then go beside the shards. Otherwise
+  the shards are copied, and the progress says so and why. Setup reads only
+  the shards' tensor directories and the pack's source; it writes only its
+  `.done` marks there, beside the links.
+- **B103. What is sent.** The files the configuration names that setup made:
+  the configuration, the pack (with its tokenizer and expert profile) and
+  the MTP helper's run files. Setup's log goes too. The GGUF never does (the
+  Library has it), nor do setup's intermediates (`mtp/tensors/`, about
+  5 GB). For IQ2_XS, measured on the LS5 real run: 1.5 GB of pack, plus 1.7
+  GB of MTP helper the first time in a folder.
+- **B104. How it is sent.** In 16 MiB chunks, under the 32 MiB an agent's
+  proxy carries. Each chunk goes at the offset the Library says has arrived,
+  under the run's lease, a slice per worker tick: a claim lasts two minutes
+  and each checkpoint lets it go. The Library appends to
+  `<file>.eugene-upload`, checks the size and SHA-256 the node states, and
+  only then renames. A file it already holds with the same SHA-256 is not
+  sent: every model in a folder shares the MTP helper. A send cut off carries
+  on from the Library's count, after an agent restart too. A file that
+  arrived damaged is sent again, twice at most. The routes:
+  `POST /v1/run-operations/{id}/files/state`, `PUT .../files?path&offset&lease`
+  and `POST .../files/complete`.
+- **B105. Where the Library writes.** Only inside an engine's own folder at
+  the top of the run's Library folder: `<Engine>-data`, holding
+  `.eugene-engine-files`, which the Library makes and marks when there is
+  none (the B43 rule for every engine). A folder of that name without the
+  marker is the person's, and nothing is written in it. The Library never
+  writes through a link or a junction, never writes the provenance file
+  (`/prepared` does that), and never writes its own partial files' names. It
+  writes only for a run that is preparing, from its node, under its lease,
+  and into the Library folder the run's model is in.
+- **B106. A failed setup's log is sent too.** The failure then names a file
+  the person can open beside their models, not one in the node's private
+  folder (the Windows service's folder is LocalSystem's). When the log
+  cannot be sent, the failure names the node's copy.
+- **B107. What the node keeps.** Once the Library lists the model, the node
+  removes what it sent and any copies of the shards. It keeps the MTP helper
+  with setup's intermediates (about 7 GB), so a next preparation there skips
+  setup's 5 GB fetch. Uninstalling the engine removes the node's preparation
+  folders. While files are on their way, the engine cannot be uninstalled.
+- **B108. Disk.** B51's check is now on the drive of the node's folder,
+  since setup writes there. The Library's drive needs room for what is sent;
+  when it is short, the Library refuses with its free space (507) and the
+  run fails naming it.
+
+**What building found:**
+
+- `operation_request` sent its own `headers` and so could not take a
+  caller's: the first chunk failed with *got multiple values for keyword
+  argument 'headers'*. The acceptance caught it; the unit tests' stand-in
+  Library had not. The caller's headers now go beside the credential, never
+  in place of it (unit test, sabotaged once).
+- Each tick's checkpoint releases the lease. So the upload cannot run in the
+  preparation's own thread under one lease: it runs in the ticks, a slice
+  each.
+- Denying `W` on a Windows folder denies SYNCHRONIZE and READ_CONTROL too,
+  which blocks every open. Denying `(WD,AD)` on the folder alone
+  reproduces Troy's failure exactly (`Errno 13` creating the `.done` file),
+  and the acceptance uses that.
 
 ## 7. Found while mapping (not part of this design)
 

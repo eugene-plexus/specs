@@ -37,6 +37,18 @@ is downloaded. No real Strata, no model, no GPU.
   C1  cancelling the operation stops setup, and lists nothing;
   F1  a setup that stops fails the run at *prepare*, in setup's own words.
 
+LS10 (§6.13): the node never writes in the Library folder. The GGUF's folder
+is made one this account cannot write in, as a NAS share is for a node
+(Troy's: setup's `.done` mark refused there, 2026-10-10), and:
+
+  L1  the GGUF's folder refuses a write, for the whole run;
+  L2  the Library made `Strata-data` (its own marker) and holds what the
+      model is made of; setup's own records and marks are not there;
+  L3  setup's marks are beside this node's links to the shards; once the
+      Library lists the model the node keeps only the MTP helper;
+  L4  a failed setup's log is sent, and the failure names the Library's copy;
+  L5  uninstalling Strata takes this node's preparation folders.
+
 Clears every ambient EUGENE_PLEXUS_* variable, so it is safe beside a live
 install. Run with the agent and library installed (editable is fine).
 """
@@ -240,6 +252,32 @@ def alive(pid: int) -> bool:
     return True
 
 
+def read_only(folder: Path):  # type: ignore[no-untyped-def]
+    """`folder` made one this account cannot write in (L1); the undo."""
+    if os.name == "nt":
+        who = subprocess.run(["whoami"], capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(
+            ["icacls", str(folder), "/deny", f"{who}:(WD,AD)"],
+            capture_output=True,
+            check=True,
+        )
+        return lambda: subprocess.run(
+            ["icacls", str(folder), "/remove:d", who], capture_output=True, check=False
+        )
+    folder.chmod(0o555)
+    return lambda: folder.chmod(0o755)
+
+
+def refuses_a_write(folder: Path) -> bool:
+    probe = folder / "probe.tmp"
+    try:
+        probe.write_text("x", encoding="utf-8")
+    except OSError:
+        return True
+    probe.unlink()
+    return False
+
+
 def same(given: str, expected: Path) -> bool:
     try:
         return Path(given).is_absolute() and os.path.samefile(given, expected)
@@ -258,6 +296,7 @@ def main() -> int:
         for shard in SHARDS:
             write_gguf(folder / shard, kv if shard == FIRST else {"general.architecture": "qwen4exp"})
         original = (folder / FIRST).read_bytes()
+        undo_read_only = read_only(folder)
         strata_root = directory / "strata"
         server = fake_strata(strata_root)
         data = models / "Strata-data"
@@ -405,9 +444,13 @@ def main() -> int:
                 done["step"] == "ready" and done.get("engine") == "strata",
                 {k: done.get(k) for k in ("step", "engine", "error", "failedStep")},
             )
+            # LS10: setup ran in this node's folder for the Library folder.
+            works = sorted((directory / "engines" / "preparing" / "strata").glob("*"))
+            work = works[0] if len(works) == 1 else directory / "no-single-work-folder"
+            node_data = work / "Strata-data"
 
             # P2 -----------------------------------------------------------
-            calls = [json.loads(line) for line in (data / "setup-calls.jsonl").read_text().splitlines()]
+            calls = [json.loads(line) for line in (node_data / "setup-calls.jsonl").read_text().splitlines()]
             argv = calls[0]["argv"] if calls else []
             pairs = dict(zip(argv[::2], argv[1::2]))
             check(
@@ -446,8 +489,46 @@ def main() -> int:
                 sorted(p.name for p in strata_root.iterdir()),
             )
             check(
-                "P3 the GGUF is unchanged (setup's .done marks beside it)",
-                (folder / FIRST).read_bytes() == original and (folder / (FIRST + ".done")).is_file(),
+                "P3 the GGUF is unchanged",
+                (folder / FIRST).read_bytes() == original,
+            )
+
+            # L1-L3 (LS10) -------------------------------------------------
+            check(
+                "L1 the GGUF's folder refuses a write from this account, as a share does a node",
+                refuses_a_write(folder),
+            )
+            marker = (data / ".eugene-engine-files").read_text(encoding="utf-8") if (data / ".eugene-engine-files").is_file() else ""
+            library_files = sorted(p.relative_to(data).as_posix() for p in data.rglob("*") if p.is_file())
+            check(
+                "L2 the Library made Strata-data and holds what the model is made of, none of setup's records",
+                "written by Eugene Plexus's Library" in marker
+                and {f"strata-{TAG}.json", f"packs/{TAG}/expert-profile.bin", "mtp/rt/experts.bin",
+                     f"packs/{TAG}/tokenizer/vocab.json"} <= set(library_files)
+                and "setup-calls.jsonl" not in library_files
+                and not [n for n in library_files if n.endswith((".done", ".eugene-upload"))]
+                and not list(folder.glob("*.done")),
+                {"marker": marker[:80], "files": library_files},
+            )
+            view = work / REPO.replace("/", os.sep)
+            node_files = sorted(p.relative_to(node_data).as_posix() for p in node_data.rglob("*") if p.is_file())
+            check(
+                "L3 setup's marks are beside this node's links; after listing it keeps only the MTP helper",
+                (view / (FIRST + ".done")).is_file()
+                and (
+                    os.path.samefile(view / FIRST, folder / FIRST)
+                    or (view / FIRST).read_bytes() == original
+                ),
+                {"view": sorted(p.name for p in view.iterdir()) if view.is_dir() else None},
+            )
+            check(
+                "L3 the node no longer holds what it sent, but keeps the MTP helper",
+                f"strata-{TAG}.json" not in node_files
+                and not [n for n in node_files if n.startswith("packs/")]
+                and "mtp/rt/experts.bin" in node_files
+                and (node_data / "mtp" / "rt" / "experts.bin").read_bytes()
+                == (data / "mtp" / "rt" / "experts.bin").read_bytes(),
+                node_files,
             )
 
             # P4 -----------------------------------------------------------
@@ -517,15 +598,15 @@ def main() -> int:
                 client.post(f"/v1/runtimes/{again['runtime']}/stop")
 
             # U1 + C1 ------------------------------------------------------
-            (data / "SLOW").write_text("", encoding="utf-8")
-            calls_before = len((data / "setup-calls.jsonl").read_text().splitlines())
+            (node_data / "SLOW").write_text("", encoding="utf-8")
+            calls_before = len((node_data / "setup-calls.jsonl").read_text().splitlines())
             submit("ls5-cancel")
             until("ls5-cancel", ("preparing",), 120)
             wait(
-                lambda: len((data / "setup-calls.jsonl").read_text().splitlines()) > calls_before,
+                lambda: len((node_data / "setup-calls.jsonl").read_text().splitlines()) > calls_before,
                 "setup starts",
             )
-            pid = json.loads((data / "setup-calls.jsonl").read_text().splitlines()[-1])["pid"]
+            pid = json.loads((node_data / "setup-calls.jsonl").read_text().splitlines()[-1])["pid"]
             refused = client.post("/v1/engines/strata/uninstall")
             check(
                 "U1 Strata cannot be uninstalled while it prepares",
@@ -539,10 +620,10 @@ def main() -> int:
                 cancelled.json().get("step") == "cancelled" and stopped is True,
                 (cancelled.status_code, cancelled.text[:200]),
             )
-            (data / "SLOW").unlink()
+            (node_data / "SLOW").unlink()
 
-            # F1 -----------------------------------------------------------
-            (data / "FAIL").write_text("", encoding="utf-8")
+            # F1 + L4 ------------------------------------------------------
+            (node_data / "FAIL").write_text("", encoding="utf-8")
             submit("ls5-fail")
             failed = until("ls5-fail", ("ready", "failed", "cancelled"))
             check(
@@ -552,8 +633,26 @@ def main() -> int:
                 and "Strata's setup stopped: not enough free disk space" in (failed.get("error") or ""),
                 {k: failed.get(k) for k in ("step", "failedStep", "error")},
             )
-            (data / "FAIL").unlink()
+            library_log = data / f"strata-{TAG}.setup.log"
+            error = failed.get("error") or ""
+            check(
+                "L4 the failed setup's log is sent, and the failure names the Library's copy",
+                library_log.is_file()
+                and "[X]  not enough free disk space" in library_log.read_text(encoding="utf-8")
+                and error.endswith(f"(its whole output: {library_log})"),
+                error,
+            )
+            (node_data / "FAIL").unlink()
+
+            # L5 -----------------------------------------------------------
+            removed = client.post("/v1/engines/strata/uninstall")
+            check(
+                "L5 uninstalling Strata takes this node's preparation folders",
+                removed.status_code == 204 and not work.exists(),
+                (removed.status_code, removed.text[:200]),
+            )
         finally:
+            undo_read_only()
             if os.name == "nt":
                 agent.send_signal(signal.CTRL_BREAK_EVENT)
             else:
