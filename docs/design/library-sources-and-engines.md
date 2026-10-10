@@ -802,6 +802,7 @@ config*.
 - **B48 and B50 approved. B49 approved for v0.2 only:** text only, the
   speed projection off and one GPU are all to be reversed after v0.2
   ([agent#14](https://github.com/eugene-plexus/agent/issues/14)).
+- **B51-B53 approved.**
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
