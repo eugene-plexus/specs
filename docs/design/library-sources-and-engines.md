@@ -782,6 +782,14 @@ config*.
   Library config has moved to `catalogueSources` first). Troy means to
   explore Stable Diffusion-style image models after v0.2 (not designed):
   sources, fit and Delete stay general enough for them.
+- **B36-B38 approved as defaults** (Troy: a power user will reorder the hubs,
+  so the order is the person's). In LS7: Settings gets move up and down on
+  the source list (the order was saved but had no control), and results come
+  in the list's order whatever a source's kind (engine lists no longer always
+  first; the default list puts them first). B37's GET search kept for an
+  older console goes in the cleanup. Adding a hub of one's own (any
+  Hugging Face-compatible address, its own token and on/off) was already in
+  LS4; other kinds (ModelScope, the Ollama registry, Civitai) are not built.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
