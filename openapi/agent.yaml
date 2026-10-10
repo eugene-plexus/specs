@@ -5383,9 +5383,10 @@ components:
             format support on the library would give the library a copy
             of it, and the copy would be the one that went stale.
 
-            **Kept for consoles older than `accepts`;** it is the formats
-            of the requirements in `accepts` that need no preparation, so
-            an older console never offers Strata for every GGUF.
+            It is the formats of the requirements in `accepts` that need
+            no preparation, a summary for a page that only says which
+            formats run here (Home); what a model needs is judged from
+            `accepts` (LS1).
         accepts:
           type: array
           items:
