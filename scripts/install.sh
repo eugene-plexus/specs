@@ -59,7 +59,7 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=4235a622d7cd1bc4a1b72a76dd1f5ba90a795c41
+PIN_AGENT=3dd20e3292dbf601de158675648b40492c3d8e64
 PIN_CONTROL=bf4675801c70e39dd44f5c786e4f10d241c22a14
 PIN_GATEWAY=e4e2b5202fb92b14b16238d9d7e19561ee544412
 PIN_DRIVER=7d22ac92317d536e5e1ffa028fb51eb6881bb072
