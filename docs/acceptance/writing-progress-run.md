@@ -133,7 +133,21 @@ lint, format and types were clean in each.
   `530740f`)
 - ui `dist` `4ba4ef2` (built from `6340cf78`)
 
-## The live run (owed)
+## The live run
+
+Troy's install, 2026-10-10, after the update to specs `44bf62c`:
+
+- **The cap is gone.** With the install's `defaultMaxTokens` cleared, the
+  retry sent none. Strata allowed the rest of the context (130,939 tokens),
+  and the answer finished `stop` after 16,222 tokens, against 4,096 and
+  `length` before.
+- **The NAS serves the new console.** Its Playground chunk carries "hit the
+  install's cap".
+- Owed: Workbench updated from the Apps page (the agent lists the new
+  catalogue version; it does not update an app on its own), then a Strata
+  chat's line, and a length stop's note.
+
+### What it should show
 
 Once Edge has this and Workbench's catalogue pin:
 - A Strata chat in Workbench should read *Thinking · 1 min 12 s* while it

@@ -109,9 +109,16 @@ agent 2189, ui 1871 (151 files).
 - inference-driver `d63c5c1`
 - ui `dist` `a484c26` (built from ui `2464d6f`)
 
-## The live run (owed)
+## The live run
 
-Once Edge has these, update the NAS container first, then Amish_Station.
-On Amish_Station, the agent's log should then say *firewall rule follows
-this install's listeners*, and the rule should allow 8093. Inference should
-show the Strata row with no error, and the Playground should chat with it.
+Troy's install, 2026-10-10, after the update to specs `44bf62c`, NAS first:
+
+- **The firewall rule follows.** Read unelevated on Amish_Station,
+  `windows.rule_ports()` is **(8079, 8093)**. Before the update it was
+  (8079, 8091). 8091 was the removed llama.cpp runtime's driver, and 8093
+  is Strata's.
+- **Strata answers through the gateway.** Troy chatted with it from
+  Workbench, which reaches it only through the root's gateway. Strata's own
+  record shows the request finished `stop` after 16,222 tokens (158 s,
+  102.6 tok/s).
+- Not yet seen by Troy: the Inference page's Strata row with no error.
