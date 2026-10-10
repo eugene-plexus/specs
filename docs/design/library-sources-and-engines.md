@@ -635,7 +635,9 @@ The judge answers each engine's fit when asked (`EligibilityRequest.fit`,
 `EngineVerdict.fit`), `GET /v1/models/{id}/fit` takes `fitModel`, and
 admission measures a launch by its engine's own model.
 
-**Calls building made**, for Troy's veto:
+**Calls building made: all twelve approved by Troy as written (2026-10-09).**
+On B67 he noted that shims for scenarios that no longer exist (an older
+Library, an older console) may want a cleanup pass later ([specs#22](https://github.com/eugene-plexus/specs/issues/22)).
 
 - **B58. Data where it can be.** The kind and its numbers are data on the
   descriptor; the `spill` and `reserved_share` arithmetic is the Library's
