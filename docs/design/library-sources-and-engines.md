@@ -825,6 +825,7 @@ config*.
   *Faster here with Strata after preparing* beside the dot. Measured speeds
   (the profile builder measures tok/s) can replace the rule later. LS9,
   after LS8, before the cleanup.
+- **B57 approved: every call in §6.2-§6.7 is now settled.**
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
