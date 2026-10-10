@@ -1102,6 +1102,44 @@ paths:
         "409":
           description: Stop this engine's runtimes and finish or cancel its install first.
 
+  /v1/engines/{engine}/prepared/inspect:
+    parameters:
+      - in: path
+        name: engine
+        required: true
+        schema:
+          $ref: "components/common.yaml#/components/schemas/EngineKind"
+    post:
+      tags: [engines]
+      operationId: inspectPreparedModel
+      summary: What a model this engine prepared is, read off the engine's own files.
+      description: |
+        For *Add a prepared model* (LS7, B22 replaced and B26): the
+        engine's adapter reads its own entry file (Strata's JSON
+        configuration) as this node reaches it and answers what the
+        provenance file should record: the source model it names (its
+        GGUF), the context it was prepared for, how the engine runs it,
+        and every file it is made of. The engine's format stays the
+        adapter's knowledge (B2): the console relays the answer to the
+        Library. 422, naming why, when the file is not one this engine
+        prepared or cannot be read.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreparedInspectRequest"
+      responses:
+        "200":
+          description: A draft of the provenance file.
+          content:
+            application/json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/PreparedProvenance"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
+          $ref: "components/common.yaml#/components/responses/Problem"
   /v1/engines/{engine}/install:
     parameters:
       - in: path
@@ -6012,6 +6050,19 @@ components:
             - windows_io_counters
             - proc_io_rchar
             - rusage_diskio
+
+    PreparedInspectRequest:
+      type: object
+      required:
+        - entry
+      properties:
+        entry:
+          type: string
+          minLength: 1
+          description: |
+            The engine's entry file, as the Library spells it (a path in a
+            Library folder); the agent reaches it through this node's path
+            mappings.
 
     CopyProgress:
       type: object

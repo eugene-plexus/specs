@@ -834,6 +834,20 @@ components:
             offers its own choices, and without one takes its own
             recommendation for the node. Strata's are its setup's own.
             Absent: the preparation takes no context.
+        minEngineVersion:
+          type: string
+          description: |
+            The oldest version of the engine that prepares this model, as
+            the engine's own setup states it (LS7, B30): e.g. Strata's
+            `v0.1.38` for UD-IQ4_XS. Absent: any version the adapter runs.
+        engineTooOld:
+          type: string
+          description: |
+            Set by the node that reported it when its installed engine is
+            older than `minEngineVersion` (LS7, B30): the installed
+            version, so the console says *needs Strata vX: update Strata on
+            this node* before a preparation would fail halfway. Absent: the
+            installed engine can prepare it, or none is installed.
 
     PreparedProvenance:
       type: object
@@ -895,6 +909,62 @@ components:
           type: string
           format: date-time
           description: When this file was written.
+        title:
+          type: string
+          description: |
+            What it is, in the engine's list's words when it came from the
+            list (`SupportedModel.title`), e.g. `Qwen3.8-Flash-Next IQ2_XS`
+            (LS7, B22 replaced).
+        architecture:
+          type: string
+          description: |
+            The architecture of the model it was made from, as the hub or
+            the source file read it (`qwen4exp`): kept for when the source
+            model is no longer in the Library.
+        quantization:
+          type: string
+          description: The engine's name for the size it was made from, e.g. `IQ2_XS`.
+        contextLength:
+          type: integer
+          minimum: 1
+          description: |
+            The context, in tokens, it was prepared for: an engine that fixes
+            the context when it prepares (Strata's `--max-context`).
+        mode:
+          type: string
+          description: |
+            How the engine runs it on the node that prepared it, in the
+            engine's own words (Strata: *every expert in RAM*, *a RAM budget
+            of its experts, the rest from the SSD*, *the low-RAM mode*).
+        files:
+          type: array
+          items:
+            $ref: "#/components/schemas/PreparedFile"
+          description: |
+            Every file the model is made of beside its source model, as the
+            preparation left them: what a node copies with it and what is
+            the model's own on disk. The source model's files are its own
+            model's, not listed.
+
+    PreparedFile:
+      type: object
+      description: One file a prepared model is made of (LS7).
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          minLength: 1
+          description: Relative to the folder holding the provenance file, with `/`.
+        sizeBytes:
+          type: integer
+          minimum: 0
+        shared:
+          type: boolean
+          default: false
+          description: |
+            Used by other models the same engine prepared in this folder too
+            (Strata's MTP helper): kept while any of them is.
 
     PreparedSource:
       type: object

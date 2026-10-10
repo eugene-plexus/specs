@@ -2503,6 +2503,50 @@ components:
         preparedAt:
           type: string
           format: date-time
+        title:
+          type: string
+          description: From the provenance file (LS7).
+        contextLength:
+          type: integer
+          minimum: 1
+          description: The context it was prepared for, from the provenance file (LS7).
+        mode:
+          type: string
+          description: How the engine runs it, in the engine's words, from the provenance file (LS7).
+        files:
+          type: array
+          items:
+            $ref: 'components/common.yaml#/components/schemas/PreparedFile'
+          description: |
+            The files it is made of beside its source model, each measured
+            on this host where the Library sees it (LS7).
+        diskBytes:
+          type: integer
+          minimum: 0
+          description: |
+            What its own files take on disk, the shared ones counted too,
+            measured on this host (LS7). Absent when they are not on the
+            Library's machine.
+        missing:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreparedFactMissing'
+          description: |
+            Each fact the Library could not give, and why (LS7, Troy: the
+            Library imparts what is known, and names what is not).
+
+    PreparedFactMissing:
+      type: object
+      description: A fact about a prepared model the Library could not give, and why.
+      required:
+        - fact
+        - reason
+      properties:
+        fact:
+          type: string
+          description: Which (`architecture`, `contextLength`, `diskBytes`, `source`, ...).
+        reason:
+          type: string
 
     PreparedModelRequest:
       type: object
