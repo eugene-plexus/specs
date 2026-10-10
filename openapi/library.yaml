@@ -429,6 +429,83 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/models/{id}/deletion:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [models]
+      operationId: planModelDeletion
+      summary: What deleting this model would remove, keep and refuse, read now.
+      description: |
+        LS8 (Troy: a Delete for every model, any format). Nothing is
+        removed: this is what the confirmation shows. A file the model is
+        made of that another listed model also names (a projector several
+        quants share, Strata's MTP helper) is kept, naming who uses it:
+        one rule for every kind of shared part. Prepared models made from
+        it are named, since an engine reads the source while it runs
+        them; Delete takes them too only when asked. `token` names this
+        answer, so the delete removes what was shown.
+      responses:
+        '200':
+          description: The plan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelDeletion'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/models/{id}/delete:
+    parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [models]
+      operationId: deleteModel
+      summary: Delete a model's files from disk, and the model and its profiles from the Library.
+      description: |
+        LS8. Removes what `planModelDeletion` answered with this `token`,
+        all or nothing per model: each file is first moved aside under a
+        hidden name, and if one cannot be (a running engine holds it on
+        Windows) the others are put back and nothing is deleted. Folders
+        left empty are removed, up to the Library folder. The model and
+        its saved profiles leave the Library. `alsoDelete` names prepared
+        models made from it to delete with it (each by its own plan).
+        A node's copy of a deleted model is removed by that node when it
+        next tidies its copies. Not for a `missing` model: `DELETE
+        /v1/models/{id}` forgets one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ModelDeleteRequest'
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelDeleted'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: |
+            Nothing was deleted: the plan changed since it was read (read
+            it again), a refusal holds (a download into its files, a run
+            preparing or starting it), or a file is in use, named.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   # -------- Profiles --------
 
   /v1/models/{id}/profiles:
@@ -2232,6 +2309,151 @@ components:
         role:
           $ref: '#/components/schemas/ModelFileRole'
         sizeBytes:
+          type: integer
+          minimum: 0
+
+    ModelDeletion:
+      type: object
+      description: What deleting a model would do, read now (LS8).
+      required:
+        - modelId
+        - files
+        - kept
+        - bytesFreed
+        - profiles
+        - preparedFrom
+        - token
+      properties:
+        modelId:
+          type: string
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelFile'
+          description: Every file Delete removes, with its size.
+        kept:
+          type: array
+          items:
+            $ref: '#/components/schemas/KeptModelFile'
+          description: |
+            Files the model is made of that another listed model also
+            names, kept for it.
+        bytesFreed:
+          type: integer
+          minimum: 0
+          description: The sizes of `files`, summed.
+        profiles:
+          type: integer
+          minimum: 0
+          description: How many saved profiles go with it.
+        preparedFrom:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreparedDependent'
+          description: |
+            Prepared models made from this one (their `sourceModelId`).
+            An engine reads the source while it runs them, so they stop
+            working without it; Delete takes them only when asked
+            (`ModelDeleteRequest.alsoDelete`).
+        refusal:
+          type: string
+          description: |
+            Why it cannot be deleted now, in a sentence; absent when it
+            can. A download into its files, or a run operation preparing
+            or starting it.
+        token:
+          type: string
+          description: Names this plan; `deleteModel` refuses another.
+
+    KeptModelFile:
+      type: object
+      description: A file a model is made of that Delete keeps for another model (LS8).
+      required:
+        - path
+        - usedBy
+      properties:
+        path:
+          type: string
+        sizeBytes:
+          type: integer
+          minimum: 0
+        usedBy:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelRef'
+
+    ModelRef:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+
+    PreparedDependent:
+      type: object
+      description: A prepared model made from the one being deleted (LS8).
+      required:
+        - id
+        - name
+        - bytesFreed
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        bytesFreed:
+          type: integer
+          minimum: 0
+          description: What deleting it as well would free.
+        refusal:
+          type: string
+          description: Why it cannot be deleted now, when it cannot.
+
+    ModelDeleteRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: The `ModelDeletion.token` the person confirmed.
+        alsoDelete:
+          type: array
+          items:
+            type: string
+          description: |
+            Prepared models made from it (`ModelDeletion.preparedFrom`)
+            to delete with it.
+
+    ModelDeleted:
+      type: object
+      description: What a delete removed (LS8).
+      required:
+        - models
+        - deleted
+        - kept
+        - bytesFreed
+      properties:
+        models:
+          type: array
+          items:
+            type: string
+          description: The ids of the models removed from the Library.
+        deleted:
+          type: array
+          items:
+            type: string
+          description: Every file removed.
+        kept:
+          type: array
+          items:
+            type: string
+          description: Files kept for other models.
+        bytesFreed:
           type: integer
           minimum: 0
 
