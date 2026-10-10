@@ -55,19 +55,22 @@ On this machine the account may not make symbolic links, so the shards were
 hard links (B102). A Windows service may make symbolic links; Linux CI makes
 them.
 
-## The live run (owed)
+## The live run
 
-Troy's install: the root's Library in the NAS container, and Amish_Station's
-service reaching `\\192.168.16.252\downloads\models`. After the root's image
-and then Amish_Station take Edge, *Prepare for Strata* on the IQ2_XS model
-already downloaded there should do the following:
+Troy's install, 2026-10-10: the root's Library in the NAS container, and
+Amish_Station's service reaching `\\192.168.16.252\downloads\models`, both on
+Edge `19fc0f4`. *Prepare for Strata* on the IQ2_XS model the failed run had
+downloaded completed, listed the model and started it (Troy: *I seem to have
+Strata running*). Per-step timings were not recorded.
 
-- setup links the two shards (no copy);
-- it fetches the MTP helper (about 5 GB) into the node's folder;
-- *Sending the prepared model to the Library* follows, about 3.2 GB;
-- then the model is listed, and it runs.
-
-The result goes here.
+The run also found that a llama.cpp model Troy had stopped started again
+whenever Amish_Station restarted
+([agent#11](https://github.com/eugene-plexus/agent/issues/11)). Strata's
+`--expert-cache auto` sizes its GPU cache from the VRAM free at its start,
+so it started with what that model left. Setup reads only the card's total
+memory (`nvidia-smi --query-gpu=memory.total`), so the preparation itself
+does not depend on what else is running; a restart of the Strata runtime
+with the card free is enough.
 
 ## Unit tests
 
