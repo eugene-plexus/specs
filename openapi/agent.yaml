@@ -5373,6 +5373,16 @@ components:
             Empty for an engine that loads whatever its requirements
             accept. The console sends it to the library's search
             (`POST /v1/catalogue/search`), which lists it as a source.
+        fit:
+          $ref: "components/common.yaml#/components/schemas/EngineFitModel"
+          description: |
+            How this engine uses memory (LS6, Troy's L11), beside `accepts`:
+            llama.cpp `spill`, vLLM `reserved_share` with its default share,
+            Strata `engine_table` with its setup's answer for each model on
+            this node's RAM and card. The console sends it to the library's
+            judge (`EligibilityEngine.fit`), and admission measures a launch
+            by it. Absent (MLX, Kev): the engine has no fit model, its fit is
+            *not estimated*, and admission admits on faith.
         experimental:
           type: boolean
           default: false
@@ -6523,11 +6533,23 @@ components:
         call A). `no` refuses. `unknown` admits with a warning: a verdict
         from a budget that could not be measured is worse than none.
 
+        **By the engine's own fit model (LS6, `EngineDescriptor.fit`).**
+        llama.cpp as above. vLLM (`reserved_share`): it takes its share of
+        each card it uses and refuses to start when less than that is free,
+        so `tight` refuses whatever `gpuLayers` says, and there is no
+        `split`; its context is `maxModelLen`. Strata (`engine_table`): its
+        setup's answer for the model on this node (`no` and `tight`
+        refuse, its low-RAM mode is `split` and admits), and `tight` too
+        when the RAM free now is short of the experts it keeps there. An
+        engine with no fit model (MLX, Kev) is `unknown`: never another
+        engine's arithmetic in its place.
+
     AdmissionBasis:
       type: string
       enum:
         - metadata
         - file_size
+        - engine_table
       description: |
         * `metadata` — the library computed required bytes from the
           model's real metadata at the requested context. Present when
@@ -6536,6 +6558,10 @@ components:
         * `file_size` — the model file's size plus a fixed allowance.
           What an agent with no library reachable can measure on its
           own, said out loud rather than dressed up.
+        * `engine_table` — the engine's own table for the model on this
+          node (Strata's setup's RAM figures, LS6), not bytes this node
+          computed. `requiredBytes` is then the card's free memory,
+          which Strata fills with its expert cache.
 
     AdmissionBlocker:
       type: object

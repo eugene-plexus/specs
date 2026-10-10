@@ -610,7 +610,41 @@ paths:
         how a caller scores a model against **another** host's memory,
         which is the only honest answer in a multi-host deployment where
         the GPU is in a different building.
+
+        **Whose fit (LS6, Troy's L11).** Each engine owns its fit model
+        (`EngineDescriptor.fit`), and the caller asks for the one of the
+        engine it means: `fitModel` and, for `reserved_share`, the share.
+        Absent, the arithmetic is `spill` (llama.cpp's), as every caller
+        before LS6 got. An `engine_table` engine's answer is its adapter's
+        own table, judged through `POST /v1/eligibility`, so here it is a
+        422 *Fit not estimated*, as is a prepared model.
       parameters:
+        - name: fitModel
+          in: query
+          schema:
+            $ref: 'components/common.yaml#/components/schemas/FitModelKind'
+          description: |
+            The engine's fit model. Absent: `spill`.
+        - name: gpuMemoryUtilization
+          in: query
+          schema:
+            type: number
+            exclusiveMinimum: 0
+            maximum: 1
+          description: |
+            With `fitModel=reserved_share`, required: the share of each
+            card's total memory the engine takes (the launch's own, or the
+            engine's default from `EngineFitModel.gpuMemoryUtilization`).
+        - name: vramTotalBytes
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: |
+            The total memory of the cards `vramBytes` is the free memory of,
+            summed. A `reserved_share` engine's share is of this. Absent with
+            `vramBytes`: taken as `vramBytes`, which shrinks that share to
+            what is free.
         - name: contextLength
           in: query
           schema:
@@ -680,11 +714,11 @@ paths:
           $ref: 'components/common.yaml#/components/responses/Problem'
         '422':
           description: |
-            Fit not estimated: a `prepared` model. The engine's files are
-            not read, and this arithmetic is llama.cpp's, which is wrong
-            for an engine that keeps its experts in RAM and a table on
-            the SSD (library-sources-and-engines.md §6.1). Each engine's
-            own fit model is LS6.
+            Fit not estimated: a `prepared` model, whose engine's files are
+            not read here, or `fitModel=engine_table`, whose answer is the
+            engine's own table (`EngineFitModel.table`, through
+            `POST /v1/eligibility`); or `fitModel=reserved_share` without
+            `gpuMemoryUtilization`.
           content:
             application/problem+json:
               schema:
@@ -4255,7 +4289,13 @@ components:
         - basis
       properties:
         verdict:
-          $ref: '#/components/schemas/FitVerdict'
+          $ref: 'components/common.yaml#/components/schemas/FitVerdict'
+        model:
+          $ref: 'components/common.yaml#/components/schemas/FitModelKind'
+          description: |
+            The fit model this arithmetic is (LS6): `spill`, llama.cpp's,
+            unless the caller asked for another (`fitModel`). Absent from a
+            library older than LS6, whose every fit was `spill`.
         requiredBytes:
           type: integer
           minimum: 0
@@ -4349,48 +4389,6 @@ components:
           tok/s for a dense 27B on the same budget.
         It describes placement, never a predicted speed; the profile
         builder measures that.
-
-    FitVerdict:
-      type: string
-      enum:
-        - fits
-        - tight
-        - split
-        - no
-        - unknown
-      description: |
-        * `fits` — inside **free** VRAM. Fully offloaded, no host memory
-          in the generation path.
-        * `tight` — inside total VRAM but not free VRAM. It would fit on
-          an idle GPU; something is holding memory right now, and
-          closing it is the operator's call.
-        * `split` — needs host memory as well. Runnable with partial
-          offload, and a decision rather than a failure. How much slower
-          depends on what moves, which `Fit.offload` says: experts (a
-          MoE model, little slower) or whole layers (much slower).
-        * `no` — larger than VRAM and RAM together.
-        * `unknown` — there is a GPU here and we could not read how much
-          memory it has, so no comparison against it can be made. Added
-          2026-09-18 (roadmap R2.3, review §6.2 #28) because the
-          alternative was worse than silence: `_intel_gpus` reports
-          `vramTotalBytes: 0` for a card whose size `xpu-smi` will not
-          state, the verdict then took the *no accelerator* branch,
-          compared the weights against host memory, and told a 16 GB Arc
-          owner that a 30 GB model **fits** — with `gpuCount: 1` printed
-          beside it. Wrong in the direction that runs out of memory at
-          load.
-
-          It is a property of the machine and not of the model, so every
-          candidate on such a host reports it, including small ones: a
-          favourable answer computed against a number we do not have is
-          right by luck.
-
-        Five values rather than a percentage because a percentage of
-        *what* — VRAM, or VRAM plus RAM? — is precisely the ambiguity
-        the operator is trying to resolve, and because they have
-        different advice. `tight` and `split` are the two the field
-        usually collapses into "won't fit", and they are the two worth
-        naming.
 
     MemoryBudget:
       type: object
@@ -4488,7 +4486,8 @@ components:
           description: |
             The largest context that still `fits` in free VRAM,
             computed by solving the same arithmetic for context instead
-            of asserting it. More useful than a yes/no at one context:
+            of asserting it. For `reserved_share` (LS6), the largest whose
+            KV cache the engine's share holds beside the weights. More useful than a yes/no at one context:
             it is the number that goes in a profile's `-c`, and it
             answers the question a launch actually asks.
         modelContextLength:
