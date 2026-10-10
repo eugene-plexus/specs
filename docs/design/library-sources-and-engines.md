@@ -190,7 +190,7 @@ never altered. Built in LS5 (§6.6).
 | **LS6** | Fit per engine | library, agent, ui |
 | **LS7** | A node runs a prepared model from its own copy of the Library's files (§6.8; agent#12, agent#10); the Library says what is known of a prepared model (B22 replaced, B26, B30, the source list's order) | specs, agent, library, ui |
 | **LS8** | Delete a model from the Library, any format, with everything it owns (§6.8, §6.11, Troy) | specs, library, ui |
-| **LS9** | The best route for this machine: Run recommends, and defaults to, preparing when fit says the preparing engine suits the machine better (§6.8, Troy) | library, agent, ui |
+| **LS9** | The best route for this machine: Run recommends, and defaults to, preparing when fit says the preparing engine suits the machine better (§6.8, §6.12, Troy) | ui |
 
 Each slice ends with the real-environment acceptance on Amish_Station with
 llama.cpp and Strata installed; LS5's is Strata's owed real-model validation.
@@ -1016,6 +1016,50 @@ follow one general rule so image models' VAEs and text encoders fit later.
   does, so a file held open refuses the move aside on Windows; on Linux a
   file can be moved while open, so the console's check for a running node is
   what stops a delete under a running engine there.
+
+## 6.12 LS9 built (2026-10-10 night): the best route for this machine
+
+Record: [ls9-route-run.md](../acceptance/ls9-route-run.md). Troy changed
+B54: a newcomer who presses Run and gets llama.cpp never learns Strata suits
+the machine better, so whenever fit says so, preparing is recommended and is
+Run's default.
+
+**Calls building made**, for Troy's veto:
+
+- **B95. The rule is the console's** (`betterAfterPreparing`), from the
+  verdicts and fits the Library already answers: no contract change. Only the
+  console runs models; if another client ever does, the Library can name the
+  recommendation itself.
+- **B96. The rule, as Troy put it:** the engine Run would use runs the model
+  as it is but its own fit is `split` (part in system memory) or `no`, and
+  the preparing engine's own fit is `fits` or `split` (Strata's low-RAM
+  mode). A fit not estimated never counts. **Both engines must be installed
+  on the node**: with Strata not installed there is no nudge (it is
+  experimental, and installing it is a step of its own); say if a newcomer
+  should be told even then (*Faster here with Strata, after installing it
+  and preparing*).
+- **B97. Run asks**: *Best on this machine: prepare for Strata, then run*,
+  why in each engine's own terms (*Strata fits it here after preparing it;
+  llama.cpp would run part of it from system memory, slower*), and two
+  choices with preparing chosen; the chosen one's control follows (Strata's
+  Prepare with its context and disk, or *Run now with llama.cpp*). No
+  minutes are promised: setup publishes no durations, and the disk it needs
+  is already said.
+- **B98.** *Faster here with Strata after preparing* stands beside the dot
+  wherever it is: the model page, Discover's rows and details, the starter
+  set.
+- **B99.** A prepared model never asks (it is prepared); a model with no
+  engine that runs it as it is shows Prepare alone, as before.
+- **B100.** The Downloads panel's small Run, after a download, does not ask
+  yet ([ui#17](https://github.com/eugene-plexus/ui/issues/17)).
+
+**What building found:**
+
+- On Amish_Station (RTX 5090, 94 GB of RAM) with the real IQ2_XS GGUF:
+  llama.cpp's own fit is *split* (about 64.5 GiB at 8,192 tokens against
+  29.9 GiB free on the card) and Strata's table says it *fits* (about 48 GB
+  of RAM for its 35.5 GB of experts): the rule recommends preparing, as Troy
+  expected.
 
 ## 7. Found while mapping (not part of this design)
 
