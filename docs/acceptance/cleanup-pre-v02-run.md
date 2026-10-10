@@ -24,10 +24,16 @@ refusing an old client.
 | library | B34 old catalogue keys (migrate, mirror, PATCH); B37 GET search; v0.1's Download-and-run (claim, `runWhenReady`, `downloadId`) | `aa3da2e` |
 | gateway | drivers from before P1; the one-off 2048 `defaultMaxTokens` clearing; the `conversation` alias | `9e1313f`, `e4e2b52` |
 | ui | B67, B3/B16/B24, B37 fallbacks; v0.1 download resume; pre-P1 drivers; old update states and the `ahead` guess; cyberpunk alias; `/runtimes` redirect; bare folder string | `97244f79` |
-| control, site-host, workbench | Job Site hosts and roots older than 2b.x (folder routes and actions), keyring fallback, `public-nodes` header, pre-M5 404, the approve page from `link_page`, older-gateway branches | (below) |
+| control, site-host, workbench | Job Site hosts and roots older than workspaces (folder routes and actions), keyring fallback, `public-nodes` header, pre-M5 404, the approve page from `link_page`, older-gateway branches | control `a8481a5`, `bf46758`; site host `c81c373`; Workbench `ba31193` / dist `576ed23`; agent catalogue `4235a62` |
+| specs | the Job Site folder routes and `JobSiteFolderCreate` | `18d3ba9` |
 
 `EngineDescriptor.modelFormats` stays: it is required, predates `accepts`,
 and Home reads it as a summary; nothing judges from it any more.
+
+Not removed as asked: a site rule that names no `command` still reads as
+deny, because the contract keeps `command` optional; Workbench now always
+names it, denied where the machine runs no commands (the choice was not
+shown).
 
 ## Kept (stored data): Troy's call
 
