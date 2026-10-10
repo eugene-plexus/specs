@@ -458,6 +458,15 @@ swap wait is a gateway knob rather than a constant.
 start. The dashboard can then say "unloaded after 600 s idle" rather
 than showing a stopped model with no explanation.
 
+**Since agent#11 (2026-10-10), `operator` is also stored.** The agent
+writes it to `agent.yaml` (`stoppedRuntimes`), so a model a person stopped
+stays stopped across an update or a reboot until something starts it.
+Before that, boot started every runtime with `autoStart`, and Troy's
+stopped llama.cpp model took Strata's VRAM back at every reboot. `idle` and
+`measurement` stay in memory only. `PUT /v1/runtimes/{name}/auto-start`
+changes `autoStart` without a restart. Record:
+`docs/acceptance/agent11-remembered-stop-run.md`.
+
 ---
 
 ## 6. VRAM-aware admission — refuse, never queue
@@ -786,7 +795,9 @@ says so now.
 4. **`stopReason` defaults are derived, not stored.** A `stopped` runtime
    with no recorded reason is `autoStart` when declared with `autoStart:
    false`, else `operator` — the only two ways to be stopped without the
-   agent having been told why.
+   agent having been told why. (Since agent#11 a person's `operator` stop
+   is stored, so that it outlives the agent. The derivation still covers
+   the rest.)
 5. **The companion's URL is loopback.** `http://127.0.0.1:<port>`, like
    every component the agent spawns. On a remote node a gateway on
    another host cannot reach it. The M5 design already carries this gap

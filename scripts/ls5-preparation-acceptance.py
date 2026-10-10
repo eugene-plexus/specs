@@ -57,6 +57,14 @@ acceptance had a gateway in front of it):
       reports no error;
   W2  a chat through the gateway is answered by Strata.
 
+And a person's Stop outlives the agent (agent#11, 2026-10-10: a model Troy
+stopped came back at every update and reboot):
+
+  S1  a model someone stopped is still stopped after the agent restarts,
+      and says why;
+  S2  Start brings it back and forgets the stop;
+  S3  Start when Eugene starts is saved without restarting the model.
+
 Clears every ambient EUGENE_PLEXUS_* variable, so it is safe beside a live
 install. Run with the agent and library installed (editable is fine).
 """
@@ -379,15 +387,31 @@ def main() -> int:
         )
         log_path = directory / "agent.log"
         log = log_path.open("wb")
-        agent = subprocess.Popen(
-            [sys.executable, "-m", "eugene_plexus_agent", "--unattended"],
-            cwd=directory,
-            env=env,
-            stdin=subprocess.DEVNULL,
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-        )
+
+        def start_agent() -> subprocess.Popen[bytes]:
+            return subprocess.Popen(
+                [sys.executable, "-m", "eugene_plexus_agent", "--unattended"],
+                cwd=directory,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+            )
+
+        def stop_agent(process: subprocess.Popen[bytes]) -> None:
+            if os.name == "nt":
+                process.send_signal(signal.CTRL_BREAK_EVENT)
+            else:
+                process.terminate()
+            try:
+                process.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                print("WARN  the agent did not stop in 60 s and was killed", flush=True)
+
+        agent = start_agent()
+        passphrase = secrets.token_urlsafe(24)
         client = httpx.Client(base_url=f"http://127.0.0.1:{agent_port}", timeout=60, trust_env=False)
 
         def wait(fn, label: str, seconds: float = 90):  # type: ignore[no-untyped-def]
@@ -406,7 +430,7 @@ def main() -> int:
         try:
             wait(lambda: client.get("/healthz").status_code == 200, "the agent answers")
             token = client.post(
-                "/v1/auth/initialize", json={"passphrase": secrets.token_urlsafe(24)}
+                "/v1/auth/initialize", json={"passphrase": passphrase}
             ).json()["sessionToken"]
             client.headers["Authorization"] = f"Bearer {token}"
             proxy = "/api/proxy/library"
@@ -669,6 +693,64 @@ def main() -> int:
                 (chat.status_code, chat.text[:400]),
             )
 
+            # S1 - S3 (agent#11: a person's Stop outlives the agent) -------
+            stopped_rt = done.get("runtime") or ""
+
+            def own() -> dict[str, Any]:
+                return client.get(f"/v1/runtimes/{stopped_rt}").json()
+
+            # The console's Stop: an empty body, which is `operator`.
+            client.post(f"/v1/runtimes/{stopped_rt}/stop", json={})
+            wait(lambda: own()["status"] == "stopped", "the runtime stops", 60)
+            stop_agent(agent)
+            agent = start_agent()
+            wait(lambda: client.get("/healthz").status_code == 200, "the agent answers again")
+            client.headers["Authorization"] = "Bearer " + client.post(
+                "/v1/auth/login", json={"passphrase": passphrase}
+            ).json()["sessionToken"]
+            wait(lambda: client.get(f"{proxy}/healthz").status_code == 200, "the library answers again")
+            # Boot is over once the agent answers; give a start it should not
+            # have made the time to show.
+            time.sleep(5)
+            after = own()
+            check(
+                "S1 a model someone stopped is still stopped after the agent restarts, and says why",
+                after.get("status") == "stopped"
+                and after.get("stopReason") == "operator"
+                and after.get("pid") is None,
+                {k: after.get(k) for k in ("status", "stopReason", "pid", "lastError")},
+            )
+            client.post(f"/v1/runtimes/{stopped_rt}/start")
+            ready = wait(lambda: (lambda r: r if r["status"] == "ready" else None)(own()), "it starts again", 90)
+            kept = yaml.safe_load((directory / "agent.yaml").read_text(encoding="utf-8"))
+            check(
+                "S2 Start brings it back and forgets the stop",
+                stopped_rt not in (kept.get("stoppedRuntimes") or []),
+                {"status": ready.get("status"), "stoppedRuntimes": kept.get("stoppedRuntimes")},
+            )
+            switched = client.put(f"/v1/runtimes/{stopped_rt}/auto-start", json={"autoStart": False})
+            time.sleep(3)
+            still = own()
+            declared = next(
+                (r for r in yaml.safe_load((directory / "agent.yaml").read_text(encoding="utf-8"))["runtimes"] if r["name"] == stopped_rt),
+                {},
+            )
+            check(
+                "S3 Start when Eugene starts is saved without restarting the model",
+                switched.status_code == 200
+                and declared.get("autoStart") is False
+                and still.get("status") == "ready"
+                and still.get("pid") == ready.get("pid")
+                and still.get("lastRestart") == ready.get("lastRestart"),
+                {
+                    "put": (switched.status_code, switched.text[:200]),
+                    "declared": declared.get("autoStart"),
+                    "before": {k: ready.get(k) for k in ("pid", "lastRestart")},
+                    "after": {k: still.get(k) for k in ("status", "pid", "lastRestart")},
+                },
+            )
+            client.put(f"/v1/runtimes/{stopped_rt}/auto-start", json={"autoStart": True})
+
             # R1 -----------------------------------------------------------
             if done.get("runtime"):
                 client.post(f"/v1/runtimes/{done['runtime']}/stop")
@@ -744,15 +826,7 @@ def main() -> int:
             )
         finally:
             undo_read_only()
-            if os.name == "nt":
-                agent.send_signal(signal.CTRL_BREAK_EVENT)
-            else:
-                agent.terminate()
-            try:
-                agent.wait(timeout=60)
-            except subprocess.TimeoutExpired:
-                agent.kill()
-                print("WARN  the agent did not stop in 60 s and was killed", flush=True)
+            stop_agent(agent)
             log.close()
             if FAILURES:
                 print("--- agent log (last 80 lines) ---")
