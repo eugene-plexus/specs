@@ -1131,7 +1131,11 @@ paths:
               $ref: "#/components/schemas/PreparedInspectRequest"
       responses:
         "200":
-          description: A draft of the provenance file.
+          description: |
+            A draft of the provenance file: `entry` as given; `source.path`
+            as the Library spells it (the source file's place beside the
+            entry on this node, applied to the entry); `files` relative to
+            the entry's folder.
           content:
             application/json:
               schema:

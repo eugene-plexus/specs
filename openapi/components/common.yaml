@@ -941,10 +941,10 @@ components:
           items:
             $ref: "#/components/schemas/PreparedFile"
           description: |
-            Every file the model is made of beside its source model, as the
-            preparation left them: what a node copies with it and what is
-            the model's own on disk. The source model's files are its own
-            model's, not listed.
+            Every file the model is made of beside its source model and
+            this provenance file, the entry first, as the engine's adapter
+            read them off its entry file: what is the model's own on disk.
+            The source model's files are its own model's, not listed.
 
     PreparedFile:
       type: object

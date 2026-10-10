@@ -2455,13 +2455,19 @@ components:
         (`PreparedProvenance`) says it, and what the library made of it.
         Present iff `format` is `prepared` and the file could be read.
 
-        The engine's own files are not read (experimental-engines.md:
-        prepared files stay usable without the library parsing them), so
-        a prepared model has no architecture, context, size or fit here:
-        the engine says what it loaded when it is ready
-        (`RuntimeCapabilities`), and fit waits for the engine's own fit
-        model (LS6). `files` lists the provenance file (`index`) and the
-        entry file (`config`) when the library's host can see it.
+        The library does not read the engine's own files
+        (experimental-engines.md: prepared files stay usable without the
+        library parsing them). What it knows of a prepared model (LS7,
+        B22 replaced: the Library imparts what is known and names what is
+        not) is what the engine's adapter read off those files when it
+        was prepared or added and the provenance file records (`title`,
+        `contextLength`, `mode`, `files`), measured on this host; what it
+        inherits from the model it was made from when the library lists
+        that (`LibraryModel.architecture`, `parameters`, `sizeLabel`);
+        and in `missing`, each fact it cannot give, with why. Fit is the
+        engine's own (LS6). `LibraryModel.files` lists the provenance
+        file (`index`), the entry file (`config`) and the files it
+        records, and `LibraryModel.sizeBytes` is `diskBytes`.
       required:
         - engine
         - entry
@@ -2585,8 +2591,11 @@ components:
             What to write. `entry` is what the person gave: the library
             writes it relative to the provenance file when it lies inside
             that file's folder, so the two move together, and as given
-            otherwise. `formatVersion` is written as 1 and `preparedAt`
-            as now when absent.
+            otherwise. `files` come relative to the entry's folder, as the
+            agent's `inspectPreparedModel` answers them, and are written
+            relative to the provenance file's folder (LS7).
+            `formatVersion` is written as 1 and `preparedAt` as now when
+            absent.
 
     RecommendedSampling:
       type: object
