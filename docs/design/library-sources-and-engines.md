@@ -753,6 +753,9 @@ config*.
   that prepares models keeps a text configuration beside its weights), and
   measured (the size of the files it names). A fact that cannot be had is
   named with why, never a bare *unknown*. Part of LS7.
+- **B21 approved. B24 and B25 go** in the pre-v0.2 cleanup. **B26 changes**
+  (LS7): *Made from* is read from the engine's configuration (Strata's names
+  the GGUF it was made from), with the picker only when that fails.
 - **LS7 builds it, before v0.2.0** (Troy). Kickoff:
   `docs/private/next-session-ls7.md`.
 
