@@ -256,10 +256,28 @@ changed the design:
    very model it is serving*. So detection is a functional probe —
    viable because the negative case costs **45 ms**, llama.cpp refusing
    a non-pooling model before any compute.
-2. **The surfaces are not always disjoint.** Ollama's are; but
-   `llama-server` given `--embedding` still serves chat perfectly well.
-   `surfaces` is therefore a list rather than an enum — a guess would
-   have been wrong.
+2. **~~The surfaces are not always disjoint.~~ They are, on every engine
+   measured.** *Corrected 2026-10-11 (MR0).* This item said `llama-server`
+   given `--embedding` "still serves chat perfectly well", and that
+   `surfaces` is a list for that reason. It had stopped reproducing by
+   2026-09-16 (b10948: an `--embedding` server answers chat with a 500, and
+   a server without it answers `/v1/embeddings` with a 501 naming the
+   flag), and it was measured again on 2026-10-11 on b10948 and b11552,
+   for `/v1/completions` too. Ollama's are disjoint as well. So a
+   single-model driver reports `embeddings` or `chat`, never both. The list
+   stays a list for other reasons: a chat model also carries `completion`
+   and `transcription` where its engine does them, and an account's
+   image-and-text model carries `image` beside `chat`.
+   **And nothing in Eugene starts a llama.cpp model as an embedder.** The
+   agent's llama.cpp adapter (`engines/llama_cpp.py`, `build_argv`) never
+   passes `--embeddings`, `--pooling` or `--reranking`: it passes the model,
+   host, port and alias, the profile's curated flags, and then the profile's
+   extra arguments as written, and reads `RuntimeCapabilities.embeddings`
+   back as unknown. An embedding GGUF launched from the Library therefore
+   answers neither surface (501 on `/v1/embeddings`, 500 on chat, measured
+   on both builds) and is listed as `chat`, until a person types
+   `--embeddings` into the profile's extra arguments. The 2026-09 runs
+   started their `llama-server`s by hand.
 3. **`encoding_format: base64` is what the OpenAI SDKs ask for by
    default**, so ignoring it breaks the most common client while every
    hand-rolled `curl` keeps working. Handled at the gateway rather than
@@ -268,9 +286,13 @@ changed the design:
 
 Also settled: token-array inputs are refused rather than accepted,
 because validating one needs a tokenizer this install deliberately does
-not own (§6.1), and `dimensions` passes through without emulation for
-the same reason a silently-truncated vector is a wrong answer that looks
-like a right one.
+not own (§6.1), and `dimensions` is not emulated, for the reason that a
+silently-truncated vector is a wrong answer that looks like a right one.
+*Corrected 2026-10-11 (MR0):* this paragraph said `dimensions` "passes
+through". It never did: the driver contract has no field for it, so the
+gateway accepted it and dropped it. It is now accepted, ignored, and named
+on `x-eugene-plexus-ignored-settings` (as is `user`), and the vectors come
+back at the model's own width.
 
 Record: [`../acceptance/embeddings-run.md`](../acceptance/embeddings-run.md),
 **14 checks** against a real embedding model.

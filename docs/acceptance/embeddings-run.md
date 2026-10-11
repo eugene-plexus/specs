@@ -74,6 +74,14 @@ completion came back normally from a server in embedding mode.
 
 An enum would have been wrong. A list was not a guess.
 
+*Corrected 2026-10-11 (MR0).* The `llama-server` half of this finding does
+not hold on current engines. It had stopped reproducing by 2026-09-16
+(`scripts/embeddings-acceptance.sh` carries that note), and on 2026-10-11 both
+b10948 and b11552 answered chat and `/v1/completions` on a server started with
+`--embedding` with a 500, and `/v1/embeddings` on one started without it with a
+501 naming the flag. The two surfaces are disjoint on every engine measured.
+The list is still a list, for other reasons (`gateway.yaml`, `surfaces`).
+
 ### 3. `encoding_format: base64` is what the OpenAI SDKs ask for
 
 Ignoring it would break the most common client while every hand-rolled
@@ -169,7 +177,11 @@ field has no `.value`.
   honours it. *Corrected 2026-10-03* (the upstream drift audit, which
   read Ollama 0.35.1): Ollama now honours `dimensions`, so the case this
   run could not reach is the ordinary one on a current Ollama, and it is
-  still unasserted.
+  still unasserted. *Corrected 2026-10-11 (MR0):* the gateway never passed
+  `dimensions` to any backend (the driver contract has no field for it), so
+  what a backend does with it never applied through Eugene. The door now
+  names `dimensions` and `user` on `x-eugene-plexus-ignored-settings`
+  ([record](mr0-embeddings-honest-run.md)).
 - **A vector store consuming the output.** The corruption this design
   prevents is described, and the refusal is proved; nobody has actually
   indexed a corpus through this endpoint and searched it.

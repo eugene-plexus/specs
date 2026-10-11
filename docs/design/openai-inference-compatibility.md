@@ -61,7 +61,7 @@ product surfaces or organisation admin (§1).
 | `POST /responses` | JSON, 32 fields | JSON or SSE | **Built** (2026-09-23). 29 fields; see 0.2 |
 | `POST /responses/input_tokens` | JSON | JSON | Not built |
 | `POST /responses/compact` | JSON | JSON | Not built |
-| `POST /embeddings` | JSON, 5 fields | JSON | **Built**, all 5 fields |
+| `POST /embeddings` | JSON, 5 fields | JSON | **Built.** 3 of 5 fields are honoured: `input` (text only, no token arrays), `model` and `encoding_format`. `dimensions` and `user` are accepted, ignored, and named on `x-eugene-plexus-ignored-settings` (MR0, 2026-10-11). This row said "all 5 fields", and the contract said `dimensions` was passed through; the door dropped both without a word |
 | `POST /completions` (legacy, and fill-in-the-middle via `suffix`) | JSON, 18 fields | JSON or SSE | Not built. Its own open call: [`responses-and-completions.md`](responses-and-completions.md) §2 |
 | `GET /models`, `GET /models/{model}` | — | JSON | List **built**; single model not built |
 | `POST /audio/speech` | JSON: `model input voice instructions response_format speed stream_format` | **binary** audio, or SSE | Not built |
