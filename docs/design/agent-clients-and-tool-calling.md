@@ -278,6 +278,16 @@ changed the design:
    on both builds) and is listed as `chat`, until a person types
    `--embeddings` into the profile's extra arguments. The 2026-09 runs
    started their `llama-server`s by hand.
+   **Corrected again 2026-10-11 (MR3), two ways.** The agent now starts the
+   embedder: its adapter reads the GGUF header, or the runtime's `mode`
+   (`RuntimeSpec.mode`), and adds `--embeddings` (`--reranking` for a
+   reranker), so the claim above is true of every Eugene build before MR3
+   and of none after. And the disjoint answers are an encoder's: a *causal*
+   embedder with last pooling (Qwen3-Embedding-0.6B, b11552) given
+   `--embeddings` still answers `/v1/chat/completions` with a 200 and text
+   that means nothing. At the engine the two surfaces are not always
+   disjoint; the list stays honest because the driver's probe finds that it
+   embeds and reports `embeddings` alone.
 3. **`encoding_format: base64` is what the OpenAI SDKs ask for by
    default**, so ignoring it breaks the most common client while every
    hand-rolled `curl` keeps working. Handled at the gateway rather than

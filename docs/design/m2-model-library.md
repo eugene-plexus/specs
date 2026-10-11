@@ -255,6 +255,15 @@ enough to know, so the library reports `capabilities.embedding` and the
 profile gets the flag set. This is the cheapest correctness win in the
 milestone.
 
+*2026-10-11 (MR3): that last half was never built, and is built differently.*
+No code read `capabilities.embedding` to set a flag for five weeks, and an
+embedding GGUF started from the Library answered neither embeddings nor chat.
+The flag is not on the profile: the agent's llama.cpp adapter reads the
+GGUF header at launch and adds `--embeddings` (or `--reranking`) itself, the
+library gained `capabilities.rerank`, and `RuntimeSpec.mode` /
+`ModelProfileSpec.mode` (auto, chat, embedding, reranking) is the person's
+override. The library still holds no engine knowledge.
+
 ---
 
 ## 2. What a model *is*, and what identifies it

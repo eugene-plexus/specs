@@ -5659,6 +5659,32 @@ components:
             its default from the filename and would have been fine,
             which is exactly why this was invisible until a second
             engine existed.
+        mode:
+          $ref: "#/components/schemas/RuntimeMode"
+          description: |
+            What the engine is started to do with this model. Absent is
+            `auto`: the agent reads the file's own header when it launches
+            the runtime and decides (see `RuntimeMode`).
+
+            **A runtime has to say, because the engine will not guess.**
+            `llama-server` embeds or reranks only when it is told to at
+            launch, and a model started the other way does neither: an
+            embedding GGUF started as chat answers `POST /v1/embeddings`
+            with a 501 and chat with a 500 (measured on b10948 and b11552,
+            2026-10-11), and it was listed as a chat model.
+
+            **A search model is meant to stay up.** For `embedding` and
+            `reranking` the gateway never unloads the runtime for being
+            idle and never starts it on demand (its embeddings door does
+            not wake a stopped runtime), so `idleUnloadSeconds` and
+            `startOnDemand` are not acted on, and `Runtime` reports them
+            absent. It starts with the agent like any runtime: `autoStart`
+            is true unless the declaration says not.
+
+            Only llama.cpp acts on `embedding` and `reranking`. Any other
+            engine accepts `auto` and `chat` and refuses the rest with a
+            400: starting vLLM, MLX or Strata one way and reporting
+            another is the lie this field exists to end.
         host:
           type: string
           default: 127.0.0.1
@@ -5718,6 +5744,12 @@ components:
             eviction**: when a `startOnDemand` model will not fit, the
             gateway may stop the most-idle runtimes that carry a timeout
             to make room. A model that must stay resident sets none.
+
+            **Never for a search model** (`mode`): the embeddings door
+            does not wake a stopped runtime, so an unloaded embedder
+            would simply stop answering. The agent reports this field
+            absent on a running one, whatever was declared, so the
+            gateway neither unloads it nor counts it evictable.
         startOnDemand:
           type: boolean
           default: false
@@ -5732,6 +5764,8 @@ components:
             once when they fit.
 
             False by default so that a hand-pressed Stop stays stopped.
+            Chat doors only: a search model (`mode`) is never started on
+            demand.
         flags:
           type: object
           additionalProperties: true
@@ -5805,6 +5839,48 @@ components:
         name:
           type: string
           description: The profile's name when the runtime was declared.
+
+    RuntimeMode:
+      # No `default:` here, on purpose. datamodel-code-generator gives the Python
+      # field the bare string 'auto' as its default, and pydantic warns every time
+      # a model carrying it is serialised (a runtime is, on every poll). Absent
+      # means `auto`; the text says so.
+      type: string
+      enum: [auto, chat, embedding, reranking]
+      description: |
+        What an engine is started to do with its model. A *search model*
+        is one that answers `POST /v1/embeddings` (`embedding`) or scores
+        passages against a question (`reranking`); everything else chats.
+        A runtime that does not say is `auto`.
+
+        * `auto` — the agent decides from the file's own header, read
+          when it launches the runtime. A pooling type of 4 (`rank`), or
+          classifier output labels, is `reranking`; any other pooling
+          type, or attention that is not causal, is `embedding`;
+          anything else is `chat`. A file whose header cannot be read is
+          `chat`, as it was before this field existed.
+        * `chat` — text generation, whatever the header says. The
+          command line is exactly the one a chat model had before this
+          field existed: nothing is added to it.
+        * `embedding` — llama.cpp gets `--embeddings`, and `--pooling`
+          only when the header names none (`mean` for a model that is not
+          causal, `last` for one that is). Unless the declaration's
+          `flags` set them, it also gets a 4,096-token context shared by
+          four requests (`contextSize`, `parallelSlots`), so one input may
+          hold 1,024 tokens, and 2,048-token batches (`batchSize`,
+          `ubatchSize`): a model that is not causal embeds no more tokens
+          at once than one physical batch holds, and llama-server
+          refuses a longer input. `extraArgs` still come last.
+        * `reranking` — llama.cpp gets `--reranking` (it sets the
+          pooling itself) and the same four defaults.
+
+        **Measured on b10948 and b11552 (2026-10-11):** a model started
+        without these flags answers neither `POST /v1/embeddings` (501)
+        nor, for an encoder, chat (500), and the gateway listed it as a
+        chat model. With `--embeddings` an encoder answers embeddings and
+        chat is a 500; a causal embedder such as Qwen3-Embedding still
+        produces chat text, which is meaningless. The gateway lists a
+        runtime by what its driver finds it answers, not by this field.
 
     Runtime:
       type: object
@@ -5883,6 +5959,12 @@ components:
         modelAlias:
           type: string
           description: Resolved alias — the declared value, or the derived filename.
+        mode:
+          $ref: "#/components/schemas/RuntimeMode"
+          description: |
+            As declared (`RuntimeSpec.mode`). `auto` is what was asked,
+            not what the file turned out to be: `capabilities.embeddings`
+            and `capabilities.reranking` say what is running.
         host:
           type: string
         port:
@@ -5894,8 +5976,15 @@ components:
           type: boolean
         idleUnloadSeconds:
           type: integer
+          description: |
+            What is in effect, which is what the gateway reads: the
+            declared value, or absent for a running search model
+            (`RuntimeSpec.mode`), which is never unloaded for being idle.
         startOnDemand:
           type: boolean
+          description: |
+            What is in effect: the declared value, or absent for a
+            running search model, which is never started on demand.
         flags:
           type: object
           additionalProperties: true
@@ -6333,7 +6422,27 @@ components:
             turn waits for room rather than overflowing the pool.
         embeddings:
           type: boolean
-          description: Whether this runtime was started in embedding mode.
+          description: |
+            Whether this runtime was started as an embedding model: it
+            answers `POST /v1/embeddings`. For llama.cpp it is set from
+            the command line the agent launched the engine with
+            (`--embeddings`, or `LLAMA_ARG_EMBEDDINGS`), however the
+            runtime came to carry it (`mode`, or `extraArgs`), so it is
+            `false` for a chat model and for a reranker, and never a
+            guess from the declaration. It is not read back from the
+            engine because the engine has nothing to read: `/props` and
+            `/v1/models` carry no pooling or embedding field (b11552).
+            Absent for an engine that does not report it.
+        reranking:
+          type: boolean
+          description: |
+            Whether this runtime was started to rerank: it answers
+            `POST /rerank` (`--reranking`, or `LLAMA_ARG_RERANKING`),
+            on the same basis as `embeddings`. A reranking runtime also
+            answers `POST /v1/embeddings`, with zeros and gaps where
+            numbers should be (measured on b11552), so `embeddings` is
+            `false` for it. Absent for an engine that does not report
+            it.
         vision:
           type: boolean
           description: Whether the loaded runtime explicitly reports image input.

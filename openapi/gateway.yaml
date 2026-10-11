@@ -3723,18 +3723,21 @@ components:
             and `transcription` where its projector hears, and an
             account's image-and-text model carries `image` beside `chat`.
 
-            **Nothing in Eugene starts a llama.cpp model as an embedder
-            today.** The agent's llama.cpp adapter never passes
-            `--embeddings`, `--pooling` or `--reranking` (it passes the
-            model, host, port and alias, the profile's curated flags, and
-            then the profile's extra arguments as written), and reads
-            `RuntimeCapabilities.embeddings` back as unknown. An
-            embedding model started from the Library therefore answers
-            neither surface (501 on `/v1/embeddings`, 500 on chat, both
-            measured on b10948 and b11552) and is listed here as `chat`,
-            until a person types `--embeddings` into the profile's extra
-            arguments, or starts `llama-server` some other way and adds it
-            as a driver.
+            **Eugene starts a llama.cpp model as an embedder when the file
+            is one (MR3, 2026-10-11).** The agent's adapter reads the
+            GGUF header, or takes the runtime's `mode`
+            (`RuntimeSpec.mode`), and adds `--embeddings` itself, so an
+            embedding model started from the Library is listed here as
+            `embeddings` and not `chat`. Until then this text said that
+            nothing did: the adapter passed the model, host, port and
+            alias, the profile's curated flags and its extra arguments,
+            and an embedding model answered neither surface (501 on
+            `/v1/embeddings`, 500 on chat, both measured on b10948 and
+            b11552) and was listed here as `chat`. **A reranker still is**:
+            there is no `rerank` surface or door yet, and its driver
+            finds nothing it recognises (the engine answers
+            `/v1/embeddings` with zeros and gaps, which the driver
+            cannot read as a vector), so it lists as `chat`.
 
             Empty means nothing serving this model would admit to either
             surface, which is a backend that could not be reached rather
