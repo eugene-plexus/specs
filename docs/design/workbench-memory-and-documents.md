@@ -13,7 +13,7 @@ the calls made while building.
 | MR0 | The embeddings door names `dimensions` and `user` as ignored | gateway `201da3e`, specs `0110472` | `docs/acceptance/mr0-embeddings-honest-run.md` |
 | MR3 | The agent starts an embedding or reranking model correctly (`RuntimeSpec.mode`, found in the file, with an override); the Library tells search models and result sorters apart; the console offers three search models | specs `79188df` `668cad9`, agent `a13749d`, library `581d87d`, inference-driver `18ff1f5`, ui `fdd8ab8b` | `docs/acceptance/mr3-search-models-run.md` |
 | MR1 | Memory v1: notes a person keeps (typed, "Remember that ...", Remember this), the Memory page, a chat's Memory chip and drawer showing exactly what was sent, the outside-model guard, export, real deletion | workbench `25bd0f6` (server) + `d315fcc` (page), dist `ac5e852` | `docs/acceptance/mr1-memory-run.md` |
-| MR2 | Documents in the prompt (PDF, Word, Markdown, text, CSV, HTML, code) for any model | workbench branch `mr2-documents` (server built; page next) | `docs/acceptance/mr2-documents-run.md` when it lands |
+| MR2 | Documents in the prompt (PDF, Word, Markdown, text, CSV, HTML, code) for any model: file cards with the choice of how much to read, the files named under an answer | workbench `8a81721` (server) + `2bb18fa` (page), dist `30bfff1` | `docs/acceptance/mr2-documents-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -45,10 +45,14 @@ MR3:
 2. The driver now asks a backend whether it reranks before asking it to embed (asking a reranker to
    embed crashed llama-server b11429 and b11552).
 
+Documents (MR2, page):
+1. The window line says what would be sent now; a 409's words land on each named file's card.
+2. Files the page had forgotten after a reload are shown again, so nothing hidden takes room.
+3. "Show what Workbench read" opens the text inline.
+
 ## Next
 
-MR2's page (file chips, the choice of how much to read, document sources under answers), then MR4
-(saved documents with keyword search) and MR5 (search by meaning, hybrid).
+MR4 (saved documents with keyword search), then MR5 (search by meaning, hybrid).
 
 ---
 
