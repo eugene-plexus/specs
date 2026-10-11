@@ -412,7 +412,15 @@ def main() -> int:
 
         agent = start_agent()
         passphrase = secrets.token_urlsafe(24)
-        client = httpx.Client(base_url=f"http://127.0.0.1:{agent_port}", timeout=60, trust_env=False)
+        # Idle connections expire on our side first: uvicorn closes one after
+        # 5 s, httpx's own default is also 5 s, and a request sent as the
+        # server closes it fails on Windows with WinError 10053 (CI, 4d427c7).
+        client = httpx.Client(
+            base_url=f"http://127.0.0.1:{agent_port}",
+            timeout=60,
+            trust_env=False,
+            limits=httpx.Limits(keepalive_expiry=2.0),
+        )
 
         def wait(fn, label: str, seconds: float = 90):  # type: ignore[no-untyped-def]
             deadline = time.perf_counter() + seconds
