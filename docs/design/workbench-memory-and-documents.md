@@ -14,6 +14,7 @@ the calls made while building.
 | MR3 | The agent starts an embedding or reranking model correctly (`RuntimeSpec.mode`, found in the file, with an override); the Library tells search models and result sorters apart; the console offers three search models | specs `79188df` `668cad9`, agent `a13749d`, library `581d87d`, inference-driver `18ff1f5`, ui `fdd8ab8b` | `docs/acceptance/mr3-search-models-run.md` |
 | MR1 | Memory v1: notes a person keeps (typed, "Remember that ...", Remember this), the Memory page, a chat's Memory chip and drawer showing exactly what was sent, the outside-model guard, export, real deletion | workbench `25bd0f6` (server) + `d315fcc` (page), dist `ac5e852` | `docs/acceptance/mr1-memory-run.md` |
 | MR2 | Documents in the prompt (PDF, Word, Markdown, text, CSV, HTML, code) for any model: file cards with the choice of how much to read, the files named under an answer | workbench `8a81721` (server) + `2bb18fa` (page), dist `30bfff1` | `docs/acceptance/mr2-documents-run.md` |
+| MR4 | Saved documents searched by words (FTS5 BM25, one index per person), the Documents screen with Test a question, a chat's Documents switch, passages cited by file and page | workbench `fd6af48` (server) + `d90dede` (page), dist `d9984de` | `docs/acceptance/mr4-library-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -50,9 +51,15 @@ Documents (MR2, page):
 2. Files the page had forgotten after a reload are shown again, so nothing hidden takes room.
 3. "Show what Workbench read" opens the text inline.
 
+Saved documents (MR4):
+1. Words only, no stemming, and the screen says so; the switch is off in new chats with a per-person
+   "new chats on" preference; library passages are held back from outside models without the chat's say.
+2. "Documents only" answers in Workbench's own words when nothing matched, with "Ask the model anyway".
+3. Deletion scrubs the words from every file of the person's folder; a damaged index offers Rebuild.
+
 ## Next
 
-MR4 (saved documents with keyword search), then MR5 (search by meaning, hybrid).
+MR5 (search by meaning, hybrid), then MR6 (`/v1/rerank`), MR7 (folders), MR8 (memory suggestions).
 
 ---
 
