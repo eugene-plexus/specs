@@ -85,6 +85,13 @@ on:
 permissions:
   contents: read
 
+# The agents the acceptance scripts start list engine builds from GitHub's
+# API. A shared runner address meets the anonymous limit of 60 an hour
+# (specs#23); with the job's own read-only token the limit is the token's.
+# The agent sends it to api.github.com only (agent be5293c).
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
 jobs:
   s10-instruments:
     name: S10 acceptance instruments (${{ matrix.os }})
