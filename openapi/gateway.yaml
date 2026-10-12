@@ -2710,13 +2710,14 @@ paths:
         `return_text` asks. An empty list is answered with no results and
         reaches no model.
 
-        **Accepted and ignored, and the answer says so:** `truncate`,
-        `truncation_direction`, `max_chunks_per_doc`,
+        **Accepted and ignored, and the answer says so:** `truncate: true`
+        (and its `truncation_direction`), `max_chunks_per_doc`,
         `max_tokens_per_doc` and `rank_fields`, named in
         `x-eugene-plexus-ignored-settings` in that order when the request
         carries them, as the other doors name what they do not honour. A
         passage longer than the model takes is a 400 naming the limit,
-        not cut.
+        not cut, which is what TEI's default `truncate: false` asks for,
+        so that is not named.
 
         At most 1,000 passages a request (Cohere's limit). The body limit
         is the embeddings door's.
@@ -6312,23 +6313,33 @@ components:
         query:
           type: string
           minLength: 1
-          description: The question the passages are scored against.
+          maxLength: 1048576
+          description: |
+            The question the passages are scored against. At most 1,048,576
+            characters, as one passage.
         documents:
           type: array
           maxItems: 1000
           items:
             oneOf:
               - type: string
+                maxLength: 1048576
               - $ref: '#/components/schemas/RerankDocument'
           description: |
             The passages (Jina, Cohere): strings, or objects whose `text`
-            is the passage. Answered as `RerankResponse`.
+            is the passage. Answered as `RerankResponse`. At most 1,048,576
+            characters a passage (the driver's limit); a longer one is a 400
+            naming its position. A passage longer than the model reads is a
+            400 naming the model's limit.
         texts:
           type: array
           maxItems: 1000
           items:
             type: string
-          description: The passages (TEI). Answered as `TeiRerankResponse`.
+            maxLength: 1048576
+          description: |
+            The passages (TEI). Answered as `TeiRerankResponse`. The same
+            limits as `documents`.
         top_n:
           type: integer
           minimum: 1
@@ -6354,10 +6365,16 @@ components:
             Honoured in either shape.
         truncate:
           type: boolean
-          description: TEI's. **Accepted and ignored**, and named in `x-eugene-plexus-ignored-settings`.
+          description: |
+            TEI's. `false`, its default, is what this door does: a passage
+            longer than the model reads is refused, not cut. `true` is
+            **accepted and ignored**, and named in
+            `x-eugene-plexus-ignored-settings`.
         truncation_direction:
           type: string
-          description: TEI's. **Accepted and ignored**, and named.
+          description: |
+            TEI's, and only meaningful with `truncate: true`: named with it
+            then, and not otherwise, as nothing is cut.
         max_chunks_per_doc:
           type: integer
           description: Cohere's. **Accepted and ignored**, and named.
@@ -6380,6 +6397,7 @@ components:
       properties:
         text:
           type: string
+          maxLength: 1048576
           description: The passage. Other fields are kept by the caller, not read here.
 
     RerankResponse:
@@ -6393,8 +6411,7 @@ components:
           type: string
           description: This answer's own id, as Cohere's carry one.
         object:
-          type: string
-          enum: [list]
+          $ref: '#/components/schemas/RerankObject'
         model:
           type: string
           description: |
@@ -6412,6 +6429,14 @@ components:
           $ref: '#/components/schemas/EmbeddingUsage'
         x_eugene_plexus:
           $ref: '#/components/schemas/CompletionRoutingInfo'
+
+    RerankObject:
+      type: string
+      enum: [list]
+      description: |
+        Named, not inline: an inline enum here made the Python generator
+        number it `Object2` and rename the Responses door's `Object2` to
+        `Object3` in every consumer (MR6, 2026-10-12).
 
     RerankResult:
       type: object
