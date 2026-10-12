@@ -15,6 +15,7 @@ the calls made while building.
 | MR1 | Memory v1: notes a person keeps (typed, "Remember that ...", Remember this), the Memory page, a chat's Memory chip and drawer showing exactly what was sent, the outside-model guard, export, real deletion | workbench `25bd0f6` (server) + `d315fcc` (page), dist `ac5e852` | `docs/acceptance/mr1-memory-run.md` |
 | MR2 | Documents in the prompt (PDF, Word, Markdown, text, CSV, HTML, code) for any model: file cards with the choice of how much to read, the files named under an answer | workbench `8a81721` (server) + `2bb18fa` (page), dist `30bfff1` | `docs/acceptance/mr2-documents-run.md` |
 | MR4 | Saved documents searched by words (FTS5 BM25, one index per person), the Documents screen with Test a question, a chat's Documents switch, passages cited by file and page | workbench `fd6af48` (server) + `d90dede` (page), dist `d9984de` | `docs/acceptance/mr4-library-run.md` |
+| MR5 | Search by meaning through a local search model, fused with the words (RRF k=60); the Documents screen states the mode live, adds meaning as it catches up, offers Rebuild on a model change | workbench `b85f0dd` (server) + `fa3c014` (page), dist `2979d97` | `docs/acceptance/mr5-meaning-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -57,9 +58,16 @@ Saved documents (MR4):
 2. "Documents only" answers in Workbench's own words when nothing matched, with "Ask the model anyway".
 3. Deletion scrubs the words from every file of the person's folder; a damaged index offers Rebuild.
 
+Search by meaning (MR5):
+1. Embeddings only to a local search model unless the owner allows an outside one; auto picks the
+   first local running search model; a model change pauses meaning (never mixes vector spaces) until Rebuild.
+2. One embedding request in flight, 30 a minute by default (a setting), resumed at boot.
+3. A no-words floor (0.5) for Qwen3-Embedding only, measured on 24 unrelated questions.
+
 ## Next
 
-MR5 (search by meaning, hybrid), then MR6 (`/v1/rerank`), MR7 (folders), MR8 (memory suggestions).
+MR6 (`/v1/rerank` and Open WebUI's RAG through Eugene), MR7 (folders), MR8 (memory suggestions after a
+measured harness), MR9 (MCP and the Anthropic door).
 
 ---
 
