@@ -133,7 +133,7 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "fbe5a9d3af96fae0df1aa279614b8eae67914cc7"
+    "agent"            = "1f870c6005133f03827f686dc0e3c063ffd0d093"
     "control"          = "bf4675801c70e39dd44f5c786e4f10d241c22a14"
     "gateway"          = "201da3e6524295cc3bafd45c7e43f17094eb48e1"
     "inference-driver" = "18ff1f565418f2a58fe8e9415aa3f5c2635fa187"
@@ -320,10 +320,19 @@ exit $result
     $runner = $runner.Replace('__LOG__', $logFile.Replace("'", "''")).Replace('__PARAMETERS__', $parameterFile.Replace("'", "''")).Replace('__SCRIPT__', $self.Replace("'", "''"))
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($runner))
     Say "$(if ($Parameters['Uninstall']) { 'Uninstalling' } else { 'Installing' }) now... Installer log: $logFile"
+    # A job site's join asks its owner for their Eugene password, and may ask
+    # whether tools may change this machine (J30). Asked in a hidden window,
+    # nobody could answer and the install waited for ever (2026-10-11), so a
+    # job site's elevated window is shown, and this one says where to look.
+    $asks = [bool]($Parameters.Contains('JobSite') -and $Parameters['JobSite'])
+    if ($asks) {
+        Say "a new window opens to ask for $($Parameters['Owner'])'s Eugene password: answer it there"
+    }
+    $windowStyle = if ($asks) { 'Normal' } else { 'Hidden' }
     try {
         $elevated = Start-Process -FilePath 'powershell.exe' `
             -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', $encoded) `
-            -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+            -Verb RunAs -WindowStyle $windowStyle -Wait -PassThru
         # The elevated window is hidden, so its output is only in the log.
         # Shown after every run, success too -- otherwise a successful
         # install said nothing but "done" -- and without the transcript's

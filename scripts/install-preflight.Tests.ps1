@@ -71,6 +71,21 @@ Describe 'Installer failure reporting' {
         @(Get-ChildItem $TestDrive -Filter 'eugene-plexus-install-*.ps1').Count | Should Be 0
     }
 
+    It 'shows a job site''s elevated window, where the join asks for its owner''s password' {
+        # 2026-10-11: hidden, the join's password prompt waited for ever.
+        $text = 'param([switch]$JobSite, [string]$Owner)'
+        Invoke-ElevatedInstaller -ScriptText $text -Parameters @{
+            JobSite = [switch]$true; Owner = 'ada'
+        } -WorkDirectory $TestDrive
+        Assert-MockCalled Start-Process -Scope It -Times 1 -Exactly -ParameterFilter { $WindowStyle -eq 'Normal' }
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like "*ada's Eugene password*" }
+    }
+
+    It 'keeps every other elevated run hidden' {
+        Invoke-ElevatedInstaller -ScriptText 'param([string]$Prefix)' -Parameters @{ Prefix = 'C:\x' } -WorkDirectory $TestDrive
+        Assert-MockCalled Start-Process -Scope It -Times 1 -Exactly -ParameterFilter { $WindowStyle -eq 'Hidden' }
+    }
+
     It 'forwards parameters without shell quoting or leaking their values in the log' {
         $output = Join-Path $TestDrive 'arguments.json'
         $text = @'
