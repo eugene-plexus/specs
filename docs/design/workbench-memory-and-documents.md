@@ -17,6 +17,7 @@ the calls made while building.
 | MR4 | Saved documents searched by words (FTS5 BM25, one index per person), the Documents screen with Test a question, a chat's Documents switch, passages cited by file and page | workbench `fd6af48` (server) + `d90dede` (page), dist `d9984de` | `docs/acceptance/mr4-library-run.md` |
 | MR5 | Search by meaning through a local search model, fused with the words (RRF k=60); the Documents screen states the mode live, adds meaning as it catches up, offers Rebuild on a model change | workbench `b85f0dd` (server) + `fa3c014` (page), dist `2979d97` | `docs/acceptance/mr5-meaning-run.md` |
 | MR7 | Folders: a person's Documents read a folder they are granted, read-only, and keep in step (rescan every 10 minutes and Sync now; ignore rules; caps; per-file reasons). Design: `docs/design/workbench-folders.md` | workbench `50f101c` (server) + `1b3dbcf` (page), dist `ca97c83` | `docs/acceptance/mr7-folders-run.md` |
+| MR6 | `POST /v1/rerank` (Jina, Cohere and TEI bodies, scores 0 to 1, one model per request) and the `rerank` surface; Open WebUI's document search through Eugene (its search model, its sorter as the external reranker, hybrid search), and its privacy defect fixed | specs `e43483f` to `7ddc4d9`, gateway `226b607`, inference-driver `b1d6820`, agent `85e9e76` | `docs/acceptance/mr6-rerank-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -65,10 +66,28 @@ Search by meaning (MR5):
 2. One embedding request in flight, 30 a minute by default (a setting), resumed at boot.
 3. A no-words floor (0.5) for Qwen3-Embedding only, measured on 24 unrelated questions.
 
+The rerank door and Open WebUI (MR6):
+1. One door for three bodies, answered in the request's shape; a passage object is its `text`;
+   `return_documents` and `return_text` are honoured here from the request's own text (llama-server
+   answers neither).
+2. Scores 0 to 1. Measured: Qwen3-Reranker answers probabilities, bge-reranker-v2-m3 logits. The driver
+   learns each backend's scale from its probe (two passages), switches to logits for good on a score
+   outside 0 to 1, and maps logits through the logistic; `raw_scores` gives the engine's own numbers.
+3. One model per request, replicas failing over (`pick_rerank`); `model` may be left out when the key
+   may use one sorter.
+4. Ignored and named: `truncate: true` (and its direction), `max_chunks_per_doc`, `max_tokens_per_doc`,
+   `rank_fields`; at most 1,000 passages; an empty list reaches no model.
+5. Open WebUI is seeded with the first local running search model and sorter its key sees (a stopped one
+   when it is all there is), hybrid search on, 32 passages a request one at a time; every OpenAI address
+   it holds is the gateway's. Its database keeps what its first start saw, so a model change never resets
+   it; a corrected environment does, once.
+6. An app's key has an app's limits: 8 at once, 600 a minute.
+
 ## Next
 
-MR6 (`/v1/rerank` and Open WebUI's RAG through Eugene), MR8 (memory suggestions after a measured
-harness), MR9 (MCP and the Anthropic door).
+MR6b (Workbench sorts its own top passages with a served sorter, decided by measuring recall@5 on MR5's
+60 questions with and without), MR8 (memory suggestions after a measured harness), MR9 (MCP and the
+Anthropic door).
 
 ---
 
