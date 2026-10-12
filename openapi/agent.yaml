@@ -7231,6 +7231,17 @@ components:
             * `{gatewayUrl}` — the gateway, as `EUGENE_PLEXUS_APP_GATEWAY_URL`;
             * `{appUrl}` — the address the console opens it at;
             * `{oidcIssuer}`, `{oidcClientId}` — with `signIn`;
+            * `{embeddingModel}`, `{rerankModel}` — the install's search
+              model and result sorter as the app's own key sees them (MR6):
+              the first model `GET /v1/models` lists, with that key, whose
+              `x_eugene_plexus.surfaces` include `embeddings` (or `rerank`)
+              and whose `owned_by` is `local`. Never an outside model:
+              documents would leave the install unasked. Read by the
+              launcher at every start; when none runs, or the gateway does
+              not answer within a few seconds, the variable is left unset
+              and the start's notes say which. A change of model is not a
+              change of connection (`resetOnConnectionChange`): an app's
+              stored vectors belong to the model that made them;
             * `{clientKey}`, `{oidcClientSecret}`, `{appSecret}` — secrets.
               `{appSecret}` is a random value made at its first start and
               kept in its data directory.

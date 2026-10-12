@@ -1043,6 +1043,94 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  /v1/rerank:
+    post:
+      tags: [inference]
+      operationId: rerank
+      summary: Score passages against a question on the configured backend.
+      description: |
+        The result sorter's counterpart to `POST /v1/embed` (MR6,
+        2026-10-12): a question and the passages a search found, each
+        scored for how well it answers the question, best first. The
+        gateway's `POST /v1/rerank` speaks the three public shapes; this
+        surface speaks one.
+
+        **Scores are 0 to 1, whatever scale the backend answers in.**
+        Measured on `llama-server` b10948 and b11552 with `--reranking`:
+        `ggml-org/Qwen3-Reranker-0.6B-Q8_0-GGUF` answers probabilities
+        (0.996 for a passage that answers, 0.00001 for one that does not),
+        and `bge-reranker-v2-m3` Q8_0 answers logits (8.19 down to -11.04)
+        for the same four passages. A threshold a caller sets means nothing
+        across the two (Open WebUI's `RAG_RELEVANCE_THRESHOLD` of 0.0 keeps
+        every probability and drops every negative logit), so `score` is
+        on one scale: the backend's number where it answers probabilities,
+        and `1 / (1 + e^-x)` of it where it answers logits. Which one a
+        backend answers is learned with the capability (below) and named
+        on each response (`scale`); `rawScore` is always the backend's own
+        number.
+
+        **Determined by trying, like `embeddings`, and asked first.** A
+        backend reranks when a rerank of two passages, one that answers
+        the question and one that does not, comes back with scores. If
+        either score is outside 0 to 1 the backend answers logits;
+        otherwise probabilities. A backend taken for probabilities that
+        later answers a score outside 0 to 1 is taken for logits from
+        then on, and the log says so once. Reported as the model's
+        `rerank` surface on `/v1/info`.
+
+        **No cross-model failover**, for the reason `POST /v1/embed`
+        gives: the gateway sends this to replicas of one model only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerankPassagesRequest'
+      responses:
+        '200':
+          description: The passages, scored, best first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RerankPassagesResponse'
+        '404':
+          $ref: '#/components/responses/ModelNotServed'
+        '400':
+          description: |
+            This backend does not rerank, or rejected the request in a way
+            another backend would reject identically (a passage longer than
+            the backend takes). Does not cascade.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '500':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '499':
+          description: |
+            The caller went away; the backend call was cancelled.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '502':
+          description: |
+            Upstream backend error, or a refusal worth retrying elsewhere
+            (`408`, `409`, `425`, `429`). Cascades, across replicas of the
+            SAME model only. `#backend-credential-refused` does not.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '504':
+          description: |
+            `requestTimeoutSeconds` passed with no answer. Does not
+            cascade: a replica would take the same time on the same input.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/decide:
     post:
       tags: [inference]
@@ -2684,6 +2772,110 @@ components:
         requestId:
           type: string
 
+    RerankPassagesRequest:
+      type: object
+      description: |
+        A question and the passages to score against it (MR6). The
+        gateway has already turned Jina's, Cohere's and TEI's shapes into
+        this one, and objects into their text.
+      required:
+        - query
+        - documents
+      properties:
+        model:
+          $ref: '#/components/schemas/RequestModel'
+        localOnly:
+          type: boolean
+          default: false
+          description: Internal policy; require a local active engine before forwarding any input.
+        query:
+          type: string
+          minLength: 1
+          maxLength: 1048576
+        documents:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            type: string
+            maxLength: 1048576
+          description: |
+            The passages, as text. A result's `index` is a position in this
+            list, which is the only way a caller matches a score to its
+            passage. At most 1,000 (Cohere's limit).
+        topN:
+          type: integer
+          minimum: 1
+          description: |
+            How many of the best to return. Absent, or more than there are:
+            all of them.
+        requestId:
+          type: string
+          description: Correlation id, echoed back. Same role as on `GenerateRequest`.
+
+    RerankPassagesResponse:
+      type: object
+      required:
+        - results
+        - scale
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RerankedPassage'
+          description: |
+            Best first: by `score`, highest first, and by `index` where two
+            are equal. `topN` long when it was given and smaller than the
+            number of passages.
+        scale:
+          $ref: '#/components/schemas/RerankScale'
+        modelId:
+          type: string
+          description: |
+            The model that scored these, as the public identifier, the way
+            `EmbedResponse.modelId` is.
+        backend:
+          $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        usage:
+          $ref: '#/components/schemas/Usage'
+        latencyMs:
+          type: integer
+          minimum: 0
+        requestId:
+          type: string
+
+    RerankedPassage:
+      type: object
+      required:
+        - index
+        - score
+        - rawScore
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          description: Position of the passage in the request's `documents`.
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            How well the passage answers the question, 0 to 1: the
+            backend's own number for a `probability` backend, its logistic
+            for a `logit` one.
+        rawScore:
+          type: number
+          description: The backend's own number, unchanged.
+
+    RerankScale:
+      type: string
+      enum: [probability, logit]
+      description: |
+        What a backend's rerank scores are. `probability`: already 0 to 1
+        (Qwen3-Reranker, which scores "yes" against "no"), passed through.
+        `logit`: unbounded (bge-reranker-v2-m3, a one-label classifier),
+        mapped through `1 / (1 + e^-x)`, which keeps their order.
+
     DecisionRequest:
       type: object
       description: |
@@ -2946,9 +3138,17 @@ components:
               `transcription` (`/v1/transcribe`, P3b), `translation`
               (`/v1/transcribe` with `translate`, P3-4), `image`
               (`/v1/image`, P4), `video` (`/v1/video`, P5),
-              `moderation` (`/v1/moderate`, P6) and `completion`
-              (`/v1/generate` with `completion`, P6), which have doors;
-            * `rerank`, which names a door Eugene has not built yet.
+              `moderation` (`/v1/moderate`, P6), `completion`
+              (`/v1/generate` with `completion`, P6) and `rerank`
+              (`/v1/rerank`, MR6), which have doors.
+
+            `rerank` is reported for a backend that answers a rerank: a
+            `llama-server` started with `--reranking`, found by asking it
+            (`/v1/rerank`). An account does not report it, whatever its
+            catalogue says, because no account engine sorts yet: a model
+            an account lists only for reranking serves nothing here, as it
+            did before the door. Until 2026-10-12 this named `rerank` as a
+            door Eugene had not built.
 
             `completion` is reported for a local `llama-server`, a vLLM,
             and an Ollama account's models with its `completion`

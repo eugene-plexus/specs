@@ -2664,6 +2664,134 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/rerank:
+    post:
+      tags: [inference]
+      operationId: createRerank
+      summary: Sort passages by how well they answer a question.
+      security:
+        - bearerAuth: []
+      description: |
+        A result sorter (reranker) scores each passage a search found
+        against the question, and the best come first (MR6, 2026-10-12).
+        Document search sends a model its top few passages: a sorter picks
+        them better than the search's own order. Open WebUI calls this as
+        its external reranker; any client of Jina's, Cohere's or Hugging
+        Face TEI's rerank API can.
+
+        **Three request shapes, one door.** `documents` (Jina, Cohere):
+        strings, or objects with a string `text`, answered as
+        `RerankResponse` (`results`). `texts` (TEI): strings, answered as
+        TEI answers, a bare array of `{index, score}`. Exactly one of the
+        two. The answer's shape follows the request's.
+
+        **Scores are 0 to 1, best first.** The engine's own scale is not
+        the same from model to model (measured: Qwen3-Reranker answers
+        probabilities, bge-reranker-v2-m3 logits from 8.19 to -11.04), so
+        a threshold would mean nothing across them; the driver puts every
+        score on one scale (`inference-driver.yaml` `POST /v1/rerank`).
+        `raw_scores: true` asks for the engine's own numbers instead.
+
+        **Failover does not cross models**, as on `POST /v1/embeddings`:
+        replicas of the named model balance and fail over; a `modelSlots`
+        cascade to a different target does not run, because two sorters'
+        scores are not comparable and a caller sorting by them would mix
+        scales with a 200.
+
+        **`model` may be left out**, as TEI's clients do: the request
+        goes to the one model this key may use whose surfaces include
+        `rerank`. None is a 404 that says so; two or more is a 400 naming
+        them.
+
+        **What `llama-server` does not do is done here.** It answers
+        `return_documents` with no documents and refuses objects
+        (measured on b10948 and b11552); this door sends it the text and
+        puts the passage back on each result when `return_documents` or
+        `return_text` asks. An empty list is answered with no results and
+        reaches no model.
+
+        **Accepted and ignored, and the answer says so:** `truncate`,
+        `truncation_direction`, `max_chunks_per_doc`,
+        `max_tokens_per_doc` and `rank_fields`, named in
+        `x-eugene-plexus-ignored-settings` in that order when the request
+        carries them, as the other doors name what they do not honour. A
+        passage longer than the model takes is a 400 naming the limit,
+        not cut.
+
+        At most 1,000 passages a request (Cohere's limit). The body limit
+        is the embeddings door's.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RerankRequest'
+      responses:
+        '200':
+          description: |
+            The passages, scored, best first: `RerankResponse` for a
+            `documents` request, `TeiRerankResponse` for a `texts` one.
+            `x-eugene-plexus-ignored-settings` names what was accepted and
+            not honoured, and is absent otherwise.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RerankResponse'
+                  - $ref: '#/components/schemas/TeiRerankResponse'
+        '400':
+          description: |
+            Malformed request (neither or both of `documents` and `texts`,
+            more than 1,000 passages, a passage that is neither text nor an
+            object with a string `text`, which the message names by
+            position), a model that does not serve `rerank`, `model` left
+            out where two or more sorters are served, or a passage longer
+            than the model takes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '404':
+          description: |
+            No reachable driver serves the requested model, or `model` was
+            left out and no result sorter is served to this key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '499':
+          description: |
+            The client disconnected; the backend call was cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: |
+            Every eligible backend for this model failed, without reaching
+            a different model; `upstream_auth_error` as on
+            `POST /v1/chat/completions`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: |
+            Something serves this model and none of it can take a request
+            right now, usually an engine still loading. Retryable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '504':
+          description: |
+            No backend answered within `requestTimeoutSeconds`. Not retried
+            on a replica.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
   /v1/systemone:
     post:
       tags: [inference]
@@ -3689,7 +3817,7 @@ components:
           type: array
           items:
             type: string
-            enum: [chat, embeddings, decisions, speech, transcription, translation, image, video, moderation, completion]
+            enum: [chat, embeddings, decisions, speech, transcription, translation, image, video, moderation, completion, rerank]
           description: |
             Which surfaces this model can be sent to. `decisions` means
             `POST /v1/systemone`; a decision-only model lists nothing
@@ -3699,7 +3827,8 @@ components:
             `translation` `POST /v1/audio/translations` (P3-4), `image`
             `POST /v1/images/generations` and `/edits` (P4), `video`
             `POST /v1/videos` (P5), `moderation` `POST /v1/moderations`
-            (P6), `completion` `POST /v1/completions` (P6).
+            (P6), `completion` `POST /v1/completions` (P6), `rerank`
+            `POST /v1/rerank` (MR6).
 
             OpenAI's own `/v1/models` does not say, which is why every
             RAG front-end makes you pick an embedding model from a
@@ -3733,11 +3862,13 @@ components:
             alias, the profile's curated flags and its extra arguments,
             and an embedding model answered neither surface (501 on
             `/v1/embeddings`, 500 on chat, both measured on b10948 and
-            b11552) and was listed here as `chat`. **A reranker still is**:
-            there is no `rerank` surface or door yet, and its driver
-            finds nothing it recognises (the engine answers
-            `/v1/embeddings` with zeros and gaps, which the driver
-            cannot read as a vector), so it lists as `chat`.
+            b11552) and was listed here as `chat`.
+
+            **A reranker is listed as `rerank` (MR6, 2026-10-12)**, and
+            nothing else: its driver asks it to rerank before it asks
+            anything else, and a reranker answers neither chat nor
+            embeddings. Until then there was no `rerank` surface or door,
+            and a reranker was listed as `chat`.
 
             Empty means nothing serving this model would admit to either
             surface, which is a backend that could not be reached rather
@@ -6162,6 +6293,175 @@ components:
         total_tokens:
           type: integer
           minimum: 0
+
+    RerankRequest:
+      type: object
+      description: |
+        Jina's and Cohere's rerank body (`documents`), or TEI's (`texts`):
+        exactly one of the two (MR6). Fields this door does not know are
+        ignored, as other OpenAI-shaped bodies' are.
+      required:
+        - query
+      properties:
+        model:
+          type: string
+          description: |
+            A model whose `x_eugene_plexus.surfaces` include `rerank`.
+            Left out: the one such model this key may use (see the
+            operation).
+        query:
+          type: string
+          minLength: 1
+          description: The question the passages are scored against.
+        documents:
+          type: array
+          maxItems: 1000
+          items:
+            oneOf:
+              - type: string
+              - $ref: '#/components/schemas/RerankDocument'
+          description: |
+            The passages (Jina, Cohere): strings, or objects whose `text`
+            is the passage. Answered as `RerankResponse`.
+        texts:
+          type: array
+          maxItems: 1000
+          items:
+            type: string
+          description: The passages (TEI). Answered as `TeiRerankResponse`.
+        top_n:
+          type: integer
+          minimum: 1
+          description: |
+            How many of the best to return. Left out, or more than there
+            are: all of them, which is what Open WebUI asks for.
+        return_documents:
+          type: boolean
+          default: false
+          description: |
+            Put each passage on its result (`document.text`, or `text` in
+            TEI's shape). Cohere's default, false; Jina's is true, so a
+            Jina client that wants the text asks.
+        return_text:
+          type: boolean
+          default: false
+          description: TEI's name for `return_documents`; either one asks.
+        raw_scores:
+          type: boolean
+          default: false
+          description: |
+            TEI's: the engine's own numbers, unchanged, instead of 0 to 1.
+            Honoured in either shape.
+        truncate:
+          type: boolean
+          description: TEI's. **Accepted and ignored**, and named in `x-eugene-plexus-ignored-settings`.
+        truncation_direction:
+          type: string
+          description: TEI's. **Accepted and ignored**, and named.
+        max_chunks_per_doc:
+          type: integer
+          description: Cohere's. **Accepted and ignored**, and named.
+        max_tokens_per_doc:
+          type: integer
+          description: Cohere's. **Accepted and ignored**, and named.
+        rank_fields:
+          type: array
+          items:
+            type: string
+          description: |
+            Cohere's. **Accepted and ignored**, and named: an object's
+            `text` is the passage.
+
+    RerankDocument:
+      type: object
+      required:
+        - text
+      additionalProperties: true
+      properties:
+        text:
+          type: string
+          description: The passage. Other fields are kept by the caller, not read here.
+
+    RerankResponse:
+      type: object
+      required:
+        - object
+        - model
+        - results
+      properties:
+        id:
+          type: string
+          description: This answer's own id, as Cohere's carry one.
+        object:
+          type: string
+          enum: [list]
+        model:
+          type: string
+          description: |
+            The model that scored these. After a same-model failover it
+            still names that model; by the rule above it can never name a
+            different one.
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RerankResult'
+          description: |
+            Best first, by `relevance_score` and then by `index`; `top_n`
+            long when it was given and smaller than the number of passages.
+        usage:
+          $ref: '#/components/schemas/EmbeddingUsage'
+        x_eugene_plexus:
+          $ref: '#/components/schemas/CompletionRoutingInfo'
+
+    RerankResult:
+      type: object
+      required:
+        - index
+        - relevance_score
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          description: Position of the passage in the request's `documents`.
+        relevance_score:
+          type: number
+          description: |
+            0 to 1, higher answers the question better; the engine's own
+            number with `raw_scores`.
+        document:
+          $ref: '#/components/schemas/RerankResultDocument'
+
+    RerankResultDocument:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: The passage, when `return_documents` or `return_text` asked.
+
+    TeiRerankResponse:
+      type: array
+      description: TEI's answer, one entry a passage, best first.
+      items:
+        $ref: '#/components/schemas/TeiRerankResult'
+
+    TeiRerankResult:
+      type: object
+      required:
+        - index
+        - score
+      properties:
+        index:
+          type: integer
+          minimum: 0
+          description: Position of the passage in the request's `texts`.
+        score:
+          type: number
+          description: 0 to 1, or the engine's own number with `raw_scores`.
+        text:
+          type: string
+          description: The passage, when `return_text` or `return_documents` asked.
 
     RoutingTableView:
       type: object
