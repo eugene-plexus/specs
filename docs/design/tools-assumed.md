@@ -10,8 +10,11 @@ assume in 2026 that a model & engine can use tools."
 - A chat model on any engine is taken to use tools (`toolCalling: true`) unless Eugene has evidence
   otherwise.
 - Evidence is one of:
-  1. The backend refused a request because of its tools, in its own words. The driver remembers this
-     for the engine's life and reports `toolCalling: false`. The person sees the backend's words.
+  1. The backend refused a request because of its tools, in its own words. Only measured wording is
+     matched: llama-server's "tools param requires --jinja flag" (a 500 from a `--no-jinja` engine).
+     The driver reports `toolCalling: false` and asks again every 10 minutes with the smallest request
+     carrying a tool. An answer clears it, so a backend fixed in place gets its tools back. The person
+     sees the backend's words.
   2. A provider's own listing says so (OpenRouter's `supported_parameters`, OpenAI's Responses-only
      tool models).
   3. Eugene has no way to carry tools to that engine (the Claude Code and Codex CLI subscriptions).
@@ -69,28 +72,41 @@ copied here.
   sent tools is refused for being the wrong door. The no-tools refusal is worded as the driver's
   report, not the model's failing.
 
-## What changes
+## What shipped (driver `4511bfb`, gateway `47521ef`, both reviewed twice)
 
 - **Driver, Strata:**
-  - tools, tool results and `response_format` pass through;
-  - `tool_choice: none` is honoured by sending no tools;
-  - `tool_choice: required` or a named function is sent as the engine takes it, and named in
-    `x-eugene-plexus-ignored-settings` as `toolChoice`;
+  - tools, tool results, `response_format` and `parallel_tool_calls` pass through;
+  - `tool_choice: none` is honoured by sending no tools (and no `parallel_tool_calls`);
+  - `capabilities.settingsNotHonoured` lists `toolChoice` [`required`, `function`] and
+    `parallelToolCalls` [`false`] (measured: Strata ignores them);
   - `response_format` with tools is Strata's own 400, relayed in its words;
-  - never the forced-tool route to structured output: it relies on `tool_choice`, which Strata
-    ignores.
-- **Driver, every engine:** a backend 4xx that refuses tools turns `toolCalling` off for that
-  engine, said once at INFO, with the backend's words in the answer. The request is the caller's
-  400. Matched on measured wording only:
-  - llama-server's "tools param requires --jinja flag";
-  - Ollama's "does not support tools".
-- **Driver contract:** `POST /v1/generate` and `/v1/generate/stream` answer
-  `x-eugene-plexus-ignored-settings` naming the request fields (the driver's names) the backend was
-  sent but does not honour.
+  - the driver's forced-tool route (a named `tool_choice` turned into a JSON schema, for llama-server)
+    is unreachable for Strata.
+- **Driver, Ollama:** its equal gaps are sent and named the same way, no longer refused.
+- **Driver, every engine:**
+  - llama-server's measured refusal, "tools param requires --jinja flag" (a 500 at any status), turns
+    `toolCalling` off for that model and makes the request the caller's 400 in the backend's words;
+  - it is asked again every 10 minutes with one tool and one token, and an answer clears it.
+  - A request without tools is not refused for `tool_choice` or `parallel_tool_calls` meanwhile.
+- **Listings that say nothing are not a no:**
+  - an OpenRouter entry without `supported_parameters`, and Gemini's Gemma models, call tools;
+  - an entry whose listing has the key and lacks tools stays no.
+- **Driver contract:** `/v1/generate` and its stream also answer a per-request
+  `x-eugene-plexus-ignored-settings` (driver spelling), for direct callers. The gateway does not read
+  it.
 - **Gateway:**
-  - The chat, Messages and Responses doors merge the driver's header into their own, in each door's
-    wire names (`tool_choice`).
-  - `tool_calling` and `web_search` treat an unknown `toolCalling` as yes.
-- **Workbench:**
-  - the switch's reason is on the screen when it is off, not only in a tooltip;
-  - the model's reason names the engine ("as Eugene runs it here"), not the model.
+  - The chat, Messages and Responses doors name what the chosen backend's `settingsNotHonoured`
+    lists, for what the caller sent, before anything is sent, so streams open as before.
+  - Only a chat model that says nothing counts as calling tools.
+  - Tool-adjacent settings are admitted where a driver reports nothing.
+  - A non-chat model sent tools is refused for the wrong door.
+- **Workbench** (`2f40f0a`): the reason names Eugene's limit ("Eugene cannot give X tools as it runs
+  here"). The reason was already on the screen under the composer, not only in the tooltip.
+
+Left for round three (reviewed, not blocking):
+- Gemini and OpenRouter still refuse an explicit `parallel_tool_calls: false` (Codex cannot use them).
+- LM Studio reads a capability list without `tool_use` as no.
+- The gateway's header can name the balancer's first pick rather than the backend asked first.
+- `tool_choice: none` with `parallel_tool_calls: false` names the latter though it is not sent.
+- An unreadable `/v1/info` turns a tools request into a 400 rather than a retryable 5xx.
+- Some new paths have no test that can fail.

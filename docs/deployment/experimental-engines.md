@@ -105,8 +105,15 @@ an operator session.
   projection off. Setup's tuning (`--calibrate`) is not run.
 - Memory fit is **unknown**. The JSON file's size is never treated as the model's
   memory footprint. Automatic wake and eviction are disabled for Strata.
-- No tools, structured output, media, embeddings, raw completions or llama.cpp
-  slot pinning. Explicit unsupported request settings are refused.
+- **Tools and structured output work** (since 2026-10-12; measured on
+  Qwen3.8-Flash-Next, `docs/design/tools-assumed.md`), so Workbench's Search the
+  web and agentic clients such as Codex can use a Strata model. Strata ignores
+  `tool_choice` `required` or a named function, and `parallel_tool_calls: false`.
+  Those are sent and named in the answer's `x-eugene-plexus-ignored-settings`
+  header, not refused. Structured output together with tools is Strata's own
+  refusal, in its words.
+- No media, embeddings, raw completions or llama.cpp slot pinning. Other explicit
+  request settings Strata does not support are refused.
 - NInfer and imp remain future adapters. The Experimental designation and shared
   install/removal/switch lifecycle are the foundation for adding them.
 
