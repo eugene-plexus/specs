@@ -7241,12 +7241,18 @@ components:
               leave the install unasked. (Until 2026-10-12 this said
               `owned_by` is `local`; the gateway lists a runtime's model
               with its driver's provider there, `openai_compat_custom`,
-              so that rule matched no local model.) Read by the launcher
-              at every start; when none runs, or the gateway does not
-              answer within a few seconds, the variable is left unset and
-              the start's notes say which. A change of model is not a
-              change of connection (`resetOnConnectionChange`): an app's
-              stored vectors belong to the model that made them;
+              so that rule matched no local model.) A running one
+              (`x_eugene_plexus.ready_backends` above 0, or the field
+              absent) before one that is listed and stopped; a stopped one
+              is still chosen when it is all there is, and the start's
+              notes say it is not running, because an app that keeps what
+              its first start saw is better off with the install's model
+              than with its own default. Read by the launcher at every
+              start; when the gateway lists none, or does not answer
+              within a few seconds, the variable is left unset and the
+              notes say which. A change of model is not a change of
+              connection (`resetOnConnectionChange`): an app's stored
+              vectors belong to the model that made them;
             * `{clientKey}`, `{oidcClientSecret}`, `{appSecret}` — secrets.
               `{appSecret}` is a random value made at its first start and
               kept in its data directory.
@@ -7267,12 +7273,23 @@ components:
           pattern: "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
           description: |
             A variable set to `true` for one start, when the gateway's
-            address or the app's key differs from the last start's. For an
-            app that copies its settings into its own database at its first
-            start and ignores the environment afterwards (Open WebUI's
-            `RESET_CONFIG_ON_START`), so a rotated key is not silently
+            address, the app's key, or the manifest's `environment` as
+            written (its placeholders unfilled) differs from the last
+            start's. For an app that copies its settings into its own
+            database at its first start and ignores the environment
+            afterwards (Open WebUI's `RESET_CONFIG_ON_START`), so a
+            rotated key, or a setting Eugene corrects, is not silently
             ignored. That start also clears what its admin set in it, and
-            the agent's log says why.
+            the agent's log says why. A filled-in value that changes
+            (`{embeddingModel}`) is not a change.
+
+            The environment joined on 2026-10-12 (MR6): Open WebUI 0.11.4
+            points every address it does not get (documents' embeddings,
+            speech, images) at `https://api.openai.com/v1`, so since C4
+            an uploaded document's text was sent there (and refused, for
+            want of a key). The corrected entry names the gateway for
+            each, and reaches an install that already started by this
+            reset, once.
         licenseUrl:
           type: string
           format: uri
