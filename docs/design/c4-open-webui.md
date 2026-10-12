@@ -100,7 +100,10 @@ of them and does not change.
 
 **Placeholders:** `{bindHost}`, `{port}`, `{dataDir}`, `{gatewayUrl}`,
 `{appUrl}` (the address the console opens it at), `{oidcIssuer}`,
-`{oidcClientId}`, and three secrets:
+`{oidcClientId}`, `{embeddingModel}` and `{rerankModel}` (MR6, 2026-10-12:
+the first local search model and result sorter the gateway lists to the app's
+own key, by `x_eugene_plexus.locality`, asked by the launcher at each start
+and left unset when none runs), and three secrets:
 - `{clientKey}`;
 - `{oidcClientSecret}`;
 - `{appSecret}`, a random value made once and kept in the app's data
@@ -148,6 +151,14 @@ because Open WebUI takes no other form.
     OPENAI_API_KEY: "{clientKey}"
     ENABLE_OLLAMA_API: "false"
     RAG_EMBEDDING_ENGINE: openai
+    # MR6 (2026-10-12): document search through Eugene. Seeded at its first
+    # start only; its database wins after (see the agent's catalogue).
+    RAG_EMBEDDING_MODEL: "{embeddingModel}"
+    RAG_RERANKING_ENGINE: external
+    RAG_RERANKING_MODEL: "{rerankModel}"
+    RAG_EXTERNAL_RERANKER_URL: "{gatewayUrl}/v1/rerank"
+    RAG_EXTERNAL_RERANKER_API_KEY: "{clientKey}"
+    ENABLE_RAG_HYBRID_SEARCH: "true"
     AUDIO_STT_ENGINE: openai
     OFFLINE_MODE: "true"
     ENABLE_VERSION_UPDATE_CHECK: "false"
@@ -179,6 +190,11 @@ because Open WebUI takes no other form.
   (`utils/oauth.py:1565-1572`).
 - **Embeddings and transcription go to the gateway**, through the app's key.
   A document upload works when the install serves an embedding model.
+  Since MR6 (2026-10-12) its document search is seeded with the install's
+  local search model and result sorter (`/v1/rerank`, as its external
+  reranker) and hybrid search, when they run at its first start; otherwise
+  its admin picks them in its Admin Settings, Documents. The run of record
+  is `docs/acceptance/mr6-rerank-run.md`.
 - **Its own web search stays off.** It runs from the app with its own search
   keys rather than the install's search account. Pointing it at the hub's
   search is later work.
