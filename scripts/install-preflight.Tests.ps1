@@ -81,6 +81,21 @@ Describe 'Installer failure reporting' {
         Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like "*ada's Eugene password*" }
     }
 
+    It 'reads the parameters as the script passes them, a generic dictionary' {
+        # $PSBoundParameters is a Dictionary[string, object], not a hashtable:
+        # a hashtable-only call stopped the real installer (2026-10-12).
+        $bound = New-Object 'System.Collections.Generic.Dictionary[string, object]'
+        $bound['JobSite'] = [switch]$true
+        $bound['Owner'] = 'ada'
+        $text = 'param([switch]$JobSite, [string]$Owner)'
+        Invoke-ElevatedInstaller -ScriptText $text -Parameters $bound -WorkDirectory $TestDrive
+        Assert-MockCalled Start-Process -Scope It -Times 1 -Exactly -ParameterFilter { $WindowStyle -eq 'Normal' }
+        $plain = New-Object 'System.Collections.Generic.Dictionary[string, object]'
+        $plain['Prefix'] = 'C:\x'
+        Invoke-ElevatedInstaller -ScriptText 'param([string]$Prefix)' -Parameters $plain -WorkDirectory $TestDrive
+        Assert-MockCalled Start-Process -Scope It -Times 1 -Exactly -ParameterFilter { $WindowStyle -eq 'Hidden' }
+    }
+
     It 'keeps every other elevated run hidden' {
         Invoke-ElevatedInstaller -ScriptText 'param([string]$Prefix)' -Parameters @{ Prefix = 'C:\x' } -WorkDirectory $TestDrive
         Assert-MockCalled Start-Process -Scope It -Times 1 -Exactly -ParameterFilter { $WindowStyle -eq 'Hidden' }

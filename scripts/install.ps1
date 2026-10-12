@@ -324,7 +324,10 @@ exit $result
     # whether tools may change this machine (J30). Asked in a hidden window,
     # nobody could answer and the install waited for ever (2026-10-11), so a
     # job site's elevated window is shown, and this one says where to look.
-    $asks = [bool]($Parameters.Contains('JobSite') -and $Parameters['JobSite'])
+    # The index, not .Contains: $PSBoundParameters is a generic Dictionary,
+    # which has no one-argument Contains (2026-10-12), and a missing key
+    # reads as $null here as it does for 'Uninstall' above.
+    $asks = [bool]$Parameters['JobSite']
     if ($asks) {
         Say "a new window opens to ask for $($Parameters['Owner'])'s Eugene password: answer it there"
     }
