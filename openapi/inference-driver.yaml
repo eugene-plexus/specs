@@ -2886,6 +2886,28 @@ components:
           type: number
           description: The backend's own number, unchanged.
 
+    SettingNotHonoured:
+      type: object
+      description: |
+        One request field, in this contract's spelling, and the values of
+        it the backend is sent and does not honour. For `toolChoice` the
+        values are its modes: `auto`, `none`, `required`, and `function`
+        for a named function. A boolean setting lists `true` or `false`.
+      required:
+        - setting
+        - values
+      properties:
+        setting:
+          type: string
+          minLength: 1
+        values:
+          type: array
+          minItems: 1
+          items:
+            oneOf:
+              - type: string
+              - type: boolean
+
     RerankScale:
       type: string
       enum: [probability, logit]
@@ -3373,6 +3395,21 @@ components:
             possible value. Absent means unknown; ineligible for requests
             requiring explicit settings. The driver still validates before
             execution, including after a configuration change.
+        settingsNotHonoured:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettingNotHonoured'
+          description: |
+            Settings this backend is sent and is measured not to honour,
+            by value (2026-10-12, `docs/design/tools-assumed.md`). A
+            measured gap is named, not refused, so these are in
+            `supportedSettings` too. Static per backend, so the gateway
+            names them on its own `x-eugene-plexus-ignored-settings`
+            before a stream opens, without waiting for this driver's
+            per-request header. Absent or empty: everything carried is
+            honoured. Strata lists `toolChoice` with `required` and
+            `function` (it honours `auto`; `none` this driver honours by
+            sending no tools) and `parallelToolCalls` with `false`.
         streaming:
           type: boolean
           description: Whether `/v1/generate/stream` emits true incremental tokens.
@@ -3444,15 +3481,24 @@ components:
 
             **True unless there is evidence** (Troy, 2026-10-12;
             `docs/design/tools-assumed.md`): a chat model on any engine
-            is taken to use tools. `false` only when the backend refused
-            a request for its tools, in its own words (kept for the
-            engine's life; llama-server's "tools param requires --jinja
-            flag", Ollama's "does not support tools"), when a provider's
-            own listing says so, or when this driver has no way to carry
-            tools to the engine (a CLI subscription). Never because a
-            configuration is untested: until 2026-10-12 Strata was
-            reported `false` for that reason alone, and measured, it
-            calls tools correctly.
+            is taken to use tools. `false` only when:
+            * the backend refused a request for its tools, in its own
+              words. The words matched are measured ones only:
+              llama-server's "tools param requires --jinja flag" (a 500
+              from a `--no-jinja` engine, b10948). While `false` for that,
+              the driver asks the backend again every 10 minutes with the
+              smallest request carrying a tool, and an answer clears it,
+              so a backend fixed in place gets its tools back without the
+              driver restarting;
+            * a provider's own listing says so (a listing that says
+              nothing is not a no);
+            * this driver has no way to carry tools to the engine (a CLI
+              subscription), which is this driver's limit, not the
+              model's.
+
+            Never because a configuration is untested: until 2026-10-12
+            Strata was reported `false` for that reason alone, and
+            measured, it calls tools correctly.
         maxContextTokens:
           type: integer
           minimum: 0

@@ -552,15 +552,22 @@ paths:
       description: |
         The one endpoint everything else exists to support.
 
-        **What the serving backend does not honour is named**
-        (2026-10-12, `docs/design/tools-assumed.md`): its driver's
-        `x-eugene-plexus-ignored-settings`, in this door's spelling
-        (`tool_choice`), comes back on this door's own header of that
-        name, on both response modes, and is absent when there is
-        nothing to name. `/v1/messages` and `/v1/responses` add it to
-        theirs. Strata ignores `tool_choice` `required` and a named
-        function (measured), so a request carrying one is answered, with
-        the header, rather than refused.
+        **What the chosen backend does not honour is named**
+        (2026-10-12, `docs/design/tools-assumed.md`): a setting the
+        caller sent, with a value the backend's
+        `capabilities.settingsNotHonoured` lists, is named on this door's
+        `x-eugene-plexus-ignored-settings` in this door's spelling
+        (`tool_choice`, `parallel_tool_calls`), on both response modes,
+        and the header is absent when there is nothing to name.
+        `/v1/messages` and `/v1/responses` add it to theirs. It is read
+        from the backend chosen for the first attempt, before anything is
+        sent, so **a stream opens as it always has**: the head never
+        waits for the backend's first frame. Only what the caller sent
+        is named; the gateway's own settings (a search loop's forced
+        first turn) are not. Strata ignores `tool_choice` `required`
+        and a named function, and `parallel_tool_calls: false`
+        (measured), so a request carrying one is answered, with the
+        header, rather than refused.
 
         Routing: `model` is resolved to its slot — the drivers serving
         it, then the drivers serving each configured target in order
@@ -4057,10 +4064,17 @@ components:
             harness can read this and pick a model rather than discover
             the limit as a 400 halfway through a task.
 
-            A backend whose driver does not say counts as one that can
-            (2026-10-12, `docs/design/tools-assumed.md`): tools are
-            assumed, and turned off only on evidence the driver
-            reports (`capabilities.toolCalling: false`).
+            A chat model's backend whose driver does not say counts as
+            one that can (2026-10-12, `docs/design/tools-assumed.md`):
+            tools are assumed, and turned off only on evidence the
+            driver reports (`capabilities.toolCalling: false`). A model
+            that does not chat (embeddings, rerank, speech) is not one
+            that calls tools, and a request sending it tools is refused
+            for what it is, in the door's words for a model on the wrong
+            door. The tools that come with a request that carries tools
+            (`tool_choice`, `parallel_tool_calls`) are admitted for such a
+            backend whatever its `supportedSettings` says, since a driver
+            that reports nothing is not a no.
         web_search:
           type: boolean
           description: |

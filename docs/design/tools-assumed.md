@@ -47,6 +47,28 @@ Strata v0.1.39, `qwen3.8-flash-next-iq2_xs` on the RTX 5090, its own OpenAI chat
 The script and its output: `scratchpad/strata-tools/` in the session that ran it; the numbers are
 copied here.
 
+## What the first build round found (driver `f6b3ddf`, gateway `4588eea`, both reviewed)
+
+- **llama-server's refusal of tools is a 500, not a 4xx.** b10948 with `--no-jinja` (`--jinja` is its
+  default) answers every tools request `500 {"error":{"code":500,"message":"tools param requires --jinja
+  flag"}}`. The evidence is the whole message matched, at any status, and it is the caller's 400.
+- **`parallel_tool_calls` was still refused for Strata, so Codex could not use it at all** (Codex sends
+  `false` on every request). Measured by the reviewer: `true` is honoured, `false` is ignored. Both are
+  now sent, and `false` is named.
+- **A per-request header from the driver made the gateway hold every stream's head** until the
+  backend's first frame (or a 10 s keepalive). That broke the Responses door's contract and Codex's
+  retry mapping. So what is not honoured is now static, `capabilities.settingsNotHonoured`, read
+  from the chosen backend before anything is sent. Streams open as they always have.
+- **A learned "no tools" outlived its cause**, until the driver restarted. While turned off, the driver
+  asks again every 10 minutes and an answer clears it.
+- **Ollama's equal gap was refused** (`tool_choice` other than `auto`, `parallel_tool_calls: false`);
+  it is now sent and named, as Strata's is.
+- **"A listing that says nothing" is not a no**: an OpenRouter entry without `supported_parameters` and
+  Gemini's Gemma models (a name prefix, never measured) are now taken to call tools.
+- Only what the caller sent is named, not the gateway's own search loop's forcing. An embedding model
+  sent tools is refused for being the wrong door. The no-tools refusal is worded as the driver's
+  report, not the model's failing.
+
 ## What changes
 
 - **Driver, Strata:**
