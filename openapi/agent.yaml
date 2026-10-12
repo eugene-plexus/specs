@@ -1428,6 +1428,16 @@ paths:
         revoked there. An app that signs people in is registered at the
         root the same way.
 
+        **An app's key has limits for an app, not for one person's
+        client** (MR6, 2026-10-12): 8 requests at once and 600 a minute,
+        with `writeLogs`. Everyone using the app shares its key, so the
+        defaults of 2 at once and 60 a minute meant two people chatting in
+        it filled it. Open WebUI's document upload failed on them outright:
+        it sends its embeddings requests together and fails the whole file
+        on the first 429. Measured in MR6's acceptance: a 10-passage file,
+        2 of 10 requests served. The owner changes them on the keys page.
+        A key minted before this keeps its limits.
+
         **On the caller's authority, not always with the caller's token**
         (2026-10-01). A session made by signing in on this machine is
         addressed to the root as well and goes on unchanged. A console on
@@ -7256,6 +7266,14 @@ components:
             * `{clientKey}`, `{oidcClientSecret}`, `{appSecret}` — secrets.
               `{appSecret}` is a random value made at its first start and
               kept in its data directory.
+
+            **A manifest that names `{gatewayUrl}` is not started while
+            the gateway's address is unknown** (MR6, 2026-10-12). Every
+            other placeholder with no value leaves its variable unset, but
+            an app without the gateway's address uses its own default, and
+            Open WebUI's is `https://api.openai.com/v1`: documents and
+            speech would go there. The start is refused, naming why, and
+            is tried again as any refused start is.
 
             **Secrets are filled in by the launcher inside the app's own
             account**, from the files it is given, so they never appear in
