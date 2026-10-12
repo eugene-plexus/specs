@@ -7235,11 +7235,16 @@ components:
               model and result sorter as the app's own key sees them (MR6):
               the first model `GET /v1/models` lists, with that key, whose
               `x_eugene_plexus.surfaces` include `embeddings` (or `rerank`)
-              and whose `owned_by` is `local`. Never an outside model:
-              documents would leave the install unasked. Read by the
-              launcher at every start; when none runs, or the gateway does
-              not answer within a few seconds, the variable is left unset
-              and the start's notes say which. A change of model is not a
+              and whose `x_eugene_plexus.locality` is `local`, the field
+              Workbench's own chooser reads. Never an outside model, nor
+              one whose locality is `unknown` or absent: documents would
+              leave the install unasked. (Until 2026-10-12 this said
+              `owned_by` is `local`; the gateway lists a runtime's model
+              with its driver's provider there, `openai_compat_custom`,
+              so that rule matched no local model.) Read by the launcher
+              at every start; when none runs, or the gateway does not
+              answer within a few seconds, the variable is left unset and
+              the start's notes say which. A change of model is not a
               change of connection (`resetOnConnectionChange`): an app's
               stored vectors belong to the model that made them;
             * `{clientKey}`, `{oidcClientSecret}`, `{appSecret}` — secrets.
