@@ -16,6 +16,7 @@ the calls made while building.
 | MR2 | Documents in the prompt (PDF, Word, Markdown, text, CSV, HTML, code) for any model: file cards with the choice of how much to read, the files named under an answer | workbench `8a81721` (server) + `2bb18fa` (page), dist `30bfff1` | `docs/acceptance/mr2-documents-run.md` |
 | MR4 | Saved documents searched by words (FTS5 BM25, one index per person), the Documents screen with Test a question, a chat's Documents switch, passages cited by file and page | workbench `fd6af48` (server) + `d90dede` (page), dist `d9984de` | `docs/acceptance/mr4-library-run.md` |
 | MR5 | Search by meaning through a local search model, fused with the words (RRF k=60); the Documents screen states the mode live, adds meaning as it catches up, offers Rebuild on a model change | workbench `b85f0dd` (server) + `fa3c014` (page), dist `2979d97` | `docs/acceptance/mr5-meaning-run.md` |
+| MR7 | Folders: a person's Documents read a folder they are granted, read-only, and keep in step (rescan every 10 minutes and Sync now; ignore rules; caps; per-file reasons). Design: `docs/design/workbench-folders.md` | workbench `50f101c` (server) + `1b3dbcf` (page), dist `ca97c83` | `docs/acceptance/mr7-folders-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -66,8 +67,8 @@ Search by meaning (MR5):
 
 ## Next
 
-MR6 (`/v1/rerank` and Open WebUI's RAG through Eugene), MR7 (folders), MR8 (memory suggestions after a
-measured harness), MR9 (MCP and the Anthropic door).
+MR6 (`/v1/rerank` and Open WebUI's RAG through Eugene), MR8 (memory suggestions after a measured
+harness), MR9 (MCP and the Anthropic door).
 
 ---
 
