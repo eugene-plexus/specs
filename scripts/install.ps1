@@ -133,7 +133,7 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "69ba80eaee33823fc53620b0b8f057804a056ebc"
+    "agent"            = "eb89e58f588003c77e551de49cab7924d7960c11"
     "control"          = "bf4675801c70e39dd44f5c786e4f10d241c22a14"
     "gateway"          = "201da3e6524295cc3bafd45c7e43f17094eb48e1"
     "inference-driver" = "18ff1f565418f2a58fe8e9415aa3f5c2635fa187"
@@ -329,7 +329,9 @@ exit $result
     # reads as $null here as it does for 'Uninstall' above.
     $asks = [bool]$Parameters['JobSite']
     if ($asks) {
-        Say "a new window opens to ask for $($Parameters['Owner'])'s Eugene password: answer it there"
+        # Their own password, the one they sign in to Workbench with: read as
+        # Eugene's owner's, it looked like one a friend would have to be told.
+        Say "a new window opens to ask $($Parameters['Owner']) for their own Eugene password, the one they sign in to Workbench with: answer it there"
     }
     $windowStyle = if ($asks) { 'Normal' } else { 'Hidden' }
     try {

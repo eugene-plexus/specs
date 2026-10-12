@@ -3,7 +3,7 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "69ba80eaee33823fc53620b0b8f057804a056ebc",
+    "agent": "eb89e58f588003c77e551de49cab7924d7960c11",
     "control": "bf4675801c70e39dd44f5c786e4f10d241c22a14",
     "gateway": "201da3e6524295cc3bafd45c7e43f17094eb48e1",
     "library": "581d87db7cbf70291d397b727a3c9856f06ae7c3",

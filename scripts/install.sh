@@ -59,7 +59,7 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=69ba80eaee33823fc53620b0b8f057804a056ebc
+PIN_AGENT=eb89e58f588003c77e551de49cab7924d7960c11
 PIN_CONTROL=bf4675801c70e39dd44f5c786e4f10d241c22a14
 PIN_GATEWAY=201da3e6524295cc3bafd45c7e43f17094eb48e1
 PIN_DRIVER=18ff1f565418f2a58fe8e9415aa3f5c2635fa187
@@ -1158,7 +1158,7 @@ site_read_password() {
        has none. Run it from a terminal, or give the password as the first line of
        standard input with --password-stdin (save this script to a file first, so its
        own standard input is free)."
-        printf "%s's Eugene password: " "$1" >/dev/tty
+        printf "%s, your own Eugene password, the one you sign in to Workbench with: " "$1" >/dev/tty
         TTY_SAVED=$(stty -g </dev/tty 2>/dev/null || true)
         stty -echo </dev/tty 2>/dev/null || true
         IFS= read -r SITE_PW </dev/tty || true

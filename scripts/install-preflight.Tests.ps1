@@ -73,12 +73,13 @@ Describe 'Installer failure reporting' {
 
     It 'shows a job site''s elevated window, where the join asks for its owner''s password' {
         # 2026-10-11: hidden, the join's password prompt waited for ever.
+        # 2026-10-12: "ada's Eugene password" read as Eugene's owner's.
         $text = 'param([switch]$JobSite, [string]$Owner)'
         Invoke-ElevatedInstaller -ScriptText $text -Parameters @{
             JobSite = [switch]$true; Owner = 'ada'
         } -WorkDirectory $TestDrive
         Assert-MockCalled Start-Process -Scope It -Times 1 -Exactly -ParameterFilter { $WindowStyle -eq 'Normal' }
-        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like "*ada's Eugene password*" }
+        Assert-MockCalled Write-Host -Scope It -ParameterFilter { $Object -like "*ask ada for their own Eugene password, the one they sign in to Workbench with*" }
     }
 
     It 'reads the parameters as the script passes them, a generic dictionary' {
