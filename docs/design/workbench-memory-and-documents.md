@@ -18,6 +18,7 @@ the calls made while building.
 | MR5 | Search by meaning through a local search model, fused with the words (RRF k=60); the Documents screen states the mode live, adds meaning as it catches up, offers Rebuild on a model change | workbench `b85f0dd` (server) + `fa3c014` (page), dist `2979d97` | `docs/acceptance/mr5-meaning-run.md` |
 | MR7 | Folders: a person's Documents read a folder they are granted, read-only, and keep in step (rescan every 10 minutes and Sync now; ignore rules; caps; per-file reasons). Design: `docs/design/workbench-folders.md` | workbench `50f101c` (server) + `1b3dbcf` (page), dist `ca97c83` | `docs/acceptance/mr7-folders-run.md` |
 | MR6 | `POST /v1/rerank` (Jina, Cohere and TEI bodies, scores 0 to 1, one model per request) and the `rerank` surface; Open WebUI's document search through Eugene (its search model, its sorter as the external reranker, hybrid search), and its privacy defect fixed | specs `e43483f` to `7ddc4d9`, gateway `226b607`, inference-driver `b1d6820`, agent `85e9e76` | `docs/acceptance/mr6-rerank-run.md` |
+| MR6b | Workbench sorts its best passages with a served sorter (heading path + text, the best 10 of each way, a Sort time budget priced from measured speed); the Documents screen and Test a question say whether and why not | workbench `534a8bd` to `3a1408c`, dist `7658527`, agent `aaf54ce` | `docs/acceptance/mr6b-sorting-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -85,9 +86,8 @@ The rerank door and Open WebUI (MR6):
 
 ## Next
 
-MR6b (Workbench sorts its own top passages with a served sorter, decided by measuring recall@5 on MR5's
-60 questions with and without), MR8 (memory suggestions after a measured harness), MR9 (MCP and the
-Anthropic door).
+MR8 (memory suggestions after a measured harness), MR9 (MCP and the Anthropic door). Owed: a live run
+of MR6b's sorting on real questions (Troy's).
 
 ---
 

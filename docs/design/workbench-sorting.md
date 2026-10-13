@@ -85,3 +85,35 @@ to the digit: recall@5 words 0.500, meaning 0.583, hybrid 0.600.
 - The page in Chrome: the mode line, Test a question's places, and the not-sorted reason.
 - Sabotage per the changed code: heading path dropped, the union replaced by hybrid's 10, the budget
   ignored, a failure failing the search, `auto` choosing an outside sorter.
+
+## What building found (MR6b, built 2026-10-12 to 13)
+
+Record: `docs/acceptance/mr6b-sorting-run.md`. Workbench `534a8bd` to `3a1408c`, dist `7658527`, agent
+`aaf54ce`. Built in three rounds, each reviewed adversarially; the third round was fixes only.
+
+- **The gain held through the real stack.** On the CPU, recall@5 went from 0.600 to 0.783 and MRR@5
+  from 0.432 to 0.664. On the RTX 5090 they were 0.767 and 0.678. **In-sample:** the questions were
+  written from headings and chose the heading format. A live run on real questions is owed.
+- **Speed decides where it sorts.** Through Workbench, a sort takes 7.1 s on a 12-thread CPU and 0.6 s
+  on an RTX 5090. The default Sort time of 3 s sorts on the card and not on the CPU, and says so with
+  the numbers.
+- **Calls changed while building:**
+  - **A search never waits for a measurement.** With no speed known, the question is answered unsorted
+    ("measuring") and the quick test runs behind it. A quick test that times out is learned from.
+    Failed measurements back off from 10 s, doubling, up to the 10-minute re-measure.
+  - **A given-up sort is its own state, not a speed.** "X did not answer within N s the last time it
+    was asked; Workbench asks it again after (time)", with no "raise Sort time" advice. While it
+    stands, Sort time decides, not size: a question is asked again only when twice Sort time is longer
+    than the wait that was given up on. Questions that were waiting together count as one strike.
+  - **Re-measuring.** The quick test runs again only when the speed is the quick test's alone, or when
+    the sorter is over budget and its speed is stale. It is blended in, and "from quick tests" is
+    said once they make up most of the speed.
+  - **A named way is not sorted.** "Try one way at a time" shows what that way finds alone.
+  - **Meaning and sorting share one look at the gateway's model list**, so a hung list holds the
+    Documents screen once, not twice.
+  - **Sort time reads "a sort is given up on after twice this"**, not "the most a sort may add".
+  - **The Result sorter says "In use" only while it sorts.** Otherwise it says "Chosen: X (automatic),
+    not sorting now:" and the reason.
+- **Failures name what was observed.** A gateway hold (a 503 with Retry-After) is the gateway asking
+  for a wait, not "not running"; MR5's meaning search had the same misreading, now fixed. A 404 gives
+  the gateway's words. The door's own 400 is not "the sorter refused".
