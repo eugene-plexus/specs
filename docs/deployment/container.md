@@ -156,7 +156,7 @@ installation into isolated MSP tenants.
 
 **The console can stay where it is.** By default only Workbench goes through
 this setup: you keep opening the console at its own address on your network
-(for example `http://192.168.16.252:8279`), with no DNS entry to add, and the
+(for example `http://NAS-IP:8279`), with no DNS entry to add, and the
 console's name (`eugene.…`) serves only Workbench's sign-in, which every browser
 must reach over HTTPS. Choose **Through this setup too** to move the console to
 its HTTPS name as well.
@@ -173,7 +173,7 @@ Manager, Caddy and Traefik recipes.
 1. **Update Workbench in Apps first.** Old Workbench versions are refused by the
    HTTPS proxy because they cannot enforce its origin and cookie rules.
 2. **Point the names at the NAS or your proxy.** For example, both
-   `eugene.home.arpa` and `workbench.home.arpa` can resolve to `192.168.16.252`.
+   `eugene.home.arpa` and `workbench.home.arpa` can resolve to your NAS's address (`NAS-IP`).
    A router's local DNS or client hosts files work. Remote clients need matching
    DNS and routing too. By default there are two names, the console and
    Workbench; the inference and node names are extras you can tick.

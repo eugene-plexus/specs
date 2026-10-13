@@ -1,9 +1,8 @@
 # Remove Eugene from Windows or Mac
 
-The offline removal utilities described here are included in the development
-installers after v0.1.0. Existing installs gain them when updated with an
-installer that includes this change. Published v0.1.0 installer assets remain
-unchanged.
+The offline removal utilities described here ship in the v0.2.0 installers.
+Existing installs gain them when updated to v0.2.0. The published v0.1.0
+installer assets are unchanged and do not include them.
 
 On **Windows**, open **Settings → Apps → Installed apps → Eugene Plexus →
 Uninstall**. Windows asks for administrator access for a service installation.
@@ -61,7 +60,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\EugenePl
 sh "$HOME/.local/share/eugene-plexus/uninstall/remove.sh" --interactive
 ```
 
-The current source installers also accept `-Uninstall` / `--uninstall`.
+The v0.2.0 installers also accept `-Uninstall` / `--uninstall`.
 Add `-PurgeDownloads` / `--purge-downloads` to delete managed downloads, and
 `-PurgeData` / `--purge-data` to delete settings and app data. An explicit
 `-Prefix` / `--prefix` selects one installation or retained folder. Without a
@@ -69,8 +68,8 @@ prefix, Windows discovers registered/default installations; follow-up purge
 also finds receipts beside the default locations. The Mac installer finds
 receipts beside its selected/default prefix.
 
-These changes also cover POSIX per-user installs. The Linux system-account
-uninstall retains its existing behavior; `--purge-data` and the interactive
+The utilities also cover POSIX per-user installs. The Linux system-account
+uninstall keeps the behavior it had before v0.2.0; `--purge-data` and the interactive
 desktop flow are not offered for that layout.
 
 ## If something remains
@@ -93,7 +92,8 @@ The source is `scripts/uninstall.ps1`, `scripts/uninstall.sh` and
 `scripts/uninstall_inventory.py`. After changes run
 `python scripts/embed-uninstall.py`; `--check` verifies that the self-contained
 installers contain the exact current utilities. Do not edit the embedded copies.
-Release assets are immutable; these utilities ship in the next release.
+Release assets are immutable; these utilities first shipped in v0.2.0, and a
+change to them reaches users in the next release.
 
 The native entry points follow Microsoft's
 [uninstall registration](https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key)

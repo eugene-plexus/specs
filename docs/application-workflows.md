@@ -1,11 +1,16 @@
-# Use a local model from Claude Code or Open WebUI
+# Use a local model from Claude Code, Codex or Open WebUI
 
-These recipes target the A4 development build, not the frozen alpha. Update the
-agent, gateway and inference-driver together. Create a named client key in
+These recipes describe [v0.2.0](releases/v0.2.0.md). Update the root first, then
+every other machine. Create a named client key in
 **Home → Use it from your apps**. Use the gateway address shown there; an engine's
-own port bypasses Eugene's authentication and routing.
+own port bypasses Eugene's authentication and routing. The console writes each
+recipe below for you, with your address, key, model and the model's window.
 
-## Claude Code 2.1.207
+## Claude Code
+
+Measured with Claude Code 2.1.207 (the acceptance below), and with 2.1.283 for
+web search and prompt-cache behavior. v0.2.0 also fixes what 2.1.288 sends, but
+no run with a 2.1.288 client is recorded.
 
 Choose a model that can call tools. Model quality matters: protocol compatibility
 does not make every small model a dependable coding assistant. The acceptance
@@ -18,7 +23,15 @@ ANTHROPIC_BASE_URL=http://YOUR-GATEWAY:8080
 ANTHROPIC_AUTH_TOKEN=YOUR-CLIENT-KEY
 ANTHROPIC_MODEL=YOUR-MODEL-ID
 CLAUDE_CODE_MAX_CONTEXT_TOKENS=YOUR-MODEL-WINDOW
+CLAUDE_CODE_MAX_OUTPUT_TOKENS=YOUR-REPLY-LIMIT
 ```
+
+The console sets `CLAUDE_CODE_MAX_OUTPUT_TOKENS` to a quarter of the window, and
+leaves the line out when a quarter would reach Claude Code's own 32,000 tokens (a
+window of 128K tokens or more). Claude Code keeps that much room free for each
+reply before it compacts, and Eugene's capacity budget reserves a turn's whole
+answer allowance, so the default 32,000 tokens on a 64K-token pool holds one turn.
+The quarter is a choice, not a measurement.
 
 Use `$env:NAME = 'value'` in PowerShell, or `export NAME='value'` in bash. The
 Anthropic base URL has **no `/v1` suffix**. Claude Code adds `/v1/messages` itself.
@@ -49,6 +62,49 @@ Start in a disposable repository. For a two-file test, allow reads of only
 command `python check.py`. Keep normal tool permissions enabled. Inspect the
 result, run the check, and then ask a follow-up in the same session. Eugene
 transports tool calls and results; Claude Code executes the tools on its host.
+
+## Codex
+
+This is the console's Codex recipe (ui `a483c9e`). Codex reaches Eugene through a
+custom provider, which speaks only the Responses API; the gateway serves it at
+`/v1/responses`. Put this in `~/.codex/config.toml`:
+
+```text
+model_provider = "eugene"
+model = "YOUR-MODEL-ID"
+model_context_window = YOUR-MODEL-WINDOW
+
+[model_providers.eugene]
+name = "Eugene Plexus"
+base_url = "http://YOUR-GATEWAY:8080/v1"
+env_key = "EUGENE_API_KEY"
+wire_api = "responses"
+```
+
+The key goes in the variable `env_key` names, set where you start Codex, and never
+in the file:
+
+```text
+EUGENE_API_KEY=YOUR-CLIENT-KEY
+```
+
+The base URL here **keeps its `/v1`**, unlike Claude Code's. Without `env_key`,
+Codex sends no key and the gateway answers 401. Without `model_context_window`,
+Codex assumes 272,000 tokens for a model it has no metadata for and stops when the
+model runs out of room; the console writes the line only when the gateway reports
+the model's window, and otherwise tells you to add it. `model`, `model_provider`
+and `model_context_window` stay above the `[model_providers.eugene]` header, since
+a key after a header belongs to that table.
+
+What was measured: [Codex CLI 0.130.0](acceptance/responses-run.md) with
+`wire_api = "responses"` and an isolated `CODEX_HOME`, 17 checks with real engines
+on the processor: a turn, a shell tool loop, both image paths, and a long prefill
+held open past Codex's idle timeout. [Codex 0.130.0 also searched](acceptance/server-tools-run.md)
+through Eugene's web search with `web_search = "live"`. Codex 0.133 and later send
+their sub-agent tools as one `namespace` tool, which v0.2.0 accepts; the console's
+keys were read from Codex's source (as of 0.160.0), and no run with a 0.133 or
+later client is recorded. Codex's auto-compaction against this door was not
+exercised.
 
 ## Open WebUI 0.11.3
 
@@ -86,11 +142,13 @@ large images before attaching them. Remote image URLs, animations and non-PNG/JP
 files are refused; a text-only fallback cannot silently answer without the image.
 
 Open WebUI's Stop button cancels its active generation. If an error says the model
-is not ready, use Eugene's Inference page to inspect the runtime. If the backend
+is not ready, use Eugene's Backends page to inspect the runtime. If the backend
 refuses an image request, check the matching projector and context window, then
 try a smaller image or shorter conversation. Native Anthropic reasoning, audio,
 document parsing, RAG and all built-in Open WebUI tools are outside this recipe's
-compatibility claim.
+compatibility claim. One exception: document search through Eugene's search and
+result-sorting models was measured with Open WebUI 0.11.4 ([MR6](acceptance/mr6-rerank-run.md));
+v0.2.0 seeds Open WebUI's settings from the install's own search model and sorter.
 
 See [the A4 acceptance record](acceptance/a4-application-workflows.md) for exact
 tasks, artifacts, results and the completed user-image check.
@@ -106,7 +164,7 @@ model/context/workload before increasing limits.
 Eugene's `POST /v1/systemone` speaks the TypeSafe System One protocol: one
 `state` and named `noul`/`choice`/`score` questions in, structured probabilities
 out. Your application decides what to do with the answer; Eugene never acts on
-it. This is on `main` toward alpha.3 and **not in alpha.2**. It was measured on
+it. This shipped in alpha.3 and is in v0.2.0. It was measured on
 WSL2 CPU only ([the B2 run](acceptance/decision-run.md)); see the
 [API boundaries](api-compatibility.md#typed-decisions-b2).
 
@@ -124,7 +182,7 @@ uv sync --extra serve
 In **Config → Agent**, set `kevPython` to that checkout's interpreter
 (`~/eugene-kev/.venv/bin/python`). Use the engine's own setting: a uv venv's
 `python` is a link to a shared interpreter, so adding the venv to
-`engineBinaryRoots` does not whitelist it. The Inference page's engine list
+`engineBinaryRoots` does not whitelist it. The Backends page's engine list
 reports Kev as found once the interpreter can import `kev.serve` and torch.
 
 **2. Get the checkpoint.** The measured starter is `jaredpalmer/kev-0.8b` at

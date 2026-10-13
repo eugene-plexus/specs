@@ -258,7 +258,7 @@ for each enabled hostname with its own fixed `tls_server_name`:
 
 ```caddyfile
 eugene.example.org {
-    reverse_proxy https://192.168.16.252:8443 {
+    reverse_proxy https://NAS-IP:8443 {
         header_up Host eugene.example.org
         transport http {
             tls_server_name eugene.example.org
