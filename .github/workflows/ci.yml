@@ -125,7 +125,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     # C3 builds an app's environment from its archive with uv (2026-10-01).
     # Job Sites waits up to 75 s for a site's own bundle pull (2026-10-05).
-    timeout-minutes: 22
+    # The tools-are-assumed pair acceptance runs about three minutes (2026-10-12).
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -272,6 +273,8 @@ jobs:
         run: python specs/scripts/google-search-acceptance.py
       - name: Verify a Gemini account (native API, thought signatures, every surface) through signed processes and the unchanged OpenAI SDK
         run: python specs/scripts/gemini-acceptance.py
+      - name: Verify the gateway and driver pair on stand-in providers (tools are assumed - header agreement, slots, counts, stream heads)
+        run: python specs/scripts/tools-assumed-acceptance.py
       - name: Verify C2 sign-in with Eugene through an agent, with a real OpenID Connect client
         run: python specs/scripts/c2-sign-in-acceptance.py
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
