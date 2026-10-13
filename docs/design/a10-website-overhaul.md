@@ -1,6 +1,6 @@
 # A10: eugeneplexus.com for v0.2.0 (plan)
 
-**Status: approved with Troy's calls (2026-10-13), building.** Roadmap row A10 in
+**Status: built 2026-10-13 (website `f428560`); the Pages deploy waits for Troy's OK.** Roadmap row A10 in
 [audience-roadmap.md](audience-roadmap.md). Sources of truth:
 [v0.2.0 release notes](../releases/v0.2.0.md), the
 [release run](../acceptance/v0.2.0-release-run.md), the dated records in
@@ -196,3 +196,38 @@ Give them small loops the same way (CSS inside each SVG, pivots from
 working scenes on `/workbench`. One pose first for Troy's approval of the
 style, then the rest. A browser check proves each moves, and holds still
 under reduced motion.
+
+## 8. What building found (2026-10-13)
+
+- **The site said Anthropic documents were refused; they have been carried
+  since 2026-09-28** (the P2a media-inputs record). `api-compatibility.md`
+  also still refused structured output and unknown settings; corrected on main
+  (specs `6b6892b`) from gateway `7b9a4c4`.
+- **`application-workflows.md` still targeted "the A4 development build"**, and
+  the support matrix had no rows for memory and documents, search models, the
+  Library's engines, Gemini or tools on every model. Both fixed at `08899f2`,
+  which the site now reads its linked docs at (`docs-revision.json`).
+- **The sitemap had lost `/cache-aware-balancing`.** It is generated from
+  `public-pages.json` now, as `/llms.txt` and the Markdown export are.
+- **Labels:** about 70 console and Workbench labels in the guides were checked
+  at ui `a483c9e` and Workbench `d5aad5f`. Workbench hides Job sites from the
+  owner; ElevenLabs has no add path under Backends' "Which app?"; switching to a
+  warm standby is not in the console. The site says each as it is.
+- **Product bugs filed:** ui#18 ("See it on Inference"; Strata "no tools"),
+  workbench#9 (a folder hint names a People section that is gone),
+  workbench#10 (a Strata model is treated as an outside model, so memory is
+  held back). Not filed, told to Troy: the "Where to find models" default shows
+  as raw JSON; the Gemini key placeholder is "sk-…".
+- **Screenshots:** the harness builds the v0.2.0 install as `install.sh` does,
+  because a dev checkout says "Development build" on Machines. Its leak check
+  matches names as words: the demo name `desk-pc` contains `sk-`. Two pictures
+  came from Troy's live install (Job Sites, a web search chat); the first take
+  missed his username, and a name swap would have rewritten a real GitHub issue
+  title among the sources, so that take was dropped.
+- **The review** (one round, Sonnet) found claims stronger than their records
+  (folder sync, Let's Encrypt and Traefik, the Mac remover, fit for every
+  engine, Strata's conditions, media screens) and unreadable desktop pictures
+  at phone width; all fixed, and each desktop picture links its full size.
+- **Eugene, animated:** Troy approved the wave after two fixes (the hand on
+  the cuff, in front of the face). The check that each pose holds still for
+  reduced motion was sabotaged once and failed as it should.
