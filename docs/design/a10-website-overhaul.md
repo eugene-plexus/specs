@@ -1,6 +1,6 @@
 # A10: eugeneplexus.com for v0.2.0 (plan)
 
-**Status: built 2026-10-13 (website `f428560`); the Pages deploy waits for Troy's OK.** Roadmap row A10 in
+**Status: deployed 2026-10-13 (website `f428560`, Pages run 38470352449).** Roadmap row A10 in
 [audience-roadmap.md](audience-roadmap.md). Sources of truth:
 [v0.2.0 release notes](../releases/v0.2.0.md), the
 [release run](../acceptance/v0.2.0-release-run.md), the dated records in
