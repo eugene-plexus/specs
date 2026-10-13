@@ -151,7 +151,7 @@ SABOTAGES = [
         "agent: contextSize is described as per-slot again",
         "agent",
         "src/eugene_plexus_agent/engines/llama_cpp.py",
-        '            "Total tokens this runtime keeps in memory, shared by its "',
+        '            "Total tokens this runtime keeps in memory, shared by its slots; the "',
         '            "Maximum tokens the model can attend to, per slot. The "',
         "tests/test_context_and_slots.py::test_context_size_is_not_described_as_per_slot",
     ),
@@ -159,7 +159,7 @@ SABOTAGES = [
         "agent: parallelSlots claims memory multiplies again",
         "agent",
         "src/eugene_plexus_agent/engines/llama_cpp.py",
-        '            "Concurrent requests this runtime serves. The slots divide "',
+        '            "Concurrent requests this runtime serves, and the unit of capacity the "',
         '            "Concurrent requests. Raising this is the usual way to "\n'
         '            "run out of VRAM. The slots each get their own "',
         "tests/test_context_and_slots.py::test_parallel_slots_does_not_claim_memory_multiplies",

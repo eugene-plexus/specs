@@ -272,7 +272,7 @@ SABOTAGES: list[Sabotage] = [
     one("an older agent's 'available' is called newer", "ui", UI_UPDATES,
         "  const knowsOrder = Array.isArray(update.ahead);\n", "  const knowsOrder = true;\n"),
     one("a machine newer than its channel is not told so", "ui", UI_UPDATES,
-        "  if (ahead.length > 0 && label) {\n", "  if (false) {\n"),
+        "  if (ahead.length > 0 && newest) {\n", "  if (false) {\n"),
     one("a newer install is named after the older release", "ui", UI_UPDATES,
         "      update.behind.length === 0 &&\n      (update.ahead ?? []).length === 0\n",
         "      update.behind.length === 0\n"),
