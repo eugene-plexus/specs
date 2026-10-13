@@ -165,9 +165,23 @@ Left as is, decided:
 - `none` on the 8 OpenRouter models (above).
 - gateway#13: a loading replica's 502 still counts against its circuit.
 
-Left for a small round six (reviewed minor):
-- An Ollama model without tools still lists `tools`.
-- The count's 400 for an unreachable key authority does not name the status it saw.
-- Four guards have no test that can fail.
-- The reviewer's wired matrix (gateway plus driver, header agreement, slots, counts) should become a
-  specs acceptance, so the gateway's `none` rule and the driver's cannot drift apart again.
+## Round six (driver `5237d8f`, gateway `437745f`)
+
+- No tools-off model (Ollama's included) lists `tools` any more. So the chat door refuses `tools: []`
+  to all six families alike.
+- The count's 400 names what the admission authority answered (its status, or the exception and its
+  words).
+- The four unguarded behaviours have tests that fail without them.
+- **The pair acceptance**, `scripts/tools-assumed-acceptance.py` (specs CI, `r7-signing` job): the
+  real gateway and real drivers in front of stand-ins. It checks:
+  - the gateway's header equals the driver's own and what was sent, over 668 requests;
+  - a whole answer is named by the backend that served it;
+  - every slot is still served;
+  - the count doors give no 5xx, over 11 listing failures and every authority failure;
+  - stream heads come first.
+  It took 55 s against the pinned pair, and its sabotage was caught 14 times out of 14. Round six was
+  not reviewed again: five reviews covered this work, and its changes are small.
+
+Left, minor (gateway#15): the count's key-policy path ("Client-key policy unavailable") still names no
+cause. An OpenRouter router with an empty `supported_parameters` list is refused on the Messages
+door for `max_tokens`.
