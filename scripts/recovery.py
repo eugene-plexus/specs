@@ -255,7 +255,7 @@ def validate_state(root):
         machine.load()
         if machine.dropped_tail_lines:
             raise ValueError(
-                "control log has a torn tail; recover it before checkpointing"
+                "control log had a torn final line, now cut off; run this again"
             )
 
 

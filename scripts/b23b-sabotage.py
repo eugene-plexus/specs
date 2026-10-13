@@ -111,10 +111,6 @@ SABOTAGES: list[tuple[str, str, str, str, str]] = [
      'names = [w["name"] for w, _, _ in rows]'),
     ("a read-only workspace's change rule is reported as stored", "site", POLICY,
      '        groups["change"] = "deny"\n', "        pass\n"),
-    ("version 1's owner on their own list is kept as a person", "site", POLICY,
-     '            if p.get("subject") != owner\n', "            if True\n"),
-    ("version 1's reader becomes a writer", "site", POLICY,
-     '"change": "allow" if writable and p.get("writable") else "deny",', '"change": "allow",'),
     # --- rules (J70, J72, J78) ----------------------------------------------------------
     ("THE RULE: an ask call runs without the person's word", "site", HOST,
      "                    if not call.asked:\n", "                    if False:\n"),

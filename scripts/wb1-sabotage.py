@@ -19,7 +19,6 @@ from pathlib import Path
 
 ANSWERS = "src/eugene_plexus_workbench/answers.py"
 CONVERSATION = "src/eugene_plexus_workbench/conversation.py"
-STORE = "src/eugene_plexus_workbench/store.py"
 WORDS = "web/src/lib/words.ts"
 USECHAT = "web/src/lib/useChat.ts"
 VIEW = "web/src/components/MessageView.tsx"
@@ -74,13 +73,6 @@ SABOTAGES: list[tuple[str, str, str, str, str]] = [
         "the marks are not saved",
         ANSWERS,
         '            "answer_from": m.answer_from,\n',
-        "",
-        "py",
-    ),
-    (
-        "an old store is not migrated",
-        STORE,
-        '        "ALTER TABLE messages ADD COLUMN answer_from INTEGER",\n',
         "",
         "py",
     ),

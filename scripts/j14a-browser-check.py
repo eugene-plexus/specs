@@ -167,20 +167,32 @@ def main() -> int:
     (data / "policy.json").write_text(
         json.dumps(
             {
-                "version": 1,
-                "folders": [
+                "version": 2,
+                "workspaces": [
                     {
                         "id": "f" * 32,
                         "name": "Notes",
                         "path": "C:\\Notes",
                         "identity": "vol:1",
+                        "holder": OWNER,
                         "writable": False,
-                        "people": [{"subject": OWNER, "writable": False}],
+                        "rules": {
+                            "edit_text": "deny",
+                            "glob": "allow",
+                            "grep": "allow",
+                            "list_directory": "allow",
+                            "read_text": "allow",
+                            "run_command": "deny",
+                            "write_text": "deny",
+                        },
+                        "deny": [],
+                        "people": [],
                     }
                 ],
                 "access": [],
                 "enabled": {},
                 "ownerInDevMode": False,
+                "authorized": {},
             }
         ),
         encoding="utf-8",

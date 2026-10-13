@@ -59,20 +59,20 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=16127312d405b02036b9e3106418c2b755b7720c
-PIN_CONTROL=a44c77280fd6e441bae7eb760d4a8c3cf4cfc853
-PIN_GATEWAY=b3f910f3bc2130649f7b53529a6899a04cec2684
+PIN_AGENT=4e070c4f549782aaf68b781936ce13399ba765aa
+PIN_CONTROL=3c378a13e1e732ad8cbabd8daa09b554cc6bf8b2
+PIN_GATEWAY=7b9a4c4c47b0ebd66bcfa42d1974ffad700f7ddc
 PIN_DRIVER=ef4eea3c568e800e4a175ba8e9235824f968317a
-PIN_LIBRARY=6bdd1596896d0a1531334b052ea4167d8f70f96e
+PIN_LIBRARY=a4669642672bd9dca075c8f8ef014f53e47bfb3d
 PIN_TOOL_DRIVER=4b4f66784930a86341e523910c18cbbbb3e2ed6e
-PIN_UI=aeeb1bfe3ab721f950b2f7246e3a40c42c6c4794   # branch `dist`, not `main`
+PIN_UI=064d6c54b3a385dfbdf32f7259aa187adf64e563   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
 # block above: it is not one of the seven packages in the agent's prefix. It
 # must equal SITE_HOST_COMMIT in agent/src/eugene_plexus_agent/site_host.py,
 # and it moves at landing, with the agent's pin.
-PIN_SITE_HOST=db20f3eb7d1483ad24a043d9bdbd7f54ca34cb3a
+PIN_SITE_HOST=fcdab30c8e33d0d30f128831bf7eb27007165666
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
@@ -1476,6 +1476,9 @@ def inventory(prefix: Path) -> dict:
                     "control.yaml.",
                     "gateway.yaml.",
                     "library.yaml.",
+                    "library-state.json.",
+                    "library-state.profiles.json.",
+                    "metrics.v",
                 )
             )
         ):
@@ -2324,7 +2327,7 @@ if [ "$JOIN_SITE" = 1 ]; then
 fi
 
 if [ -n "$JOIN_CONTROL" ]; then
-    [ -n "$JOIN_TOKEN" ] || die "--join needs --token (mint one at the control root: Nodes -> Add a node)"
+    [ -n "$JOIN_TOKEN" ] || die "--join needs --token (mint one at the control root: Machines -> Add a node)"
     take_over_existing
 fi
 
@@ -3711,7 +3714,7 @@ FRESH=1
 if in_prefix test -f "$CONFIG"; then FRESH=0; fi
 
 if [ -n "$JOIN_CONTROL" ]; then
-    [ -n "$JOIN_TOKEN" ] || die "--join needs --token (mint one at the control root: Nodes -> Add a node)"
+    [ -n "$JOIN_TOKEN" ] || die "--join needs --token (mint one at the control root: Machines -> Add a node)"
     # `if` rather than `[ ... ] && set --`: under `set -e` a false test
     # at the end of a && chain is the script's exit status, so the
     # short-circuit would end the install rather than skip an option.
@@ -3730,7 +3733,7 @@ if [ -n "$JOIN_CONTROL" ]; then
             # The agent's EXIT_TOKEN_REFUSED: unknown, expired or used. The
             # same command cannot work again, so this never says to retry.
             die "the control root refused the join token.
-       Make a new one on its Nodes page (Add a node) and run the command
+       Make a new one on its Machines page (Add a node) and run the command
        it gives you. This machine is back as it was."
         fi
         die "the join failed (see above). This machine is back as it was.

@@ -625,7 +625,7 @@ Describe 'A join takes over whatever is here' {
         $threw = $null
         try { . $runJoin } catch { $threw = $_.Exception.Message }
         $threw | Should Match 'refused the join token'
-        $threw | Should Match 'Make a new one on its Nodes page'
+        $threw | Should Match 'Make a new one on its Machines page'
         $threw | Should Match 'back as it was'
         $threw | Should Not Match 'again'
         Assert-MockCalled Restore-EugeneInstall -Scope It -Times 1 -Exactly

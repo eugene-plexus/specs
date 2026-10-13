@@ -108,6 +108,9 @@ def inventory(prefix: Path) -> dict:
                     "control.yaml.",
                     "gateway.yaml.",
                     "library.yaml.",
+                    "library-state.json.",
+                    "library-state.profiles.json.",
+                    "metrics.v",
                 )
             )
         ):

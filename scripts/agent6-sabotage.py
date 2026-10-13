@@ -1,8 +1,11 @@
 """Sabotage for agent#6: Flash attention is on, off, or the engine's own
-choice, and a profile saved as a checkbox keeps doing what it did.
+choice, and a runtime saved as a checkbox keeps doing what it did. The
+checkbox is converted once, when `agent.yaml` is loaded (`conversions.py`,
+2026-10-13), and nothing else reads one; `conversions-b-sabotage.py` holds
+the rest of that converter's sabotages.
 
-Each sabotage edits the agent's source, runs the engine, benchmark and
-builder tests, and restores the file from a byte copy taken first. A
+Each sabotage edits the agent's source, runs the engine, benchmark, builder
+and conversion tests, and restores the file from a byte copy taken first. A
 baseline run that must pass opens it. A timeout counts as caught.
 
     python scripts/agent6-sabotage.py [--agent ../agent]
@@ -18,20 +21,32 @@ from pathlib import Path
 LLAMA = "src/eugene_plexus_agent/engines/llama_cpp.py"
 BENCH = "src/eugene_plexus_agent/benchmarks.py"
 BUILDS = "src/eugene_plexus_agent/profile_builds.py"
-TESTS = ["tests/test_engines.py", "tests/test_benchmarks.py", "tests/test_profile_builds.py"]
+CONVERSIONS = "src/eugene_plexus_agent/conversions.py"
+TESTS = [
+    "tests/test_engines.py",
+    "tests/test_benchmarks.py",
+    "tests/test_profile_builds.py",
+    "tests/test_conversions.py",
+]
 
 SABOTAGES: list[tuple[str, str, str, str]] = [
     (
-        "an old False reads as off (the over-correction)",
-        LLAMA,
-        '    if value == "off":\n        return "off"',
-        '    if value is False or value == "off":\n        return "off"',
+        "a converted False becomes off (the over-correction)",
+        CONVERSIONS,
+        '        del flags["flashAttention"]\n        return True',
+        '        flags["flashAttention"] = "off"\n        return True',
     ),
     (
-        "an old True no longer reads as on",
+        "a converted True is no longer on",
+        CONVERSIONS,
+        '        flags["flashAttention"] = "on"\n        return True',
+        "        return True",
+    ),
+    (
+        "a checkbox that reaches a launch is read as a setting",
         LLAMA,
-        '    if value is True or value == "on":',
-        '    if value == "on":',
+        "    if choice is not None and choice not in FLASH_ATTENTION_CHOICES:",
+        "    if False:",
     ),
     (
         "off is never sent",
@@ -48,8 +63,8 @@ SABOTAGES: list[tuple[str, str, str, str]] = [
     (
         "an overridden off is ignored silently",
         LLAMA,
-        "            log.warning(\n",
-        "            log.debug(\n",
+        '            log.warning(\n                "flash attention is set off',
+        '            log.debug(\n                "flash attention is set off',
     ),
     (
         "the setting is a checkbox again",

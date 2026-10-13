@@ -1,7 +1,12 @@
 # Audience roadmap
 
 **Status: the order of work from 2026-09-30.**
-- **▶ A9, JOB SITES: SLICES 1, 2 AND 2b.1-2b.4 WITH J14a AND J14b ARE BUILT
+- **▶ NEXT, RIGHT AFTER THE v0.2.0 RELEASE: A10, THE WEBSITE OVERHAUL** (Troy, 2026-10-13). It
+  needs full descriptions of the new features, new screenshots, and updated install pages and
+  how-tos. Then the memory roadmap, MR8 and MR9
+  ([design](workbench-memory-and-documents.md)). Job Sites slice 3, cross-site copy, is deferred
+  past v0.2.0 (Troy, 2026-10-13).
+- **A9, JOB SITES: SLICES 1, 2 AND 2b.1-2b.4 WITH J14a AND J14b ARE BUILT
   (2026-10-08, [the last record](../acceptance/j14b-signed-calls-run.md)).**
   Each person's calls run as their own account, are signed with their own key,
   and commands run where an administrator allowed them. **The pickup is slice
@@ -209,6 +214,7 @@ first:**
 | **A7** | **The prompt cache: keep each engine's cache warm across doors, replicas and hosted backends** | [`prompt-cache.md`](prompt-cache.md) ([record](../acceptance/prompt-cache-measurement.md)) | **Troy, 2026-10-02: high priority before going public** (*"at the core of what Eugene is: managing multiple backends efficiently"*). Measured the same day; **PC1-PC5 built and pinned 2026-10-02** (Troy took the four calls: PC1-PC5 before public, affinity the default, the system-message fold an operator setting, client breakpoints only). PC6-PC7 after the release |
 | **A8** | **Experimental engines, starting with Strata** | [`experimental-engines.md`](experimental-engines.md), [`strata-engine.md`](strata-engine.md) | **First Strata implementation on Edge 2026-10-04.** Recognition, install/uninstall, start/stop, model switching and text inference; [verification](../acceptance/strata-engine-run.md). Real-model GPU validation remains. The experimental label persists after hardware validation. NInfer and imp are subsequent candidates. |
 | **A9** | **Job Sites, slice 1: Workbench's four file tools on a person's machines outside the LAN, with the new access model** | [`remote-nodes.md`](remote-nodes.md) §5 (every call, J1-J18, taken 2026-10-05) | **Built 2026-10-05** ([record](../acceptance/job-sites-run.md): 17 of 17 with the root behind WSL2's NAT, sabotage 45 of 45). Slice 2, 2b.1-2b.4, J14a and J14b built by 2026-10-08 ([J14b record](../acceptance/j14b-signed-calls-run.md)). Slice 3 (cross-site copy) designed 2026-10-08, calls J92-J99 for Troy ([design](job-sites-cross-site-copy.md)) |
+| **A10** | **Website overhaul after v0.2.0**: every new feature described in full, new screenshots, updated install instructions and how-tos | to write | **Troy, 2026-10-13: right after the v0.2.0 release.** The website deploys by manual `workflow_dispatch` |
 | later | AWS-style dashboards for system administrators, fleet and host telemetry over time | to write | Troy: lower priority than A1–A6; sysadmins are the longer-term audience |
 
 ## Not scheduled without Troy

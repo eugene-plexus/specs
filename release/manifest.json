@@ -3,12 +3,12 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "16127312d405b02036b9e3106418c2b755b7720c",
-    "control": "a44c77280fd6e441bae7eb760d4a8c3cf4cfc853",
-    "gateway": "b3f910f3bc2130649f7b53529a6899a04cec2684",
-    "library": "6bdd1596896d0a1531334b052ea4167d8f70f96e",
+    "agent": "4e070c4f549782aaf68b781936ce13399ba765aa",
+    "control": "3c378a13e1e732ad8cbabd8daa09b554cc6bf8b2",
+    "gateway": "7b9a4c4c47b0ebd66bcfa42d1974ffad700f7ddc",
+    "library": "a4669642672bd9dca075c8f8ef014f53e47bfb3d",
     "tool-driver": "4b4f66784930a86341e523910c18cbbbb3e2ed6e",
-    "ui": "aeeb1bfe3ab721f950b2f7246e3a40c42c6c4794",
+    "ui": "064d6c54b3a385dfbdf32f7259aa187adf64e563",
     "inference-driver": "ef4eea3c568e800e4a175ba8e9235824f968317a"
   },
   "dependenciesSha256": "3a4a32641e201cf2c2ad0082ccb537c396c5b27582cd254a6c2b6b292832e24b"

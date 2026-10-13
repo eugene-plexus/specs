@@ -56,6 +56,14 @@ class RemovalTests(unittest.TestCase):
         self.write("control-state/keys.json")
         self.write("library-state.runs.sqlite3-wal")
         self.write("gateway.yaml.unreadable")
+        copies = (
+            "library-state.json.v0.1.bak",
+            "library-state.json.preserved",
+            "library-state.profiles.json.v0.1.bak.1",
+            "metrics.v11.bak",
+        )
+        for name in copies:
+            self.write(name)
         self.write("models/original.gguf")
         self.write("engines/llama/server")
         plan = inventory.inventory(self.prefix)
@@ -65,6 +73,8 @@ class RemovalTests(unittest.TestCase):
         self.assertIn(str(self.prefix / "control-state"), plan["data"])
         self.assertIn(str(self.prefix / "library-state.runs.sqlite3-wal"), plan["data"])
         self.assertIn(str(self.prefix / "gateway.yaml.unreadable"), plan["data"])
+        for name in copies:
+            self.assertIn(str(self.prefix / name), plan["data"])
         self.assertIn(str(self.prefix / "engines"), plan["downloads"])
         for kind in ("software", "data", "downloads"):
             self.assertNotIn(str(self.prefix / "models"), plan[kind])
