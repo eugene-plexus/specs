@@ -137,9 +137,13 @@ definitions/results, temperature, top-p, `top_k`, stop sequences and
 `tool_choice.disable_parallel_tool_use` into the same routing path. Images
 (since 2026-09-23) and `document` blocks (since 2026-09-28: a base64 PDF, or
 plain text) are carried to backends that confirm them, including from inside a
-`tool_result`. A document by URL or file id, `citations` enabled, hosted tools,
-`mcp_servers`, any `output_config` key other than `effort` (structured output's
-`format` included) and unknown top-level settings receive explicit refusals. The measured Claude Code request includes `thinking`,
+`tool_result`. `output_config` carries `effort` and a JSON-schema `format`
+(structured output, as Claude Code's titles and hooks send it). A document by
+URL or file id, `citations` enabled, `mcp_servers` and server-side tools other
+than web search receive explicit refusals; a server-tool refusal uses
+Anthropic's own `Input tag` wording, so Claude Code retries without an optional
+one such as its advisor. Unknown top-level settings are accepted and named in
+`x-eugene-plexus-ignored-settings` (v0.2.0). The measured Claude Code request includes `thinking`,
 `context_management`, `output_config.effort` and cache hints even when pointed at
 local models. `context_management`, `output_config.effort` and cache hints remain
 accepted, but **are not enforced**;
