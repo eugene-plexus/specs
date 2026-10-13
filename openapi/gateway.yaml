@@ -559,10 +559,12 @@ paths:
         `x-eugene-plexus-ignored-settings` in this door's spelling
         (`tool_choice`, `parallel_tool_calls`), on both response modes,
         and the header is absent when there is nothing to name.
-        `/v1/messages` and `/v1/responses` add it to theirs. It is read
-        from the backend chosen for the first attempt, before anything is
-        sent, so **a stream opens as it always has**: the head never
-        waits for the backend's first frame. Only what the caller sent
+        `/v1/messages` and `/v1/responses` add it to theirs. A stream's
+        is read from the backend chosen for the first attempt, before
+        anything is sent, so **a stream opens as it always has**: the
+        head never waits for the backend's first frame, and a failover
+        after the head cannot change it. A whole answer's is read after
+        the call, from the backend that served it. Only what the caller sent
         is named; the gateway's own settings (a search loop's forced
         first turn) are not. Strata ignores `tool_choice` `required`
         and a named function, and `parallel_tool_calls: false`
@@ -820,6 +822,16 @@ paths:
             URL and the provider's own words, and says to set a working
             API key on that driver. Neither case cascades; that rule is
             older than both and unchanged.
+
+            **Since 2026-10-12 a 502 also answers a request the gateway
+            could not admit because a driver's listing could not be read
+            for a cause that waiting cannot clear:** the driver refused
+            the gateway's credential, answered 404 or a body that is not
+            a listing, or says it is degraded (in its own words). The
+            message names the driver and what to look at, with no
+            `Retry-After`. Causes that can clear (a timeout, a refused
+            connection, a 5xx, a listing that lacks the model for now)
+            are the 503 below.
           content:
             application/json:
               schema:
@@ -842,7 +854,11 @@ paths:
             not reach `ready` within `swapWaitSeconds`, or the gateway
             is in safe mode. Retryable, so it is deliberately not folded
             into 502. The message names the runtime when one is being
-            woken.
+            woken. Since 2026-10-12 it also answers a request whose
+            backends' listings could not be read for a cause that can
+            clear (a timeout, a refused connection, a 5xx, a listing
+            that lacks the model for now): it names each driver and what
+            was observed, with `Retry-After`.
           content:
             application/json:
               schema:
@@ -1322,7 +1338,12 @@ paths:
         by measurement:** answered 400, 403 or 404, `/context` tried each
         count once and fell back; answered 501 or 503, it retried every
         one first. A stopped model is never woken to count: a caller who
-        wants that pays for it knowingly, through the fallback.
+        wants that pays for it knowingly, through the fallback. Since
+        2026-10-12 the same 400 also answers a count whose key or whose
+        backends' listings cannot be checked right now (the admission
+        authority or a driver did not answer). It fails closed: nothing
+        is counted, and nothing is forwarded or woken. A rejected key is
+        still its 401 or 403.
 
         ### What it shares with the Messages door, and what it does not
 
@@ -1658,7 +1679,10 @@ paths:
         **A count this door cannot give is a 400 saying why**: a backend
         that cannot count without generating (every hosted provider;
         OpenRouter has no such endpoint, measured), an attachment, whose
-        cost is the encoder's, or nothing running.
+        cost is the encoder's, or nothing running. A key or a listing that
+        cannot be checked right now is the same 400 (fail-closed), never a
+        5xx. It is admitted as `/v1/responses` is: the same key scope and
+        `localOnly` rule, and the same body limit (2026-10-12).
       requestBody:
         required: true
         content:

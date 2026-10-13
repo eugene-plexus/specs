@@ -30,7 +30,8 @@ listed every Strata model without tools.
 
 ## Strata, measured (2026-10-12, Troy's running engine)
 
-Strata v0.1.39, `qwen3.8-flash-next-iq2_xs` on the RTX 5090, its own OpenAI chat endpoint, directly.
+Troy's running Strata (its `/health` names no version), `qwen3.8-flash-next-iq2_xs` on the RTX 5090,
+its own OpenAI chat endpoint, directly.
 
 | Check | Result |
 |---|---|
@@ -103,10 +104,70 @@ copied here.
 - **Workbench** (`2f40f0a`): the reason names Eugene's limit ("Eugene cannot give X tools as it runs
   here"). The reason was already on the screen under the composer, not only in the tooltip.
 
-Left for round three (reviewed, not blocking):
-- Gemini and OpenRouter still refuse an explicit `parallel_tool_calls: false` (Codex cannot use them).
-- LM Studio reads a capability list without `tool_use` as no.
-- The gateway's header can name the balancer's first pick rather than the backend asked first.
-- `tool_choice: none` with `parallel_tool_calls: false` names the latter though it is not sent.
-- An unreadable `/v1/info` turns a tools request into a 400 rather than a retryable 5xx.
-- Some new paths have no test that can fail.
+## Rounds three to five (driver `cbf3120`, gateway `4ade1aa`, pinned together)
+
+Each round was built, then reviewed adversarially. Round five was reviewed as the pair that ships:
+- 166 request shapes were compared on all three doors, whole and streamed. The gateway's header equals
+  the driver's own and what the stand-in provider received, with 0 mismatches.
+- Every [family, local] slot that the local model served was still served.
+- The count doors gave no 5xx under 14 ways the key check can fail.
+
+**What the gaps are now.**
+- Gemini's `parallel_tool_calls: false` and the OpenRouter settings a model's listing leaves out are
+  named, not refused. Before, Codex could use 13 of OpenRouter's 390 tool models.
+- An OpenRouter gap is **not delivered**, and never "measured". Eugene asks OpenRouter only for
+  providers that take every parameter it sends (`require_parameters`). A parameter the listing leaves
+  out would leave no provider to route to, so it is withheld, and only when that request carries
+  `require_parameters`.
+- Round three's premise, "no provider of the model reads it", was wrong. OpenAI and Mistral take
+  `parallel_tool_calls`, though none of their 131 listings names it.
+- The 8 OpenRouter models that list tools but not `tool_choice` (Amazon Nova, among others) keep their
+  tools for `tool_choice: none`. Bedrock refuses a tool history that comes without tool definitions.
+  So `none` is named, not honoured by stripping. Strata and Ollama still honour `none` by sending no
+  tools.
+- LM Studio's capability list is no longer read as "no tools".
+
+**Engines whose tools are off.** This covers a learned refusal, a listing that names no tools
+(OpenRouter, Ollama), OpenAI's Responses-only models, and the Claude Code and Codex CLI
+subscriptions. Each lists `toolChoice` and `parallelToolCalls`, and drops them from a request that
+carries no tools. The gateway admits a setting only where the driver lists it, so a newer gateway
+with an older driver still routes around the driver, as before.
+
+Round four had the gateway admit those two settings by itself. That was wrong: the CLI drivers refuse
+them with a 400, which does not cascade, so a slot that the local model used to serve stopped at the
+first target. Reverted in round five.
+
+**Failures.**
+- llama-server's "Loading model" 503 (measured: 75 bytes, for 0.73 s while it loads) is safe to retry
+  on another replica (inference-driver#10). The match parses the body for exactly those words.
+- A listing that cannot be read is a 503 with `Retry-After` when waiting can clear it: a timeout, a
+  refused connection, a 5xx, the model missing for now, or a token the gateway's agent would not give.
+  It is a 502 naming the driver and what to look at when waiting cannot: a refused credential, a 404,
+  an invalid body, a degraded driver.
+- `/v1/messages/count_tokens` and `/v1/responses/input_tokens` stay a 400 and never a 5xx, as
+  measured for Claude Code. That holds when a key or a listing cannot be checked: the count fails
+  closed. `input_tokens` is now admitted as `/v1/responses` is: key scope, `localOnly` and the body
+  limit.
+
+**The header.** A stream's header comes from the backend asked first, before anything is sent. A
+whole answer's comes from the backend that served it, after a failover too.
+
+**Strata.**
+- `seed` and the frequency and presence penalties pass through. Measured at temperature 0.8: seed 4242
+  gave the same sentence twice, and 4243 a different one.
+- A seed of 0 or below is refused in plain words: Strata uses only a positive seed, and the header
+  cannot name a number. In a slot, that refusal stops at Strata. Decided: it is rare, and it names
+  its cause.
+- `logprobs` is still refused.
+
+Left as is, decided:
+- The Strata seed refusal in a slot (above).
+- `none` on the 8 OpenRouter models (above).
+- gateway#13: a loading replica's 502 still counts against its circuit.
+
+Left for a small round six (reviewed minor):
+- An Ollama model without tools still lists `tools`.
+- The count's 400 for an unreachable key authority does not name the status it saw.
+- Four guards have no test that can fail.
+- The reviewer's wired matrix (gateway plus driver, header agreement, slots, counts) should become a
+  specs acceptance, so the gateway's `none` rule and the driver's cannot drift apart again.

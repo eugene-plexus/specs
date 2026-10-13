@@ -112,6 +112,10 @@ an operator session.
   Those are sent and named in the answer's `x-eugene-plexus-ignored-settings`
   header, not refused. Structured output together with tools is Strata's own
   refusal, in its words.
+- `seed`, `frequency_penalty` and `presence_penalty` are passed through (since 2026-10-12). A seed
+  must be a positive whole number: Strata ignores 0 or below, so Eugene refuses it. By Strata's own
+  documentation, a sampled answer repeats run to run only with static expert residency, not on its
+  default adaptive tier. `logprobs` is refused.
 - No media, embeddings, raw completions or llama.cpp slot pinning. Other explicit
   request settings Strata does not support are refused.
 - NInfer and imp remain future adapters. The Experimental designation and shared

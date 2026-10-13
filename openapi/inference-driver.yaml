@@ -242,8 +242,10 @@ paths:
           description: |
             Generation completed. `x-eugene-plexus-ignored-settings` names
             the request's fields, in this contract's spelling (`toolChoice`),
-            that the backend was sent and is known not to honour, and is
-            absent otherwise (`docs/design/tools-assumed.md`, 2026-10-12).
+            that `callerSettings` lists and that the backend does not honour
+            (`settingsNotHonoured`), and is absent otherwise
+            (`docs/design/tools-assumed.md`, 2026-10-12). A direct caller
+            gets it only for the settings it lists in `callerSettings`.
             Strata ignores `toolChoice` `required` and a named function
             (measured), so those are sent as it takes them and named here;
             `none` it is given as no tools.
@@ -3400,9 +3402,15 @@ components:
           items:
             $ref: '#/components/schemas/SettingNotHonoured'
           description: |
-            Settings this backend is sent and is measured not to honour,
-            by value (2026-10-12, `docs/design/tools-assumed.md`). A
-            measured gap is named, not refused, so these are in
+            Settings, by value, that this backend does not honour though
+            the request is served (2026-10-12, `docs/design/tools-assumed.md`).
+            Either sent and known to be ignored (Strata: measured; Ollama:
+            read from its source), or not delivered because the provider
+            cannot take it: Gemini's API has
+            no field for `parallelToolCalls` `false`, and OpenRouter, asked
+            only for providers that take every parameter sent
+            (`require_parameters`), lists no provider of the model taking
+            it. A gap is named, not refused, so these are in
             `supportedSettings` too. Static per backend, so the gateway
             names them on its own `x-eugene-plexus-ignored-settings`
             before a stream opens, without waiting for this driver's
