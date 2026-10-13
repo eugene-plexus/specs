@@ -6,12 +6,13 @@
 
 OpenAPI 3.1 contracts for every cross-component interface in [Eugene Plexus](https://eugeneplexus.com).
 
-**[v0.1.0](https://github.com/eugene-plexus/specs/releases/tag/v0.1.0) is the
-first release** of the local-inference control plane: early software that works,
-with rough edges and [known limits](docs/releases/v0.1.0.md#known-issues). Start
+**[v0.2.0](https://github.com/eugene-plexus/specs/releases/tag/v0.2.0) is the
+latest release** of the local-inference control plane: early software that works,
+with rough edges and [known limits](docs/releases/v0.2.0.md#known-issues). Start
 with the [installation guide](https://eugeneplexus.com/install). Before updating
 an installation, make a checkpoint as the
-[backup and recovery guide](docs/recovery.md) describes.
+[backup and recovery guide](docs/recovery.md) describes, then update the control
+root first.
 
 This is the **single source of truth** for how Eugene Plexus components talk to each other. The six active consumers (`agent`, `control`, `gateway`, `inference-driver`, `library`, and `ui`) depend on a pinned revision via codegen, never via direct import. Retired repos retain historical pins; they do not consume today's contracts. Components share *schemas, not code*.
 
@@ -42,9 +43,10 @@ Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-
 
 ## Current status
 
-**2026-10-02: [v0.1.0](docs/releases/v0.1.0.md) is the first release**; see
+**2026-10-13: [v0.2.0](docs/releases/v0.2.0.md) is the second release**; see
 the [installation instructions](https://eugeneplexus.com/install) and the
-[release checks](docs/acceptance/v0.1.0-release-run.md). The six alphas before it
+[release checks](docs/acceptance/v0.2.0-release-run.md).
+[v0.1.0](docs/releases/v0.1.0.md) (2026-10-02) and the six alphas before it
 remain available. The [support matrix](docs/support-matrix.md) distinguishes
 measured, simulated, pending and unsupported configurations, and the release
 notes list the physical checks and the moderated sessions still owed.
