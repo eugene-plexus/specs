@@ -3826,9 +3826,10 @@ components:
         owned_by:
           type: string
           description: |
-            OpenAI sends an organisation here. We send the provider —
-            `local`, or the cloud provider key for a subscription
-            backend.
+            OpenAI sends an organisation here. We send `local` only when
+            every backend reports local inference, otherwise the provider
+            key when there is one, `mixed` for multiple providers, or
+            `unknown` when no provider or local inference is confirmed.
         x_eugene_plexus:
           $ref: '#/components/schemas/ModelRoutingInfo'
 

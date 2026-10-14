@@ -199,6 +199,11 @@ paths:
           took every healthy replica of an 8B out as "cooling down"
           (gateway#8). A request bigger than the whole pool is
           llama-server's 400 and stays the caller's.
+        * **A backend still loading its model is 502, `type` ending
+          `#backend-loading`**: the measured llama-server 503 whose whole
+          message is `Loading model`. `retryDisposition` is `safe`; another
+          replica may serve the request before output, and this refusal
+          does not count against the loading replica's circuit.
         * A backend 4xx that is worth trying elsewhere — `408`, `409`,
           `425`, `429` — stays **502**, so the priority-list cascade
           still fires. A rate-limited cloud provider falling through to
