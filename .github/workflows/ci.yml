@@ -264,7 +264,9 @@ jobs:
       - name: Verify P2a audio and PDF inputs at every door through signed processes
         run: python specs/scripts/p2-media-acceptance.py
       - name: Verify P3 speech and transcription through signed processes and the unchanged OpenAI SDK
-        run: python specs/scripts/p3-audio-acceptance.py
+        run: |
+          python specs/scripts/p3-audio-checks.py
+          python specs/scripts/p3-audio-acceptance.py
       - name: Verify P4 image generation and edits through signed processes and the unchanged OpenAI SDK
         run: python specs/scripts/p4-images-acceptance.py
       - name: Verify P5 video jobs through signed processes, a gateway restart and the unchanged OpenAI SDK

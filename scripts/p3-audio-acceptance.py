@@ -73,6 +73,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from typing import Any
 
 import httpx
 import yaml
@@ -84,7 +85,7 @@ KEYS_FILE = Path(os.environ.get("EP_KEYS", "C:/Users/troyc/.eugene-plexus-secret
 #: OpenRouter's account listing, trimmed: two speech models, one of them
 #: listing voices (most do) and one not (fish-audio's and bytedance's do not),
 #: and a chat model.
-OR_LISTING = {
+OR_LISTING: dict[str, dict[str, Any]] = {
     "acme/kokoro": {"output": ["speech"], "voices": ["af_heart", "af_bella"]},
     "acme/flux": {"output": ["speech"], "voices": None},
     "acme/chat": {"output": ["text"], "voices": None},
@@ -688,11 +689,11 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
         )
 
     def streamed(arrivals, label):
-        """Nothing buffered: the first byte arrives long before the last is
-        sent. A buffering hop delivers every byte at once, at the end."""
+        """The slow fixture's arrival span survives both hops. Buffering
+        collapses that span; startup delay says nothing about buffering."""
         first, last = arrivals[0], arrivals[-1]
         assert last >= (CHUNKS - 1) * GAP * 0.9, (label, arrivals)
-        assert first < last * 0.4 and last - first >= (CHUNKS - 2) * GAP, (label, arrivals)
+        assert last - first >= (CHUNKS - 2) * GAP, (label, arrivals)
         return f"first byte {first:.2f} s, last {last:.2f} s"
 
     def error_of(response):
@@ -767,7 +768,7 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
                  "-c", "4096"],
                 stdin=subprocess.DEVNULL,
                 stdout=output, stderr=subprocess.STDOUT,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             wait(lambda: call("llama-server", "GET", "/health").status_code == 200, "llama-server", 120)
             driver("asr", {"provider": "openai_compat_custom", "baseUrl": url("llama-server"),
@@ -1292,9 +1293,9 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
             })
             assert response.status_code == 200, response.text[:400]
             heard = response.json()["choices"][0]["message"]["content"] or ""
-            said = {w for w in sentence.lower().strip(".").split() if len(w) >= 4}
+            said_words = {w for w in sentence.lower().strip(".").split() if len(w) >= 4}
             words = {"".join(c for c in w if c.isalpha()) for w in heard.lower().split()}
-            assert len(said & words) * 2 >= len(said), (heard, sorted(said))
+            assert len(said_words & words) * 2 >= len(said_words), (heard, sorted(said_words))
             ok(f"live: the OpenAI SDK gets {LIVE_SPEAKS}'s speech through the gateway as a WAV made from its pcm, "
                f"and {LIVE_HEARS} hears it back as {heard.strip()!r}")
 
@@ -1303,7 +1304,7 @@ def exercise(directory: Path, *, live: bool, llama_dir: Path | None = None) -> N
             [answer] = transcribe_by_sdk(key, [{"model": transcribes_live, "file": str(clip)}])
             assert answer["status"] == 200, answer
             words = {"".join(c for c in w if c.isalpha()) for w in answer["body"]["text"].lower().split()}
-            assert len(said & words) * 2 >= len(said), (answer, sorted(said))
+            assert len(said_words & words) * 2 >= len(said_words), (answer, sorted(said_words))
             ok(f"live: {LIVE_TRANSCRIBES} transcribes that WAV through the SDK as {answer['body']['text'].strip()!r}")
 
             # ElevenLabs, with the key widened on 2026-09-28 (it reads models
