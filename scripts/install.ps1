@@ -133,7 +133,7 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "c9bfa53a69611e878357c06719fe0003b12fd50f"
+    "agent"            = "11950e326b67b9a482e88671ded0ce7df8dc263b"
     "control"          = "4710ce829c99b3a5fbed4a3461f157c93d8040a8"
     "gateway"          = "775600a750cbc527318b27c18b3ed3252bb10728"
     "inference-driver" = "ce924a345b5af7c3c5888a535b64507b0d3a0f10"

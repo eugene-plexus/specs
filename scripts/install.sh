@@ -59,7 +59,7 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=c9bfa53a69611e878357c06719fe0003b12fd50f
+PIN_AGENT=11950e326b67b9a482e88671ded0ce7df8dc263b
 PIN_CONTROL=4710ce829c99b3a5fbed4a3461f157c93d8040a8
 PIN_GATEWAY=775600a750cbc527318b27c18b3ed3252bb10728
 PIN_DRIVER=ce924a345b5af7c3c5888a535b64507b0d3a0f10
@@ -72,7 +72,7 @@ PIN_UI=187c80e210f981d95d014aa97bdc5fdf8522b493   # branch `dist`, not `main`
 # block above: it is not one of the seven packages in the agent's prefix. It
 # must equal SITE_HOST_COMMIT in agent/src/eugene_plexus_agent/site_host.py,
 # and it moves at landing, with the agent's pin.
-PIN_SITE_HOST=fcdab30c8e33d0d30f128831bf7eb27007165666
+PIN_SITE_HOST=097a89c6372156b78291431677a7754f53dd89c5
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the
