@@ -1,6 +1,6 @@
 # Workbench rich content rendering roadmap
 
-**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `2e435fd`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3-RC5 planned.**
+**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4-RC5 planned.**
 
 Workbench should display equations, diagrams, generated media, structured
 results and interactive previews alongside a conversation. Keep the existing
@@ -457,6 +457,82 @@ uncertainty and non-replay semantics.
 - Legacy chats and text-only tools still work. Tool transcripts replay within
   the gateway's supported schema and limits, without pretending image vision.
 - Deletion preserves assets on surviving branches and cleans up true orphans.
+
+### RC3: what building found (2026-10-13)
+
+Built in Workbench `src/eugene_plexus_workbench/content.py` (the one reader
+of a tool's result), `store.py` (schema 14), `tools.py` and `node_folders.py`
+(both paths through it), `answers.py` (files kept before the checkpoint that
+announces them), `api.py` (the hidden-result rule on files), `app.py`
+(orphans at start), and `web/src/components/ToolContent.tsx`, `lib/api.ts`,
+`App.tsx` and `lib/conveniences.ts`.
+
+- **Every result went through two different flatteners,** one for MCP
+  servers and one for job sites, which joined text and turned anything else
+  into `[Unsupported image result]`; one appended structured content always,
+  the other only when it differed from the text. Now one reader
+  (`content.normalize`) makes an ordered list of blocks (`text`, `image`,
+  `audio`, `video`, `file`, `data`, `link`, `unsupported`), each with a stable
+  id (`<call id>:<n>`), kept on the call in `tool_rounds` (`content`,
+  `contentVersion: 1`), and the text the model is sent again (`result`), from
+  the same blocks. Structured content the words already hold is said once.
+- **Representation:** blocks live on the call they belong to; a picture,
+  sound or file is a row of the chat's `files` (schema 14 adds `message_id`
+  and `origin`, `upload` or `tool`) and its bytes beside the person's
+  uploads. The bytes are written first, then the row, then the call's blocks,
+  then the checkpoint saves the answer and sends it: nothing is announced
+  before it is kept. A crash between keeping a file and saving the answer
+  leaves a file no answer names; it is removed at the next start. No event
+  carries bytes; the `answer` event already carries the whole message, so a
+  reconnect or a repeated event replaces rather than splices.
+- **What a file is comes from its bytes.** A picture is shown only when its
+  bytes are PNG, JPEG or WebP, a sound only when they are a sound Workbench
+  plays; anything else, an SVG, a page that says it is a PNG, a GIF, is a
+  file offered for download (served as `application/octet-stream`, as an
+  attachment, under `sandbox`), with what it claimed beside it. An address a
+  tool names (`resource_link`) is shown, and is a link only when it is a web
+  address; nothing is fetched.
+- **Limits:** 5 MiB a picture, 10 MiB a sound, video or file, 8 files and
+  20 MiB a call, 1 GiB of tool files a person, 64 blocks a result, 65,536
+  characters of structured data and of the text replayed. What is over says
+  so in its place ("Not kept: a picture. It is larger than 5 MiB."), and the
+  model is told the same.
+- **The model is told what it did not see.** Each picture, sound or file is
+  one line in the replayed text: `[The tool returned a picture, "chart.png"
+  (image/png, 120 KB). The person sees it; you do not.]`. No file id, path or
+  token of Workbench's is in it. A call made before keeps its text as it was.
+- **The hidden-result rule now holds for files.** `/api/files/{id}` checked
+  only that the reader could read the chat, so the install owner could fetch
+  any chat file by id, a hidden message's upload included. A file is now
+  hidden as its message is: a tool's by `message_id`, an upload by the
+  message that carries it. Only what a person uploaded counts toward a
+  chat's attachments, is listed among its documents, or can be taken back
+  unsent.
+- **The page:** pictures under the call's state, fetched with the session
+  each time they are shown and let go when not; a sound or video loads only
+  when asked and has its controls, never playing by itself; a file is a card
+  with its name, type, size and Download. Signing out, however it comes
+  about, lets go of every file's `blob:` address and of the drawn diagrams
+  and laid-out formulas. Under the page's policy a `fetch` of a `blob:`
+  address is refused (`connect-src`), so the check loads it as an image.
+- **Job sites:** their results come through the same reader, so a site's
+  picture is kept and hidden as its message is. But site-host and control
+  each cap a site's answer at 70,000 bytes, so only small pictures pass a
+  site; larger ones fail with the site's own words. Widening that is
+  site-host's and control's change, not Workbench's.
+- **Older pages and stores:** a page from before ignores `content` and shows
+  the replayed text, which says what each file was. A Workbench from before
+  refuses a schema-14 store, as it refuses any newer one; the copy made
+  before the migration is the way back.
+- **Bundle:** the page's own script grew 6 KB (1.7 KB gz) for the content
+  view; nothing new loads with it.
+- **Not done:** a direct MCP server's whole response is still capped at
+  2 MiB, so pictures reach about 1.5 MiB that way (5 MiB through a site would
+  need the site cap widened first); two answers at once can pass the
+  per-person total by one call's 20 MiB; a picture opened in a tab of its own
+  is let go when its message is; the model is never sent a picture (no
+  shared contract carries one in a tool result yet); no Firefox or Safari
+  run.
 
 ## RC4 Citations and structured results
 
