@@ -1,6 +1,6 @@
 # Workbench rich content rendering roadmap
 
-**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4 landed 2026-10-14 (Workbench `fd64990`, dist `cf45d79`, agent `f9d4410`; record: [RC4 run](../acceptance/workbench-rich-content-rc4-run.md)); RC5 planned.**
+**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4 landed 2026-10-14 (Workbench `fd64990`, dist `cf45d79`, agent `f9d4410`; record: [RC4 run](../acceptance/workbench-rich-content-rc4-run.md)); RC5 landed 2026-10-14 (Workbench `de136f1`, dist `53384fc`, agent `0b7f910`; record: [RC5 run](../acceptance/workbench-rich-content-rc5-run.md)). The roadmap is complete.**
 
 Workbench should display equations, diagrams, generated media, structured
 results and interactive previews alongside a conversation. Keep the existing
@@ -683,6 +683,108 @@ rules from RC2, even when no scripts are intended.
   chat, Media screens and the existing search-suggestion iframe still work.
 - Errors and resource-heavy fixtures have a usable stop/recovery path. Preview
   controls work by keyboard and at narrow widths.
+
+### RC5: what building found (2026-10-14)
+
+Built in Workbench `artifacts.py`, `artifacts_api.py`, `store.py` (schema 15),
+`api.py`, `web.py`, and on the page in `lib/artifacts.ts`, `lib/svgArtifact.ts`,
+`components/Artifact.tsx`, `ArtifactDialog.tsx`, `ArtifactPreview.tsx`,
+`preview/runtime.ts` (built apart by `vite.preview.config.ts`), and in
+`Markdown.tsx`, `Block.tsx`, `markdownPlugins.ts`, `MessageView.tsx`,
+`conveniences.ts` and `App.tsx`.
+
+- **The producer is the fence's own words:** a fence whose info string holds
+  `artifact` (`html artifact title="Pricing table"`), in Markdown, SVG, HTML,
+  JSX or TSX, is a card that opens the artifact, once the fence has closed;
+  any other closed block of those languages has **Open as artifact**. Nothing
+  runs because it is shown or opened. Workbench does not ask models to write
+  the word: a person asks for it, or opens a block. A tool result as an
+  artifact producer is left for later.
+- **An artifact is kept at its first save, not when it is shown.** Until then
+  it is the answer's block. The first save keeps the block as revision 1 (by
+  "the answer" when the answer holds it, line by line for a fence set in by a
+  list, its lines in their order) and the edit as revision 2, in one
+  transaction; each later save is a new revision, never written over (the same
+  words twice is no new one). An edit says which revision it began from, and
+  one begun before the last saved one (another tab's) is refused, saying so,
+  and kept on the page to be saved after it. Each belongs to the
+  message whose block it was, so every version of an answer has its own, and
+  they go with their chat (no files: the source is in the store). Limits: 512
+  KB a revision, 100 revisions, 20 artifacts a message, 256 MB a person.
+- **A block is found again by its words:** the store keeps a number of
+  revision 1 (its length in UTF-16 units and cyrb53 over them), which the page
+  computes for each block, so a card says "3 revisions" wherever the block is.
+  The page and the server are tested on the same values (an emoji, an accent).
+  The parser ends a block's text with the newline before its closing fence;
+  that newline is not the block's.
+- **The owner reading someone's chat reads its artifacts and keeps none;** an
+  artifact of a message hidden from the owner (a job site's) does not exist to
+  them, as its files do not. An export names each kept artifact and how many
+  revisions it has; their sources are Workbench's, not the export's.
+- **Markdown reads as an answer does, and SVG by RC2's rules:** the browser's
+  XML reader makes a tree no one sees, RC2's allowlist writes it anew, and it
+  is an `<img>`. A drawing with a script, a stylesheet or an outside picture is
+  not shown, saying why, with its source.
+- **A page or a component runs only at Run, in `/preview/frame`:** a page of
+  its own whose policy (`PREVIEW_CSP`) gives it no origin (`sandbox
+  allow-scripts allow-forms`, never `allow-same-origin`), no network
+  (`connect-src 'none'`; pictures and fonts only from `data:` and `blob:`), no
+  workers, frames or plugins, no form's sending (`form-action 'none'`, below),
+  and lets only Workbench's page frame it
+  (`frame-ancestors 'self'`, `X-Frame-Options: SAMEORIGIN` for that path
+  alone). The chat's own policy is unchanged. Its script is one classic file
+  (`/preview/runtime.js`, 426 KB, 116 KB gzip: React and sucrase), built apart
+  from the page: a module from a page with no origin is fetched as another
+  origin's, which needs CORS. The page and the frame speak in six messages,
+  each heard only from the frame's own window, the source sent once when the
+  frame says it is ready, and `started` and `failed` counted only with the
+  run's nonce; what the frame says is shown as words.
+- **A component imports React and nothing else,** compiled by sucrase (JSX and
+  TypeScript); any other import fails in words ("This preview has React only:
+  it cannot load "lodash"") with its source a tab away. An error thrown in
+  Workbench's own script reaches the frame's error listener as "Script error."
+  (another origin's script, to that page), so the component's code is run in
+  an inline script that catches what it throws.
+- **What a preview tries is refused and said:** a link that leaves is not
+  followed; a script, picture or address it cannot load is listed. **One way
+  out is left:** a frame may go to another address itself (by script or a
+  `<meta>` refresh), and no policy Chrome keeps stops it (`navigate-to` was
+  never shipped). The preview says so as it starts to go and the page removes
+  the frame, but the request for that address may already have gone, carrying
+  what the preview put in it; the run of record's page did not get that far.
+  Its caption says it is stopped if it goes elsewhere, not that it cannot.
+- **A preview keeps running while its source is read;** the two tabs are
+  panels that stay (arrow keys, Home and End move between them).
+- **A form's own script runs; the form never sends, and Chrome is not even
+  asked to.** A frame whose form Chrome refused, then a preview that loops in
+  the same process, left that process unable to end: every preview after it
+  never started, a reload of the page too (85 s and counting, measured, with
+  a sandbox that refused forms). And in a sandbox that refuses forms Chrome
+  fires no `submit` at all, so a component's form (React's `onSubmit`) did
+  nothing. So the sandbox allows forms, and the preview's script refuses
+  `form.submit()` and stops each `submit` its page did not handle, once the
+  page's own handlers have heard it; `form-action 'none'` refuses any it
+  missed. A component's form works (by Enter and by its button, checked), a
+  page's plain form says "Refused: sending a form", and the stuck process no
+  longer happens.
+- **A preview that never stops does not stop the page, and Stop ends it:**
+  Chrome runs a sandboxed frame in a process of its own (the page's longest
+  frame 0.2 ms while the preview looped; Stop 21 ms). That process lives on
+  after Stop while it is stuck (a whole core for 5 s after, none 15 s after),
+  and Chrome puts the next preview in it. So a frame that has not said it is
+  ready in 3 s is replaced, up to 7 frames, and the preview says it waits for
+  the browser to end the one stopped before; run at once after Stop, a preview
+  started in 6.2 to 6.8 s. One that is ready and does not start in 10 s is
+  stopped. A browser that runs frames in the page's own process (not measured)
+  could stall with it; the source and Download stay beside it.
+- **A request with a character that is no text** (a lone surrogate, which JSON
+  may carry) was answered by FastAPI's own refusal with an error of the
+  server's, on every route: its writer encodes as UTF-8. Workbench now writes
+  that refusal itself (`web.invalid_request`), as a 422.
+- **Not done:** no other npm package, no CDN, no `localStorage` in a preview
+  (it has no origin); an artifact's title is the fence's and is not edited; no
+  artifact from a tool's result; no diff between revisions; no Firefox or
+  Safari run.
 
 ## Verification and release requirements
 
