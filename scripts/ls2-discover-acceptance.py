@@ -5,7 +5,8 @@ free loopback ports supervises its own Library, whose catalogue points at a
 fake hub on loopback (never huggingface.co). The engine root holds a
 stand-in llama.cpp build `b1` (a receipt and an empty file, never started)
 whose own architecture list is already kept beside it: every name in the
-list the agent ships, except `qwen4exp`. Nothing is downloaded or started.
+list the agent ships, except `qwen4exp`. D7 downloads tiny checkpoint fixture
+files from that same fake hub; no model weights or engines are started.
 
   D1  the agent's GET /v1/engines declares llama.cpp's architectures as the
       installed build's own list, not the shipped one and with no *may run*;
@@ -20,6 +21,7 @@ list the agent ships, except `qwen4exp`. Nothing is downloaded or started.
   D5  a plain folder's detail: vLLM may run it, and its SentencePiece
       tokenizer comes with the download (design doc section 7);
   D6  the starter set carries facts, and the installed build runs it.
+  D7  a Kev candidate downloads every checkpoint file and scans as Kev.
 
 Clears every ambient EUGENE_PLEXUS_* variable, so it is safe beside a live
 install. Run with the agent and library installed (editable is fine).
@@ -27,6 +29,7 @@ install. Run with the agent and library installed (editable is fine).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import secrets
@@ -56,19 +59,46 @@ MLX_CONFIG = {
 PLAIN_CONFIG = {"architectures": ["LlamaForCausalLM"], "model_type": "llama"}
 
 SEARCH = [
-    {"id": "org/Small-GGUF", "author": "org", "downloads": 40, "tags": ["gguf"],
-     "library_name": "gguf", "gguf": {"architecture": "llama", "total": 1_000_000_000}},
-    {"id": "org/FlashNext-GGUF", "author": "org", "downloads": 30, "tags": ["gguf"],
-     "library_name": "gguf", "gguf": {"architecture": "qwen4exp", "total": 125_000_000_000}},
-    {"id": "mlx-community/Tiny-4bit", "author": "mlx-community", "downloads": 20,
-     "tags": ["mlx", "safetensors"], "library_name": "mlx"},
-    {"id": "org/Plain", "author": "org", "downloads": 10, "tags": ["safetensors"],
-     "library_name": "transformers"},
+    {
+        "id": "org/Small-GGUF",
+        "author": "org",
+        "downloads": 40,
+        "tags": ["gguf"],
+        "library_name": "gguf",
+        "gguf": {"architecture": "llama", "total": 1_000_000_000},
+    },
+    {
+        "id": "org/FlashNext-GGUF",
+        "author": "org",
+        "downloads": 30,
+        "tags": ["gguf"],
+        "library_name": "gguf",
+        "gguf": {"architecture": "qwen4exp", "total": 125_000_000_000},
+    },
+    {
+        "id": "mlx-community/Tiny-4bit",
+        "author": "mlx-community",
+        "downloads": 20,
+        "tags": ["mlx", "safetensors"],
+        "library_name": "mlx",
+    },
+    {
+        "id": "org/Plain",
+        "author": "org",
+        "downloads": 10,
+        "tags": ["safetensors"],
+        "library_name": "transformers",
+    },
 ]
 
 
 def _file(path: str, size: int, *, lfs: bool = False) -> dict[str, Any]:
-    entry: dict[str, Any] = {"type": "file", "path": path, "size": size, "oid": "1" * 40}
+    entry: dict[str, Any] = {
+        "type": "file",
+        "path": path,
+        "size": size,
+        "oid": "1" * 40,
+    }
     if lfs:
         entry["lfs"] = {"oid": "a" * 64, "size": size}
     return entry
@@ -89,6 +119,37 @@ TREES = {
 }
 CONFIGS = {"mlx-community/Tiny-4bit": MLX_CONFIG, "org/Plain": PLAIN_CONFIG}
 
+# Published jaredpalmer/kev-0.8b filenames, tiny fixture contents. No weights
+# are interpreted: the scanner recognizes the adapter + decision-head markers.
+KEV_REPO = "jaredpalmer/kev-0.8b"
+KEV_FILES = {
+    name: b"{}"
+    for name in (
+        ".gitattributes",
+        "README.md",
+        "adapter_config.json",
+        "adapter_model.safetensors",
+        "head.pt",
+        "provenance.json",
+        "result.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "train.log",
+        "training_config.json",
+        "training_metrics.json",
+    )
+}
+KEV_FILES["adapter_config.json"] = b'{"base_model_name_or_path":"fixture/base"}'
+TREES[KEV_REPO] = [
+    {
+        "type": "file",
+        "path": name,
+        "size": len(body),
+        "oid": hashlib.sha1(f"blob {len(body)}\0".encode() + body).hexdigest(),
+    }
+    for name, body in KEV_FILES.items()
+]
+
 
 class FakeHub(BaseHTTPRequestHandler):
     """Just the hub endpoints the catalogue calls, shaped like the real ones."""
@@ -105,22 +166,36 @@ class FakeHub(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parts = urlsplit(self.path)
-        HUB_REQUESTS.append((parts.path, parse_qs(parts.query), self.headers.get("Range")))
+        HUB_REQUESTS.append(
+            (parts.path, parse_qs(parts.query), self.headers.get("Range"))
+        )
         if parts.path == "/api/models":
             self._send(200, json.dumps(SEARCH).encode())
             return
         if parts.path.startswith("/api/models/"):
-            rest = parts.path[len("/api/models/"):]
+            rest = parts.path[len("/api/models/") :]
             if "/tree/" in rest:
                 repo = rest.split("/tree/")[0]
                 self._send(200, json.dumps(TREES.get(repo, [])).encode())
                 return
-            row = next((r for r in SEARCH if r["id"] == rest), None)
+            row = (
+                {"id": KEV_REPO, "tags": ["safetensors"]}
+                if rest == KEV_REPO
+                else next((r for r in SEARCH if r["id"] == rest), None)
+            )
             if row is None:
                 self._send(404, b'{"error": "Repository not found"}')
                 return
             self._send(200, json.dumps({**row, "sha": "c0ffee"}).encode())
             return
+        for revision in ("main", "c0ffee"):
+            prefix = f"/{KEV_REPO}/resolve/{revision}/"
+            if (
+                parts.path.startswith(prefix)
+                and (name := parts.path[len(prefix) :]) in KEV_FILES
+            ):
+                self._send(200, KEV_FILES[name], "application/octet-stream")
+                return
         for repo, config in CONFIGS.items():
             if parts.path == f"/{repo}/resolve/main/config.json":
                 body = json.dumps(config).encode()
@@ -137,9 +212,25 @@ class FakeHub(BaseHTTPRequestHandler):
                 return
         self._send(404, b'{"error": "Entry not found"}')
 
+    def do_HEAD(self) -> None:  # noqa: N802
+        path = urlsplit(self.path).path
+        for revision in ("main", "c0ffee"):
+            prefix = f"/{KEV_REPO}/resolve/{revision}/"
+            if path.startswith(prefix) and (name := path[len(prefix) :]) in KEV_FILES:
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(KEV_FILES[name])))
+                self.send_header("X-Repo-Commit", "c0ffee")
+                self.end_headers()
+                return
+        self.send_response(404)
+        self.end_headers()
+
 
 def check(label: str, ok: bool, detail: object = "") -> None:
-    print(f"{'PASS' if ok else 'FAIL'}  {label}" + ("" if ok else f"  -- {detail}"), flush=True)
+    print(
+        f"{'PASS' if ok else 'FAIL'}  {label}" + ("" if ok else f"  -- {detail}"),
+        flush=True,
+    )
     if not ok:
         FAILURES.append(label)
 
@@ -192,14 +283,21 @@ def stand_in_llama_build(root: Path, names: list[str]) -> None:
     binary.write_bytes(b"")
     (build / "install.json").write_text(
         json.dumps(
-            {"version": "b1", "variant": "stand-in", "binary": binary.name,
-             "installedAt": "2026-10-09T00:00:00+00:00", "sizeBytes": 0}
+            {
+                "version": "b1",
+                "variant": "stand-in",
+                "binary": binary.name,
+                "installedAt": "2026-10-09T00:00:00+00:00",
+                "sizeBytes": 0,
+            }
         ),
         encoding="utf-8",
     )
     kept = root / "llama_cpp" / "architectures"
     kept.mkdir(parents=True)
-    (kept / "b1.json").write_text(json.dumps({"tag": "b1", "architectures": names}), encoding="utf-8")
+    (kept / "b1.json").write_text(
+        json.dumps({"tag": "b1", "architectures": names}), encoding="utf-8"
+    )
 
 
 def main() -> int:
@@ -207,7 +305,9 @@ def main() -> int:
     hub_port, agent_port, library_port = free_ports(3)
     hub = ThreadingHTTPServer(("127.0.0.1", hub_port), FakeHub)
     threading.Thread(target=hub.serve_forever, daemon=True).start()
-    with tempfile.TemporaryDirectory(prefix="ep-ls2-", ignore_cleanup_errors=True) as raw:
+    with tempfile.TemporaryDirectory(
+        prefix="ep-ls2-", ignore_cleanup_errors=True
+    ) as raw:
         directory = Path(raw)
         models = directory / "models"
         models.mkdir()
@@ -249,7 +349,11 @@ def main() -> int:
             ),
             encoding="utf-8",
         )
-        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.upper().startswith("EUGENE_PLEXUS_")
+        }
         env.update(
             {
                 "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(directory / "agent.yaml"),
@@ -273,7 +377,9 @@ def main() -> int:
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
-        client = httpx.Client(base_url=f"http://127.0.0.1:{agent_port}", timeout=60, trust_env=False)
+        client = httpx.Client(
+            base_url=f"http://127.0.0.1:{agent_port}", timeout=60, trust_env=False
+        )
 
         def wait(fn, label: str, seconds: float = 90):  # type: ignore[no-untyped-def]
             deadline = time.perf_counter() + seconds
@@ -283,7 +389,13 @@ def main() -> int:
                     got = fn()
                     if got:
                         return got
-                except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError) as e:
+                except (
+                    httpx.HTTPError,
+                    KeyError,
+                    ValueError,
+                    TypeError,
+                    IndexError,
+                ) as e:
                     last = e
                 time.sleep(0.5)
             raise AssertionError(f"timed out: {label} ({last!r})")
@@ -295,8 +407,14 @@ def main() -> int:
             ).json()["sessionToken"]
             client.headers["Authorization"] = f"Bearer {token}"
             proxy = "/api/proxy/library"
-            wait(lambda: client.get(f"{proxy}/healthz").status_code == 200, "the library answers")
-            print(f"agent :{agent_port}, library :{library_port}, hub :{hub_port}", flush=True)
+            wait(
+                lambda: client.get(f"{proxy}/healthz").status_code == 200,
+                "the library answers",
+            )
+            print(
+                f"agent :{agent_port}, library :{library_port}, hub :{hub_port}",
+                flush=True,
+            )
 
             # D1 -----------------------------------------------------------
             engines = client.get("/v1/engines").json()["engines"]
@@ -307,7 +425,9 @@ def main() -> int:
                 llama["available"] is True
                 and llama.get("version") == "b1"
                 and [r.get("architectures") for r in llama["accepts"]] == [build_names]
-                and all(r.get("authority") in (None, "eugene") for r in llama["accepts"]),
+                and all(
+                    r.get("authority") in (None, "eugene") for r in llama["accepts"]
+                ),
                 {k: llama.get(k) for k in ("available", "version")},
             )
             sent = as_console_sends(engines)
@@ -368,7 +488,8 @@ def main() -> int:
                 verdict("org/FlashNext-GGUF", "llama_cpp")["verdict"] == "no"
                 and "qwen4exp is not one of them"
                 in verdict("org/FlashNext-GGUF", "llama_cpp")["reason"]
-                and verdict("org/FlashNext-GGUF", "strata")["verdict"] == "after_preparation"
+                and verdict("org/FlashNext-GGUF", "strata")["verdict"]
+                == "after_preparation"
                 and flash["level"] == expected,
                 flash,
             )
@@ -376,10 +497,12 @@ def main() -> int:
             # D4 -----------------------------------------------------------
             before = len(HUB_REQUESTS)
             detail = client.get(
-                f"{proxy}/v1/catalogue/model", params={"repo": "mlx-community/Tiny-4bit"}
+                f"{proxy}/v1/catalogue/model",
+                params={"repo": "mlx-community/Tiny-4bit"},
             ).json()
             reads = [
-                rng for path, _, rng in HUB_REQUESTS[before:]
+                rng
+                for path, _, rng in HUB_REQUESTS[before:]
                 if path.endswith("/resolve/main/config.json")
             ]
             mlx_facts = detail["candidates"][0].get("facts") or {}
@@ -393,7 +516,8 @@ def main() -> int:
                 {"reads": reads, "facts": mlx_facts},
             )
             one = client.post(
-                f"{proxy}/v1/eligibility", json={"candidates": [mlx_facts], "engines": sent}
+                f"{proxy}/v1/eligibility",
+                json={"candidates": [mlx_facts], "engines": sent},
             ).json()["models"][0]
             vllm = next(v for v in one["engines"] if v["engine"] == "vllm")
             mlx = next(v for v in one["engines"] if v["engine"] == "mlx")
@@ -407,13 +531,17 @@ def main() -> int:
             )
 
             # D5 -----------------------------------------------------------
-            plain = client.get(f"{proxy}/v1/catalogue/model", params={"repo": "org/Plain"}).json()
+            plain = client.get(
+                f"{proxy}/v1/catalogue/model", params={"repo": "org/Plain"}
+            ).json()
             candidate = plain["candidates"][0]
             judged_plain = client.post(
                 f"{proxy}/v1/eligibility",
                 json={"candidates": [candidate["facts"]], "engines": sent},
             ).json()["models"][0]
-            plain_vllm = next(v for v in judged_plain["engines"] if v["engine"] == "vllm")
+            plain_vllm = next(
+                v for v in judged_plain["engines"] if v["engine"] == "vllm"
+            )
             check(
                 "D5 a plain folder: vLLM may run it, in its own words, and nothing was guessed",
                 candidate["facts"].get("mlxQuantized") is False
@@ -443,6 +571,63 @@ def main() -> int:
                 and all(m["level"] == "works_here" for m in starter_judged),
                 [(m["modelId"], m["level"]) for m in starter_judged],
             )
+
+            # D7: the candidate must be the checkpoint that appears after download.
+            detail = client.get(
+                f"{proxy}/v1/catalogue/model", params={"repo": KEV_REPO}
+            ).json()
+            candidate = detail["candidates"][0]
+            paths = [f["path"] for f in candidate["files"]]
+            check(
+                "D7 Kev Discover carries every checkpoint file and its own format",
+                candidate["format"] == candidate["facts"]["format"] == "kev_checkpoint"
+                and set(paths) == set(KEV_FILES),
+                candidate,
+            )
+            if FAILURES:
+                return 1
+            started = client.post(
+                f"{proxy}/v1/downloads", json={"repo": KEV_REPO, "files": paths}
+            )
+            started.raise_for_status()
+            ident = started.json()["id"]
+            downloaded = wait(
+                lambda: (
+                    r
+                    if (r := client.get(f"{proxy}/v1/downloads/{ident}").json())[
+                        "state"
+                    ]
+                    in ("done", "failed")
+                    else None
+                ),
+                "Kev downloaded",
+            )
+            check(
+                "D7 the complete checkpoint downloads",
+                downloaded["state"] == "done",
+                downloaded,
+            )
+            if FAILURES:
+                return 1
+            client.post(f"{proxy}/v1/scan", json={"full": True})
+            listed = wait(
+                lambda: next(
+                    (
+                        m
+                        for m in client.get(f"{proxy}/v1/models").json()["models"]
+                        if m["format"] == "kev_checkpoint"
+                    ),
+                    None,
+                ),
+                "Kev scans",
+            )
+            check(
+                "D7 the downloaded folder scans as a decision checkpoint",
+                listed["capabilities"]["decision"] is True
+                and listed["kev"]["baseModel"] == "fixture/base"
+                and {Path(f["path"]).name for f in listed["files"]} >= set(KEV_FILES),
+                listed,
+            )
         finally:
             # Asked to stop, not killed: a hard kill on Windows skips the
             # agent's shutdown and orphans the library it supervises.
@@ -459,7 +644,13 @@ def main() -> int:
             hub.shutdown()
             if FAILURES:
                 print("--- agent log (last 60 lines) ---")
-                print("\n".join(log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-60:]))
+                print(
+                    "\n".join(
+                        log_path.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).splitlines()[-60:]
+                    )
+                )
     print(f"{'FAILED' if FAILURES else 'PASSED'}: {len(FAILURES)} failing check(s)")
     return 1 if FAILURES else 0
 
