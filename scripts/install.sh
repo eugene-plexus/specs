@@ -60,11 +60,11 @@ set -eu
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 PIN_AGENT=101a2d0dd0fa15b3a29b95742f82a23661a16252
-PIN_CONTROL=3c378a13e1e732ad8cbabd8daa09b554cc6bf8b2
-PIN_GATEWAY=7b9a4c4c47b0ebd66bcfa42d1974ffad700f7ddc
-PIN_DRIVER=ef4eea3c568e800e4a175ba8e9235824f968317a
+PIN_CONTROL=4710ce829c99b3a5fbed4a3461f157c93d8040a8
+PIN_GATEWAY=8f1c3c0eaaf84682478877a520c22846021d1ef8
+PIN_DRIVER=e035deea4ec918722a9ce7ef195cca5d9ccb330c
 PIN_LIBRARY=a4669642672bd9dca075c8f8ef014f53e47bfb3d
-PIN_TOOL_DRIVER=4b4f66784930a86341e523910c18cbbbb3e2ed6e
+PIN_TOOL_DRIVER=f46d0bbb5b5b710d635761c35c1ba730ed3a7a5b
 PIN_UI=8cf99134461ca85848d356c291640453e37bd523   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,

@@ -134,11 +134,11 @@ $PrefixGiven = [bool]$Prefix
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
     "agent"            = "101a2d0dd0fa15b3a29b95742f82a23661a16252"
-    "control"          = "3c378a13e1e732ad8cbabd8daa09b554cc6bf8b2"
-    "gateway"          = "7b9a4c4c47b0ebd66bcfa42d1974ffad700f7ddc"
-    "inference-driver" = "ef4eea3c568e800e4a175ba8e9235824f968317a"
+    "control"          = "4710ce829c99b3a5fbed4a3461f157c93d8040a8"
+    "gateway"          = "8f1c3c0eaaf84682478877a520c22846021d1ef8"
+    "inference-driver" = "e035deea4ec918722a9ce7ef195cca5d9ccb330c"
     "library"          = "a4669642672bd9dca075c8f8ef014f53e47bfb3d"
-    "tool-driver"      = "4b4f66784930a86341e523910c18cbbbb3e2ed6e"
+    "tool-driver"      = "f46d0bbb5b5b710d635761c35c1ba730ed3a7a5b"
     "ui"               = "8cf99134461ca85848d356c291640453e37bd523"  # branch `dist`, not `main`
 }
 $DIST = @{
