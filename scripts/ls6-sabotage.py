@@ -189,7 +189,7 @@ SABOTAGES: list[tuple[str, str, str, str, str]] = [
     ("the library client never sends the fit model", "agent", ADMISSION,
      "            if fit_model is not None:", "            if False:"),
     ("Run suggests vLLM a flag it refuses", "agent", WORKER,
-     "        if not takes_context_size(engine):", "        if False:"),
+     "        if context_flag(engine) is None:", "        if False:"),
     # --- the console ----------------------------------------------------------------------
     ("THE RULE: a version's column quotes llama.cpp for every engine", "ui", DISCOVER,
      '            const spills = candidate.format === "gguf" && (!ownFit || ownFit.model === "spill");',

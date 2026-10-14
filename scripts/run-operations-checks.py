@@ -25,7 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 class Engine:
-    def __init__(self):
+    def __init__(self, kind="llama_cpp"):
+        self.kind = kind
         self.installed = False
         self.installs = 0
         self.declarations = {}
@@ -37,7 +38,7 @@ class Engine:
     async def engines(self):
         return [
             {
-                "engine": "llama_cpp",
+                "engine": self.kind,
                 "available": self.installed,
                 "modelFormats": ["gguf"],
                 "accepts": [{"format": "gguf", "preference": 10}],
@@ -55,6 +56,8 @@ class Engine:
 
     async def launch(self, model, profile, *, start):
         spec = runtime_spec(model, profile, start=start)
+        flag = "maxModelLen" if self.kind == "vllm" else "contextSize"
+        assert profile["flags"] == spec.flags == {flag: 4096}, (self.kind, spec.flags)
         self.declarations.setdefault(spec.name, spec.model_dump(mode="json"))
         if start and not self.starts:
             self.starts += 1
@@ -67,7 +70,7 @@ class Engine:
         return {"name": name, "status": "ready"}
 
 
-async def check(directory):
+async def check(directory, kind="llama_cpp"):
     protocol = FastAPI(title="Eugene Plexus durable run protocol", version="1.0.0")
     protocol.include_router(router)
     actual = protocol.openapi()
@@ -90,7 +93,7 @@ async def check(directory):
     app.state.state_store = store
     now = [1_800_000_000.0]
     app.state.run_operations = Journal(directory / "runs.sqlite3", clock=lambda: now[0])
-    engine = Engine()
+    engine = Engine(kind)
     node = FastAPI()
     real = httpx.ASGITransport(app=app)
     drop_checkpoint = [False]
@@ -120,6 +123,8 @@ async def check(directory):
         drop_checkpoint[0] = True
         await RunWorker(node, node_actions=engine).tick(client, node="worker")
         assert len(store.list_profiles("m")) == 1
+        flag = "maxModelLen" if kind == "vllm" else "contextSize"
+        assert store.list_profiles("m")[0].flags == {flag: 4096}
         now[0] += 121
         # Library and agent both restart. State comes from disk, not Python objects.
         recovered = StateStore(directory / "state.json")
@@ -151,8 +156,10 @@ async def check(directory):
 
 
 if __name__ == "__main__":
-    with tempfile.TemporaryDirectory(prefix="ep-run-check-") as directory:
-        asyncio.run(check(Path(directory)))
+    for kind in ("llama_cpp", "vllm"):
+        with tempfile.TemporaryDirectory(prefix="ep-run-check-") as directory:
+            asyncio.run(check(Path(directory), kind))
+        print(f"PASS: {kind} context flag preserved through profile, restart and launch")
     print(
         "PASS: protocol conformance, durable install decision, restart after profile and runtime "
         "commits, one profile/install/runtime/start"

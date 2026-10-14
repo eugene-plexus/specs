@@ -459,7 +459,7 @@ def main() -> int:
     parser.add_argument("--embedding-model", type=Path, help="nomic-embed-text-v1.5 Q8_0 (768-d)")
     parser.add_argument("--qwen3-embedding", type=Path, help="Qwen3-Embedding-0.6B Q8_0 (1024-d)")
     parser.add_argument("--chat-model", type=Path, help="a small chat GGUF, the control (Qwen3-0.6B)")
-    parser.add_argument("--reranker", type=Path, help="the ggml-org Qwen3-Reranker-0.6B Q8_0")
+    parser.add_argument("--reranker", type=Path, help="a GGUF reranker, such as Qwen3-Reranker or bge-reranker")
     parser.add_argument(
         "--skip", default="",
         help="phases to leave out, comma separated: I (the idle wait, over a minute), W, O, F, R",
@@ -911,7 +911,7 @@ def run(stack: Stack, linked: dict[str, Path]) -> int:
             ranker = stack.status_of("reranker", "ready")
             if ranker is not None:
                 rerank_tail = [*DEFAULT_FLAGS, "--reranking"]
-                check("R2 its header names rank pooling and labels, so the agent adds --reranking and the "
+                check("R2 its header identifies a reranker, so the agent adds --reranking and the "
                       "defaults, and neither --embeddings nor --pooling",
                       normalised(ranker["argv"]) == expected_argv(stack, ranker, linked["reranker"], "reranker", rerank_tail),
                       show(ranker["argv"]))
