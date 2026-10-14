@@ -1,6 +1,6 @@
 # Workbench rich content rendering roadmap
 
-**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2-RC5 planned.**
+**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `2e435fd`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3-RC5 planned.**
 
 Workbench should display equations, diagrams, generated media, structured
 results and interactive previews alongside a conversation. Keep the existing
@@ -258,6 +258,101 @@ diagram source and a textual alternative available.
 - Attempts to enable callbacks, inject HTML or fetch external resources fail.
 - Source copying and SVG/PNG download work; export dimensions are bounded.
 - Diagrams work at mobile width, with keyboard controls and reduced motion.
+
+### RC2: what building found (2026-10-13)
+
+Built in Workbench `web/src/lib/diagramDom.ts` (a page for Mermaid that is
+not the page), `diagramRender.ts` + `diagramWorker.ts` (Mermaid, in a worker),
+`diagramClient.ts` (the store and the theme), `diagramMarkup.ts` (the page's
+allowlist), `workerQueue.ts` (the worker's keeper, now shared with RC1's
+formulas) and `components/MermaidDiagram.tsx`.
+
+- **Mermaid cannot run on the page under its policy, and cannot be stopped
+  there.** It draws into the DOM and measures what it drew; while drawing it
+  inserts a `<style>` and sets `style` attributes, which `style-src 'self'`
+  refuses and reports. And a source cap again cannot bound the work: 100
+  nested subgraphs (1,711 characters) took 20 s, 500 nodes with 1,000 edges
+  9 s. So Mermaid runs in a module worker on linkedom's DOM, and
+  `diagramDom.ts` supplies the sizes Mermaid reads back: text measured with an
+  OffscreenCanvas in the font, size and weight its element would have (its
+  attributes, its style, and Mermaid's stylesheet for the diagram, matched
+  with linkedom's selectors), shapes from their geometry, a group through its
+  children's transforms. Side by side with Mermaid on a real page, the 13
+  kinds below laid out alike. A diagram over **4 s** ends the worker, says "it
+  took longer than 4 s to draw", and a new worker takes the next (RC1's keeper,
+  made generic). Measured in the worker: ordinary diagrams 10 to 250 ms, a
+  300-step flowchart 0.6 s, 300 classes 3.8 s. The worker starts Mermaid and
+  the flowchart's code before it says it is ready, so a first flowchart's
+  time is its own. Also capped: 20,000 characters of source (a 500-step
+  flowchart is 17,540), 20,000 elements, 6 MB of SVG, 50,000 px a side.
+- **A picture the page writes itself, shown as an image.** The worker writes
+  Mermaid's stylesheet into each element's style and sends the drawing as a
+  tree. The page reads it through an allowlist (elements, attributes, styles;
+  a value may point only inside the drawing, `url(#id)`) and writes a new SVG,
+  every name from its own tables and every value escaped, shown as an `<img>`
+  of a `data:` URL: an image runs no script and fetches nothing, and its ids
+  meet no other diagram's, so repeated diagrams and branches need no id
+  rewriting. A link (`click ... href`) becomes a group: Mermaid puts a linked
+  node's place on the link, and unwrapping it first moved the node to the
+  corner. A `foreignObject` and an `<image>` are dropped; any other element
+  off the list fails the diagram, which shows its source. The policy refused
+  nothing.
+- **The configuration is Workbench's.** Strict security (no click callbacks),
+  no HTML labels, dagre, the classic look, the base theme in the page's
+  colours, and every key on Mermaid's `secure` list, so a `%%{init}%%`
+  directive or front matter `config:` changes nothing (tested with HTML
+  labels, a loose security level, a theme, ELK, `themeCSS` with an outside
+  `url()`).
+- **13 kinds are drawn:** flowchart, sequence, class, state, entity
+  relationship, Gantt, pie, user journey, timeline, Git graph, mind map,
+  quadrant and XY. Another kind says "Workbench does not draw this kind of
+  diagram (sankey)" and shows its source; the kind is detected before any of
+  its code loads, so `flowchart-elk` never loads ELK's 1.46 MB.
+- **A diagram is drawn when it comes near the screen** (within one and a
+  half screens of the chat's scroller), not when its chat opens: one answer
+  of slow diagrams, each stopped at 4 s, would otherwise queue ahead of the
+  one being read, and a long chat would draw all its history. A picture
+  already drawn stays while a change of theme draws the new one, so a larger
+  view open on it stays open.
+- **The font is Arial (Liberation Sans on Linux).** An image cannot load the
+  page's IBM Plex, and a family every computer has keeps a downloaded SVG's
+  text inside its boxes elsewhere.
+- **Colours come from the page's CSS variables,** read when a diagram is
+  drawn; the theme is part of what is kept, so a change of theme draws each
+  diagram once more. Shapes in `--tint` edged in `--accent-left`, notes edged
+  in `--accent-right`, titles in `--heading`; a timeline's sections, a mind
+  map's and a Git graph's branches in the status colours' edges under the
+  strongest text (5:1 or more in both themes); pie slices and XY series in the
+  accents. `--tint-edge` read 2.1:1 and 2.9:1 under a slice's text and was
+  replaced. A user journey's section names are HTML beside a text fallback
+  that Mermaid colours like the box behind it (invisible in both themes); the
+  fallback now takes the text colour.
+- **Mermaid's picture shape (`img:`) loads the picture** to learn its size
+  (`new Image()`, which a worker lacks). The stand-in has no size and fetches
+  nothing; the shape keeps the size the diagram gave it, and the page drops
+  the picture.
+- **Instrument traps:** a document the page parses (`DOMParser`) is held to
+  the page's policy, so the check's own reading of each SVG reported
+  `style-src-attr` refusals until it moved to Node. Windows' clipboard reads
+  back `\r\n`. A phone's buttons are 44 px tall: "one row" is measured by the
+  tools' middle lines, not the head's height.
+- **Dependencies:** `mermaid` 12.1.0 and `linkedom` 0.18.13, exact (MIT and
+  ISC; released 2026-10-02 by Mermaid's release workflow with provenance, and
+  2026-07-07). npm `overrides` give Mermaid the KaTeX 0.19.0 RC1 pinned (one
+  copy; 12.1.0 asked for 0.16.47, under GHSA-238p-pmpm-9mq7), and hold
+  `dompurify` 3.4.16, `uuid` 14.0.2 and `package-manager-detector` 1.8.0
+  (the resolved versions were 1, 3 and 8 days old). `npm audit`: 0.
+- **Bundle:** the page's own script grew 11.4 KB (2.7 KB gz) for the block,
+  its tools and the store; Mermaid's core (636 KB, 126 KB gz), linkedom with
+  the stand-in (200 KB, 69 KB gz) and each kind's code load only with the
+  first diagram.
+- **Not done:** a diagram's text is in the picture, not the page (no
+  find-in-page; a screen reader gets the kind, the diagram's own title and
+  description, and the source). A wide diagram is shrunk to the column and
+  read at size in Expand, which opens at no less than 50%. A model's own
+  colours (`style`, `classDef`) are drawn as written, not adjusted per theme.
+  Mermaid's math in labels was not checked. No Firefox or Safari run. Every
+  kind's code is in the build (7.4 MB of assets in all, loaded only as used).
 
 ## RC3 Content blocks and authorized assets
 
