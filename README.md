@@ -41,6 +41,8 @@ Real local-model setup: [Claude Code and Open WebUI](docs/application-workflows.
 
 Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Current order of work: [audience roadmap](docs/design/audience-roadmap.md).
 
+Workbench rendering improvements: [rich content roadmap](docs/design/workbench-rich-content-roadmap.md).
+
 ## Current status
 
 **2026-10-13: [v0.2.0](docs/releases/v0.2.0.md) is the second release**; see

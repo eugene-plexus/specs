@@ -1,0 +1,518 @@
+# Workbench rich content rendering roadmap
+
+**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2-RC5 planned.**
+
+Workbench should display equations, diagrams, generated media, structured
+results and interactive previews alongside a conversation. Keep the existing
+React and Markdown foundation, complete its common rendering features, and
+preserve rich results throughout storage and streaming before adding more
+display components.
+
+This roadmap covers the rendering work requested after the Workbench feature
+review. It is intended for an implementation session that has not seen that
+conversation. Start with **RC1**, then follow the dependencies below. The
+defaults in this plan are implementation recommendations; record justified
+changes in the relevant slice rather than reopening routine choices.
+
+Related designs: [reading and Markdown](workbench-reading.md),
+[answer versions](workbench-answer-versions.md), [MCP tools](workbench-mcp.md),
+[memory and documents](workbench-memory-and-documents.md), and
+[media screens](workbench-media-screens.md). This roadmap takes up the math and
+footnote work deferred in the reading design. It does not reorder the broader
+[audience roadmap](audience-roadmap.md).
+
+## Scope and intended result
+
+A person can ask for a technical explanation and see readable equations and a
+diagram, ask a connected tool for a plot and see its image, inspect a data table
+or chart, and open a generated document or small interactive preview. The same
+content remains available after reconnecting or selecting an earlier answer
+version. Unsupported or malformed content has a readable explanation and a
+source or download fallback.
+
+The scope includes rich Markdown, message and tool content representation,
+authorized assets, source navigation, bounded charts and tables, and isolated
+artifact previews. An artifact is a saved output with its own source, preview
+and revisions.
+
+Projects, long-chat compaction, research orchestration, a Python/code-execution
+service, real-time voice, and an Office-style editor are separate work. This
+roadmap displays files and results produced by existing models or tools; it
+does not create a general computation service. Previewing an HTML/React
+artifact runs browser code only inside the preview boundary defined in RC5.
+
+## Current implementation
+
+The source baseline was inspected at Workbench commit
+`d5aad5f921778216be9d5a1f1782c57d6490f1a1`. Recheck the current checkout before
+implementing; this is a dated baseline, not an installed-version claim.
+Backend filenames below are under `src/eugene_plexus_workbench/` unless a
+different path is shown.
+
+| Area | Current behavior | Implementation entry point in Workbench |
+|---|---|---|
+| Markdown | CommonMark/GFM, tables, task lists, callouts, and attribute-free `br`, `sub`, `sup`, `kbd` | `web/src/components/Markdown.tsx`, `web/src/lib/markdownPlugins.ts` |
+| Code | Language label, Copy, syntax highlighting, closed-fence detection, memoization and size limits | `web/src/lib/highlight.ts` |
+| Math and diagrams | No math typesetting; Mermaid displays as code | Markdown plugin and code-block dispatch |
+| Footnotes | Footnote text appears, but references/backlinks lose navigation because fragment links are rejected | `safeHref` and the Markdown `a` component |
+| Images and HTML | Answer image URLs become links; most raw HTML/SVG is dropped | Markdown `img`, `skipHtml`, `src/eugene_plexus_workbench/web.py` |
+| Assistant messages | Text and reasoning strings, with sources and attachments stored separately | `store.py`, `answers.py`, `web/src/lib/types.ts` |
+| MCP results | Non-text blocks become unsupported placeholders; structured content becomes a JSON string | `tools.py`, `node_folders.py`, `web/src/components/ToolCalls.tsx` |
+| Citations | Web annotation URL/title retained, but annotation positions discarded; document sources listed separately | `answers.py`, `web/src/components/SourcePassages.tsx` |
+| Media | Images, audio and video work in the Media screen; uploads have their own attachment path | `media_api.py`, `web/src/components/Media.tsx`, `MessageView.tsx` |
+
+The chat client currently uses `/v1/chat/completions`. A gateway capability,
+including an output available through Responses, is not automatically available
+in Workbench. Rendering support must name the input path that supplies it.
+
+## Delivery order
+
+| Slice | Deliverable | Dependency | Primary owner |
+|---|---|---|---|
+| RC1 | Math and working footnotes | Existing Markdown | Workbench frontend |
+| RC2 | Mermaid diagrams with source fallback | RC1 rendering conventions | Workbench frontend |
+| RC3 | Typed tool/message content, authorized assets and inline media/file cards | Independent of RC1/RC2; required by RC4/RC5 | Workbench backend and frontend |
+| RC4 | Citation navigation and structured tables/charts | RC3 | Workbench backend and frontend |
+| RC5 | Saved artifacts and isolated previews | RC3; reuse RC2/RC4 where applicable | Workbench backend and frontend |
+
+Each slice must be usable and accepted before it is called complete. RC3 can
+be designed alongside RC1/RC2, but keep shared-file edits coordinated. A fresh
+implementation session per slice is appropriate.
+
+## RC1 Math and footnote navigation
+
+**Result:** equations render in ordinary answers, and a footnote reference
+moves to the correct footnote and back without changing chats.
+
+Use the existing Markdown extension points. Prefer KaTeX with Markdown math
+parsing, bundled locally and loaded when needed. Check dependency versions,
+licenses and Node compatibility against the actual package files before
+pinning them. Keep reasoning as plain text; its rendering policy is a separate
+decision already documented in the reading design.
+
+Support inline `$...$` and `\(...\)`, and display `$$...$$` and `\[...\]`.
+Recognize backslash delimiters before Markdown removes their escapes. Use
+tokenizer-aware handling that excludes inline/fenced code, escaped delimiters
+and URLs. Define and test the dollar-delimiter rules: `$5 and $10` must remain
+currency. Do not apply a global replacement regex to the entire answer.
+
+The reading design's section 10 records CSP failures with the then-tested
+`rehype-katex` path and a working parse5-to-React alternative. Reproduce this
+under the production headers with the chosen versions. Keep the parent chat's
+CSP intact. Use a controlled syntax-tree-to-React path for renderer-produced
+markup, with an explicit element/attribute/style allowlist; parsing alone is
+not sanitization. Keep KaTeX trust disabled, bound expansion and visual size,
+and retain accessible MathML.
+Malformed or incomplete math must leave the answer readable and copyable.
+
+Footnote IDs must be unique per rendered message/version and per draft/final
+region. Preserve generated IDs and accessibility attributes on references and
+backlinks. Resolve only known fragment targets inside that Markdown region;
+move focus appropriately without mutating the app's routing hash. Do not turn
+the fragment fix into permission for arbitrary URL schemes or element access.
+
+**Acceptance:**
+
+- Inline/display equations, fractions, matrices, Unicode and equations inside
+  lists/tables render in both themes and at 200% zoom.
+- Currency, escaped dollars, code samples and incomplete streaming delimiters
+  retain their intended text. Copy and Markdown export preserve source.
+- Bad formulas and excessive expansion/size fall back locally; they do not
+  blank or freeze the chat. Macro state cannot leak between messages.
+- Two answers using `[^1]`, a quiet draft, and an alternate branch have unique
+  IDs and working keyboard-accessible references/backlinks.
+- The production browser run reports no new CSP violations or external asset
+  requests. Existing raw-HTML and unsafe-link tests still pass.
+
+### RC1: what building found (2026-10-13)
+
+Built in Workbench `web/src/lib/markdownMath.ts` (the parser),
+`mathTypeset.ts` + `mathWorker.ts` (KaTeX, in a worker), `mathClient.ts` (the
+worker's keeper and the cache), `mathMarkup.ts` (markup to React through an
+allowlist), `components/MathFormula.tsx`, and footnotes in
+`components/Markdown.tsx` + `lib/markdownPlugins.ts`.
+
+- **A source cap cannot bound the work; a worker can.** Measured with KaTeX
+  0.19.0 and `maxExpand: 1000`: a 488-character formula that defines and
+  repeats a macro took **36 s**, a 2,008-character one **92 s**, while the
+  largest legitimate fixture (a 25 x 25 matrix, 5,674 characters) took 20 ms.
+  `maxExpand` counts expansions, not the tokens they produce. So KaTeX runs in
+  a module worker, one formula at a time; a formula over **1.5 s** ends the
+  worker, fails with "it took longer than 1.5 s to lay out", and a new worker
+  takes the next one (the start, up to 10 s, is not counted). Also capped:
+  8,000 characters of source and 600 KB of markup (a 20 x 20 matrix is
+  358 KB). No CSP change: the worker is a same-origin script under
+  `script-src 'self'`.
+- **No parse5.** KaTeX's `renderToString` runs in the worker; the page reads
+  its markup with a strict reader for exactly the shape KaTeX writes (anything
+  else fails the formula) and builds React elements through an element,
+  attribute, class and style allowlist. React sets styles through the style
+  object, which the policy allows: zero refusals, and no 62 KB gz parser.
+  `trust` stays off; no `macros` object is passed, so a `\gdef` dies with its
+  formula.
+- **`maxSize` caps only positive sizes.** `\kern{-500em}` became a -500 em
+  margin that would pull the line across the page, and 300 of `\kern{-20em}`
+  the same in small steps. The reader refuses one negative margin over 25 em
+  and a formula's negative margins over 40 em in all (the most measured in
+  real formulas was 19, for 60 `\!`). Offsets up and down are KaTeX's own
+  layout and only held to a 2,000 em size limit: a first cap of 25 em on `top`
+  refused a 40-row `aligned`, whose rows sit up to 70 em from its middle. A
+  raised box keeps its own height in the line (KaTeX's strut reserves it), and
+  the chat's scroller clips anything pulled sideways out of the column. A
+  vertical-only `overflow: clip` on each inline formula was tried and dropped:
+  it changed rasterisation (40 device pixels in 41 formulas) and contained
+  nothing the above does not.
+- **Dollar rules:** Pandoc's (a single `$` opens before a non-space and closes
+  after one, not before a digit) plus "not after a digit", for "5$/month",
+  plus TeX's own: `$x$` ends at its next bare `$`, so a `$` that cannot close
+  means the first was money. "Costs $5, then $x$" is money, then a formula
+  (Pandoc reads "5, then $x" as the formula). `$5 and $10`, `$10-$20`,
+  `$HOME and $PATH` stay text; `$2x + 3 = 7$` is a formula. Known false
+  positive: shell text outside code with a closing-shaped `$`, such as
+  `$PATH:$HOME` followed by text.
+- **Looking for closes is budgeted.** Every opener looks ahead for its close
+  (a single `$` 1,000 characters, the others 20,000), and every chunk of an
+  answer being written is parsed again. Built text such as `\(a ` repeated to
+  32 KB took 3 to 6 s a parse. Now one parse may spend 200,000 characters on
+  searches that found nothing, and an opener inside a stretch where an earlier
+  one of its kind already searched to the end of the text does not search.
+  The test asserts under 1.5 s for each such input; a real answer spends a few
+  hundred characters.
+- **`\[...\]` in prose is display math.** An answer escaping brackets as
+  `\[1\]` loses them to a formula. Accepted: models write `\[` for display
+  math far more often.
+- **A `$$` or `\[` block may not interrupt a paragraph.** Otherwise "Total:
+  $$", "x", "$$" opened a block at the last line and swallowed the rest of the
+  answer; the paragraph's own `$$` pair is the formula instead. A block opens
+  only on a line of its own, closes on its delimiter's own line or a line
+  ending in it, and an unclosed one stays source, like an open code fence.
+  A ```` ```math ```` fence is a display formula, as on GitHub.
+- **Footnotes:** `clobberPrefix` takes each answer's `useId()` prefix, but
+  mdast-util-to-hast 13.2.1 leaves the screen-reader heading as
+  `footnote-label` (and the references' `aria-describedby` with it) in every
+  answer; a rehype plugin prefixes both. A reference finds its note among the
+  ids inside its own answer, not with `getElementById`, so a colliding id
+  elsewhere cannot capture it; focus moves and the address and hash do not.
+- **jsdom has no style on MathML elements**, and MathML's styles (a box's
+  border, `\pmb`'s shadow) draw nothing in KaTeX's hidden MathML copy, so they
+  are dropped. KaTeX 0.19 renamed `.strut`/`.base` to `.katex-strut`/`.katex-base`.
+- **Bundle (measured against a build of `d5aad5f`):** the page's own script
+  939.6 to 951.4 KB (272.1 to 276.2 KB gz); none of KaTeX is in it. The first
+  formula loads a 3.4 KB view (1.8 KB gz), KaTeX's 22.5 KB stylesheet
+  (3.5 KB gz) and the 260 KB worker (76.7 KB gz); the browser fetches each
+  KaTeX face as it is used. A build plugin keeps KaTeX's faces as woff2 only:
+  20 files instead of 60.
+- **Dependencies:** `katex` 0.19.0, exact (MIT; released 2026-10-01 by a
+  long-standing maintainer; its one dependency, `commander`, is the CLI's and
+  is not bundled). `micromark-util-character` and `micromark-factory-space`
+  become direct dependencies at the versions react-markdown already used;
+  `mdast-util-from-markdown` (types) is pinned at the installed 2.0.3, because
+  npm would otherwise have moved react-markdown's parser to 2.1.0, ten days
+  old.
+- **The cache:** at most 500 laid-out formulas and 16 MB of their markup,
+  the least recently shown dropped first. A formula that failed because the
+  worker would not start, stopped, or the display chunk would not load is
+  tried again when it is next shown; its own error (bad TeX, too long, too
+  slow) is final.
+- **Not done:** copying a selected formula copies its drawn text, not its TeX
+  (KaTeX's `copy-tex`); a `\color` the model chose is not adjusted per theme;
+  reasoning stays plain text; no screen-reader, Firefox or Safari run. Slow
+  formulas wait their turn: an answer with N formulas that each take the full
+  1.5 s keeps the ones after them pending for N x 1.5 s (the page stays
+  usable). An unclosed `$$` block at the end of a finished answer shows the
+  rest as its source, as an unclosed code fence does. A footnote link opened
+  in a new tab opens Workbench with the note's id as the hash, which does
+  nothing. KaTeX's faces use `font-display: block`, so a formula is blank
+  until its font arrives (from Workbench itself, so briefly).
+
+## RC2 Mermaid diagrams
+
+**Result:** a fenced `mermaid` block shows a diagram with Source, Copy, expand
+and download controls. Invalid syntax still shows the original code and a
+short explanation.
+
+Add a dedicated code-fence renderer. Load Mermaid locally on demand; render
+once a fence closes, cache completed results, and cancel or ignore obsolete
+renders when a message/version changes. An unfinished fence remains source
+text. Keep other code fences on the existing highlighting path.
+
+Use fixed application-controlled Mermaid configuration, strict security and
+disabled HTML labels/click callbacks. Source directives must not override that
+configuration. Bound source size, diagram complexity and rendering work. Choose
+and record enforceable limits after measuring representative fixtures; a
+Promise timeout alone does not stop a synchronous layout that blocks the UI.
+
+Treat the resulting SVG as untrusted output. Use a controlled, sanitized
+display boundary; do not copy Mermaid examples that assign `innerHTML` into
+the chat. Strip active content and external references, including from
+downloads. Preserve the main chat's no-HTML-injection invariant. Keep the
+diagram source and a textual alternative available.
+
+**Acceptance:**
+
+- Flowchart, sequence, class and state diagrams render from streamed answers.
+- Repeated diagrams and branch switches do not collide on SVG IDs or rerender
+  unchanged blocks on every token. Theme changes remain legible.
+- Invalid, oversized and adversarial diagrams fail within the bounded path;
+  the surrounding answer and Stop/navigation controls stay usable.
+- Attempts to enable callbacks, inject HTML or fetch external resources fail.
+- Source copying and SVG/PNG download work; export dimensions are bounded.
+- Diagrams work at mobile width, with keyboard controls and reduced motion.
+
+## RC3 Content blocks and authorized assets
+
+**Result:** an MCP tool can return text plus an image or file, and Workbench
+retains and displays those results after refresh. Existing chats continue to
+work. This is the foundation for rich output beyond Markdown.
+
+### Representation and compatibility
+
+Define a versioned, ordered content-block representation with stable block
+IDs. Start with text, image, audio, video, file and structured-data blocks,
+plus an explicit unsupported-content fallback. Store citation annotations
+against their text block. Exact field names belong in the implementation
+contract; required semantics are:
+
+- Original order, source tool/call, message/branch ownership and provenance.
+- Source text or validated structured payload; large binary data is an asset
+  reference, not base64 repeated in message JSON or SSE.
+- An asset's media type, byte size, display name and availability state.
+- Version/revision information and a bounded textual fallback.
+
+Introduce this additively. Map legacy message strings and tool results to text
+blocks without guessing that old code fences, JSON or URLs are rich assets.
+Keep the existing text fields as a defined compatibility projection while
+needed; document which representation is authoritative and prevent divergence.
+Do not fabricate content that was already lost as an unsupported placeholder.
+
+Follow the store's migration and pre-migration backup conventions. Test old
+database fixtures and interrupted migrations. Define behavior for an older
+browser tab seeing new events and for an older application opening a newer
+store; do not assume schema downgrade is safe.
+
+### Transport and model replay
+
+Use one normalization path within Workbench for **both** direct MCP and Job
+Site result handling. Preserve text,
+supported embedded media/resources, resource-link metadata and structured
+content. Validate type and size before persistence. Unsupported content gets
+an explicit bounded fallback, not silent disappearance.
+
+Keep remote resource URLs as link metadata by default. A URI alone is not
+permission to fetch it, read another MCP resource, or access a local path.
+Embedded bytes and an already-authorized asset are the first supported paths.
+
+Make events idempotent with stable block IDs and revisions/offsets. Preserve
+the existing UTF-16 text-offset convention used by the browser. Reconnecting
+from a snapshot, duplicate delivery, gaps, partial results and branch changes
+must not duplicate content or splice one result into another. Persist state
+before advertising a completed asset.
+
+Separate display from model replay. A rendered image must not silently be
+omitted from the model request while the UI implies the model saw it. For the
+first slice, retain the supported bounded text replay and explicitly describe
+rich content unavailable to that model. Do not add Workbench storage paths,
+access tokens or credentials from asset metadata to the projection. Preserve
+existing authorization and replay behavior for tool-result text, which may
+legitimately name a person's files. Preserve tool-call IDs and tool message
+order.
+
+Current public chat contracts do not provide a generic multimodal tool-result
+or assistant-output channel. If a later implementation sends images back to
+the model or ingests provider-native output parts, first extend the relevant
+shared contracts/adapters and test an actual supported backend. Adopting
+Responses wholesale is not a prerequisite for RC1-RC5.
+
+### Asset access and lifecycle
+
+Provide authenticated media/file routes and reuse appropriate existing media
+components. Preview only validated assets whose authorization succeeds; model
+authored image URLs remain links. Audio/video use explicit playback controls,
+not autoplay. Files have readable names, type/size information and downloads.
+Initially, formats without a safe preview remain downloadable file cards.
+
+An asset inherits the restrictions of the result that produced it. Existing
+chat readability alone is insufficient: a Job Site result hidden from the
+install owner must also hide its filenames, thumbnails, bytes and downloads.
+Apply saved-document restrictions where that provenance applies. Enforce the
+same checks on metadata, preview, download, range requests and export routes.
+Preserve `Cache-Control: private, no-store` on authenticated asset responses.
+Clear rendered private assets, object URLs and application caches on sign-out
+or a known loss of access; revalidate access when a preview is reopened.
+
+Define per-asset and per-person storage limits, failure states and orphan
+cleanup. Keep assets referenced by any surviving answer version. Delete only
+unreferenced owned assets when their chat/artifact is deleted; never delete a
+source file on a Job Site. Cancelled or interrupted calls retain their existing
+uncertainty and non-replay semantics.
+
+**Acceptance:**
+
+- A fixture MCP server returns mixed text/image/resource/structured results
+  through each tool path; order and supported content survive persistence,
+  restart, reconnect, export and branch selection.
+- A second person cannot access asset metadata or bytes. Owner read-only views
+  obey hidden-result rules through direct URLs as well as the visible UI.
+- Signing out, changing person or losing access cannot restore a prior private
+  preview from application caches or an unreleased object URL.
+- Duplicate/gapped events, emoji offsets, partial uploads and missing assets
+  produce consistent recovery or explicit fallback.
+- Spoofed MIME types, excessive payloads and hostile SVG/HTML cannot become
+  active content in the main chat. Resource URLs cause no implicit fetch.
+- Legacy chats and text-only tools still work. Tool transcripts replay within
+  the gateway's supported schema and limits, without pretending image vision.
+- Deletion preserves assets on surviving branches and cleans up true orphans.
+
+## RC4 Citations and structured results
+
+**Result:** a citation opens its source detail, and supported structured
+results display as useful tables or charts with the underlying data available.
+
+Retain provider annotation positions when supplied. Specify the provider's
+offset units and map them explicitly to the stored text block and browser
+string; account for streaming, Unicode and draft/final separation. Do not
+invent positions when a provider supplied only a URL. Keep existing Sources
+lists as the reliable fallback.
+
+Connect document citation markers to the existing passage detail view. Avoid
+converting arbitrary bracketed numbers in code or unrelated prose into source
+links. Reuse the source ownership and redaction rules, and preserve the
+distinction between a passage sent to the model and one cited by the answer.
+
+Support explicit structured table and chart blocks. Start with bounded tables
+and bar, line and scatter charts using a declarative schema controlled by
+Workbench. Do not execute JavaScript from data or interpret every JSON tool
+result as a chart. Provide a table/raw-data view and download alongside a
+visualization. Treat CSV exports as data, including spreadsheet-formula
+injection handling. State truncation rather than silently dropping rows.
+
+**Acceptance:**
+
+- Citation navigation works with mouse and keyboard; missing/invalid spans
+  retain a source-list fallback. Unicode and branched answers target the
+  correct text and source.
+- Text-only tool results remain text. Explicit table/chart fixtures render,
+  sort or inspect predictably, and preserve their source data.
+- Charts have labels and accessible data alternatives, and remain legible in
+  both themes and at mobile width. Large results use an explicit bounded view.
+- Unknown schemas, missing fields and invalid numbers produce useful fallback.
+- No chart expression, source link or export bypasses RC3 access rules.
+
+## RC5 Saved artifacts and isolated previews
+
+**Result:** a user can open a generated Markdown document, SVG, HTML page or
+small React app beside the chat, inspect/edit its source, save a revision and
+download it. Begin with Markdown and static previews, then add executable
+HTML/React once its isolation acceptance passes.
+
+Give artifacts a title, type, source, revision history and a link to their
+originating message. Use an explicit producer format or tool result, plus an
+explicit user action to open an ordinary code block as an artifact. Do not
+automatically execute all HTML/JavaScript fences. Earlier answer branches keep
+their artifact revisions; user edits create revisions rather than overwriting
+history. Markdown export should identify artifacts and revisions and must not
+embed expiring authenticated URLs as permanent download links.
+
+Render executable content inside an isolated preview with no access to chat
+DOM, session credentials, authenticated APIs or arbitrary network destinations.
+Bundle a small, fixed runtime locally for the first React slice; arbitrary npm
+installation and public CDN dependencies are outside this roadmap. Keep the
+parent chat's script policy unchanged and provide a source/download fallback.
+
+Workbench currently applies CSP and `X-Frame-Options: DENY` broadly. Design the
+preview route/origin, response headers and iframe sandbox together. Use a
+narrow preview-specific policy; avoid the same-origin plus script combination
+that lets untrusted content escape a nominal sandbox. Deny forms, popups,
+navigation and service workers. Any parent/preview messaging must authenticate
+the frame/channel and validate a small schema; it must not grant a general
+Workbench API bridge. Apply RC3 permissions when loading preview assets.
+
+Provide Run, Stop and Reload controls; opening a chat must not silently execute
+an interactive artifact. Set bounded source/dependency limits and a stoppable
+preview lifecycle. An error or expensive preview must not destroy the
+conversation. Do not claim
+that an iframe alone guarantees CPU isolation: measure the chosen design and
+make failure/recovery explicit. Static SVG follows the sanitized rendering
+rules from RC2, even when no scripts are intended.
+
+**Acceptance:**
+
+- Markdown, static SVG/HTML and the supported React subset have clear preview,
+  source, edit, revision and download behavior. Unknown dependencies fail in
+  words with source still available.
+- Reopening, branch switching and revising artifacts preserve the right source
+  and revision; deleting a chat follows RC3 asset-reference rules.
+- Browser tests attempt parent DOM/cookie access, authenticated API calls,
+  network fetches, forms, navigation and popups; each prohibited action fails.
+- Main chat and preview headers are tested separately in the built app. Normal
+  chat, Media screens and the existing search-suggestion iframe still work.
+- Errors and resource-heavy fixtures have a usable stop/recovery path. Preview
+  controls work by keyboard and at narrow widths.
+
+## Verification and release requirements
+
+Follow [CONTRIBUTING.md](../../CONTRIBUTING.md) and the repository's current
+engineering instructions. Shared contract changes belong in specs before
+consumer implementation/codegen; Workbench-only rendering changes do not need
+unrelated consumer re-pins. Keep this roadmap marked planned until each slice
+has its own implementation and acceptance record.
+
+For each slice, use a focused renderer/content fixture set and unit tests for
+changed behavior, then one browser acceptance run against the built app with
+production headers. Include partial streaming, malformed content, branch and
+reconnect behavior, dark/light themes, mobile width, keyboard use and network
+request inspection. DOM-only tests cannot establish CSP or iframe isolation.
+
+The existing renderer tests intentionally reject raw HTML injection and unsafe
+image fetching. Extend them to express the new controlled paths; do not disable
+the protections globally. Add error boundaries and size/work limits around new
+renderers. Record concrete performance and bundle measurements: ordinary
+text-only chat should not eagerly load math, diagrams, charts or preview
+runtimes, and finished blocks should not be reprocessed for every token.
+
+Use the repo's runner workflow for checks and its scoped sabotage policy for
+changed guards. Browser acceptance should use isolated fixtures and ports, not
+the live installation's defaults. Run the relevant frontend type/lint/build
+checks and backend checks for files changed. Record versions, measurements and
+remaining limitations under `docs/acceptance/`, and update the relevant design
+with what building found.
+
+When shipping an implementation, follow the Workbench README's `dist` build
+and catalogue-pin workflow; changing `main` alone does not update the installed
+page. A documentation-only roadmap needs link and whitespace checks and no
+codegen or runtime deployment.
+
+## Starting the implementation session
+
+Use this prompt for the first slice:
+
+> Implement RC1 from `specs/docs/design/workbench-rich-content-roadmap.md`.
+> Read the repository instructions and the existing Workbench reading design,
+> inspect the current source, and implement math rendering and scoped footnote
+> navigation using the roadmap's recommended defaults. Preserve production CSP,
+> streaming behavior, source copying and existing safety guarantees. Complete
+> the slice's unit and browser acceptance checks, record what building found,
+> and update its status. Keep the change within RC1; leave the later slices
+> planned. Follow the repository's normal landing and distribution workflow.
+
+For subsequent sessions, replace RC1 with the next slice and read its
+predecessor's acceptance record. Any unresolved blocker should identify the
+specific failed behavior and the smallest remaining decision or dependency.
+
+## Reference documentation
+
+- [react-markdown](https://github.com/remarkjs/react-markdown) and
+  [remark math](https://github.com/remarkjs/remark-math): the existing parser's
+  extension points and math support.
+- [KaTeX security](https://katex.org/docs/security) and
+  [options](https://katex.org/docs/options): trust, expansion/size bounds and
+  accessible output choices.
+- [Mermaid configuration](https://mermaid.js.org/config/schema-docs/config.html):
+  security and renderer configuration; verify against the pinned version.
+- [Open WebUI Mermaid](https://docs.openwebui.com/features/chat-conversations/chat-features/code-execution/mermaid/):
+  inline diagrams with source and navigation controls as a product benchmark.
+- [Claude artifacts](https://support.claude.com/en/articles/17153992-what-are-artifacts-and-how-do-i-use-them):
+  separate editable outputs and exports as a product benchmark.
+- [LibreChat artifacts](https://www.librechat.ai/docs/features/artifacts):
+  HTML/React/SVG/Mermaid previews as an advanced benchmark; this documentation
+  describes its development version.

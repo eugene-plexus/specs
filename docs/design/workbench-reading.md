@@ -2297,7 +2297,7 @@ Each has the recommended default (what the CSS above does), and one or two alter
 
 ## 12. Out of scope, or later
 
-- **Math** (section 10) and **footnotes** (the references are dead text today; the fix is a prefix for ids, a `#` branch in the `a` component that scrolls instead of changing the hash, and `section[data-footnotes]` styles: MD-18).
+- **Math** (section 10) and **footnotes** (the references are dead text today; the fix is a prefix for ids, a `#` branch in the `a` component that scrolls instead of changing the hash, and `section[data-footnotes]` styles: MD-18). *Built 2026-10-13 as [rich-content RC1](workbench-rich-content-roadmap.md#rc1-what-building-found-2026-10-13): KaTeX in a worker, read into React without parse5; footnotes move focus instead of scrolling.*
 - **Image chips** (an image an answer names is a link; a dashed chip with an icon and the host would help: MD-19) and the dead-link address (`[config](./x.yaml)` shows "config" with nothing to say it was a link).
 - **Heading outline** for screen readers: retag an answer's headings under the message's own and key the styles on `data-md` (A11Y-08). Not now: CSS stays by tag.
 - **Settings for display** (BP16, A11Y-12): text size as a percent of the browser's size (never the console's `16px` override, which beats a person's own browser setting), reading width (Narrow 34 rem / Comfortable 36 / Full), theme (System / Dark / Light). Stored per viewer; the label of the default says the effective px. Needs a place (the sidebar footer is reachable on a phone).
