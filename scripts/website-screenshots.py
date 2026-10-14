@@ -484,7 +484,7 @@ class Run:
         self.url[label] = url
         config: dict[str, Any] = {
             "firstRunComplete": True,
-            "updateChecks": True,
+            "updateChecks": False,
             "securityMode": "prompt_on_startup",
             "advertiseUrl": url,
             "runtimes": [],
