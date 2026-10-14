@@ -1,6 +1,6 @@
 # Workbench rich content rendering roadmap
 
-**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4-RC5 planned.**
+**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4 landed 2026-10-14 (Workbench `fd64990`, dist `cf45d79`, agent `f9d4410`; record: [RC4 run](../acceptance/workbench-rich-content-rc4-run.md)); RC5 planned.**
 
 Workbench should display equations, diagrams, generated media, structured
 results and interactive previews alongside a conversation. Keep the existing
@@ -568,6 +568,70 @@ injection handling. State truncation rather than silently dropping rows.
   both themes and at mobile width. Large results use an explicit bounded view.
 - Unknown schemas, missing fields and invalid numbers produce useful fallback.
 - No chart expression, source link or export bypasses RC3 access rules.
+
+### RC4: what building found (2026-10-14)
+
+Built in Workbench `answers.py` (`cite`, `sources_view`),
+`web/src/lib/citations.ts`, `lib/chartSpec.ts`, `lib/csv.ts`,
+`components/Chart.tsx`, `DataTable.tsx`, `Structured.tsx`, and in
+`Markdown.tsx`, `MessageView.tsx`, `SourcePassages.tsx` and `ToolContent.tsx`.
+
+- **The gateway already says where a web source is cited,** and Workbench
+  dropped it. `server_tools.citations` annotates only an address the answer's
+  text holds, with `start_index` and `end_index` as Python indexes into the
+  text of the one request that wrote it (a whole Markdown link when the
+  address is one). Workbench now notes where each request's text begins in
+  the message and gives the page the place in the page's count, UTF-16
+  (`marks`), never Python's. A source with no place is in the Sources list
+  only, as before.
+- **The gateway's count drifts after a draft.** It counts its rounds' text
+  joined by a blank line it never streams, so in the most common searched
+  answer (a draft, a search, the answer) every place was two characters past
+  the stored text a round, and a bare address no longer fit its place (filed
+  as gateway#16; its Responses door likely shares it). So a place is where
+  the text holds the address, at the occurrence nearest the gateway's index,
+  a Markdown link around it cited whole as the gateway cites it; where the
+  text does not hold the address there is no place. No place is made up, and
+  none depends on the gateway's arithmetic.
+- **The number goes after the link that is the citation.** The answer's
+  Markdown is the text after its draft, so each place is taken from where the
+  answer begins (the same trim as `answerParts`). A remark plugin puts the
+  source's number after the link whose source range meets the place; the
+  number moves focus to that source in the answer's Sources, by mouse or
+  keyboard, and leaves the address alone. Each version of an answer has its
+  own sources and its own numbers.
+- **A passage's `[n]`,** as Workbench asks the model to cite (context.py), is
+  a link only for a passage that was sent with the question, only in the
+  answer's words: not in code (which has no words to split), not inside a
+  link, not a footnote. It opens that passage under the answer and focuses
+  it. Any other bracketed number stays words. A model's own `[x](#web-1)` is
+  no citation: only the plugin marks one, and a link to `#` is not a link.
+- **Charts and tables are asked for in so many words:** a ```` ```chart ````
+  block in an answer (JSON; it may leave out `"workbench"` and `"version"`),
+  or a tool's structured content that says `"workbench": "chart"` or
+  `"table"`, version 1. Nothing else is tried: a tool's other data stays data.
+  The spec is read strictly (types, finite numbers, x as numbers or as
+  categories but not both, 12 series, 5,000 points, 50 columns, 10,000 rows,
+  200-character labels); what fails says why ("Chart not shown: `type` must
+  be ...") and shows its source or data.
+- **Workbench draws them itself,** bar, line and scatter, as SVG elements made
+  from numbers, words as text, colours from the page's own variables by class
+  (no `style` attribute, which the policy refuses), so they follow the theme.
+  Each chart is named for a screen reader in one sentence and has its numbers
+  a click away as a table. A table sorts by a column at a click
+  (`aria-sort`), shows 200 rows and says how many there are; its CSV has them
+  all.
+- **A CSV is data:** a cell that starts with `=`, `+`, `-`, `@`, a tab or a
+  return is written after an apostrophe (OWASP's guidance), numbers as
+  numbers. No chart library: the drawing is about 250 lines.
+- **A bar stands on a category,** so a bar chart's numeric x values (years)
+  are categories in their order; a range too wide to step is drawn between
+  its ends; long numbers are compact ("4.5M"); a chart's words are drawn
+  larger on a phone. A tool's chart is read once for its data, not on every
+  token of the answer around it.
+- **Not done:** pie and stacked charts; no zoom or tooltips on a chart;
+  series told apart by colour (and the legend's names) only; no Firefox or
+  Safari run.
 
 ## RC5 Saved artifacts and isolated previews
 
