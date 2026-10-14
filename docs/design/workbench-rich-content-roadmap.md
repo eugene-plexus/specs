@@ -1,6 +1,6 @@
 # Workbench rich content rendering roadmap
 
-**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4 landed 2026-10-14 (Workbench `fd64990`, dist `cf45d79`, agent `f9d4410`; record: [RC4 run](../acceptance/workbench-rich-content-rc4-run.md)); RC5 landed 2026-10-14 (Workbench `de136f1`, dist `53384fc`, agent `0b7f910`; record: [RC5 run](../acceptance/workbench-rich-content-rc5-run.md)). The roadmap is complete.**
+**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4 landed 2026-10-14 (Workbench `fd64990`, dist `cf45d79`, agent `f9d4410`; record: [RC4 run](../acceptance/workbench-rich-content-rc4-run.md)); RC5 landed 2026-10-14 (Workbench `de136f1`, dist `53384fc`, agent `0b7f910`; record: [RC5 run](../acceptance/workbench-rich-content-rc5-run.md)); RC6 landed 2026-10-14 (Workbench `b8eb976`, dist `56464a7`, agent `20ac64d`; record: [RC6 run](../acceptance/workbench-rich-content-rc6-run.md)).**
 
 Workbench should display equations, diagrams, generated media, structured
 results and interactive previews alongside a conversation. Keep the existing
@@ -74,6 +74,7 @@ in Workbench. Rendering support must name the input path that supplies it.
 | RC3 | Typed tool/message content, authorized assets and inline media/file cards | Independent of RC1/RC2; required by RC4/RC5 | Workbench backend and frontend |
 | RC4 | Citation navigation and structured tables/charts | RC3 | Workbench backend and frontend |
 | RC5 | Saved artifacts and isolated previews | RC3; reuse RC2/RC4 where applicable | Workbench backend and frontend |
+| RC6 | Artifacts shown and run in place | RC5 | Workbench backend and frontend |
 
 Each slice must be usable and accepted before it is called complete. RC3 can
 be designed alongside RC1/RC2, but keep shared-file edits coordinated. A fresh
@@ -785,6 +786,107 @@ Built in Workbench `artifacts.py`, `artifacts_api.py`, `store.py` (schema 15),
   (it has no origin); an artifact's title is the fence's and is not edited; no
   artifact from a tool's result; no diff between revisions; no Firefox or
   Safari run.
+
+## RC6 Artifacts shown and run in place
+
+Added 2026-10-14 at Troy's call, after RC5: an artifact is shown where the answer
+puts it and a page or component runs there by itself, as the foundation models'
+own apps do. RC5's isolation is unchanged; only when a preview starts changes.
+
+**Result:** an artifact the answer asks for is drawn in its message: Markdown as
+it reads, SVG as a picture, a page or a component in its frame, started when it
+comes into view and sized to its content. Open still gives its source, revisions
+and download.
+
+- **Decided (Troy):** previews run by themselves by default, every answer's,
+  including answers that read web pages or tool output. That accepts RC5's one
+  way out zero-click: a page an injected answer wrote may go to another
+  address, with what it holds, when the chat is opened. A person can turn it
+  off (**Run previews when shown**, theirs, kept by Workbench), and then each
+  preview waits for Run in place. The install owner reading someone's chat
+  never runs it by itself: it is another person's output.
+- **One process for every preview:** Chrome puts every preview frame of the
+  page in one process (measured: one loops, every other goes silent; the
+  chat answers in 1 ms). So previews start one at a time, each heard from
+  every half second, at most four run at once (the one longest out of view
+  makes room), and when every running preview falls silent the run is stuck:
+  all are stopped, the one that was busy (focused, or just started) is named
+  and does not run by itself again, and the rest start again.
+- **A preview says its height,** and its frame follows, up to most of the
+  screen, then it scrolls in its own box.
+- **Acceptance:** RC5's isolation checks hold for a preview started by
+  itself; nothing runs before it is in view; at most four run; a looping
+  preview is stopped and named, and the others run again; the height follows
+  the content; the switch is shown as it is and is kept; the owner's view
+  waits for Run; a long chat stays smooth; RC5's own checks still pass with
+  the switch off.
+
+### RC6: what building found (2026-10-14)
+
+Built in Workbench `web/src/lib/previewRunner.ts`, `components/ArtifactBody.tsx`,
+and in `Artifact.tsx`, `ArtifactPreview.tsx`, `ArtifactDialog.tsx`,
+`Sidebar.tsx`, `App.tsx`, `preview/runtime.ts` and `api.py` (`runPreviews` on
+`/api/me`, `PUT /api/me/run-previews`).
+
+- **An artifact is drawn in its card:** Markdown as an answer reads (in a box
+  that scrolls past 32 rem), SVG as RC2's picture, a page or a component in
+  its frame; the card shows the last revision kept of it, else the answer's
+  block. The body is a chunk of its own, fetched with the first artifact on
+  the page.
+- **Every preview frame of the page is one Chrome process.** Measured: four
+  sandboxed frames, one loops, all four stop answering at once (2 s silent
+  each); the chat answers in 1 ms. A preview's process cannot be told apart,
+  so the page watches the group: each preview says it still answers every
+  half second (`alive`), and when every running preview that has its source
+  is silent for 3 s, all are stopped.
+- **Which one loops:** the one the person is in (its frame has focus), else
+  the one given its source last. Not the one started last: the first build
+  named a preview whose frame had been put in the frozen process and never
+  got its source, and the real one ran again. The one named waits for Run,
+  remembered in the browser (cleared at sign-out) so a reload does not run it
+  again; the others start again by themselves and ran again 8.8 s after the
+  stop (most of it Chrome ending the process, RC5's frame retries meanwhile).
+- **One starts at a time:** a preview runs by itself only once the one before
+  it has had its source for 2 s, so one that loops as it starts is caught on
+  its own; at most four run, and the one that left the screen first makes
+  room (its card says so, and it runs again when shown). A preview starts
+  when its own run row is on screen, not its card's title.
+- **A frame is as tall as its page** (the preview reports its height when it
+  changes), from 120 px to 70% of the window, then the page scrolls inside;
+  set through CSSOM, as the page's policy refuses a style attribute. A written
+  page's height is watched by its reporter: writing the page replaces the
+  element the runtime watched, though its timer (the heartbeat) goes on.
+- **The switch is the person's,** kept by Workbench (`runPreviews:<sub>` in the
+  settings), shown in the sidebar as kept: the box changes once it is kept,
+  and says so when keeping fails. Off, previews wait for Run in place. The
+  owner's view of someone's chat never runs one by itself; a draft and a
+  plain block never do.
+- **The chat keeps to its end** while what it holds grows (ChatView's pin),
+  so a card scrolled into view can be taken away again as previews above it
+  grow; the browser check brings a card back until it runs. Measured with
+  four previews running: the chat's longest frame 13.8 ms.
+- **Silence is not always a loop:** a hidden tab throttles the previews'
+  beat, and a long task of the page's own (or a machine asleep) stops it and
+  the watch alike. The watch notes when it last looked; across a gap of more
+  than two of its beats, or while the tab is hidden, or as the tab is shown
+  again, every running preview counts as heard. Found by the review: the
+  first build would have named a healthy preview after the tab came back.
+- **A preview's messages are read so far:** forty a second from one frame
+  and no more, and its height applied at once, then at most every 200 ms and
+  only when it moved 4 px or more, so a preview that floods the page with
+  `size` or `alive` cannot keep the chat busy or move it at every frame.
+- **An artifact holds no artifacts:** the fences inside a Markdown artifact
+  are plain blocks, in its card and its dialog (the first build ran them as
+  previews of their own). Nothing runs by itself in an answer still being
+  written. What is remembered when a preview loops is its words as well as
+  its block, so a revision that fixes it runs by itself again.
+- **Not done:** no per-chat switch; the one named stays named on that browser
+  until Run (no list to clear); a looping preview still uses a whole core
+  for about 3.5 s before it is stopped, and the process until Chrome ends it;
+  the person's Run (and an artifact's dialog) may run a fifth preview when
+  four on screen run already; the one named is a guess (the one the person
+  is in, else the newest), and a preview that loops later than its start can
+  have a neighbour named for it.
 
 ## Verification and release requirements
 
