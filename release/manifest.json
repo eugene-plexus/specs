@@ -3,7 +3,7 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "101a2d0dd0fa15b3a29b95742f82a23661a16252",
+    "agent": "0840e0432377935e1f8ae83d221ee73215262e94",
     "control": "4710ce829c99b3a5fbed4a3461f157c93d8040a8",
     "gateway": "775600a750cbc527318b27c18b3ed3252bb10728",
     "library": "a4669642672bd9dca075c8f8ef014f53e47bfb3d",
@@ -11,5 +11,5 @@
     "ui": "8cf99134461ca85848d356c291640453e37bd523",
     "inference-driver": "c6745cb92ace41269f85f2a6039a1231eb4bbc55"
   },
-  "dependenciesSha256": "3a4a32641e201cf2c2ad0082ccb537c396c5b27582cd254a6c2b6b292832e24b"
+  "dependenciesSha256": "266568e25707278b36f6ef0f1439dffd94b2a9f44e7a50bf5cf3c6b633ef5498"
 }

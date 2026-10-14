@@ -9,12 +9,17 @@ joserfc>=1.6.1,<2
 jsonschema>=4.20,<5
 keyring>=25.5,<26
 mcp>=2.3,<2.4
+numpy>=2.0,<3
 pillow>=12.3,<13
+psutil>=7.2.2,<8
 pydantic-settings>=2.6,<3
 pydantic>=2.9,<3
 pyjwt[crypto]>=2.10,<3
 pyjwt[crypto]>=2.9,<3
 pynacl>=1.5,<2
+pypdf>=6,<7
+pypdfium2>=5,<6
+python-docx>=1.2,<2
 python-multipart>=0.0.20,<0.1
 pywin32>=306; sys_platform == 'win32'
 pyyaml>=6.0,<7

@@ -241,6 +241,8 @@ jobs:
         run: python specs/scripts/ls4-sources-acceptance.py
       - name: Verify preparation is a job on the engine's node, with a stand-in Strata setup (LS5)
         run: python specs/scripts/ls5-preparation-acceptance.py
+      - name: Verify runtime Stop waits for descendants and refuses stale Strata listeners
+        run: python specs/scripts/runtime-stop-acceptance.py
       - name: Verify each engine owns its fit model, from declaration to judge to admission (LS6)
         run: python specs/scripts/ls6-fit-acceptance.py
       - name: Verify a node runs a prepared model from its own copy of the Library's files (LS7a)
