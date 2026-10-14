@@ -488,6 +488,7 @@ FAMILIES = [
         "from OpenRouter stand-in",
         False,
     ),
+    Fam("or-unknown", "or", "or-box/test/unknown", "from OpenRouter stand-in", True),
     Fam(
         "gemini",
         "gemini",
@@ -514,6 +515,7 @@ DOOR_FAMILIES = (
     "or-nova",
     "or-nopar",
     "or-all3",
+    "or-unknown",
     "gemini",
 )
 #: Decided, said in plain words, and so not a failure: a seed of 0 or below to Strata
@@ -596,7 +598,7 @@ def expect(fam: Fam, shape: Shape) -> Expect:
 # --------------------------------------------------------------------------- #
 
 #: OpenRouter's public list as it answered on 2026-10-12, trimmed to what a driver reads:
-#: a model that names no tools, the eight that name tools without `tool_choice` (Amazon
+#: a model explicitly listing no tools, an unknown listing, and models with tools without `tool_choice` (Amazon
 #: Nova is one), one without `parallel_tool_calls`, and one that has all three.
 ARCH = {"input_modalities": ["text"], "output_modalities": ["text"]}
 OPENROUTER_LISTING = {
@@ -605,6 +607,13 @@ OPENROUTER_LISTING = {
             "id": "nvidia/switchyard",
             "name": "NVIDIA: Switchyard",
             "context_length": 1000000,
+            "architecture": ARCH,
+            "supported_parameters": ["temperature", "max_tokens"],
+        },
+        {
+            "id": "test/unknown",
+            "name": "Unknown parameters",
+            "context_length": 100000,
             "architecture": ARCH,
             "supported_parameters": [],
         },
@@ -742,6 +751,9 @@ class Quiet(BaseHTTPRequestHandler):
 
     def chat_done(self, model: str, stream: bool) -> None:
         """Answer a chat completion `from <tag>`, whole or as SSE."""
+        if getattr(self, "loading", False):
+            self.send_json(503, {"error": {"message": "Loading model"}})
+            return
         if self.chat_status:
             self.send_json(self.chat_status, {"error": {"message": "stand-in failure"}})
             return
@@ -2429,6 +2441,45 @@ def check_heads(stack: Stack) -> Result:
     )
 
 
+def check_loading(stack: Stack) -> Result:
+    """A loading backend is tried on every call, then serves as soon as ready."""
+    primary = stack.stand_in(FAM["strata"])
+    problems: list[str] = []
+    for stream in (False, True):
+        gateway = stack.new_gateway(stack.slots, f"loading-{stream}")
+        primary.recorded.clear()
+        primary.loading = True
+        try:
+            for attempt in range(4):
+                reply = stack.post("chat", "slot-strata", {}, stream, gateway)
+                if reply.status != 200 or "from local" not in reply.text:
+                    problems.append(
+                        f"stream={stream} loading attempt {attempt}: {reply.text[:200]}"
+                    )
+            asked = len(
+                [p for p, _ in primary.recorded if p.endswith("/chat/completions")]
+            )
+            if asked != 4:
+                problems.append(
+                    f"stream={stream}: loading backend was asked {asked} times, wanted 4"
+                )
+            primary.loading = False
+            reply = stack.post("chat", "slot-strata", {}, stream, gateway)
+            if reply.status != 200 or FAM["strata"].tag not in reply.text:
+                problems.append(
+                    f"stream={stream}: ready backend still unavailable: {reply.text[:200]}"
+                )
+        finally:
+            primary.loading = False
+            stack.retire(gateway)
+    return Result(
+        "loading",
+        "loading does not open a circuit",
+        problems,
+        "4 loading refusals then immediate recovery, whole and streamed",
+    )
+
+
 def problems_for(problems: list[str], label: str) -> bool:
     return any(p.startswith(label) for p in problems)
 
@@ -2443,11 +2494,13 @@ CHECKS = {
     "slots": "2",
     "counts": "3",
     "heads": "4",
+    "loading": "5",
 }
 #: Which families each check needs built (header and slots take `--families`).
 NEEDS = {
     "failover": {"strata", "local"},
     "heads": {"strata", "local"},
+    "loading": {"strata", "local"},
     "counts": {"local"},
 }
 
@@ -2541,6 +2594,8 @@ def main(argv: list[str]) -> int:
                 result = check_slots(stack, only)
             elif check == "heads":
                 result = check_heads(stack)
+            elif check == "loading":
+                result = check_loading(stack)
             else:
                 result = check_counts(stack)
             results.append(result)

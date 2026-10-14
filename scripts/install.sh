@@ -61,10 +61,10 @@ set -eu
 # Generated from release/manifest.json by scripts/release-inputs.py.
 PIN_AGENT=101a2d0dd0fa15b3a29b95742f82a23661a16252
 PIN_CONTROL=4710ce829c99b3a5fbed4a3461f157c93d8040a8
-PIN_GATEWAY=8f1c3c0eaaf84682478877a520c22846021d1ef8
-PIN_DRIVER=e035deea4ec918722a9ce7ef195cca5d9ccb330c
+PIN_GATEWAY=775600a750cbc527318b27c18b3ed3252bb10728
+PIN_DRIVER=c6745cb92ace41269f85f2a6039a1231eb4bbc55
 PIN_LIBRARY=a4669642672bd9dca075c8f8ef014f53e47bfb3d
-PIN_TOOL_DRIVER=f46d0bbb5b5b710d635761c35c1ba730ed3a7a5b
+PIN_TOOL_DRIVER=f5dc64a475756d94d0b8976a9189542b0d0f1831
 PIN_UI=8cf99134461ca85848d356c291640453e37bd523   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,

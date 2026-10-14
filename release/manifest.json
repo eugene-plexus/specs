@@ -5,11 +5,11 @@
   "components": {
     "agent": "101a2d0dd0fa15b3a29b95742f82a23661a16252",
     "control": "4710ce829c99b3a5fbed4a3461f157c93d8040a8",
-    "gateway": "8f1c3c0eaaf84682478877a520c22846021d1ef8",
+    "gateway": "775600a750cbc527318b27c18b3ed3252bb10728",
     "library": "a4669642672bd9dca075c8f8ef014f53e47bfb3d",
-    "tool-driver": "f46d0bbb5b5b710d635761c35c1ba730ed3a7a5b",
+    "tool-driver": "f5dc64a475756d94d0b8976a9189542b0d0f1831",
     "ui": "8cf99134461ca85848d356c291640453e37bd523",
-    "inference-driver": "e035deea4ec918722a9ce7ef195cca5d9ccb330c"
+    "inference-driver": "c6745cb92ace41269f85f2a6039a1231eb4bbc55"
   },
   "dependenciesSha256": "3a4a32641e201cf2c2ad0082ccb537c396c5b27582cd254a6c2b6b292832e24b"
 }
