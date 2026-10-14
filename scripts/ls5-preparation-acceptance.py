@@ -100,7 +100,7 @@ PREPARED = "qwen3.8-flash-next-unsloth-ud-iq4_xs"
 # Upstream's setup, standing in: its arguments, its outputs where it puts
 # them, its `[!]`/`[X]`/`=== Step` lines. A `SLOW` file in the data folder
 # makes it wait (for C1 and U1), a `FAIL` file makes it stop (F1).
-FAKE_SETUP = r'''
+FAKE_SETUP = r"""
 import argparse, json, os, sys, time
 from pathlib import Path
 
@@ -157,10 +157,10 @@ cfg = {"exe": str(ROOT / "engine" / "strata.exe"), "args": args, "cwd": str(ROOT
 (ROOT / f"strata-{tag}.json").write_text(json.dumps(cfg))
 (ROOT / f"run-{tag}.bat").write_text("@echo off")
 print("All set.", flush=True)
-'''
+"""
 
 # The stand-in for Strata's `serve/server.py`, as LS3's acceptance has it.
-FAKE_SERVER = '''
+FAKE_SERVER = """
 import argparse, json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -224,11 +224,14 @@ class Handler(BaseHTTPRequestHandler):
 
 
 ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
-'''
+"""
 
 
 def check(label: str, ok: bool, detail: object = "") -> None:
-    print(f"{'PASS' if ok else 'FAIL'}  {label}" + ("" if ok else f"  -- {detail}"), flush=True)
+    print(
+        f"{'PASS' if ok else 'FAIL'}  {label}" + ("" if ok else f"  -- {detail}"),
+        flush=True,
+    )
     if not ok:
         FAILURES.append(label)
 
@@ -249,7 +252,12 @@ def _gguf_string(text: str) -> bytes:
 
 
 def write_gguf(path: Path, kv: dict[str, Any]) -> None:
-    body = bytearray(b"GGUF" + struct.pack("<I", 3) + struct.pack("<Q", 0) + struct.pack("<Q", len(kv)))
+    body = bytearray(
+        b"GGUF"
+        + struct.pack("<I", 3)
+        + struct.pack("<Q", 0)
+        + struct.pack("<Q", len(kv))
+    )
     for key, value in kv.items():
         body += _gguf_string(key)
         if isinstance(value, str):
@@ -284,7 +292,10 @@ def fake_strata(root: Path) -> Path:
 def alive(pid: int) -> bool:
     if os.name == "nt":
         out = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, check=False
+            ["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+            capture_output=True,
+            text=True,
+            check=False,
         ).stdout
         return str(pid) in out
     try:
@@ -297,7 +308,9 @@ def alive(pid: int) -> bool:
 def read_only(folder: Path):  # type: ignore[no-untyped-def]
     """`folder` made one this account cannot write in (L1); the undo."""
     if os.name == "nt":
-        who = subprocess.run(["whoami"], capture_output=True, text=True, check=True).stdout.strip()
+        who = subprocess.run(
+            ["whoami"], capture_output=True, text=True, check=True
+        ).stdout.strip()
         subprocess.run(
             ["icacls", str(folder), "/deny", f"{who}:(WD,AD)"],
             capture_output=True,
@@ -328,15 +341,24 @@ def same(given: str, expected: Path) -> bool:
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="ep-ls5-", ignore_cleanup_errors=True) as raw:
+    with tempfile.TemporaryDirectory(
+        prefix="ep-ls5-", ignore_cleanup_errors=True
+    ) as raw:
         directory = Path(raw)
         agent_port, library_port, gateway_port = free_ports(3)
         models = directory / "models"
         folder = models / REPO.replace("/", os.sep)
         folder.mkdir(parents=True)
-        kv = {"general.architecture": "qwen4exp", "general.name": "Flash Next", "general.file_type": 20}
+        kv = {
+            "general.architecture": "qwen4exp",
+            "general.name": "Flash Next",
+            "general.file_type": 20,
+        }
         for shard in SHARDS:
-            write_gguf(folder / shard, kv if shard == FIRST else {"general.architecture": "qwen4exp"})
+            write_gguf(
+                folder / shard,
+                kv if shard == FIRST else {"general.architecture": "qwen4exp"},
+            )
         original = (folder / FIRST).read_bytes()
         undo_read_only = read_only(folder)
         strata_root = directory / "strata"
@@ -344,7 +366,8 @@ def main() -> int:
         data = models / "Strata-data"
         (directory / "engines").mkdir()
         (directory / "library.yaml").write_text(
-            yaml.safe_dump({"logLevel": "INFO", "modelRoots": [str(models)]}), encoding="utf-8"
+            yaml.safe_dump({"logLevel": "INFO", "modelRoots": [str(models)]}),
+            encoding="utf-8",
         )
         (directory / "gateway.yaml").write_text(
             yaml.safe_dump({"routingRefreshSeconds": 2}), encoding="utf-8"
@@ -374,7 +397,11 @@ def main() -> int:
             ),
             encoding="utf-8",
         )
-        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.upper().startswith("EUGENE_PLEXUS_")
+        }
         env.update(
             {
                 "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(directory / "agent.yaml"),
@@ -396,7 +423,9 @@ def main() -> int:
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                if os.name == "nt"
+                else 0,
             )
 
         def stop_agent(process: subprocess.Popen[bytes]) -> None:
@@ -422,17 +451,29 @@ def main() -> int:
             limits=httpx.Limits(keepalive_expiry=2.0),
         )
 
-        def wait(fn, label: str, seconds: float = 90):  # type: ignore[no-untyped-def]
+        def wait(fn, label: str, seconds: float = 90, *, diagnostic=None):  # type: ignore[no-untyped-def]
             deadline = time.perf_counter() + seconds
             last: object = None
             while time.perf_counter() < deadline:
                 try:
                     got = fn()
+                    last = got
                     if got:
                         return got
-                except (httpx.HTTPError, KeyError, ValueError, TypeError, IndexError) as e:
+                except (
+                    httpx.HTTPError,
+                    KeyError,
+                    ValueError,
+                    TypeError,
+                    IndexError,
+                ) as e:
                     last = e
                 time.sleep(0.25)
+            if diagnostic is not None:
+                try:
+                    last = diagnostic()
+                except Exception as exc:
+                    last = f"diagnostic failed: {type(exc).__name__}: {exc}; last saw {last!r}"
             raise AssertionError(f"timed out: {label} ({last!r})")
 
         try:
@@ -442,7 +483,10 @@ def main() -> int:
             ).json()["sessionToken"]
             client.headers["Authorization"] = f"Bearer {token}"
             proxy = "/api/proxy/library"
-            wait(lambda: client.get(f"{proxy}/healthz").status_code == 200, "the library answers")
+            wait(
+                lambda: client.get(f"{proxy}/healthz").status_code == 200,
+                "the library answers",
+            )
             patched = client.patch("/v1/config", json={"strataServer": str(server)})
             if patched.status_code != 200:
                 raise AssertionError(f"strataServer refused: {patched.text[:300]}")
@@ -450,21 +494,37 @@ def main() -> int:
             def scanned() -> dict[str, dict[str, Any]]:
                 client.post(f"{proxy}/v1/scan", json={"full": True})
                 wait(
-                    lambda: client.get(f"{proxy}/v1/scan").json()["state"] != "scanning",
+                    lambda: (
+                        client.get(f"{proxy}/v1/scan").json()["state"] != "scanning"
+                    ),
                     "the scan finishes",
                 )
-                return {m["name"]: m for m in client.get(f"{proxy}/v1/models").json()["models"]}
+                return {
+                    m["name"]: m
+                    for m in client.get(f"{proxy}/v1/models").json()["models"]
+                }
 
             gguf_name = LISTED
-            listed = wait(lambda: (lambda ms: ms if gguf_name in ms else None)(scanned()), "the GGUF is listed")
+            listed = wait(
+                lambda: (lambda ms: ms if gguf_name in ms else None)(scanned()),
+                "the GGUF is listed",
+            )
             gguf = listed[gguf_name]
             node = client.get("/v1/node").json().get("name")
-            print(f"agent :{agent_port}, library :{library_port}, node {node!r}", flush=True)
+            print(
+                f"agent :{agent_port}, library :{library_port}, node {node!r}",
+                flush=True,
+            )
 
             # E1 -----------------------------------------------------------
-            engines = {e["engine"]: e for e in client.get("/v1/engines").json()["engines"]}
+            engines = {
+                e["engine"]: e for e in client.get("/v1/engines").json()["engines"]
+            }
             strata = engines["strata"]
-            entry = next((m for m in strata.get("supportedModels") or [] if m["id"] == CHOICE), {})
+            entry: dict[str, Any] = next(
+                (m for m in strata.get("supportedModels") or [] if m["id"] == CHOICE),
+                {},
+            )
             preparation = entry.get("preparation") or {}
             check(
                 "E1 Strata is available from its borrowed install and publishes each preparation's disk and contexts",
@@ -476,20 +536,31 @@ def main() -> int:
             )
 
             def submit(op: str, **preparation: Any) -> None:
-                body = {"modelId": gguf["id"], "node": node, "preparation": {"engine": "strata", **preparation}}
+                body = {
+                    "modelId": gguf["id"],
+                    "node": node,
+                    "preparation": {"engine": "strata", **preparation},
+                }
                 put = client.put(f"{proxy}/v1/run-operations/{op}", json=body)
                 if put.status_code != 202:
-                    raise AssertionError(f"run refused: {put.status_code} {put.text[:300]}")
+                    raise AssertionError(
+                        f"run refused: {put.status_code} {put.text[:300]}"
+                    )
 
             def record(op: str) -> dict[str, Any]:
-                got: dict[str, Any] = client.get(f"{proxy}/v1/run-operations/{op}").json()
+                got: dict[str, Any] = client.get(
+                    f"{proxy}/v1/run-operations/{op}"
+                ).json()
                 return got
 
-            def until(op: str, steps: tuple[str, ...], seconds: float = 180) -> dict[str, Any]:
+            def until(
+                op: str, steps: tuple[str, ...], seconds: float = 180
+            ) -> dict[str, Any]:
                 return wait(
                     lambda: (lambda r: r if r["step"] in steps else None)(record(op)),
                     f"run {op} reaches {steps}",
                     seconds,
+                    diagnostic=lambda: record(op),
                 )
 
             # P1 -----------------------------------------------------------
@@ -511,7 +582,11 @@ def main() -> int:
                 preparing["step"] == "preparing"
                 and any("preparing the model for Strata" in s for s in seen_steps)
                 and status.get("bytesNeeded") == preparation.get("diskBytes"),
-                {"steps": sorted(seen_steps), "status": status, "record": preparing.get("error")},
+                {
+                    "steps": sorted(seen_steps),
+                    "status": status,
+                    "record": preparing.get("error"),
+                },
             )
             done = until("ls5-prepare", ("ready", "failed", "cancelled"))
             check(
@@ -525,7 +600,10 @@ def main() -> int:
             node_data = work / "Strata-data"
 
             # P2 -----------------------------------------------------------
-            calls = [json.loads(line) for line in (node_data / "setup-calls.jsonl").read_text().splitlines()]
+            calls = [
+                json.loads(line)
+                for line in (node_data / "setup-calls.jsonl").read_text().splitlines()
+            ]
             argv = calls[0]["argv"] if calls else []
             pairs = dict(zip(argv[::2], argv[1::2]))
             check(
@@ -544,7 +622,11 @@ def main() -> int:
 
             # P3 -----------------------------------------------------------
             config_path = data / f"strata-{TAG}.json"
-            config = json.loads(config_path.read_text(encoding="utf-8")) if config_path.exists() else {}
+            config = (
+                json.loads(config_path.read_text(encoding="utf-8"))
+                if config_path.exists()
+                else {}
+            )
             args = config.get("args") or []
             check(
                 "P3 Strata-data has the marker and Strata's configuration, paths relative, no cwd",
@@ -557,8 +639,10 @@ def main() -> int:
             )
             check(
                 "P3 the expert profile is copied beside the pack, nothing is left in the engine's folder",
-                (data / "packs" / TAG / "expert-profile.bin").read_bytes() == b"\1" * 256
-                and args[args.index("--expert-profile") + 1] == f"packs/{TAG}/expert-profile.bin"
+                (data / "packs" / TAG / "expert-profile.bin").read_bytes()
+                == b"\1" * 256
+                and args[args.index("--expert-profile") + 1]
+                == f"packs/{TAG}/expert-profile.bin"
                 and not list(strata_root.glob("strata-*.json"))
                 and not list(strata_root.glob("run-*.bat")),
                 sorted(p.name for p in strata_root.iterdir()),
@@ -573,20 +657,37 @@ def main() -> int:
                 "L1 the GGUF's folder refuses a write from this account, as a share does a node",
                 refuses_a_write(folder),
             )
-            marker = (data / ".eugene-engine-files").read_text(encoding="utf-8") if (data / ".eugene-engine-files").is_file() else ""
-            library_files = sorted(p.relative_to(data).as_posix() for p in data.rglob("*") if p.is_file())
+            marker = (
+                (data / ".eugene-engine-files").read_text(encoding="utf-8")
+                if (data / ".eugene-engine-files").is_file()
+                else ""
+            )
+            library_files = sorted(
+                p.relative_to(data).as_posix() for p in data.rglob("*") if p.is_file()
+            )
             check(
                 "L2 the Library made Strata-data and holds what the model is made of, none of setup's records",
                 "written by Eugene Plexus's Library" in marker
-                and {f"strata-{TAG}.json", f"packs/{TAG}/expert-profile.bin", "mtp/rt/experts.bin",
-                     f"packs/{TAG}/tokenizer/vocab.json"} <= set(library_files)
+                and {
+                    f"strata-{TAG}.json",
+                    f"packs/{TAG}/expert-profile.bin",
+                    "mtp/rt/experts.bin",
+                    f"packs/{TAG}/tokenizer/vocab.json",
+                }
+                <= set(library_files)
                 and "setup-calls.jsonl" not in library_files
-                and not [n for n in library_files if n.endswith((".done", ".eugene-upload"))]
+                and not [
+                    n for n in library_files if n.endswith((".done", ".eugene-upload"))
+                ]
                 and not list(folder.glob("*.done")),
                 {"marker": marker[:80], "files": library_files},
             )
             view = work / REPO.replace("/", os.sep)
-            node_files = sorted(p.relative_to(node_data).as_posix() for p in node_data.rglob("*") if p.is_file())
+            node_files = sorted(
+                p.relative_to(node_data).as_posix()
+                for p in node_data.rglob("*")
+                if p.is_file()
+            )
             check(
                 "L3 setup's marks are beside this node's links; after listing it keeps only the MTP helper",
                 (view / (FIRST + ".done")).is_file()
@@ -594,7 +695,11 @@ def main() -> int:
                     os.path.samefile(view / FIRST, folder / FIRST)
                     or (view / FIRST).read_bytes() == original
                 ),
-                {"view": sorted(p.name for p in view.iterdir()) if view.is_dir() else None},
+                {
+                    "view": sorted(p.name for p in view.iterdir())
+                    if view.is_dir()
+                    else None
+                },
             )
             check(
                 "L3 the node no longer holds what it sent, but keeps the MTP helper",
@@ -610,7 +715,11 @@ def main() -> int:
             listed = scanned()
             prepared = listed.get(PREPARED) or {}
             provenance_path = data / f"{PREPARED}{SUFFIX}"
-            provenance = json.loads(provenance_path.read_text(encoding="utf-8")) if provenance_path.exists() else {}
+            provenance = (
+                json.loads(provenance_path.read_text(encoding="utf-8"))
+                if provenance_path.exists()
+                else {}
+            )
             check(
                 "P4 the Library lists the prepared model, linked to its GGUF; the MTP helper is not a model",
                 prepared.get("format") == "prepared"
@@ -629,11 +738,19 @@ def main() -> int:
                 and (done.get("preparedFrom") or {}).get("id") == gguf["id"],
                 {k: done.get(k) for k in ("model", "preparedFrom")},
             )
-            profiles = client.get(f"{proxy}/v1/models/{prepared.get('id')}/profiles").json()["profiles"]
-            runtimes = {r["name"]: r for r in client.get("/v1/runtimes").json()["runtimes"]}
+            profiles = client.get(
+                f"{proxy}/v1/models/{prepared.get('id')}/profiles"
+            ).json()["profiles"]
+            runtimes = {
+                r["name"]: r for r in client.get("/v1/runtimes").json()["runtimes"]
+            }
             runtime = runtimes.get(done.get("runtime") or "") or {}
             seen_file = server.parent / "seen" / f"{PREPARED}.json"
-            seen = json.loads(seen_file.read_text(encoding="utf-8")) if seen_file.exists() else {}
+            seen = (
+                json.loads(seen_file.read_text(encoding="utf-8"))
+                if seen_file.exists()
+                else {}
+            )
             handed = (seen.get("config") or {}).get("args") or []
             check(
                 "P4 its profile is Strata's, its runtime the provenance file, Strata handed the prepared files at 32K",
@@ -649,7 +766,8 @@ def main() -> int:
             # P5 -----------------------------------------------------------
             check(
                 "P5 setup's warnings are kept on the operation",
-                "Windows' page file is 2.0 GB" in ((done.get("preparation") or {}).get("warnings") or []),
+                "Windows' page file is 2.0 GB"
+                in ((done.get("preparation") or {}).get("warnings") or []),
                 done.get("preparation"),
             )
 
@@ -657,15 +775,29 @@ def main() -> int:
             companion = f"{done.get('runtime')}-driver"
 
             def seen_by_gateway() -> dict[str, Any] | None:
-                listed = client.get("/api/proxy/gateway/v1/admin/drivers").json().get("drivers") or []
+                listed = (
+                    client.get("/api/proxy/gateway/v1/admin/drivers")
+                    .json()
+                    .get("drivers")
+                    or []
+                )
                 found = next((d for d in listed if d.get("name") == companion), None)
-                return found if found and found.get("reachable") and not found.get("error") else None
+                return (
+                    found
+                    if found and found.get("reachable") and not found.get("error")
+                    else None
+                )
 
             try:
-                seen = wait(seen_by_gateway, "the gateway sees Strata's driver serving", 90)
+                seen = wait(
+                    seen_by_gateway, "the gateway sees Strata's driver serving", 90
+                )
             except AssertionError:
                 seen = {}
-            listed = client.get("/api/proxy/gateway/v1/admin/drivers").json().get("drivers") or []
+            listed = (
+                client.get("/api/proxy/gateway/v1/admin/drivers").json().get("drivers")
+                or []
+            )
             check(
                 "W1 the gateway reaches the Strata runtime's companion driver, which reports no error",
                 bool(seen),
@@ -687,14 +819,30 @@ def main() -> int:
                 )
 
             try:
-                wait(routable, "the gateway routes the prepared model to Strata's driver", 60)
+                wait(
+                    routable,
+                    "the gateway routes the prepared model to Strata's driver",
+                    60,
+                )
             except AssertionError:
-                print("NOTE  the gateway never routed the prepared model to Strata's driver within 60 s")
+                print(
+                    "NOTE  the gateway never routed the prepared model to Strata's driver within 60 s"
+                )
             chat = client.post(
                 "/api/proxy/gateway/v1/chat/completions",
-                json={"model": alias, "messages": [{"role": "user", "content": "Hello"}], "max_tokens": 16},
+                json={
+                    "model": alias,
+                    "messages": [{"role": "user", "content": "Hello"}],
+                    "max_tokens": 16,
+                },
             )
-            said = ((chat.json().get("choices") or [{}])[0].get("message") or {}).get("content") if chat.status_code == 200 else None
+            said = (
+                ((chat.json().get("choices") or [{}])[0].get("message") or {}).get(
+                    "content"
+                )
+                if chat.status_code == 200
+                else None
+            )
             check(
                 "W2 a chat through the gateway is answered by Strata",
                 said == "Hello from the stand-in Strata.",
@@ -712,11 +860,20 @@ def main() -> int:
             wait(lambda: own()["status"] == "stopped", "the runtime stops", 60)
             stop_agent(agent)
             agent = start_agent()
-            wait(lambda: client.get("/healthz").status_code == 200, "the agent answers again")
-            client.headers["Authorization"] = "Bearer " + client.post(
-                "/v1/auth/login", json={"passphrase": passphrase}
-            ).json()["sessionToken"]
-            wait(lambda: client.get(f"{proxy}/healthz").status_code == 200, "the library answers again")
+            wait(
+                lambda: client.get("/healthz").status_code == 200,
+                "the agent answers again",
+            )
+            client.headers["Authorization"] = (
+                "Bearer "
+                + client.post("/v1/auth/login", json={"passphrase": passphrase}).json()[
+                    "sessionToken"
+                ]
+            )
+            wait(
+                lambda: client.get(f"{proxy}/healthz").status_code == 200,
+                "the library answers again",
+            )
             # Boot is over once the agent answers; give a start it should not
             # have made the time to show.
             time.sleep(5)
@@ -729,18 +886,35 @@ def main() -> int:
                 {k: after.get(k) for k in ("status", "stopReason", "pid", "lastError")},
             )
             client.post(f"/v1/runtimes/{stopped_rt}/start")
-            ready = wait(lambda: (lambda r: r if r["status"] == "ready" else None)(own()), "it starts again", 90)
-            kept = yaml.safe_load((directory / "agent.yaml").read_text(encoding="utf-8"))
+            ready = wait(
+                lambda: (lambda r: r if r["status"] == "ready" else None)(own()),
+                "it starts again",
+                90,
+            )
+            kept = yaml.safe_load(
+                (directory / "agent.yaml").read_text(encoding="utf-8")
+            )
             check(
                 "S2 Start brings it back and forgets the stop",
                 stopped_rt not in (kept.get("stoppedRuntimes") or []),
-                {"status": ready.get("status"), "stoppedRuntimes": kept.get("stoppedRuntimes")},
+                {
+                    "status": ready.get("status"),
+                    "stoppedRuntimes": kept.get("stoppedRuntimes"),
+                },
             )
-            switched = client.put(f"/v1/runtimes/{stopped_rt}/auto-start", json={"autoStart": False})
+            switched = client.put(
+                f"/v1/runtimes/{stopped_rt}/auto-start", json={"autoStart": False}
+            )
             time.sleep(3)
             still = own()
-            declared = next(
-                (r for r in yaml.safe_load((directory / "agent.yaml").read_text(encoding="utf-8"))["runtimes"] if r["name"] == stopped_rt),
+            declared: dict[str, Any] = next(
+                (
+                    r
+                    for r in yaml.safe_load(
+                        (directory / "agent.yaml").read_text(encoding="utf-8")
+                    )["runtimes"]
+                    if r["name"] == stopped_rt
+                ),
                 {},
             )
             check(
@@ -754,10 +928,14 @@ def main() -> int:
                     "put": (switched.status_code, switched.text[:200]),
                     "declared": declared.get("autoStart"),
                     "before": {k: ready.get(k) for k in ("pid", "lastRestart")},
-                    "after": {k: still.get(k) for k in ("status", "pid", "lastRestart")},
+                    "after": {
+                        k: still.get(k) for k in ("status", "pid", "lastRestart")
+                    },
                 },
             )
-            client.put(f"/v1/runtimes/{stopped_rt}/auto-start", json={"autoStart": True})
+            client.put(
+                f"/v1/runtimes/{stopped_rt}/auto-start", json={"autoStart": True}
+            )
 
             # R1 -----------------------------------------------------------
             if done.get("runtime"):
@@ -771,7 +949,10 @@ def main() -> int:
                 "R1 preparing again with another context replaces its own configuration and provenance",
                 again["step"] == "ready"
                 and args[args.index("--max-context") + 1] == "8192"
-                and json.loads(provenance_path.read_text(encoding="utf-8")).get("recipe") == "strata-prepare"
+                and json.loads(provenance_path.read_text(encoding="utf-8")).get(
+                    "recipe"
+                )
+                == "strata-prepare"
                 and [n for n in listed if n.startswith(PREPARED)] == [PREPARED],
                 {k: again.get(k) for k in ("step", "error")},
             )
@@ -780,14 +961,21 @@ def main() -> int:
 
             # U1 + C1 ------------------------------------------------------
             (node_data / "SLOW").write_text("", encoding="utf-8")
-            calls_before = len((node_data / "setup-calls.jsonl").read_text().splitlines())
+            calls_before = len(
+                (node_data / "setup-calls.jsonl").read_text().splitlines()
+            )
             submit("ls5-cancel")
             until("ls5-cancel", ("preparing",), 120)
             wait(
-                lambda: len((node_data / "setup-calls.jsonl").read_text().splitlines()) > calls_before,
+                lambda: (
+                    len((node_data / "setup-calls.jsonl").read_text().splitlines())
+                    > calls_before
+                ),
                 "setup starts",
             )
-            pid = json.loads((node_data / "setup-calls.jsonl").read_text().splitlines()[-1])["pid"]
+            pid = json.loads(
+                (node_data / "setup-calls.jsonl").read_text().splitlines()[-1]
+            )["pid"]
             refused = client.post("/v1/engines/strata/uninstall")
             check(
                 "U1 Strata cannot be uninstalled while it prepares",
@@ -795,7 +983,11 @@ def main() -> int:
                 (refused.status_code, refused.text[:200]),
             )
             cancelled = client.post(f"{proxy}/v1/run-operations/ls5-cancel/cancel")
-            stopped = wait(lambda: not alive(pid), "setup stops", 60) if cancelled.status_code == 200 else False
+            stopped = (
+                wait(lambda: not alive(pid), "setup stops", 60)
+                if cancelled.status_code == 200
+                else False
+            )
             check(
                 "C1 cancelling the operation stops setup and what it started",
                 cancelled.json().get("step") == "cancelled" and stopped is True,
@@ -811,7 +1003,8 @@ def main() -> int:
                 "F1 a setup that stops fails the run at prepare, in setup's own words",
                 failed["step"] == "failed"
                 and failed.get("failedStep") == "prepare"
-                and "Strata's setup stopped: not enough free disk space" in (failed.get("error") or ""),
+                and "Strata's setup stopped: not enough free disk space"
+                in (failed.get("error") or ""),
                 {k: failed.get(k) for k in ("step", "failedStep", "error")},
             )
             library_log = data / f"strata-{TAG}.setup.log"
@@ -819,7 +1012,8 @@ def main() -> int:
             check(
                 "L4 the failed setup's log is sent, and the failure names the Library's copy",
                 library_log.is_file()
-                and "[X]  not enough free disk space" in library_log.read_text(encoding="utf-8")
+                and "[X]  not enough free disk space"
+                in library_log.read_text(encoding="utf-8")
                 and error.endswith(f"(its whole output: {library_log})"),
                 error,
             )
@@ -836,9 +1030,15 @@ def main() -> int:
             undo_read_only()
             stop_agent(agent)
             log.close()
-            if FAILURES:
+            if FAILURES or sys.exc_info()[0] is not None:
                 print("--- agent log (last 80 lines) ---")
-                print("\n".join(log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-80:]))
+                print(
+                    "\n".join(
+                        log_path.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).splitlines()[-80:]
+                    )
+                )
     print(f"{'FAILED' if FAILURES else 'PASSED'}: {len(FAILURES)} failing check(s)")
     return 1 if FAILURES else 0
 

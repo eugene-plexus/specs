@@ -239,6 +239,8 @@ jobs:
         run: python specs/scripts/ls3-prepared-acceptance.py
       - name: Verify catalogue sources are a list and Strata publishes its own, against two fake hubs (LS4)
         run: python specs/scripts/ls4-sources-acceptance.py
+      - name: Verify LS5 timeout diagnostics preserve the operation state
+        run: python specs/scripts/ls5-preparation-checks.py
       - name: Verify preparation is a job on the engine's node, with a stand-in Strata setup (LS5)
         run: python specs/scripts/ls5-preparation-acceptance.py
       - name: Verify runtime Stop waits for descendants and refuses stale Strata listeners
