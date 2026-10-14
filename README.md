@@ -4,82 +4,146 @@
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![OpenAPI 3.1](https://img.shields.io/badge/OpenAPI-3.1-6BA539.svg)](https://spec.openapis.org/oas/v3.1.0)
 
-OpenAPI 3.1 contracts for every cross-component interface in [Eugene Plexus](https://eugeneplexus.com).
+**Manage local AI engines, model files and application access from your browser.**
 
-**[v0.2.0](https://github.com/eugene-plexus/specs/releases/tag/v0.2.0) is the
-latest release** of the local-inference control plane: early software that works,
-with rough edges and [known limits](docs/releases/v0.2.0.md#known-issues). Start
-with the [installation guide](https://eugeneplexus.com/install). Before updating
-an installation, make a checkpoint as the
-[backup and recovery guide](docs/recovery.md) describes, then update the control
-root first.
+[Install Eugene Plexus](https://eugeneplexus.com/install/) ·
+[See it in use](https://eugeneplexus.com/#uses) ·
+[Release notes](docs/releases/v0.2.1.md)
 
-This is the **single source of truth** for how Eugene Plexus components talk to each other. The six active consumers (`agent`, `control`, `gateway`, `inference-driver`, `library`, and `ui`) depend on a pinned revision via codegen, never via direct import. Retired repos retain historical pins; they do not consume today's contracts. Components share *schemas, not code*.
+**[v0.2.1](https://github.com/eugene-plexus/specs/releases/tag/v0.2.1) is the
+latest release**, published 2026-10-14. It is early software, with rough edges
+and [known limits](#current-status).
 
 ## What is Eugene Plexus?
 
 **A self-hosted control plane for local LLM inference.**
 
-It installs, updates and supervises inference engines, manages a model library on your own disk, holds per-model settings profiles, and exposes OpenAI-compatible and Anthropic Messages endpoints over eligible local and cloud backends. Its browser console manages authentication, routing and the machines in an installation. See the [tested configurations and support boundaries](docs/support-matrix.md) before planning a shared deployment.
+Eugene installs and supervises upstream inference engines, keeps models as
+plain files in your own folders, and gives your applications one address for
+local models and any cloud backends you choose to connect. Start on one
+computer and add more machines as your setup grows.
 
-**It is not an inference engine.** We supervise upstream llama.cpp, and user-installed vLLM and MLX (on Apple silicon). We do not fork or replace the engines.
+1. **Engine setup and restarts.** Install and manage llama.cpp, MLX on Apple
+   silicon, or experimental Strata from the browser. Connect a vLLM
+   installation you already have. Crashed engines restart; idle models can
+   unload and wake when an app needs them.
+2. **Settings that start with your hardware.** See model and memory-fit
+   guidance before downloading, then save per-model launch settings. Fit
+   estimates guide a launch; they do not predict speed or shared-service capacity.
+3. **Your model files, in your folders.** Search model catalogues, download
+   with progress and resume, or scan models already on disk. Removing Eugene
+   preserves your original model folders.
+4. **One endpoint for your applications.** Use OpenAI-compatible APIs,
+   including chat, embeddings and Responses, plus an Anthropic Messages
+   subset. Connect tools such as Claude Code, Codex and Open WebUI with their
+   own revocable keys. See the [API compatibility limits](docs/api-compatibility.md).
+5. **Keep the backends you already use.** Connect existing HTTP servers,
+   cloud accounts and supported CLI backends. Routing can keep a conversation
+   with the replica holding its prompt cache and fail over when retry is safe.
+   See [cache-aware balancing](https://eugeneplexus.com/cache-aware-balancing/)
+   and the [failover rules](docs/design/failover-safety.md).
+6. **Use it from your other devices.** Sign in from your phone or another
+   computer over a trusted LAN or a private network such as Tailscale.
+7. **Grow into a homelab.** Manage machines from one console, keep a model
+   library on a NAS, and let workers keep local copies of the models they run.
 
-Eugene brings engine lifecycle, model files, application access and routing into one console. The intended workflow is:
-
-1. **It installs, updates and restarts the engine for you.** llama.cpp today, your own vLLM if you have one; it comes back after a crash and gets out of memory when idle.
-2. **It tells you what fits before you download, and starts your settings there.** Quant and context picked for *this* card, with the reason shown. Fit estimates guide a launch; they do not establish shared-service latency or replace testing on the target hardware.
-3. **It finds and downloads models in the app, into your own folders, as plain files.** Search a catalogue, read what a model is, pick a quant, download with resume and progress — landing in your existing GGUF directories, plainly named. No content-addressed cache, no hash mismatches. Delete us and you still have your models, correctly named, where you put them.
-4. **One endpoint for your applications.** OpenAI-compatible chat, tool calling, embeddings and streaming, plus an Anthropic Messages subset for Claude Code. See the [supported features and limitations](docs/api-compatibility.md).
-5. **Add the backends you already run and the subscriptions you already pay for.** Connect local HTTP servers, supervised engines and supported CLI backends to one endpoint. Replicas are balanced with the prompt cache in mind: a conversation goes back to the copy that already holds it, a new one goes where there is room, and a llama.cpp server is never sent more than its memory holds ([the research behind it](https://eugeneplexus.com/cache-aware-balancing/)). Failover uses eligible targets only when retry is safe; ambiguous work is not automatically replayed. See the [failover rules](docs/design/failover-safety.md) and the [API feature limits](docs/api-compatibility.md).
-6. **Reach it from your other devices, safely.** One switch, a real login with sessions, and client keys you can revoke — over a tailnet or your own LAN, not just localhost.
-7. **It grows into a homelab.** More machines from one console, a model library on the NAS, replicas across GPUs, one trust root that holds the install together.
-
-This order and this wording were adopted on 2026-09-18 ([`docs/design/release-roadmap.md`](docs/design/release-roadmap.md) decision #2). The design documents number the same ideas differently and deliberately — they keep the numbers older documents cite, so `#4` there is still the schema-driven config UI, which has not gone anywhere: it is now how line 2 prefills a profile rather than something worth leading with. [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md) §2 holds both lists side by side.
-
-Client credentials and revocation: [client-key management](docs/client-keys.md).
-Real local-model setup: [Claude Code and Open WebUI](docs/application-workflows.md).
-
-Full design: [`docs/design/local-inference-control-plane.md`](docs/design/local-inference-control-plane.md). Current order of work: [audience roadmap](docs/design/audience-roadmap.md).
-
-Workbench rendering improvements: [rich content roadmap](docs/design/workbench-rich-content-roadmap.md).
+For everyday chat, install [**Workbench**](https://eugeneplexus.com/workbench/)
+from **Apps** in the console. It supports documents with sources, saved memory,
+and tools you approve. v0.2.1 adds rich answers and saved interactive previews.
+Open WebUI is also available from Apps.
 
 ## Current status
 
-**2026-10-13: [v0.2.0](docs/releases/v0.2.0.md) is the second release**; see
-the [installation instructions](https://eugeneplexus.com/install) and the
-[release checks](docs/acceptance/v0.2.0-release-run.md).
-[v0.1.0](docs/releases/v0.1.0.md) (2026-10-02) and the six alphas before it
-remain available. The [support matrix](docs/support-matrix.md) distinguishes
-measured, simulated, pending and unsupported configurations, and the release
-notes list the physical checks and the moderated sessions still owed.
+v0.2.1 has versioned installers and a Linux amd64 container image. Its
+[release checks](docs/acceptance/v0.2.1-release-run.md) include packaged Windows
+and WSL installs with real CPU model replies, a Linux system-service update
+under WSL, macOS runner checks, and container acceptance.
 
-### Historical snapshot — 2026-09-17
+Hardware and first-time-user verification remain uneven:
 
-The following snapshot predates R1-R8 and the alpha; its defect and publication
-statuses are historical, not the current pickup list. Their implementation
-records are in the [previous roadmap](docs/design/release-roadmap.md).
+- Windows and WSL have real inference evidence, including NVIDIA GPU runs.
+  Those runs do not establish support for every device or unattended boot scenario.
+- MLX has run on GitHub's macOS runners; physical Mac installation, reboot and
+  real-size model workloads remain unverified. AMD, Intel, modest-memory and
+  multi-GPU configurations have varying levels of evidence.
+- Strata remains experimental. The container's GPU path still needs a physical
+  hardware check. API compatibility is a documented subset of vendor features.
+- [Observed first-time-user sessions](docs/acceptance/hobbyist-sessions.md)
+  remain incomplete; one outside Windows installation was reported successful.
 
-As of **2026-09-17**, this is a pre-1.0 control plane under active development, and **not yet releasable — deliberately**. Milestones M0 through M11 are built, each with a re-runnable acceptance script rather than a claim, and so are ten further slices since (the resource-tree UI, Library folders, the hobbyist onboarding plan, Issues, a node-local model copy). Installers, a developer bootstrap and a control-plane container image exist; the container image is published to GHCR as `:edge`, and nothing else is published — no GitHub Release, nothing on PyPI or npm.
+The [support matrix](docs/support-matrix.md) records measured, simulated,
+pending and unsupported cases through v0.2.0; read it with the
+[v0.2.1 fixes and release limits](docs/releases/v0.2.1.md).
+Development priorities live in the [audience roadmap](docs/design/audience-roadmap.md).
 
-**An adversarial code review on 2026-09-17 found 38 anchored defects plus an architectural note, 11 of them rated High for a public first release.** Eight are being fixed before any public link and five more before the first hostile review; the order is [`docs/design/release-roadmap.md`](docs/design/release-roadmap.md). Until they land, **do not expose this to a network you do not control** — the login rate limiter can be driven from a request header when the browser reaches it through our own proxy, which is a pre-authentication defect. (A second one needs an operator token first: a crafted single-file download spec can write outside your model folders.)
+## Installing it
 
-- **Live-verified on real hardware:** llama.cpp *and* vLLM supervision, model scanning and profiles, catalogue search and resumable downloads, replica balancing, priority-tier failover, idle unload, wake on demand, memory admission, retained per-request metrics, tool calling end to end, embeddings, real token streaming, and a node keeping its own copy of the models it runs (21 s to serving against 266 s over SMB).
-- **Multi-host is proven on two real machines** (Windows + WSL2 Ubuntu, across NAT and a host firewall): non-loopback binds, derived advertise addresses, a cross-host completion, an idle unload decided on one host and executed on the other, and a full signing-key rotation. A NAS-hosted library serving a 27B to a GPU node is the live install. **Not proven: two replicas of one model on two machines** — the gateway keys runtimes by bare name, so that case cross-wires today (roadmap R1.6).
-- **Hardware-aware quant guidance is built and is not yet trustworthy.** Two code paths compute a fit and only one carries the per-layer KV arithmetic, so the number the one-click Run path writes into a profile can be far smaller than the one the recommendation card showed (roadmap R1.3). A Windows machine with an AMD or Intel GPU is currently detected as having no GPU at all and is given a CPU-only engine build (roadmap R2.3).
-- **The browser path is verified**, as of M9: Playwright drives first run, login, restart-on-login and the topology-resolved proxy against a live install; `scripts/hobbyist-acceptance.sh` counts real clicks from a clean guest to a first token on Windows and WSL2.
-- **Still unverified:** a signing-key rotation with a genuinely offline node, a partitioned-but-alive old control root, two-GPU placement, macOS on bare-metal hardware, and concurrent users against one runtime. **macOS and MLX are verified on GitHub's (virtual) Macs** (A4, 2026-09-30: the installer, launchd, MLX and llama.cpp on Metal); MLX is no longer experimental. Clock skew is no longer unverified — it took a worker out of the live install on 2026-09-15, and every component now tolerates five minutes of it.
-- **Provider compatibility is a subset.** Anthropic `/v1/messages` is implemented for text/tool clients, with explicit limitations. Images are planned in A4; Responses API parity is not promised. See [API compatibility](docs/api-compatibility.md).
-- **Known gaps:** rolling engine upgrades; a mixed-version engine fleet is possible and nothing detects it; no structured model-slot editor; one control-root screen (`/nodes`). The ~116 ms of control-plane overhead measured at M8 **is explained** — a fresh HTTPS client per request, parsing a CA bundle on the event loop — and is the first fix on the roadmap.
+Start with the [installation guide](https://eugeneplexus.com/install/) for
+requirements, first setup, your first reply and troubleshooting. A small first
+model needs about 16 GB of RAM and 10 GB of free disk space. You do not need
+Python, Node.js, Git or an inference engine installed first.
 
-Records: [the node-local copy](docs/acceptance/model-copy-run.md) ·
-[Library folders](docs/acceptance/library-folders-run.md) ·
-[the hobbyist click budget](docs/acceptance/hobbyist-run.md) ·
-[Issues](docs/acceptance/issues-run.md) ·
-[M7 on two hosts](docs/acceptance/m7-two-host-run.md) ·
-[M4 vLLM](docs/acceptance/m4-vllm-run.md) ·
-[M8 metrics](docs/acceptance/m8-metrics-run.md).
-Deploying over a tailnet: [`docs/deployment/tailnet.md`](docs/deployment/tailnet.md) ·
-in a container: [`docs/deployment/container.md`](docs/deployment/container.md).
+**Windows:** open PowerShell and approve the administrator prompt.
+
+```powershell
+irm https://eugeneplexus.com/releases/v0.2.1/install.ps1 | iex
+```
+
+**Linux:** use a terminal as your normal user. The installer asks for `sudo`
+when setting up its service; see the guide for systemd and WSL requirements.
+
+```sh
+curl -fsSL https://eugeneplexus.com/releases/v0.2.1/install.sh | sh
+```
+
+These commands stay on **v0.2.1**. The
+[release assets](https://github.com/eugene-plexus/specs/releases/tag/v0.2.1)
+include the installer source, component manifest and SHA-256 checksums.
+Follow the installer's final instructions to open the browser console.
+
+**Docker / NAS:** use `ghcr.io/eugene-plexus/control-plane:v0.2.1` with the
+published [Compose and storage instructions](https://eugeneplexus.com/install/#docker).
+The container runs the console, control root, gateway and model library. It
+can also run models on its CPU or a passed-through NVIDIA GPU; the GPU path
+has not been verified on physical hardware. A separate Windows or Linux
+worker can run the models instead.
+
+**Mac:** the installer supports Apple silicon and native arm64 Python,
+including from a Rosetta terminal. See the
+[Mac installation guidance](https://eugeneplexus.com/install/#mac) and the
+verification limits above before trying it.
+
+**Updating:** make a checkpoint using the [backup and recovery guide](docs/recovery.md),
+then update the control root before the other machines. Follow the
+[update instructions](https://eugeneplexus.com/install/#update) for your current
+version; do not run an older installer over a newer installation.
+
+**Removal:** v0.2.1 includes offline Windows and Mac removal utilities.
+On Windows, use **Settings → Apps → Installed apps → Eugene Plexus → Uninstall**.
+On Mac, use **Remove Eugene Plexus** in your home folder's **Applications** folder.
+They remove the software while keeping settings, app data and downloads by
+default, with separate choices to remove retained data. Original model folders
+are preserved. See [removal for each installation type](https://eugeneplexus.com/install/#remove)
+and the [offline removal guide](docs/deployment/uninstall.md).
+
+## Help and documentation
+
+- [Report a problem or ask a question](https://github.com/eugene-plexus/specs/issues/new):
+  include your Eugene version, OS, GPU/RAM, what you tried and the error text.
+  Remove credentials and private content from logs or screenshots.
+- [Application setup guides](https://eugeneplexus.com/guides/) and
+  [client keys and revocation](docs/client-keys.md).
+- [Architecture overview](https://eugeneplexus.com/architecture/) and
+  [full design](docs/design/local-inference-control-plane.md).
+- [Contributing](CONTRIBUTING.md): code contributions use DCO sign-off.
+
+## About this repository
+
+`specs` holds the OpenAPI 3.1 contracts, installers, release records and design
+documents for Eugene Plexus. It is the source of truth for cross-component
+interfaces. Consumers pin a revision and generate models or clients from it;
+components share **schemas, not code**. Retired repositories retain historical
+pins and do not consume today's contracts.
 
 ## Layout
 
@@ -91,8 +155,11 @@ openapi/
                             catalogue search, downloads, quant guidance
   agent.yaml                per-host supervision, engine lifecycle, enrollment
   control.yaml              trust root, node registry, replicated control state
+  tool-driver.yaml          server-run tools, including web search
+  site-host.yaml            a person's Job Site enrollment and local tools
   components/
     common.yaml             shared schemas (messages, errors, config protocol, auth)
+    ...                     client keys, sites and Job Sites
 ```
 
 ## Shape
@@ -106,7 +173,10 @@ Two layers, never collapsed: a routing `gateway` above N per-backend `inference-
 | gateway          | [`gateway`](https://github.com/eugene-plexus/gateway)                   | 8080                   | One OpenAI-compatible endpoint. Model → driver resolution, load balancing, priority-list failover. **No backend knowledge.**                                                             |
 | inference-driver | [`inference-driver`](https://github.com/eugene-plexus/inference-driver) | 8081                   | **One instance per backend.** Owns provider choice, model id, secrets and health; generation parameters come from the gateway                                                            |
 | library          | [`library`](https://github.com/eugene-plexus/library)                   | 8082                   | The operator's own model directories: recursive scan (GGUF + safetensors), metadata, per-model launch profiles; catalogue search, resumable downloads, quant table, hardware fit scoring |
+| tool-driver      | [`tool-driver`](https://github.com/eugene-plexus/tool-driver)           | 8190                   | Server-run tools, including web search, per account |
 | ui               | [`ui`](https://github.com/eugene-plexus/ui)                             | 3000 dev / 8079 served | Config editor, runtime dashboard, library browser, discovery, chat playground, logs                                                                                                      |
+| Workbench        | [`workbench`](https://github.com/eugene-plexus/workbench)               | assigned at install    | Chat app with documents, memory and approved tools; signs people in with Eugene |
+| site-host        | [`site-host`](https://github.com/eugene-plexus/site-host)               | loopback               | A person's Job Site enrollment and tools running under their own OS account |
 | specs            | this repo                                                               | —                      | Contracts; consumers codegen from a pinned SHA                                                                                                                                           |
 
 The layering matters and is not an accident of history. A driver belongs *next to its engine*, so it can run on a remote GPU host while the gateway reaches it over the tailnet — that is the whole multi-host story. Two replicas of one model on two GPUs need N independently-configured backends with something above them. And `claude_code_cli` / `codex_cli` are subprocess backends with no endpoint to proxy to, so a driver has to be able to sit in the request path regardless.
@@ -157,65 +227,6 @@ We deliberately **avoid the Java-based `openapi-generator`** — verbose output,
 
 Consumers pin a specs SHA in their own `SPECS_REF` file and regenerate from GitHub at that SHA, so a change here never breaks a consumer until it chooses to bump.
 
-## Installing it
-
-One command on any machine, from nothing — no Python needed first, because
-`uv` brings its own:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.sh | sh
-```
-
-```powershell
-irm https://raw.githubusercontent.com/eugene-plexus/specs/main/scripts/install.ps1 | iex
-```
-
-On Apple Silicon, the POSIX installer and developer bootstrap request native
-arm64 Python, including from a Rosetta terminal. An existing Intel environment
-is preserved and rejected with recovery instructions. The bootstrap's
-`--python` option still accepts an explicit interpreter override. Architecture
-selection has simulated regression coverage; installation and Metal inference
-on a physical Mac remain unverified.
-
-Both install into a single prefix they own, register startup, start Eugene and
-print its URL. Windows uses a service by default and asks for administrator
-access; `-NoService` selects a logon task. Mac uses a per-user LaunchAgent.
-A worker joins an existing installation with `--join <control-root-url>
---token <jwt>`.
-
-The current development installers also save an **offline removal utility**:
-Windows **Settings ? Apps ? Installed apps ? Eugene Plexus ? Uninstall**, or
-**Remove Eugene Plexus** in the Mac user's **Applications** folder. Removal
-shows sizes and offers separate choices for deleting settings/app data and
-managed downloads. By default it deletes the software while preserving those
-files and all original model folders. A retained cleanup receipt lets you
-change the choices later, even after Python has been removed.
-
-`--uninstall` / `-Uninstall` remains available. See the
-[Windows and Mac removal guide](docs/deployment/uninstall.md) for exact commands,
-retained-file locations and how to handle a partial cleanup. These improvements
-ship after v0.1.0; published installer assets are unchanged.
-
-Packages are fetched from pinned GitHub archives. The
-[support matrix](docs/support-matrix.md) distinguishes runner checks from
-physical-machine verification, including the remaining Mac and Windows checks.
-
-### Or in a container, for the control plane
-
-The control plane runs on an ordinary VM or NAS while the GPU machines stay on
-bare metal and join it over the network:
-
-```sh
-docker compose -f docker/compose.yaml up -d --build
-```
-
-One service, not four: the container runs a node agent that supervises the
-control root, gateway and library, exactly as it does on a host. There is no
-GPU and no engine in the image, deliberately.
-[`docs/deployment/container.md`](docs/deployment/container.md) has the
-without-Compose commands (UnRAID, Synology, plain Docker), the port table, and
-what is verified so far.
-
 ## Setting up a dev environment
 
 Eugene Plexus is a polyrepo targeting **Python 3.12** — every component pins `requires-python = ">=3.12"`, ruff `target-version = "py312"`, and mypy `python_version = "3.12"`, and CI runs on 3.12. Develop on 3.12 so local matches CI.
@@ -228,13 +239,16 @@ git clone https://github.com/eugene-plexus/specs
 sh specs/scripts/bootstrap.sh     # Windows: powershell specs/scripts/bootstrap.ps1
 ```
 
-It clones all eight repos as siblings, gives each Python repo a 3.12 virtualenv
-with `[dev]` and pre-commit hooks, sets up `ui` and `website` with npm, builds
+It clones the core development repos as siblings, gives each Python repo a
+3.12 virtualenv with `[dev]` and pre-commit hooks, sets up `ui` and `website` with npm, builds
 the UI export, and installs every component into the **agent's** virtualenv —
 which is the step that matters, because the supervisor spawns children with its
 own interpreter. Pass `--root DIR` / `-Root DIR` to build it somewhere else.
 Node is optional; without it the two Node repos are skipped and the dev agent
 serves no browser half.
+
+Workbench and site-host have their own development instructions in their
+repositories; this bootstrap does not set them up.
 
 The rest of this section describes what that automates. Committed generated
 files already match each consumer's pin;
@@ -346,20 +360,22 @@ These are settled. Don't relitigate them in PRs without a strong reason.
 
 Eugene Plexus began in May 2026 as a consciousness framework wrapping commercial LLMs, then grew a from-scratch LLM training platform in June 2026. **Both were retired as of 2026-09-08.** The code still exists and worked; it is archived, not deleted. If you find consciousness or training concepts in old commits or tags, they are historical — `main` is the control plane.
 
-The organization contains **15 repositories: seven active, one deferred, and seven
-retired**. `connector` is deferred; `memory`, `identity`, `coordinator`, `trainer`,
-`data`, `eval`, and `inference` are retired. None is GitHub-archived: status labels
-describe project scope, not read-only repository settings. `cluster` is not an
-existing repository. Historical pins and documentation are retained.
+`connector` is deferred; `memory`, `identity`, `coordinator`, `trainer`, `data`,
+`eval` and `inference` are retired. These labels describe project scope.
+Historical pins and documentation are retained.
 
-The name is a legacy of that era and was kept deliberately, which is why this README does the work a descriptive name would have done for free.
+The [September 2026 README status snapshot](docs/history/readme-status-2026-09.md)
+preserves the earlier development status and review findings. Subsequent fixes
+are recorded in the [release roadmap](docs/design/release-roadmap.md); use
+[Current status](#current-status) above for the released product.
 
 ## Versioning
 
 - This repo follows [SemVer](https://semver.org). `0.x` means breaking changes can land on minor bumps; pin exactly until 1.0.
 - Each OpenAPI document carries its own `info.version`. The repo tag is the umbrella version.
 - Breaking schema changes require a major (or pre-1.0 minor) bump and a migration note in the changelog.
-- Cross-component release notes live in [`CHANGELOG.md`](CHANGELOG.md).
+- Cross-component release notes live in [`docs/releases/`](docs/releases/).
+  [`CHANGELOG.md`](CHANGELOG.md) retains earlier development entries.
 
 ## License
 
