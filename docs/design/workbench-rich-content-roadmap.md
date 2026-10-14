@@ -1,6 +1,6 @@
 # Workbench rich content rendering roadmap
 
-**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4 landed 2026-10-14 (Workbench `fd64990`, dist `cf45d79`, agent `f9d4410`; record: [RC4 run](../acceptance/workbench-rich-content-rc4-run.md)); RC5 landed 2026-10-14 (Workbench `de136f1`, dist `53384fc`, agent `0b7f910`; record: [RC5 run](../acceptance/workbench-rich-content-rc5-run.md)); RC6 landed 2026-10-14 (Workbench `b8eb976`, dist `56464a7`, agent `20ac64d`; record: [RC6 run](../acceptance/workbench-rich-content-rc6-run.md)).**
+**Status: RC1 landed 2026-10-13 (Workbench `b10d2fe`, dist `8934301`, agent `ee3fbe7`; record: [RC1 run](../acceptance/workbench-rich-content-rc1-run.md)); RC2 landed 2026-10-13 (Workbench `36be7ab`, dist `7851a80`, agent `07e14f2`; record: [RC2 run](../acceptance/workbench-rich-content-rc2-run.md)); RC3 landed 2026-10-13 (Workbench `78a3ea2`, dist `3f1e813`, agent `cccb1d8`; record: [RC3 run](../acceptance/workbench-rich-content-rc3-run.md)); RC4 landed 2026-10-14 (Workbench `fd64990`, dist `cf45d79`, agent `f9d4410`; record: [RC4 run](../acceptance/workbench-rich-content-rc4-run.md)); RC5 landed 2026-10-14 (Workbench `de136f1`, dist `53384fc`, agent `0b7f910`; record: [RC5 run](../acceptance/workbench-rich-content-rc5-run.md)); RC6 landed 2026-10-14 (Workbench `b8eb976`, dist `56464a7`, agent `20ac64d`; footnotes fix Workbench `da6e47f`, dist `5c63bd7`, agent `101a2d0`; record: [RC6 run](../acceptance/workbench-rich-content-rc6-run.md)).**
 
 Workbench should display equations, diagrams, generated media, structured
 results and interactive previews alongside a conversation. Keep the existing
@@ -887,6 +887,23 @@ and in `Artifact.tsx`, `ArtifactPreview.tsx`, `ArtifactDialog.tsx`,
   four on screen run already; the one named is a guess (the one the person
   is in, else the newest), and a preview that loops later than its start can
   have a neighbour named for it.
+- **Found in Troy's test after landing:** a chat whose Markdown artifact had
+  footnotes scrolled the whole page, footer and all, into empty space. The
+  footnotes heading is hidden for a screen reader by absolute positioning, and
+  nothing positioned stood between it and the pane around the thread, so it
+  sat at its place in the thread's full height and lengthened the page. This
+  was not RC6's to begin with: any answer with footnotes did it, from RC1 on.
+  RC6 showed it by drawing Markdown artifacts in place. Fixed in two places:
+  the thread is now positioned and holds whatever is hidden in it, and a
+  Markdown artifact's own scrolling box holds what its Markdown hides. The
+  same chat's preview reported "Refused:
+  static.cloudflareinsights.com/beacon…": Cloudflare, in front of Troy's
+  Workbench, adds its analytics script to every HTML page, the preview frame
+  included. Every page now says `Cache-Control: no-cache, no-transform`,
+  which Cloudflare's documentation says it leaves as written; this still has
+  to be confirmed on Troy's install once it updates. The browser check never caught the
+  first bug: no fixture had footnotes, and no check measured the page's own
+  height.
 
 ## Verification and release requirements
 

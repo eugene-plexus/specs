@@ -120,6 +120,34 @@ its own):
   reporter's watch, and the tall page still had its height from the load
   event; the run now has a page that grows four seconds after it loads.
 
+## After landing: footnotes scrolled the page
+
+In Troy's test (Brave, behind Cloudflare), a chat whose Markdown artifact had
+footnotes scrolled the whole page, footer and all, into empty space. A
+headless Chrome probe reproduced it with footnotes, in a plain answer as well
+(the page measured 4,613 px in a 900 px window). The cause and the fix are in
+the roadmap's "RC6: what building found". Workbench `da6e47f`.
+
+The inline run gained a long Markdown artifact with a footnote, and a
+footnote in the answer around it, plus two checks. Both checks failed on the
+build from before the fix (`1 failed in 68.39s`):
+
+```
+FAIL  footnotes far down a chat do not lengthen the page: {"thread":4,"threadLoose":2,"docs":[1],"docsLoose":1,"page":4178}
+FAIL  a Markdown artifact's box holds what its Markdown hides: {"thread":4,"threadLoose":2,"docs":[1],"docsLoose":1,"page":4178}
+```
+
+After the fix, all 21 lines passed (`1 passed in 76.58s`), the two new ones
+among them. RC5's run, reading, citations and charts, and Media passed
+unchanged. Unit tests: the thread holds what is hidden in it
+(`ChatView.test.tsx`); a Markdown artifact's box is positioned
+(`stylesheet.test.ts`); every page says `no-cache, no-transform`
+(`test_artifacts.py`). Each failed under its own sabotage case (1/1 caught,
+three cases). The web suite: 3,234 tests in 85 files. Python: 1,990 passed
+and 28 skipped. One test failed in the full run,
+`test_folder_lifecycle_api.py::test_checks_are_not_made_while_the_owner_has_turned_documents_off`.
+It is outside this change, and it passed when run alone.
+
 ## Bundle
 
 The page's own script: 989.52 KB to 993.08 KB (287.55 to 288.87 KB gzip),
