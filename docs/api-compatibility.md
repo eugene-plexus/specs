@@ -3,6 +3,11 @@
 This describes development builds after A4 implementation, not the frozen `v0.1.0-alpha.1`.
 Compatibility means the features below, not every feature of a provider API.
 
+Assistant messages accept `reasoning` as an alias for `reasoning_content`,
+including Hermes Agent's tool-result follow-up. The text is carried back to
+the backend as reasoning. When both fields have non-null values, they must
+match. Responses continue to use `reasoning_content`.
+
 | Surface or feature | Status | Boundary |
 | --- | --- | --- |
 | `GET /v1/models` | Supported | Eugene's discovered models and routing aliases. |
@@ -27,7 +32,8 @@ Compatibility means the features below, not every feature of a provider API.
 | Tools and `response_format` | Forwarded | Definitions, JSON Schema and `strict` survive the wire. Backend support and schema enforcement vary; Eugene does not execute tools or post-validate output. |
 | Reasoning output | Supported | A model's separately reported reasoning (llama.cpp `reasoning_content`, vLLM `reasoning`) is returned as `reasoning_content` on the OpenAI door and as `thinking` blocks on the Anthropic door when the request enabled thinking. See [reasoning](#reasoning). |
 | `frequency_penalty`, `presence_penalty`, `top_k`, `min_p`, `parallel_tool_calls`, the `developer` role | Carried | Refused with 400 before 2026-09-23. Backends that cannot take one are routed around; see [chat settings](#chat-settings). |
-| `logprobs`, `logit_bias`, `reasoning_effort`, `verbosity`, `prediction`, `web_search_options` | Carried (P2c, since 2026-09-28) | Routed only to a backend whose model lists the setting; with none, a 400 naming it. Log probabilities and web citations come back. See [chat settings](#chat-settings). |
+| `logprobs`, `logit_bias`, `verbosity`, `prediction`, `web_search_options` | Carried (P2c, since 2026-09-28) | Routed only to a backend whose model lists the setting; with none, a 400 naming it. Log probabilities and web citations come back. See [chat settings](#chat-settings). |
+| `reasoning_effort` | Best effort | Forwarded to backends that support it, including Strata. Otherwise omitted and named in `x-eugene-plexus-ignored-settings`; it never excludes a backend or causes an unsupported-setting refusal. |
 | The deprecated `functions` / `function_call` | Translated (P2c) | Carried as tools and answered in the old shape. |
 | `POST /v1/responses/input_tokens` | Supported (P2c) | Counted by a local `llama-server`'s own tokenizer; a hosted provider cannot count and says so. |
 | Unknown fields | Rejected | 400 naming the field, including unknown nested message/tool/format fields. |
@@ -79,18 +85,38 @@ are refused. `user` and string-valued `metadata` are ignored annotations,
 neither stored nor forwarded nor used as authenticated identity. Unknown fields
 are refused even when null.
 
-**Since P2c (2026-09-28)**, six more settings are carried, each routed only to
-a backend whose model is known to take it: `logprobs` (with `top_logprobs`, up
-to 20), `logit_bias`, `reasoning_effort`, `verbosity`, `prediction` and
-`web_search_options`.
+**Since P2c (2026-09-28)**, six more settings are carried: `logprobs` (with
+`top_logprobs`, up to 20), `logit_bias`, `reasoning_effort`, `verbosity`,
+`prediction` and `web_search_options`. Except for reasoning effort, these route
+only to a backend whose model is known to take them.
+
+**Reasoning effort is a preference (2026-10-15).** A valid value, including
+`none`, never excludes a backend or causes an unsupported-setting refusal.
+For each attempt, the gateway forwards it when the backend lists support;
+otherwise it omits the field and names `reasoning_effort` in the ignored-settings
+header. The driver also tolerates unsupported effort on direct requests. An
+omitted effort leaves the backend's default in effect; it does not promise that
+thinking is disabled. Supported backends receive the value unchanged.
+The Responses API's `reasoning.effort` and Anthropic's `output_config.effort`
+use this same path. Anthropic `thinking.type: disabled` requests effort `none`
+and takes precedence over `output_config.effort`. An unsupported control is
+named using the field the client sent.
+
+Strata supports the control: its request translator maps `none`/`minimal` to
+thinking disabled, preserves `low` and `medium`, and maps `high`/`xhigh`/`max`
+to `xhigh`. The prepared Qwen3.8 Flash Next template supports those levels.
+Eugene previously removed Strata's declared support through an inherited
+generic HTTP capability filter, incorrectly refusing Cline's request.
+See [Strata's translator](https://github.com/Niko1221/Strata/blob/v0.1.39/serve/frontend.py#L57-L72).
 
 - An OpenRouter model takes the ones its listing names. On 2026-09-28 that was
   186 models for `reasoning_effort`, 149 for `logprobs`, 141 for `logit_bias`
   and far fewer for the rest.
-- OpenAI's own API takes all six. A local engine takes none yet: llama.cpp and
-  vLLM document `logprobs` and `logit_bias`, but they are not measured here.
-- With no backend that takes one, the answer is a 400 naming it; nothing is
-  sent. `logprobs: false` asks for nothing.
+- OpenAI's own API takes all six. Strata takes reasoning effort. Other local
+  engines do not yet advertise these fields: llama.cpp and vLLM document
+  `logprobs` and `logit_bias`, but they are not measured here.
+- With no backend that takes a setting other than reasoning effort, the answer
+  is a 400 naming it; nothing is sent. `logprobs: false` asks for nothing.
 - **Listed is not promised.** A provider can still refuse a listed setting
   (OpenAI refuses `web_search_options` for `gpt-4o-mini`), and that is the
   caller's 400 with the provider's words.
@@ -145,14 +171,18 @@ Anthropic's own `Input tag` wording, so Claude Code retries without an optional
 one such as its advisor. Unknown top-level settings are accepted and named in
 `x-eugene-plexus-ignored-settings` (v0.2.0). The measured Claude Code request includes `thinking`,
 `context_management`, `output_config.effort` and cache hints even when pointed at
-local models. `context_management`, `output_config.effort` and cache hints remain
-accepted, but **are not enforced**;
-`thinking` decides whether reasoning is returned (below), but a `budget_tokens` is
-not enforced and `disabled` hides reasoning without stopping the model thinking.
+local models. `context_management` and cache hints remain accepted but are not
+enforced. `output_config.effort` reaches supporting backends. `thinking` decides
+whether reasoning is returned (below), and `disabled` also requests native effort
+`none` where supported. A `budget_tokens` is not enforced by this compatibility path.
 Both streaming and ordinary responses list controls that were not honoured in
 `x-eugene-plexus-ignored-settings`. Metadata remains an ignored annotation.
-`stop_sequence` names the matched sequence when the backend reports it (vLLM
-does; llama.cpp does not, so behind llama.cpp `stop_reason` reads `end_turn`).
+`stop_sequence` names the matched sequence when the backend reports it or Eugene
+enforces it (Strata). vLLM reports it; llama.cpp does not, so behind llama.cpp
+`stop_reason` reads `end_turn`. Strata's driver matches stop strings in visible
+answer text across chunks and closes the upstream stream at the match. Tool
+arguments and reasoning are preserved. Usage is absent after an early stop when
+the backend has not supplied its final counts.
 When the backend reports cached prompt tokens, they are `cache_read_input_tokens`
 and `input_tokens` is the remainder, so the three input fields sum to the prompt.
 This is not native Anthropic reasoning, caching or context editing; consumers

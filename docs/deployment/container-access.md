@@ -113,6 +113,21 @@ Cloudflare. If you move the console through the setup too:
   refuses it.
 - Workbench works through Cloudflare when **Allow Workbench access from any
   network** is ticked.
+- For an API client such as Cline to work from home and away through Cloudflare,
+  enable the inference name and **Allow inference from any network, with an API
+  key**. This opens only the inference paths to requests from any network; the
+  gateway still requires a valid Eugene key and applies its model permissions
+  and limits. The console and node names keep their own access settings. Point
+  the inference name's NPM host at the same Docker address and port as Workbench,
+  and use `https://inference.<your-domain>/v1` as the client's base URL.
+
+  On a build without that checkbox, edit only `inference.networks` in the active
+  `/data/entrypoint.json` to `["0.0.0.0/0", "::/0"]`, then restart the container.
+  Keep the existing `inference.origin` and other settings. An older setup page
+  writes the private-network list back to inference when applied, so retain this
+  change until the UI is updated. A 403 saying the request came through Cloudflare
+  is this network check, before API-key validation; replacing the key does not
+  resolve it.
 - The console only answers your own networks, so through Cloudflare it refuses
   you, and says so. To reach it from home, add a local DNS entry (router, Pi-hole,
   or the hosts file) pointing the console name at your proxy's LAN address, so

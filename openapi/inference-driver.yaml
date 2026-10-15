@@ -1519,8 +1519,12 @@ components:
             rides with `logprobs`. The hints (`promptCacheKey`,
             `promptCacheRetention`, `serviceTier`, `safetyIdentifier`) are never
             listed: a backend that cannot carry a hint drops it. The gateway preserves this
-            list on each fallback attempt. An adapter must refuse a known unsupported
-            explicit setting with 400, rather than silently dropping it. Settings
+            list on each fallback attempt, except `reasoningEffort` when the selected
+            backend does not support it: effort is a preference, omitted and named
+            in the gateway's ignored-settings header. Drivers also omit unsupported
+            effort without refusing a direct request, even when this list names it.
+            An adapter must refuse other known unsupported explicit settings with 400,
+            rather than silently dropping them. Settings
             supplied only by profiles/defaults retain the adapter's default behavior.
             This field is internal and is not forwarded to upstream providers.
         completion:

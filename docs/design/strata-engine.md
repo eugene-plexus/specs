@@ -16,6 +16,46 @@ recipe in isolation and exercised Eugene against Strata's actual HTTP server
 with its mock engine. No model weights were downloaded and no GPU inference
 was performed. Performance remains upstream evidence until measured through Eugene.
 
+## Integration audit, 2026-10-15
+
+The current changes address four gaps in Eugene's adapter and API translation:
+
+- **Reasoning controls:** the generic HTTP capability filter incorrectly removed
+  Strata's declared `reasoningEffort`. Strata now advertises and receives it.
+  Chat Completions, Responses and Messages share the same best-effort path;
+  unsupported effort no longer blocks a request. Strata's configured thinking
+  mode uses native effort controls without appending instructions to the prompt.
+  An explicit request overrides the configured default.
+- **Thinking disabled:** Anthropic's `thinking.type: disabled` now requests effort
+  `none`, instead of only hiding the output. Unsupported controls are named in
+  the response header using the client's field name. Exact Anthropic token
+  budgets remain outside the shared driver contract.
+- **Stop sequences:** the pinned server reads its model's stop tokens but does
+  not implement caller-provided stop strings. Eugene now enforces them on visible
+  answer text, retaining partial matches across stream chunks and closing the
+  upstream connection at a match. Whole answers use the same path. Tool arguments
+  and reasoning are not truncated. Early cancellation has no invented usage count.
+- **Optional parallel requests:** a prepared config may request `parallel: 1..8`.
+  The agent reports the effective `concurrency.serving` from `/v1/status`, not the
+  requested count or the single entry in Strata's compatibility `/slots` endpoint.
+  Missing or invalid status leaves capacity conservatively at one. Existing
+  configurations retain their setting; parallelism is not enabled automatically.
+
+Evidence: the pinned [request translator](https://github.com/Niko1221/Strata/blob/6f32ec070f23ced9f50e704d854d775da52591ab/serve/frontend.py),
+[server](https://github.com/Niko1221/Strata/blob/6f32ec070f23ced9f50e704d854d775da52591ab/serve/server.py),
+and [batching documentation](https://github.com/Niko1221/Strata/blob/6f32ec070f23ced9f50e704d854d775da52591ab/docs/BATCHING.md),
+plus the locally prepared Qwen3.8 Flash Next IQ2_XS chat template. Regression
+tests exercise the real Eugene routes with simulated upstream responses,
+stream closure, split stop sequences, tool arguments, and effective capacity.
+This audit does not measure GPU throughput or deploy the changes.
+
+Known upstream limitations remain: `tool_choice: required` and named choices,
+`parallel_tool_calls: false`, structured output together with tools, and log
+probabilities. Eugene still supports text-only prepared models on one GPU;
+vision and multi-GPU preparation require separate integration work. The API
+compatibility layer still cannot express Strata's exact per-request reasoning
+token budget, although a prepared config can supply its native default.
+
 ## Recommendation
 
 Troy clarified the support bar on October 4: **Strata is experimental**, with

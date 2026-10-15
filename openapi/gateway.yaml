@@ -930,12 +930,11 @@ paths:
 
         ### Compatibility hints and explicit refusals (A2)
 
-        `cache_control`, `context_management` and `output_config.effort`
-        remain accepted for measured Claude Code compatibility, but are not
-        enforced (`output_config` was added 2026-09-23, when a newer Claude
-        Code began sending it and this door refused every request). `thinking`
-        decides whether the model's reasoning is returned as `thinking`
-        blocks (see below) and nothing more. Ignored hints are named in
+        `cache_control` and `context_management` remain accepted for Claude Code
+        compatibility but are not enforced. `output_config.effort` is carried as
+        the shared reasoning-effort preference to supporting backends.
+        `thinking` decides whether reasoning is returned as `thinking` blocks,
+        and `disabled` also requests effort `none` where supported. Ignored hints are named in
         `x-eugene-plexus-ignored-settings` on both response modes.
         `metadata` is discarded as an opaque annotation.
 
@@ -1470,8 +1469,8 @@ paths:
         model's own reasoning, which is what a local engine reports.
         `summary` is empty: there is nothing here to summarize with, so
         a requested `reasoning.summary` is named on the ignored-settings
-        header, as is `reasoning.effort` (the model's settings profile
-        governs how it thinks).
+        header. `reasoning.effort` is carried to supporting backends; when
+        unsupported it is omitted and named on that header without refusing the request.
 
         When `include` asks for `reasoning.encrypted_content`, the item
         also carries `encrypted_content`:
@@ -5476,6 +5475,16 @@ components:
             Refused with a 400 until 2026-09-23.
         content:
           $ref: './components/common.yaml#/components/schemas/MessageContent'
+        reasoning:
+          type:
+            - string
+            - 'null'
+          description: |
+            Request alias for `reasoning_content`, used by Hermes Agent and
+            OpenRouter-compatible clients when replaying assistant turns.
+            Preserved as reasoning, never merged into visible content. If both
+            fields contain non-null values, they must match. Responses use
+            `reasoning_content`.
         reasoning_content:
           type:
             - string
@@ -6926,27 +6935,26 @@ components:
             `content[0].text` pointing at the answer for every client
             that never asked.
 
-            What it does not decide: a `budget_tokens` is not enforced,
-            and `disabled` hides the blocks without stopping the model
-            thinking. Either is named on the ignored-settings response
-            header. The operator's `thinkingMode` governs what a local
-            model actually does.
+            A `budget_tokens` is not enforced and is named on the ignored-settings
+            header. Since 2026-10-15, `disabled` also requests effort `none`, taking
+            precedence over `output_config.effort`. Supporting backends receive
+            the control; others omit it and name `thinking` on that header.
         output_config:
           type:
             - object
             - 'null'
           additionalProperties: true
           description: |
-            **Accepted for `effort` only, and not enforced.** Claude Code
+            **`effort` is carried to supporting backends.** Claude Code
             sends `{"effort": "high"}` on every request -- measured
             2026-09-23 (2.1.207 with agent-sdk 0.3.280, beta header
             `effort-2025-11-24`), absent from the 2026-09-19 capture --
             and the unknown-field refusal A2 added turned that into a
             400 on the first request of every session: **Claude Code
             could not use this door at all** until this field was named.
-            How hard a local model thinks is the operator's
-            `thinkingMode`, exactly as for `thinking.budget_tokens`, so a
-            non-null value is named on the ignored-settings header.
+            Since 2026-10-15 it uses the shared reasoning-effort preference.
+            Unsupported effort is omitted and named as `output_config.effort`
+            on the ignored-settings header, without refusing the request.
 
             **`format` is honoured** (2026-10-03): `{"type":
             "json_schema", "schema": {...}}` becomes the chat path's
@@ -7571,9 +7579,10 @@ components:
             - 'null'
           additionalProperties: true
           description: |
-            `effort` and `summary` are accepted and not honoured, and are
-            named on the ignored-settings header when set. Codex sends
-            null for a model id it does not know.
+            `effort` is carried to supporting backends, otherwise omitted and
+            named as `reasoning.effort` on the ignored-settings header. `summary`
+            is accepted and not honoured, and named when set. Codex sends null
+            for a model id it does not know.
         include:
           type:
             - array
