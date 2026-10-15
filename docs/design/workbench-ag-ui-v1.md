@@ -32,6 +32,9 @@ event fail the run. Tool streams can interleave by ID. State patches apply
 atomically, with RFC JSON Pointer escaping and array semantics; references never
 retrieve remote schemas. Terminal success is committed only after clean upstream
 EOF. RUN_ERROR may be the first event, as allowed by the pinned protocol.
+Removing the entire state document is refused; use a root replacement with null.
+Native tool results have a 16,000-character text excerpt with an explicit note
+that the saved answer holds the full result. Reasoning is not projected.
 
 ## Identity and configuration
 
@@ -64,12 +67,16 @@ GET thread returns this saved input seed. The saved host answer must still be
 the selected chat tip: edits, retries and ordinary chat turns invalidate AG-UI
 continuation. Client input cannot inject system instructions, assistant/tool
 results, state changes, local tools or arbitrary execution targets.
+After a null state snapshot, omit the input's `state` field: the pinned upstream
+input schema does not admit an explicit null there. Native initialization also
+requires its messages snapshot to fit the event bound, before inference starts.
 
 Connect also supports an interrupt outcome followed by a new run with `resume`:
 every outstanding interrupt is answered exactly once with resolved/cancelled
 status, and resolved payloads satisfy its optional responseSchema. Schema
-references are local only. Interrupt expiry is enforced. Resume repeats saved
-messages/state and adds no user message. A parent can have only one successor,
+references and regular expressions are refused; response schemas are bounded to
+4 KiB and resolved payloads to 16 KiB. Interrupt expiry is enforced. Resume
+repeats saved messages/state and adds no user message. A parent can have only one successor,
 including after failure or uncertain execution. Native approval remains in the
 existing tool-decision API; native interrupt/resume input is refused.
 
