@@ -1,0 +1,191 @@
+openapi: 3.1.0
+info:
+  title: Workbench AG-UI backend
+  version: 1.0.0
+  description: |
+    Headless serve/connect adapters for the pinned AG-UI 1.0 subset.
+    See docs/design/workbench-ag-ui-v1.md for lifecycle, authorization and bounds.
+    Existing session cookie AND X-Workbench-Secret are required; writes also
+    require the canonical Origin. HTTPS uses the __Host- cookie prefix.
+  license: {name: Apache-2.0, identifier: Apache-2.0}
+servers: [{url: /}]
+security: [{session: [], secret: []}]
+paths:
+  /api/v1/ag-ui/capabilities:
+    get:
+      operationId: aguiCapabilities
+      responses:
+        '200':
+          description: Implemented backend subset; renderer is false.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [protocol, version, directions, renderer, events]
+                properties:
+                  protocol: {const: ag-ui}
+                  version: {const: '1.0'}
+                  directions: {type: array, items: {enum: [serve, connect]}}
+                  renderer: {const: false}
+                  events: {type: array, items: {type: string}}
+                  sourceRevision: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/ag-ui/agents:
+    get:
+      operationId: aguiAgents
+      responses:
+        '200':
+          description: Agents permitted to the caller; owner sees all. Tokens are never returned.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Agent'}}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: aguiAddAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, url, subjects]
+              properties:
+                name: {type: string, minLength: 1, maxLength: 120}
+                url: {type: string, minLength: 1, maxLength: 2048}
+                token: {type: string, maxLength: 4096, default: ''}
+                subjects: {type: array, minItems: 1, maxItems: 64, uniqueItems: true, items: {type: string, minLength: 1, maxLength: 256}}
+      responses:
+        '201':
+          description: Owner-created immutable configuration.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Agent'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/ag-ui/agents/{agent_id}:
+    parameters:
+      - {name: agent_id, in: path, required: true, schema: {type: string}}
+    delete:
+      operationId: aguiRemoveAgent
+      responses:
+        '204': {description: Owner removed the configuration and stopped its runs.}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/ag-ui:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+    get:
+      operationId: aguiThread
+      responses:
+        '200':
+          description: Latest saved run, or null for a new empty thread. Only the chat owner may read it.
+          content:
+            application/json:
+              schema: {oneOf: [{$ref: '#/components/schemas/Run'}, {type: 'null'}]}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/ag-ui/run:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - {$ref: '#/components/parameters/Cursor'}
+    post:
+      operationId: aguiServe
+      summary: Run Workbench's existing answer loop, or replay an identical saved run
+      requestBody: {$ref: '#/components/requestBodies/Input'}
+      responses:
+        '200': {$ref: '#/components/responses/Stream'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/ag-ui/agents/{agent_id}/run:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - {$ref: '#/components/parameters/Cursor'}
+      - {name: agent_id, in: path, required: true, schema: {type: string}}
+    post:
+      operationId: aguiConnect
+      summary: Start one external POST, or replay an identical saved run
+      requestBody: {$ref: '#/components/requestBodies/Input'}
+      responses:
+        '200': {$ref: '#/components/responses/Stream'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/ag-ui/runs/{run_id}:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - {$ref: '#/components/parameters/Run'}
+    get:
+      operationId: aguiRun
+      responses:
+        '200':
+          description: Authoritative persisted projection, with no execution or credential disclosure.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/ag-ui/runs/{run_id}/events:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - {$ref: '#/components/parameters/Run'}
+      - {$ref: '#/components/parameters/Cursor'}
+    get:
+      operationId: aguiEvents
+      responses:
+        '200': {$ref: '#/components/responses/Stream'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/ag-ui/runs/{run_id}/stop:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - {$ref: '#/components/parameters/Run'}
+    post:
+      operationId: aguiStop
+      responses:
+        '204': {description: Local work stopped. External outcome may remain uncertain.}
+        default: {$ref: '#/components/responses/Problem'}
+components:
+  securitySchemes:
+    session: {type: apiKey, in: cookie, name: workbench_session}
+    secret: {type: apiKey, in: header, name: X-Workbench-Secret}
+  parameters:
+    Chat: {name: chat_id, in: path, required: true, schema: {type: string}}
+    Run: {name: run_id, in: path, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,80}$'}}
+    Cursor: {name: Last-Event-ID, in: header, required: false, schema: {type: integer, minimum: 0, maximum: 4096}}
+  requestBodies:
+    Input:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: '../protocols/ag-ui/schema.json#RunAgentInput'}
+  responses:
+    Problem:
+      description: Explicit request refusal; no new dispatch. 401/403/404 identity, 409 conflict, 413 bounds, 422 unsupported input, 429 quota.
+      content:
+        application/json:
+          schema: {type: object, required: [detail], properties: {detail: {type: object, required: [message], properties: {message: {type: string}}}}}
+    Stream:
+      description: |
+        SSE data is a pinned AG-UI Event. Decimal ids persist per run. Reconnection
+        returns events strictly after Last-Event-ID and never repeats execution.
+        Connection loss does not cancel work. Post-dispatch failures are RUN_ERROR.
+      content:
+        text/event-stream:
+          schema: {type: string}
+          x-event-schema: {$ref: '../protocols/ag-ui/schema.json#Event'}
+  schemas:
+    Agent:
+      type: object
+      required: [id, name, url, subjects]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        url: {type: string}
+        subjects: {type: array, items: {type: string}}
+    Run:
+      type: object
+      required: [threadId, runId, direction, agentId, status, cursor, messages, state, answerId, outcome]
+      properties:
+        threadId: {type: string}
+        runId: {type: string}
+        direction: {enum: [serve, connect]}
+        agentId: {type: [string, 'null']}
+        status: {enum: [running, done, interrupted, cancelled, error, uncertain]}
+        cursor: {type: integer, minimum: 0}
+        messages: {type: array, items: {$ref: '../protocols/ag-ui/schema.json#Message'}}
+        state: {}
+        answerId: {type: [string, 'null']}
+        outcome: {oneOf: [{$ref: '../protocols/ag-ui/schema.json#RunFinishedOutcome'}, {type: 'null'}]}

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Workbench durable interactions
-  version: 1.2.0
+  version: 1.3.0
   description: |
     Workbench application-server contract, not an inference gateway extension.
     See docs/design/workbench-interactions-v1.md for lifecycle and limits.
@@ -55,6 +55,13 @@ paths:
                         version: {type: string}
                         renderer: {type: boolean}
                         methods:
+                          type: array
+                          items: {type: string}
+                        directions:
+                          type: array
+                          items: {enum: [serve, connect]}
+                        sourceRevision: {type: string}
+                        events:
                           type: array
                           items: {type: string}
                         catalogIds:
