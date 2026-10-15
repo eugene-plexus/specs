@@ -72,7 +72,8 @@ to the live installation.
 ## CI and remaining gates
 
 [G2 Workbench CI](https://github.com/eugene-plexus/workbench/actions/runs/38805157097)
-is running at publication; its eventual result is separate from local acceptance.
+completed successfully on Windows and Linux, including the frontend and guard checks
+(checked during G3). Its result is separate from local acceptance.
 The prior G1 run passed Linux and frontend checks, but Windows had one failure
 in the existing Job Site signature workflow (2,020 passed, 28 skipped).
 [Workbench #13](https://github.com/eugene-plexus/workbench/issues/13) tracks a

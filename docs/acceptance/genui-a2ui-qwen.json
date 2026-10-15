@@ -1,0 +1,254 @@
+{
+  "model": "qwen3.8-flash-next-iq2_xs",
+  "transport": "isolated Eugene gateway + Strata driver; running engine",
+  "python": "3.14.3",
+  "sources": {
+    "gateway": "gateway/src/eugene_plexus_gateway/__init__.py",
+    "driver": "inference-driver/src/eugene_plexus_inference_driver/__init__.py",
+    "validator": "workbench/src/eugene_plexus_workbench/a2ui_state.py"
+  },
+  "samples": [
+    {
+      "case": "text",
+      "status": 200,
+      "seconds": 10.355,
+      "jsonValid": true,
+      "catalogValid": true,
+      "taskValid": true,
+      "finish": "stop",
+      "usage": {
+        "prompt_tokens": 4928,
+        "completion_tokens": 968,
+        "total_tokens": 5896,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "surface": {
+        "mimeType": "application/a2ui+json",
+        "messages": [
+          {
+            "version": "v0.9.1",
+            "createSurface": {
+              "surfaceId": "surface1",
+              "catalogId": "https://eugeneplexus.com/a2ui/catalogs/forms-v1.json"
+            }
+          },
+          {
+            "version": "v0.9.1",
+            "updateComponents": {
+              "surfaceId": "surface1",
+              "components": [
+                {
+                  "id": "root",
+                  "component": "Text",
+                  "text": "A2UI ready"
+                }
+              ]
+            }
+          }
+        ],
+        "fallback": "A2UI ready"
+      }
+    },
+    {
+      "case": "form",
+      "status": 200,
+      "seconds": 20.347,
+      "jsonValid": true,
+      "catalogValid": true,
+      "taskValid": true,
+      "finish": "stop",
+      "usage": {
+        "prompt_tokens": 4970,
+        "completion_tokens": 2456,
+        "total_tokens": 7426,
+        "prompt_tokens_details": {
+          "cached_tokens": 4908
+        }
+      },
+      "surface": {
+        "mimeType": "application/a2ui+json",
+        "messages": [
+          {
+            "version": "v0.9.1",
+            "createSurface": {
+              "surfaceId": "rsvp",
+              "catalogId": "https://eugeneplexus.com/a2ui/catalogs/forms-v1.json"
+            }
+          },
+          {
+            "version": "v0.9.1",
+            "updateComponents": {
+              "surfaceId": "rsvp",
+              "components": [
+                {
+                  "id": "root",
+                  "component": "Column",
+                  "children": [
+                    "title",
+                    "nameField",
+                    "attendingCheck",
+                    "submitButton"
+                  ]
+                },
+                {
+                  "id": "title",
+                  "component": "Text",
+                  "text": "RSVP",
+                  "variant": "h2"
+                },
+                {
+                  "id": "nameField",
+                  "component": "TextField",
+                  "label": "Name",
+                  "value": {
+                    "path": "/name"
+                  },
+                  "checks": [
+                    {
+                      "condition": {
+                        "call": "required",
+                        "args": {
+                          "value": {
+                            "path": "/name"
+                          }
+                        },
+                        "returnType": "boolean"
+                      },
+                      "message": "Name is required."
+                    }
+                  ]
+                },
+                {
+                  "id": "attendingCheck",
+                  "component": "CheckBox",
+                  "label": "Attending",
+                  "value": {
+                    "path": "/attending"
+                  }
+                },
+                {
+                  "id": "submitButton",
+                  "component": "Button",
+                  "child": "buttonLabel",
+                  "action": {
+                    "event": {
+                      "name": "rsvp",
+                      "context": {
+                        "name": {
+                          "path": "/name"
+                        },
+                        "attending": {
+                          "path": "/attending"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "buttonLabel",
+                  "component": "Text",
+                  "text": "Submit"
+                }
+              ]
+            }
+          },
+          {
+            "version": "v0.9.1",
+            "updateDataModel": {
+              "surfaceId": "rsvp",
+              "value": {
+                "name": "Ada",
+                "attending": true
+              }
+            }
+          }
+        ],
+        "fallback": "RSVP form with name initialized to Ada, attending initialized to true, and a submit button that sends an rsvp event with name and attending."
+      }
+    },
+    {
+      "case": "layout",
+      "status": 200,
+      "seconds": 15.022,
+      "jsonValid": true,
+      "catalogValid": true,
+      "taskValid": true,
+      "finish": "stop",
+      "usage": {
+        "prompt_tokens": 4943,
+        "completion_tokens": 1800,
+        "total_tokens": 6743,
+        "prompt_tokens_details": {
+          "cached_tokens": 4908
+        }
+      },
+      "surface": {
+        "mimeType": "application/a2ui+json",
+        "messages": [
+          {
+            "version": "v0.9.1",
+            "createSurface": {
+              "surfaceId": "surface",
+              "catalogId": "https://eugeneplexus.com/a2ui/catalogs/forms-v1.json"
+            }
+          },
+          {
+            "version": "v0.9.1",
+            "updateComponents": {
+              "surfaceId": "surface",
+              "components": [
+                {
+                  "id": "root",
+                  "component": "Row",
+                  "children": [
+                    "cardCity",
+                    "cardWeather"
+                  ]
+                },
+                {
+                  "id": "cardCity",
+                  "component": "Card",
+                  "child": "textCity"
+                },
+                {
+                  "id": "cardWeather",
+                  "component": "Card",
+                  "child": "textWeather"
+                },
+                {
+                  "id": "textCity",
+                  "component": "Text",
+                  "text": {
+                    "path": "/city"
+                  }
+                },
+                {
+                  "id": "textWeather",
+                  "component": "Text",
+                  "text": {
+                    "path": "/weather"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "version": "v0.9.1",
+            "updateDataModel": {
+              "surfaceId": "surface",
+              "path": "/",
+              "value": {
+                "city": "Chicago",
+                "weather": "Sunny"
+              }
+            }
+          }
+        ],
+        "fallback": "City: Chicago, Weather: Sunny"
+      }
+    }
+  ],
+  "validationNote": "Original three responses revalidated offline after correcting a validator import dependency. No model requests repeated."
+}
