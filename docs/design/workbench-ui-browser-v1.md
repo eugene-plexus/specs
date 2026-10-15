@@ -64,6 +64,9 @@ remote custom events never become trusted HTML or A2UI surfaces.
 
 Owners configure immutable agent connections (name, URL, optional bearer token,
 people) and remove them in the GUI. Tokens are sent once and never read back.
+`GET /api/v1/ag-ui/people` is an owner-only grant picker returning known signed-in
+people's `{sub, name}` records, including the owner. It grants no chat access
+and works independently of the owner's read-chats setting.
 Read-only views retain the saved normal answer and cannot start/resume a run.
 
 ## Release gate

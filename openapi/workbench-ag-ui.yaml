@@ -26,9 +26,26 @@ paths:
                   protocol: {const: ag-ui}
                   version: {const: '1.0'}
                   directions: {type: array, items: {enum: [serve, connect]}}
-                  renderer: {const: false}
+                  renderer: {type: boolean}
                   events: {type: array, items: {type: string}}
                   sourceRevision: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/ag-ui/people:
+    get:
+      operationId: aguiPeople
+      responses:
+        '200':
+          description: Owner-only grant picker; known signed-in people's IDs and names, without chat metadata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [sub, name]
+                  properties:
+                    sub: {type: string}
+                    name: {type: string}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/ag-ui/agents:
     get:
