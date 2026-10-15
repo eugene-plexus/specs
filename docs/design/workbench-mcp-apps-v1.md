@@ -47,6 +47,7 @@ linkage, and check person, selected branch, session lease, source configuration,
 source selection, expiry and revision before and after network IO. Resource
 bytes are returned as JSON data, never as an executable same-origin HTML page.
 Responses use no-store and nosniff. Remote failures expose no remote error text.
+At most eight reads run concurrently; each has a 45-second overall deadline.
 Resource listing/subscription, arbitrary URIs, cross-source calls, app-provided
 tools, links, logging, downloads, sampling and elicitation are unsupported.
 

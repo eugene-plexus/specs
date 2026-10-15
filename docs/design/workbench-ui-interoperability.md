@@ -3,8 +3,10 @@
 **2026-10-15. Backend first, at Troy's request.** G0's inference prerequisite
 gate is implemented and passed locally; [acceptance](../acceptance/genui-inference-run.md).
 G1's durable backend foundation is also implemented;
-[acceptance](../acceptance/genui-interactions-run.md). G2–G5 remain planned.
-No AG-UI, A2UI or MCP Apps compatibility is advertised yet.
+[acceptance](../acceptance/genui-interactions-run.md). G2's MCP Apps headless
+backend is implemented; [acceptance](../acceptance/genui-mcp-apps-run.md).
+G3–G5 remain planned. Backend capabilities are reported separately; no production
+protocol renderer is advertised yet.
 
 This follows the [rich-content roadmap](workbench-rich-content-roadmap.md),
 whose RC1–RC6 provide rendering, typed content, assets and saved previews.
@@ -132,11 +134,11 @@ state and counted external effects, not only successful status codes.
 
 ## G2: MCP Apps server integration
 
-Current discovery retains names, descriptions and input schemas, but drops tool
-UI metadata. Current result normalization retains content and structured data,
-but does not establish an MCP Apps resource/interaction lifecycle. Per-answer
-MCP sessions also end when the answer ends; a saved app needs an explicit policy
-for later interaction and fresh authentication/discovery.
+**Implemented:** the [headless host contract](workbench-mcp-apps-v1.md) and
+[acceptance record](../acceptance/genui-mcp-apps-run.md) declare the supported
+methods, transports, bounds and remaining browser gate. Saved apps reconnect
+after an answer or restart using their original authenticated source binding.
+The requirements below are covered by that declared subset.
 
 Preserve validated tool/UI linkage and UI-only result metadata. Negotiate the
 extension; distinguish tools visible to the model, the app, or both. An app-only

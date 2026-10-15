@@ -2,8 +2,9 @@
 
 G1 of [UI interoperability](workbench-ui-interoperability.md). The wire shapes
 are in [OpenAPI](../../openapi/workbench-interactions.yaml). This foundation
-does not claim AG-UI, A2UI or MCP Apps compatibility. Their adapters and
-catalogs remain G2–G4; production renderers remain G5.
+does not itself claim AG-UI, A2UI or MCP Apps compatibility. The
+[MCP Apps headless adapter](workbench-mcp-apps-v1.md) is implemented in G2;
+A2UI and AG-UI remain G3–G4, and production renderers remain G5.
 
 ## Authority and state
 
@@ -11,14 +12,16 @@ Trusted server adapters publish a surface bound permanently to the chat owner,
 chat, assistant message, run, protocol version and optional originating MCP
 connection. Publication validates the adapter's exact version and description.
 There is no public publication endpoint. Browser actions name a saved surface
-and one of its allowed actions; they cannot supply a server, tool, URL or target.
+and one of its allowed actions; they cannot select a server or credential.
+An adapter may accept a tool name within its bound source's current allowlist.
 The adapter checks current source access before any external dispatch, in
 addition to Workbench's ownership, session and selected-branch checks.
 
 Surface updates use compare-and-swap revisions. Deletion is a tombstone;
 disabled/deleted surfaces cannot be reactivated under the same ID. Plain text
 fallback is required. UI data and results are saved separately from their
-explicit model projection. Nothing is appended to model context by this layer.
+explicit model projection. Protocol adapters define which approved projections
+enter subsequent model turns; raw UI records never enter inference.
 MIME types and asset references are validated by the applicable adapter using
 Workbench's existing authorized assets; arbitrary URLs are not asset grants.
 

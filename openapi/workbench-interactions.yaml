@@ -28,7 +28,7 @@ paths:
       summary: Read the implemented interaction capabilities
       responses:
         '200':
-          description: Empty supportedProtocols means no protocol adapter is enabled.
+          description: Empty supportedProtocols means no production renderer is enabled; headless adapters are listed separately.
           content:
             application/json:
               schema:
