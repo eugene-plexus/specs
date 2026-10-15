@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Workbench durable interactions
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Workbench application-server contract, not an inference gateway extension.
     See docs/design/workbench-interactions-v1.md for lifecycle and limits.
@@ -55,6 +55,9 @@ paths:
                         version: {type: string}
                         renderer: {type: boolean}
                         methods:
+                          type: array
+                          items: {type: string}
+                        catalogIds:
                           type: array
                           items: {type: string}
         default: {$ref: '#/components/responses/Problem'}
@@ -190,6 +193,48 @@ paths:
           content:
             application/json:
               schema: {type: object}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/interactions/surfaces/{surface_id}/a2ui/input:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - name: surface_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Interactions]
+      operationId: updateA2uiInput
+      summary: Save a bound form input at the current surface revision
+      description: |
+        See docs/design/workbench-a2ui-v1.md. Requires the owning person, current
+        branch, valid source and revision. Derives the data path from a reachable
+        TextField or CheckBox. No tool runs. The new revision invalidates stale
+        proposals. Server events instead use the ordinary G1 approval endpoints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision, componentId, value]
+              properties:
+                revision: {type: integer, minimum: 1}
+                componentId: {type: string, minLength: 1, maxLength: 80}
+                value:
+                  oneOf:
+                    - {type: string, maxLength: 8192}
+                    - {type: boolean}
+      responses:
+        '200':
+          description: New committed surface revision; read the snapshot for state.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [revision]
+                properties:
+                  revision: {type: integer, minimum: 1}
         default: {$ref: '#/components/responses/Problem'}
 components:
   securitySchemes:

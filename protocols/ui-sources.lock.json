@@ -62,6 +62,21 @@
           "path": "specification/v0_9_1/json/client_data_model.json",
           "sha256": "6aefe455be9287caaf2f964ae480e8cf87706718106130908b41df19d5e982be",
           "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/json/client_data_model.json"
+        },
+        {
+          "path": "specification/v0_9_1/catalogs/basic/catalog.json",
+          "sha256": "8cc94d0a482e67048f9fc989964ca5da56fe42f531d919315a508989fb22e13e",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/catalogs/basic/catalog.json"
+        },
+        {
+          "path": "specification/v0_9_1/catalogs/basic/examples/00_simple-text.json",
+          "sha256": "130ae3b46fa16b24246fb5bcd5d14d9707abbae8adda5fbd047ad98d1b13a56b",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/catalogs/basic/examples/00_simple-text.json"
+        },
+        {
+          "path": "specification/v0_9_1/catalogs/basic/examples/00_interactive-button.json",
+          "sha256": "19d990117be8d66ffed20d5bb21127c9d153f90b8e3b2670f80c72d34aad0fb5",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/catalogs/basic/examples/00_interactive-button.json"
         }
       ]
     },
