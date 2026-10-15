@@ -21,6 +21,10 @@ Related designs: [reading and Markdown](workbench-reading.md),
 footnote work deferred in the reading design. It does not reorder the broader
 [audience roadmap](audience-roadmap.md).
 
+Follow-on work: [interactive UI interoperability](workbench-ui-interoperability.md)
+covers MCP Apps, A2UI and AG-UI. Its backend contracts and acceptance precede new
+production renderers; the rich-content slices here do not imply protocol support.
+
 ## Scope and intended result
 
 A person can ask for a technical explanation and see readable equations and a

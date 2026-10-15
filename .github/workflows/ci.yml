@@ -281,6 +281,17 @@ jobs:
         run: python specs/scripts/gemini-acceptance.py
       - name: Verify the gateway and driver pair on stand-in providers (tools are assumed - header agreement, slots, counts, stream heads)
         run: python specs/scripts/tools-assumed-acceptance.py
+      - name: Verify interactive UI inference prerequisites through gateway and drivers
+        run: python specs/scripts/genui-inference-acceptance.py --report genui-inference.json
+      - name: Verify the UI inference gate detects lost structured-output settings
+        run: python specs/scripts/genui-inference-sabotage.py
+      - name: Keep UI inference prerequisite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: genui-inference-${{ matrix.os }}
+          path: genui-inference.json
+          if-no-files-found: ignore
       - name: Verify C2 sign-in with Eugene through an agent, with a real OpenID Connect client
         run: python specs/scripts/c2-sign-in-acceptance.py
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
