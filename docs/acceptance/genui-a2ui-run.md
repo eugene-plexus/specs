@@ -107,7 +107,7 @@ integration is still required; ordinary JSON answers are not promoted to UI.
 
 The distribution and catalogue update are publication, not deployment to the live
 installation. [G3 Workbench CI](https://github.com/eugene-plexus/workbench/actions/runs/38810765147)
-is running at publication; local acceptance does not claim a completed Linux run.
+completed successfully on Windows and Linux, verified at the start of G4.
 The preceding G2 CI completed successfully on both
 platforms. The older Job Site signature timing issue remains tracked separately
 as [Workbench #13](https://github.com/eugene-plexus/workbench/issues/13).

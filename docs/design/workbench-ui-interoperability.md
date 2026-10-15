@@ -6,7 +6,8 @@ G1's durable backend foundation is also implemented;
 [acceptance](../acceptance/genui-interactions-run.md). G2's MCP Apps headless
 backend is implemented; [acceptance](../acceptance/genui-mcp-apps-run.md).
 G3's A2UI backend is implemented for the pinned forms catalog;
-[acceptance](../acceptance/genui-a2ui-run.md). G4–G5 remain planned.
+[acceptance](../acceptance/genui-a2ui-run.md). G4's AG-UI serve/connect backends
+are implemented; [acceptance](../acceptance/genui-ag-ui-run.md). G5 remains planned.
 Backend capabilities are reported separately; no production
 protocol renderer is advertised yet.
 
@@ -185,6 +186,12 @@ restart. Separately measure at least one real local model through Eugene; report
 generation/schema reliability apart from wire and state-machine conformance.
 
 ## G4: AG-UI server integration
+
+**Implemented** for the [pinned AG-UI 1.0 subset](workbench-ag-ui-v1.md).
+The [acceptance record](../acceptance/genui-ag-ui-run.md) distinguishes serve
+and connect, including native approval, external interrupt/resume, durable
+reconnect and real process termination without replay. No production renderer
+is advertised by this headless gate.
 
 Treat two directions separately: exposing Workbench's existing agent loop through
 AG-UI, and connecting Workbench to external AG-UI agents. Record the supported
