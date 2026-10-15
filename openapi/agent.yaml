@@ -2786,6 +2786,51 @@ paths:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
 
+  /v1/updates/all:
+    get:
+      tags: [node]
+      operationId: getUpdateAll
+      summary: Read this console's latest install-wide update job.
+      description: Operator-only. Retained across agent restarts; no update starts on a read.
+      responses:
+        "200":
+          description: The latest job, or no run before the first Update all.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UpdateAllStatus'}
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    post:
+      tags: [node]
+      operationId: startUpdateAll
+      summary: Update enrolled machines and their installed catalogue apps.
+      description: |
+        Operator-only, using a session signed in on this console's agent.
+        Snapshots the enrolled machines, updates the control root first, then
+        workers one at a time, each on its own channel. After each machine
+        returns, updates its already installed shipped catalogue apps (including
+        Workbench) from the new catalogue. Does not install absent or custom apps.
+        Existing target verification, anti-downgrade and app isolation guards apply.
+        A root that fails or needs a manual container update blocks worker updates.
+        Other failures are reported per item and remaining machines continue.
+        The job survives closing the browser and restarting its hosting agent.
+        It temporarily retains the initiating session in an owner-only file;
+        expiry or sign-out stops further work, and completion removes it.
+        A job lasts at most two hours. No uncertain write is automatically retried.
+        One job may run per console agent; a repeat request while running returns
+        that job. An enrolled machine with an update already running is observed,
+        never started twice. Containers still require their host's update action.
+      responses:
+        "202":
+          description: The job is running, or the existing active job was returned.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UpdateAllRun'}
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
   /v1/node/trust-bundle:
     post:
       tags: [node]
@@ -4341,6 +4386,63 @@ components:
         truncated:
           type: boolean
           description: Older matching lines exist beyond `tail`.
+
+    UpdateAllStatus:
+      type: object
+      description: The latest install-wide update started from this console.
+      properties:
+        run:
+          $ref: '#/components/schemas/UpdateAllRun'
+
+    UpdateAllRunState:
+      type: string
+      description: Complete means every item updated or was current; attention includes manual or failed items.
+      enum: [running, complete, attention]
+
+    UpdateAllItemState:
+      type: string
+      description: Per-machine or per-app progress, retained through restarts.
+      enum: [pending, checking, updating, updated, current, manual, failed, skipped]
+
+    UpdateAllItemKind:
+      type: string
+      description: A machine's Eugene installation or an installed catalogue app.
+      enum: [node, app]
+
+    UpdateAllItem:
+      type: object
+      additionalProperties: false
+      description: One machine or installed app in the update job.
+      required: [node, kind, state, detail]
+      properties:
+        node: {type: string, description: Enrolled machine name.}
+        kind: {$ref: '#/components/schemas/UpdateAllItemKind'}
+        app: {type: string, description: Catalogue app id for an app item.}
+        state: {$ref: '#/components/schemas/UpdateAllItemState'}
+        detail: {type: string, description: What happened or what to do next.}
+        target: {type: string, description: Verified node ref or app version being installed.}
+        startedAt: {type: string, format: date-time, description: When this item began applying.}
+        components:
+          type: object
+          additionalProperties: {type: string}
+          description: Expected installed component stamps used to verify a node's return.
+
+    UpdateAllRun:
+      type: object
+      additionalProperties: false
+      description: Durable progress of one operator-requested Update all job.
+      required: [id, root, startedAt, expiresAt, state, items]
+      properties:
+        id: {type: string, description: Unique job identifier.}
+        root: {type: string, description: Control root machine updated first.}
+        startedAt: {type: string, format: date-time, description: When the job was accepted.}
+        expiresAt: {type: string, format: date-time, description: Latest time further work may start.}
+        finishedAt: {type: string, format: date-time, description: When all work stopped.}
+        state: {$ref: '#/components/schemas/UpdateAllRunState'}
+        items:
+          type: array
+          description: Root first, then workers, with installed apps added after each node returns.
+          items: {$ref: '#/components/schemas/UpdateAllItem'}
 
     UpdateRequest:
       type: object
