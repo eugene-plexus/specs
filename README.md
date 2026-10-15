@@ -8,10 +8,10 @@
 
 [Install Eugene Plexus](https://eugeneplexus.com/install/) ·
 [See it in use](https://eugeneplexus.com/#uses) ·
-[Release notes](docs/releases/v0.2.1.md)
+[Release notes](docs/releases/v0.2.2.md)
 
-**[v0.2.1](https://github.com/eugene-plexus/specs/releases/tag/v0.2.1) is the
-latest release**, published 2026-10-14. It is early software, with rough edges
+**[v0.2.2](https://github.com/eugene-plexus/specs/releases/tag/v0.2.2) is the
+latest release**, published 2026-10-15. It is early software, with rough edges
 and [known limits](#current-status).
 
 ## What is Eugene Plexus?
@@ -49,15 +49,15 @@ computer and add more machines as your setup grows.
 
 For everyday chat, install [**Workbench**](https://eugeneplexus.com/workbench/)
 from **Apps** in the console. It supports documents with sources, saved memory,
-and tools you approve. v0.2.1 adds rich answers and saved interactive previews.
+and tools you approve. v0.2.1 added rich answers and saved interactive previews.
 Open WebUI is also available from Apps.
 
 ## Current status
 
-v0.2.1 has versioned installers and a Linux amd64 container image. Its
-[release checks](docs/acceptance/v0.2.1-release-run.md) include packaged Windows
-and WSL installs with real CPU model replies, a Linux system-service update
-under WSL, macOS runner checks, and container acceptance.
+v0.2.2 has versioned installers and a Linux amd64 container image. Its
+[release checks](docs/acceptance/v0.2.2-release-run.md) include packaged Windows
+and WSL installs with real CPU model replies, Linux system-service update
+checks, macOS runner checks, and container acceptance.
 
 Hardware and first-time-user verification remain uneven:
 
@@ -73,7 +73,7 @@ Hardware and first-time-user verification remain uneven:
 
 The [support matrix](docs/support-matrix.md) records measured, simulated,
 pending and unsupported cases through v0.2.0; read it with the
-[v0.2.1 fixes and release limits](docs/releases/v0.2.1.md).
+[v0.2.2 fixes and release limits](docs/releases/v0.2.2.md).
 Development priorities live in the [audience roadmap](docs/design/audience-roadmap.md).
 
 ## Installing it
@@ -86,22 +86,22 @@ Python, Node.js, Git or an inference engine installed first.
 **Windows:** open PowerShell and approve the administrator prompt.
 
 ```powershell
-irm https://eugeneplexus.com/releases/v0.2.1/install.ps1 | iex
+irm https://eugeneplexus.com/releases/v0.2.2/install.ps1 | iex
 ```
 
 **Linux:** use a terminal as your normal user. The installer asks for `sudo`
 when setting up its service; see the guide for systemd and WSL requirements.
 
 ```sh
-curl -fsSL https://eugeneplexus.com/releases/v0.2.1/install.sh | sh
+curl -fsSL https://eugeneplexus.com/releases/v0.2.2/install.sh | sh
 ```
 
-These commands stay on **v0.2.1**. The
-[release assets](https://github.com/eugene-plexus/specs/releases/tag/v0.2.1)
+These commands stay on **v0.2.2**. The
+[release assets](https://github.com/eugene-plexus/specs/releases/tag/v0.2.2)
 include the installer source, component manifest and SHA-256 checksums.
 Follow the installer's final instructions to open the browser console.
 
-**Docker / NAS:** use `ghcr.io/eugene-plexus/control-plane:v0.2.1` with the
+**Docker / NAS:** use `ghcr.io/eugene-plexus/control-plane:v0.2.2` with the
 published [Compose and storage instructions](https://eugeneplexus.com/install/#docker).
 The container runs the console, control root, gateway and model library. It
 can also run models on its CPU or a passed-through NVIDIA GPU; the GPU path
@@ -114,11 +114,14 @@ including from a Rosetta terminal. See the
 verification limits above before trying it.
 
 **Updating:** make a checkpoint using the [backup and recovery guide](docs/recovery.md),
-then update the control root before the other machines. Follow the
+then update the control root before the other machines. Once the root runs
+v0.2.2, **Machines → Versions → Update all** coordinates the remaining machines
+and installed catalogue apps, including Workbench. Containers use their host's
+update controls; a root requiring a manual update pauses the remaining work. Follow the
 [update instructions](https://eugeneplexus.com/install/#update) for your current
 version; do not run an older installer over a newer installation.
 
-**Removal:** v0.2.1 includes offline Windows and Mac removal utilities.
+**Removal:** v0.2.2 includes offline Windows and Mac removal utilities.
 On Windows, use **Settings → Apps → Installed apps → Eugene Plexus → Uninstall**.
 On Mac, use **Remove Eugene Plexus** in your home folder's **Applications** folder.
 They remove the software while keeping settings, app data and downloads by
