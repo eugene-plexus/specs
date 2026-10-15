@@ -250,14 +250,55 @@ An install made before this has no `POST /v1/node/update` to call. Run the
 installer on it once, the same one-line command, and it can update itself
 from then on.
 
-## 4. Not in scope
+## 4. Update all (2026-10-15)
+
+Machines → Versions has **Update all**. One confirmation starts a job on the
+agent serving that console. It snapshots enrolled machines, identifies the
+active root from `NodeIdentity.hostsControl` (initial enrollment records still
+say `role: agent`), updates the root, then workers one at a time. Each machine
+keeps its own channel and the existing fresh-check and no-downgrade rules.
+
+After each machine returns, the job reads its new app catalogue and updates
+already installed shipped apps, including Workbench. The existing app installer
+preserves stopped apps, their data and their previous version. Absent apps and
+custom entries are excluded. Engines and models remain separate actions.
+
+Containers retain their platform instructions. A root needing a manual update,
+or whose update fails, blocks worker updates. Other offline or failed machines
+are recorded individually; remaining machines continue. Completion distinguishes
+all-current from items needing attention. A duplicate POST returns the active job.
+
+`GET/POST /v1/updates/all` is operator-only. The durable journal is written
+atomically before a mutation, beside the protected agent config. It temporarily
+contains the initiating session using the existing owner-only writer (0600 on
+POSIX, inherited install ACLs on Windows). No service token gains update rights.
+Normal proxy token exchange still applies. The session is verified before each
+call; expiry or sign-out stops remaining work and removes the credential. The
+job has a two-hour limit and each update a 45-minute observation limit.
+
+The journal survives closing the page and restarting the hosting agent. Recovery
+observes a previously requested update rather than replaying its POST. Node
+success requires a matching recent installer result and matching component
+stamps; app success checks the install result as well as the version. A damaged
+journal cannot prevent agent startup or silently authorize a new job.
+
+Progress belongs to the console agent that started the job; other consoles keep
+their existing per-machine status. Independent jobs cannot bypass the local
+node's serialized update-start guard or the app installer's existing lock.
+
+Acceptance: `scripts/update-all-acceptance.py` uses real Control, two enrolled
+agents, authentication and remote token exchange, with simulated installer/app
+boundaries. It terminates and restarts the hosting agent mid-job and verifies
+exactly one update per machine and app. No host installer runs in this fixture.
+
+## 5. Not in scope
 
 - Rolling engine (llama.cpp) upgrades (`project_open_threads`).
 - Downgrade or rollback, which `docs/recovery.md` covers by hand.
 
 ---
 
-## 5. Edge as a published marker (BANKED 2026-10-07 by Troy: a sketch for later, not started; the calls below were never put)
+## 6. Edge as a published marker (BANKED 2026-10-07 by Troy: a sketch for later, not started; the calls below were never put)
 
 **Why.** On 2026-10-07 every node named `d8975ed` (2026-09-28) as edge, read
 itself as newer and offered nothing: each node computes edge from GitHub's run
