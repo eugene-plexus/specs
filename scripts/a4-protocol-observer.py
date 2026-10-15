@@ -30,7 +30,12 @@ def create_app(target, output):
 
     @app.api_route("/{path:path}", methods=["GET", "POST"])
     async def forward(path: str, request: Request):
-        if path not in {"v1/models", "v1/chat/completions", "v1/messages"}:
+        if path not in {
+            "v1/models",
+            "v1/chat/completions",
+            "v1/messages",
+            "v1/responses",
+        }:
             return Response(status_code=404)
         raw = await request.body()
         record = {
@@ -56,6 +61,9 @@ def create_app(target, output):
                     "keys": sorted(body),
                     "model": body.get("model"),
                     "stream": body.get("stream"),
+                    "reasoningEffort": body.get("reasoning_effort"),
+                    "reasoning": body.get("reasoning"),
+                    "thinking": body.get("thinking"),
                     "tools": [
                         t.get("name") or t.get("function", {}).get("name")
                         for t in body.get("tools", [])
@@ -68,6 +76,7 @@ def create_app(target, output):
                 item = {
                     "role": message.get("role"),
                     "contentType": type(content).__name__,
+                    "toolCalls": len(message.get("tool_calls") or []),
                 }
                 if isinstance(content, list):
                     item["parts"] = [part.get("type") for part in content]
@@ -101,6 +110,9 @@ def create_app(target, output):
             stream=True,
         )
         record["status"] = upstream.status_code
+        record["ignoredSettings"] = upstream.headers.get(
+            "x-eugene-plexus-ignored-settings"
+        )
         with output.open("a", encoding="utf-8") as file:
             file.write(json.dumps(record) + "\n")
 
@@ -115,6 +127,9 @@ def create_app(target, output):
             chunks(),
             status_code=upstream.status_code,
             media_type=upstream.headers.get("content-type"),
+            headers={
+                k: v for k, v in upstream.headers.items() if k.startswith("x-eugene-")
+            },
         )
 
     return app
