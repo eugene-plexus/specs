@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Workbench durable interactions
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Workbench application-server contract, not an inference gateway extension.
     See docs/design/workbench-interactions-v1.md for lifecycle and limits.
@@ -44,6 +44,19 @@ paths:
                       properties:
                         protocol: {type: string}
                         version: {type: string}
+                  backendProtocols:
+                    type: array
+                    description: Headless adapters; does not imply browser rendering support.
+                    items:
+                      type: object
+                      required: [protocol, version, renderer, methods]
+                      properties:
+                        protocol: {type: string}
+                        version: {type: string}
+                        renderer: {type: boolean}
+                        methods:
+                          type: array
+                          items: {type: string}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/chats/{chat_id}/interactions:
     parameters:
@@ -140,6 +153,43 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Action'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/interactions/surfaces/{surface_id}/mcp-apps/read:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - name: surface_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Interactions]
+      operationId: readMcpApp
+      summary: Read a bound MCP app through the authenticated headless host
+      description: |
+        See docs/design/workbench-mcp-apps-v1.md for the exact method subset and
+        bounds. Only the chat owner on its selected branch may read. Checks are
+        repeated after IO. HTML is inert JSON data; never executable same-origin
+        content. No credentials or connection configuration appear in responses.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [revision, method, params]
+              properties:
+                revision: {type: integer, minimum: 1}
+                method:
+                  type: string
+                  enum: [ui/initialize, ping, tools/list, resources/read]
+                params: {type: object}
+      responses:
+        '200':
+          description: The bounded MCP method result, with Cache-Control no-store.
+          content:
+            application/json:
+              schema: {type: object}
         default: {$ref: '#/components/responses/Problem'}
 components:
   securitySchemes:
