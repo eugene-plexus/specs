@@ -2,7 +2,9 @@
 
 **2026-10-15. Backend first, at Troy's request.** G0's inference prerequisite
 gate is implemented and passed locally; [acceptance](../acceptance/genui-inference-run.md).
-G1–G5 remain planned. No AG-UI, A2UI or MCP Apps compatibility is advertised yet.
+G1's durable backend foundation is also implemented;
+[acceptance](../acceptance/genui-interactions-run.md). G2–G5 remain planned.
+No AG-UI, A2UI or MCP Apps compatibility is advertised yet.
 
 This follows the [rich-content roadmap](workbench-rich-content-roadmap.md),
 whose RC1–RC6 provide rendering, typed content, assets and saved previews.
@@ -91,6 +93,14 @@ gate. Existing broader acceptance records remain evidence for their own scope;
 they are not relabeled as UI protocol conformance.
 
 ## G1: application-server contracts and durable interaction
+
+**Implemented** in Workbench `c38b640`, with a production capability list that
+remains empty until the protocol adapters pass their own gates. The
+[v1 contract](workbench-interactions-v1.md),
+[OpenAPI](../../openapi/workbench-interactions.yaml) and
+[upstream source lock](../../protocols/ui-sources.lock.json) preceded the runtime.
+The [acceptance record](../acceptance/genui-interactions-run.md) includes actual
+process termination after a counted external effect and recovery without replay.
 
 Write the versioned Workbench HTTP/event contract and capability matrix before
 implementing protocol endpoints. Inspect the current store, answer branches,

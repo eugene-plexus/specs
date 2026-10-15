@@ -5,6 +5,9 @@
 This records inference transport readiness, not implementation of AG-UI, A2UI
 or MCP Apps.
 
+Follow-up: [specs CI run 38796531895](https://github.com/eugene-plexus/specs/actions/runs/38796531895)
+completed successfully, including this gate and sabotage on Windows and Linux.
+
 ## Code and environment
 
 - Windows, Python 3.14.3, shared acceptance environment `agent/.venv`.
