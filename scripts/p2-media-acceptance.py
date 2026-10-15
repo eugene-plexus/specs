@@ -940,12 +940,12 @@ def exercise(directory: Path, *, live: bool) -> None:
                          "prediction", "web_search_options"):
             assert upstream.get(key_name) == settings[key_name], (key_name, upstream.get(key_name))
         assert upstream["provider"] == {"require_parameters": True}, upstream.get("provider")
-        ok("every P2c setting routes past a tier that does not list it to one that does, in OpenAI's names; "
+        ok("strict P2c settings route past an unsupported tier; supported effort is preserved, in OpenAI's names; "
            "logprobs and citations come back streamed and not, OpenRouter's file note left out; the "
            "text model never asked; a local engine and an unlisting model are claimed for none of them")
 
         before = counts()
-        for name, value in (("logit_bias", {"1": 5}), ("reasoning_effort", "high"),
+        for name, value in (("logit_bias", {"1": 5}),
                             ("web_search_options", {}), ("logprobs", True)):
             refused = chat(key, "router/acme/text-only", "hi", **{name: value})
             assert refused.status_code == 400, refused.text
@@ -954,12 +954,26 @@ def exercise(directory: Path, *, live: bool) -> None:
         refused = chat(key, "router/acme/thinks", "hi", top_logprobs=2)
         assert refused.status_code == 400 and refused.json()["error"]["param"] == "top_logprobs", refused.text
         assert counts() == before, (before, counts())
+        for stream in (False, True):
+            for effort in ("none", "high"):
+                accepted = chat(key, "router/acme/text-only", "hi", stream=stream,
+                                reasoning_effort=effort, max_tokens=None)
+                assert accepted.status_code == 200, accepted.text
+                assert accepted.headers.get("x-eugene-plexus-ignored-settings") == "reasoning_effort"
+                upstream = last_seen("acme/text-only")
+                assert "reasoning_effort" not in upstream, upstream
+                assert not upstream.get("provider", {}).get("require_parameters"), upstream
+                if stream:
+                    assert "data: [DONE]" in accepted.text and '"error"' not in accepted.text
+                else:
+                    assert accepted.json()["choices"][0]["message"]["content"]
+        ok("unsupported effort is named and omitted without forcing OpenRouter require_parameters")
         hints = {"prompt_cache_key": "k", "service_tier": "flex", "safety_identifier": "u",
                  "prompt_cache_retention": "24h"}
         response = chat(key, "router/acme/text-only", "hi", **hints)
         assert response.status_code == 200, response.text
         assert not set(hints) & set(last_seen("acme/text-only")), sorted(last_seen("acme/text-only"))
-        ok("a setting no backend lists is refused naming it and nothing is sent; top_logprobs needs logprobs; "
+        ok("a strict setting no backend lists is refused naming it and nothing is sent; top_logprobs needs logprobs; "
            "hints never restrict routing and are dropped for a backend that does not take them")
 
         weather = {"name": "get_weather", "description": "Weather.",

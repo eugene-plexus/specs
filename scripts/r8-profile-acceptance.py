@@ -268,7 +268,7 @@ def main() -> None:
                     assert got["responseFormat"] == schema, got
                 before = len(calls)
                 for extra in ({"max_tokens": 25, "max_completion_tokens": 26},
-                              {"max_completion_tokens": True}, {"reasoning_effort": "high"}):
+                              {"max_completion_tokens": True}, {"logprobs": True}):
                     refused = client.post(gateway_url + "/v1/chat/completions", json={
                         "model": "friendly-alias", "messages": [{"role": "user", "content": "SECRET"}], **extra})
                     assert refused.status_code == 400, refused.text
@@ -276,6 +276,23 @@ def main() -> None:
                     assert "SECRET" not in refused.text
                 assert len(calls) == before
                 print("PASS A2 structured-output wire and safe refusals before generation", flush=True)
+                for stream in (False, True):
+                    for effort in ("none", "high"):
+                        before = len(calls)
+                        accepted = client.post(gateway_url + "/v1/chat/completions", json={
+                            "model": "friendly-alias", "messages": [{"role": "user", "content": "hi"}],
+                            "stream": stream, "reasoning_effort": effort})
+                        assert accepted.status_code == 200, accepted.text
+                        assert accepted.headers.get("x-eugene-plexus-ignored-settings") == "reasoning_effort"
+                        assert len(calls) == before + 1, calls[before:]
+                        assert calls[-1].get("reasoningEffort") is None, calls[-1]
+                        assert "reasoningEffort" not in (calls[-1].get("callerSettings") or [])
+                        if stream:
+                            assert "data: [DONE]" in accepted.text
+                            assert '"error"' not in accepted.text
+                        else:
+                            assert accepted.json()["choices"][0]["message"]["content"] == "profile-ok"
+                print("PASS unsupported effort is omitted and named on both response modes", flush=True)
                 client.put(url + "/" + profile_id, json=spec).raise_for_status()
 
                 for endpoint in ("/v1/chat/completions", "/v1/messages"):
