@@ -534,7 +534,8 @@ jobs:
             openapi/agent.yaml \
             openapi/control.yaml \
             openapi/tool-driver.yaml \
-            openapi/site-host.yaml
+            openapi/site-host.yaml \
+            openapi/workbench-interactions.yaml
 
   dco:
     name: DCO sign-off check

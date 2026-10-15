@@ -1,0 +1,235 @@
+openapi: 3.1.0
+info:
+  title: Workbench durable interactions
+  version: 1.0.0
+  description: |
+    Workbench application-server contract, not an inference gateway extension.
+    See docs/design/workbench-interactions-v1.md for lifecycle and limits.
+    Existing Workbench session cookie AND X-Workbench-Secret header are required;
+    writes also require the canonical Workbench Origin. HTTPS prefixes the cookie
+    name with __Host-. An owner's permitted view of another person's chat is read-only.
+    No browser endpoint can create surfaces or choose their execution target.
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: /
+security:
+  - session: []
+    secret: []
+tags:
+  - name: Interactions
+    description: Saved surfaces, explicit decisions, and authoritative snapshots.
+paths:
+  /api/v1/interactions/capabilities:
+    get:
+      tags: [Interactions]
+      operationId: interactionCapabilities
+      summary: Read the implemented interaction capabilities
+      responses:
+        '200':
+          description: Empty supportedProtocols means no protocol adapter is enabled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [version, supportedProtocols]
+                properties:
+                  version: {const: 1}
+                  supportedProtocols:
+                    type: array
+                    items:
+                      type: object
+                      required: [protocol, version]
+                      properties:
+                        protocol: {type: string}
+                        version: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/interactions:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - {$ref: '#/components/parameters/Via'}
+    get:
+      tags: [Interactions]
+      operationId: interactionSnapshot
+      summary: Read an authoritative saved snapshot of one answer branch
+      responses:
+        '200':
+          description: Selected branch, or a read-only historical branch with via.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Snapshot'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/interactions/events:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - {$ref: '#/components/parameters/Via'}
+    get:
+      tags: [Interactions]
+      operationId: interactionEvents
+      summary: Follow authoritative snapshots without replaying actions
+      description: |
+        SSE event name snapshot, data is Snapshot, id is its decimal cursor.
+        Every connection begins with a complete snapshot, regardless of Last-Event-ID.
+        Later events replace the snapshot. IDs increase per chat and survive restart;
+        gaps are permitted. Heartbeats are comments. Access is rechecked every second.
+        Access loss closes the stream. Disconnect does not cancel an approved action.
+      responses:
+        '200':
+          description: A snapshot stream with Cache-Control no-store.
+          content:
+            text/event-stream:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/interactions/surfaces/{surface_id}/actions:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - name: surface_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Interactions]
+      operationId: proposeInteractionAction
+      summary: Save an action proposal for explicit approval
+      description: |
+        Never dispatches. Same action ID and identical payload returns the saved
+        disposition, including terminal/uncertain outcomes. Reusing an ID with
+        different content, a stale revision or an inactive branch returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Proposal'}
+      responses:
+        '200':
+          description: Saved disposition, including an identical earlier proposal.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Action'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/chats/{chat_id}/interactions/actions/{action_id}/decision:
+    parameters:
+      - {$ref: '#/components/parameters/Chat'}
+      - name: action_id
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      tags: [Interactions]
+      operationId: decideInteractionAction
+      summary: Approve the saved arguments or refuse the action
+      description: |
+        Only the originating sign-in may decide. No argument editing here.
+        Approval queues once; repeated decisions return the saved disposition.
+        A fresh authorization/branch/revision/connection check precedes dispatch.
+        Results appear in snapshots. Terminal and uncertain actions never retry.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [approve]
+              properties:
+                approve: {type: boolean}
+      responses:
+        '200':
+          description: The saved disposition after this decision.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Action'}
+        default: {$ref: '#/components/responses/Problem'}
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: workbench_session
+    secret:
+      type: apiKey
+      in: header
+      name: X-Workbench-Secret
+  parameters:
+    Chat:
+      name: chat_id
+      in: path
+      required: true
+      schema: {type: string}
+    Via:
+      name: via
+      in: query
+      description: Read the saved branch through this message; never grants action permission.
+      schema: {type: string}
+  responses:
+    Problem:
+      description: |
+        401 sign-in lost; 403 Origin refused; 404 unavailable or unowned chat/target;
+        409 stale/disabled/unsupported/conflicting action; 413 size/quota exceeded;
+        422 invalid shape; 503 authorization unavailable. No exception/credential detail.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: object
+                properties:
+                  message: {type: string}
+  schemas:
+    Proposal:
+      type: object
+      additionalProperties: false
+      required: [id, revision, name, arguments]
+      properties:
+        id: {type: string, pattern: '^[A-Za-z0-9_-]{1,80}$'}
+        revision: {type: integer, minimum: 1}
+        name: {type: string, minLength: 1, maxLength: 80}
+        arguments: {type: object}
+    Action:
+      type: object
+      required: [id, surfaceId, revision, name, arguments, status, expiresAt, result, error]
+      properties:
+        id: {type: string}
+        surfaceId: {type: string}
+        revision: {type: integer}
+        name: {type: string}
+        arguments: {type: object}
+        status:
+          enum: [proposed, queued, dispatching, completed, failed, cancelled, uncertain]
+        expiresAt: {type: number}
+        result: {type: [object, 'null']}
+        error: {type: [string, 'null']}
+    Surface:
+      type: object
+      required: [id, messageId, runId, protocol, version, revision, state, view, fallback, actions, expiresAt, actionable]
+      properties:
+        id: {type: string}
+        messageId: {type: string}
+        runId: {type: string}
+        protocol: {type: string}
+        version: {type: string}
+        revision: {type: integer, minimum: 1}
+        state: {enum: [active, disabled, deleted]}
+        view: {type: object}
+        fallback: {type: string}
+        actions:
+          type: array
+          items: {type: string}
+        expiresAt: {type: number}
+        actionable: {type: boolean}
+    Snapshot:
+      type: object
+      required: [version, cursor, chatId, readOnly, surfaces, actions]
+      properties:
+        version: {const: 1}
+        cursor: {type: integer, minimum: 0}
+        chatId: {type: string}
+        readOnly: {type: boolean}
+        surfaces:
+          type: array
+          items: {$ref: '#/components/schemas/Surface'}
+        actions:
+          type: array
+          items: {$ref: '#/components/schemas/Action'}

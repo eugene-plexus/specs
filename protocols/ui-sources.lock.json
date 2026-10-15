@@ -1,0 +1,93 @@
+{
+  "format": 1,
+  "sources": [
+    {
+      "protocol": "mcp-apps",
+      "version": "2026-01-26",
+      "repository": "modelcontextprotocol/ext-apps",
+      "commit": "298e884ec3f02daba085acdb02042d73bd00b355",
+      "license": "Apache-2.0 AND MIT",
+      "licenseNote": "Upstream transition: new code/specifications Apache-2.0, unconsented earlier contributions MIT; other documentation CC-BY-4.0. See pinned LICENSE; no upstream code is vendored here.",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "0382b0057770ca05e9c350a50aa3b1c1fea84da0bc81d723bf00b9aa841be58a",
+          "url": "https://raw.githubusercontent.com/modelcontextprotocol/ext-apps/298e884ec3f02daba085acdb02042d73bd00b355/LICENSE"
+        },
+        {
+          "path": "specification/2026-01-26/apps.mdx",
+          "sha256": "ee452a7d1b9b7fb900acfeb4d6932d3963375b0f3f37d196a4b93eb80312af0e",
+          "url": "https://raw.githubusercontent.com/modelcontextprotocol/ext-apps/298e884ec3f02daba085acdb02042d73bd00b355/specification/2026-01-26/apps.mdx"
+        }
+      ]
+    },
+    {
+      "protocol": "a2ui",
+      "version": "0.9.1",
+      "repository": "google/A2UI",
+      "commit": "c07134caf2f63e3356c4439d248afc9eb04f310e",
+      "license": "Apache-2.0",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "8c8b5b632d56c4c1658296963c693db5396772a33caaddb9a22593c4155c437a",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/LICENSE"
+        },
+        {
+          "path": "specification/v0_9_1/json/server_to_client.json",
+          "sha256": "21693ba612f029940222ac788ff381c5fe0ef08f612312ff934db7a2daaca289",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/json/server_to_client.json"
+        },
+        {
+          "path": "specification/v0_9_1/json/client_to_server.json",
+          "sha256": "f049f8a554296a603cd3c1cef37dd6811006dc90e3ff52ce845d1674cd00a6b7",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/json/client_to_server.json"
+        },
+        {
+          "path": "specification/v0_9_1/json/common_types.json",
+          "sha256": "a13897d7dbe14c37512c5cbc9b8561782fc3b01e3a6ff114c1f12c82275b5884",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/json/common_types.json"
+        },
+        {
+          "path": "specification/v0_9_1/json/client_capabilities.json",
+          "sha256": "917ff302b883c8c50475f0fafa836c17620078e7e2089392b322dc5df01de78f",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/json/client_capabilities.json"
+        },
+        {
+          "path": "specification/v0_9_1/json/server_capabilities.json",
+          "sha256": "bdaf275dd2abf279e62637ead1b840744e031d94735ec4f63d0c7c2fe5347dd4",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/json/server_capabilities.json"
+        },
+        {
+          "path": "specification/v0_9_1/json/client_data_model.json",
+          "sha256": "6aefe455be9287caaf2f964ae480e8cf87706718106130908b41df19d5e982be",
+          "url": "https://raw.githubusercontent.com/google/A2UI/c07134caf2f63e3356c4439d248afc9eb04f310e/specification/v0_9_1/json/client_data_model.json"
+        }
+      ]
+    },
+    {
+      "protocol": "ag-ui",
+      "version": "release/2026-10-13",
+      "repository": "ag-ui-protocol/ag-ui",
+      "commit": "b3f61a96fa3c755f37558ac44f4acc5b1c3828f1",
+      "license": "MIT",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "06dcddbb6908a0c6dd4a9e8ec822eea41d5a460a53089fecccc8a68049e99241",
+          "url": "https://raw.githubusercontent.com/ag-ui-protocol/ag-ui/b3f61a96fa3c755f37558ac44f4acc5b1c3828f1/LICENSE"
+        },
+        {
+          "path": "sdks/typescript/packages/core/src/generated/schemas.ts",
+          "sha256": "972f008e8e2cf04747ea77313d3ffe2ebf13ffb84420c8e94c3c8abf4b80f9f8",
+          "url": "https://raw.githubusercontent.com/ag-ui-protocol/ag-ui/b3f61a96fa3c755f37558ac44f4acc5b1c3828f1/sdks/typescript/packages/core/src/generated/schemas.ts"
+        },
+        {
+          "path": "sdks/typescript/packages/core/src/generated/types.ts",
+          "sha256": "babdb5de14b3ebe41bcc586fcc6c0d914bd6263e34fc67a978090731f2828b77",
+          "url": "https://raw.githubusercontent.com/ag-ui-protocol/ag-ui/b3f61a96fa3c755f37558ac44f4acc5b1c3828f1/sdks/typescript/packages/core/src/generated/types.ts"
+        }
+      ]
+    }
+  ]
+}
