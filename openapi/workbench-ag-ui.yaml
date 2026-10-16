@@ -16,7 +16,7 @@ paths:
       operationId: aguiCapabilities
       responses:
         '200':
-          description: Implemented backend subset; renderer is false.
+          description: Implemented subset; renderer is true when the G5 UI build is installed.
           content:
             application/json:
               schema:
