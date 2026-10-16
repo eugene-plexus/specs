@@ -143,7 +143,7 @@ components:
       properties:
         keyId: {type: string}
         keyName: {type: string}
-        personId: {type: string, description: Stable subject verified by the root, never caller supplied.}
+        personId: {type: string, description: "Stable subject verified by the root, never caller supplied."}
         appClientId: {type: string}
         limits: {$ref: '#/components/schemas/ClientKeyLimits'}
         leaseSeconds: {type: number, exclusiveMinimum: 0, maximum: 30}

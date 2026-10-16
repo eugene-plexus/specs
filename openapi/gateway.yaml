@@ -8463,7 +8463,7 @@ components:
           description: Entire request lifetime, including preparation, wake and every attempt.
         clientKeyId: {type: string, description: Verified key identifier; absent for operator/service requests and pre-A5 rows.}
         clientKeyName: {type: string, description: Registry name captured for this request.}
-        personId: {type: string, description: Stable person subject verified by the control root, when present.}
+        personId: {type: string, description: "Stable person subject verified by the control root, when present."}
         appClientId: {type: string, description: Registered app bound to the person's proof.}
         startedAt:
           type: string
