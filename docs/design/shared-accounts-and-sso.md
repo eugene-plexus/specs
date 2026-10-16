@@ -326,6 +326,20 @@ sign-in. Publishing did not upgrade any running installation.
 
 ## U3 implementation result, 2026-10-16
 
+### Directory presentation follow-up (published to Edge)
+
+Troy's first Edge review asked for a scalable account list and a clearer tree
+entry. Owner and delegated administration now share a searchable, paginated
+directory which opens one person's editor. People is one entry in the left tree;
+the directory owns individual accounts. Each person's page uses visible sections
+for account details, groups and app access, administration permissions, and
+separate account actions. Only explanatory help remains folded. The owner can
+reset passwords and change email; delegates see only their permitted account and
+group controls. Existing person links and permission gates remain intact. See the
+[implementation and acceptance record](../acceptance/people-directory-2026-10-16.md).
+
+### Person enforcement
+
 Workbench now sends its app key together with the current person's root-issued
 OIDC access token. The gateway asks the active root to verify the proof, its
 binding to the registered app, the current account, session and individual/group
@@ -387,3 +401,67 @@ Upgrade active/standby roots before agents, gateway and Workbench. Mixed old/new
 person-proof participants fail closed. U4 is the next account slice: Google,
 Microsoft and generic OIDC, explicit identity linking, admission controls,
 shared sign-in, session visibility, logout and recovery.
+
+## U4 implementation result, 2026-10-16 (published to Edge)
+
+People now has an optional **External sign-in** setup panel for Google,
+Microsoft and generic OpenID Connect. The owner chooses the stable HTTPS Eugene
+address, copies the callback URL to a provider's web application registration,
+and enters its client ID and secret. HTTP is limited to literal loopback for
+local testing. Microsoft uses a specific tenant ID, with a preset for personal
+Microsoft accounts; additional tenants use separate registrations. Generic
+providers retain their exact advertised issuer, including a trailing slash.
+
+Admission is invitation-only. The owner first creates an ordinary Eugene member
+account, then issues a one-use, 24-hour connection invitation from that person's
+**Sign-in and sessions** section. The invitation code is shown once and pasted
+into a form, never carried in a URL. The member explicitly confirms which Eugene
+account they are connecting. Only the verified `(issuer, subject)` is linked;
+matching names or email addresses never merge accounts or grant access.
+Provider setup, identity linking and unlinking remain owner-only controls.
+
+Both local member login and upstream login establish an eight-hour shared browser
+sign-in. Apps can offer **Continue as [person]**. Named administration can use
+that same session with its existing grants. Stable person IDs, Workbench chat
+ownership, individual/group permissions and U3 inference admission stay intact.
+The protected owner still uses the local passphrase/unlock path. No external
+identity can become the owner, unlock the root or create machine authority.
+
+The account page, linked from Workbench, shows connected accounts and active
+browser sign-ins and can end one or all shared sign-ins. Owners can revoke these
+from a person's page. App and administration credentials are bound to the parent
+sign-in: revocation, unlinking, provider edits/disable, account disable/delete or
+password reset prevents subsequent refresh, person admission and administration
+requests. Existing U3 renewal and ten-minute private-page refresh bounds apply;
+this does not erase already viewed content. App sign-out still signs out of that
+app. Shared sign-out does not log out the upstream provider. Legacy app sessions
+and direct password-based administration sessions retain their own logout paths.
+
+The authorization-code flow uses PKCE S256, browser-bound state, nonce, signature,
+issuer, audience/authorized-party, time and subject validation. Google accepts its
+two documented issuer spellings; Microsoft checks tenant and signing-key issuer.
+Only RS256 and ES256 signatures are supported. Provider HTTP uses bounded JSON,
+no redirects and no shared cookies. The agent forwards only Eugene's dedicated
+HttpOnly, SameSite=Lax sign-in cookies and explicitly suppresses pooled cookies
+for a visitor without one. HTTPS uses Secure cookies. Account actions require
+a browser-bound CSRF proof.
+
+Provider secrets are sealed with the existing root master key. Cookie and
+invitation capabilities are stored as hashes. Providers, identities, invitations
+and shared sessions use replicated log operations and snapshots, with bounded
+active sessions/invitations and access-audit receipts. Provider edits invalidate
+pending invitations as well as prior provider sessions. In-progress authorization
+requests are deliberately temporary; restart requires starting those again.
+
+[Acceptance evidence](../acceptance/u4-sso-2026-10-16.md) covers real root, agent,
+Workbench and Chrome, plus a local upstream provider signing real RSA tokens.
+Google and Microsoft discovery were checked read-only and their token profiles
+were tested. Live Google/Microsoft account authentication awaits actual provider
+registrations; no credentials or running installations were changed.
+
+This slice and the directory/detail presentation changes are included in the
+[Edge publication](../acceptance/edge-sso-2026-10-16.md). Control/UI were regenerated
+from the published contracts, and both distribution builds and release pins were
+refreshed. Other platform consumers carry only the canonical token-verifier update.
+Upgrade active/standby roots before enabling SSO; Workbench has a separate app
+update. No running installation was upgraded as part of publication.

@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "mobileFits": true,
+  "pageErrors": [],
+  "revokedSessionRefused": true,
+  "pagination": true,
+  "browserBack": true,
+  "deepLinkReload": true,
+  "realPermissionSave": true,
+  "nameSpacing": true,
+  "peopleTreeEntry": true,
+  "visiblePermissionSections": true,
+  "separateAccountActions": true,
+  "passwordReset": true,
+  "delegatedControlsLimited": true
+}

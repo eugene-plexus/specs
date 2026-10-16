@@ -1400,9 +1400,20 @@ def video_run(*, ada: Browser, call, wait, app_id: str, operator: str, data: Pat
     # holding a handle the gateway issued to the app's key, as a crash leaves
     # one (a graceful stop would not test the boot path); start it again.
     key = (data / "client_key").read_text(encoding="utf-8").strip()
-    submitted = httpx.post(f"{gateway}/v1/videos", headers={"Authorization": f"Bearer {key}"},
+    # U3 binds installed-app inference to its signed-in owner. Read only this
+    # disposable test account's persisted proof; never log it or use app-only
+    # authority to manufacture the crash fixture.
+    with sqlite3.connect(data / "workbench.sqlite3") as db:
+        session = db.execute(
+            "SELECT access_token FROM sessions WHERE sub = ? AND access_expires_at > ? "
+            "ORDER BY created_at DESC LIMIT 1", (person, time.time()),
+        ).fetchone()
+    assert session and session[0], "The crash fixture needs the signed-in owner's current proof"
+    submitted = httpx.post(f"{gateway}/v1/videos", headers={"Authorization": f"Bearer {key}",
+                           "X-Eugene-Person-Token": session[0]},
                            json={"model": grok, "prompt": "[long] a ball after a crash",
                                  "seconds": "1", "size": "854x480"}, trust_env=False, timeout=60)
+    assert submitted.status_code == 200, f"Crash fixture submission refused: {submitted.status_code}"
     handle = submitted.json().get("id") if submitted.status_code == 200 else None
     crashed_job = f"gen-vid-c3-{len(seen('router-video'))}"
     stopped = call("agent", "POST", f"/v1/apps/{app_id}/stop", operator)

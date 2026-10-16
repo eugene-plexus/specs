@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "providerSetup": true,
+  "explicitInvitation": true,
+  "stableAccountAndChat": true,
+  "sharedAdministration": true,
+  "noOwnerEscalation": true,
+  "restartPreserved": true,
+  "freshProviderLoginAfterRestart": true,
+  "unlinkRevokesAdministration": true,
+  "passwordRecovery": true,
+  "memberLogout": true,
+  "mobileNoOverflow": true,
+  "pageErrors": []
+}

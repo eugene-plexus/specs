@@ -1,0 +1,8 @@
+{
+  "passed": true,
+  "privateChatIsolated": true,
+  "restartPreserved": true,
+  "namedCannotUnlock": true,
+  "realProxy": true,
+  "ui": "production export"
+}

@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "privateChatIsolated": true,
+  "restartPreserved": true,
+  "namedCannotUnlock": true,
+  "realProxy": true,
+  "ui": "production export",
+  "upstream": "local RS256 OIDC fixture",
+  "sharedSignIn": true,
+  "sessionRevocation": true
+}

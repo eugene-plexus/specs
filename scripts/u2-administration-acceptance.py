@@ -6,6 +6,7 @@ All ports and state are isolated; all APIs are real. No inference or live keys.
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import os
@@ -22,7 +23,7 @@ import httpx
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def exercise() -> None:
+def exercise(*, production_ui: bool = False) -> None:
     directory = Path(tempfile.mkdtemp(prefix="ep-u2-acceptance-"))
     print(f"Acceptance artifacts: {directory}", flush=True)
     spec = importlib.util.spec_from_file_location(
@@ -101,7 +102,9 @@ def exercise() -> None:
                 try:
                     if (
                         call(
-                            name, "GET", "/administration/" if name == "ui" else "/healthz"
+                            name,
+                            "GET",
+                            "/administration/" if name == "ui" else "/healthz",
                         ).status_code
                         == 200
                     ):
@@ -128,7 +131,10 @@ def exercise() -> None:
             start("agent")
             assert (
                 call(
-                    "control", "POST", "/v1/auth/initialize", json={"passphrase": password}
+                    "control",
+                    "POST",
+                    "/v1/auth/initialize",
+                    json={"passphrase": password},
                 ).status_code
                 == 204
             )
@@ -136,7 +142,11 @@ def exercise() -> None:
                 "sessionToken"
             ]
             join = call(
-                "control", "POST", "/v1/nodes/join-token", owner, json={"nodeName": "u2-node"}
+                "control",
+                "POST",
+                "/v1/nodes/join-token",
+                owner,
+                json={"nodeName": "u2-node"},
             ).json()["token"]
             local = call(
                 "agent", "POST", "/v1/auth/initialize", json={"passphrase": password}
@@ -167,10 +177,17 @@ def exercise() -> None:
                 "POST",
                 "/v1/oidc/clients",
                 owner,
-                json={"name": "Workbench", "redirectUris": [urls["workbench"] + "/oidc/callback"]},
+                json={
+                    "name": "Workbench",
+                    "redirectUris": [urls["workbench"] + "/oidc/callback"],
+                },
             ).json()
             ada = call(
-                "control", "POST", "/v1/people", owner, json={"name": "Ada", "password": password}
+                "control",
+                "POST",
+                "/v1/people",
+                owner,
+                json={"name": "Ada", "password": password},
             ).json()
             manager = call(
                 "control",
@@ -217,7 +234,8 @@ def exercise() -> None:
             ):
                 sign_in(ada_app, "Ada")
                 chat = ada_app.post(
-                    urls["workbench"] + "/api/chats", json={"model": "acceptance-no-inference"}
+                    urls["workbench"] + "/api/chats",
+                    json={"model": "acceptance-no-inference"},
                 )
                 assert chat.status_code == 201, chat.text
                 chat_id = chat.json()["id"]
@@ -254,7 +272,10 @@ def exercise() -> None:
                     "named login cannot unlock",
                     flush=True,
                 )
-                start("ui")
+                if production_ui:
+                    urls["ui"] = urls["agent"]
+                else:
+                    start("ui")
                 context = directory / "browser-context.json"
                 context.write_text(
                     json.dumps(
@@ -290,7 +311,7 @@ def exercise() -> None:
                         "restartPreserved": True,
                         "namedCannotUnlock": True,
                         "realProxy": True,
-                        "ui": "development build",
+                        "ui": "production export" if production_ui else "development build",
                     },
                     indent=2,
                 )
@@ -314,4 +335,6 @@ def exercise() -> None:
 
 
 if __name__ == "__main__":
-    exercise()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--production-ui", action="store_true")
+    exercise(production_ui=parser.parse_args().production_ui)
