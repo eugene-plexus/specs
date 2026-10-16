@@ -109,6 +109,12 @@ schemas:
     required:
     - providers
     properties:
+      signInAddress:
+        type: [string, 'null']
+        description: Effective canonical sign-in address from an explicit setting or managed console origin. Absent until either is configured; never inferred from request headers.
+      managedSignInAddress:
+        type: [string, 'null']
+        description: Sign-in address derived from the root's managed console origin. An explicit oidcIssuer overrides it.
       providers:
         type: array
         items:

@@ -5005,7 +5005,7 @@ components:
           items: {$ref: '#/components/schemas/OidcClient'}
         issuer:
           type: string
-          description: '`oidcIssuer` when the operator set one; otherwise absent, and an app uses the address it reaches Eugene at, with `/oidc`.'
+          description: 'Explicit oidcIssuer or the managed console origin with /oidc. Otherwise absent, and an app uses the address it reaches Eugene at with /oidc.'
 
     OidcClientCreateRequest:
       type: object
