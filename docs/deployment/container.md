@@ -154,12 +154,12 @@ wildcard route, path-based app mount, or automatic public administration. User
 sign-in and node/folder grants still decide access. This does not turn one
 installation into isolated MSP tenants.
 
-**The console can stay where it is.** By default only Workbench goes through
-this setup: you keep opening the console at its own address on your network
-(for example `http://NAS-IP:8279`), with no DNS entry to add, and the
-console's name (`eugene.…`) serves only Workbench's sign-in, which every browser
-must reach over HTTPS. Choose **Through this setup too** to move the console to
-its HTTPS name as well.
+**New setups use two HTTPS names.** The console and sign-in use `eugene.…`, and
+chats use `workbench.…`. The optional model API shares the Eugene hostname at
+`/inference/v1`, so it needs no third proxy host. Existing configurations keep
+their saved addresses. You can still choose **On its own port, as now** to keep
+opening the console on the LAN (for example `http://NAS-IP:8279`); its HTTPS
+hostname then serves sign-in and the optional model API.
 
 **Set it up from Settings.** Open **Settings → Container access setup**, choose
 who manages HTTPS (an existing reverse proxy, automatic Let's Encrypt, local
@@ -236,9 +236,12 @@ somewhere else can be named with
 [`compose.single-port.yaml`](../../docker/compose.single-port.yaml) publishes the
 HTTPS port; keep your existing volume name, model mounts and other settings.
 
-If you previously set a custom **OIDC issuer** on the control root, change it to
-the console origin plus `/oidc` as part of the migration. Workbench verifies this
-exact issuer; it will refuse a provider still naming a different address.
+The sign-in address follows the managed console origin plus `/oidc` automatically
+when no **OIDC issuer** override is saved. An existing override is preserved.
+In People, External sign-in shows the effective address and offers **Use access
+setup address** under its advanced options. Coordinate an address change with
+apps and external-provider callback registrations; Workbench verifies the exact
+issuer. Active and standby roots must use the same canonical sign-in address.
 
 This version publishes Workbench as the browser app. Other optional apps remain
 private and have no Open link in this mode. Use the direct-port setup if you need

@@ -1,5 +1,33 @@
 # One HTTPS entry point for the container
 
+## Two-hostname follow-up, 2026-10-16
+
+Implemented and included in the [Edge publication](../acceptance/edge-two-host-access-2026-10-16.md).
+New setup forms default to serving the
+console through HTTPS alongside Workbench. `inference_on_console: {networks: [...]}`
+publishes only the model API at the console's `/inference/v1` path; it is opt-in
+with an independent network policy. The existing console `/inference/` engines
+page remains intact. An optional `inference` service keeps its separate hostname
+and policy during migration. Existing configurations never opt in implicitly.
+
+The root derives its canonical issuer from its trusted startup console origin
+when no explicit `oidcIssuer` exists. Provider setup, discovery and client lists
+use the same value; browser headers cannot establish an SSO address. Explicit
+overrides survive migration, with a visible action to return to the managed
+address. Both active and standby roots need the same canonical public address.
+
+The shared API namespace is matched before console routing and refused before
+fallthrough, including when disabled. Only the existing inference endpoint list
+is forwarded, with `/inference` stripped, request bodies/query strings retained
+and streaming unbuffered. Shared-origin API responses have a sandbox CSP and
+nosniff policy, so returned bytes cannot execute as console documents.
+
+Node enrollment routing is unchanged. Direct control mappings must remain while
+enrolled machines use them. Automatic control-address migration is separate work;
+this change does not silently strand workers or rewrite their saved identities.
+
+The original design and historical implementation notes follow.
+
 Approved by Troy, 2026-10-04. This supersedes the requirement for a separate
 published Workbench port in `apps-and-spokes.md`; separate browser origins remain
 required. Existing containers retain their current ports until explicitly migrated.

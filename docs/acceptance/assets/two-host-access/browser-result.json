@@ -1,0 +1,55 @@
+{
+  "passed": true,
+  "preview": {
+    "configuration": {
+      "listen_port": 8088,
+      "console": {
+        "origin": "https://eugene.example.org",
+        "networks": [
+          "192.168.16.0/24"
+        ]
+      },
+      "workbench": {
+        "origin": "https://workbench.example.org",
+        "networks": [
+          "192.168.16.0/24"
+        ]
+      },
+      "inference_on_console": {
+        "networks": [
+          "192.168.16.0/24"
+        ]
+      },
+      "internal_ca": false,
+      "proxy": {
+        "addresses": [
+          "172.30.0.2/32"
+        ],
+        "transport": "http"
+      },
+      "public_console": false,
+      "public_sites": false,
+      "console_direct": false
+    },
+    "publicUrls": {
+      "consoleUrl": "https://eugene.example.org/",
+      "workbenchUrl": "https://workbench.example.org/",
+      "inferenceUrl": "https://eugene.example.org/inference",
+      "nodesUrl": null,
+      "publicSites": null
+    },
+    "instructions": [
+      "Configuration validated. DNS, certificate files and external connectivity have not been tested; no running settings have changed.",
+      "Update Workbench in Apps first. Keep the existing /data volume, model mounts and container settings.",
+      "Point these names at your reverse proxy: eugene.example.org, workbench.example.org",
+      "Eugene's sign-in address is https://eugene.example.org/oidc. External sign-in uses it automatically unless you have explicitly saved another address.",
+      "Use https://eugene.example.org/inference/v1 as the model API base URL. It shares Eugene's proxy host and port, with its own network rules and API keys.",
+      "Create one proxy host per name, preserving Host. Forward them all to Eugene on HTTP port 8088. Require HTTPS for browser connections.",
+      "Only the proxy addresses entered here may connect. Use the proxy's address as Eugene sees it: on a shared Docker network, its address on that network, not its LAN address. The proxy must set X-Forwarded-Proto to https and add the visitor's address to X-Forwarded-For.",
+      "Put Eugene and your proxy on one Docker network and give the proxy a fixed address there, matching this setup. Eugene's other ports need not be published for the proxy. Use HTTPS transport across machines.",
+      "Enrolled machines keep reaching this one at its control port (8083 in the container), so keep that port published while other machines are enrolled.",
+      "Apply from this page: Eugene saves it and restarts. Then open https://eugene.example.org and sign in within 15 minutes, or Eugene goes back to how it was. Workbench's sign-in address follows by itself; its chats and sign-ins are kept."
+    ]
+  },
+  "errors": []
+}

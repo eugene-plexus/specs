@@ -66,7 +66,8 @@ fixture actually wait, and fixed a signature decision being replaced during
 site polling. It also fixed AG-UI emitting an empty tool result while a signature
 was still pending. Dedicated tests prove a decline is consumed and the eventual
 tool result is emitted exactly once. This record does not claim resolution of
-every issue covered by the older Workbench #13 report.
+every issue covered by the older Workbench #13 report. The remaining cases were
+subsequently covered by the [2026-10-16 follow-up](signed-call-poll-race-2026-10-16.md).
 
 Adversarial review and browser failures also led to preserved dirty form drafts,
 edit-revision checks, reachable-only validation, distinct shared-component label

@@ -738,6 +738,15 @@ print(' '.join(paths))
       else
         bad "33. trusted proxy or certificate rotation checks failed"
       fi
+      if $CT exec ep-entry-check mkdir -p /tmp/ep-two-host-checks \
+          && $CT cp "$HERE/two-host-proxy-acceptance.py" ep-entry-check:/tmp/ep-two-host-checks/ \
+          && $CT cp "$HERE/entrypoint-proxy-checks.py" ep-entry-check:/tmp/ep-two-host-checks/ \
+          && $CT exec ep-entry-check /opt/eugene-plexus/venv/bin/python \
+             /tmp/ep-two-host-checks/two-host-proxy-acceptance.py --caddy /usr/local/bin/caddy; then
+        ok "33b. two-host model API isolation, streaming and legacy-address migration"
+      else
+        bad "33b. two-host model API checks failed"
+      fi
       if $CT exec -i ep-entry-check /opt/eugene-plexus/venv/bin/python - < "$HERE/entrypoint-acme-checks.py"; then
         ok "34. real ACME issuance, renewal and persistence using TLS-ALPN only"
       else

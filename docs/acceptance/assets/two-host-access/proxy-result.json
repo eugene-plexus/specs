@@ -1,0 +1,27 @@
+{
+  "checks": [
+    "prefix stripped exactly and query retained",
+    "shared API documents cannot execute in the console origin",
+    "authorization still reaches the gateway",
+    "legacy inference clients still work",
+    "public sign-in remains available",
+    "Workbench keeps its own hostname",
+    "refused /inference/v1/config",
+    "refused /inference/v1/auth/login",
+    "refused /inference/oidc/account",
+    "refused /inference",
+    "refused /v1/config",
+    "refused paths reached no backend",
+    "console permission cannot bypass the API network policy",
+    "private console still answers",
+    "existing engines page is preserved",
+    "POST bodies survive routing",
+    "first SSE event arrives before completion",
+    "remaining SSE events arrive",
+    "spoofed internal authority is stripped",
+    "two-host API also works with a direct-only console",
+    "removed alias no longer routes",
+    "disabled API cannot fall through to console"
+  ],
+  "passed": 22
+}

@@ -35,7 +35,11 @@ deny, because the contract keeps `command` optional; Workbench now always
 names it, denied where the machine runs no commands (the choice was not
 shown).
 
-## Kept (stored data): Troy's call
+## Kept (stored data): retained by agreement on 2026-10-16
+
+During the pre-Edge issue review, Troy agreed to retain these migrations because
+they preserve stored data during upgrades. They do not block Edge or require
+removal to finish specs#22.
 
 1. Library state v1 → v2 (profiles stored inside the state file).
 2. Site host `policy.json` v1 (people's sharing rules).

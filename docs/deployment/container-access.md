@@ -16,21 +16,37 @@ Eugene goes back to how it was by itself, so a mistake never locks you out. The
 | SMB/MSP with organisation PKI | Supplied certificate files | One HTTPS port, automatically reloaded PEM files; organisation CA trust |
 | Reverse proxy on a different machine | My reverse proxy, with HTTPS upstream | Verified TLS on both legs; Eugene's port restricted to the proxy |
 
-**Where you open the console** is a choice of its own. By default it stays on its
-own port on your network, as before, and only Workbench goes through the setup;
-the console's name is then used only for Workbench's sign-in, so it still needs a
-proxy host, but nobody needs a local DNS entry. This is the setup to start with
-when Workbench is reached from outside, for example through Cloudflare.
+New setups use two HTTPS names on one port: `eugene.<domain>` for the console,
+sign-in and optional model API, and `workbench.<domain>` for chats. Enter the base
+domain once. The sign-in address follows automatically as
+`https://eugene.<domain>/oidc`; a previously saved explicit sign-in address is kept.
+You can still keep the console on its direct port. Existing configurations retain
+that choice until you change and apply it.
 
 Every mode keeps separate exact console and Workbench hostnames, browser HTTPS,
 sign-in and per-user node/folder grants. Those two names are the default; an
-inference name (for apps on other machines) and a node name are extras. Without a
+inference name and a node name remain optional extras. The recommended model API
+address is `https://eugene.<domain>/inference/v1`, sharing the console's proxy host
+but using its own network policy and API keys. Without a
 node name, machines you have connected keep reaching this one at the control
 root's port, 8083 in the container, so keep that port published while any are
 enrolled. Accounts are not isolated MSP tenants;
 use a separate Eugene installation for each customer requiring that boundary.
 Legacy direct ports remain available. The managed entry point runs in the Linux
 container; browsers and enrolled Windows/macOS/Linux machines can use it.
+
+### Moving an existing inference hostname
+
+Enable the model API and choose **Use Eugene’s address**. Leave **Keep the existing
+inference address working during migration** checked while updating clients to
+the new base URL. Both addresses work, and the old address keeps its network rules.
+Once clients have moved, uncheck that option, prepare/apply again, then remove the
+old NPM host and DNS record. Opening the setup page alone changes nothing.
+
+This does not move enrolled machines off the control port. Keep that mapping
+until their control addresses have been migrated; it is separate from model API
+access. In particular, do not remove the NAS control mapping just because the
+inference hostname is no longer needed.
 
 ## Existing reverse proxy on the same Docker host
 
@@ -81,7 +97,7 @@ or bind-mounted appdata, retain your existing host path mapped to `/data` instea
 of changing to a named volume. Attach the dedicated network; once Workbench
 answers through the proxy, the gateway and Workbench port mappings can go. **Keep
 the console's mapping (container port `8079`) while the console stays on its own
-port, which is the default: it is then the only way into the console.** It can go
+port: it is then the only way into the console.** It can go
 only if you moved the console through the setup too and it answers there. Keep the
 control root's `8083` while other machines are enrolled. Keep the
 hostname, model mounts, GPU settings and user ID from your existing installation.
@@ -104,7 +120,7 @@ trusts*.
 ### Behind Cloudflare
 
 With Cloudflare's proxy (the orange cloud) in front of your own, every visitor
-arrives as a Cloudflare address. The simplest setup is the default one: keep the
+arrives as a Cloudflare address. One option is to keep the
 console on its own port, and only Workbench (and its sign-in) goes through
 Cloudflare. If you move the console through the setup too:
 
@@ -114,12 +130,13 @@ Cloudflare. If you move the console through the setup too:
 - Workbench works through Cloudflare when **Allow Workbench access from any
   network** is ticked.
 - For an API client such as Cline to work from home and away through Cloudflare,
-  enable the inference name and **Allow inference from any network, with an API
+  enable the model API and **Allow inference from any network, with an API
   key**. This opens only the inference paths to requests from any network; the
   gateway still requires a valid Eugene key and applies its model permissions
   and limits. The console and node names keep their own access settings. Point
-  the inference name's NPM host at the same Docker address and port as Workbench,
-  and use `https://inference.<your-domain>/v1` as the client's base URL.
+  both NPM hosts at the same Docker address and port, and use
+  `https://eugene.<your-domain>/inference/v1` as the client's base URL. A separate
+  inference hostname remains available for existing clients or proxy rules.
 
   On a build without that checkbox, edit only `inference.networks` in the active
   `/data/entrypoint.json` to `["0.0.0.0/0", "::/0"]`, then restart the container.
@@ -158,6 +175,9 @@ Cloudflare. If you move the console through the setup too:
 ### Nginx Proxy Manager
 
 Create a Proxy Host for each enabled name (or one with all the exact names):
+
+For the recommended setup those names are `eugene.<domain>` and
+`workbench.<domain>`. The model API and sign-in need no additional NPM host.
 
 - Forward scheme: `http`; hostname: `eugene-plexus-control-plane`; port: `8088`.
 - SSL: choose/request the appropriate certificate and enable **Force SSL**.
