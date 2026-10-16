@@ -503,6 +503,67 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
 
+  /v1/permission-groups:
+    get:
+      operationId: listPermissionGroups
+      summary: Permission groups shared by Eugene and its apps
+      description: Operator only. Group grants are enforced at app sign-in/refresh and job-site authorization.
+      responses:
+        '200':
+          description: All groups; membership is on Person.groups.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionGroupList'}
+    post:
+      operationId: createPermissionGroup
+      summary: Create a permission group
+      description: Operator only; active root. New groups grant nothing unless explicitly configured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PermissionGroupWrite'}
+      responses:
+        '201':
+          description: The group.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionGroup'}
+        '409':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '422':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+  /v1/permission-groups/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    put:
+      operationId: replacePermissionGroup
+      summary: Replace a group's name and grants
+      description: Operator only. Existing member IDs stay assigned; new authorizations and refreshes use the new grants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PermissionGroupWrite'}
+      responses:
+        '200':
+          description: The group.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PermissionGroup'}
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      operationId: deletePermissionGroup
+      summary: Delete a group and its memberships
+      description: Operator only. Empty memberships remain group-based with no access; individual defaults are not restored.
+      responses:
+        '204': {description: Deleted.}
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
   /v1/people:
     get:
       operationId: listPeople
@@ -3890,6 +3951,8 @@ components:
         - revokeSession
         - promote
         - putPerson
+        - putPermissionGroup
+        - deletePermissionGroup
         - putNodeHelper
         - setPersonPassword
         - deletePerson
@@ -4098,6 +4161,10 @@ components:
             The public half of the above, carried in the clear so a
             standby can report the identity it would assume without
             holding the passphrase.
+        permissionGroups:
+          type: array
+          items: {$ref: '#/components/schemas/PermissionGroup'}
+          description: Central access groups. Absent in old snapshots means no groups.
         people:
           type: array
           items: {$ref: '#/components/schemas/SnapshotPerson'}
@@ -4151,6 +4218,12 @@ components:
       type: object
       required: [id, name, passwordVerifier, disabled, createdAt, passwordChangedAt]
       properties:
+        groups:
+          type: [array, 'null']
+          maxItems: 64
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 64}
+          description: Null or absent keeps individual access. A list uses only the union of these groups; an empty list grants no access. Individual app/permission settings are retained but inactive in group mode.
         helperGrants:
           type: array
           deprecated: true
@@ -4201,6 +4274,12 @@ components:
         a person's sign-in opens their apps and nothing in the hub.
       required: [id, name, disabled, createdAt, passwordChangedAt]
       properties:
+        groups:
+          type: [array, 'null']
+          maxItems: 64
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 64}
+          description: Null or absent keeps individual access. A list uses only the union of these groups; an empty list grants no access. Individual app/permission settings are retained but inactive in group mode.
         id: {type: string, description: 'Stable; the `sub` in their ID tokens.'}
         name: {type: string, description: 'What they sign in with. Unique, compared case-folded.'}
         displayName: {type: string}
@@ -4211,6 +4290,10 @@ components:
             asks for the `email` scope, with `email_verified: false`: Eugene
             sends no mail and has proved nothing about it. Some apps (Open
             WebUI) identify people by it (C4).
+        appsInEffect:
+          type: [array, 'null']
+          items: {type: string}
+          description: Effective app grants, calculated from groups or individual access. Null means every app; an empty list means none.
         apps:
           type: [array, 'null']
           items: {type: string}
@@ -4228,7 +4311,7 @@ components:
         permissionsInEffect:
           type: array
           items: {$ref: '#/components/schemas/PersonPermission'}
-          description: What applies now, from `permissions` or, when it is null, the install's defaults.
+          description: Effective permissions from selected groups, or individual permissions/install defaults when groups is null.
         disabled: {type: boolean}
         createdAt: {type: string, format: date-time}
         passwordChangedAt: {type: string, format: date-time}
@@ -4257,6 +4340,8 @@ components:
       type: object
       required: [people]
       properties:
+        owner:
+          $ref: '#/components/schemas/OwnerAccount'
         people:
           type: array
           items: {$ref: '#/components/schemas/Person'}
@@ -4269,6 +4354,12 @@ components:
       additionalProperties: false
       required: [name, password]
       properties:
+        groups:
+          type: [array, 'null']
+          maxItems: 64
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 64}
+          description: Null or absent keeps individual access. A list uses only the union of these groups; an empty list grants no access. Individual app/permission settings are retained but inactive in group mode.
         name: {type: string, minLength: 1, maxLength: 64, pattern: "^[^\\s@][^@]*[^\\s@]$|^[^\\s@]$"}
         displayName: {type: string, maxLength: 120}
         email: {type: string, maxLength: 254, pattern: "^[^@\\s]+@[^@\\s]+$"}
@@ -4291,6 +4382,12 @@ components:
       type: object
       additionalProperties: false
       properties:
+        groups:
+          type: [array, 'null']
+          maxItems: 64
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 64}
+          description: Null or absent keeps individual access. A list uses only the union of these groups; an empty list grants no access. Individual app/permission settings are retained but inactive in group mode.
         displayName: {type: string, maxLength: 120}
         email:
           type: [string, 'null']
@@ -4680,3 +4777,64 @@ components:
             that would otherwise reach a dead node's secrets. There is no
             recovery path, by design.
 
+    OwnerAccount:
+      type: object
+      description: Protected root owner, listed beside people without changing the existing operator subject or passphrase recovery. Not editable through person/group APIs.
+      required: [id, name, displayName]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        displayName: {type: string}
+
+    PermissionGroup:
+      type: object
+      description: A shared collection of app and job-site grants.
+      additionalProperties: false
+      required: [id, name, description, apps, permissions, createdAt, updatedAt]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 64}
+        name: {type: string, minLength: 1, maxLength: 80}
+        description: {type: string, maxLength: 500}
+        apps:
+          type: [array, 'null']
+          maxItems: 256
+          uniqueItems: true
+          items: {type: string}
+          description: Explicit app client IDs; null deliberately grants all apps.
+        permissions:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/PersonPermission'}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+
+    PermissionGroupWrite:
+      type: object
+      description: Complete replacement policy; omitted grants default to no access.
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80}
+        description: {type: string, maxLength: 500, default: ''}
+        apps:
+          type: [array, 'null']
+          maxItems: 256
+          uniqueItems: true
+          default: []
+          items: {type: string}
+        permissions:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          default: []
+          items: {$ref: '#/components/schemas/PersonPermission'}
+
+    PermissionGroupList:
+      type: object
+      description: All permission groups in the central directory.
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items: {$ref: '#/components/schemas/PermissionGroup'}
