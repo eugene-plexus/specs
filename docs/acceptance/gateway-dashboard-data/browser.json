@@ -1,0 +1,10 @@
+{
+  "result": "passed",
+  "checks": [
+    "Deduplicated capacity, honest sleeping-route status, six history charts and server percentiles",
+    "Export includes scope and exact data; failures filter requests on server; desktop/mobile and light theme fit",
+    "Failed refresh marked stale; export disabled; partial reads, dropped/expired data, empty window, and disabled recording distinct"
+  ],
+  "browserErrors": [],
+  "apiMutations": []
+}
