@@ -1,0 +1,41 @@
+{
+  "checks": [
+    "Models lead; engines and manual setup disclose by keyboard/click without losing instructions",
+    "No horizontal overflow at 1600, 1280, 768, 390 and 320 px; dark/light screenshots",
+    "Worker start/stop, saved autostart, visible restart refusal, safe removal confirmation and logs preserved",
+    "Selected build reaches worker; existing install progress and failure automatically reveal engine management",
+    "Inventory failures leave model controls available; multiple nodes and long external names fit narrow screens"
+  ],
+  "writes": [
+    {
+      "method": "POST",
+      "path": "/api/proxy/node:Amish_Station/v1/runtimes/qwen3-8-flash-next-iq2-xs/stop",
+      "body": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/proxy/node:Amish_Station/v1/runtimes/qwen3-8-flash-next-iq2-xs/start",
+      "body": {}
+    },
+    {
+      "method": "PUT",
+      "path": "/api/proxy/node:Amish_Station/v1/runtimes/qwen3-8-flash-next-iq2-xs/auto-start",
+      "body": {
+        "autoStart": false
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/proxy/node:Amish_Station/v1/runtimes/qwen3-8-flash-next-iq2-xs/restart",
+      "body": {}
+    },
+    {
+      "method": "POST",
+      "path": "/api/proxy/node:Amish_Station/v1/engines/llama_cpp/install",
+      "body": {
+        "variant": "win-cpu-x64"
+      }
+    }
+  ],
+  "errors": []
+}
