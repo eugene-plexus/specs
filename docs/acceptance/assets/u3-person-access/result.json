@@ -1,0 +1,16 @@
+{
+  "passed": true,
+  "streamRevocationSeconds": 9.996,
+  "realComponents": [
+    "control",
+    "agent",
+    "gateway",
+    "workbench"
+  ],
+  "fixture": "inference only",
+  "fallbackDenied": true,
+  "rootOutageDenied": true,
+  "restartAuditPreserved": true,
+  "personMetrics": true,
+  "privateChatPreserved": true
+}

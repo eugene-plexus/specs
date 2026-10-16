@@ -503,11 +503,76 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
 
+  /v1/auth/audit:
+    get:
+      operationId: readAccessAudit
+      summary: Recent committed access changes (owner only)
+      description: Up to 1000 durable events, newest first. No tokens, passwords, prompts or document content.
+      responses:
+        '200':
+          description: Recent changes retained through compaction and restart.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessAudit'}
+  /v1/auth/administration/login:
+    post:
+      operationId: loginAdministration
+      summary: Sign in to delegated directory administration with a named account
+      security: []
+      description: Requires an unlocked active root and current administration grants. Does not unlock the root or issue an owner, app or machine credential. Rate limited like owner login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdministrationLoginRequest'}
+      responses:
+        '200':
+          description: One-hour administration session, addressed only to control
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdministrationLoginResponse'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+  /v1/auth/administration/session:
+    get:
+      operationId: getAdministrationSession
+      summary: Current owner or delegated directory authority
+      responses:
+        '200':
+          description: Read from current root state on every request
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdministrationSession'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+    delete:
+      operationId: logoutAdministration
+      summary: Revoke the presented administration session
+      responses:
+        '204': {description: Signed out}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
+  /v1/people/{id}/administration:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    put:
+      operationId: setPersonAdministration
+      summary: Owner-only delegation of directory administration
+      description: Replaces the person's explicit administration grants and invalidates their existing administration sessions. Groups never confer these grants. Password recovery and app registration remain owner-only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AdministrationGrants'}
+      responses:
+        '200':
+          description: Updated person
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Person'}
+        '401': {$ref: 'components/common.yaml#/components/responses/Problem'}
   /v1/permission-groups:
     get:
       operationId: listPermissionGroups
       summary: Permission groups shared by Eugene and its apps
-      description: Operator only. Group grants are enforced at app sign-in/refresh and job-site authorization.
+      description: Owner or named directory administrator. Group grants are enforced at app sign-in/refresh and job-site authorization.
       responses:
         '200':
           description: All groups; membership is on Person.groups.
@@ -517,7 +582,7 @@ paths:
     post:
       operationId: createPermissionGroup
       summary: Create a permission group
-      description: Operator only; active root. New groups grant nothing unless explicitly configured.
+      description: Owner or manageGroups administrator; active root. New groups grant nothing unless explicitly configured.
       requestBody:
         required: true
         content:
@@ -539,7 +604,7 @@ paths:
     put:
       operationId: replacePermissionGroup
       summary: Replace a group's name and grants
-      description: Operator only. Existing member IDs stay assigned; new authorizations and refreshes use the new grants.
+      description: Owner or manageGroups administrator. Existing member IDs stay assigned; new authorizations and refreshes use the new grants.
       requestBody:
         required: true
         content:
@@ -558,7 +623,7 @@ paths:
     delete:
       operationId: deletePermissionGroup
       summary: Delete a group and its memberships
-      description: Operator only. Empty memberships remain group-based with no access; individual defaults are not restored.
+      description: Owner or manageGroups administrator. Empty memberships remain group-based with no access; individual defaults are not restored.
       responses:
         '204': {description: Deleted.}
         '404':
@@ -568,7 +633,7 @@ paths:
     get:
       operationId: listPeople
       summary: The people who may sign in to apps
-      description: Operator only. Never a password or its verifier.
+      description: Owner or named directory administrator. Never a password or its verifier.
       responses:
         '200':
           description: The people.
@@ -578,7 +643,7 @@ paths:
     post:
       operationId: createPerson
       summary: Add a person
-      description: Operator only; active, unlocked root. A name is unique, compared case-folded, and `operator` is the owner's.
+      description: Owner or managePeople administrator; active, unlocked root. Delegated creation requires no apps, permissions, groups or email in the request and starts in empty group mode. A name is unique, compared case-folded, and operator is reserved.
       requestBody:
         required: true
         content:
@@ -600,7 +665,7 @@ paths:
     patch:
       operationId: updatePerson
       summary: Change a person's name, apps, permissions, or whether they are disabled
-      description: Operator only. Disabling refuses their next sign-in and their apps' next refresh.
+      description: Owner, or a directory administrator within their grants. managePeople permits display-name and enabled-state changes on ordinary accounts; membershipGroups permits only additions/removals in scope while retaining group mode and other memberships. Email and individual grants remain owner-only. Disabling ends administration sessions immediately and refuses the next app refresh.
       requestBody:
         required: true
         content:
@@ -617,7 +682,7 @@ paths:
     delete:
       operationId: deletePerson
       summary: Remove a person
-      description: Operator only. Their sign-ins stop at their apps' next refresh.
+      description: Owner, or managePeople for an ordinary account. Administrators cannot delete themselves or other administrators. Administration sessions end immediately; app sign-ins stop at the next refresh.
       responses:
         '204': {description: Removed.}
         '404':
@@ -647,7 +712,7 @@ paths:
     get:
       operationId: listOidcClients
       summary: The apps that sign in with Eugene
-      description: Operator only. Never a secret.
+      description: Owner or named directory administrator. Never a secret; registering and changing apps remain owner-only.
       responses:
         '200':
           description: The apps.
@@ -3890,6 +3955,24 @@ components:
             Reported on every page so a standby learns it has fallen
             behind compaction *before* it tries to read a gap.
 
+    AccessAuditEvent:
+      type: object
+      additionalProperties: false
+      required: [index, at, actor, action, target]
+      properties:
+        index: {type: integer, minimum: 1}
+        at: {type: string}
+        actor: {type: string, minLength: 1, maxLength: 256}
+        action: {type: string, minLength: 1, maxLength: 128}
+        target: {type: string, minLength: 1, maxLength: 256}
+    AccessAudit:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/AccessAuditEvent'}
     LogEntry:
       type: object
       description: |
@@ -3919,6 +4002,10 @@ components:
             well as out of the agents.
         op:
           $ref: '#/components/schemas/LogOp'
+        actor:
+          type: string
+          maxLength: 256
+          description: Verified actor of an access change. Absent on legacy records; never inferred as owner.
         payload:
           type: object
           additionalProperties: true
@@ -4048,6 +4135,10 @@ components:
           type: object
           additionalProperties: true
           description: Durable logical clock and per-key admission buckets; replayed verbatim with leases and rolling-window charges.
+        accessAudit:
+          type: array
+          maxItems: 1000
+          items: {$ref: '#/components/schemas/AccessAuditEvent'}
         clientKeys:
           type: array
           items: {$ref: '#/components/schemas/ClientKey'}
@@ -4218,6 +4309,11 @@ components:
       type: object
       required: [id, name, passwordVerifier, disabled, createdAt, passwordChangedAt]
       properties:
+        administration: {$ref: '#/components/schemas/AdministrationGrants'}
+        administrationVersion:
+          type: integer
+          minimum: 0
+          description: Absent is zero. Increased on delegation, disable/enable and password changes to invalidate administration sessions.
         groups:
           type: [array, 'null']
           maxItems: 64
@@ -4270,10 +4366,11 @@ components:
     Person:
       type: object
       description: |
-        Someone the operator lets sign in to apps (C2). Not an operator:
-        a person's sign-in opens their apps and nothing in the hub.
+        A stable account for apps. Explicit owner-granted administration may also
+        open directory management; it never grants owner or private-chat access.
       required: [id, name, disabled, createdAt, passwordChangedAt]
       properties:
+        administration: {$ref: '#/components/schemas/AdministrationGrants'}
         groups:
           type: [array, 'null']
           maxItems: 64
@@ -4315,6 +4412,49 @@ components:
         disabled: {type: boolean}
         createdAt: {type: string, format: date-time}
         passwordChangedAt: {type: string, format: date-time}
+
+    AdministrationGrants:
+      type: object
+      additionalProperties: false
+      properties:
+        managePeople:
+          type: boolean
+          default: false
+          description: Create accounts with no access, edit display names, disable/enable or delete ordinary accounts. No password resets, email changes, individual access edits, self edits or changes to other administrators.
+        manageGroups:
+          type: boolean
+          default: false
+          description: Define groups and their app/job-site grants. Does not assign memberships or administration rights. May change access for existing members of these groups.
+        membershipGroups:
+          type: array
+          default: []
+          maxItems: 64
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 64}
+          description: May add/remove ordinary accounts in exactly these groups. Preserve memberships outside this scope. May not change individual-access mode, self or other administrators.
+    AdministrationLoginRequest:
+      type: object
+      additionalProperties: false
+      required: [name, password]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 64}
+        password: {type: string, minLength: 1, maxLength: 1024}
+    AdministrationSession:
+      type: object
+      description: When owner is true, authority is unrestricted and the membershipGroups scope is not applicable. The owner's session uses the existing owner logout endpoint.
+      required: [personId, name, owner, grants]
+      properties:
+        personId: {type: string}
+        name: {type: string}
+        owner: {type: boolean}
+        grants: {$ref: '#/components/schemas/AdministrationGrants'}
+    AdministrationLoginResponse:
+      type: object
+      required: [sessionToken, expiresAt, session]
+      properties:
+        sessionToken: {type: string}
+        expiresAt: {type: string, format: date-time}
+        session: {$ref: '#/components/schemas/AdministrationSession'}
 
     PersonPermission:
       type: string

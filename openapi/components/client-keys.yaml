@@ -120,7 +120,22 @@ components:
         action: {type: string, enum: [check, acquire, renew, release]}
         keyId: {type: string, minLength: 1, maxLength: 128}
         requestId: {type: string, minLength: 1, maxLength: 128}
+        purpose:
+          type: string
+          enum: [inference, logs, catalog]
+          default: inference
+          description: Logs and catalog permit only a check without a model/person token; neither acquires or renews inference. Catalog is only GET /v1/models with X-Eugene-App-Operation set to catalog, for app settings.
         model: {type: string, minLength: 1, maxLength: 256}
+        personToken:
+          type: string
+          minLength: 1
+          maxLength: 16384
+          description: |
+            Root-issued OIDC access token carried alongside the app key in
+            X-Eugene-Person-Token. The root checks its signature, session,
+            current person access and exact registered app owner on every check,
+            acquisition and renewal. Required for app:workbench@ keys. Never
+            persist or log this token. A standalone authority refuses it.
     ClientAdmissionResult:
       type: object
       additionalProperties: false
@@ -128,6 +143,8 @@ components:
       properties:
         keyId: {type: string}
         keyName: {type: string}
+        personId: {type: string, description: Stable subject verified by the root, never caller supplied.}
+        appClientId: {type: string}
         limits: {$ref: '#/components/schemas/ClientKeyLimits'}
         leaseSeconds: {type: number, exclusiveMinimum: 0, maximum: 30}
     ClientKeyCreated:

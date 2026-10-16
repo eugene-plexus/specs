@@ -72,11 +72,21 @@ Every token is a JWS compact JWT.
 **Header:** `{"alg": "EdDSA", "typ": <class>, "kid": <thumbprint>}`.
 
 - `kid` is the RFC 7638 JWK thumbprint of the public key.
-- `typ` is one of three classes:
+- `typ` identifies the credential class:
   - `ep-session+jwt`: an operator session, or one obtained from a
     session by exchange (D7);
   - `ep-service+jwt`: one process calling another;
   - `ep-client+jwt`: a key an app outside the install holds.
+  - `ep-administration+jwt` (U2): a named directory administrator. Only the
+    authority at `control` may issue it, addressed exactly to `["control"]`,
+    with a stable person ID (never `operator`) and an integer
+    `administration_version`. Maximum lifetime is 3,600 seconds with the
+    existing clock-skew allowance. Only directory routes accept it. The root
+    rechecks the current person, grants and version on every request; logout
+    uses the replicated session-revocation list. It cannot be exchanged into
+    an operator, machine, app or gateway credential. The agent proxy recognizes
+    it solely to forward it to control, never to exchange it. Other components
+    continue refusing this class.
 
 **Claims:**
 

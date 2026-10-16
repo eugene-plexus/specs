@@ -11,6 +11,204 @@ must survive. The owner's `operator` subject stays reserved and protected. The
 passphrase also unseals the root, so local unlock/recovery remains independent
 of everyday external sign-in.
 
+## Model routing and a simple default experience
+
+Direction agreed with Troy on 2026-10-16; the additions below are design
+requirements, not shipped behavior. Model routing profiles may be assigned to
+people or groups, with a selection for each task role. The first roles are
+conversation, document search (embeddings), and result sorting. A compatible
+model may serve several roles without another loaded copy. Chat-based result
+sorting needs an explicit implementation; assigning that role does not turn
+a chat model into a native reranker or an embedding model.
+
+**The single-person, single-machine experience must require none of this
+configuration.** Installing and starting one suitable chat model must be enough
+to chat and search documents. There must be no required role assignment,
+profile creation, group setup, embedding download, or reranker download.
+Document search already works by words without a dedicated model. Automatic
+selection can use suitable dedicated models when available. Reusing the chat
+model for sorting is planned; its quality and latency must be established before
+it becomes an automatic default. Missing optional roles must not block answers.
+
+The proposed presentation follows the existing hobbyist UX principle of
+disclosing details beside the feature that uses them:
+
+- **Everyday use:** show the selected model, document availability, storage,
+  updates, and actionable health information. The default routing profile is
+  managed automatically and does not require an editor in this path.
+- **Customize:** put model roles, ordered alternatives, and detailed limits
+  behind a contextual control. It remains available to an authorized person
+  on a single machine. Settings search and direct links reveal the relevant
+  details, without requiring a global expert-mode switch.
+- **Sharing:** put people, groups, profile assignments, delegated administration,
+  and SSO under a clear "Share Eugene" / "People and access" entry. Detailed
+  sharing setup is not part of a fresh personal installation's ordinary flow.
+  Existing shared installations retain visible access-management entry points.
+- **Machines:** reveal connection and placement controls when managing machines;
+  adding another machine does not imply adding another person. A single person
+  with several machines should still be able to keep the everyday experience.
+
+Sharing and technical detail are independent. Do not introduce a required
+"single tenant / multi tenant" setup choice or make expertise depend on user
+count. Hiding a panel changes presentation only: it never disables authentication,
+clears settings, removes people, or bypasses backend authorization. An ordinary
+shared user sees their permitted experience, not the administrator's controls.
+Existing custom values and active policies survive any presentation change;
+show a concise "Customized" or effective-value summary where they affect behavior.
+Errors, pending changes, and important operating status remain visible even when
+their detailed controls are collapsed. Raw config keys belong in technical
+details rather than the everyday form.
+
+Profiles select preferred models; permission grants constrain every actual
+target, including fallbacks. Groups may grant access to multiple profiles, with
+an explicit default and an explicit permission to choose alternatives. Do not
+silently merge competing model preferences from several groups. Embedding
+selection is bound to the document index's compatible model; switching embedding
+models requires a controlled rebuild, not ordinary cross-model failover.
+
+U2's delegated administration design accounts for managing and assigning
+profiles. U3 checks the person and app key for every actual model request,
+including current chat, embedding and sorting calls and routing fallbacks.
+When role profiles are implemented, their resolution and model grants must feed
+that same enforcement path. Do not expose profile permissions before they are
+enforced. Profile routing and chat-based sorting remain future implementation;
+the presentation slices completed so far are recorded below.
+
+### A download must lead visibly to using the model
+
+Troy's observation on 2026-10-16: Library -> Discover -> finding a model that
+fits the NAS -> downloading it offered no obvious next step to launch it. He
+had to find the launch controls himself. Simplification therefore covers the
+whole task, including what happens after success, as well as fewer settings.
+
+Source inspection found an existing Run action in the expandable Downloads
+panel, but the model's main action does not become a launch handoff. There is
+also a completion race: Library marks a download done before `_locate_model`
+finishes, while `useDownloads` stops polling when no transfer is active. A final
+record without `modelId` can therefore remain on screen without its Run action.
+Completed ordinary downloads also leave the Tasks list. These are observed code
+paths, not a reproduction of Troy's specific session. The local implementation
+below addresses them.
+
+The proposed flow is Find -> Download -> Run -> Use, with a visible next action
+at each step:
+
+- The selected model's main card shows download progress, then **Run on
+  [machine]**. Preserve the machine used for the fit/launch choice; do not silently
+  replace it with whichever machine the user later browses. On one machine,
+  there is no placement question to answer.
+- Offer **Download and run** as a clearly named combined action where supported,
+  with **Download only** available. Choosing download only never implicitly
+  starts a model or stops an existing one.
+- Between file completion and launch readiness, say **Adding to your Library**
+  and keep tracking readiness. If registration or preparation fails, retain the
+  completed file and show the observed reason with a retry or repair action.
+- The continuation stays on the model card and is reachable through Downloads
+  and recent Tasks, including after navigation or refresh. A transient toast or
+  a separate panel below the model is not the sole place to find it.
+- After Run, show progress and the destination machine. Once ready, a chat model
+  offers **Open in Workbench** with that model selected. A specialist model offers
+  the relevant next action or explains that it is available for search, sorting,
+  or another supported task; it must not be sent to a chat it cannot serve.
+- Running status identifies the actual machine and reported GPU/CPU use. A fit
+  prediction and completed download must not be presented as evidence of GPU
+  execution.
+
+Acceptance for that work must include:
+
+- A fresh personal installation with one chat model can answer a question about
+  a saved document without configuring roles or installing a second model.
+- A single person can add a second machine without being forced through group
+  or profile administration; several people can share one machine.
+- Customizing and collapsing settings preserves saved values, exposes effective
+  behavior, and leaves every permitted setting discoverable through search.
+- Shared profiles and all their fallbacks respect the caller's effective access;
+  changing presentation never changes those grants.
+- Discover -> download -> run -> use succeeds without hunting for another page,
+  both on one machine and with the NAS selected. A delayed Library registration
+  does not leave the finished download stuck without its next action.
+- Navigating away and returning preserves the next step and intended machine;
+  download-only never starts a model. Launch failures keep a visible recovery
+  action, and a specialist model gets a relevant completion action.
+
+#### Download handoff implementation, 2026-10-16 (local, unpublished)
+
+The first implementation slice covers Discover -> Download -> Run -> Workbench.
+The model card offers Download and run or Download only, then progress and the
+next action. Download-only remembers its destination per browser without granting
+permission to launch. A missing destination disables Run rather than silently
+choosing a different host. Combined runs use the existing durable operation,
+including the selected source, revision, and companion files.
+
+Library now finishes registration before marking a transfer done. Registration
+failures retain the file and show a scan recovery action; later scans reconnect
+the finished transfer to its Library entry. The UI also briefly follows older
+Libraries that finish the transfer before returning its model ID.
+
+Recent completed downloads remain in Tasks without inflating its active count.
+Their links identify the exact transfer, and its continuation remains available
+even if the catalogue cannot be read. Successful run receipts survive navigation.
+Downloads starts collapsed in Discover so it does not crowd the model's next
+action; its management link opens it when needed.
+
+After a launch, the UI checks the runtime on the destination agent and uses its
+served model alias for a Workbench link. Workbench retains that choice through
+sign-in and validates it against the current user's model list when New chat is
+pressed. Opening the link itself creates no chat. Embedding/reranking runs lead
+to Documents instead. Old launch receipts distinguish a stopped or unavailable
+runtime from a ready one.
+
+Validation: 130 focused UI tests, 71 Workbench App tests, and 26 Library download
+tests passed. Both frontends passed TypeScript and focused ESLint checks; Library
+passed focused Ruff and mypy checks. Two Chrome fixture flows covered local and
+NAS destinations, download-only without an implicit launch, returning through
+Tasks on the same page, refresh, catalogue failure, served-alias handoff, and
+phone-width layout. The browser flows use isolated API fixtures, not physical
+inference engines (`ui/e2e/discover-handoff.spec.ts`, opt-in with
+`EP_HANDOFF_FIXTURE=1` and an isolated `EP_UI_URL`). The Library suite still emits
+existing dependency deprecations and a pending supervisor-task cleanup warning.
+
+This slice does not implement the broader settings simplification, model-role
+profiles, permissions enforcement, or chat-based sorting. Actual GPU/CPU execution
+is not available in the runtime summary consumed here: the handoff links to the
+selected model's backend details and makes no GPU-execution claim. The NAS
+container's physical GPU validation remains outstanding. Nothing was released,
+deployed, or changed on the live installation for this validation.
+
+#### Everyday settings implementation, 2026-10-16 (local, unpublished)
+
+Troy asked to queue several slices locally before publishing or running release
+CI. This slice adds contextual Customize controls to the existing settings
+editors. Known document limits, specialist-model selection and technical tuning
+start folded; everyday controls and unfamiliar/new fields stay visible. Workbench
+gets settings search, including raw keys, and fragment links open the relevant
+control. Raw config keys now live under each field's Technical details.
+
+Collapsed customization shows saved overrides, unsaved edits and reported model
+status. Warnings, invalid values, rejected edits and pending restarts remain
+visible outside the fold. Summaries never serialize secrets or structured
+credentials. Search keeps the topic editors mounted, fixing a draft-loss path
+when a search previously removed a topic. Hidden and visible changes still use
+the existing Save/Discard operations. People and access remains discoverable by
+sharing, group and account searches; this makes no change to authorization and
+does not infer sharing from the number of machines.
+
+Troy also requested choosing widgets to suit their data. Default temperature
+and Workbench's sorting-time budget now pair a slider with a precise number
+input. Bounds come from the served schema. Unset/default and invalid values are
+preserved, rather than saved implicitly or clamped. Exact counts and resource
+limits remain number inputs; model names use the previously held dropdown work.
+
+Validation: 104 focused settings tests passed, plus TypeScript, focused ESLint,
+format and diff checks. A Chrome fixture flow checked keyboard slider use,
+precise entry, collapse/search/save, preservation of an unrelated custom limit,
+and phone-width layout (`ui/e2e/settings-customization.spec.ts`, opt-in with
+`EP_SETTINGS_FIXTURE=1` and an isolated `EP_UI_URL`). Temporarily restoring the
+old search unmount behavior made the draft-preservation regression test fail;
+the source was restored from a copy before the passing run. No release build,
+remote CI, push or live-install deployment was performed. Model-role profiles,
+delegated administration and external SSO remain separate implementation work.
+
 ## Slices
 
 - **U1 — account and group foundation (complete).** Central group CRUD and
@@ -19,11 +217,11 @@ of everyday external sign-in.
   authoritative directory. Group access is enforced at OIDC authorization and
   refresh and the existing job-site gates. The owner remains the only account
   manager until delegated checks land.
-- **U2 — delegated administration.** Separate account management, group
+- **U2 — delegated administration (implemented locally, unpublished).** Separate account management, group
   definition and scoped membership assignment. Named console sessions and
   backend capability gates replace assumptions that every console session is
   the owner. Account administration never implicitly grants private-chat access.
-- **U3 — cross-component enforcement.** Propagate person identity through app
+- **U3 — cross-component enforcement (implemented locally, unpublished).** Propagate person identity through app
   credentials, intersect person and app permissions, define revocation bounds,
   and audit changes across console, gateway, Workbench and job sites.
 - **U4 — external sign-in and shared sessions.** Google, Microsoft and generic
@@ -73,5 +271,119 @@ Review found a race between approving an OIDC sign-in and exchanging its code:
 current group access is now checked at code exchange as well as authorization,
 refresh and user-info. A regression test covers withdrawal during that window.
 
-Next is U2: named console sessions and delegated, scoped account/group management.
-External provider setup remains U4; no Google/Microsoft credentials are needed yet.
+U2 and U3 are now implemented locally as described below. Next is U4, external
+provider setup and shared sessions. No external provider credentials were needed
+for these foundation slices.
+
+## U2 result, 2026-10-16 (local, unpublished)
+
+The owner can grant three independent powers under a person's Administration
+access: manage ordinary accounts, define permission groups, and assign members
+to explicitly selected groups. These grants live on the stable person record,
+outside app/site groups. Only the owner delegates administration; changing a
+group cannot make someone an administrator. Future profile-management and
+profile-assignment permissions will follow the same separation when their
+enforcement exists. No placeholder profile grants are exposed now.
+
+Account managers create accounts in empty group mode with no effective access,
+edit display names, disable/enable or delete ordinary accounts. They cannot edit
+themselves or other administrators. Password resets and email changes remain
+owner-only: both can become account takeover in apps. Account managers cannot
+set individual grants or switch individual/group mode. Membership delegates
+can change only their assigned groups, preserving all other memberships.
+Group designers can change app/site access for existing members through group
+definition or deletion; that authority is stated explicitly at delegation.
+
+Named administrators sign in at `/administration/` with their existing Eugene
+name/password. The page uses its own session storage and never falls back to an
+owner credential. It presents permitted tools, explicit membership checkboxes
+and Save, current grants, and account search. Owner delegation stays under the
+existing People page; the owner unlock and recovery flow is unchanged.
+
+A new `ep-administration+jwt` credential is addressed only to control. The agent
+proxy forwards it there but never exchanges it for a machine or owner session.
+All existing infrastructure, app-registration and secret-management routes keep
+their owner/service gates. Administration reads current active-root policy on
+every request. Logout, changed delegation, disable/enable, password reset,
+account deletion and removal of a delegated group invalidate existing named
+sessions immediately. A sealed/unreachable root cannot authorize administration.
+Named sessions last one hour plus the existing clock-skew allowance; shared
+external sign-in/session management remains U4.
+
+Grants and an administration-session version persist in person log records and
+snapshots. Old records default to no administration. Group deletion removes
+its delegation scopes atomically. Directory writes log actor ID, action and
+target; a durable cross-component audit surface remains U3.
+
+[Local acceptance evidence](../acceptance/u2-administration-2026-10-16.md) covers
+real root/agent/Workbench APIs, Chrome, restart, private-chat separation and
+revocation. This is queued beside the two UX slices. No commit, push, deployment,
+release build or remote CI was performed. Generated control models/UI types were
+created from the local contract while published `SPECS_REF` pins remain unchanged;
+publish and repin together when the batch is released. Upgrade active and standby
+roots before new person records are written, then agents/UI for named sign-in.
+
+## U3 result, 2026-10-16 (local, unpublished)
+
+Workbench now sends its app key together with the current person's root-issued
+OIDC access token. The gateway asks the active root to verify the proof, its
+binding to the registered app, the current account, session and individual/group
+app grant. The verified stable person ID follows admission, reservation renewal
+and gateway request metrics. The app key still constrains every selected model,
+including aliases and fallback targets, gateway-run tools, locality, shared
+concurrency and request rate. A person's proof never replaces the app key.
+
+This intersection currently means **person's app entitlement AND app key's
+runtime limits**. It does not introduce per-person model allowlists or per-group
+model-role profiles. The proof requirement applies to installed Workbench app
+keys. Other API clients keep their existing app-only behavior unless they adopt
+the protocol; supplied proofs are always verified and app-bound.
+
+Workbench keeps access proofs on its backend, refreshes legacy sessions on first
+model use, and scopes model-list caches by person/session. Document indexing uses
+the document owner's session; chat and resumed media work retain their owner.
+Missing, expired or revoked owner credentials stop model use; background work
+never borrows another person's session or falls back to app-only inference.
+The existing private-chat and document ownership rules remain independent of
+administration grants.
+
+Every new model admission reads current root policy. Long-running requests renew
+at ten-second intervals, with a four-second authority timeout; withdrawal ends
+the request when renewal fails. The real-service acceptance observed 10.00 seconds
+from group withdrawal to a stopped Workbench stream. Root unavailability fails
+closed even with a cached app-key lookup. Access proofs expire after ten minutes;
+Workbench refreshes before starting another request, but an existing stream can
+end when its proof expires. Already-completed downstream work is not undone.
+Ordinary Workbench private-page sessions retain their existing refresh bound;
+U3 does not claim instantaneous logout of every open page.
+
+Two explicit app-only checks preserve non-inference operations: agent log ingress
+and a filtered model catalogue for owner settings. Neither can acquire or renew
+an inference reservation. Opening Settings no longer starts the sorter's speed
+measurement; it starts when a signed-in person uses Documents. Existing job-site
+calls already recheck current root app/person permissions and retain site-local
+OS, folder and key grants. Tests cover group and membership withdrawal using an
+already-issued job-site credential; site-local activity remains in its own audit.
+
+Committed account, group, app, key, password and session changes now produce
+bounded audit receipts in the same durable log operation as the mutation. The
+latest 1,000 receipts survive replication, snapshots and restart. People has a
+folded owner-only Access history panel; Gateway Metrics shows the verified person
+on attributed requests. Receipts contain actor, action, target, time and log
+index, never passwords, prompts or credentials. Legacy log entries are labelled
+unattributed; events already compacted before this upgrade cannot be recovered.
+This is a history of committed access changes, not a failed-login audit.
+
+[Local acceptance evidence](../acceptance/u3-person-access-2026-10-16.md) covers
+real root/agent/gateway/Workbench processes, the browser's real agent proxy,
+revocation during streaming, excluded fallbacks, root restart/outage, retained
+private chat ownership, historical database migration and request attribution.
+Only inference was simulated; no physical GPU or external provider was used.
+
+This remains queued with U2 and the UX slices. No commit, push, deployment,
+release build or remote CI was performed. Local generated contracts are ahead
+of unchanged published `SPECS_REF` pins. Publish and repin the batch together;
+upgrade active/standby roots before agents, gateway and Workbench. Mixed old/new
+person-proof participants fail closed. U4 is the next account slice: Google,
+Microsoft and generic OIDC, explicit identity linking, admission controls,
+shared sign-in, session visibility, logout and recovery.

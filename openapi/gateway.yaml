@@ -18,6 +18,22 @@ info:
     and lifetime rules in `TrustBundle`. The key material is Ed25519
     only.
 
+    **Signed-in app requests (U3).** An installed Workbench sends its app
+    client key as the Bearer and its root-issued OIDC access token in
+    `X-Eugene-Person-Token`. The active root checks the current person,
+    session and app grant and binds the proof to that app key on every
+    admission and renewal. The person proof cannot replace the Bearer and
+    is never sent to inference drivers. Other clients remain app-only unless
+    they adopt this proof protocol; supplied proofs are always validated.
+    Missing or unavailable person verification fails closed.
+
+    An app may request its model catalogue without a person by sending
+    `X-Eugene-App-Operation: catalog` to `GET /v1/models`. This exception
+    preserves the app key's model filter and cannot run models. The header
+    is refused on every other inference route and cannot accompany a
+    person proof. Model requests retain the app key's model, tool,
+    locality, concurrency and rate limits.
+
     The gateway is the single endpoint a client talks to. It resolves a
     requested model to a backend, load-balances across the drivers
     serving that model, and cascades down a priority list when one
@@ -8447,6 +8463,8 @@ components:
           description: Entire request lifetime, including preparation, wake and every attempt.
         clientKeyId: {type: string, description: Verified key identifier; absent for operator/service requests and pre-A5 rows.}
         clientKeyName: {type: string, description: Registry name captured for this request.}
+        personId: {type: string, description: Stable person subject verified by the control root, when present.}
+        appClientId: {type: string, description: Registered app bound to the person's proof.}
         startedAt:
           type: string
           format: date-time
