@@ -205,6 +205,394 @@ tags:
       uses its tools through `/oidc/sites`.
 
 paths:
+  /v1/auth/providers:
+    get:
+      tags:
+      - people
+      operationId: listExternalProviders
+      summary: listExternalProviders
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalProviderList'
+    post:
+      tags:
+      - people
+      operationId: createExternalProvider
+      summary: createExternalProvider
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalProviderWrite'
+  /v1/auth/providers/{provider_id}:
+    put:
+      tags:
+      - people
+      operationId: updateExternalProvider
+      summary: updateExternalProvider
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalProvider'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalProviderWrite'
+      parameters:
+      - name: provider_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+    delete:
+      tags:
+      - people
+      operationId: deleteExternalProvider
+      summary: deleteExternalProvider
+      responses:
+        '204':
+          description: Successful operation
+      parameters:
+      - name: provider_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+  /v1/people/{person_id}/sign-in:
+    get:
+      tags:
+      - people
+      operationId: personSignIn
+      summary: personSignIn
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PersonSignIn'
+      parameters:
+      - name: person_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+  /v1/people/{person_id}/sign-in/invitations:
+    post:
+      tags:
+      - people
+      operationId: inviteExternalSignIn
+      summary: inviteExternalSignIn
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignInInvitationCreated'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInInvitationRequest'
+      parameters:
+      - name: person_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+  /v1/people/{person_id}/sign-in/identities/{record_id}:
+    delete:
+      tags:
+      - people
+      operationId: removePersonIdentities
+      summary: removePersonIdentities
+      responses:
+        '204':
+          description: Successful operation
+      parameters:
+      - name: person_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+      - name: record_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+  /v1/people/{person_id}/sign-in/sessions/{record_id}:
+    delete:
+      tags:
+      - people
+      operationId: removePersonSessions
+      summary: removePersonSessions
+      responses:
+        '204':
+          description: Successful operation
+      parameters:
+      - name: person_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+      - name: record_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+  /v1/people/{person_id}/sign-in/invitations/{record_id}:
+    delete:
+      tags:
+      - people
+      operationId: removePersonInvitations
+      summary: removePersonInvitations
+      responses:
+        '204':
+          description: Successful operation
+      parameters:
+      - name: person_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+      - name: record_id
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 64
+  /v1/auth/administration/code:
+    post:
+      security: []
+      tags:
+      - people
+      operationId: exchangeAdministrationCode
+      summary: exchangeAdministrationCode
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdministrationLoginResponse'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdministrationCodeRequest'
+  /oidc/account:
+    get:
+      tags:
+      - oidc
+      security: []
+      summary: Show the current member and their shared browser sign-ins
+      responses:
+        '200':
+          description: Sign-in page
+        '303':
+          description: Continue sign-in
+        '400':
+          description: Expired, mismatched or refused sign-in.
+      operationId: oidcAccount
+      description: Browser HTML flow. Eugene validates its HttpOnly browser cookie and
+        one-time proof; no operator bearer is required.
+    post:
+      tags:
+      - oidc
+      security: []
+      summary: End one or all of the current member's shared sign-ins
+      responses:
+        '200':
+          description: Sign-in page
+        '303':
+          description: Continue sign-in
+        '400':
+          description: Expired, mismatched or refused sign-in.
+      operationId: endBrowserSignIn
+      description: Browser HTML flow. Eugene validates its HttpOnly browser cookie and
+        one-time proof; no operator bearer is required.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+              - csrf
+              - session
+              properties:
+                csrf:
+                  type: string
+                  description: Browser-bound account action proof.
+                session:
+                  type: string
+                  description: Session record ID, or all. Only the current member's
+                    sessions are affected.
+  /oidc/invitation:
+    get:
+      tags:
+      - oidc
+      security: []
+      summary: Enter a private one-time account connection invitation
+      responses:
+        '200':
+          description: Sign-in page
+        '303':
+          description: Continue sign-in
+        '400':
+          description: Expired, mismatched or refused sign-in.
+      operationId: oidcInvitation
+      description: Browser HTML flow. Eugene validates its HttpOnly browser cookie and
+        one-time proof; no operator bearer is required.
+    post:
+      tags:
+      - oidc
+      security: []
+      summary: Validate an invitation and ask the member to confirm the account
+      responses:
+        '200':
+          description: Sign-in page
+        '303':
+          description: Continue sign-in
+        '400':
+          description: Expired, mismatched or refused sign-in.
+      operationId: confirmOidcInvitation
+      description: Browser HTML flow. Eugene validates its HttpOnly browser cookie and
+        one-time proof; no operator bearer is required.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+              - binding
+              - code
+              properties:
+                binding:
+                  type: string
+                  description: Proof matching the browser flow cookie.
+                code:
+                  type: string
+                  description: Owner-issued invitation code; never the stored hash.
+  /oidc/external/start:
+    post:
+      tags:
+      - oidc
+      security: []
+      summary: Start a provider authorization-code flow with PKCE
+      responses:
+        '200':
+          description: Sign-in page
+        '303':
+          description: Continue sign-in
+        '400':
+          description: Expired, mismatched or refused sign-in.
+      operationId: startExternalSignIn
+      description: Browser HTML flow. Eugene validates its HttpOnly browser cookie and
+        one-time proof; no operator bearer is required.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+              - provider
+              properties:
+                provider:
+                  type: string
+                  description: Enabled provider ID.
+                request:
+                  type: string
+                  description: Pending Eugene app authorization request. Required unless
+                    using an invitation.
+                invitation:
+                  type: string
+                  description: Raw invitation code for an explicit account connection.
+                binding:
+                  type: string
+                  description: Browser proof required with an invitation.
+  /oidc/external/callback:
+    get:
+      tags:
+      - oidc
+      security: []
+      summary: Verify a provider response and establish a shared sign-in
+      responses:
+        '200':
+          description: Sign-in page
+        '303':
+          description: Continue sign-in
+        '400':
+          description: Expired, mismatched or refused sign-in.
+      operationId: finishExternalSignIn
+      description: Browser HTML flow. Eugene validates its HttpOnly browser cookie and
+        one-time proof; no operator bearer is required.
+      parameters:
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+        description: One-use state bound to the initiating browser.
+      - name: code
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Provider authorization code.
+      - name: iss
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Provider response issuer, when supplied.
+      - name: error
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Provider error; fails sign-in without revealing provider details.
   /v1/auth/client-keys/admission:
     post:
       tags: [auth]
@@ -3187,6 +3575,34 @@ components:
         none of these.
 
   schemas:
+    ExternalProviderKind:
+      $ref: './components/sign-in.yaml#/schemas/ExternalProviderKind'
+    ExternalTokenAuthMethod:
+      $ref: './components/sign-in.yaml#/schemas/ExternalTokenAuthMethod'
+    ExternalProvider:
+      $ref: './components/sign-in.yaml#/schemas/ExternalProvider'
+    ExternalProviderWrite:
+      $ref: './components/sign-in.yaml#/schemas/ExternalProviderWrite'
+    ExternalProviderRecord:
+      $ref: './components/sign-in.yaml#/schemas/ExternalProviderRecord'
+    ExternalProviderList:
+      $ref: './components/sign-in.yaml#/schemas/ExternalProviderList'
+    ExternalIdentity:
+      $ref: './components/sign-in.yaml#/schemas/ExternalIdentity'
+    BrowserSignIn:
+      $ref: './components/sign-in.yaml#/schemas/BrowserSignIn'
+    SignInInvitation:
+      $ref: './components/sign-in.yaml#/schemas/SignInInvitation'
+    SignInInvitationRequest:
+      $ref: './components/sign-in.yaml#/schemas/SignInInvitationRequest'
+    SignInInvitationCreated:
+      $ref: './components/sign-in.yaml#/schemas/SignInInvitationCreated'
+    PersonSignIn:
+      $ref: './components/sign-in.yaml#/schemas/PersonSignIn'
+    BrowserSignInState:
+      $ref: './components/sign-in.yaml#/schemas/BrowserSignInState'
+    AdministrationCodeRequest:
+      $ref: './components/sign-in.yaml#/schemas/AdministrationCodeRequest'
     SitePersonCheckRequest:
       $ref: "components/sites.yaml#/SitePersonCheckRequest"
     SitePersonCheck:
@@ -4053,6 +4469,14 @@ components:
         - setSiteHost
         - setSiteDevGrants
         - setStandby
+        - putExternalProvider
+        - deleteExternalProvider
+        - putSignInInvitation
+        - deleteSignInInvitation
+        - linkExternalIdentity
+        - deleteExternalIdentity
+        - putBrowserSignIn
+        - deleteBrowserSignIn
       description: |
         **`setStandby` (2026-10-08)** gives one node the `standby` grant
         (`on: true`) or takes it away (`on: false`); `promote` takes it from
@@ -4131,6 +4555,8 @@ components:
         - index
         - epoch
       properties:
+        browserSignIn:
+          $ref: '#/components/schemas/BrowserSignInState'
         clientAdmission:
           type: object
           additionalProperties: true

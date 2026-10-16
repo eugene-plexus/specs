@@ -1,0 +1,313 @@
+schemas:
+  ExternalProviderKind:
+    type: string
+    enum:
+    - google
+    - microsoft
+    - oidc
+  ExternalTokenAuthMethod:
+    type: string
+    enum:
+    - client_secret_basic
+    - client_secret_post
+  ExternalProvider:
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - name
+    - kind
+    - issuer
+    - clientId
+    - tokenAuthMethod
+    - enabled
+    - revision
+    - hasSecret
+    - callbackUrl
+    properties:
+      id: &id007
+        type: string
+        minLength: 1
+        maxLength: 64
+      name: &id002
+        type: string
+        minLength: 1
+        maxLength: 80
+      kind: &id003
+        $ref: '#/schemas/ExternalProviderKind'
+      issuer: &id004
+        type: string
+        minLength: 1
+        maxLength: 2048
+      clientId: &id005
+        type: string
+        minLength: 1
+        maxLength: 512
+      tokenAuthMethod: &id006
+        $ref: '#/schemas/ExternalTokenAuthMethod'
+      enabled: &id001
+        type: boolean
+      revision: &id008
+        type: string
+        minLength: 1
+        maxLength: 64
+      hasSecret: *id001
+      callbackUrl:
+        type: string
+        minLength: 1
+        maxLength: 2048
+  ExternalProviderWrite:
+    type: object
+    additionalProperties: false
+    required:
+    - name
+    - kind
+    - issuer
+    - clientId
+    - tokenAuthMethod
+    - enabled
+    properties:
+      name: *id002
+      kind: *id003
+      issuer: *id004
+      clientId: *id005
+      tokenAuthMethod: *id006
+      enabled: *id001
+      clientSecret:
+        type: string
+        maxLength: 4096
+        writeOnly: true
+  ExternalProviderRecord:
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - name
+    - kind
+    - issuer
+    - clientId
+    - tokenAuthMethod
+    - enabled
+    - revision
+    - sealedSecret
+    properties:
+      id: *id007
+      name: *id002
+      kind: *id003
+      issuer: *id004
+      clientId: *id005
+      tokenAuthMethod: *id006
+      enabled: *id001
+      revision: *id008
+      sealedSecret:
+        type: string
+        minLength: 1
+        maxLength: 16384
+  ExternalProviderList:
+    type: object
+    additionalProperties: false
+    required:
+    - providers
+    properties:
+      providers:
+        type: array
+        items:
+          $ref: '#/schemas/ExternalProvider'
+  ExternalIdentity:
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - personId
+    - providerId
+    - issuer
+    - subject
+    - createdAt
+    properties:
+      id:
+        type: string
+        minLength: 1
+        maxLength: 64
+      personId:
+        type: string
+        minLength: 1
+        maxLength: 64
+      providerId:
+        type: string
+        minLength: 1
+        maxLength: 64
+      issuer:
+        type: string
+        minLength: 1
+        maxLength: 2048
+      subject:
+        type: string
+        minLength: 1
+        maxLength: 255
+      createdAt:
+        type: number
+        minimum: 0
+  BrowserSignIn:
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - personId
+    - issuer
+    - authAt
+    - expiresAt
+    - label
+    - identityId
+    - providerRevision
+    properties:
+      id:
+        type: string
+        minLength: 1
+        maxLength: 64
+      personId:
+        type: string
+        minLength: 1
+        maxLength: 64
+      issuer:
+        type: string
+        minLength: 1
+        maxLength: 2048
+      authAt:
+        type: number
+        minimum: 0
+      expiresAt: &id009
+        type: integer
+        minimum: 0
+      label:
+        type: string
+        minLength: 1
+        maxLength: 200
+      identityId:
+        type:
+        - string
+        - 'null'
+        maxLength: 64
+      providerRevision:
+        type:
+        - string
+        - 'null'
+        maxLength: 64
+  SignInInvitation:
+    type: object
+    additionalProperties: false
+    required:
+    - id
+    - personId
+    - providerId
+    - expiresAt
+    - passwordChangedAt
+    properties:
+      id:
+        type: string
+        minLength: 1
+        maxLength: 64
+      personId:
+        type: string
+        minLength: 1
+        maxLength: 64
+      providerId:
+        type: string
+        minLength: 1
+        maxLength: 64
+      expiresAt: *id009
+      passwordChangedAt:
+        type: string
+        minLength: 1
+        maxLength: 80
+  SignInInvitationRequest:
+    type: object
+    additionalProperties: false
+    required:
+    - providerId
+    properties:
+      providerId:
+        type: string
+        minLength: 1
+        maxLength: 64
+  SignInInvitationCreated:
+    type: object
+    additionalProperties: false
+    required:
+    - code
+    - expiresAt
+    - url
+    properties:
+      code:
+        type: string
+        minLength: 1
+        maxLength: 128
+      expiresAt: *id009
+      url:
+        type: string
+        minLength: 1
+        maxLength: 2048
+  PersonSignIn:
+    type: object
+    additionalProperties: false
+    required:
+    - identities
+    - sessions
+    - invitations
+    properties:
+      identities:
+        type: array
+        items:
+          $ref: '#/schemas/ExternalIdentity'
+      sessions:
+        type: array
+        items:
+          $ref: '#/schemas/BrowserSignIn'
+      invitations:
+        type: array
+        items:
+          $ref: '#/schemas/SignInInvitation'
+  BrowserSignInState:
+    type: object
+    additionalProperties: false
+    required: []
+    properties:
+      providers:
+        type: object
+        additionalProperties:
+          $ref: '#/schemas/ExternalProviderRecord'
+        default: {}
+      identities:
+        type: object
+        additionalProperties:
+          $ref: '#/schemas/ExternalIdentity'
+        default: {}
+      invitations:
+        type: object
+        additionalProperties:
+          $ref: '#/schemas/SignInInvitation'
+        default: {}
+      sessions:
+        type: object
+        additionalProperties:
+          $ref: '#/schemas/BrowserSignIn'
+        default: {}
+  AdministrationCodeRequest:
+    type: object
+    additionalProperties: false
+    required:
+    - code
+    - verifier
+    - redirectUri
+    properties:
+      code:
+        type: string
+        minLength: 1
+        maxLength: 512
+      verifier:
+        type: string
+        minLength: 1
+        maxLength: 128
+      redirectUri:
+        type: string
+        minLength: 1
+        maxLength: 2048

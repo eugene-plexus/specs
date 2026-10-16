@@ -87,6 +87,11 @@ Every token is a JWS compact JWT.
     an operator, machine, app or gateway credential. The agent proxy recognizes
     it solely to forward it to control, never to exchange it. Other components
     continue refusing this class.
+    U4 may add `eugene_browser_session`, the 64-character lowercase SHA-256
+    record ID of its parent shared browser sign-in. Control rechecks that
+    session, its account and provider on every administration call. This claim
+    is forbidden on other platform token classes. It is a binding, not a
+    browser credential; the raw cookie is never included in a platform token.
 
 **Claims:**
 
