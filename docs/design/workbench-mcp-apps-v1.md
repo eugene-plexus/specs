@@ -2,8 +2,9 @@
 
 The backend implements the published MCP Apps specification 2026-01-26 at the
 commit and hashes in `protocols/ui-sources.lock.json`. Browser sandboxing and
-the iframe message bridge remain G5. `supportedProtocols` stays empty until a
-renderer passes that gate; `backendProtocols` describes the headless backend.
+the iframe message bridge are in the implemented [G5 constrained renderer](workbench-ui-browser-v1.md).
+Headless installs keep `supportedProtocols` empty; built distributions advertise
+the offline browser subset. `backendProtocols` describes the headless backend.
 
 ## Sources and discovery
 

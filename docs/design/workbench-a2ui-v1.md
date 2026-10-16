@@ -8,7 +8,8 @@ bindings are supported. The pure local functions required/and/or/not are support
 for checks and context resolution; a function action never becomes a server call.
 External assets, templates, regex validation and arbitrary functions are refused.
 The upstream schema accepts both v0.9 and v0.9.1 envelopes; that compatibility is
-retained. Backend capability version is 0.9.1, renderer false. G5 remains separate.
+retained. Backend capability version is 0.9.1. Headless installs report renderer
+false; the implemented [G5 product UI](workbench-ui-browser-v1.md) adds forms rendering.
 
 ## Typed source and capability negotiation
 

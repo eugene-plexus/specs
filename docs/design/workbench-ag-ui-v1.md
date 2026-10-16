@@ -2,8 +2,9 @@
 
 G4 implements two explicit directions: **serve** adapts Workbench's existing
 answer loop; **connect** consumes a configured external agent. Neither changes
-the gateway or inference-driver contract. This is a headless backend; G5 still
-owns browser rendering. The HTTP contract is
+the gateway or inference-driver contract. This document defines the headless
+backend; the implemented [G5 product UI](workbench-ui-browser-v1.md) owns browser
+rendering. The HTTP contract is
 [workbench-ag-ui.yaml](../../openapi/workbench-ag-ui.yaml).
 
 ## Baseline and supported events

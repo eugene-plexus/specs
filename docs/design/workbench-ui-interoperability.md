@@ -7,9 +7,11 @@ G1's durable backend foundation is also implemented;
 backend is implemented; [acceptance](../acceptance/genui-mcp-apps-run.md).
 G3's A2UI backend is implemented for the pinned forms catalog;
 [acceptance](../acceptance/genui-a2ui-run.md). G4's AG-UI serve/connect backends
-are implemented; [acceptance](../acceptance/genui-ag-ui-run.md). G5 remains planned.
-Backend capabilities are reported separately; no production
-protocol renderer is advertised yet.
+are implemented; [acceptance](../acceptance/genui-ag-ui-run.md). G5's product UI
+is implemented for the [declared browser subsets](workbench-ui-browser-v1.md);
+[acceptance](../acceptance/genui-browser-run.md). Built distributions advertise
+these renderers; headless installs retain backend-only capabilities. MCP Apps
+uses an explicitly constrained offline sandbox, not full upstream browser conformance.
 
 This follows the [rich-content roadmap](workbench-rich-content-roadmap.md),
 whose RC1–RC6 provide rendering, typed content, assets and saved previews.
@@ -211,6 +213,14 @@ and reconnect without duplicate actions. Draft/unimplemented events must have a
 documented refusal or fallback, not an apparent success.
 
 ## G5: browser conformance and product UI
+
+**Implemented 2026-10-15:** A2UI forms, native/external AG-UI conversations and
+reviewed self-contained MCP Apps. The [capability matrix](workbench-ui-browser-v1.md#release-gate)
+and [browser acceptance](../acceptance/genui-browser-run.md) record the supported
+subset and exact release pins. MCP Apps' separate-origin/allow-same-origin web
+proxy and network/device grants remain unsupported; the shipped opaque-origin
+offline profile is advertised as constrained. Browser evidence is system Chrome
+on Windows, not a cross-browser certification.
 
 Begin production UI integration after G1–G4 backend gates pass. Use the existing
 rich-content renderers and previews where their boundaries fit the protocols.
