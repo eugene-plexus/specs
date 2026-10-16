@@ -1,0 +1,15 @@
+{
+  "verifiedAt": "2026-10-16T16:41:57.108817+00:00",
+  "specsCommit": "af580d0e5eb77457acd87a0a83c19e7b5985362a",
+  "workflow": "https://github.com/eugene-plexus/specs/actions/runs/38933301675",
+  "image": "ghcr.io/eugene-plexus/control-plane:edge",
+  "tags": {
+    "edge": "sha256:48364953bf9a2cb07dbd0a0a2853ba1eb8f9786f802fc4526aecf047d5f1d8fa",
+    "sha-af580d0": "sha256:48364953bf9a2cb07dbd0a0a2853ba1eb8f9786f802fc4526aecf047d5f1d8fa"
+  },
+  "platform": "linux/amd64",
+  "channelEnvironment": [
+    "EUGENE_PLEXUS_AGENT_DEFAULT_UPDATE_CHANNEL=edge",
+    "EUGENE_PLEXUS_CONTAINER_IMAGE=ghcr.io/eugene-plexus/control-plane:edge"
+  ]
+}

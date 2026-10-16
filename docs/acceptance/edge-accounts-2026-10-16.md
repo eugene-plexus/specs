@@ -66,6 +66,52 @@ updated. Mixed old/new person-proof participants refuse model requests until
 updated. Existing private accounts, chats, documents and metrics retain the
 migration and revocation bounds recorded in U3.
 
-The container workflow must build and test the exact pinned image, including
-Compose, NAS Workbench installation and recovery, before uploading `edge`.
-Publication results and registry verification are recorded below once complete.
+## Published Edge
+
+The [container workflow](https://github.com/eugene-plexus/specs/actions/runs/38933301675)
+passed the exact pinned image through Compose, NAS Workbench installation and
+recovery before uploading it. Specs candidate
+`af580d0e5eb77457acd87a0a83c19e7b5985362a` is available as both
+`ghcr.io/eugene-plexus/control-plane:edge` and `:sha-af580d0`.
+
+Anonymous registry verification at 2026-10-16 16:41 UTC found both tags at
+`sha256:48364953bf9a2cb07dbd0a0a2853ba1eb8f9786f802fc4526aecf047d5f1d8fa`.
+The manifest content hash agrees with the registry header; the image is
+Linux/amd64 and its image name and default update channel both select Edge.
+The sanitized [registry receipt](assets/edge-accounts/registry.json) records
+these checks. The component manifest, both installers and the agent's Workbench
+catalogue are published; no stable tag or installed service was changed.
+
+Component CI passed for
+[agent](https://github.com/eugene-plexus/agent/actions/runs/38932673701),
+[control](https://github.com/eugene-plexus/control/actions/runs/38932713999),
+[gateway](https://github.com/eugene-plexus/gateway/actions/runs/38932719104),
+[Library](https://github.com/eugene-plexus/library/actions/runs/38932680717),
+[inference driver](https://github.com/eugene-plexus/inference-driver/actions/runs/38932725729),
+[tool driver](https://github.com/eugene-plexus/tool-driver/actions/runs/38932731233)
+and [UI](https://github.com/eugene-plexus/ui/actions/runs/38932849588).
+
+The broader specs run caught two comma-containing descriptions in YAML flow
+mappings. Commit `0da3dd6d45435f7746d7df12c590d9a03d032e79` quotes them; it
+changes description metadata, not runtime fields or component pins. Redocly
+passes locally and in [CI](https://github.com/eugene-plexus/specs/actions/runs/38933868565).
+Existing nonfatal warnings remain. Consumer pins still identify the original
+contract used to generate the shipped models; the wording correction can enter
+their next contract refresh.
+
+Workbench's [Linux server run](https://github.com/eugene-plexus/workbench/actions/runs/38931923493)
+finished with 2,159 tests passing, 24 skipped, and one outdated crash-recovery
+fixture failing: it created a running video row without any signed-in owner.
+The U3 gate correctly refused to resume it. Test-only commit
+`402e2a96aa0d257dd28dba2382dee04638a09c8e` preserves the owner's session before
+the simulated crash and adds the missing-owner case with another person signed
+in. Both focused cases pass locally: authorized recovery keeps the video;
+missing-owner recovery sends no gateway request. Lint, formatting and secret
+checks pass. This changes no shipped runtime or frontend asset.
+
+The [corrected Workbench CI](https://github.com/eugene-plexus/workbench/actions/runs/38934252445),
+broader specs acceptance suite, and
+[macOS acceptance](https://github.com/eugene-plexus/specs/actions/runs/38933301537)
+were still queued or running at handoff. Workbench frontend, codegen and secret checks had passed.
+This record does not claim those longer suites have completed. Their final
+results should be checked before the next slice, per the repository CI policy.

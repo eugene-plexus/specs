@@ -217,11 +217,11 @@ delegated administration and external SSO remain separate implementation work.
   authoritative directory. Group access is enforced at OIDC authorization and
   refresh and the existing job-site gates. The owner remains the only account
   manager until delegated checks land.
-- **U2 — delegated administration (implemented locally, unpublished).** Separate account management, group
+- **U2 — delegated administration (published to Edge).** Separate account management, group
   definition and scoped membership assignment. Named console sessions and
   backend capability gates replace assumptions that every console session is
   the owner. Account administration never implicitly grants private-chat access.
-- **U3 — cross-component enforcement (implemented locally, unpublished).** Propagate person identity through app
+- **U3 — cross-component enforcement (published to Edge).** Propagate person identity through app
   credentials, intersect person and app permissions, define revocation bounds,
   and audit changes across console, gateway, Workbench and job sites.
 - **U4 — external sign-in and shared sessions.** Google, Microsoft and generic
@@ -271,11 +271,13 @@ Review found a race between approving an OIDC sign-in and exchanging its code:
 current group access is now checked at code exchange as well as authorization,
 refresh and user-info. A regression test covers withdrawal during that window.
 
-U2 and U3 are now implemented locally as described below. Next is U4, external
-provider setup and shared sessions. No external provider credentials were needed
-for these foundation slices.
+U2, U3 and the two UX slices were published to Edge on 2026-10-16;
+[publication evidence and CI status](../acceptance/edge-accounts-2026-10-16.md)
+supersede the local-only status in the historical implementation records below.
+Next is U4, external provider setup and shared sessions. No external provider
+credentials were needed for these foundation slices.
 
-## U2 result, 2026-10-16 (local, unpublished)
+## U2 implementation result, 2026-10-16
 
 The owner can grant three independent powers under a person's Administration
 access: manage ordinary accounts, define permission groups, and assign members
@@ -317,13 +319,12 @@ target; a durable cross-component audit surface remains U3.
 
 [Local acceptance evidence](../acceptance/u2-administration-2026-10-16.md) covers
 real root/agent/Workbench APIs, Chrome, restart, private-chat separation and
-revocation. This is queued beside the two UX slices. No commit, push, deployment,
-release build or remote CI was performed. Generated control models/UI types were
-created from the local contract while published `SPECS_REF` pins remain unchanged;
-publish and repin together when the batch is released. Upgrade active and standby
-roots before new person records are written, then agents/UI for named sign-in.
+revocation. The subsequent Edge publication regenerated from published contracts
+and updated the distribution and installer pins together. Upgrade active and
+standby roots before new person records are written, then agents/UI for named
+sign-in. Publishing did not upgrade any running installation.
 
-## U3 result, 2026-10-16 (local, unpublished)
+## U3 implementation result, 2026-10-16
 
 Workbench now sends its app key together with the current person's root-issued
 OIDC access token. The gateway asks the active root to verify the proof, its
@@ -380,10 +381,9 @@ revocation during streaming, excluded fallbacks, root restart/outage, retained
 private chat ownership, historical database migration and request attribution.
 Only inference was simulated; no physical GPU or external provider was used.
 
-This remains queued with U2 and the UX slices. No commit, push, deployment,
-release build or remote CI was performed. Local generated contracts are ahead
-of unchanged published `SPECS_REF` pins. Publish and repin the batch together;
-upgrade active/standby roots before agents, gateway and Workbench. Mixed old/new
+This was published to Edge with U2 and the UX slices, with generated contracts,
+distribution builds and installer pins recorded in the publication evidence.
+Upgrade active/standby roots before agents, gateway and Workbench. Mixed old/new
 person-proof participants fail closed. U4 is the next account slice: Google,
 Microsoft and generic OIDC, explicit identity linking, admission controls,
 shared sign-in, session visibility, logout and recovery.
