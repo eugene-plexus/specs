@@ -12,6 +12,9 @@ An inaccessible snapshot removes its active views. Reloading never approves or
 retries an action. Forms and apps propose actions; a separate host-owned review
 shows the method and exact arguments before Allow once or Decline. The server
 remains authoritative for revision, access, approval, source and dispatch.
+The snapshot's optional `sourceName` names the configured originating connection
+in host-owned text beside the surface and its action review; it comes from the
+server's connection record, never from embedded HTML.
 
 ## MCP Apps constrained renderer
 
@@ -26,6 +29,9 @@ bounded (24 KiB proxy messages, 20 KiB RPC requests, 40 messages/second,
 16 pending and 128 distinct requests per mount). Stopping/unmounting invalidates
 all pending bridge replies. The host sends ping every two seconds and closes
 a view that does not reply for six seconds; initialization has a 60-second bound.
+An empty proxy that has not announced readiness after three seconds may be
+replaced up to six times, to recover Chrome's lingering blocked sandbox process.
+A proxy that has loaded an app is never retried automatically.
 
 This intentionally differs from the upstream web proxy requirement for a
 separate origin with allow-same-origin. It is **not full MCP Apps browser
