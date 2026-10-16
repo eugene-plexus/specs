@@ -56,10 +56,10 @@ jobs:
         # virtual M1 or M2 with 7 or 14 GB, and every one exposes Metal.
         os: [macos-14, macos-15, macos-26]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # For the harness alone, which is stdlib only. The install brings its
       # own Python through uv, and the MLX recipe brings another.
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       # The agent asks GitHub's API for llama.cpp's releases anonymously,
@@ -99,7 +99,7 @@ jobs:
         run: python scripts/a4-macos-acceptance.py --report a4-report.json
       - name: Keep the report and the agent log
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: a4-${{ matrix.os }}
           path: |

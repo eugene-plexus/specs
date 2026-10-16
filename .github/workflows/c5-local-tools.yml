@@ -27,8 +27,8 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-24.04]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - name: Install the HTTP acceptance client
@@ -39,7 +39,7 @@ jobs:
         run: python scripts/c5-local-tools-acceptance.py --report c5-report.json
       - name: Keep the report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: c5-${{ matrix.os }}
           path: c5-report.json
