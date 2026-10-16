@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "components": [
+    "control",
+    "agent",
+    "workbench"
+  ],
+  "chatPreserved": true,
+  "refreshDenied": true
+}

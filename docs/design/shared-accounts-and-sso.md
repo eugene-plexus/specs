@@ -13,7 +13,7 @@ of everyday external sign-in.
 
 ## Slices
 
-- **U1 — account and group foundation (building).** Central group CRUD and
+- **U1 — account and group foundation (complete).** Central group CRUD and
   memberships, explicit individual/group access, effective app and job-site
   permissions, durable replication, People UI, and a Workbench link to the
   authoritative directory. Group access is enforced at OIDC authorization and
@@ -60,3 +60,18 @@ New log operations are `putPermissionGroup` and `deletePermissionGroup`.
 Snapshots gain `permissionGroups`; old snapshots load with no groups and
 unchanged individual access. A standby must understand these operations before
 it can follow group mutations. Rollout upgrades the root/standby before the UI.
+
+
+## U1 result
+
+Published with [acceptance evidence](../acceptance/u1-shared-accounts-2026-10-15.md).
+A real existing Workbench account kept its subject and chat through group
+assignment, root restart, last-group deletion and an explicit switch back to
+individual access. The owner has a Workbench shortcut to the central directory.
+
+Review found a race between approving an OIDC sign-in and exchanging its code:
+current group access is now checked at code exchange as well as authorization,
+refresh and user-info. A regression test covers withdrawal during that window.
+
+Next is U2: named console sessions and delegated, scoped account/group management.
+External provider setup remains U4; no Google/Microsoft credentials are needed yet.
