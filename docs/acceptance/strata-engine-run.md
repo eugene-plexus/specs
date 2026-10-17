@@ -2,6 +2,52 @@
 
 Edge implementation. No live-install update or GPU model run.
 
+## Edge image-preparation follow-up (2026-10-17)
+
+This Edge update adds an Images choice (Off by default, CPU or GPU) for
+supported preparation recipes, durable mode propagation, portable encoder
+assets, owned encoder executables and live capability discovery. UD-Q4_K_XL
+does not offer images. Setup fallback from GPU to CPU fails with an explicit
+cause. Re-preparation with changed settings restarts an existing runtime;
+unchanged retries do not.
+
+Focused verification on Windows:
+
+- Agent: 146 passed, one platform-specific skip across Strata, preparation,
+  worker propagation and runtime-refresh tests.
+- Inference-driver: 45 passed, including live-status capability decisions
+  and image forwarding through both actual driver HTTP routes with a mocked
+  upstream. These are not native encoder tests.
+- Library: 17 preparation tests and one vendored-protocol conformance test
+  passed. Specs' isolated ASGI durable-run wiring check completed successfully.
+- UI: 17 tests passed; TypeScript, focused ESLint and Prettier checks passed.
+  Static export and Python package staging (`npm run build:python`) passed.
+- Seven selected `ls5-sabotage.py --label VISION:` mutations were caught;
+  agent, Library, driver and UI gates passed after restoration from copies.
+- Agent mypy passed on Windows and with `--platform linux`; driver and
+  Library mypy passed. Focused Ruff checks passed after import/regex fixes.
+- The eight top-level API documents passed Redocly validation (35 warnings).
+
+The release includes signed-off commits, regenerated contract pins and the
+rebuilt UI distribution. Release inputs reference:
+
+- Contract: `dc51e0bf89d07436443b0c01928c1546bde0af42`.
+- Agent: `34a38dc76722db2a1789a61853435f08563bb144`.
+- Library: `616358ca42964dc4f9616e5f37aefb9b5514c2d0`.
+- Inference-driver: `25b96d75964930cd4e444e96c3b44a77a23f7960`.
+- UI source: `0de140dcf92042441101119e1bdab2a25bd2b62a`.
+- UI distribution: `67e6ccd17827f40c7db7c824e1f27926f40e2239`.
+
+The actual published UI archive contains 277 static files, including 49
+JavaScript bundles and the compiled Images control; its build stamp resolves
+to the distribution commit. Dependency locks and other component pins are
+unchanged. The published v0.1.0 assets are not updated.
+
+No model download, native image-inference run or live-install modification
+was performed locally. Native CPU/GPU image encoding and visual-answer
+correctness remain an outstanding hardware acceptance requirement for the
+live Edge test server. Publication is not a hardware-validation claim.
+
 Upstream source is `Niko1221/Strata` v0.1.39,
 `6f32ec070f23ced9f50e704d854d775da52591ab`. Windows native asset SHA-256:
 `a862bcfa2330cd1c23f9b5d6e49f4027da8f8313842bd62e858ec6cd4533813a`.
@@ -67,15 +113,15 @@ in its `dist` branch with installer-ref `main`.
 
 Edge's shared manifest and both installers pin:
 
-| Component | Commit |
-| --- | --- |
-| Agent | `8f2d75ac05ca7724bca685143ef6f440036dffb4` |
+| Component        | Commit                                     |
+| ---------------- | ------------------------------------------ |
+| Agent            | `8f2d75ac05ca7724bca685143ef6f440036dffb4` |
 | Inference driver | `02beb480eb19af45d71435947291f1387d53060e` |
-| Gateway | `2c92e568c96f71442605df5f79f07ff4304d808c` |
-| Control | `569eed6fa2584654fe4018873070503df0831c10` |
-| Library | `98daf3038090ff60b26c5a1cf09b1b7937ff8543` |
-| UI source | `58d13798acebf6a89f6d18f65b58e9d4ebb25ac5` |
-| UI distribution | `23fad73ebf45c994d09b0073f8f3b5bc42c5ad5f` |
+| Gateway          | `2c92e568c96f71442605df5f79f07ff4304d808c` |
+| Control          | `569eed6fa2584654fe4018873070503df0831c10` |
+| Library          | `98daf3038090ff60b26c5a1cf09b1b7937ff8543` |
+| UI source        | `58d13798acebf6a89f6d18f65b58e9d4ebb25ac5` |
+| UI distribution  | `23fad73ebf45c994d09b0073f8f3b5bc42c5ad5f` |
 
 The distribution archive was checked for all 253 exported files, the Strata
 controls, source provenance and its own substituted commit stamp. Edge becomes

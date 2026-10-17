@@ -51,10 +51,33 @@ This audit does not measure GPU throughput or deploy the changes.
 
 Known upstream limitations remain: `tool_choice: required` and named choices,
 `parallel_tool_calls: false`, structured output together with tools, and log
-probabilities. Eugene still supports text-only prepared models on one GPU;
-vision and multi-GPU preparation require separate integration work. The API
+probabilities. Multi-GPU preparation still requires separate integration work.
+Optional image preparation is included in Edge as described below. The API
 compatibility layer still cannot express Strata's exact per-request reasoning
 token budget, although a prepared config can supply its native default.
+
+### Edge image preparation follow-up (2026-10-17)
+
+The preparation contract now offers `off`, `cpu` and `gpu` image modes for
+supported Strata models. Omission remains text-only. Unsloth UD-Q4_K_XL does
+not offer images, matching the pinned setup. Enabling images adds a conservative
+1 GB disk allowance for the encoder; memory fit remains unknown.
+
+The selected mode survives Library persistence and browser refresh, reaches
+upstream setup, and is checked against setup's resulting encoder placement.
+A GPU-to-CPU fallback fails explicitly rather than claiming the requested mode.
+Encoder assets travel with the prepared model, but executable paths do not:
+each node supplies its own installed encoder. A changed prepared configuration
+restarts an existing runtime through admission; an unchanged replay does not.
+
+The driver reads the running model's `/v1/status` before advertising image
+input. Disabled, unavailable, errored, unloaded or mismatched models do not
+claim it. Streaming and non-streaming routes preserve inline image parts.
+These paths have automated coverage and scoped sabotage checks, not a new
+GPU image-inference result. Edge pins the updated contracts and consumers,
+including the rebuilt UI distribution. Native CPU/GPU image inference remains
+for live-server validation. See the
+[verification record](../acceptance/strata-engine-run.md).
 
 ## Recommendation
 
@@ -113,18 +136,18 @@ MTP is no longer exclusive at the source level.
 
 ## Integration work
 
-| Area | Existing Eugene seam | Work needed |
-| --- | --- | --- |
-| Initial connection | `inference-driver/.../providers.py`, `openai_compat_custom` | Measure against an existing Strata server. Eugene's address field takes the server origin, e.g. `http://127.0.0.1:8080`; the driver adds `/v1/...`. |
-| Lifecycle | `agent/.../engines/base.py` and its adapter registry | Add `StrataAdapter` and the shared `EngineKind` value. Start Python plus `serve/server.py --engine strata --config <owned-config> --host 127.0.0.1 --port <assigned-port>`. Own both parent and child lifecycle, logs and cleanup. |
-| Acquisition | `agent/.../engines/acquisition.py` | Install a pinned source/server bundle, isolated Python dependencies and verified native archive. Retain an earlier working version for rollback. Do not run the interactive setup launcher on every runtime start. |
-| Model preparation | Library catalogue, downloads and profile lifecycle | Initially accept an explicitly selected upstream-prepared configuration and check its required files. Later automate the related GGUF, tokenizer, pack, PLE, expert-profile and MTP artifacts with resumable progress and space reporting. Preserve original files. |
-| Model eligibility | `ui/src/lib/engineCompat.ts`, `EngineDescriptor` | The existing filter mostly joins by file format. Strata must not be offered for every GGUF: check supported architecture, quant and prepared artifacts on the agent as well as in the UI. Decide the shared eligibility representation before codegen. |
-| Fit and admission | `library/.../fit.py`, `agent/.../admission.py` | Initially show fit as unestimated and use explicit saved settings plus upstream checks. Keep unknown memory out of automatic eviction decisions. Later account for resident experts, GPU cache, KV, MTP, scratch buffers and desktop reserve; the current layer-offload estimate is not evidence of Strata fit. |
-| Protocol and capabilities | Existing OpenAI-compatible driver | Add only the Strata-specific capability/error handling demonstrated necessary by measurements. Report context, loaded state, reasoning, cache usage and effective request capacity honestly. |
-| Profiles and UI | Existing schema-driven settings | Keep the experimental badge visible for engine selection, runtimes and profiles. Initially expose a small set of verified options and the selected prepared configuration. A richer tuning page is optional. |
-| Model switching | Existing runtime lifecycle and gateway admission | Keep a saved configuration per prepared model; stop/drain the old runtime, start the selected one, and route only after readiness. Process restart is sufficient. A request for one model must never silently run on another. |
-| Removal and recovery | New offline uninstall and checkpoint inventory | Track Eugene-owned software and generated assets. A borrowed Strata installation or external `Strata-data` folder is not Eugene-owned. Protect original GGUFs; show the size of optional generated/downloaded assets before deletion. |
+| Area                      | Existing Eugene seam                                        | Work needed                                                                                                                                                                                                                                                                                                     |
+| ------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Initial connection        | `inference-driver/.../providers.py`, `openai_compat_custom` | Measure against an existing Strata server. Eugene's address field takes the server origin, e.g. `http://127.0.0.1:8080`; the driver adds `/v1/...`.                                                                                                                                                             |
+| Lifecycle                 | `agent/.../engines/base.py` and its adapter registry        | Add `StrataAdapter` and the shared `EngineKind` value. Start Python plus `serve/server.py --engine strata --config <owned-config> --host 127.0.0.1 --port <assigned-port>`. Own both parent and child lifecycle, logs and cleanup.                                                                              |
+| Acquisition               | `agent/.../engines/acquisition.py`                          | Install a pinned source/server bundle, isolated Python dependencies and verified native archive. Retain an earlier working version for rollback. Do not run the interactive setup launcher on every runtime start.                                                                                              |
+| Model preparation         | Library catalogue, downloads and profile lifecycle          | Initially accept an explicitly selected upstream-prepared configuration and check its required files. Later automate the related GGUF, tokenizer, pack, PLE, expert-profile and MTP artifacts with resumable progress and space reporting. Preserve original files.                                             |
+| Model eligibility         | `ui/src/lib/engineCompat.ts`, `EngineDescriptor`            | The existing filter mostly joins by file format. Strata must not be offered for every GGUF: check supported architecture, quant and prepared artifacts on the agent as well as in the UI. Decide the shared eligibility representation before codegen.                                                          |
+| Fit and admission         | `library/.../fit.py`, `agent/.../admission.py`              | Initially show fit as unestimated and use explicit saved settings plus upstream checks. Keep unknown memory out of automatic eviction decisions. Later account for resident experts, GPU cache, KV, MTP, scratch buffers and desktop reserve; the current layer-offload estimate is not evidence of Strata fit. |
+| Protocol and capabilities | Existing OpenAI-compatible driver                           | Add only the Strata-specific capability/error handling demonstrated necessary by measurements. Report context, loaded state, reasoning, cache usage and effective request capacity honestly.                                                                                                                    |
+| Profiles and UI           | Existing schema-driven settings                             | Keep the experimental badge visible for engine selection, runtimes and profiles. Initially expose a small set of verified options and the selected prepared configuration. A richer tuning page is optional.                                                                                                    |
+| Model switching           | Existing runtime lifecycle and gateway admission            | Keep a saved configuration per prepared model; stop/drain the old runtime, start the selected one, and route only after readiness. Process restart is sufficient. A request for one model must never silently run on another.                                                                                   |
+| Removal and recovery      | New offline uninstall and checkpoint inventory              | Track Eugene-owned software and generated assets. A borrowed Strata installation or external `Strata-data` folder is not Eugene-owned. Protect original GGUFs; show the size of optional generated/downloaded assets before deletion.                                                                           |
 
 ### Details that prevent a misleading integration
 
@@ -165,14 +188,14 @@ MTP is no longer exclusive at the source level.
 
 Read October 4, including maintainer replies where present:
 
-| Report | Relevance and current evidence |
-| --- | --- |
-| [#481: Windows long-stream hang](https://github.com/Niko1221/Strata/issues/481) | Reported on 0.1.34. The maintainer added a silence/stop watchdog in 0.1.37; the reporter had not reproduced the freeze after moving to 0.1.38. Root cause remains open. Test long streams, cancellation and restart on our pinned version. |
+| Report                                                                                  | Relevance and current evidence                                                                                                                                                                                                                           |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#481: Windows long-stream hang](https://github.com/Niko1221/Strata/issues/481)         | Reported on 0.1.34. The maintainer added a silence/stop watchdog in 0.1.37; the reporter had not reproduced the freeze after moving to 0.1.38. Root cause remains open. Test long streams, cancellation and restart on our pinned version.               |
 | [#606: persistent repeated-token output](https://github.com/Niko1221/Strata/issues/606) | v0.1.39 adds finite-value clamping and a repeated-token cutoff. This is a mitigation to verify, not a basis for claiming the latest version still has the original reproduction. A healthy process alone did not establish healthy output in the report. |
-| [#528: restored conversation slowdown](https://github.com/Niko1221/Strata/issues/528) | Reported on Windows 0.1.36; the maintainer could not reproduce on the current engine and supplied a benchmark. Keep optional RAM conversation snapshots out of the initial preset; measure normal prefix reuse and interleaved chats. |
-| [#754: tools emitted as thinking](https://github.com/Niko1221/Strata/issues/754) | Reported through Strata's Anthropic interface on 0.1.38. Eugene would use its own client interfaces and Strata's OpenAI backend path; test that path, since the report alone proves neither success nor failure there. |
-| [#765: large-context memory budgeting](https://github.com/Niko1221/Strata/issues/765) | A 524K-context report describes competing KV, expert and prefill allocations. Keep extended contexts out of the first preset and measure peak allocations at the selected context. |
-| [#771: Linux startup stalls](https://github.com/Niko1221/Strata/issues/771) | New 0.1.39 report under RAM pressure, implicating transparent huge-page compaction. Relevant to Linux acceptance and available-memory checks; not a Windows blocker. |
+| [#528: restored conversation slowdown](https://github.com/Niko1221/Strata/issues/528)   | Reported on Windows 0.1.36; the maintainer could not reproduce on the current engine and supplied a benchmark. Keep optional RAM conversation snapshots out of the initial preset; measure normal prefix reuse and interleaved chats.                    |
+| [#754: tools emitted as thinking](https://github.com/Niko1221/Strata/issues/754)        | Reported through Strata's Anthropic interface on 0.1.38. Eugene would use its own client interfaces and Strata's OpenAI backend path; test that path, since the report alone proves neither success nor failure there.                                   |
+| [#765: large-context memory budgeting](https://github.com/Niko1221/Strata/issues/765)   | A 524K-context report describes competing KV, expert and prefill allocations. Keep extended contexts out of the first preset and measure peak allocations at the selected context.                                                                       |
+| [#771: Linux startup stalls](https://github.com/Niko1221/Strata/issues/771)             | New 0.1.39 report under RAM pressure, implicating transparent huge-page compaction. Relevant to Linux acceptance and available-memory checks; not a Windows blocker.                                                                                     |
 
 These warrant an experimental integration and a limited support claim. They
 do not require Eugene's unrelated feature backlog to be completed first, nor

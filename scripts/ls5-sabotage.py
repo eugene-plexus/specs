@@ -9,6 +9,7 @@ names the gate that must notice:
   file and the scan's engine folders;
 - `agent`: Strata's recipe, the preparation jobs, the run worker's steps and
   the uninstall guard;
+- `driver`: Strata's running-model image capability checks;
 - `ui`: the run store, *Prepare* and *Download and prepare*, the install
   question (vitest, started from `D:`);
 - `acceptance`: `ls5-preparation-acceptance.py`, for what only real processes
@@ -62,6 +63,11 @@ GATES: dict[str, tuple[str, list[str]]] = {
         "tests/test_strata_prepare.py", "tests/test_run_preparation.py",
         "tests/test_engines.py", "tests/test_run_worker.py", "tests/test_strata.py",
     ]),
+    "driver": ("inference-driver", [
+        str(ROOT / "inference-driver" / ".venv" / "Scripts" / "python.exe"),
+        "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider",
+        "tests/test_strata.py", "-k", "image",
+    ]),
     "ui": ("ui", [
         "cmd", "/c", "npx", "vitest", "run", "src/components/PrepareModel.test.tsx",
         "src/lib/oneClickRun.prepare.test.ts", "src/components/RunDialog.test.tsx",
@@ -74,6 +80,23 @@ GATES: dict[str, tuple[str, list[str]]] = {
 
 # (label, gate, file, old, new)
 SABOTAGES: list[tuple[str, str, str, str, str]] = [
+    ("VISION: worker drops the selected encoder", "agent", WORKER,
+     '                vision=wanted.get("vision", "off"),', '                vision="off",'),
+    ("VISION: setup silently falls back to CPU", "agent", RECIPE,
+     '            if vision.get("gpu") is not expected_gpu:', '            if False:'),
+    ("VISION: changed prepared config keeps the old process", "agent", WORKER,
+     '                            if await asyncio.to_thread(changed):', '                            if False:'),
+    ("VISION: omitted mode enables images", "library", RUNOPS,
+        '        default=PreparationVisionMode.off,',
+        '        default=PreparationVisionMode.cpu,'),
+    ("VISION: driver claims images for a different model", "driver",
+     "inference-driver/src/eugene_plexus_inference_driver/engines/strata_http.py",
+     '                and body.get("model") == self._upstream_model_id', '                and True'),
+    ("VISION: driver ignores encoder failure", "driver",
+     "inference-driver/src/eugene_plexus_inference_driver/engines/strata_http.py",
+     '                and not vision.get("error")', '                and True'),
+    ("VISION: UI drops the selected encoder", "ui", CONTROL,
+     '        ...(visionModes.length > 0 ? { vision: selectedVision } : {}),', ''),
     # --- the library: the operation goes on with the prepared model ---------------------
     ("THE RULE: a preparation run goes on with the original model", "library", RUNOPS,
      '                and record.get("preparedFrom") is None', "                and False"),

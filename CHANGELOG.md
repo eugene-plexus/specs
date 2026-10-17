@@ -2,6 +2,20 @@
 
 Cross-component release notes. Each repo has its own commit history; this file consolidates what shipped together.
 
+### Experimental Strata images (2026-10-17, Edge)
+
+- Preparation offers Off (the unchanged text-only default), CPU or GPU image
+  encoding for supported models. Encoder assets travel with the prepared model;
+  each node uses its own installed executable. UD-Q4_K_XL does not offer images.
+- Image capability follows the running model's encoder status. Setup fallback
+  from GPU to CPU fails explicitly, and changed prepared settings restart an
+  existing runtime rather than leaving it on its old configuration.
+- Edge includes the updated Agent, Library, inference-driver and rebuilt UI.
+  Automated tests and scoped sabotage checks pass. Native CPU/GPU image
+  inference remains for live-server validation. See the
+  [verification record](docs/acceptance/strata-engine-run.md). Published v0.1.0
+  assets are unchanged.
+
 ### Experimental Strata engines (2026-10-04, Edge)
 
 - Strata v0.1.39 gains a pinned Windows NVIDIA install recipe, prepared-model

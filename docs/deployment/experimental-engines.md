@@ -27,6 +27,14 @@ do not include it.
    and llama.cpp's `gguf-py`) and its MTP helper (about 5 GB,
    once per Library folder).
 
+  For models that support images, **Images** offers **Off** (the default),
+  **CPU** or **GPU**. Enabling it downloads an additional encoder and adds
+  about 1 GB to the disk estimate; serving also needs additional memory.
+  Unsloth UD-Q4_K_XL does not offer images. If setup falls back from GPU to
+  CPU, the run fails explicitly rather than claiming GPU encoding. Prepare
+  again with a supported mode. Re-preparing with changed settings restarts
+  an existing runtime; finish active requests first.
+
    The prepared files go into `Strata-data` at the top of the Library folder
    holding the GGUF: Strata's configuration, its pack, tokenizer and MTP helper,
    and the model's `<name>.eugene-prepared.json`. The GGUF itself is not
@@ -36,7 +44,8 @@ do not include it.
    (agent#12).
 3. A model prepared outside Eugene with
    [Strata's setup](https://github.com/Niko1221/Strata/blob/v0.1.39/docs/INSTALL.md)
-   (text only, `--vision no`; one request at a time, `--parallel 1`) can be
+  (`--vision no` for text only, or `--vision cpu` / `--vision gpu` for images)
+  can be
    adopted instead: open **Library**, pick that node in the header and choose
    **add prepared model**. Enter the JSON configuration's path on the node, a
    name (clients request the model by it) and the Library folder to keep its
@@ -59,9 +68,11 @@ by Eugene.
 
 Eugene launches its own copy of the prepared configuration, supplies its native
 executable and loopback address, and assigns the saved alias. It preserves the
-original JSON. Configured commands, MCP servers, vision, batching and unsupported
-native flags are refused with a specific error. The JSON controls prepared model
-assets and the supported native settings; Eugene captures the engine's output.
+original JSON. Configured commands, MCP servers and unsupported native flags
+are refused with a specific error. Image configurations keep their encoder
+assets, but Eugene uses its own installed encoder executable, not a command
+from the configuration. The JSON controls prepared model assets and supported
+native settings; Eugene captures the engine's output.
 
 ## Switch models
 
@@ -96,13 +107,17 @@ an operator session.
 ## Current limits
 
 - Text chat, streaming, reasoning text and reported token usage; one concurrent
-  request per managed runtime.
+  request by default. A prepared config's optional parallel setting is retained.
 - Prepared models only, made from the nine models Strata's own setup offers
   (*Strata's list*: the original Qwen3.8-Flash-Next in four sizes, Swift 1.5
   in two, the Coder, Unsloth's two), each at the revision Strata pins; Strata
-  prepares only those files, by name, as its setup does. Preparation is text
-  only, on one GPU (the one with the most memory), with the experimental speed
+  prepares only those files, by name, as its setup does. Preparation is on one
+  GPU (the one with the most memory), with the experimental speed
   projection off. Setup's tuning (`--calibrate`) is not run.
+- Image preparation and routing are experimental. The driver advertises image
+  input only when the loaded model reports an enabled, available encoder with
+  no error. Native CPU/GPU image inference and visual-answer correctness still
+  require hardware validation; automated checks do not establish those results.
 - Memory fit is **unknown**. The JSON file's size is never treated as the model's
   memory footprint. Automatic wake and eviction are disabled for Strata.
 - **Tools and structured output work** (since 2026-10-12; measured on
@@ -116,7 +131,7 @@ an operator session.
   must be a positive whole number: Strata ignores 0 or below, so Eugene refuses it. By Strata's own
   documentation, a sampled answer repeats run to run only with static expert residency, not on its
   default adaptive tier. `logprobs` is refused.
-- No media, embeddings, raw completions or llama.cpp slot pinning. Other explicit
+- No audio, video, embeddings, raw completions or llama.cpp slot pinning. Other explicit
   request settings Strata does not support are refused.
 - NInfer and imp remain future adapters. The Experimental designation and shared
   install/removal/switch lifecycle are the foundation for adding them.
