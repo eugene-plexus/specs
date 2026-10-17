@@ -54,9 +54,11 @@ to the distribution commit. Dependency locks and other component pins are
 unchanged. The published v0.1.0 assets are not updated.
 
 No model download, native image-inference run or live-install modification
-was performed locally. Native CPU/GPU image encoding and visual-answer
-correctness remain an outstanding hardware acceptance requirement for the
-live Edge test server. Publication is not a hardware-validation claim.
+was performed locally during the automated implementation checks. On
+2026-10-17, Troy reported that Strata vision CPU validation was tested and
+passed. Native GPU image encoding and visual-answer correctness remain
+outstanding hardware acceptance requirements. The CPU result does not
+establish GPU validation.
 
 Upstream source is `Niko1221/Strata` v0.1.39,
 `6f32ec070f23ced9f50e704d854d775da52591ab`. Windows native asset SHA-256:
