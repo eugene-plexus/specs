@@ -802,6 +802,11 @@ components:
         when it loads (vLLM's model registry, for one), so a match is
         only `may_run` (Troy's L4).
 
+    PreparationVisionMode:
+      type: string
+      enum: ['off', cpu, gpu]
+      description: Where to encode images during inference; off prepares text only.
+
     ModelPreparation:
       type: object
       description: |
@@ -839,6 +844,15 @@ components:
             offers its own choices, and without one takes its own
             recommendation for the node. Strata's are its setup's own.
             Absent: the preparation takes no context.
+        visionModes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreparationVisionMode'
+          description: |
+            Image encoder choices supported by this model's preparation. Absent:
+            no image preparation is offered. Omitting the choice in a run intent
+            preserves text-only preparation. Enabling images downloads an extra
+            encoder and uses additional memory while serving.
         minEngineVersion:
           type: string
           description: |
