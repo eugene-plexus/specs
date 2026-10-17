@@ -9,7 +9,7 @@
     "library": "616358ca42964dc4f9616e5f37aefb9b5514c2d0",
     "tool-driver": "3034479687dee4d20a9e8d88f1e0b7796a1eb949",
     "ui": "67e6ccd17827f40c7db7c824e1f27926f40e2239",
-    "inference-driver": "25b96d75964930cd4e444e96c3b44a77a23f7960"
+    "inference-driver": "8b9305db8d237412b2757436a360a8a77559560c"
   },
   "dependenciesSha256": "266568e25707278b36f6ef0f1439dffd94b2a9f44e7a50bf5cf3c6b633ef5498"
 }

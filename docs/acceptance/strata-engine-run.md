@@ -18,6 +18,9 @@ Focused verification on Windows:
 - Inference-driver: 45 passed, including live-status capability decisions
   and image forwarding through both actual driver HTTP routes with a mocked
   upstream. These are not native encoder tests.
+- Full driver retest after updating the text-only attachment fixture: 1,718
+  passed, five skipped on Windows. The fixture now answers the live status
+  probe before checking rejection.
 - Library: 17 preparation tests and one vendored-protocol conformance test
   passed. Specs' isolated ASGI durable-run wiring check completed successfully.
 - UI: 17 tests passed; TypeScript, focused ESLint and Prettier checks passed.
@@ -34,9 +37,16 @@ rebuilt UI distribution. Release inputs reference:
 - Contract: `dc51e0bf89d07436443b0c01928c1546bde0af42`.
 - Agent: `34a38dc76722db2a1789a61853435f08563bb144`.
 - Library: `616358ca42964dc4f9616e5f37aefb9b5514c2d0`.
-- Inference-driver: `25b96d75964930cd4e444e96c3b44a77a23f7960`.
+- Inference-driver: `8b9305db8d237412b2757436a360a8a77559560c`.
 - UI source: `0de140dcf92042441101119e1bdab2a25bd2b62a`.
 - UI distribution: `67e6ccd17827f40c7db7c824e1f27926f40e2239`.
+
+Consumer CI also exposed existing failures already present on the pre-vision
+parent commits: Agent sign-in forwarding
+([agent#18](https://github.com/eugene-plexus/agent/issues/18)) and the UI
+access-browser default
+([ui#19](https://github.com/eugene-plexus/ui/issues/19)). They are tracked
+separately; the first Edge specs/container/macOS workflows passed.
 
 The actual published UI archive contains 277 static files, including 49
 JavaScript bundles and the compiled Images control; its build stamp resolves
