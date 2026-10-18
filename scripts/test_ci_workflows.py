@@ -16,6 +16,20 @@ def workflow(name: str) -> dict:
 
 
 class WiringTests(unittest.TestCase):
+    def test_container_checks_install_yaml_in_the_selected_interpreter(self) -> None:
+        steps = workflow("container.yml")["jobs"]["build-verify-publish"]["steps"]
+        setup = next(i for i, step in enumerate(steps) if "setup-python@" in step.get("uses", ""))
+        install = next(
+            i
+            for i, step in enumerate(steps)
+            if "python -m pip install PyYAML==6.0.3" in step.get("run", "")
+        )
+        acceptance = next(
+            i for i, step in enumerate(steps) if "compose-acceptance.sh" in step.get("run", "")
+        )
+        self.assertLess(setup, install)
+        self.assertLess(install, acceptance)
+
     def test_release_candidate_inline_imports_resolve(self) -> None:
         steps = workflow("release-qualification.yml")["jobs"]["candidate"]["steps"]
         script = next(step["run"] for step in steps if step.get("id") == "pins")

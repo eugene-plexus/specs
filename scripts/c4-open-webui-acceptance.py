@@ -59,7 +59,7 @@ PERSON_PASSWORD = "a-person-password-1"
 #: What the owner signs in with once the install has people (C2, D4).
 OWNER_NAME = "operator"
 #: The words the launcher prints when it resets an app's settings for one start.
-RESET_WORDS = "connection%20details%20changed"
+RESET_WORDS = "What%20Eugene%20gives%20this%20app%20changed"
 
 # --------------------------------------------------------------------------- #
 # the fixture model, which records the bearer each request arrived with
