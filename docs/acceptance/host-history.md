@@ -2,7 +2,7 @@
 
 2026-10-18, Amish_Station (RTX 5090 beside the AMD integrated GPU, Windows 11),
 llama.cpp b11719. Design: [`docs/design/host-history.md`](../design/host-history.md),
-Troy's calls H1-H6. Agent d65ffa4; UI a40a37d5.
+Troy's calls H1-H6. Agent d65ffa4; UI a40a37d5, then 12ad083 (the page scrolls; caught by UI CI).
 
 ## The run
 
