@@ -1001,7 +1001,7 @@ paths:
           repo: shards are summed into one candidate, and the vision
           projectors, the imatrix calibration file and the MTP draft
           model are pulled out of the candidate list into
-          `projectors` / `otherFiles`. A screen that lists `.gguf`
+          `projectors` / `otherFiles` / `draftFiles`. A screen that lists `.gguf`
           files offers four things that cannot be launched and one that
           is half a model.
         * **Scores every candidate** against detected memory at

@@ -24,6 +24,13 @@ Usage:
 `--models` must hold unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-Q4_K_M.gguf and
 ggml-org/Qwen3.6-27B-GGUF/{Qwen3.6-27B-Q4_K_M,mtp-Qwen3.6-27B-Q4_0}.gguf.
 Clears every ambient EUGENE_PLEXUS_* variable, so it is safe beside a live agent.
+
+`--from-discover` (library#13) gives the Library hard links to the two models
+without the companion, and fetches the companion the way Discover does before
+S1: D1 the catalogue offers ggml-org's MTP files as companions (and its DFlash
+drafters as neither companions nor versions), and says where the owned 27B
+sits; D2 the companion downloads alone into that folder. The links and the
+download live in the run's temporary directory, so `--models` is only read.
 """
 
 from __future__ import annotations
@@ -46,6 +53,11 @@ import yaml
 HEAD_MODEL = "Qwen3.5-9B-Q4_K_M"
 PLAIN_MODEL = "Qwen3.6-27B-Q4_K_M"
 SIDECAR = "mtp-Qwen3.6-27B-Q4_0.gguf"
+PLAIN_REPO = "ggml-org/Qwen3.6-27B-GGUF"
+MODEL_FILES = (
+    "unsloth/Qwen3.5-9B-MTP-GGUF/Qwen3.5-9B-Q4_K_M.gguf",
+    f"{PLAIN_REPO}/Qwen3.6-27B-Q4_K_M.gguf",
+)
 EDIT_PROMPT = (
     "Add type hints to every function in this file and return the whole file, unchanged "
     "otherwise, in one code block.\n\n```python\n"
@@ -95,16 +107,73 @@ def gib(n: int | None) -> str:
     return "unknown" if n is None else f"{n / 1024**3:.2f} GiB"
 
 
+def fetch_companion_through_discover(client: httpx.Client, proxy: str, wait: Any) -> None:
+    """D1 and D2: what Discover shows for ggml-org's 27B, and its download."""
+    listing = client.get(f"{proxy}/v1/catalogue/model", params={"repo": PLAIN_REPO})
+    listing.raise_for_status()
+    body = listing.json()
+    drafts = {f["path"]: f for f in body.get("draftFiles") or []}
+    labels = [c["label"] for c in body.get("candidates") or []]
+    plain = next((c for c in body.get("candidates") or [] if c["label"] == "Q4_K_M"), {})
+    owned = plain.get("alreadyOwned") or {}
+    check(
+        "D1 Discover offers the MTP files as companions, not the DFlash files as versions, "
+        "and says where the owned 27B sits",
+        SIDECAR in drafts
+        and all(f["role"] == "draft" for f in drafts.values())
+        and not any("dflash" in label.lower() for label in labels)
+        and owned.get("root") is not None
+        and owned.get("folder") == PLAIN_REPO,
+        f"companions {sorted(drafts)}; versions {labels}; owned {owned}",
+    )
+    started = client.post(
+        f"{proxy}/v1/downloads",
+        json={
+            "repo": PLAIN_REPO,
+            "revision": body.get("resolvedCommit") or "main",
+            "files": [SIDECAR],
+            "root": owned.get("root"),
+            "subdirectory": owned.get("folder"),
+        },
+    )
+    if started.status_code >= 300:
+        raise AssertionError(f"the companion download: {started.status_code} {started.text[:400]}")
+    download_id = started.json()["id"]
+    done = wait(
+        lambda: (lambda d: d if d["state"] in ("done", "failed", "cancelled") else None)(
+            client.get(f"{proxy}/v1/downloads/{download_id}").json()
+        ),
+        "the companion downloads",
+        3600,
+    )
+    files = done.get("files") or []
+    check(
+        "D2 the companion downloads alone into the 27B's folder",
+        done["state"] == "done"
+        and len(files) == 1
+        and Path(files[0]["destinationPath"]).parent.as_posix().endswith(PLAIN_REPO),
+        f"{done['state']}: {[f.get('destinationPath') for f in files]} {done.get('error') or ''}",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--server", type=Path, required=True)
     parser.add_argument("--models", type=Path, required=True)
+    parser.add_argument("--from-discover", action="store_true")
     args = parser.parse_args()
     server: Path = args.server.resolve()
     models: Path = args.models.resolve()
 
     with tempfile.TemporaryDirectory(prefix="ep-sd1-", ignore_cleanup_errors=True) as raw:
         directory = Path(raw)
+        if args.from_discover:
+            # Hard links: no copy of 21 GB, and the source folder is never written.
+            linked = directory / "models"
+            for relative in MODEL_FILES:
+                (linked / relative).parent.mkdir(parents=True, exist_ok=True)
+                os.link(models / relative, linked / relative)
+            models = linked
         agent_port, library_port = free_ports(2)
         (directory / "engines").mkdir()
         (directory / "library.yaml").write_text(
@@ -180,12 +249,19 @@ def main() -> int:
             client.headers["Authorization"] = f"Bearer {token}"
             proxy = "/api/proxy/library"
             wait(lambda: client.get(f"{proxy}/healthz").status_code == 200, "the library answers")
-            client.post(f"{proxy}/v1/scan", json={"full": True})
-            wait(
-                lambda: client.get(f"{proxy}/v1/scan").json()["state"] != "scanning",
-                "the scan finishes",
-                600,
-            )
+
+            def scan() -> None:
+                client.post(f"{proxy}/v1/scan", json={"full": True})
+                wait(
+                    lambda: client.get(f"{proxy}/v1/scan").json()["state"] != "scanning",
+                    "the scan finishes",
+                    600,
+                )
+
+            scan()
+            if args.from_discover:
+                fetch_companion_through_discover(client, proxy, wait)
+                scan()
             listed = {m["name"]: m for m in client.get(f"{proxy}/v1/models").json()["models"]}
             skipped = client.get(f"{proxy}/v1/scan").json().get("skipped") or []
 
@@ -205,8 +281,7 @@ def main() -> int:
                 and any(f.get("role") == "draft" for f in plain.get("files") or [])
                 and SIDECAR not in {Path(m["path"]).name for m in listed.values()}
                 and any(
-                    s.get("reason") == "draft" and Path(s["path"]).name == SIDECAR
-                    for s in skipped
+                    s.get("reason") == "draft" and Path(s["path"]).name == SIDECAR for s in skipped
                 ),
                 f"{HEAD_MODEL}: {head_spec}; {PLAIN_MODEL}: {plain_spec}",
             )
@@ -245,9 +320,9 @@ def main() -> int:
                 if created.status_code != 201:
                     raise AssertionError(f"{name}: {created.status_code} {created.text[:400]}")
                 runtime = wait(
-                    lambda: (
-                        lambda r: r if r["status"] == "ready" else None
-                    )(client.get(f"/v1/runtimes/{name}").json()),
+                    lambda: (lambda r: r if r["status"] == "ready" else None)(
+                        client.get(f"/v1/runtimes/{name}").json()
+                    ),
                     f"{name} is ready",
                     900,
                 )
@@ -272,11 +347,13 @@ def main() -> int:
                 drafted_now = timings.get("draft_n") or 0
                 shown = wait(
                     lambda: (
-                        lambda s: s
-                        if s
-                        and s.get("draftedTokens") is not None
-                        and s["draftedTokens"] >= drafted_now
-                        else None
+                        lambda s: (
+                            s
+                            if s
+                            and s.get("draftedTokens") is not None
+                            and s["draftedTokens"] >= drafted_now
+                            else None
+                        )
                     )(client.get(f"/v1/runtimes/{name}").json().get("speculation")),
                     f"{name} shows its drafting counts",
                     60,

@@ -131,9 +131,14 @@ Read off upstream source. llama.cpp at **b11719** (2026-10-18), vLLM at
   drafting must beat Off by more than 3% to be saved.
 - **The built profile's recorded speeds are still llama-bench's,** without
   drafting. `ProfileBuiltBy` gained nothing; the trials are on the build.
-- **Not built:** Discover does not offer an `mtp-*.gguf` to download beside
-  the model yet, so "Companion file" appears only for a file someone put
-  there (library#13).
+- **Discover offers the companion (library#13, built 2026-10-18).** A repo's
+  `mtp-*`/`draft-*` GGUFs are `CatalogueModel.draftFiles`, a box beside the
+  vision part, off by default with the smallest precision chosen. A version
+  already on the disk names its `root` and `folder`, and the companion
+  downloads alone into it. ggml-org also ships `dflash-*.gguf`, which
+  llama.cpp b11719 takes as `draft-dflash`; Discover listed them as versions
+  of the model, and now lists them under other files. Launching DFlash is not
+  built.
 
 ### Measured on the 5090 (S4, 2026-10-18)
 
