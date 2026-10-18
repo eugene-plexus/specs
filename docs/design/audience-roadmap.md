@@ -259,6 +259,26 @@ first:**
 - **P7, Realtime.** Ask first, per the 2026-09-28 order.
 - **The platform half of the OpenAI API:** files, batches, vector stores,
   fine-tuning. It is on the future roadmap and not relitigated.
+- **Blueprints: a programming language with ML at its core (Troy,
+  2026-10-18).** Harness workflows as visual programs, like UE5 Blueprints
+  rather than ComfyUI. They have control flow (loops, if/else, subroutines,
+  variables) and sub-agent definitions picked by `#tag`. Fast typed decisions
+  (Jev, the `/v1/systemone` door) serve as branch conditions. Each sub-agent
+  gets explicitly wired context. Blueprints are created, saved, shared and
+  tuned per person.
+  - **A tool of its own, independent of Workbench** (Troy). Workbench may run
+    blueprints; it does not contain them.
+  - **Prior art, partial:** Rivet, OpenAI's Agent Builder, LangGraph, Dify,
+    n8n. None found that combines cheap typed decisions as branches,
+    explicit context wiring, a tagged sub-agent registry, and a
+    local-first, interactive harness.
+  - **When it is picked up:**
+    - Design the language first: the execution model, node types, scope,
+      context wiring, and the file format the runtime executes. The editor
+      and the debugger (live flow, breakpoints, watched variables) are
+      views of it.
+    - First proof: a hand-written blueprint driving a local 9B model on
+      coding tasks, against the same model running free.
 
 ## Carried from the adoption roadmap
 
