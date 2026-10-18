@@ -6,9 +6,10 @@
   2026-10-18: 17 setups from r/LocalAIServers (four run MTP), then YouTube benchmark creators.
   SD2 (vLLM) is designed, not scheduled; Discover offering MTP files is library#13. Next, in
   order:
-  - **Owed, small:** the session-start issue check
-    ([intake](../../CONTRIBUTING.md#reporting-issues)); MR6b's live run; the host-history half
-    of the sysadmin dashboards (the gateway half is built).
+  - **Owed, small:** the host-history half of the sysadmin dashboards, designed 2026-10-18 and
+    waiting on Troy's calls H1-H6 ([design](host-history.md); the gateway half is built). Done
+    2026-10-18: the session-start issue check, and MR6b's rerun against the pinned components
+    (111/111).
   - **Next by this roadmap:** MR8, memory suggestions after a measurement harness, then MR9,
     MCP and the Anthropic door ([design](workbench-memory-and-documents.md)).
   - **Business candidates, not scheduled:** a live vLLM run on current Edge (the last was
@@ -246,7 +247,7 @@ first:**
 | **A9** | **Job Sites, slice 1: Workbench's four file tools on a person's machines outside the LAN, with the new access model** | [`remote-nodes.md`](remote-nodes.md) §5 (every call, J1-J18, taken 2026-10-05) | **Built 2026-10-05** ([record](../acceptance/job-sites-run.md): 17 of 17 with the root behind WSL2's NAT, sabotage 45 of 45). Slice 2, 2b.1-2b.4, J14a and J14b built by 2026-10-08 ([J14b record](../acceptance/j14b-signed-calls-run.md)). Slice 3 (cross-site copy) designed 2026-10-08, calls J92-J99 for Troy ([design](job-sites-cross-site-copy.md)) |
 | **A10** | **Website overhaul after v0.2.0**: every new feature described in full, new screenshots, updated install instructions and how-tos | deployed 2026-10-13 ([plan and findings](a10-website-overhaul.md)) | **Built.** The website deploys by manual `workflow_dispatch` |
 | selected 2026-10-15 | AWS-style dashboards for system administrators, fleet and host telemetry over time | [Gateway dashboard built](gateway-operations-dashboard.md); host history remains separate | Troy selected Gateway Metrics after the engine overview; includes operations panels and varied dials. **Host history is owed** |
-| next | MR8, then MR9 | [`workbench-memory-and-documents.md`](workbench-memory-and-documents.md) | MR8: harness, suggestions inbox, relevance, expiry (1.5 to 2 sessions). MR6b's live run is owed first. Order may change after Troy's setups review |
+| next | MR8, then MR9 | [`workbench-memory-and-documents.md`](workbench-memory-and-documents.md) | MR8: harness, suggestions inbox, relevance, expiry (1.5 to 2 sessions). Order may change after Troy's setups review |
 
 ## Not scheduled without Troy
 

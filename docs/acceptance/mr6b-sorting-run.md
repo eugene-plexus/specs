@@ -122,3 +122,25 @@ numbers.
 - gateway#14: the rerank door's 502 for a lost connection says "work may have occurred".
 - workbench#8: five older sabotage scripts have drifted anchors (from earlier slices).
 - A live run on real questions and real hardware (Troy's).
+
+## Rerun against the pinned components (2026-10-18)
+
+Troy's choice: MR5's 60 questions as they are, against the components pinned at
+specs c8619eb (gateway 2036c31, inference-driver 8b9305d, Workbench 020df6b,
+which is the pinned dist's source), on the CPU, on the script's own ports, with
+every `EUGENE_PLEXUS_*` cleared, and with no `--reuse-data` (the import took
+10.1 minutes, 2,810 passages). **111 passed, 0 failed, 1,574 s.**
+
+- With the sorter off, the three searches reproduce MR5's record to the digit.
+- Recall@5 went from 0.600 to 0.783, +0.183 [+0.083, +0.300], and MRR@5 from
+  0.432 to 0.664, +0.232 [+0.129, +0.335]. That is 12 gained and 1 lost (q15),
+  the same as the run of record.
+- On the CPU, a sorted question took a median of 5.46 s (p90 6.34 s), at about
+  949 tokens a second, against 7.10 s on 2026-10-13. The default Sort time of
+  3 s still sorts none of the 60 and says so (`over_budget`, a usual sort
+  priced at 6.07 s). The price matched what a sort actually took (1.0×).
+- A stopped sorter was noticed in 10.3 s and was back in 15.2 s. A hung sorter
+  was given up on at 40.1 s, twice the Sort time of 20 s.
+
+This is still in-sample: the questions were written from the documents' headings.
+Troy chose this regression run over a new set of real questions.
