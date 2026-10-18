@@ -1,10 +1,9 @@
 # Audience roadmap
 
 **Status: the order of work from 2026-09-30, brought up to date 2026-10-18.**
-- **▶ ON HOLD FOR TROY'S SETUPS REVIEW (2026-10-18).** Troy is compiling the local-AI setups
-  people describe on Reddit into one document. Reviewing it sorts them into setups Eugene serves
-  easily, ones that are hard or manual, and ones it can't serve, and that may re-order this list
-  toward businesses. Until then:
+- **▶ NEXT: SD1, [speculative decoding](speculative-decoding.md) for llama.cpp** (Troy,
+  2026-10-18). It came from two audience passes on 2026-10-18: 17 setups from r/LocalAIServers
+  (four run MTP), then YouTube benchmark creators. The rest of this list, in order:
   - **Owed, small:** the session-start issue check
     ([intake](../../CONTRIBUTING.md#reporting-issues)); MR6b's live run; the host-history half
     of the sysadmin dashboards (the gateway half is built).
@@ -14,9 +13,21 @@
     2026-09-10, [record](../acceptance/m4-vllm-run.md)); vLLM installed from its official
     container image; a gateway load test at 1-256 concurrent streams, the evidence any Rust
     rewrite would need first.
-  - **Designed from the first setups pass:** [speculative decoding and MTP](speculative-decoding.md),
-    all five calls taken 2026-10-18. Four of 17 setups run it.
+  - **From the setups pass, not designed:** a hardware health readout (PCIe generation and
+    width against the maximum, P2P, temperature, power cap); a Prometheus `/metrics` export;
+    one model across machines through llama.cpp's `rpc-server`; TensorSharp as an
+    experimental engine.
   - Job Sites slice 3, cross-site copy, stays deferred (Troy, 2026-10-13).
+  - **From the creators pass (Troy, 2026-10-18: at the back of this list), not designed:**
+    1. a benchmark that runs through the gateway, so llama.cpp, MLX, vLLM and Strata take
+       the same test, with a concurrency sweep;
+    2. a benchmark matrix (models x quants x context depths x engines x nodes), unattended,
+       into one table;
+    3. power during runs: GPU watts, tok/s per watt, joules per token, plus a wall-meter
+       reading;
+    4. a shareable benchmark card with the full provenance;
+    5. a presentation view for recording;
+    6. an opt-in public results dataset, which needs a privacy design.
 - **Built since the v0.2.0 release:** A10, the website overhaul (2026-10-13); v0.2.1 to v0.2.3
   (2026-10-14 to 10-16); interactive content in Workbench, G1-G5
   ([contract](workbench-ui-browser-v1.md)); the
