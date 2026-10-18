@@ -37,7 +37,9 @@ the reduced plan. Markdown fixtures under scripts are not documentation.
 - Component pins run the existing signing, stolen-key, profiles, eligibility,
   runtime-stop, local-routing, OIDC and packaged Workbench smoke checks on Linux
   and Windows. Agent/driver pins also select launch-boundary checks; agent pins
-  select real Linux system updates. Relevant engine pins select one macOS version.
+  select real Linux system updates. Relevant engine pins select one macOS version,
+  run on a push by `macos-push.yml` outside CI so Edge does not wait for it
+  (2026-10-18). A macOS-only failure is a red run, not a held Edge.
 - Full coverage retains every previous CI acceptance command, the three-version
   macOS matrix, app-account isolation, Open WebUI and folder-tool service checks.
 - Full integration runs weekly, and CI's manual `profile=full` remains available.

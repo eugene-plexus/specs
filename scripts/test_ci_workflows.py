@@ -12,20 +12,26 @@ WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
 
 
 def workflow(name: str) -> dict:
-    return yaml.load((WORKFLOWS / name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    return yaml.load(
+        (WORKFLOWS / name).read_text(encoding="utf-8"), Loader=yaml.BaseLoader
+    )
 
 
 class WiringTests(unittest.TestCase):
     def test_container_checks_install_yaml_in_the_selected_interpreter(self) -> None:
         steps = workflow("container.yml")["jobs"]["build-verify-publish"]["steps"]
-        setup = next(i for i, step in enumerate(steps) if "setup-python@" in step.get("uses", ""))
+        setup = next(
+            i for i, step in enumerate(steps) if "setup-python@" in step.get("uses", "")
+        )
         install = next(
             i
             for i, step in enumerate(steps)
             if "python -m pip install PyYAML==6.0.3" in step.get("run", "")
         )
         acceptance = next(
-            i for i, step in enumerate(steps) if "compose-acceptance.sh" in step.get("run", "")
+            i
+            for i, step in enumerate(steps)
+            if "compose-acceptance.sh" in step.get("run", "")
         )
         self.assertLess(setup, install)
         self.assertLess(install, acceptance)
@@ -34,7 +40,9 @@ class WiringTests(unittest.TestCase):
         steps = workflow("release-qualification.yml")["jobs"]["candidate"]["steps"]
         script = next(step["run"] for step in steps if step.get("id") == "pins")
         imports = script.split("root = Path.cwd()", 1)[0]
-        subprocess.run([sys.executable, "-c", imports], cwd=WORKFLOWS.parent.parent, check=True)
+        subprocess.run(
+            [sys.executable, "-c", imports], cwd=WORKFLOWS.parent.parent, check=True
+        )
 
     def test_planner_outputs_and_scoped_jobs_are_connected(self) -> None:
         jobs = workflow("ci.yml")["jobs"]
@@ -67,17 +75,23 @@ class WiringTests(unittest.TestCase):
 
     def test_only_publisher_moves_edge_and_publication_is_not_canceled(self) -> None:
         publisher = workflow("edge.yml")
-        self.assertEqual(publisher["on"]["workflow_run"]["workflows"], ["CI", "Container image"])
+        self.assertEqual(
+            publisher["on"]["workflow_run"]["workflows"], ["CI", "Container image"]
+        )
         self.assertEqual(publisher["concurrency"]["cancel-in-progress"], "false")
         checkout = publisher["jobs"]["publish"]["steps"][0]
         self.assertEqual(checkout["with"]["ref"], "main")
         self.assertEqual(checkout["with"]["persist-credentials"], "false")
         build = workflow("container.yml")["jobs"]["build-verify-publish"]
-        tagging = next(step["run"] for step in build["steps"] if step.get("id") == "push")
+        tagging = next(
+            step["run"] for step in build["steps"] if step.get("id") == "push"
+        )
         self.assertNotIn('"$IMAGE:edge"', tagging)
         self.assertNotIn('"$IMAGE:$RELEASE_TAG"', tagging)
 
-    def test_release_cannot_publish_by_rebuilding_or_without_qualification(self) -> None:
+    def test_release_cannot_publish_by_rebuilding_or_without_qualification(
+        self,
+    ) -> None:
         jobs = workflow("container.yml")["jobs"]
         promotion = jobs["promote-release"]
         commands = "\n".join(step.get("run", "") for step in promotion["steps"])
@@ -93,24 +107,44 @@ class WiringTests(unittest.TestCase):
             {"candidate", "components", "integration", "container"},
         )
 
-    def test_nested_acceptance_runs_once_and_metadata_can_skip_container_build(self) -> None:
+    def test_nested_acceptance_runs_once_and_metadata_can_skip_container_build(
+        self,
+    ) -> None:
         for name in ("a4-macos.yml", "c1-app-accounts.yml", "c4-open-webui.yml"):
             self.assertNotIn("push", workflow(name)["on"])
+        # macOS on a push runs beside CI, not in it, so Edge does not wait for it.
+        self.assertIn(
+            "github.event_name != 'push'", workflow("ci.yml")["jobs"]["macos"]["if"]
+        )
+        pushed = workflow("macos-push.yml")
+        self.assertIn("push", pushed["on"])
+        self.assertEqual(
+            pushed["jobs"]["macos"]["uses"], "./.github/workflows/a4-macos.yml"
+        )
+        self.assertNotIn(
+            "macOS after push", workflow("edge.yml")["on"]["workflow_run"]["workflows"]
+        )
         jobs = workflow("container.yml")["jobs"]
         self.assertEqual(jobs["build-verify-publish"]["needs"], "coverage")
-        self.assertIn("needs.coverage.outputs.container", jobs["build-verify-publish"]["if"])
+        self.assertIn(
+            "needs.coverage.outputs.container", jobs["build-verify-publish"]["if"]
+        )
 
     def test_release_browser_checks_use_shipped_not_rebuilt_static_files(self) -> None:
         steps = workflow("release-qualification.yml")["jobs"]["components"]["steps"]
         script = next(
-            step["run"] for step in steps if step.get("name", "").startswith("Console regression")
+            step["run"]
+            for step in steps
+            if step.get("name", "").startswith("Console regression")
         )
         self.assertNotIn("build:python", script)
         browser_commands = [
             line for line in script.splitlines() if "browser-acceptance.mjs" in line
         ]
         self.assertEqual(len(browser_commands), 5)
-        self.assertTrue(all("python/eugene_plexus_ui/static" in line for line in browser_commands))
+        self.assertTrue(
+            all("python/eugene_plexus_ui/static" in line for line in browser_commands)
+        )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,46 @@
+name: macOS after push
+
+# Out of CI so Edge does not wait for it (Troy, 2026-10-18): Edge publishes
+# after CI's Linux and Windows pinned integration and the image. A macOS-only
+# break shows as a red run here; CI's weekly full run and Release
+# qualification still run the three-version matrix.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-push-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITHUB_TOKEN: ${{ github.token }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      macos: ${{ steps.select.outputs.macos }}
+      full: ${{ steps.select.outputs.full }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Compute gates
+        id: select
+        env:
+          CI_BASE: ${{ github.event.before }}
+        run: python scripts/ci_plan.py --base "$CI_BASE" --head HEAD
+
+  macos:
+    needs: plan
+    if: needs.plan.outputs.macos == 'true'
+    uses: ./.github/workflows/a4-macos.yml
+    with:
+      platforms: ${{ needs.plan.outputs.full == 'true' && '["macos-14","macos-15","macos-26"]' || '["macos-26"]' }}

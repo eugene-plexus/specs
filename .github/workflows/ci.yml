@@ -403,9 +403,10 @@ jobs:
         if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/r8-profile-checks.py
 
+  # On a push, macOS runs in macos-push.yml so Edge does not wait for it.
   macos:
     needs: plan
-    if: needs.plan.outputs.macos == 'true'
+    if: needs.plan.outputs.macos == 'true' && github.event_name != 'push'
     uses: ./.github/workflows/a4-macos.yml
     with:
       agent_ref: ${{ inputs.agent_ref }}
