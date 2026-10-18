@@ -68,12 +68,12 @@ were skipped. They had passed in the preceding full infrastructure run.
 
 Comparable CI-only receipts, using workflow start to last job completion:
 
-| Measure | Full infrastructure | Reduced agent pins |
-| --- | ---: | ---: |
-| CI run | 39128593630 | 39130830857 |
-| Successful / skipped jobs | 27 / 3 | 11 / 10 |
-| Elapsed | 1,116 s (18m36s) | 544 s (9m04s) |
-| Summed non-skipped jobs | 5,435 s (90m35s) | 1,572 s (26m12s) |
+| Measure                   | Full infrastructure | Reduced agent pins |
+| ------------------------- | ------------------: | -----------------: |
+| CI run                    |         39128593630 |        39130830857 |
+| Successful / skipped jobs |              27 / 3 |            11 / 10 |
+| Elapsed                   |    1,116 s (18m36s) |      544 s (9m04s) |
+| Summed non-skipped jobs   |    5,435 s (90m35s) |   1,572 s (26m12s) |
 
 Observed reductions: 51.3% elapsed and 71.1% summed job time. These are different
 commits and intentionally different coverage, not a fixed-workload benchmark

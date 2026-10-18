@@ -78,3 +78,38 @@ Caddy binary in WSL. Live Google/Microsoft registration was not exercised here.
 Enrolled machines retain their existing control address and port. Keep its port
 mapping while they use it; automatic worker control-address migration remains a
 separate change. Active and standby roots must share the canonical sign-in address.
+
+## UI #19 browser regression follow-up (2026-10-17)
+
+The old exported-browser acceptance expected a new setup to keep the console
+on its own port. The intended two-host default, component state and existing
+unit tests instead put the console through this setup. The failing assertion
+was about console placement, not the optional model API's exposure.
+
+The corrected browser check requires the proxied-console default, keeps public
+console access off, and verifies the prepared private-network configuration.
+The model API remains disabled by default: neither `inference` nor
+`inference_on_console` is emitted. Explicit direct-port selection is still
+exercised, including hiding public-console controls, invalidating stale previews
+and downloading the prepared configuration. All four HTTPS modes, Apply and
+mobile scrolling remain covered.
+
+- The exported UI passed in Chrome; screenshots are under
+  `ui/test-results/access-issue19` in the local sibling UI checkout.
+- All 22 `AccessSetup.test.tsx` tests passed with a single fork worker. The
+  initial default-worker run exited without diagnostics; that failure did not
+  reproduce in the focused single-worker run.
+- Node syntax, focused ESLint and Prettier checks passed.
+- An in-memory static-response mutation changed the new-setup console default
+  to direct-port mode. The corrected browser assertion failed with the
+  recommended radio unchecked. Exactly one bundle response was changed;
+  source and exported asset bytes stayed unchanged, and the temporary browser
+  and static server were stopped.
+- Adversarial review found no issues.
+
+This browser-check correction changes no production UI behavior, release pins
+or running installations.
+The Chrome check uses the real static export with fixture API responses; this
+is not a new live proxy or DNS validation. The correction is committed locally
+in UI `22537e84`, with rebuilt distribution `04f6108d`. Neither commit has been
+pushed; remote CI has not been rerun for it.

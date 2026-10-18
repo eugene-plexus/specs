@@ -1053,12 +1053,12 @@ function Remove-Autostart {
     if ($IsElevated) {
         $launcher = Join-Path $Prefix "apps\launcher\app_launcher.py"
         Get-CimInstance Win32_Service -Filter "Name LIKE 'EugenePlexusApp-%'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.PathName -and $_.PathName.Contains($launcher) } |
-            ForEach-Object {
-                Say "removing the app service $($_.Name)"
-                Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue
-                & sc.exe delete $_.Name | Out-Null
-            }
+        Where-Object { $_.PathName -and $_.PathName.Contains($launcher) } |
+        ForEach-Object {
+            Say "removing the app service $($_.Name)"
+            Stop-Service -Name $_.Name -Force -ErrorAction SilentlyContinue
+            & sc.exe delete $_.Name | Out-Null
+        }
     }
     if (Get-AgentTask) {
         Say "removing the scheduled task"
@@ -1221,10 +1221,10 @@ function Get-RegisteredInstallLocation {
     # own install, and every count was off by one.
     foreach ($hive in @('HKCU:', 'HKLM:')) {
         Get-ChildItem -Path "$hive\Software\Microsoft\Windows\CurrentVersion\Uninstall\EugenePlexus-*" -ErrorAction SilentlyContinue |
-            ForEach-Object {
-                $registered = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
-                if ($registered.InstallLocation) { $registered.InstallLocation }
-            }
+        ForEach-Object {
+            $registered = Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue
+            if ($registered.InstallLocation) { $registered.InstallLocation }
+        }
     }
 }
 function Remove-AgentServiceRegistration { & sc.exe delete $ServiceName | Out-Null }
