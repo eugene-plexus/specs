@@ -3685,14 +3685,29 @@ components:
             them and the operator picks — and because a projector is
             never a candidate on its own. Add the chosen one to the
             download's `files`.
+        draftFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogueFile'
+          description: |
+            Speculative-decoding companions offered by this repo (role
+            `draft`, library#13): `mtp-*` or `draft-*` GGUFs, as their own
+            list for the reasons `projectors` is one. A repo commonly
+            ships several precisions of one MTP file, and each pairs with
+            every quant of the model. Add the chosen one to the download's
+            `files`; downloaded beside the model, the scan lists it in
+            `GgufSpeculation.draftFiles`. To fetch one later beside a
+            version already on the disk, download it alone to that
+            version's `alreadyOwned.root` and `alreadyOwned.folder`.
         otherFiles:
           type: array
           items:
             $ref: '#/components/schemas/CatalogueFile'
           description: |
             Files in the repo that are neither candidates nor
-            projectors: the imatrix calibration file, an MTP or draft
-            model, documentation. Reported rather than hidden, for the
+            projectors or companions: the imatrix calibration file, a
+            drafter of a kind Eugene does not launch yet (`dflash-*`),
+            documentation. Reported rather than hidden, for the
             same reason the scan reports `skipped` — a listing that
             silently drops files it did not understand is
             indistinguishable from one that is broken.
@@ -3900,6 +3915,18 @@ components:
             one, because the library deliberately never hashes model
             content (a 40 GB read per scan is not on the table), so for
             most entries name and size is all there is to compare.
+        root:
+          type: string
+          description: |
+            The configured model directory that holds it: a download's
+            `root` for a file meant to land beside it, such as a drafting
+            companion fetched later (library#13). Absent when it sits
+            outside every configured directory.
+        folder:
+          type: string
+          description: |
+            Its folder relative to `root` (`.` when it sits in `root`
+            itself): the matching download `subdirectory`.
 
     StarterSet:
       type: object
@@ -4270,7 +4297,8 @@ components:
             Repo-relative paths. Every shard of a split candidate, the
             projector if the operator wants vision, and for safetensors
             the sidecars as well as the weights. Take these from
-            `CatalogueCandidate.files` and `CatalogueModel.projectors`.
+            `CatalogueCandidate.files`, `CatalogueModel.projectors` and
+            `CatalogueModel.draftFiles`.
         root:
           type: string
           description: |
