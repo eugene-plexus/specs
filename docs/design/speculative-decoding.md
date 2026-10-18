@@ -1,6 +1,6 @@
 # Speculative decoding and MTP
 
-**Status: designed 2026-10-18, calls S1-S5 waiting for Troy.** Nothing is built.
+**Status: designed 2026-10-18; Troy took S1-S5 the same day.** Nothing is built; SD1 is ready to build.
 
 ## Why
 
@@ -59,17 +59,20 @@ Read off upstream source. llama.cpp at **b11719** (2026-10-18), vLLM at
    - `draftFiles` are the MTP or draft GGUFs already classified in the same
      folder.
    - Like the projector, a draft file belongs to the model beside it.
-2. **Profile: one setting, "Speed up writing" (S2).** Choices:
-   - **Off**.
-   - **Model's own prediction head**: `--spec-type draft-mtp`, offered only when
-     `mtpHead` is true.
-   - **Companion file**: `--spec-type draft-mtp|draft-simple --spec-draft-model F`,
-     offered when `draftFiles` is not empty. The type comes from the file's own
-     metadata.
-   - **Reuse repeated text**: `--spec-type ngram-mod`, always offered.
+2. **Profile: "Speculative decoding" (S2), two settings.**
+   - **Reuse repeated text**, on or off, **on by default for every llama.cpp
+     runtime** (S3). It adds `ngram-mod` to `--spec-type`, needs no file and
+     proposes nothing when nothing in the context repeats.
+   - **Draft with**: Off (default, S1), **Model's own prediction head**
+     (`draft-mtp`, offered only when `mtpHead` is true) or **Companion file**
+     (`draft-mtp` or `draft-simple` plus `--spec-draft-model F`, offered when
+     `draftFiles` is not empty; the type comes from the file's own metadata).
 
-   An expert field, "Tokens drafted per step", maps to `--spec-draft-n-max`.
-   `extraArgs` keeps working and wins, as it does today.
+   Both together launch as `--spec-type ngram-mod,draft-mtp`. llama.cpp tries
+   the types in that order for each sequence (`common_speculative_draft`,
+   b11719): a free n-gram match first, then the model. An expert field,
+   "Tokens drafted per step", maps to `--spec-draft-n-max`. `extraArgs` keeps
+   working and wins, as it does today.
 3. **Agent: launch it.** Add to `_FLAG_CLI_NAMES`, and validate that the
    companion file is in the same Library model folder. A node's own model copy
    must copy the companion too: agent#10 found the same trap with split GGUF
@@ -77,18 +80,22 @@ Read off upstream source. llama.cpp at **b11719** (2026-10-18), vLLM at
 4. **Admission: count it.** A shared MTP head adds its context only. A separate
    draft adds its weights and KV cache. Measure both on the 5090 before trusting
    an estimate (S4).
-5. **Say whether it is working.** Read the accepted-token counter from
-   `llama-server`'s `/metrics` and show the acceptance rate on the run. A low
-   rate means the setting costs more than it gives, and the run should say so.
-6. **Profile builder.** Add on/off as a trial dimension, so the builder measures
-   tok/s both ways on this machine and keeps the faster one (S1).
+5. **Show the acceptance rate.** Read the accepted-token counter from
+   `llama-server`'s `/metrics` and show the rate on the run, as a fact. Eugene
+   makes no recommendation from it (S3); the profile builder uses it.
+6. **Profile builder.** Add "Draft with" as a trial dimension, so the builder
+   measures tok/s both ways on this machine and keeps the faster one (S1).
+   "Reuse repeated text" is not a trial dimension: its benefit depends on the
+   person's own work, which a benchmark prompt can't stand in for.
 
 ### Slice SD2, vLLM
 
-The same profile setting maps to `--speculative-config`:
+The same settings map to `--speculative-config`, which takes **one** method:
 - Model's own head: `{"method":"mtp","num_speculative_tokens":N}`.
 - Companion: `draft_model`.
-- Repeated text: `ngram`.
+- Repeated text: `ngram`, used only when "Draft with" is Off. vLLM can't combine
+  it with a model, so a chosen model wins, and the run says that n-gram is not
+  in effect.
 
 Accepted counts come from vLLM's own metrics. The live check runs in WSL2, and
 it doubles as the overdue vLLM run on current Edge.
@@ -102,13 +109,13 @@ it doubles as the overdue vLLM run on current Edge.
 
 ## Calls for Troy
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 | --- | --- | --- |
-| S1 | Default on or off? | Off until the profile builder has measured it on that machine, then whichever was faster. Many people at once on one runtime gain less from it, and only a measurement shows that |
-| S2 | What the setting is called | "Speed up writing", with the choices above in plain words. "Speculative decoding" and "MTP" go in its help text |
-| S3 | Offer "Reuse repeated text" (n-gram)? | Yes, off by default. It needs no file and helps code edits most |
-| S4 | Measure memory before shipping admission's estimate? | Yes. One run on the 5090 with a model that has an MTP head, and one with a companion file |
-| S5 | Drafting with a small, separate Library model (e.g. 0.6B for a 27B)? | Later, as SD3. It needs a vocabulary match check across models |
+| S1 | Default on or off? | **Taken 2026-10-18:** off until the profile builder has measured it on that machine, then whichever was faster |
+| S2 | What the setting is called | **Taken:** "Speculative decoding", with "MTP" in its help text |
+| S3 | Offer "Reuse repeated text" (n-gram)? | **Taken:** yes, **on everywhere** by default, with no recommendation when it isn't helping. Slot count was rejected as a signal: llama-server's default is auto (several slots), and one person's several agents fill slots just as several people do |
+| S4 | Measure memory before shipping admission's estimate? | **Taken: yes.** One run on the 5090 with a model that has an MTP head, and one with a companion file |
+| S5 | Drafting with a small, separate Library model (e.g. 0.6B for a 27B)? | **Taken:** later, as SD3. It needs a vocabulary match check across models |
 
 ## Acceptance
 
