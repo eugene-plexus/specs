@@ -14,6 +14,8 @@
     2026-09-10, [record](../acceptance/m4-vllm-run.md)); vLLM installed from its official
     container image; a gateway load test at 1-256 concurrent streams, the evidence any Rust
     rewrite would need first.
+  - **Designed from the first setups pass:** [speculative decoding and MTP](speculative-decoding.md),
+    calls S1-S5 waiting for Troy. Four of 17 setups run it.
   - Job Sites slice 3, cross-site copy, stays deferred (Troy, 2026-10-13).
 - **Built since the v0.2.0 release:** A10, the website overhaul (2026-10-13); v0.2.1 to v0.2.3
   (2026-10-14 to 10-16); interactive content in Workbench, G1-G5
