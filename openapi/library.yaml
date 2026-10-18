@@ -2329,6 +2329,7 @@ components:
         - weights
         - shard
         - projector
+        - draft
         - config
         - tokenizer
         - index
@@ -2340,6 +2341,10 @@ components:
         * `shard` — the second through Nth part of a split model.
         * `projector` — a vision projector (`general.type: mmproj`),
           which is why it is a role here and not a model of its own.
+        * `draft` — a speculative-decoding companion beside a GGUF model
+          (`GgufSpeculation.draftFiles`): a separate MTP head or a small
+          draft model. Like a projector, it belongs to the model beside
+          it, and several quants of one model can share it.
         * `config` / `tokenizer` / `index` — safetensors sidecars.
         * `other` — present in the model's directory, counted in
           `sizeBytes`, not classified.
@@ -2420,6 +2425,8 @@ components:
             llama-server can also find it unaided, but it is reported
             because "this model can see" is a fact the browser should
             show and a profile should be able to override.
+        speculation:
+          $ref: '#/components/schemas/GgufSpeculation'
         recommendedSampling:
           $ref: '#/components/schemas/RecommendedSampling'
         metadata:
@@ -2431,6 +2438,65 @@ components:
             keys grow with upstream, and a reader that only ever exposes
             the fields it was written to understand goes blind on every
             model newer than itself.
+
+    GgufSpeculation:
+      type: object
+      required: [mtpHead, draftFiles]
+      description: |
+        What this model can draft with when it runs with speculative
+        decoding (docs/design/speculative-decoding.md, SD1). Read from
+        the tensor table, by llama.cpp's own rule (b11719,
+        `common_speculative_types_from_gguf`): a file carries an MTP head
+        when it has `blk.<block_count-1>.nextn.eh_proj.weight`.
+
+        Absent on an entry scanned before SD1, which a rescan fills in.
+      properties:
+        mtpHead:
+          type: boolean
+          description: |
+            The model carries its own multi-token prediction head in this
+            file, beside every other block. Its profile can then draft
+            with "Model's own prediction head" (`--spec-type draft-mtp`
+            with no draft file), which runs on the main weights and costs
+            only a small context.
+
+            `<arch>.nextn_predict_layers` is not enough on its own: a
+            separate MTP file (ggml-org's `mtp-*.gguf`) declares it too,
+            and holds only the last block.
+        draftFiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/DraftFile'
+          description: |
+            Companion files in this model's folder that it can draft
+            with (`--spec-draft-model`). Also listed in `files` with the
+            role `draft`, and skipped as models with the reason `draft`.
+            Empty when there are none.
+
+    DraftFile:
+      type: object
+      required: [path, kind]
+      properties:
+        path:
+          type: string
+          description: Absolute path, in the same folder as the model.
+        kind:
+          $ref: '#/components/schemas/DraftKind'
+        sizeBytes:
+          type: [integer, "null"]
+          minimum: 0
+
+    DraftKind:
+      type: string
+      enum: [mtp, simple]
+      description: |
+        How llama.cpp drafts with a companion file, read from the file
+        itself:
+
+        * `mtp` — a separate MTP head: the `nextn` tensors of the last
+          block and no first block (`--spec-type draft-mtp`).
+        * `simple` — a whole small model named as a draft (`draft-*.gguf`)
+          (`--spec-type draft-simple`).
 
     SafetensorsDetail:
       type: object
@@ -3142,6 +3208,7 @@ components:
       type: string
       enum:
         - projector
+        - draft
         - shard_member
         - adapter
         - older_revision
@@ -3156,6 +3223,10 @@ components:
         * `projector` — a vision projector (`general.type: mmproj`),
           which belongs to the model beside it. Nearly a gigabyte each
           on current models, so getting this wrong is visible.
+        * `draft` — a speculative-decoding companion (`DraftFile`) that
+          belongs to the model beside it: a separate MTP head, which
+          holds only the last block and cannot run alone, or a small
+          model named as a draft.
         * `shard_member` — part 2..N of a split model, accounted for on
           the entry that owns part 1.
         * `adapter` — a LoRA or similar (`adapter_config.json` plus
