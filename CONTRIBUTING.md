@@ -182,10 +182,19 @@ that acceptance run's checkouts; they do not modify the installers or a release.
 
 ## Reporting issues
 
-File issues at [github.com/eugene-plexus/specs/issues](https://github.com/eugene-plexus/specs/issues). Useful issues include:
+**Security problems:** report them privately, as [SECURITY.md](https://github.com/eugene-plexus/.github/blob/main/SECURITY.md)
+describes. Don't open a public issue.
+
+Users report every bug and question here, through the
+[issue forms](https://github.com/eugene-plexus/specs/issues/new/choose), whichever
+component is at fault. A maintainer transfers each one to the repo that owns the
+fix. Issue forms in the component repos point here.
+
+Useful contract issues include:
 
 - Concrete schema mismatches between repos.
 - Ambiguous or under-specified endpoints causing implementation drift.
 - Proposals for new endpoints, with a use case described.
 
-Cross-component architecture questions belong in [specs issues](https://github.com/eugene-plexus/specs/issues), next to the design documents. Component-specific bugs belong in the owning repo.
+Cross-component architecture questions belong in [specs issues](https://github.com/eugene-plexus/specs/issues), next to the design documents. Maintainers file component bugs they find
+themselves directly in the owning repo.

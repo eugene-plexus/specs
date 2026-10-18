@@ -132,7 +132,7 @@ and the [offline removal guide](docs/deployment/uninstall.md).
 
 ## Help and documentation
 
-- [Report a problem or ask a question](https://github.com/eugene-plexus/specs/issues/new):
+- [Report a problem or ask a question](https://github.com/eugene-plexus/specs/issues/new/choose):
   include your Eugene version, OS, GPU/RAM, what you tried and the error text.
   Remove credentials and private content from logs or screenshots.
 - [Application setup guides](https://eugeneplexus.com/guides/) and

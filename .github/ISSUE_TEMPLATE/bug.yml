@@ -1,0 +1,102 @@
+name: Report a problem
+description: Something in Eugene Plexus is broken or does the wrong thing.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. You don't need to know which part of Eugene is at fault; we'll move the issue to the right place.
+
+        **Security problem?** Please [report it privately](https://github.com/eugene-plexus/specs/security/advisories/new) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you were doing, what went wrong, and any error text you saw.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Library
+        2. Download ...
+        3. ...
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Eugene Plexus version
+      description: The Nodes page shows each machine's version.
+      placeholder: v0.2.2
+    validations:
+      required: true
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Update channel
+      description: Settings → Updates.
+      options:
+        - Releases
+        - Edge
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Container (Docker, Unraid, ...)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: GPU and RAM
+      placeholder: RTX 4070 12 GB, 32 GB RAM
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where it happened
+      options:
+        - Installing, updating or removing
+        - The console (web UI)
+        - Workbench
+        - Models, downloads or the Library
+        - Running a model, or its settings
+        - The API endpoint from another app
+        - Signing in or people
+        - Several machines or Job Sites
+        - Not sure
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The Logs page shows them. Paste the lines around the error.
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you post
+      options:
+        - label: I removed passphrases, API keys, private paths and prompts from what I pasted.
+          required: true
