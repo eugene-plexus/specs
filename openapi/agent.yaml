@@ -256,6 +256,14 @@ tags:
       of its own, so every child it spawns inherits the access without
       knowing the credential exists.
 
+      Host history (`docs/design/host-history.md`): `hostHistoryEnabled`
+      (default on), `hostHistorySampleSeconds` (default 10),
+      `hostHistoryRawHours` (6), `hostHistoryMinuteDays` (7) and
+      `hostHistoryHourDays` (90). Per node, because each agent records its
+      own host. Turning recording off deletes nothing;
+      `DELETE /v1/node/history` does. Each retention field's status line
+      gives the store's size on disk.
+
       Topology lives under `/v1/components`, not here, so editing UI
       prefs can never accidentally restructure the install.
       `GET /v1/directories` is the picker behind every path field on
@@ -2831,6 +2839,110 @@ paths:
         "409":
           $ref: "components/common.yaml#/components/responses/Problem"
 
+  /v1/node/history:
+    get:
+      tags: [node]
+      operationId: getNodeHistory
+      summary: What this host's hardware did over a window.
+      description: |
+        Host history (`docs/design/host-history.md`, H1-H6 taken
+        2026-10-18). Each agent records **its own host**: a sampler every
+        `hostHistorySampleSeconds` writes one row to a SQLite file in the
+        agent's state directory and rolls rows up into minute and hour
+        buckets (min, mean and max per series). A single-machine install
+        has history with no control root, a node that loses the root keeps
+        recording, and the replicated log never carries time series. The
+        console reads every node through the agent's proxy
+        (`/api/proxy/node:<name>/v1/node/history`), so a fleet view is one
+        screen.
+
+        **Resolution.** `raw` buckets are single samples, `minute` and
+        `hour` are rollups. With `step=auto` the agent picks the finest
+        resolution whose retention still covers `from` and that gives at
+        most 1,500 buckets over the window. A named `step` is honoured, and
+        a window that would need more than 5,000 buckets at it is refused.
+
+        **The timeline is explicit.** `buckets` lists every bucket in the
+        window, including the empty ones, with how many samples it holds
+        and how many it should have held. A bucket with no samples is a
+        gap (the agent was stopped, the machine slept); one with fewer than
+        expected is partial. Every series carries `min`, `mean` and `max`
+        arrays aligned with `buckets`, `null` where the bucket had no
+        reading of that series.
+
+        **`null` is not 0.** A series this host cannot read is present with
+        `unavailable` saying why (no NVIDIA driver, a platform that does not
+        publish the counter) and every value `null`, so a screen can say
+        "not reported" and the reason. A series that read once and then
+        failed shows `null` from that point, not a flat zero.
+
+        Reading history works with recording off (`enabled: false`): what
+        was recorded is kept until `DELETE /v1/node/history`.
+
+        Operator or service token, as `GET /v1/node`.
+      parameters:
+        - name: from
+          in: query
+          description: Start of the window, inclusive. Defaults to one hour before `to`.
+          schema: {type: string, format: date-time}
+        - name: to
+          in: query
+          description: End of the window, exclusive. Defaults to now.
+          schema: {type: string, format: date-time}
+        - name: step
+          in: query
+          description: The resolution. `auto` (default) chooses as above.
+          schema:
+            $ref: "#/components/schemas/HostHistoryStepChoice"
+        - name: metric
+          in: query
+          description: |
+            Restrict the series to these metrics; repeat the parameter for
+            several. Absent means every metric. The fleet row asks for the
+            four GPU series it draws and nothing else.
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/HostMetric"
+      responses:
+        "200":
+          description: The window.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HostHistory"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          description: |
+            The store could not be opened; the problem's detail names the
+            observed cause. Distinct from an empty window, which is a 200
+            whose buckets hold no samples.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+    delete:
+      tags: [node]
+      operationId: deleteNodeHistory
+      summary: Delete everything this host has recorded.
+      description: |
+        Empties the store. Turning `hostHistoryEnabled` off stops
+        recording and deletes nothing; this is the one call that deletes,
+        and recording (if on) starts again from empty at the next sample.
+        Operator session only.
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
   /v1/node/trust-bundle:
     post:
       tags: [node]
@@ -3976,6 +4088,187 @@ components:
           type: string
           format: uri
           description: The active root it follows, this node's `controlUrl`.
+
+    HostHistoryStep:
+      type: string
+      enum: [raw, minute, hour]
+      description: |
+        A resolution of host history: single samples, or minute or hour
+        rollups. Each is kept for its own retention
+        (`hostHistoryRawHours`, `hostHistoryMinuteDays`,
+        `hostHistoryHourDays`).
+
+    HostHistoryStepChoice:
+      type: string
+      enum: [auto, raw, minute, hour]
+      default: auto
+      description: A resolution to ask for, or `auto` to let the agent choose.
+
+    HostMetric:
+      type: string
+      enum:
+        - gpuMemoryUsed
+        - gpuMemoryTotal
+        - gpuMemoryEugene
+        - gpuUtilization
+        - gpuTemperature
+        - gpuPower
+        - cpuUtilization
+        - ramUsed
+        - ramTotal
+        - swapUsed
+        - swapTotal
+        - diskFree
+        - diskTotal
+        - runtimesRunning
+        - runtimesLoading
+      description: |
+        What a host-history series measures.
+
+        * `gpuMemoryUsed` is every process's use of the card, system-wide.
+          `gpuMemoryEugene` is the part of it held by this agent's own
+          runtimes (their process trees), measured per process, not
+          estimated from a reservation; the rest is everything else on
+          the machine.
+        * `gpuUtilization` is the busiest engine's percentage, the figure
+          Task Manager shows. `gpuTemperature` is the core temperature,
+          `gpuPower` the board's draw.
+        * `diskFree` and `diskTotal` are per volume, for each volume that
+          holds a model folder, the model-copy folder or the engine folder.
+        * `runtimesRunning` counts this agent's runtimes that are ready;
+          `runtimesLoading` those copying, starting or loading.
+
+    HostUnit:
+      type: string
+      enum: [bytes, percent, celsius, watts, count]
+
+    HostBucket:
+      type: object
+      description: One bucket on the window's timeline.
+      required: [start, samples, expectedSamples]
+      properties:
+        start:
+          type: string
+          format: date-time
+        samples:
+          type: integer
+          minimum: 0
+          description: |
+            Samples recorded in this bucket. 0 is a gap: nothing was
+            recording.
+        expectedSamples:
+          type: integer
+          minimum: 1
+          description: |
+            How many the sample interval in force would have produced.
+            Fewer than this is a partial bucket: a missed sample, or the
+            start or end of a gap.
+
+    HostSeries:
+      type: object
+      description: |
+        One measured quantity over the window. `min`, `mean` and `max`
+        have one entry per `HostHistory.buckets` entry, `null` where that
+        bucket holds no reading of this series. For `raw` buckets the three
+        are the same reading.
+      required: [key, metric, unit, label, min, mean, max]
+      properties:
+        key:
+          type: string
+          description: |
+            Stable across the window and across requests: `gpu:<kind>:<index>`
+            plus the metric for a GPU series, `disk:<volume>` plus the metric
+            for a disk series, the metric alone for the rest.
+        metric:
+          $ref: "#/components/schemas/HostMetric"
+        unit:
+          $ref: "#/components/schemas/HostUnit"
+        label:
+          type: string
+          description: What to call it on a screen, e.g. `NVIDIA GeForce RTX 5090 memory used`.
+        deviceKind:
+          $ref: "components/common.yaml#/components/schemas/ComputeDeviceKind"
+        deviceIndex:
+          type: integer
+          description: The device's `ComputeDevice.index` in `GET /v1/node`, for a GPU series.
+        deviceName:
+          type: string
+        volume:
+          type: string
+          description: The volume's mount point or drive, for a disk series.
+        holds:
+          type: array
+          items: {type: string}
+          description: |
+            For a disk series, the folders on that volume it is measured
+            for: model folders, the model-copy folder, the engine folder.
+        unavailable:
+          type: string
+          description: |
+            Why this host does not report this series, when it does not;
+            every value is then `null`. Absent when it reports.
+        latest:
+          type: number
+          description: The newest reading, whatever the window. Absent when there is none.
+        min:
+          type: array
+          items: {type: [number, "null"]}
+        mean:
+          type: array
+          items: {type: [number, "null"]}
+        max:
+          type: array
+          items: {type: [number, "null"]}
+
+    HostHistory:
+      type: object
+      description: What this host's hardware did over a window (`GET /v1/node/history`).
+      required: [enabled, sampleSeconds, step, stepSeconds, from, to, truncated, buckets, series]
+      properties:
+        enabled:
+          type: boolean
+          description: Whether this agent is recording now (`hostHistoryEnabled`).
+        sampleSeconds:
+          type: integer
+          description: The sample interval in force (`hostHistorySampleSeconds`).
+        step:
+          $ref: "#/components/schemas/HostHistoryStep"
+        stepSeconds:
+          type: integer
+        from:
+          type: string
+          format: date-time
+          description: The window's start, aligned down to the step.
+        to:
+          type: string
+          format: date-time
+          description: The window's end, exclusive.
+        recordingSince:
+          type: string
+          format: date-time
+          description: |
+            The oldest bucket kept at this resolution. Absent when nothing
+            is recorded.
+        truncated:
+          type: boolean
+          description: |
+            True when `from` is older than this resolution's retention, so
+            the start of the window is gone rather than empty.
+        latestAt:
+          type: string
+          format: date-time
+          description: When the newest sample was taken. Absent when there is none.
+        storeBytes:
+          type: integer
+          description: The store's size on disk.
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostBucket"
+        series:
+          type: array
+          items:
+            $ref: "#/components/schemas/HostSeries"
 
     NodeIdentity:
       type: object

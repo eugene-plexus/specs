@@ -1,7 +1,8 @@
 # Host history
 
-**Status: designed 2026-10-18, waiting on Troy's calls H1-H6.** Nothing is
-built and no contract has changed.
+**Status: calls H1-H6 taken 2026-10-18 (Troy took every recommendation);
+building.** Contract: `GET`/`DELETE /v1/node/history` and the `HostHistory`
+schemas in `agent.yaml`.
 
 The second half of the sysadmin dashboards (memory `project_admin_dashboards`;
 [audience roadmap](audience-roadmap.md), "Owed, small"). The gateway half is
@@ -89,7 +90,31 @@ upgrades to this.
 | H5 | The screen | **A Hosts page beside Gateway metrics**, fleet first, then one machine. Or: a History section on each node's existing page |
 | H6 | On by default? | **On.** The cost is a few probe calls every 10 s and a few megabytes (both to measure before it ships), and history is only useful when it was already recording before something went wrong |
 
-## Build order once the calls are taken
+## Calls taken (Troy, 2026-10-18)
+
+All six recommendations: H1 each agent records its own host; H2 every reading,
+`null` with a reason where unreadable; H3 6 h raw, 7 d minutes, 90 d hours; H4
+`GET /v1/node/history` plus the `hostHistory*` settings; H5 a Hosts page
+beside Gateway metrics; H6 on by default once measured.
+
+## What building found
+
+- **The sampler's cost on this box** (RTX 5090 beside the AMD integrated GPU,
+  Windows 11, 2026-10-18): one full sample (PDH `GPU Engine` utilization over
+  789 instances, `GPU Process Memory`, `GPU Adapter Memory`, NVML
+  utilization/temperature/power/memory, psutil CPU/RAM/swap/two disks) took
+  1.4 ms of wall time and 1.6 ms of CPU, 0.016% of one core at one sample
+  per 10 s. NVML's first load took 10 ms. On by default stands.
+- **Eugene's share is measured per process, not taken from the admission
+  ledger.** The ledger only holds reservations for launches that have not
+  taken their memory yet (`reservations.py`); a ready runtime is not in it.
+  The share is the sum of the runtimes' process trees' memory on each card:
+  the `GPU Process Memory` counters on Windows (every vendor), NVML's process
+  lists on Linux NVIDIA, `fdinfo` on amdgpu.
+- **`DELETE /v1/node/history`** was added: "turning it off deletes nothing
+  until asked" needed a way to ask.
+
+## Build order
 
 1. Contract (H4).
 2. Agent: sampler and probes, store and rollups, endpoint, settings, with
