@@ -466,7 +466,7 @@ def wait_for_edge(commit: str, minutes: float) -> int:
             print(
                 f"Edge is at {edge[:7]}, which includes {commit[:7]} ({took:.0f} min)."
             )
-            print("On an install: Settings -> Updates -> Check now, then Update.")
+            print("On an install: Nodes -> the node's update card -> Check now, then Update.")
             return 0
         for workflow in ("ci.yml", "container.yml"):
             runs = gh_json(
