@@ -1,11 +1,26 @@
 # Audience roadmap
 
-**Status: the order of work from 2026-09-30.**
-- **▶ NEXT, RIGHT AFTER THE v0.2.0 RELEASE: A10, THE WEBSITE OVERHAUL** (Troy, 2026-10-13). It
-  needs full descriptions of the new features, new screenshots, and updated install pages and
-  how-tos. Then the memory roadmap, MR8 and MR9
-  ([design](workbench-memory-and-documents.md)). Job Sites slice 3, cross-site copy, is deferred
-  past v0.2.0 (Troy, 2026-10-13).
+**Status: the order of work from 2026-09-30, brought up to date 2026-10-18.**
+- **▶ ON HOLD FOR TROY'S SETUPS REVIEW (2026-10-18).** Troy is compiling the local-AI setups
+  people describe on Reddit into one document. Reviewing it sorts them into setups Eugene serves
+  easily, ones that are hard or manual, and ones it can't serve, and that may re-order this list
+  toward businesses. Until then:
+  - **Owed, small:** the session-start issue check
+    ([intake](../../CONTRIBUTING.md#reporting-issues)); MR6b's live run; the host-history half
+    of the sysadmin dashboards (the gateway half is built).
+  - **Next by this roadmap:** MR8, memory suggestions after a measurement harness, then MR9,
+    MCP and the Anthropic door ([design](workbench-memory-and-documents.md)).
+  - **Business candidates, not scheduled:** a live vLLM run on current Edge (the last was
+    2026-09-10, [record](../acceptance/m4-vllm-run.md)); vLLM installed from its official
+    container image; a gateway load test at 1-256 concurrent streams, the evidence any Rust
+    rewrite would need first.
+  - Job Sites slice 3, cross-site copy, stays deferred (Troy, 2026-10-13).
+- **Built since the v0.2.0 release:** A10, the website overhaul (2026-10-13); v0.2.1 to v0.2.3
+  (2026-10-14 to 10-16); interactive content in Workbench, G1-G5
+  ([contract](workbench-ui-browser-v1.md)); the
+  [gateway operations dashboard](gateway-operations-dashboard.md); the
+  [engine overview](engine-overview-layout.md); the People directory, external sign-in and
+  shared accounts ([design](shared-accounts-and-sso.md)); Strata image preparation, experimental.
 - **A9, JOB SITES: SLICES 1, 2 AND 2b.1-2b.4 WITH J14a AND J14b ARE BUILT
   (2026-10-08, [the last record](../acceptance/j14b-signed-calls-run.md)).**
   Each person's calls run as their own account, are signed with their own key,
@@ -214,8 +229,9 @@ first:**
 | **A7** | **The prompt cache: keep each engine's cache warm across doors, replicas and hosted backends** | [`prompt-cache.md`](prompt-cache.md) ([record](../acceptance/prompt-cache-measurement.md)) | **Troy, 2026-10-02: high priority before going public** (*"at the core of what Eugene is: managing multiple backends efficiently"*). Measured the same day; **PC1-PC5 built and pinned 2026-10-02** (Troy took the four calls: PC1-PC5 before public, affinity the default, the system-message fold an operator setting, client breakpoints only). PC6-PC7 after the release |
 | **A8** | **Experimental engines, starting with Strata** | [`experimental-engines.md`](experimental-engines.md), [`strata-engine.md`](strata-engine.md) | **First Strata implementation on Edge 2026-10-04.** Recognition, install/uninstall, start/stop, model switching and text inference; [verification](../acceptance/strata-engine-run.md). Real-model GPU validation remains. The experimental label persists after hardware validation. NInfer and imp are subsequent candidates. |
 | **A9** | **Job Sites, slice 1: Workbench's four file tools on a person's machines outside the LAN, with the new access model** | [`remote-nodes.md`](remote-nodes.md) §5 (every call, J1-J18, taken 2026-10-05) | **Built 2026-10-05** ([record](../acceptance/job-sites-run.md): 17 of 17 with the root behind WSL2's NAT, sabotage 45 of 45). Slice 2, 2b.1-2b.4, J14a and J14b built by 2026-10-08 ([J14b record](../acceptance/j14b-signed-calls-run.md)). Slice 3 (cross-site copy) designed 2026-10-08, calls J92-J99 for Troy ([design](job-sites-cross-site-copy.md)) |
-| **A10** | **Website overhaul after v0.2.0**: every new feature described in full, new screenshots, updated install instructions and how-tos | deployed 2026-10-13 ([plan and findings](a10-website-overhaul.md)) | **Troy, 2026-10-13: right after the v0.2.0 release.** The website deploys by manual `workflow_dispatch` |
-| selected 2026-10-15 | AWS-style dashboards for system administrators, fleet and host telemetry over time | [Gateway dashboard built](gateway-operations-dashboard.md); host history remains separate | Troy selected Gateway Metrics after the engine overview; includes operations panels and varied dials |
+| **A10** | **Website overhaul after v0.2.0**: every new feature described in full, new screenshots, updated install instructions and how-tos | deployed 2026-10-13 ([plan and findings](a10-website-overhaul.md)) | **Built.** The website deploys by manual `workflow_dispatch` |
+| selected 2026-10-15 | AWS-style dashboards for system administrators, fleet and host telemetry over time | [Gateway dashboard built](gateway-operations-dashboard.md); host history remains separate | Troy selected Gateway Metrics after the engine overview; includes operations panels and varied dials. **Host history is owed** |
+| next | MR8, then MR9 | [`workbench-memory-and-documents.md`](workbench-memory-and-documents.md) | MR8: harness, suggestions inbox, relevance, expiry (1.5 to 2 sessions). MR6b's live run is owed first. Order may change after Troy's setups review |
 
 ## Not scheduled without Troy
 
