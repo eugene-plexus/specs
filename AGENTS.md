@@ -8,7 +8,8 @@ the release pins.
 
 1. Run the tests for the files you changed, from that repository's own
    `.venv` (`.venv/Scripts/python -m pytest tests/test_x.py`), plus `ruff`.
-   Not the full suite: CI runs it after the push.
+   Not the full suite: CI runs it after the push. When a full suite is
+   needed, run it in parallel (`-n auto`; Workbench takes about a minute).
 2. Commit in each repository on `main` with `git commit -s`.
 3. From this repository: `python scripts/ship.py --wait`.
 
