@@ -43,3 +43,18 @@ peak), and a companion's file.
 identical): `tests/test_speculation.py::test_a_companion_must_sit_beside_its_model`
 failed, alone, 1 of 67 across `test_speculation.py` and `test_runtimes.py`; 67 of
 67 again after the restore.
+
+## Rerun with the companion fetched through Discover (library#13, 2026-10-18)
+
+`--from-discover`, from the agent's venv on its own ports with every
+`EUGENE_PLEXUS_*` cleared, library 22ee70d, agent 8920021, b11719. The Library
+got hard links to the two models without the MTP file, and fetched it the way
+Discover does. 10 of 10:
+
+| Check | Result |
+| --- | --- |
+| D1 the catalogue offers the MTP files as companions, not DFlash as versions, and says where the owned 27B sits | PASS: companions BF16, Q4_0, Q8_0; versions Q4_K_M, Q8_0, BF16; `root` and `folder` `ggml-org/Qwen3.6-27B-GGUF` |
+| D2 the companion downloads alone into the 27B's folder | PASS: `mtp-Qwen3.6-27B-Q4_0.gguf` beside the model |
+| S1-S6 | PASS, the same counts as above: S3 931/248, S4 1,161/394, S5 1,198/370; S6 9.47 ≥ 7.72 GiB and 24.35 ≥ 23.39 GiB |
+
+Decode: default 265.8 tok/s, own head 318.8, companion 140.7.
