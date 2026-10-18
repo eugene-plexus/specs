@@ -1,9 +1,11 @@
 # Audience roadmap
 
 **Status: the order of work from 2026-09-30, brought up to date 2026-10-18.**
-- **▶ NEXT: SD1, [speculative decoding](speculative-decoding.md) for llama.cpp** (Troy,
-  2026-10-18). It came from two audience passes on 2026-10-18: 17 setups from r/LocalAIServers
-  (four run MTP), then YouTube benchmark creators. The rest of this list, in order:
+- **Built 2026-10-18: SD1, [speculative decoding](speculative-decoding.md) for llama.cpp**
+  ([record](../acceptance/sd1-speculative-decoding.md)). It came from two audience passes on
+  2026-10-18: 17 setups from r/LocalAIServers (four run MTP), then YouTube benchmark creators.
+  SD2 (vLLM) is designed, not scheduled; Discover offering MTP files is library#13. Next, in
+  order:
   - **Owed, small:** the session-start issue check
     ([intake](../../CONTRIBUTING.md#reporting-issues)); MR6b's live run; the host-history half
     of the sysadmin dashboards (the gateway half is built).

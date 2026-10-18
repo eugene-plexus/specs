@@ -1,6 +1,6 @@
 # Speculative decoding and MTP
 
-**Status: designed 2026-10-18; Troy took S1-S5 the same day.** Nothing is built; SD1 is ready to build.
+**Status: designed 2026-10-18; Troy took S1-S5 the same day. SD1 built 2026-10-18** (see "What building SD1 found"). SD2 is not built.
 
 ## Why
 
@@ -87,6 +87,78 @@ Read off upstream source. llama.cpp at **b11719** (2026-10-18), vLLM at
    measures tok/s both ways on this machine and keeps the faster one (S1).
    "Reuse repeated text" is not a trial dimension: its benefit depends on the
    person's own work, which a benchmark prompt can't stand in for.
+
+### What building SD1 found
+
+- **`nextn_predict_layers` does not tell a model with a head from a separate
+  head.** ggml-org's `mtp-Qwen3.6-27B-Q4_0.gguf` declares
+  `qwen35.nextn_predict_layers 1` and `block_count 65`, like a model, but
+  holds 18 tensors: block 64 and the embeddings. The Library and the agent
+  both use llama.cpp's own test instead
+  (`common_speculative_types_from_gguf`): the last block has
+  `nextn.eh_proj.weight`. With `blk.0.` as well, it is a model with its own
+  head (`mtpHead`); without, it is a companion (`DraftKind.mtp`). The Strata
+  `mtp-q2_0.gguf` has neither and stays as it was. A whole model counts as a
+  companion only when it is named `draft-*`.
+- **A companion pairs with every quant in its folder** of the same
+  architecture and vocabulary size, since ggml-org ships one MTP file per
+  repository. It is re-paired on every scan, because downloading it leaves
+  the model's own file, and so its cache entry, unchanged. Its bytes are in
+  `sizeBytes` but not in a fit's weights, like a projector's.
+- **`--spec-type` appends.** A second one in `extraArgs` would be combined
+  with ours, not replace it, so "extraArgs wins" means generating nothing
+  when `extraArgs` or `env` sets any speculation flag.
+- **The order is llama.cpp's.** `common_speculative_init` tries n-gram types
+  before model drafts whatever order `--spec-type` lists them in.
+- **The default must not break an older build.** llama-server exits on an
+  argument it does not know. The adapter reads the build's `--help` (cached
+  per binary, like `--load-mode`) and passes only the types it lists. A build
+  whose help cannot be read gets no default; a way of drafting someone chose
+  is still passed. What is left out is said on the run
+  (`RuntimeSpeculation.note`).
+- **The counters need `--metrics`.** llama-server's `/metrics` is off by
+  default, so the adapter adds `--metrics` to any command line that
+  speculates, `extraArgs` included. The agent reads the two counters every
+  10 seconds while the runtime is ready, keyed to the process so a restart
+  starts from zero.
+- **Reusing repeated text is not free on these models:** 163-183 MiB of GPU
+  memory on both Qwen3.5/3.6 runs (S4). Admission counts 256 MiB for it on
+  every llama.cpp launch that does not turn it off.
+- **llama-bench cannot speculate,** so the builder's "Draft with" trials run
+  in llama-server, after `confirming`, on the confirmed candidate only, with
+  "Reuse repeated text" off (a new phase, `drafting`). Each trial is one fixed
+  384-token generation at the model's own sampling defaults. A way of
+  drafting must beat Off by more than 3% to be saved.
+- **The built profile's recorded speeds are still llama-bench's,** without
+  drafting. `ProfileBuiltBy` gained nothing; the trials are on the build.
+- **Not built:** Discover does not offer an `mtp-*.gguf` to download beside
+  the model yet, so "Companion file" appears only for a file someone put
+  there (library#13).
+
+### Measured on the 5090 (S4, 2026-10-18)
+
+llama-server b11719, CUDA 13.4, `-c 32768`, slots automatic, f16 cache,
+thinking off, seed 7, 512 tokens. "Prose" asks for an explanation and a short
+class; "edit" asks for a 50-line file back with type hints added.
+`docs/acceptance/sd1-speculative-decoding.md` has the run through the agent.
+
+| Model | Drafting | GPU over none | Prose tok/s | Edit tok/s | Kept (prose, edit) |
+| --- | --- | --- | --- | --- | --- |
+| Qwen3.5-9B Q4_K_M (own head) | none | (6,730 MiB) | 211.5 | 213.1 | |
+| | repeated text | +169 MiB | 210.3 | 249.3 | -, 36% |
+| | own head | +961 MiB | 277.4 | 372.8 | 62%, 95% |
+| | both | +1,170 MiB | 281.4 | 367.6 | 62%, 55% |
+| Qwen3.6-27B Q4_K_M + ggml-org MTP Q4_0 | none | (20,838 MiB) | 70.0 | 69.7 | |
+| | repeated text | +163 MiB | 69.1 | 87.4 | -, 36% |
+| | companion | +2,979 MiB | 149.2 | 190.7 | 68%, 95% |
+| | both | +3,129 MiB | 149.7 | 180.9 | 68%, 56% |
+
+With both on, an edit ran slower than with the model's head alone (367.6
+against 372.8 on the 9B, 180.9 against 190.7 on the 27B): it drafted about
+400 tokens and kept about 230, where the head alone drafted about 220 and kept
+almost all. On its own, reusing repeated text made the same edit 17-25%
+faster. S3 keeps it on everywhere with no recommendation; the run shows the
+rate, and this is one prompt each.
 
 ### Slice SD2, vLLM
 
