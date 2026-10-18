@@ -71,14 +71,12 @@ The agent reads all six from its own venv, as text rather than by importing.
 
 ### 1.2 Two channels: `edge` and `releases`
 
-- **`edge`** (Troy: the name the container already uses) is the head of
-  `main`, gated. It is the newest `main` commit on which every workflow that
-  ran succeeded, CI among them.
-
-  The container workflow runs only when the image's inputs change, so a
-  commit it did not run for changed nothing in the image. This is the commit
-  the `:edge` image was built from, so a native install is never offered an
-  update the container was not given.
+- **`edge`** (Troy: the name the container already uses) is the commit named by
+  the published `edge` branch. A publisher checks named CI/runtime gates and an
+  input-identical verified container digest, retags that image and then
+  fast-forwards the marker. Agents read that marker rather than interpreting
+  workflow history. See the [current gates and rollout order](../maintenance/testing-and-release.md).
+  Older agents retain the previous all-push-workflows reader until upgraded.
 - **`releases`** is the newest published release, prereleases included. It is
   read from the release's own `manifest.json`, and the installer is checked
   against the checksums that manifest publishes.
@@ -119,14 +117,14 @@ and the final channel check must still name that ref. The confirmation says
 it uses the newest version on the machine's channel; a caller cannot supply
 an arbitrary version or installer URL.
 
-| Install | Started as | Runs |
-| --- | --- | --- |
-| Windows service | one-shot scheduled task, **as SYSTEM** | `install.ps1 -Update` |
-| Windows per-user | one-shot scheduled task, as the person | `install.ps1 -NoService -Update` |
-| Linux per-user | `systemd-run --user` transient unit | `install.sh --user --update` |
-| Linux system | a request file; root's `eugene-plexus-update.path` | `install.sh --update`, by a root helper |
-| container | refused, with the steps (§1.5) | — |
-| macOS, or nothing starts it | refused, with the installer command | — |
+| Install                     | Started as                                         | Runs                                    |
+| --------------------------- | -------------------------------------------------- | --------------------------------------- |
+| Windows service             | one-shot scheduled task, **as SYSTEM**             | `install.ps1 -Update`                   |
+| Windows per-user            | one-shot scheduled task, as the person             | `install.ps1 -NoService -Update`        |
+| Linux per-user              | `systemd-run --user` transient unit                | `install.sh --user --update`            |
+| Linux system                | a request file; root's `eugene-plexus-update.path` | `install.sh --update`, by a root helper |
+| container                   | refused, with the steps (§1.5)                     | —                                       |
+| macOS, or nothing starts it | refused, with the installer command                | —                                       |
 
 On Windows the task runs PowerShell from Windows itself, never Python from the
 install: the installer stops every process running from inside the install
@@ -235,12 +233,12 @@ the agent's refusal to downgrade still apply.
 
 ## 2. The calls (all taken as recommended, Troy 2026-09-27)
 
-| # | Question | Taken |
-| --- | --- | --- |
-| 1 | What does "update" install? | The newest on the node's own channel. |
-| 2 | Linux system installs | A root oneshot unit plus a path trigger, set up by the installer. |
-| 3 | Apply automatically? | Not now: check automatically, apply on a click. |
-| 4 | Machines on different versions | Warn, do not block. |
+| #   | Question                       | Taken                                                             |
+| --- | ------------------------------ | ----------------------------------------------------------------- |
+| 1   | What does "update" install?    | The newest on the node's own channel.                             |
+| 2   | Linux system installs          | A root oneshot unit plus a path trigger, set up by the installer. |
+| 3   | Apply automatically?           | Not now: check automatically, apply on a click.                   |
+| 4   | Machines on different versions | Warn, do not block.                                               |
 
 ---
 
@@ -298,7 +296,14 @@ exactly one update per machine and app. No host installer runs in this fixture.
 
 ---
 
-## 6. Edge as a published marker (BANKED 2026-10-07 by Troy: a sketch for later, not started; the calls below were never put)
+## 6. Original marker sketch (historical, superseded 2026-10-17)
+
+The testing/release audit approved the published-marker direction with explicit
+Edge gates and input-based evidence reuse, replacing the sketch's unchanged
+"every workflow" rule. The implementation and activation sequence are specified
+in the [testing and release runbook](../maintenance/testing-and-release.md).
+The original proposal below records the earlier alternatives, not the current
+gate list, image-tag format or test obligations.
 
 **Why.** On 2026-10-07 every node named `d8975ed` (2026-09-28) as edge, read
 itself as newer and offered nothing: each node computes edge from GitHub's run
@@ -350,14 +355,14 @@ make edge a fact published once, not a computation done everywhere.
 
 **The calls.**
 
-| # | Question | Recommended | Against it |
-| --- | --- | --- | --- |
-| 5 | What is the marker? | A branch `edge`, fast-forward only, guarded by a ruleset. Forward-only is enforced by the server, not by the workflow's care. | A force-moved tag `edge` reads as a version and breaks git's "tags do not move" (a clone that fetched it keeps the old one). A JSON file needs a commit or a Pages deploy per move and a third thing to keep consistent. The branch shows GitHub's "recent pushes" banner. |
-| 6 | Does the image move with the marker? | Yes: `:edge` is retagged by `edge.yml`, so an Unraid pull never gets an image whose CI failed, and the container's Versions card agrees with every native node exactly. | Today `:edge` moves when the image's own checks pass; it can be ahead of native edge (`88699c7`: image pushed, CI cancelled). Changing it touches the container workflow. |
-| 7 | When the marker cannot be read | Nothing is offered, and the check says why ("the edge marker is missing"). No fallback computation: one source of truth. | A fallback to `44c9391`'s computation keeps working through a GitHub outage of one endpoint, at the cost of two answers that can disagree, which is what failed. |
-| 8 | Older agents | Nothing beyond `44c9391` (already pinned): each reads the marker after its next update. Four machines exist. | The console could flag a node whose reported edge is older than another node's on the same channel ("this machine's update check is out of date"). A UI change for a case that ends with one update. |
-| 9 | The README and `tailnet.md` one-liners | Install from `specs/edge/...` instead of `specs/main/...`, so a fresh install gets the gated build. The installers' own `INSTALLER_URL` stays `main` (update mode installs a named commit). | Installing a candidate pin before its checks finish then needs the `main` URL typed by hand. |
-| 10 | Monitoring | The daily run fails if the newest green commit on `main` is newer than the marker after it tried. | No monitor: a stuck marker shows only as "no update offered". |
+| #   | Question                               | Recommended                                                                                                                                                                                 | Against it                                                                                                                                                                                                                                                                 |
+| --- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 5   | What is the marker?                    | A branch `edge`, fast-forward only, guarded by a ruleset. Forward-only is enforced by the server, not by the workflow's care.                                                               | A force-moved tag `edge` reads as a version and breaks git's "tags do not move" (a clone that fetched it keeps the old one). A JSON file needs a commit or a Pages deploy per move and a third thing to keep consistent. The branch shows GitHub's "recent pushes" banner. |
+| 6   | Does the image move with the marker?   | Yes: `:edge` is retagged by `edge.yml`, so an Unraid pull never gets an image whose CI failed, and the container's Versions card agrees with every native node exactly.                     | Today `:edge` moves when the image's own checks pass; it can be ahead of native edge (`88699c7`: image pushed, CI cancelled). Changing it touches the container workflow.                                                                                                  |
+| 7   | When the marker cannot be read         | Nothing is offered, and the check says why ("the edge marker is missing"). No fallback computation: one source of truth.                                                                    | A fallback to `44c9391`'s computation keeps working through a GitHub outage of one endpoint, at the cost of two answers that can disagree, which is what failed.                                                                                                           |
+| 8   | Older agents                           | Nothing beyond `44c9391` (already pinned): each reads the marker after its next update. Four machines exist.                                                                                | The console could flag a node whose reported edge is older than another node's on the same channel ("this machine's update check is out of date"). A UI change for a case that ends with one update.                                                                       |
+| 9   | The README and `tailnet.md` one-liners | Install from `specs/edge/...` instead of `specs/main/...`, so a fresh install gets the gated build. The installers' own `INSTALLER_URL` stays `main` (update mode installs a named commit). | Installing a candidate pin before its checks finish then needs the `main` URL typed by hand.                                                                                                                                                                               |
+| 10  | Monitoring                             | The daily run fails if the newest green commit on `main` is newer than the marker after it tried.                                                                                           | No monitor: a stuck marker shows only as "no update offered".                                                                                                                                                                                                              |
 
 **The test plan** (testing policy): the evaluator is a script
 (`scripts/edge_marker.py`) with fixture tests (green, running, red, cancelled,

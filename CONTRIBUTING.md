@@ -142,9 +142,17 @@ python -m openapi_spec_validator openapi/gateway.yaml
 npx --yes @redocly/cli@2.30.4 lint openapi/gateway.yaml openapi/inference-driver.yaml openapi/library.yaml openapi/agent.yaml openapi/control.yaml
 ```
 
-CI runs both validators and a secret scan on pushes and PRs; PRs also check DCO
-sign-offs. Documentation-only changes should check links and whitespace without
-regenerating consumers. Never stage secret-bearing runtime configs.
+CI selects affected checks conservatively; contract changes run both validators,
+all pushes and PRs retain the secret scan, and PRs also check DCO sign-offs.
+Documentation-only changes check links and whitespace without runtime acceptance
+or regenerating consumers. Never stage secret-bearing runtime configs.
+
+Follow the [testing and release policy](docs/maintenance/testing-and-release.md).
+Routine Edge slices need focused regression and applicable static checks, not a
+mandatory new acceptance harness, sabotage pass or adversarial review. Auth,
+privileges, destructive operations, migrations, installers and publication gates
+retain focused real-environment acceptance and adversarial review. Full Release
+qualification is a separate workflow, not a requirement for every work slice.
 
 Windows development-task changes also run the focused Pester suite described in
 [README.md](README.md#vs-code-tasks-windows). CI runs it on Windows with Node.js,
@@ -168,7 +176,7 @@ launch isolated processes and do not require a running installation or GPU.
 
 CI normally checks out the installer-pinned consumer revisions. To review control
 or library dependency proposals before merging or changing release pins, dispatch
-the **CI** workflow with `control_ref` and/or `library_ref` set to the candidate's
+the **CI** workflow with `profile=full` and `control_ref` and/or `library_ref` set to the candidate's
 full commit SHA. Omitted inputs retain the installer pins. These inputs only change
 that acceptance run's checkouts; they do not modify the installers or a release.
 

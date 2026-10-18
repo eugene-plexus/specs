@@ -1,0 +1,184 @@
+name: Release qualification
+
+on:
+    workflow_dispatch:
+        inputs:
+            release_tag:
+                description: "Existing release tag at this workflow's exact commit"
+                type: string
+                required: true
+            acceptance_record:
+                description: "Reviewed committed docs/acceptance record of packaged install, real upgrades and remaining hardware limits"
+                type: string
+                required: true
+
+permissions:
+    contents: read
+    packages: write
+
+concurrency:
+    group: release-qualification-${{ github.sha }}
+    cancel-in-progress: false
+
+jobs:
+    candidate:
+        runs-on: ubuntu-latest
+        outputs:
+            matrix: ${{ steps.nested.outputs.matrix }}
+        defaults:
+            run:
+                working-directory: specs
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  path: specs
+                  fetch-depth: 0
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: "3.12"
+            - run: python -m pip install PyYAML==6.0.3
+            - name: Verify immutable candidate and resolve agent
+              id: pins
+              env:
+                  RELEASE_TAG: ${{ inputs.release_tag }}
+                  ACCEPTANCE_RECORD: ${{ inputs.acceptance_record }}
+              shell: python {0}
+              run: |
+                  import json, os, sys
+                  from pathlib import Path
+                  sys.path.insert(0, 'scripts')
+                  from release_gate import VERSION, acceptance_digest
+                  from ci_plan import git
+                  root = Path.cwd()
+                  tag = os.environ['RELEASE_TAG']
+                  if not VERSION.fullmatch(tag):
+                      raise ValueError('expected a release version tag')
+                  commit = git(root, 'rev-parse', 'HEAD').strip()
+                  if git(root, 'rev-parse', f'refs/tags/{tag}^{{commit}}').strip() != commit:
+                      raise ValueError('select the release tag as the workflow ref; do not qualify a different branch head')
+                  acceptance_digest(root, commit, os.environ['ACCEPTANCE_RECORD'])
+                  with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+                      stream.write('agent=' + json.loads(Path('release/manifest.json').read_text())['components']['agent'] + '\n')
+            - uses: actions/checkout@v6
+              with:
+                  repository: eugene-plexus/agent
+                  ref: ${{ steps.pins.outputs.agent }}
+                  path: agent
+            - name: Resolve every shipped nested pin
+              id: nested
+              run: python scripts/release_gate.py resolve --agent ../agent --output candidate.json
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: release-candidate
+                  path: specs/candidate.json
+
+    components:
+        needs: candidate
+        name: Component ${{ matrix.repository }} (${{ matrix.os }})
+        runs-on: ${{ matrix.os }}
+        timeout-minutes: 30
+        strategy:
+            fail-fast: false
+            matrix: ${{ fromJSON(needs.candidate.outputs.matrix) }}
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  path: specs
+            - uses: actions/checkout@v6
+              with:
+                  repository: eugene-plexus/${{ matrix.repository }}
+                  ref: ${{ matrix.commit }}
+                  path: component
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: "3.12"
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: "24"
+            - name: Full Python regression on shipped runtime constraints
+              if: matrix.repository != 'ui'
+              working-directory: component
+              shell: python {0}
+              run: |
+                  import subprocess, sys
+                  from pathlib import Path
+                  subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True)
+                  python = str(Path('.venv/Scripts/python.exe' if sys.platform == 'win32' else '.venv/bin/python').resolve())
+                  subprocess.run([python, '-m', 'pip', 'install', '-c', '../specs/release/constraints.txt', '-e', '.[dev]'], check=True)
+                  for command in ([python, '-m', 'ruff', 'check', '.'], [python, '-m', 'ruff', 'format', '--check', '.'], [python, '-m', 'mypy', 'src/'], [python, '-m', 'pytest', '-q']):
+                      subprocess.run(command, check=True)
+                  if Path('scripts/check-vendored.py').is_file():
+                      subprocess.run([python, 'scripts/check-vendored.py'], check=True)
+                  if Path('scripts/codegen.py').is_file():
+                      subprocess.run([python, 'scripts/codegen.py'], check=True)
+                      subprocess.run(['git', 'diff', '--exit-code', '--', 'src/'], check=True)
+            - name: Workbench frontend regression
+              if: matrix.repository == 'workbench' && runner.os == 'Linux'
+              working-directory: component/web
+              run: |
+                  npm ci
+                  npm run typecheck
+                  npm run lint
+                  npm run format:check
+                  npm test
+                  npm run build
+            - name: Console regression, one production export and browser journeys
+              if: matrix.repository == 'ui'
+              working-directory: component
+              run: |
+                  npm ci
+                  npm run lint
+                  npm run format:check
+                  npm run typecheck
+                  npm test
+                  npm run codegen
+                  npm run codegen:runs
+                  git diff --exit-code -- src/generated/
+                  npm run build
+                  node scripts/a1-browser-acceptance.mjs python/eugene_plexus_ui/static test-results/a1
+                  node scripts/update-status-browser-acceptance.mjs python/eugene_plexus_ui/static test-results/update-status
+                  node scripts/access-browser-acceptance.mjs python/eugene_plexus_ui/static test-results/access
+                  node scripts/engines-browser-acceptance.mjs python/eugene_plexus_ui/static test-results/engines
+                  node scripts/metrics-browser-acceptance.mjs python/eugene_plexus_ui/static test-results/metrics
+                  python -m pip install build
+                  python -m build --wheel
+
+    integration:
+        needs: candidate
+        uses: ./.github/workflows/ci.yml
+        with:
+            profile: full
+
+    container:
+        needs: candidate
+        uses: ./.github/workflows/container.yml
+        with:
+            release_tag: ${{ inputs.release_tag }}
+            profile: full
+            publish: false
+
+    receipt:
+        needs: [candidate, components, integration, container]
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+            - uses: actions/setup-python@v6
+              with:
+                  python-version: "3.12"
+            - uses: actions/download-artifact@v4
+              with:
+                  name: release-candidate
+            - name: Bind qualification to its exact evidence and tested image
+              env:
+                  RELEASE_TAG: ${{ inputs.release_tag }}
+                  ACCEPTANCE_RECORD: ${{ inputs.acceptance_record }}
+                  DIGEST: ${{ needs.container.outputs.digest }}
+              run: python scripts/release_gate.py record --pins candidate.json --release-tag "$RELEASE_TAG" --acceptance-record "$ACCEPTANCE_RECORD" --digest "$DIGEST"
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: release-qualification
+                  path: qualification.json
+                  if-no-files-found: error
+                  retention-days: 90

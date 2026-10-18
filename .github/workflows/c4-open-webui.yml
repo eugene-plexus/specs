@@ -10,12 +10,21 @@
 name: C4 Open WebUI
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - scripts/c4-open-webui-acceptance.py
-      - .github/workflows/c4-open-webui.yml
   workflow_dispatch:
+    inputs:
+      agent_ref:
+        description: "Candidate agent SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
+      control_ref:
+        description: "Candidate control SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
+      gateway_ref:
+        description: "Candidate gateway SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
+  workflow_call:
     inputs:
       agent_ref:
         description: "Candidate agent SHA (40 chars); empty = the installer's pin"

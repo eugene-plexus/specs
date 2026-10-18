@@ -13,11 +13,9 @@
 # runner has Docker, which makes CI the first place the image has ever
 # been built or started.
 #
-# `edge`, deliberately not `latest`. Nothing in this project is released
-# (`install-paths-and-distribution.md` §9 puts the release last, behind
-# tool calling), and `latest` is the tag every registry convention reads
-# as "the supported one". `edge` says what this is: the head of main,
-# tested, and not a release.
+# Edge candidates receive immutable SHA tags. edge.yml alone moves :edge
+# after the named CI gates pass. Versioned images are promoted from the
+# digest retained by full Release qualification, never rebuilt for publishing.
 #
 # Triggered only by the things that change the image -- the Dockerfile,
 # the Compose file, the installer whose six pins decide what goes in it,
@@ -31,17 +29,12 @@ on:
     branches: [main]
     paths:
       - "docker/**"
-      - "scripts/install.sh"
-      - "scripts/compose-acceptance.sh"
-      - "scripts/container-workbench-acceptance.py"
-      - "scripts/entrypoint-security-checks.py"
-      - "scripts/entrypoint-proxy-checks.py"
-      - "scripts/two-host-proxy-acceptance.py"
-      - "scripts/entrypoint-acme-checks.py"
-      - "scripts/container-entrypoint-acceptance.py"
-      - "scripts/recovery.py"
-      - "scripts/a7-*"
-      - "unraid/eugene-plexus.xml"
+      - "scripts/**"
+      - "release/**"
+      - "platform/**"
+      - "unraid/**"
+      - ".dockerignore"
+      - ".gitattributes"
       - ".github/workflows/container.yml"
   workflow_dispatch:
     inputs:
@@ -49,6 +42,28 @@ on:
         description: "Existing version tag to build and publish (empty publishes edge)"
         required: false
         type: string
+      qualification_run:
+        description: "Successful Release qualification run ID (required to publish a version)"
+        required: false
+        type: string
+      publish:
+        description: "Publish a versioned tag after qualification; false only builds an immutable candidate"
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: false
+      publish:
+        type: boolean
+        default: false
+      profile:
+        type: string
+        default: full
+    outputs:
+      digest:
+        value: ${{ jobs.build-verify-publish.outputs.digest }}
 
 concurrency:
   group: container-image
@@ -65,14 +80,50 @@ env:
   BUILT: eugene-plexus/control-plane:0.1
 
 jobs:
+  coverage:
+    if: inputs.release_tag == '' || !inputs.publish
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.select.outputs.full }}
+      container: ${{ steps.select.outputs.container }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Select build and recovery coverage
+        id: select
+        env:
+          CI_BASE: ${{ github.event.before }}
+          CI_FULL: ${{ inputs.profile == 'full' || inputs.release_tag != '' }}
+        shell: python {0}
+        run: |
+          import os, subprocess, sys
+          command = [sys.executable, 'scripts/ci_plan.py', '--base', os.environ.get('CI_BASE', ''), '--head', 'HEAD']
+          if os.environ.get('CI_FULL') == 'true':
+              command.append('--full')
+          subprocess.run(command, check=True)
+
   build-verify-publish:
+    needs: coverage
+    if: (inputs.release_tag == '' || !inputs.publish) && (needs.coverage.outputs.container == 'true' || inputs.release_tag != '')
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.release_tag || github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
 
       - name: Validate release tag
         if: inputs.release_tag != ''
@@ -110,7 +161,7 @@ jobs:
         run: bash scripts/compose-acceptance.sh
 
       - name: Restore isolated control plane and worker after a failed update
-        if: inputs.release_tag == ''
+        if: needs.coverage.outputs.full == 'true'
         run: bash scripts/a7-container-acceptance.sh
 
       # Only reached when the script exited 0, which it does only with
@@ -123,17 +174,43 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Tag and push the image that passed
+        id: push
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
-          short=$(git rev-parse --short HEAD)
-          docker tag "$BUILT" "$IMAGE:sha-$short"
-          docker push "$IMAGE:sha-$short"
-          channel=${RELEASE_TAG:-edge}
-          docker tag "$BUILT" "$IMAGE:$channel"
-          docker push "$IMAGE:$channel"
-          echo "published $IMAGE:$channel and $IMAGE:sha-$short"
+          commit=$(git rev-parse HEAD)
+          prefix=sha
+          if [ -n "$RELEASE_TAG" ]; then prefix=release-sha; fi
+          candidate="$IMAGE:$prefix-$commit"
+          docker tag "$BUILT" "$candidate"
+          docker push "$candidate"
+          digest=$(docker buildx imagetools inspect "$candidate" --format '{{.Manifest.Digest}}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Verified candidate: $candidate@$digest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain the exact tested image digest and inputs
+        env:
+          VERIFIED_DIGEST: ${{ steps.push.outputs.digest }}
+        shell: python {0}
+        run: |
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'scripts')
+          from ci_plan import git
+          from edge_marker import DIGEST, fingerprint
+          root = Path.cwd()
+          digest = os.environ['VERIFIED_DIGEST']
+          if not DIGEST.fullmatch(digest):
+              raise ValueError('the tested image has no valid digest')
+          receipt = {'specsCommit': git(root, 'rev-parse', 'HEAD').strip(), 'imageFingerprint': fingerprint(root, 'HEAD', image=True), 'digest': digest}
+          Path('image-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8', newline='\n')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-container
+          path: image-receipt.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Summary
         env:
@@ -143,10 +220,45 @@ jobs:
             echo "### Container image published"
             echo
             echo '```'
-            echo "$IMAGE:${RELEASE_TAG:-edge}"
-            echo "$IMAGE:sha-$(git rev-parse --short HEAD)"
+            echo "Immutable candidate commit: $(git rev-parse HEAD)"
             echo '```'
             echo
             echo "Verified by \`scripts/compose-acceptance.sh\` before pushing."
             echo "Unraid template: \`unraid/eugene-plexus.xml\`."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  promote-release:
+    if: inputs.release_tag != '' && inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Verify qualification and retain the tested digest
+        id: qualification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFICATION_RUN: ${{ inputs.qualification_run }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python scripts/release_gate.py
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote without rebuilding
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          DIGEST: ${{ steps.qualification.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --prefer-index=false --tag "$IMAGE:$RELEASE_TAG" "$IMAGE@$DIGEST"
+          actual=$(docker buildx imagetools inspect "$IMAGE:$RELEASE_TAG" --format '{{.Manifest.Digest}}')
+          test "$actual" = "$DIGEST"
+          echo "Published $IMAGE:$RELEASE_TAG@$DIGEST without rebuilding" >> "$GITHUB_STEP_SUMMARY"

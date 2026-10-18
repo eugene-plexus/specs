@@ -5,8 +5,16 @@ on:
     branches: [main]
   push:
     branches: [main]
+  schedule:
+    - cron: "23 3 * * 0"
   workflow_dispatch:
     inputs:
+      profile:
+        description: "CI coverage profile"
+        required: false
+        type: choice
+        options: [edge, full]
+        default: full
       agent_ref:
         description: "Optional agent candidate commit; defaults to the release pin"
         required: false
@@ -45,6 +53,11 @@ on:
         type: string
   workflow_call:
     inputs:
+      profile:
+        description: "CI coverage profile"
+        required: false
+        type: string
+        default: full
       agent_ref:
         description: "Optional agent candidate commit; defaults to the release pin"
         required: false
@@ -85,6 +98,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+
 # The agents the acceptance scripts start list engine builds from GitHub's
 # API. A shared runner address meets the anonymous limit of 60 an hour
 # (specs#23); with the job's own read-only token the limit is the token's.
@@ -93,7 +110,50 @@ env:
   GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.select.outputs.full }}
+      runtime: ${{ steps.select.outputs.runtime }}
+      launch: ${{ steps.select.outputs.launch }}
+      installers: ${{ steps.select.outputs.installers }}
+      dev: ${{ steps.select.outputs.dev }}
+      uninstall: ${{ steps.select.outputs.uninstall }}
+      contracts: ${{ steps.select.outputs.contracts }}
+      instruments: ${{ steps.select.outputs.instruments }}
+      macos: ${{ steps.select.outputs.macos }}
+      container: ${{ steps.select.outputs.container }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Check CI planning
+        run: |
+          python -m unittest discover -s scripts -p 'test_ci*.py' -v
+          python -m unittest discover -s scripts -p test_edge_marker.py -v
+          python -m unittest discover -s scripts -p test_release_gate.py -v
+      - name: Compute gates
+        id: select
+        env:
+          CI_BASE: ${{ github.event.before || github.event.pull_request.base.sha }}
+          CI_FULL: ${{ github.event_name == 'schedule' || inputs.profile == 'full' || github.repository != 'eugene-plexus/specs' }}
+        shell: python {0}
+        run: |
+          import os, subprocess, sys
+          command = [sys.executable, 'scripts/ci_plan.py', '--base', os.environ.get('CI_BASE', ''), '--head', 'HEAD']
+          if os.environ.get('CI_FULL') == 'true':
+              command.append('--full')
+          subprocess.run(command, check=True)
+
   s10-instruments:
+    needs: plan
+    if: needs.plan.outputs.instruments == 'true'
     name: S10 acceptance instruments (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -121,7 +181,9 @@ jobs:
         run: python scripts/a8-summarize.py docs/acceptance/a8-data
 
   r7-signing:
-    name: R7 signing, R8 profiles and A2/A3/A5 acceptance (${{ matrix.os }})
+    needs: plan
+    if: needs.plan.outputs.runtime == 'true'
+    name: Pinned integration (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # C3 builds an app's environment from its archive with uv (2026-10-01).
     # Job Sites waits up to 75 s for a site's own bundle pull (2026-10-05).
@@ -212,6 +274,7 @@ jobs:
       - name: Check installed dependency consistency
         run: python -m pip check
       - name: Verify durable run protocol when both consumers provide it
+        if: needs.plan.outputs.full == 'true'
         shell: python {0}
         run: |
           import importlib.util, subprocess, sys
@@ -222,10 +285,12 @@ jobs:
           else:
               print("Pre-operation release pins: legacy compatibility checks still apply; run recovery activates when both consumers are upgraded.")
       - name: Score the shipped starter set for 8 GB GPU and 16 GB RAM
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/s10-starter-check.py
       - name: One token module in five repos, and nothing of the shared-key model left
         run: python specs/scripts/r7-signing-checks.py
       - name: Rotate the root's token key across two live agents
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
       - name: A stolen worker key tried against every other process, then revoked
         run: python specs/scripts/row3-per-node-keys-acceptance.py --lan
@@ -234,59 +299,83 @@ jobs:
       - name: Verify engines declare what they accept and the Library judges (LS1)
         run: python specs/scripts/ls1-eligibility-acceptance.py
       - name: Verify Discover's verdicts before download, against a fake hub on loopback (LS2)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls2-discover-acceptance.py
       - name: Verify a prepared model is a Library model, Run to ready on a stand-in Strata (LS3)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls3-prepared-acceptance.py
       - name: Verify catalogue sources are a list and Strata publishes its own, against two fake hubs (LS4)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls4-sources-acceptance.py
       - name: Verify LS5 timeout diagnostics preserve the operation state
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls5-preparation-checks.py
       - name: Verify preparation is a job on the engine's node, with a stand-in Strata setup (LS5)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls5-preparation-acceptance.py
       - name: Verify runtime Stop waits for descendants and refuses stale Strata listeners
         run: python specs/scripts/runtime-stop-acceptance.py
       - name: Verify each engine owns its fit model, from declaration to judge to admission (LS6)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls6-fit-acceptance.py
       - name: Verify a node runs a prepared model from its own copy of the Library's files (LS7a)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls7-copy-acceptance.py
       - name: Verify the Library says what is known of a prepared model (LS7b)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls7b-facts-acceptance.py
       - name: Verify a model is deleted from the Library, any format, all or nothing (LS8)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls8-delete-acceptance.py
       - name: Verify A3 client-key revocation and outage bounds across five processes
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/a3-client-keys-acceptance.py
       - name: Verify A5 scoped keys, shared limits, cancellation and usage across gateways
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/a5-scoped-keys-acceptance.py
       - name: Verify A6 local-only routing through signed components and real drivers
         run: python specs/scripts/a6-local-only-acceptance.py
       - name: Verify A6b uncertain outcomes, cooldown, deadlines and CLI side effects
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/a6b-failover-acceptance.py
       - name: Verify P2a audio and PDF inputs at every door through signed processes
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/p2-media-acceptance.py
       - name: Verify P3 streaming timing is independent of request startup
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/p3-audio-checks.py
       - name: Verify P3 speech and transcription through signed processes and the unchanged OpenAI SDK
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/p3-audio-acceptance.py
       - name: Verify P4 image generation and edits through signed processes and the unchanged OpenAI SDK
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/p4-images-acceptance.py
       - name: Verify P5 video jobs through signed processes, a gateway restart and the unchanged OpenAI SDK
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/p5-videos-acceptance.py
       - name: Verify P6 moderations, model lookup and completions through signed processes and the unchanged OpenAI SDK
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/p6-acceptance.py
       - name: Verify P8 web search through agent-spawned search accounts and the unchanged OpenAI and Anthropic SDKs
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/p8-search-acceptance.py
       - name: Verify Google Search beside Brave (grounded answer verbatim, real addresses, Search Suggestions on every door, the person's search order)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/google-search-acceptance.py
       - name: Verify a Gemini account (native API, thought signatures, every surface) through signed processes and the unchanged OpenAI SDK
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/gemini-acceptance.py
       - name: Verify the gateway and driver pair on stand-in providers (tools are assumed - header agreement, slots, counts, stream heads)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/tools-assumed-acceptance.py
       - name: Verify interactive UI inference prerequisites through gateway and drivers
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/genui-inference-acceptance.py --report genui-inference.json
       - name: Verify the UI inference gate detects lost structured-output settings
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/genui-inference-sabotage.py
       - name: Keep UI inference prerequisite evidence
-        if: always()
+        if: always() && needs.plan.outputs.full == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: genui-inference-${{ matrix.os }}
@@ -297,20 +386,62 @@ jobs:
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
         run: python specs/scripts/c3-workbench-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py
       - name: Verify the warm standby is granted, follows, is revoked and promotes (control#5)
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/standby-acceptance.py
       - name: Verify Job Sites through the public node route, real Caddy and a joined site
         # The entry point is the Linux container's; the Windows topology (the
         # root in WSL2) is run by hand with --root-wsl.
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.plan.outputs.full == 'true'
         run: python specs/scripts/job-sites-acceptance.py
       - name: Verify A7 encrypted checkpoints and destructive restore refusals
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/a7-recovery-checks.py
       - name: Detect deliberately broken R8 profile defaults
+        if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/r8-profile-checks.py
 
+  macos:
+    needs: plan
+    if: needs.plan.outputs.macos == 'true'
+    uses: ./.github/workflows/a4-macos.yml
+    with:
+      agent_ref: ${{ inputs.agent_ref }}
+      library_ref: ${{ inputs.library_ref }}
+      gateway_ref: ${{ inputs.gateway_ref }}
+      driver_ref: ${{ inputs.inference_driver_ref }}
+      platforms: ${{ needs.plan.outputs.full == 'true' && '["macos-14","macos-15","macos-26"]' || '["macos-26"]' }}
+
+  app-accounts:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
+    uses: ./.github/workflows/c1-app-accounts.yml
+    with:
+      agent_ref: ${{ inputs.agent_ref }}
+      control_ref: ${{ inputs.control_ref }}
+      gateway_ref: ${{ inputs.gateway_ref }}
+
+  open-webui:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
+    uses: ./.github/workflows/c4-open-webui.yml
+    with:
+      agent_ref: ${{ inputs.agent_ref }}
+      control_ref: ${{ inputs.control_ref }}
+      gateway_ref: ${{ inputs.gateway_ref }}
+
+  folder-tools:
+    needs: plan
+    if: needs.plan.outputs.full == 'true'
+    uses: ./.github/workflows/c6-folder-tools.yml
+    with:
+      agent_ref: ${{ inputs.agent_ref }}
+
   r7-launch-boundary:
+    needs: plan
+    if: needs.plan.outputs.launch == 'true'
     name: R7 launch boundary (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -372,6 +503,8 @@ jobs:
         run: python specs/scripts/r6-benchmark-checks.py
 
   posix-installers:
+    needs: plan
+    if: needs.plan.outputs.installers == 'true'
     name: POSIX installer architecture regression
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -387,7 +520,8 @@ jobs:
 
   system-update:
     name: Linux system install updates itself through its root helper
-    if: github.repository == 'eugene-plexus/specs'
+    needs: plan
+    if: github.repository == 'eugene-plexus/specs' && needs.plan.outputs.installers == 'true'
     # A real sudo install on the runner, then an update asked for the way
     # the agent asks, carried out by root (docs/design/in-app-updates.md
     # §1.4). Its first two live runs each found a defect nothing else could.
@@ -410,6 +544,8 @@ jobs:
           grep -q '^ALL PASS$' update-run.log
 
   dev-tasks:
+    needs: plan
+    if: needs.plan.outputs.dev == 'true'
     name: Windows development tasks
     runs-on: windows-latest
     timeout-minutes: 5
@@ -438,6 +574,8 @@ jobs:
           Invoke-Pester -Script ./scripts/uninstall.Tests.ps1 -EnableExit
 
   offline-removal:
+    needs: plan
+    if: needs.plan.outputs.uninstall == 'true'
     name: Offline removal (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -452,7 +590,7 @@ jobs:
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
       - run: python -m pip install PyYAML==6.0.3
       - run: python scripts/embed-uninstall.py --check
       - run: python scripts/test_uninstall.py
@@ -472,6 +610,8 @@ jobs:
           ./gitleaks dir . --no-banner --redact
 
   validate-openapi:
+    needs: plan
+    if: needs.plan.outputs.contracts == 'true'
     name: Validate (openapi-spec-validator)
     runs-on: ubuntu-latest
     steps:
@@ -508,6 +648,8 @@ jobs:
           exit $status
 
   lint-openapi:
+    needs: plan
+    if: needs.plan.outputs.contracts == 'true'
     name: Lint (Redocly)
     runs-on: ubuntu-latest
     steps:

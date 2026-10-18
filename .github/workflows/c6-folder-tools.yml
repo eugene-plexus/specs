@@ -7,6 +7,12 @@ on:
         description: "Candidate agent SHA; empty uses the release pin"
         required: false
         type: string
+  workflow_call:
+    inputs:
+      agent_ref:
+        description: "Candidate agent SHA; empty uses the release pin"
+        required: false
+        type: string
 
 permissions:
   contents: read

@@ -16,12 +16,6 @@
 name: A4 macOS
 
 on:
-  push:
-    branches: [main, a4-macos]
-    paths:
-      - scripts/install.sh
-      - scripts/a4-macos-acceptance.py
-      - .github/workflows/a4-macos.yml
   workflow_dispatch:
     inputs:
       agent_ref:
@@ -40,6 +34,34 @@ on:
         description: "Candidate inference-driver SHA (40 chars); empty = install.sh's pin"
         required: false
         type: string
+      platforms:
+        description: "JSON array of macOS runner platforms"
+        required: false
+        type: string
+        default: '["macos-14","macos-15","macos-26"]'
+  workflow_call:
+    inputs:
+      agent_ref:
+        description: "Candidate agent SHA (40 chars); empty = install.sh's pin"
+        required: false
+        type: string
+      library_ref:
+        description: "Candidate library SHA (40 chars); empty = install.sh's pin"
+        required: false
+        type: string
+      gateway_ref:
+        description: "Candidate gateway SHA (40 chars); empty = install.sh's pin"
+        required: false
+        type: string
+      driver_ref:
+        description: "Candidate inference-driver SHA (40 chars); empty = install.sh's pin"
+        required: false
+        type: string
+      platforms:
+        description: "JSON array of macOS runner platforms"
+        required: false
+        type: string
+        default: '["macos-14","macos-15","macos-26"]'
 
 permissions:
   contents: read
@@ -54,7 +76,7 @@ jobs:
       matrix:
         # Three macOS releases people run; each image's machine is a
         # virtual M1 or M2 with 7 or 14 GB, and every one exposes Metal.
-        os: [macos-14, macos-15, macos-26]
+        os: ${{ fromJSON(inputs.platforms || '["macos-14","macos-15","macos-26"]') }}
     steps:
       - uses: actions/checkout@v6
       # For the harness alone, which is stdlib only. The install brings its

@@ -13,13 +13,21 @@
 name: C1 app accounts
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - scripts/c1-app-accounts-acceptance.py
-      - scripts/fixtures/app-fixture/**
-      - .github/workflows/c1-app-accounts.yml
   workflow_dispatch:
+    inputs:
+      agent_ref:
+        description: "Candidate agent SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
+      control_ref:
+        description: "Candidate control SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
+      gateway_ref:
+        description: "Candidate gateway SHA (40 chars); empty = the installer's pin"
+        required: false
+        type: string
+  workflow_call:
     inputs:
       agent_ref:
         description: "Candidate agent SHA (40 chars); empty = the installer's pin"
