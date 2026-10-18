@@ -188,7 +188,8 @@ describes. Don't open a public issue.
 Users report every bug and question here, through the
 [issue forms](https://github.com/eugene-plexus/specs/issues/new/choose), whichever
 component is at fault. A maintainer transfers each one to the repo that owns the
-fix. Issue forms in the component repos point here.
+fix. Every repo shows the same forms, from
+[eugene-plexus/.github](https://github.com/eugene-plexus/.github).
 
 Useful contract issues include:
 

@@ -1,8 +1,0 @@
-blank_issues_enabled: true
-contact_links:
-  - name: Report a security vulnerability
-    url: https://github.com/eugene-plexus/specs/security/advisories/new
-    about: Report it privately. Please don't open a public issue.
-  - name: Setup guides
-    url: https://eugeneplexus.com/guides/
-    about: Step-by-step guides for connecting apps to Eugene.
