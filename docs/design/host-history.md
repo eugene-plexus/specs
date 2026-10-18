@@ -113,6 +113,23 @@ beside Gateway metrics; H6 on by default once measured.
   lists on Linux NVIDIA, `fdinfo` on amdgpu.
 - **`DELETE /v1/node/history`** was added: "turning it off deletes nothing
   until asked" needed a way to ask.
+- **The store at full default retention on this box is 7.6 MB** (17 series:
+  one GPU's six, CPU, RAM, swap, two volumes, two runtime counts; measured by
+  filling 6 h raw, 7 d of minutes and 90 d of hours). About 0.45 MB per
+  series; a two-GPU host with three volumes is about 11 MB.
+- **NVML's v1 memory call counts the driver's reserved memory as used**
+  (0.4 GB on the 5090), so it disagreed with `nvidia-smi` and `GET /v1/node`.
+  The probe uses `nvmlDeviceGetMemoryInfo_v2`; used and total now match
+  `nvidia-smi` exactly.
+- **On Windows NVML reports temperature and power; nothing else does.** A
+  non-NVIDIA card on Windows has memory and utilization (PDH) and says "not
+  reported" for temperature and power. The AMD integrated GPU on this box is
+  not in `GET /v1/node`'s list beside the 5090 (only what the CUDA build
+  reaches), so it has no history either.
+- **Which card is which** is matched by name to the OS adapter, in order
+  where two share a name: two identical cards on one Windows machine could
+  have their Eugene's-share figures swapped. `gpu_probe.Adapter` gained a
+  `key` (the PDH LUID, the sysfs directory) for this, in `platform/`.
 
 ## Build order
 
