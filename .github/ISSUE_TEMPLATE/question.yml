@@ -1,0 +1,30 @@
+name: Ask a question
+description: Setting up, using or connecting an app to Eugene Plexus.
+labels: [question, needs-triage]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: Include what you've tried so far.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Eugene Plexus version
+      placeholder: v0.2.2
+    validations:
+      required: false
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+        - macOS
+        - Container (Docker, Unraid, ...)
+        - Other
+    validations:
+      required: false
