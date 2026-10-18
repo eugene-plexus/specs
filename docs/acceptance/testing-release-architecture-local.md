@@ -1,5 +1,9 @@
 # Testing and release architecture: local evidence
 
+This is the pre-publication snapshot. The subsequent
+[live Edge publication](testing-release-edge-publish.md) supersedes the pending
+remote-rollout status below, not the limits of these local checks.
+
 Scope: local implementation of the risk-based slice policy, conservative CI
 planner, explicit Edge publisher/agent reader, and immutable Release
 qualification. Operational policy and rollout order are in
