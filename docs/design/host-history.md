@@ -1,7 +1,7 @@
 # Host history
 
-**Status: calls H1-H6 taken 2026-10-18 (Troy took every recommendation);
-building.** Contract: `GET`/`DELETE /v1/node/history` and the `HostHistory`
+**Status: built 2026-10-18** (Troy took every recommendation for H1-H6);
+[acceptance](../acceptance/host-history.md) 6/6 on two nodes. Contract: `GET`/`DELETE /v1/node/history` and the `HostHistory`
 schemas in `agent.yaml`.
 
 The second half of the sysadmin dashboards (memory `project_admin_dashboards`;
