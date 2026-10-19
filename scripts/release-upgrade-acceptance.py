@@ -419,7 +419,7 @@ def setup_root(ctx: Install, api: Api) -> str:
     token = wait(
         lambda: api.call(agent, "POST", "/v1/auth/login", body={"passphrase": PASSPHRASE})["sessionToken"], "agent login", 60
     )  # fmt: skip
-    api.call(agent, "PATCH", "/v1/config", token, {"firstRunComplete": True})
+    api.call(agent, "PATCH", "/v1/config", token, {"firstRunComplete": True, "updateChecks": False})
     return token
 
 

@@ -76,7 +76,8 @@ jobs:
         needs: candidate
         name: Component ${{ matrix.repository }} (${{ matrix.os }})
         runs-on: ${{ matrix.os }}
-        timeout-minutes: 30
+        # Workbench's full suite on Windows ran past 30 minutes (v0.3.0's first qualification).
+        timeout-minutes: 60
         strategy:
             fail-fast: false
             matrix: ${{ fromJSON(needs.candidate.outputs.matrix) }}
@@ -104,7 +105,9 @@ jobs:
                   from pathlib import Path
                   subprocess.run([sys.executable, '-m', 'venv', '.venv'], check=True)
                   python = str(Path('.venv/Scripts/python.exe' if sys.platform == 'win32' else '.venv/bin/python').resolve())
-                  subprocess.run([python, '-m', 'pip', 'install', '-c', '../specs/release/constraints.txt', '-e', '.[dev]'], check=True)
+                  # The agent ships with its service and tray extras (pywin32 on Windows), as install.ps1 installs it.
+                  extras = '.[dev,service,tray]' if '${{ matrix.repository }}' == 'agent' else '.[dev]'
+                  subprocess.run([python, '-m', 'pip', 'install', '-c', '../specs/release/constraints.txt', '-e', extras], check=True)
                   for command in ([python, '-m', 'ruff', 'check', '.'], [python, '-m', 'ruff', 'format', '--check', '.'], [python, '-m', 'mypy', 'src/'], [python, '-m', 'pytest', '-q']):
                       subprocess.run(command, check=True)
                   if Path('scripts/check-vendored.py').is_file():

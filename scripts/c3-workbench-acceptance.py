@@ -1259,7 +1259,7 @@ def audio_run(*, ada: Browser, call, wait, app_id: str, operator: str, live: boo
           item["status"] == "done" and got == SPOKEN and files[0]["mediaType"] == "audio/mpeg"
           and item.get("units") == {"characters": 19} and (item.get("served") or {}).get("driver") == IMAGES
           and asked.get("voice") == "af_heart" and asked.get("response_format") == "mp3",
-          {"status": item["status"], "files": files, "served": item.get("served"), "sent": asked})
+          {"status": item["status"], "error": item.get("error"), "files": files, "served": item.get("served"), "sent": asked})
 
     before = len(seen("router-speech"))
     refused = speak(voice="alloy")
