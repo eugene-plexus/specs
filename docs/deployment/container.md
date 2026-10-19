@@ -361,12 +361,12 @@ other name.
 **Leave `--hostname` in `ExtraParams`.** A node's name in this install is
 whatever `socket.gethostname()` returns when it enrols, and a container's
 default hostname is its own container ID — so without it the control host
-joins as something like `468e3ed662bf` and carries that hex string in the
-node registry, on its Config tab, in the resource tree, and in Home's
-"kept on …" line. **A node cannot be renamed afterwards**: the name is the
-registry key, and `PATCH /v1/nodes/{name}` announces an address rather than
-a name. Changing it later means un-enrolling and re-enrolling the control
-host, which signs everyone out. Set it before the first start, or accept it.
+joins as something like `468e3ed662bf`. The first-run wizard asks what to
+call this machine, and **Machines → Rename** changes what every screen
+shows at any time. The name underneath stays: it is the registry key, and
+it still appears in addresses, logs and under the new name on Machines.
+Only un-enrolling and re-enrolling the control host changes that, which
+signs everyone out.
 
 It pulls `ghcr.io/eugene-plexus/control-plane:edge`, which CI builds and
 **verifies before pushing** — `scripts/compose-acceptance.sh` runs its

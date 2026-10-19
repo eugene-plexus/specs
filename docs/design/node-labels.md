@@ -1,6 +1,7 @@
 # Node labels — a name you can change, over an identity you cannot
 
-**Status:** scoped, not started (2026-09-16).
+**Status:** built 2026-10-19 (contract specs f6bc55c). Decisions §6 #1-#5
+taken by Troy as recommended; see §8 for what building changed.
 
 A node's name is whatever `socket.gethostname()` returned when it
 enrolled, and it is permanent. On a container that is the container ID,
@@ -201,3 +202,38 @@ with ten call sites, one form, one acceptance script. The risk is
 concentrated entirely in one question — *did a label leak into a key?* —
 which is why check 2 exists and why the helper is a single function
 rather than a fallback repeated at each site.
+
+---
+
+## §8 What building found (2026-10-19)
+
+- **Troy chose the label over a true rename** of the identity (§5), and
+  the wizard field (#5). The hex name still appears in proxy targets,
+  logs, `?sel=` URLs and under the label on Machines.
+- **Labels are unique against labels too**, not only names: two machines
+  both labelled "NAS" is the same lie as a label equal to a name. Checked
+  ignoring case, in the route and again in apply (a standby runs only
+  apply). A label equal to the node's own name clears it.
+- **A machine that enrolls again keeps its label** unless the enrollment
+  sets one: `enrollNode` replaces the record, so it carries the old label
+  forward when the payload has no `label` key. Deterministic, so replay
+  is unaffected.
+- **A collision that arrives later is shown, not refused.** A machine
+  joining under a name someone already used as a label is not refused
+  (that would block a join over a display string); the UI shows both
+  machines with their names, `Studio (DESKTOP-4KJ2P9)` (`labelsFrom`).
+- **The wizard field is empty, not the detected hostname.** The agent's
+  `GET /v1/node` needs a session and the wizard has none on its first
+  screen, so the field says "leave it empty to use its network name". A
+  `hostName` field was added and reverted the same day for this reason.
+- **One label store in the UI** (`ui/src/lib/nodeLabels.ts`): every hook
+  that already polls `GET /v1/nodes` records the rows, and display code
+  calls `labelOf(name)`. About 70 display sites; the six label builders
+  (`TargetNode`, issues `NodeFacts`, `RunNode`, the tree, settings owners,
+  Home's strip) cover most of them.
+- **Installers do not take `--label` yet** (decision #2's last part). The
+  agent's `join --label` does; a worker can also be renamed from Machines
+  after it joins. Installers are high-risk changes and were left for their
+  own slice.
+- **An older standby refuses `labelNode`** as an unknown op and
+  re-snapshots until it updates; on Edge both machines update together.
