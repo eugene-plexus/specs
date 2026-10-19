@@ -21,6 +21,7 @@ the calls made while building.
 | MR6b | Workbench sorts its best passages with a served sorter (heading path + text, the best 10 of each way, a Sort time budget priced from measured speed); the Documents screen and Test a question say whether and why not | workbench `534a8bd` to `3a1408c`, dist `7658527`, agent `aaf54ce` | `docs/acceptance/mr6b-sorting-run.md` |
 | MR8 | Memory suggestions after a measured harness: an inbox of notes a chat's model proposed from the person's own words, kept or turned away; Learn from my chats; relevance by meaning and words; events that expire and projects revisited; `reasoning_effort: none` reaching llama.cpp | workbench, inference-driver, specs (harness) | `docs/acceptance/m-memory-measurement.md`, `docs/acceptance/mr8-suggestions-run.md` |
 | MR9a | The Anthropic door reads `search_result` blocks (numbered across the request; `citations` named ignored) and turns `memory_20250818` into a function the client runs, with Anthropic's protocol text | gateway, specs `241059c` | `docs/acceptance/mr9a-anthropic-door-run.md` |
+| MR9b | Workbench's MCP server at `/mcp`: connections a person makes (scoped, expiring, inside their sign-in), four tools over their own notes and documents, suggestions to the inbox only; the Memory page's Connections | workbench | `docs/acceptance/mr9b-connections-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -115,7 +116,7 @@ run `docs/acceptance/mr8-suggestions-run.md`):
 
 ## Next
 
-MR9b (Workbench's MCP server and connections); MR9 is designed in section 10, and MR9a is built. Owed: a live run of MR6b's sorting on real
+The v0.3.0 release, then the converter removal (v0.3.1). MR9 is built; its design is section 10. Owed: a live run of MR6b's sorting on real
 questions (Troy's).
 
 ---
@@ -1398,6 +1399,34 @@ MR9a first (no auth, and it fixes a silent drop today), then MR9b. Each ships on
 | MRC33 | Citations on `search_result` | Accepted and named ignored; no citations returned | Settings never lie | taken |
 | MRC34 | Where the MCP server lives | Workbench, `/mcp` | The store and the person are there | taken |
 | MRC35 | Tools, limits, logs | 10.3's four tools; 60 a minute, 4 at once, 10 connections a person; counts in logs, never words | Bounded and auditable | taken |
+
+### 10.7 What building MR9b found, and the calls it made (2026-10-18)
+
+1. **A token that matches a connection is told why it stopped**: expired on its date, connections
+   turned off, sign in to Workbench again, or Eugene no longer accepting the sign-in. A token that
+   matches none, a revoked one included, gets one 401 and one set of words. (10.3 said every bad
+   token gets the same answer; the holder of a real token learns only its own connection's state.)
+2. **The limits come before the sign-in check**, which may ask Eugene, so a token cannot make
+   Workbench ask more often than 60 requests a minute and 4 at once allow (review). The limit
+   counts every request to `/mcp` (an MCP client also sends `initialize` and `tools/list`); "calls
+   today" on the page counts tool calls.
+3. **A suggestion's write checks that its connection is still live**, in the same transaction, so a
+   call let in just before Revoke leaves nothing behind (review).
+4. **Any failure but a refusal is said in fixed words**, with its kind in the log: the SDK would send
+   the exception's own text, which can name paths or SQL (review).
+5. **`search_notes` without a running local search model searches by words** and says why: every
+   note that fits, the chats' fallback, is too much to hand an app. The notes the person always
+   wants used come first.
+6. **Only saved documents are searched** (My documents, folders included); a chat's own attachments
+   are not.
+7. **A suggested note gets MR8's checks**: the typed note's rules, NFKC first, the sensitive
+   categories, the words of notes turned away, and the 20 a day shared with chats' suggestions.
+   The owner's `memorySuggestions: off` stops them too.
+8. **Signing out on one device does not stop a connection while another sign-in lives**; the page
+   says it works "while you are signed in to Workbench on any device. To stop one, revoke it."
+9. **Ready setups for Claude Code** (its `claude mcp add --transport http` command) **and an MCP
+   settings file**; Codex and Open WebUI are given the address and header, since their own formats
+   were not checked here.
 
 ---
 

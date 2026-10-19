@@ -250,7 +250,9 @@ first:**
 | **A9** | **Job Sites, slice 1: Workbench's four file tools on a person's machines outside the LAN, with the new access model** | [`remote-nodes.md`](remote-nodes.md) §5 (every call, J1-J18, taken 2026-10-05) | **Built 2026-10-05** ([record](../acceptance/job-sites-run.md): 17 of 17 with the root behind WSL2's NAT, sabotage 45 of 45). Slice 2, 2b.1-2b.4, J14a and J14b built by 2026-10-08 ([J14b record](../acceptance/j14b-signed-calls-run.md)). Slice 3 (cross-site copy) designed 2026-10-08, calls J92-J99 for Troy ([design](job-sites-cross-site-copy.md)) |
 | **A10** | **Website overhaul after v0.2.0**: every new feature described in full, new screenshots, updated install instructions and how-tos | deployed 2026-10-13 ([plan and findings](a10-website-overhaul.md)) | **Built.** The website deploys by manual `workflow_dispatch` |
 | selected 2026-10-15 | AWS-style dashboards for system administrators, fleet and host telemetry over time | [Gateway dashboard built](gateway-operations-dashboard.md); host history remains separate | Troy selected Gateway Metrics after the engine overview; includes operations panels and varied dials. Host history built 2026-10-18 (Hosts page) |
-| next | MR9 | [`workbench-memory-and-documents.md`](workbench-memory-and-documents.md) | MR8 built 2026-10-18 (harness, inbox, relevance, expiry and revisit). Order may change after Troy's setups review |
+| built 2026-10-18 | MR9 | [`workbench-memory-and-documents.md`](workbench-memory-and-documents.md) | MR8 built 2026-10-18 (harness, inbox, relevance, expiry and revisit). Order may change after Troy's setups review |
+| then | **v0.3.0 release** (Troy, 2026-10-18) | `docs/maintenance/testing-and-release.md` | After MR9b. Release qualification on one candidate. The v0.1 data converters stay in v0.3.0 |
+| first after v0.3.0 | Remove the v0.1 data converters, so v0.3.1 has none | memory `project_v020_release` | library `conversions.py`, agent `conversions.py`, control `retired_conversion.py` and the retired handlers in `applied.py` |
 
 ## Not scheduled without Troy
 
