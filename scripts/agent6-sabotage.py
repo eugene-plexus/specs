@@ -1,11 +1,9 @@
 """Sabotage for agent#6: Flash attention is on, off, or the engine's own
-choice, and a runtime saved as a checkbox keeps doing what it did. The
-checkbox is converted once, when `agent.yaml` is loaded (`conversions.py`,
-2026-10-13), and nothing else reads one; `conversions-b-sabotage.py` holds
-the rest of that converter's sabotages.
+choice. A checkbox saved by v0.1 is not converted any more (v0.3.0 did it, once):
+one that reaches a launch is refused, naming v0.1 and the way out.
 
-Each sabotage edits the agent's source, runs the engine, benchmark, builder
-and conversion tests, and restores the file from a byte copy taken first. A
+Each sabotage edits the agent's source, runs the engine, benchmark and builder
+tests, and restores the file from a byte copy taken first. A
 baseline run that must pass opens it. A timeout counts as caught.
 
     python scripts/agent6-sabotage.py [--agent ../agent]
@@ -21,26 +19,18 @@ from pathlib import Path
 LLAMA = "src/eugene_plexus_agent/engines/llama_cpp.py"
 BENCH = "src/eugene_plexus_agent/benchmarks.py"
 BUILDS = "src/eugene_plexus_agent/profile_builds.py"
-CONVERSIONS = "src/eugene_plexus_agent/conversions.py"
 TESTS = [
     "tests/test_engines.py",
     "tests/test_benchmarks.py",
     "tests/test_profile_builds.py",
-    "tests/test_conversions.py",
 ]
 
 SABOTAGES: list[tuple[str, str, str, str]] = [
     (
-        "a converted False becomes off (the over-correction)",
-        CONVERSIONS,
-        '        del flags["flashAttention"]\n        return True',
-        '        flags["flashAttention"] = "off"\n        return True',
-    ),
-    (
-        "a converted True is no longer on",
-        CONVERSIONS,
-        '        flags["flashAttention"] = "on"\n        return True',
-        "        return True",
+        "a checkbox that reaches a launch is no longer refused by name",
+        LLAMA,
+        "    if isinstance(choice, bool):",
+        "    if False:",
     ),
     (
         "a checkbox that reaches a launch is read as a setting",

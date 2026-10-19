@@ -15,13 +15,11 @@ import httpx
 def check(root: Path, blocked: bool) -> None:
     root.mkdir()
     config = root / "config.yaml"
-    original = (
-        b"modelRoots: [/old/models]\n" if blocked else b"modelRoots: [unfinished\n"
-    )
+    original = b"modelRoots: [unfinished\n"
     config.write_bytes(original)
     state = root / "library-state.json"
     if blocked:
-        config.with_name(config.name + ".v0.1.bak").mkdir()
+        config.with_name(config.name + ".bak").mkdir()
         state.write_text(
             '{"version":1,"models":[],"profiles":{"m":{"not":"a list"}}}',
             encoding="utf-8",
@@ -63,14 +61,16 @@ def check(root: Path, blocked: bool) -> None:
                 assert root.name not in str(health), health
                 response = client.patch("/v1/config", json={"modelRoots": []})
                 if blocked:
-                    assert "library-state.json" in health["details"]["storageError"]
+                    storage = health["details"]["storageError"]
+                    assert "library-state.json" in storage, health
+                    assert "start Eugene v0.3.0 once" in storage, health
                     assert response.status_code == 409, response.text
                     assert root.name not in response.text and "backup" in response.text
                     assert config.read_bytes() == original
                 else:
                     assert response.status_code == 200, response.text
                     assert (
-                        config.with_name(config.name + ".v0.1.bak").read_bytes()
+                        config.with_name(config.name + ".bak").read_bytes()
                         == original
                     )
                     assert "configError" not in client.get("/healthz").json()["details"]
@@ -81,7 +81,7 @@ def check(root: Path, blocked: bool) -> None:
             proc.wait(timeout=30)
     assert str(config) in (root / "library.log").read_text(encoding="utf-8")
     print(
-        f"PASS {'failed conversion refuses overwrite' if blocked else 'bad YAML repaired with backup'}; public errors omit paths",
+        f"PASS {'v0.1 state refused by name, repair never overwrites a backup' if blocked else 'bad YAML repaired with backup'}; public errors omit paths",
         flush=True,
     )
 

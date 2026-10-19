@@ -252,7 +252,7 @@ first:**
 | selected 2026-10-15 | AWS-style dashboards for system administrators, fleet and host telemetry over time | [Gateway dashboard built](gateway-operations-dashboard.md); host history remains separate | Troy selected Gateway Metrics after the engine overview; includes operations panels and varied dials. Host history built 2026-10-18 (Hosts page) |
 | built 2026-10-18 | MR9 | [`workbench-memory-and-documents.md`](workbench-memory-and-documents.md) | MR8 built 2026-10-18 (harness, inbox, relevance, expiry and revisit). Order may change after Troy's setups review |
 | then | **v0.3.0 release** (Troy, 2026-10-18) | `docs/maintenance/testing-and-release.md` | After MR9b. Release qualification on one candidate. The v0.1 data converters stay in v0.3.0 |
-| first after v0.3.0 | Remove the v0.1 data converters, so v0.3.1 has none | memory `project_v020_release` | library `conversions.py`, agent `conversions.py`, control `retired_conversion.py` and the retired handlers in `applied.py` |
+| done 2026-10-19 | Remove the v0.1 data converters, so v0.3.1 has none | memory `project_v020_release` | Shipped to Edge for v0.3.1. Old data is refused by name with the way out (start v0.3.0 once, then update) |
 
 ## Not scheduled without Troy
 
