@@ -419,7 +419,13 @@ def setup_root(ctx: Install, api: Api) -> str:
     token = wait(
         lambda: api.call(agent, "POST", "/v1/auth/login", body={"passphrase": PASSPHRASE})["sessionToken"], "agent login", 60
     )  # fmt: skip
-    api.call(agent, "PATCH", "/v1/config", token, {"firstRunComplete": True, "updateChecks": False})
+    api.call(
+        agent,
+        "PATCH",
+        "/v1/config",
+        token,
+        {"firstRunComplete": True, "updateChecks": False},
+    )
     return token
 
 
@@ -685,7 +691,14 @@ def verify(
               f"{(installed.get(name) or '-')[:12]} vs {manifest['components'][name][:12]}")  # fmt: skip
     app, base = workbench_up(ctx, api, token)
     version = app.get("version")
-    check("TO: Workbench is 9f51391", str(version).startswith("9f51391"), version)
+    # The Workbench the candidate's own catalogue names, not one written here.
+    catalogue = api.call(agent, "GET", "/v1/app-catalogue", token)
+    named = next(
+        r["manifest"]["version"]
+        for r in catalogue["apps"]
+        if r["manifest"]["id"] == "workbench"
+    )
+    check("TO: Workbench is the catalogue's", version == named, f"{version} vs {named}")
     schema = ctx.workbench_schema()
     check("TO: Workbench store is schema 21", schema == 21, schema)
     RESULT["schemaAfter"] = schema
