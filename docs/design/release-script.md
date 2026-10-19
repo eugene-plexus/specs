@@ -75,6 +75,30 @@ mismatch in any digest or pin. Never a stop for approval: the request was the
 approval. A security or data-loss finding sets `EDGE_PUBLICATION_PAUSED` and
 stops for Troy.
 
+## What building found (2026-10-19)
+
+- **The evidence runs are sequential**, not paired: the Windows fresh install
+  and the upgrade harness both start at port 19000 and both drive the one
+  Chrome. About eight minutes in all.
+- **The release notes are the one piece of prose.** The record is generated
+  from the results; the notes (`docs/releases/<version>.md`, the previous
+  release's shape) are the session's to write. The record phase stops with
+  exit 3 until they exist, so a session can write them while the evidence runs.
+- **Qualification runs on a `release-candidate/<version>` branch** at the record
+  commit, not on `main`: an Edge ship from another session cannot change what
+  is qualified. Branch pushes run no CI. The tag is made at that commit and the
+  branch deleted.
+- **A runtime change after the candidate stops the record** (anything outside
+  `docs/` between the candidate and `HEAD`): the evidence would no longer
+  describe what is tagged. Don't ship to Edge during a release.
+- **The update check needs a previous release still installed.** The upgrade
+  run's prefix becomes the new release, and recovery uninstalls the gateway
+  from the fresh install. The close phase uses the previous release run's
+  Windows install (kept in its state file, or found under `%TEMP%`), and says
+  so plainly in the record if there is none.
+- **`updates-system-install-acceptance.sh` exits 0 with failed checks**; only
+  its closing `ALL PASS` counts.
+
 ## What stays manual
 
 The NAS root container upgrade (Troy's, root first; this machine has no
