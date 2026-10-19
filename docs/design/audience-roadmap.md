@@ -13,9 +13,12 @@
     ([measurement](../acceptance/m-memory-measurement.md): four starter models pass Troy's bar;
     [acceptance](../acceptance/mr8-suggestions-run.md), 30/30, two people), and
     `reasoning_effort: none` now turns a llama.cpp template's thinking off.
-  - **Next by this roadmap (2026-10-19):** the memory reshape, MV1 first. The memory research
-    recommended reshaping Workbench's memory rather than replacing it, and Troy took all fourteen
-    calls ([research and calls](memory-research-2026-10.md)).
+  - **Next by this roadmap (2026-10-19):** the memory reshape, MV2 (past chats) next. MV1 (long
+    notes, procedures, tags, versions, notes chosen every turn) is on Edge
+    ([design](workbench-memory-v2.md), [acceptance](../acceptance/mv1-memory-run.md), 51/51 live);
+    its call MV1-C1 is open for Troy with its default built. The memory research recommended
+    reshaping Workbench's memory rather than replacing it, and Troy took all fourteen calls
+    ([research and calls](memory-research-2026-10.md)).
   - **Business candidates, not scheduled:** a live vLLM run on current Edge (the last was
     2026-09-10, [record](../acceptance/m4-vllm-run.md)); vLLM installed from its official
     container image; a gateway load test at 1-256 concurrent streams, the evidence any Rust
