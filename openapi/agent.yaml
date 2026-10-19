@@ -5194,6 +5194,16 @@ components:
           description: |
             Requested node name. Defaults to the host's own name, which
             is the answer an operator would have typed anyway.
+        label:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: |
+            The name people see for this machine, passed to the control
+            root's enrollment as `EnrollmentRequest.label` and checked there
+            (`NodeLabel` in `control.yaml`). The first-run wizard sends what
+            the person typed for this machine; omitted, the machine is shown
+            by its name.
 
     ServiceTokenRequest:
       type: object
