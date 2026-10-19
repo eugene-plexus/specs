@@ -3,10 +3,10 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "2d01b3baf6570932c25dfc9611c47421379aa616",
-    "control": "77a15f0f1b74e83aa8c569bf88ccfc9a688bbe62",
+    "agent": "817eeeadb61845db9c7075e06375c0305416248c",
+    "control": "cf234a2dbfeacf57fa1f9de5f2805385ae1e50d4",
     "gateway": "bac6c512cd56ed9f5886bcd2bad2164024b81d30",
-    "library": "27f79fd93c8606e88c62aa0ba9ae907abca1c329",
+    "library": "e7d1e857e76f393a8d86258ca939152ca021a317",
     "tool-driver": "3034479687dee4d20a9e8d88f1e0b7796a1eb949",
     "ui": "d32fc86e1983b4a0b65247c5048cd86e07fd5c88",
     "inference-driver": "9ef3e7db0d06b832dafaf43bf7e89171ec14ecf5"
