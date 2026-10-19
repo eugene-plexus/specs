@@ -8,10 +8,10 @@
 
 [Install Eugene Plexus](https://eugeneplexus.com/install/) ·
 [See it in use](https://eugeneplexus.com/#uses) ·
-[Release notes](docs/releases/v0.2.3.md)
+[Release notes](docs/releases/v0.3.0.md)
 
-**[v0.2.3](https://github.com/eugene-plexus/specs/releases/tag/v0.2.3) is the
-latest release**, published 2026-10-15. It is early software, with rough edges
+**[v0.3.0](https://github.com/eugene-plexus/specs/releases/tag/v0.3.0) is the
+latest release**, published 2026-10-18. It is early software, with rough edges
 and [known limits](#current-status).
 
 ## What is Eugene Plexus?
@@ -49,16 +49,18 @@ computer and add more machines as your setup grows.
 
 For everyday chat, install [**Workbench**](https://eugeneplexus.com/workbench/)
 from **Apps** in the console. It supports documents with sources, saved memory,
-and tools you approve. v0.2.3 adds supported MCP Apps, A2UI forms and AG-UI
-conversations, plus central account groups and a redesigned operations dashboard.
+and tools you approve. v0.3.0 adds suggested notes and connections that let
+other apps use a person's own notes and documents, plus a People directory,
+delegated administration and sign-in with Google, Microsoft or OpenID Connect.
 Open WebUI is also available from Apps.
 
 ## Current status
 
-v0.2.3 has versioned installers and a Linux amd64 container image. Its
-[release checks](docs/acceptance/v0.2.3-release-run.md) include packaged Windows
-and WSL installs with real CPU model replies, Linux system-service update
-checks, macOS runner checks, and container acceptance.
+v0.3.0 has versioned installers and a Linux amd64 container image. Its
+[release checks](docs/acceptance/v0.3.0-release-run.md) include packaged Windows
+and WSL installs with real CPU model replies, a Windows upgrade from v0.2.3
+that keeps chats, notes, documents and people, Linux system-service update and
+recovery checks, macOS runner checks, and container acceptance.
 
 Hardware and first-time-user verification remain uneven:
 
@@ -74,7 +76,7 @@ Hardware and first-time-user verification remain uneven:
 
 The [support matrix](docs/support-matrix.md) records measured, simulated,
 pending and unsupported cases through v0.2.0; read it with the
-[v0.2.3 changes and release limits](docs/releases/v0.2.3.md).
+[v0.3.0 changes and release limits](docs/releases/v0.3.0.md).
 Development priorities live in the [audience roadmap](docs/design/audience-roadmap.md).
 
 ## Installing it
@@ -87,22 +89,22 @@ Python, Node.js, Git or an inference engine installed first.
 **Windows:** open PowerShell and approve the administrator prompt.
 
 ```powershell
-irm https://eugeneplexus.com/releases/v0.2.3/install.ps1 | iex
+irm https://eugeneplexus.com/releases/v0.3.0/install.ps1 | iex
 ```
 
 **Linux:** use a terminal as your normal user. The installer asks for `sudo`
 when setting up its service; see the guide for systemd and WSL requirements.
 
 ```sh
-curl -fsSL https://eugeneplexus.com/releases/v0.2.3/install.sh | sh
+curl -fsSL https://eugeneplexus.com/releases/v0.3.0/install.sh | sh
 ```
 
-These commands stay on **v0.2.3**. The
-[release assets](https://github.com/eugene-plexus/specs/releases/tag/v0.2.3)
+These commands stay on **v0.3.0**. The
+[release assets](https://github.com/eugene-plexus/specs/releases/tag/v0.3.0)
 include the installer source, component manifest and SHA-256 checksums.
 Follow the installer's final instructions to open the browser console.
 
-**Docker / NAS:** use `ghcr.io/eugene-plexus/control-plane:v0.2.3` with the
+**Docker / NAS:** use `ghcr.io/eugene-plexus/control-plane:v0.3.0` with the
 published [Compose and storage instructions](https://eugeneplexus.com/install/#docker).
 The container runs the console, control root, gateway and model library. It
 can also run models on its CPU or a passed-through NVIDIA GPU; the GPU path
@@ -115,8 +117,8 @@ including from a Rosetta terminal. See the
 verification limits above before trying it.
 
 **Updating:** make a checkpoint using the [backup and recovery guide](docs/recovery.md),
-then update the control root before the other machines. Once the root runs
-v0.2.2, **Machines → Versions → Update all** coordinates the remaining machines
+then update the control root and its standbys before the other machines. Once
+the root runs v0.3.0, **Machines → Versions → Update all** coordinates the remaining machines
 and installed catalogue apps, including Workbench. Containers use their host's
 update controls; a root requiring a manual update pauses the remaining work. Follow the
 [update instructions](https://eugeneplexus.com/install/#update) for your current
