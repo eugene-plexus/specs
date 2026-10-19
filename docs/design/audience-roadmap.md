@@ -1,6 +1,6 @@
 # Audience roadmap
 
-**Status: the order of work from 2026-09-30, brought up to date 2026-10-18.**
+**Status: the order of work from 2026-09-30, brought up to date 2026-10-19.**
 - **Built 2026-10-18: SD1, [speculative decoding](speculative-decoding.md) for llama.cpp**
   ([record](../acceptance/sd1-speculative-decoding.md)). It came from two audience passes on
   2026-10-18: 17 setups from r/LocalAIServers (four run MTP), then YouTube benchmark creators.
@@ -13,8 +13,9 @@
     ([measurement](../acceptance/m-memory-measurement.md): four starter models pass Troy's bar;
     [acceptance](../acceptance/mr8-suggestions-run.md), 30/30, two people), and
     `reasoning_effort: none` now turns a llama.cpp template's thinking off.
-  - **Next by this roadmap:** MR9, MCP and the Anthropic door
-    ([design](workbench-memory-and-documents.md)).
+  - **Next by this roadmap (2026-10-19):** the memory reshape, MV1 first. The memory research
+    recommended reshaping Workbench's memory rather than replacing it, and Troy took all fourteen
+    calls ([research and calls](memory-research-2026-10.md)).
   - **Business candidates, not scheduled:** a live vLLM run on current Edge (the last was
     2026-09-10, [record](../acceptance/m4-vllm-run.md)); vLLM installed from its official
     container image; a gateway load test at 1-256 concurrent streams, the evidence any Rust
@@ -253,7 +254,8 @@ first:**
 | built 2026-10-18 | MR9 | [`workbench-memory-and-documents.md`](workbench-memory-and-documents.md) | MR8 built 2026-10-18 (harness, inbox, relevance, expiry and revisit). Order may change after Troy's setups review |
 | then | **v0.3.0 release** (Troy, 2026-10-18) | `docs/maintenance/testing-and-release.md` | After MR9b. Release qualification on one candidate. The v0.1 data converters stay in v0.3.0 |
 | done 2026-10-19 | Remove the v0.1 data converters, so v0.3.1 has none | memory `project_v020_release` | Shipped to Edge for v0.3.1. Old data is refused by name with the way out (start v0.3.0 once, then update) |
-| **next** (Troy, 2026-10-19) | **Memory research**: is Workbench's memory competitive, or should it be extended, reshaped or replaced? | handoff `docs/private/handoff-memory-research.md` | A research slice in a fresh session; no memory changes until Troy decides. Raised by: auto-written memory elsewhere, the 1,000-token budget, 240-character notes, the 300-note cap, and the Memory page putting notes under config (memory `feedback_app_before_config`). The Notes reorganisation waits on it |
+| done 2026-10-19 | **Memory research**: is Workbench's memory competitive, or should it be extended, reshaped or replaced? | [`memory-research-2026-10.md`](memory-research-2026-10.md) | **Reshape.** Keep the built-in store as the default, rebuild it on CoALA's four memory types, raise the limits, let any model the person allows keep notes under an owner-set write policy, index past chats, add tags with a master list, put one contract in front for optional backends (Hindsight first). Troy took all fourteen calls |
+| **next** (Troy, 2026-10-19) | **Memory reshape, MV1-MV7**: MV1 notes with bodies, procedures, tags and supersession, budgets scaled, relevant memory re-chosen each turn; MV2 past chats; MV3 learning and the write policy; MV4 Memory as an app; MV5 backends; MV6 provenance and tidy; MV7 projects | [`memory-research-2026-10.md`](memory-research-2026-10.md) §7, §10; slice designs in `workbench-memory-v2.md` (MV1 writes it) | Handoff `docs/private/handoff-memory-mv1.md`. MV1 includes a store migration and changes what models receive; MV3 changes who writes memory. Both are high risk: one adversarial review each and a real-environment run |
 | candidate, after the setups review | **Connect an app on this machine** (Troy, 2026-10-19): a Workbench connection set up by the person's Job Site instead of a pasted command | not designed | The site's worker (the person's own OS account) finds the installed clients (Claude Code, Codex), writes their config with the client's own tool where one exists (`claude mcp add -s user`) or a merging edit with a backup (`~/.codex/config.toml`), and removes it on revoke. The token goes Workbench → worker → file, never through the browser. Approval like the folder tools. Open WebUI is configured by Eugene itself, no site needed. The copied setup stays the expert route. High risk (auth, writes in a home directory): one review and a real-machine run |
 
 ## Not scheduled without Troy

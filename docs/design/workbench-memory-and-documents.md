@@ -116,8 +116,11 @@ run `docs/acceptance/mr8-suggestions-run.md`):
 
 ## Next
 
-The v0.3.0 release, then the converter removal (v0.3.1). MR9 is built; its design is section 10. Owed: a live run of MR6b's sorting on real
-questions (Troy's).
+The memory research of 2026-10-19 ([`memory-research-2026-10.md`](memory-research-2026-10.md)) chose to
+reshape memory, and Troy took its calls. The memory reshape, MV1 to MV7, supersedes this document's memory
+limits, budgets and write rules. Its section 11 corrects two claims made here: the "97.8% junk" figure and
+Open WebUI's "27B floor". The documents half (MR2-MR7) stays as built. Owed: a live run of MR6b's sorting
+on real questions (Troy's).
 
 ---
 
