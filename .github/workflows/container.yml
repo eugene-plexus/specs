@@ -39,7 +39,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Existing version tag to build and publish (empty publishes edge)"
+        description: "Version to build a candidate for, or to publish (publishing needs its tag); empty builds edge"
         required: false
         type: string
       qualification_run:
@@ -66,7 +66,10 @@ on:
         value: ${{ jobs.build-verify-publish.outputs.digest }}
 
 concurrency:
-  group: container-image
+  # Pushes and manual runs queue together; a qualification's build (the only
+  # caller passing profile) has its own group, so a weekly rehearsal never
+  # holds an Edge build.
+  group: container-image-${{ inputs.profile && github.run_id || 'main' }}
   cancel-in-progress: false
 
 permissions:
@@ -89,7 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.release_tag || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
@@ -118,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v6
@@ -135,7 +138,12 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z]+\.[0-9]+)?$ ]] || exit 1
-          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          # Qualification may run before the tag exists; an existing tag must name this commit.
+          tagged=$(git rev-parse --verify --quiet "refs/tags/$RELEASE_TAG^{commit}" || true)
+          if [ -n "$tagged" ] && [ "$tagged" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::$RELEASE_TAG names $tagged, not this commit"
+            exit 1
+          fi
 
       # Check 5 reads the agent's own `_COMPONENT_SPECS` to derive which
       # `<KIND>_BIND_HOST` variables the image must set, rather than
@@ -180,10 +188,13 @@ jobs:
         id: push
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
           commit=$(git rev-parse HEAD)
           prefix=sha
+          # A rehearsal's build of the same commit must not take the tag of Edge's push build.
+          if [ "$EVENT" != push ]; then prefix=rehearsal-sha; fi
           if [ -n "$RELEASE_TAG" ]; then prefix=release-sha; fi
           candidate="$IMAGE:$prefix-$commit"
           docker tag "$BUILT" "$candidate"

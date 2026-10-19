@@ -97,9 +97,19 @@ failing critical gate to make a candidate eligible.
 
 ## Release qualification
 
-Finish the candidate and its reviewed acceptance record, then create its normal
-version tag. Dispatch **Release qualification** on that exact tag with
-`release_tag` and the committed `docs/acceptance/...md` record path.
+Finish the candidate and its reviewed acceptance record, commit them, and
+dispatch **Release qualification** on that commit's branch with `release_tag`
+(the version it is for) and the committed `docs/acceptance/...md` record path.
+Create the annotated version tag only after qualification passes, at the
+qualified commit or a documentation-only descendant, so a failed candidate
+never needs a tag moved (2026-10-19). A tag that already exists must name the
+qualified commit.
+
+Dispatched with `release_tag` empty, or on its weekly schedule against `main`,
+the workflow is a **rehearsal**: every job runs, its container builds as an
+Edge candidate, and no receipt is produced, so it can never publish. Run one
+before cutting a candidate; the session-start check names a failed scheduled
+rehearsal.
 
 Qualification resolves all seven component pins plus Workbench and site-host
 from the pinned agent, and rejects disagreements with the installer's site-host
@@ -128,6 +138,9 @@ receipt, then retags the retained digest without rebuilding. Candidate builds
 never publish a version alias. GitHub release assets continue to be generated
 from committed blobs with `release-artifacts.py`; publishing a GitHub release
 remains the maintainer's explicit action after these gates and manual checks.
+The maintainer asking for a release is that action for the release asked for:
+the session publishes once every gate and manual check passes, and stops
+instead on any failure (Troy, 2026-10-19).
 
 The qualification artifact expires after 90 days. Missing/expired evidence
 requires requalification, not a bypass. Documentation-only changes can reuse

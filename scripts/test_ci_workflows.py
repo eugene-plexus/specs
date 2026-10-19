@@ -107,6 +107,33 @@ class WiringTests(unittest.TestCase):
             {"candidate", "components", "integration", "container"},
         )
 
+    def test_qualification_runs_before_the_tag_and_a_rehearsal_earns_no_receipt(
+        self,
+    ) -> None:
+        qualification = workflow("release-qualification.yml")
+        inputs = qualification["on"]["workflow_dispatch"]["inputs"]
+        self.assertEqual(inputs["release_tag"]["required"], "false")
+        self.assertTrue(qualification["on"]["schedule"])
+        self.assertEqual(qualification["jobs"]["receipt"]["if"], "inputs.release_tag")
+        script = next(
+            step["run"]
+            for step in qualification["jobs"]["candidate"]["steps"]
+            if step.get("id") == "pins"
+        )
+        self.assertIn("if tagged and tagged != commit", script)
+        self.assertIn("acceptance_digest(", script.split("else:", 1)[0])
+        # The candidate image is built from the qualified commit, not a tag ref.
+        container = workflow("container.yml")
+        for job in ("coverage", "build-verify-publish"):
+            with self.subTest(job=job):
+                self.assertEqual(
+                    container["jobs"][job]["steps"][0]["with"]["ref"], "${{ github.sha }}"
+                )
+        self.assertIn("inputs.profile && github.run_id", container["concurrency"]["group"])
+        # Publication still needs the tag, checked out, at the qualified inputs.
+        promote = container["jobs"]["promote-release"]["steps"][0]
+        self.assertEqual(promote["with"]["ref"], "${{ inputs.release_tag }}")
+
     def test_nested_acceptance_runs_once_and_metadata_can_skip_container_build(
         self,
     ) -> None:

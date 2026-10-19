@@ -4,20 +4,24 @@ on:
     workflow_dispatch:
         inputs:
             release_tag:
-                description: "Existing release tag at this workflow's exact commit"
+                description: "Version this candidate is for. Its tag may be made after qualification; an existing tag must name this commit. Empty runs a rehearsal with no receipt"
                 type: string
-                required: true
+                required: false
             acceptance_record:
-                description: "Reviewed committed docs/acceptance record of packaged install, real upgrades and remaining hardware limits"
+                description: "Reviewed committed docs/acceptance record of packaged install, real upgrades and remaining hardware limits (required with a version)"
                 type: string
-                required: true
+                required: false
+    # A weekly rehearsal of main: every gate, no receipt, so a gap is found
+    # between releases rather than on the day (2026-10-19).
+    schedule:
+        - cron: "23 10 * * 1"
 
 permissions:
     contents: read
     packages: write
 
 concurrency:
-    group: release-qualification-${{ github.sha }}
+    group: release-qualification-${{ github.sha }}-${{ inputs.release_tag || 'rehearsal' }}
     cancel-in-progress: false
 
 jobs:
@@ -44,19 +48,25 @@ jobs:
                   ACCEPTANCE_RECORD: ${{ inputs.acceptance_record }}
               shell: python {0}
               run: |
-                  import json, os, sys
+                  import json, os, subprocess, sys
                   from pathlib import Path
                   sys.path.insert(0, 'scripts')
                   from release_gate import VERSION, acceptance_digest
                   from ci_plan import git
                   root = Path.cwd()
                   tag = os.environ['RELEASE_TAG']
-                  if not VERSION.fullmatch(tag):
-                      raise ValueError('expected a release version tag')
                   commit = git(root, 'rev-parse', 'HEAD').strip()
-                  if git(root, 'rev-parse', f'refs/tags/{tag}^{{commit}}').strip() != commit:
-                      raise ValueError('select the release tag as the workflow ref; do not qualify a different branch head')
-                  acceptance_digest(root, commit, os.environ['ACCEPTANCE_RECORD'])
+                  if tag:
+                      if not VERSION.fullmatch(tag):
+                          raise ValueError('expected a release version tag')
+                      # The tag is made after qualification passes; one that exists already must name this commit.
+                      tagged = subprocess.run(['git', 'rev-parse', '--verify', '--quiet', f'refs/tags/{tag}^{{commit}}'],
+                                              cwd=root, capture_output=True, text=True).stdout.strip()
+                      if tagged and tagged != commit:
+                          raise ValueError(f'{tag} already names {tagged}; qualify that commit or a new version')
+                      acceptance_digest(root, commit, os.environ['ACCEPTANCE_RECORD'])
+                  else:
+                      print('Rehearsal: every gate runs on this commit; no release receipt is produced')
                   with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
                       stream.write('agent=' + json.loads(Path('release/manifest.json').read_text())['components']['agent'] + '\n')
             - uses: actions/checkout@v6
@@ -162,6 +172,8 @@ jobs:
 
     receipt:
         needs: [candidate, components, integration, container]
+        # A rehearsal has no version and earns no receipt.
+        if: inputs.release_tag
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v6
