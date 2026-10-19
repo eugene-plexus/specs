@@ -68,4 +68,27 @@ public HTTPS), with a connection he made on the Memory page with `suggest_note` 
 
 Limits: one person, one client, Claude Code's CLI; the VS Code extension shares its config but
 was not restarted to use the server. `claude mcp add` keeps the token in plain text in
-`~/.claude.json`. Codex's and Open WebUI's formats remain unchecked.
+`~/.claude.json`.
+
+## A real Codex, 2026-10-19
+
+The same Workbench, with the `codex.exe` the Codex VS Code extension carries (codex-cli
+0.162.0-alpha.17.2; no separate install), driven by `codex exec`:
+
+- **Setup format.** Workbench's JSON block is not what Codex reads, and `codex mcp add --url`
+  takes a token only from an environment variable. Troy added this to `~/.codex/config.toml`:
+  `[mcp_servers.workbench]`, `url = "<address>"`,
+  `http_headers = { Authorization = "Bearer <token>" }`; `codex mcp list` showed it enabled with
+  a bearer token. Workbench now shows this block as its Codex setup (workbench `ddfcb8d`).
+- **Tools and reads.** All four tools listed; `search_notes` found the note kept from Claude
+  Code; `search_documents` found the Markdown document (5 passages); `read_document` returned
+  11,999 characters, cut.
+- **Suggestion.** On a second connection, `suggest_note` waited under Suggested notes on the
+  Memory page, named "Suggested by Codex Here, an app you connected", with Keep, Edit, Dismiss.
+- **Revoking.** Revoked without keeping it: the suggestion was gone, a direct `initialize` with
+  the token got 401 and the made-up token's text, and Codex reported the tool unavailable. (A
+  first try that skipped the revoke's confirmation left the connection working, as it should.)
+
+Found along the way: the tool, the connection's rights and the setting said suggestions wait "in
+the inbox", but Workbench's page calls the place Suggested notes; they now say so (workbench
+`ddfcb8d`). Open WebUI's format remains unchecked.
