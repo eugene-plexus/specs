@@ -70,6 +70,225 @@ def _load_workbench(src: Path):
     return memory_suggest
 
 
+#: MV1 (call 14): a person's tag list, for `--tags N`, its first N sent with each request so
+#: the cut-off at which a small model's suggestions get worse is measured. The first twelve fit
+#: the labelled sets; the rest are what a long list holds.
+TAG_POOL: list[tuple[str, str]] = [
+    ('work', 'my job and what I do for a living'),
+    ('family', 'my partner, children, parents and relatives'),
+    ('health', 'my body, fitness and medical matters'),
+    ('travel', 'trips, places I go and how I get there'),
+    ('food', 'what I eat, cook and avoid'),
+    ('tech', 'computers, devices and software I use'),
+    ('writing', 'how I want text written and my own writing'),
+    ('projects', 'things I am working on over weeks or months'),
+    ('home', 'where I live and my household'),
+    ('learning', 'courses, languages and skills I am learning'),
+    ('hobbies', 'what I do for fun'),
+    ('events', 'dated plans and appointments'),
+    ('garden', ''),
+    ('cooking', ''),
+    ('cycling', ''),
+    ('running', ''),
+    ('climbing', ''),
+    ('hiking', ''),
+    ('camping', ''),
+    ('fishing', ''),
+    ('sailing', ''),
+    ('chess', ''),
+    ('music', ''),
+    ('guitar', ''),
+    ('piano', ''),
+    ('singing', ''),
+    ('painting', ''),
+    ('drawing', ''),
+    ('photography', ''),
+    ('film', ''),
+    ('books', ''),
+    ('reading', ''),
+    ('poetry', ''),
+    ('podcasts', ''),
+    ('news', ''),
+    ('politics', ''),
+    ('history', ''),
+    ('science', ''),
+    ('physics', ''),
+    ('chemistry', ''),
+    ('biology', ''),
+    ('math', ''),
+    ('statistics', ''),
+    ('finance', ''),
+    ('taxes', ''),
+    ('budget', ''),
+    ('savings', ''),
+    ('investing', ''),
+    ('insurance', ''),
+    ('mortgage', ''),
+    ('rent', ''),
+    ('car', ''),
+    ('bike', ''),
+    ('transit', ''),
+    ('flights', ''),
+    ('hotels', ''),
+    ('visas', ''),
+    ('passport', ''),
+    ('language', ''),
+    ('spanish', ''),
+    ('french', ''),
+    ('german', ''),
+    ('japanese', ''),
+    ('chinese', ''),
+    ('italian', ''),
+    ('portuguese', ''),
+    ('korean', ''),
+    ('arabic', ''),
+    ('hindi', ''),
+    ('russian', ''),
+    ('pets', ''),
+    ('dog', ''),
+    ('cat', ''),
+    ('birds', ''),
+    ('fish', ''),
+    ('aquarium', ''),
+    ('plants', ''),
+    ('houseplants', ''),
+    ('recipes', ''),
+    ('baking', ''),
+    ('coffee', ''),
+    ('tea', ''),
+    ('wine', ''),
+    ('beer', ''),
+    ('vegan', ''),
+    ('vegetarian', ''),
+    ('allergies', ''),
+    ('diet', ''),
+    ('sleep', ''),
+    ('meditation', ''),
+    ('yoga', ''),
+    ('gym', ''),
+    ('swimming', ''),
+    ('tennis', ''),
+    ('football', ''),
+    ('basketball', ''),
+    ('baseball', ''),
+    ('golf', ''),
+    ('skiing', ''),
+    ('snowboard', ''),
+    ('surfing', ''),
+    ('diving', ''),
+    ('martial-arts', ''),
+    ('boxing', ''),
+    ('dance', ''),
+    ('theatre', ''),
+    ('opera', ''),
+    ('museums', ''),
+    ('art', ''),
+    ('design', ''),
+    ('fashion', ''),
+    ('shopping', ''),
+    ('gifts', ''),
+    ('birthdays', ''),
+    ('holidays', ''),
+    ('wedding', ''),
+    ('kids', ''),
+    ('school', ''),
+    ('homework', ''),
+    ('university', ''),
+    ('exams', ''),
+    ('thesis', ''),
+    ('research', ''),
+    ('papers', ''),
+    ('conferences', ''),
+    ('talks', ''),
+    ('teaching', ''),
+    ('mentoring', ''),
+    ('hiring', ''),
+    ('interviews', ''),
+    ('career', ''),
+    ('resume', ''),
+    ('salary', ''),
+    ('meetings', ''),
+    ('email', ''),
+    ('calendar', ''),
+    ('notes', ''),
+    ('todo', ''),
+    ('productivity', ''),
+    ('habits', ''),
+    ('goals', ''),
+    ('journaling', ''),
+    ('therapy', ''),
+    ('friends', ''),
+    ('neighbours', ''),
+    ('community', ''),
+    ('volunteering', ''),
+    ('charity', ''),
+    ('church', ''),
+    ('clubs', ''),
+    ('games', ''),
+    ('boardgames', ''),
+    ('videogames', ''),
+    ('streaming', ''),
+    ('youtube', ''),
+    ('social-media', ''),
+    ('privacy', ''),
+    ('security', ''),
+    ('passwords', ''),
+    ('backups', ''),
+    ('linux', ''),
+    ('windows', ''),
+    ('mac', ''),
+    ('android', ''),
+    ('iphone', ''),
+    ('homelab', ''),
+    ('servers', ''),
+    ('networking', ''),
+    ('docker', ''),
+    ('kubernetes', ''),
+    ('python', ''),
+    ('rust', ''),
+    ('javascript', ''),
+    ('typescript', ''),
+    ('go', ''),
+    ('java', ''),
+    ('databases', ''),
+    ('sql', ''),
+    ('cloud', ''),
+    ('aws', ''),
+    ('azure', ''),
+    ('gcp', ''),
+    ('ai', ''),
+    ('models', ''),
+    ('gpus', ''),
+    ('electricity', ''),
+    ('solar', ''),
+    ('renovation', ''),
+    ('diy', ''),
+    ('tools', ''),
+    ('woodworking', ''),
+    ('plumbing', ''),
+    ('electrical', ''),
+    ('cleaning', ''),
+    ('chores', ''),
+    ('moving', ''),
+    ('storage', ''),
+    ('clients', ''),
+    ('invoices', ''),
+    ('contracts', ''),
+    ('legal', ''),
+    ('accounting', ''),
+    ('marketing', ''),
+    ('sales', ''),
+    ('support', ''),
+    ('product', ''),
+    ('roadmap', ''),
+    ('launch', ''),
+    ('bugs', ''),
+    ('releases', ''),
+    ('docs', ''),
+    ('testing', ''),
+]
+
+
 # --------------------------------------------------------------------------- #
 # the labelled sets
 # --------------------------------------------------------------------------- #
@@ -443,6 +662,10 @@ def main() -> int:
     parser.add_argument("--only", help="comma-separated set ids or categories")
     parser.add_argument("--workbench", type=Path, default=HERE.parents[2] / "workbench" / "src")
     parser.add_argument("--out", type=Path, default=HERE.parents[1] / "docs/acceptance/m-memory-data")
+    parser.add_argument("--tags", type=int, default=0,
+                        help="send the person's tag list as its first N tags of TAG_POOL (MV1)")
+    parser.add_argument("--enum-max", type=int, default=None,
+                        help="the longest list sent as an enum (default: Workbench's TAG_ENUM_MAX)")
     parser.add_argument("--rescore", action="store_true",
                         help="judge the stored answers in --out again with Workbench's code as it is now; no engine")
     args = parser.parse_args()
@@ -454,6 +677,10 @@ def main() -> int:
         parser.error("--server and --model are needed unless --rescore")
     name = args.name or args.model.stem
     label = name + ("" if args.thinking == "off" else "+thinking")
+    if args.tags:
+        label += f"+tags{args.tags}" + (f"-enum{args.enum_max}" if args.enum_max is not None else "")
+    tags = [ms.TagChoice(t, d) for t, d in TAG_POOL[: args.tags]] if args.tags else []
+    enum_max = {} if args.enum_max is None else {"enum_max": args.enum_max}
     chosen = [s for s in SETS if not args.only or s["id"] in args.only.split(",")
               or s["category"] in args.only.split(",")]
     args.out.mkdir(parents=True, exist_ok=True)
@@ -477,7 +704,11 @@ def main() -> int:
                     records.append(record)
                     print(f"  {s['id']:>15} #{seed}  not asked (nothing left to read)", flush=True)
                     continue
-                body = ms.request_body(name, sources, known, TODAY, secrets.token_hex(4))
+                body = (
+                    ms.request_body(name, sources, known, TODAY, secrets.token_hex(4), tags, **enum_max)
+                    if tags
+                    else ms.request_body(name, sources, known, TODAY, secrets.token_hex(4))
+                )
                 body["seed"] = seed
                 # What the driver does with it for a llama.cpp backend.
                 if body.pop("reasoning_effort", None) == "none" and args.thinking == "off":
@@ -493,6 +724,7 @@ def main() -> int:
                 raw_items = [i for i in (raw or []) if isinstance(i, dict)]
                 accepted = [
                     {"text": p.text, "quote": p.quote, "kind": p.kind,
+                     "tags": list(getattr(p, "tags", ())),
                      "date": p.expires_at or "", "replaces": next(
                          (n for n, k in enumerate(known, 1) if k.id == p.replaces), 0)}
                     for p in (outcome.proposals if outcome else [])
@@ -520,6 +752,7 @@ def main() -> int:
         process.kill()
         process.wait()
     result = {"model": label, "file": args.model.name, "engine": engine, "thinking": args.thinking,
+              "tags": args.tags, "enumMax": args.enum_max,
               "today": TODAY.isoformat(), "samples": args.samples,
               "sets": {s["id"]: {k: s[k] for k in ("category", "expect", "canary")} for s in chosen},
               "records": records}
