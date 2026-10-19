@@ -114,7 +114,8 @@ run `docs/acceptance/mr8-suggestions-run.md`):
 
 ## Next
 
-MR9 (MCP and the Anthropic door). Owed: a live run of MR6b's sorting on real questions (Troy's).
+MR9 (MCP and the Anthropic door), designed in section 10. Owed: a live run of MR6b's sorting on real
+questions (Troy's).
 
 ---
 
@@ -1222,6 +1223,180 @@ embedding and rerank throughput; FTS5 and `pypdfium2` and `python-docx` installs
 tokenizer choice for FTS5 on non-English text; the dense floor per embedder; whether llama-server allocates
 the full KV cache for an embedder; Open WebUI RAG through Eugene; vLLM pooling runners; the memory
 extractor's quality on any local model.
+
+---
+
+## 10. MR9: reach for memory and documents (designed 2026-10-18)
+
+Two pieces, two slices: **MR9a**, the gateway's Anthropic door carrying `search_result` blocks and the
+`memory_20250818` tool for every backend; **MR9b**, Workbench serving an MCP server over a person's own
+notes and documents, reached with a connection the person makes. The OpenAI Files and vector-store
+facade stays out (MRC24 is Troy's). Calls MRC29 to MRC32 are Troy's, taken as recommended on 2026-10-18 (10.6); the rest are taken.
+
+### 10.1 What exists (read 2026-10-18)
+
+- **Sign-in.** Workbench signs people in through Eugene's OIDC. A session is a cookie plus a header
+  secret, 30 days (`sessions.py:40`), refreshed against the root every 10 minutes; the refresh is where
+  a disabled person, a new password, an ended shared sign-in or a withdrawn app grant is caught (C2 D6
+  and D9, U4). Model calls carry the person's root access token beside the app key (U3); background
+  work uses only its owner's unexpired session (`store.latest_session`). Root refresh tokens last 30
+  days and are not rotated. [V]
+- **Reach.** Workbench binds the agent's bind host on port 8190 (the agent passes `BIND_HOST`); with an
+  HTTPS entry point it has a `public_origin` and refuses any other host with a 421. [V]
+- **MCP.** Workbench is an MCP *client* only (C5, `mcp>=2.3,<2.4`). Nothing outside Workbench can read a
+  person's notes or documents. [V]
+- **The Anthropic door** translates every request to chat completions (no driver speaks Anthropic's
+  wire). A `search_result` block is **dropped silently**, at the top level of a user turn and inside a
+  `tool_result` (`translate_request` has no branch for it; `_tool_result_text` reads only top-level
+  `text` fields): a settings-never-lie defect today. Every typed tool but `web_search_*` is refused
+  with Anthropic's `Input tag` words, so `memory_20250818` is a 400. [V]
+- **Upstream** (platform.claude.com, read 2026-10-18). `search_result` is `source`, `title` and
+  `content` (text blocks only), with optional `citations.enabled` (one setting for every result in a
+  request) and `cache_control`; user turns only, at the top level or inside a `tool_result`. Citations
+  come back as `search_result_location` (`source`, `title`, `cited_text`, `search_result_index` counted
+  across the whole request in order, `start_block_index`, `end_block_index`). `memory_20250818`
+  (`name: "memory"`, no beta header) is **client-side**: the API adds a fixed protocol text to the
+  system prompt, the model calls `view`, `create`, `str_replace`, `insert`, `delete` or `rename` on paths
+  under `/memories`, and the client's own handler runs each on its own storage. [V]
+
+### 10.2 MR9a: the Anthropic door
+
+1. **`search_result` is flattened into text the model reads**, wherever Anthropic allows it:
+
+   ```
+   [Search result 1: <title> (<source>)]
+   <each text block, separated by a blank line>
+   [End of search result 1]
+   ```
+
+   The number is `search_result_index + 1`, counted in request order across messages and tool results
+   exactly as Anthropic counts, so it is stable from turn to turn (the prefix cache holds) and a
+   client's index and the model's "[1]" mean the same result. At the top level it is a text part in
+   its place; inside a `tool_result` it joins that tool message's text. Refused with a 400 in
+   Anthropic's words, as upstream refuses them: a missing `source`, `title` or `content`, a non-text
+   block in `content`, a `search_result` on an assistant turn, and `citations.enabled` that differs
+   between results. `count_tokens` counts the flattened text.
+2. **Citations are named, not faked (MRC33, taken).** `citations.enabled: true` is accepted and
+   `x-eugene-plexus-ignored-settings` names `citations`: a local model cannot say which content blocks
+   it drew on, so no `search_result_location` is returned. Asking the model to cite "[n]" and turning
+   the markers into whole-result citations is possible later; it is left out because a marker the
+   model invents would be a citation that lies.
+3. **`memory_20250818` becomes a function tool, and stays the client's to run.** The door replaces it
+   with a function named `memory`: a JSON schema with a `command` enum of the six commands and each
+   command's fields (`path`, `view_range`, `file_text`, `old_str`, `new_str`, `insert_line`,
+   `insert_text`, `old_path`, `new_path`), and a description in our words of what Anthropic's tool
+   tells the model (paths stay under `/memories`; `create` creates or overwrites; the root cannot be
+   deleted or renamed). The documented protocol text is appended after the client's own system text,
+   so an unchanged system prompt keeps its cached prefix. The model's call comes back as an ordinary
+   `tool_use` block named `memory`, which is what Anthropic returns, and the client runs it. The
+   gateway executes nothing, stores nothing and checks paths no further than the schema.
+   `tool_choice: {"type": "tool", "name": "memory"}` works; a client function also named `memory` in
+   the same request is a 400; other typed tools are still refused. `count_tokens` counts the
+   expansion. Why the gateway does not run it against Workbench's memory: MRC32.
+4. **Contract.** `gateway.yaml`: `AnthropicContentBlock` names `search_result` (`source`, `title`,
+   `citations`) and `AnthropicToolDefinition` names `memory_20250818`; the endpoint text says what is
+   flattened, what is ignored and what the client runs. Both schemas are loose on purpose, so the
+   radius should be description text only; the regeneration diff of every consumer decides.
+
+### 10.3 MR9b: Workbench's MCP server, reached with connections
+
+**Where it lives (MRC34, taken): Workbench, at `<Workbench's address>/mcp`.** Streamable HTTP, the
+SDK 2.3 server in stateless JSON mode, in Workbench's process. Not the agent: the notes and each
+person's index are Workbench's, and apps-and-spokes keeps what acts on a person's files in the app;
+the agent would need a back door into Workbench's store. Not a new component: MRC1's trigger for
+extraction is a second consumer of the *store*, and an MCP client is a consumer of a *door* Workbench
+can serve. The tools call the same `memory`, `memory_relevance` and `saved` functions the pages call,
+so extraction later stays a move, not a rewrite.
+
+**Who may call it: whoever holds a connection, as the person who made it (MRC29).**
+
+- A person makes a connection in a new **Connections** section of the Memory page (linked from
+  Documents): a name ("Claude Code on my laptop"); what it may do, each a checkbox: *read my notes*,
+  *search my documents*, *suggest notes* (off by default, MRC31); an expiry of 30, 90 (the default)
+  or 365 days. The token is shown once, with Workbench's MCP address and a ready configuration for
+  Claude Code, Codex and Open WebUI. It is 32 random bytes with a `wbc_` prefix (so secret scanners
+  know it), stored as its SHA-256 only, compared in constant time. The list shows name, rights,
+  created, expires, last used and calls today, with Revoke. At most 10 a person.
+- **A connection lives inside the person's sign-in.** Each call finds the person's newest unexpired
+  Workbench session and, when its access is older than 10 minutes, refreshes it against Eugene (the
+  existing `_refresh` path). So a disabled person, a changed password, "end all sign-ins" or a
+  withdrawn Workbench grant stops every connection within 10 minutes, with no root change. With no
+  live session the call is a 401 and the page says "Sign in to Workbench again to use your
+  connections". The same session carries the person's proof to the gateway for search by meaning
+  (U3); nothing borrows anyone else's.
+- **The owner** cannot make, list or use anyone else's connections, and `ownerReadsChats` does not
+  reach them (MRC5, no role sees everything). The install setting `connections` (MRC30) turns every
+  connection off at once.
+- **Transport.** `Authorization: Bearer` only; a token in the address or query string is refused; the
+  session cookie never opens `/mcp`, and nothing there reads it. An `Origin` header that is not
+  Workbench's own is refused (MCP's DNS-rebinding rule). Every bad token gets the same 401, so the
+  door does not say whether one exists; the person's page names the cause (revoked, expired, sign-in
+  ended, connections turned off). HTTPS when Workbench has a `public_origin`; otherwise plain HTTP on
+  the LAN, as the sign-in cookie already travels, and the page says so beside the address.
+
+**Tools**, each listed only when the connection has its right, and checked again when called:
+
+| Tool | Right | What it returns or does |
+|---|---|---|
+| `search_notes(query, limit≤20)` | read my notes | Active notes that match, by MR8's relevance (words and meaning; meaning only through a local search model already running, MRC28); an empty query returns the person's instruction and pinned notes. Text, kind, id, dates. Never pending, dismissed or past notes. |
+| `search_documents(query, limit≤10)` | search my documents | The search Test a question runs (words, meaning, the sorter when one runs): passages with file name, page, heading path and document id, at most 8,000 tokens in all. |
+| `read_document(document_id, page?)` | search my documents | One document's text from the extracted copy, a page or the first 4,000 tokens, with the page count. |
+| `suggest_note(text, why?)` | suggest notes | Checked as a typed note is (240 characters, secrets, hidden characters) and against MR8's sensitive categories and dedupe; lands in the **inbox** as `pending` with source "connection" and the connection's name, never kept without the person (MRC3). It counts against the person's 20 suggestions a day; revoking the connection removes its unkept suggestions. |
+
+No tool edits, deletes, lists every note or exports: changing what is kept stays on the page. Results
+carry `structuredContent` and a text rendering; passages are delimited and labelled as the person's
+documents, data rather than instructions, because the calling agent may also be reading a hostile page.
+A note or document that is not the caller's answers exactly as one that does not exist.
+
+**Limits and logs (MRC35, taken).** 60 calls a minute and 4 at once a connection; a query at most 1,000
+characters. The log carries the tool, the connection's id, counts and time, never a query or a result's
+words. Calls today and last used are counted per connection for the page.
+
+**Outside models (MRC30).** The app behind a connection usually sends what it reads to its own model,
+often a cloud one (Claude Code to Anthropic). Making the connection is the person's say for what its
+rights allow, and the dialog says so before it shows the token.
+
+**Not in MR9b:** MCP resources and prompts, OAuth for MCP clients (MRC29's alternative), Workbench's own
+chats using the server (they already have memory and documents natively), shared or team stores
+(MRC25).
+
+### 10.4 Acceptance, review and sabotage
+
+- **MR9a** is a cross-component door change of ordinary risk. Gateway tests for the changed paths, then
+  one acceptance at the boundary (`specs/scripts/mr9a-anthropic-door-acceptance.py`): real gateway,
+  driver and `llama-server` with a small model, a recording proxy before the engine. Flattened results
+  reach the engine numbered across the top level and tool results; mixed `citations` is a 400 and
+  `citations` is named in the header; the `memory` function and the protocol text reach the engine; a
+  real model's `memory` call comes back as a `tool_use` with a valid command; `count_tokens` counts
+  both. Sabotage once: the request-wide numbering, the ignored header, the protocol text.
+- **MR9b** is auth: **one adversarial review** of the diff, and acceptance with two people
+  (`workbench/scripts/mr9-connections-acceptance.py`, MR8's stack: real Workbench, gateway, driver and
+  engine, recording proxies, the stand-in sign-in) driven by the SDK's real Streamable HTTP client, as
+  Claude Code would: Ada's connection finds her notes and passages and never Bo's (Bo's ids answer as
+  missing); a notes-only connection is not offered `search_documents` and is refused when it calls it;
+  `suggest_note` lands pending in her inbox, a secret is refused, the daily cap holds; revoking stops
+  the next call; the stand-in refusing her refresh stops her connections; no live session is a 401;
+  the install switch stops all; a foreign `Origin`, a query-string token and the session cookie alone
+  are refused; the owner with `ownerReadsChats` on reads nothing; the database holds no token in
+  clear; the log holds no query words. Sabotage once each: the owner filter, the rights check, the
+  token compare, the sign-in binding, the `Origin` check, `pending`.
+
+### 10.5 Order
+
+MR9a first (no auth, and it fixes a silent drop today), then MR9b. Each ships on its own with
+`scripts/ship.py --wait`.
+
+### 10.6 Calls
+
+| # | Decision | Recommended | Why | Who |
+|---|---|---|---|---|
+| MRC29 | How an outside app proves who it acts for | A connection token the person makes in Workbench, scoped and expiring, working only while that person has a live Workbench sign-in (re-checked with Eugene every 10 minutes). Alternative: MCP's OAuth with Eugene as the authorization server (Claude Code and Codex speak it; the root would need public clients, dynamic or metadata-document registration and audience-bound tokens: a root auth slice of its own) | No root change; revocation as fast as Workbench's own; the 30-day re-sign-in is the cost | Troy: as recommended (2026-10-18) |
+| MRC30 | The install's default, and whether a connection is the person's say for outside models | `connections` on, since nothing is reachable until a person makes one; making one is their say (MRC6) for what its rights allow, and the dialog says the app may send it to an outside model | Easy default; consent stays per person | Troy: as recommended (2026-10-18) |
+| MRC31 | Writes from a connection | `suggest_note` only, to the inbox, off per connection by default. Section 4.8 item 5 gated tool `remember` on the MR8 harness, which cannot test an outside app's model; the inbox is what holds it to the person | Nothing kept without the person (MRC3) | Troy: as recommended (2026-10-18) |
+| MRC32 | `memory_20250818` and Workbench's memory | The door makes the tool work for every backend and leaves it the client's to run on its own `/memories`, as Anthropic defines it; Workbench's memory is reached through MR9b. The 6.1 row's "mapped onto Workbench memory" would make the gateway hold or fetch a person's data (D2 was rejected) and answer a client-side tool behind the client's back | The gateway holds no user data | Troy: as recommended (2026-10-18) |
+| MRC33 | Citations on `search_result` | Accepted and named ignored; no citations returned | Settings never lie | taken |
+| MRC34 | Where the MCP server lives | Workbench, `/mcp` | The store and the person are there | taken |
+| MRC35 | Tools, limits, logs | 10.3's four tools; 60 a minute, 4 at once, 10 connections a person; counts in logs, never words | Bounded and auditable | taken |
 
 ---
 
