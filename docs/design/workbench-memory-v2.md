@@ -5,7 +5,8 @@ gets a section here: its design, its calls, and what building found. The researc
 this doc holds the what. Paths are under `workbench/src/eugene_plexus_workbench/` unless named.
 
 Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 parked until MV3, its default built.
-MV2 (past chats) designed 2026-10-19, call MV2-C1 written with its default built; building.**
+MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
+default built. Next: MV3.**
 
 ---
 
@@ -605,6 +606,14 @@ Every other decision MV2 needed was inside call 7 or the design's remit.
   from the store in the background (review: past chats were empty until the next restart).
 - **One chat that cannot be put does not stop a person's backfill**; it is retried with the
   touched ones. AG-UI answers are touched when their run ends, as answers are (review).
+- **The live run found meaning left behind by a restart** (`docs/acceptance/mv2-past-chats-run.md`).
+  A restart leaves exchanges "ready, words only" until a search model is seen, and nothing woke the
+  meaning worker for them until a new answer came: the status said nothing was owed, and a search
+  by meaning found nothing. The status now counts every passage without meaning and says when no
+  search model can run, and a search of past chats or notes (MV1 had the same gap) or a look at
+  the status wakes the worker when meaning is owed, as a look at the Documents screen does.
+- **The backfill writes about 465 exchanges a second** by words on this PC (2,000 exchanges,
+  resumed after a stop part way); meaning follows in the background.
 - **Accepted, not fixed (minor):** an answer in another chat that quoted a deleted chat in its own
   words keeps them, and that chat's exchange holds them (the model's words are its own answer, not
   a copy we keep); an MCP connection with Search my past chats may read document passages earlier
