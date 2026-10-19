@@ -20,6 +20,7 @@ the calls made while building.
 | MR6 | `POST /v1/rerank` (Jina, Cohere and TEI bodies, scores 0 to 1, one model per request) and the `rerank` surface; Open WebUI's document search through Eugene (its search model, its sorter as the external reranker, hybrid search), and its privacy defect fixed | specs `e43483f` to `7ddc4d9`, gateway `226b607`, inference-driver `b1d6820`, agent `85e9e76` | `docs/acceptance/mr6-rerank-run.md` |
 | MR6b | Workbench sorts its best passages with a served sorter (heading path + text, the best 10 of each way, a Sort time budget priced from measured speed); the Documents screen and Test a question say whether and why not | workbench `534a8bd` to `3a1408c`, dist `7658527`, agent `aaf54ce` | `docs/acceptance/mr6b-sorting-run.md` |
 | MR8 | Memory suggestions after a measured harness: an inbox of notes a chat's model proposed from the person's own words, kept or turned away; Learn from my chats; relevance by meaning and words; events that expire and projects revisited; `reasoning_effort: none` reaching llama.cpp | workbench, inference-driver, specs (harness) | `docs/acceptance/m-memory-measurement.md`, `docs/acceptance/mr8-suggestions-run.md` |
+| MR9a | The Anthropic door reads `search_result` blocks (numbered across the request; `citations` named ignored) and turns `memory_20250818` into a function the client runs, with Anthropic's protocol text | gateway, specs `241059c` | `docs/acceptance/mr9a-anthropic-door-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -114,7 +115,7 @@ run `docs/acceptance/mr8-suggestions-run.md`):
 
 ## Next
 
-MR9 (MCP and the Anthropic door), designed in section 10. Owed: a live run of MR6b's sorting on real
+MR9b (Workbench's MCP server and connections); MR9 is designed in section 10, and MR9a is built. Owed: a live run of MR6b's sorting on real
 questions (Troy's).
 
 ---
