@@ -4,7 +4,7 @@ The build of `memory-research-2026-10.md` (Troy took its fourteen calls on 2026-
 gets a section here: its design, its calls, and what building found. The research doc holds the why;
 this doc holds the what. Paths are under `workbench/src/eugene_plexus_workbench/` unless named.
 
-Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 open, its default built.
+Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 parked until MV3, its default built.
 Next: MV2.**
 
 ---
@@ -290,7 +290,7 @@ Sabotage each new critical check once (`check-memory-sabotage.py`).
 
 ### 12. Calls
 
-**MV1-C1 (open, Troy's): the model does not see the tag list.** Call 14 had a model propose tags
+**MV1-C1 (parked until MV3, Troy 2026-10-19; the default stands): the model does not see the tag list.** Call 14 had a model propose tags
 from the person's list (an `enum` in the suggestion schema) and asked for the list length at which
 small models get worse. Measured on Gemma 4 E4B (section 13): **any** list made them worse. False
 memories went from 0% to 13-17% with 12-50 tags and an injection was kept; at 100-200 tags they
