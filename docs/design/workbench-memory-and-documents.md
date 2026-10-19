@@ -19,6 +19,7 @@ the calls made while building.
 | MR7 | Folders: a person's Documents read a folder they are granted, read-only, and keep in step (rescan every 10 minutes and Sync now; ignore rules; caps; per-file reasons). Design: `docs/design/workbench-folders.md` | workbench `50f101c` (server) + `1b3dbcf` (page), dist `ca97c83` | `docs/acceptance/mr7-folders-run.md` |
 | MR6 | `POST /v1/rerank` (Jina, Cohere and TEI bodies, scores 0 to 1, one model per request) and the `rerank` surface; Open WebUI's document search through Eugene (its search model, its sorter as the external reranker, hybrid search), and its privacy defect fixed | specs `e43483f` to `7ddc4d9`, gateway `226b607`, inference-driver `b1d6820`, agent `85e9e76` | `docs/acceptance/mr6-rerank-run.md` |
 | MR6b | Workbench sorts its best passages with a served sorter (heading path + text, the best 10 of each way, a Sort time budget priced from measured speed); the Documents screen and Test a question say whether and why not | workbench `534a8bd` to `3a1408c`, dist `7658527`, agent `aaf54ce` | `docs/acceptance/mr6b-sorting-run.md` |
+| MR8 | Memory suggestions after a measured harness: an inbox of notes a chat's model proposed from the person's own words, kept or turned away; Learn from my chats; relevance by meaning and words; events that expire and projects revisited; `reasoning_effort: none` reaching llama.cpp | workbench, inference-driver, specs (harness) | `docs/acceptance/m-memory-measurement.md`, `docs/acceptance/mr8-suggestions-run.md` |
 
 ## Calls made while building (for Troy's tweaks)
 
@@ -84,10 +85,36 @@ The rerank door and Open WebUI (MR6):
    it; a corrected environment does, once.
 6. An app's key has an app's limits: 8 at once, 600 a minute.
 
+Memory suggestions, relevance, expiry and revisit (MR8; measurement `docs/acceptance/m-memory-measurement.md`,
+run `docs/acceptance/mr8-suggestions-run.md`):
+1. The pass bar is Troy's (2026-10-18): no secret, injection or sensitive note kept; false memories at
+   most 5% of kept; recall at least 60%; unreadable and noise at most 5% each. Gemma 4 E4B and 12B,
+   Qwen3.6-35B-A3B and Qwen3.8-27B pass and suggest by default for a person who has not chosen
+   (`memory_learn.PASSED`, the install's `memorySuggestions: measured`); Qwen3.5-4B fails on recall (7%).
+2. Thinking off is real (Troy's choice): the inference-driver gives a llama.cpp template
+   `enable_thinking: false` for `reasoning_effort: none`, asking `/props` first when no poll has. With
+   thinking, Qwen models spent the whole budget thinking on 31-100% of calls.
+3. A chat is read once it has been quiet 90 seconds, its person's messages only, and only those the
+   chat's current model answered; words read while learning was off are never sent later. One call at a
+   time a person, at most 20 an hour; at most 3 suggestions a chat ever and 20 a person a day, counted
+   inside the write.
+4. Pasted material is never a source: fences of any length, quoted and HTML-quoted lines, chat-log lines,
+   an email's headers or "wrote:" line, quoted spans of six words or more, and what follows a first
+   paragraph that points at "this email" and the like. Code also refuses notes the quote does not support
+   (content words, numbers and negation), fullwidth tricks (NFKC first) and sensitive categories,
+   including dating words and visa status.
+5. A suggestion is a `pending` note; Keep (with the person's edit), Keep new or Keep both for one that
+   replaces a note, or Dismiss, which keeps only its words' stems so it is never offered again.
+   Suggestions go with their chat and after 30 days, and do not count against a person's own notes.
+6. "Only what is relevant" (the default) runs only with a local search model already running (MRC28):
+   words and meaning, RRF; without one every note that fits is used, and the page and drawer say why.
+   Notes never go to an outside search model, whatever the owner allows for documents.
+7. Events leave chats after their day (the page's Past); a project asks "Still true?" from its revisit
+   date, one at a time, at most weekly. The offer of suggestions comes on an empty chat after the fifth.
+
 ## Next
 
-MR8 (memory suggestions after a measured harness), MR9 (MCP and the Anthropic door). Owed: a live run
-of MR6b's sorting on real questions (Troy's).
+MR9 (MCP and the Anthropic door). Owed: a live run of MR6b's sorting on real questions (Troy's).
 
 ---
 
