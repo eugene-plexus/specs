@@ -46,3 +46,26 @@ and prettier clean.
 
 **Limits.** A real Claude Code was not connected in this run (the SDK's client speaks the same
 transport). Codex's and Open WebUI's own settings formats were not checked.
+
+## A real Claude Code, 2026-10-19
+
+On Amish_Station against Troy's live Workbench (`https://workbench.screamingamish.com/mcp`,
+public HTTPS), with a connection he made on the Memory page with `suggest_note` on:
+
+- **Setup format.** Workbench's Claude Code command (`claude mcp add --transport http workbench
+  <address> --header "Authorization: Bearer <token>"`), run as shown, added the server at local
+  scope; it prints nothing on success. `claude mcp list` then showed it `✔ Connected`.
+- **Tools.** A real Claude Code (`claude -p`, Haiku) listed all four: `search_notes`,
+  `search_documents`, `read_document`, `suggest_note`.
+- **Suggestion, then search.** `suggest_note` answered `waiting in the person's inbox`; Troy kept
+  it, and `search_notes` then found it word for word.
+- **Documents.** After he added a Markdown document, `search_documents` found it with a passage and
+  `read_document` returned its text, cut at about 11,400 characters with `"cut": true`. The
+  queries `the` and `document` were refused as having nothing to search for.
+- **Revoking.** After he revoked the connection, `claude mcp list` showed `✘ Failed to connect`
+  with Workbench's 401 words, the model said the tool was unavailable, and a direct `initialize`
+  with the old token got 401 and the made-up token's text.
+
+Limits: one person, one client, Claude Code's CLI; the VS Code extension shares its config but
+was not restarted to use the server. `claude mcp add` keeps the token in plain text in
+`~/.claude.json`. Codex's and Open WebUI's formats remain unchecked.
