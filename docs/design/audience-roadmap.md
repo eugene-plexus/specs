@@ -253,6 +253,7 @@ first:**
 | built 2026-10-18 | MR9 | [`workbench-memory-and-documents.md`](workbench-memory-and-documents.md) | MR8 built 2026-10-18 (harness, inbox, relevance, expiry and revisit). Order may change after Troy's setups review |
 | then | **v0.3.0 release** (Troy, 2026-10-18) | `docs/maintenance/testing-and-release.md` | After MR9b. Release qualification on one candidate. The v0.1 data converters stay in v0.3.0 |
 | done 2026-10-19 | Remove the v0.1 data converters, so v0.3.1 has none | memory `project_v020_release` | Shipped to Edge for v0.3.1. Old data is refused by name with the way out (start v0.3.0 once, then update) |
+| candidate, after the setups review | **Connect an app on this machine** (Troy, 2026-10-19): a Workbench connection set up by the person's Job Site instead of a pasted command | not designed | The site's worker (the person's own OS account) finds the installed clients (Claude Code, Codex), writes their config with the client's own tool where one exists (`claude mcp add -s user`) or a merging edit with a backup (`~/.codex/config.toml`), and removes it on revoke. The token goes Workbench → worker → file, never through the browser. Approval like the folder tools. Open WebUI is configured by Eugene itself, no site needed. The copied setup stays the expert route. High risk (auth, writes in a home directory): one review and a real-machine run |
 
 ## Not scheduled without Troy
 
