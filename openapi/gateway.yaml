@@ -996,6 +996,32 @@ paths:
         reasoning block, and that decision belongs to the operator who
         owns the model rather than to the caller.
 
+        ### Search results and the memory tool (MR9a, 2026-10-18)
+
+        A `search_result` block (`source`, `title`, `content` of text
+        blocks), on a user turn or inside a `tool_result`, reaches the
+        model as its words between `[Search result N: <title> (<source>)]`
+        and `[End of search result N]`, where N is one more than
+        Anthropic's `search_result_index`: counted across the whole
+        request in order, top level and tool results alike. **Dropped
+        silently before MR9a.** A missing `source`, `title` or `content`,
+        a non-text block inside it, one on an assistant turn, and
+        `citations.enabled` that differs between results are each a 400,
+        as upstream refuses them. `citations.enabled: true` is accepted
+        and named on `x-eugene-plexus-ignored-settings` as `citations`:
+        no `search_result_location` citation is returned, because a local
+        model cannot say which blocks it drew on.
+
+        The `memory_20250818` tool (named `memory`) is the caller's to
+        run, as Anthropic defines it. It reaches the backend as a
+        function named `memory` (a `command` of `view`, `create`,
+        `str_replace`, `insert`, `delete` or `rename`, with each
+        command's fields), and Anthropic's memory protocol text follows
+        the request's own system text. The model's call comes back as a
+        `tool_use` block named `memory`; the gateway runs nothing and
+        keeps nothing. Another tool named `memory` in the same request is
+        a 400. `count_tokens` counts both expansions.
+
         ### Reasoning comes back as `thinking` blocks, when asked for
 
         Since 2026-09-23 a model's reasoning -- which llama.cpp and vLLM
@@ -7112,7 +7138,10 @@ components:
         `signature`) -- returned ahead of the answer when the request
         enabled thinking, and read back on an assistant turn as that
         turn's reasoning. `redacted_thinking` is accepted on the way in
-        and dropped. `server_tool_use` and `web_search_tool_result` (P8)
+        and dropped. `search_result` (`source`, a string here; `title`;
+        `content`, text blocks; `citations`) is read as text, numbered
+        across the request (MR9a; see the endpoint). `server_tool_use` and
+        `web_search_tool_result` (P8)
         are returned for a search this install ran and, handed back on
         an assistant turn, become that turn's history: the query, and
         each result's title, address and the excerpt the model read,
@@ -7182,13 +7211,17 @@ components:
             signature and not verifiable by Anthropic; a signature
             without that prefix is ignored on the way in.
         source:
-          type: object
-          additionalProperties: true
           description: |
             On `image`: `{"type": "base64", "media_type": "image/png",
             "data": "<base64>"}`. `media_type` is `image/png`,
             `image/jpeg`, `image/gif` or `image/webp`; the last two are
-            re-encoded to PNG. A `url` or `file` source is refused.
+            re-encoded to PNG. A `url` or `file` source is refused. On
+            `search_result`: a string, the URL or identifier the result
+            came from (MR9a).
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: string
         cache_control:
           type: object
           additionalProperties: true
@@ -7219,7 +7252,10 @@ components:
         anything this gateway would have to execute itself, rather than
         hand back to the caller — is refused with a 400, **except web
         search** (`web_search_<date>`), which this install's search
-        account runs since P8. There is no sandbox to run code in, and
+        account runs since P8, **and the memory tool**
+        (`memory_20250818`, named `memory`), which is client-run by
+        definition and becomes a function whose calls come back to the
+        caller (MR9a). There is no sandbox to run code in, and
         pretending otherwise would fail at the moment the model chose to
         use one. The refusal's message contains `Input tag '<type>'`, the
         wording Claude Code (2.1.280 and later) looks for to retry
