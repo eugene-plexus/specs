@@ -4299,14 +4299,6 @@ components:
             works without a trust relationship, which is what lets the
             agent on the control host boot first and start the control
             root.
-        hostName:
-          type: string
-          description: |
-            This host's own network name, `socket.gethostname()`: the name
-            it enrolls under when the enrollment gives none. The first-run
-            wizard offers it as the machine's name for people, so a
-            container's ID is something the person sees and can replace
-            rather than something they meet later (`node-labels.md`).
         name:
           type: string
           description: This node's name in the install. Absent until enrolled.
