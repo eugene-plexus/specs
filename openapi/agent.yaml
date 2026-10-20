@@ -4598,15 +4598,7 @@ components:
       required: [state, plainAllowed, doors]
       properties:
         state:
-          type: string
-          enum: [issued, pending, none, error]
-          description: |
-            * `issued`: the doors present a leaf from the install CA.
-            * `pending`: this node has asked and holds no leaf yet (the root
-              is sealed, or has no CA yet).
-            * `none`: not enrolled; a node alone has no CA, and its doors
-              take plain HTTP only.
-            * `error`: the root refused the request; `error` says why.
+          $ref: '#/components/schemas/ClientTlsState'
         names:
           type: array
           items:
@@ -4639,6 +4631,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ClientDoor'
+
+    ClientTlsState:
+      type: string
+      enum: [issued, pending, none, error]
+      description: |
+        * `issued`: the doors present a leaf from the install CA.
+        * `pending`: this node has asked and holds no leaf yet (the root is
+          sealed, or has no CA yet).
+        * `none`: not enrolled; a node alone has no CA, and its doors take
+          plain HTTP only.
+        * `error`: the root refused the request; `error` says why.
 
     ClientDoor:
       type: object
