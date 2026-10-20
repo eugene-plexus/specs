@@ -2485,14 +2485,17 @@ paths:
         **LT2 (`docs/design/tls-for-clients.md` §3).** The CA that signed
         this node's client leaf, as control issued it, so a device can
         fetch it from any machine it can reach. Public. PEM by default;
-        `?format=der` answers DER as `application/pkix-cert`.
+        `?format=der` answers DER as `application/pkix-cert`;
+        `?format=bundle` answers the public roots Python clients use
+        (certifi) with the CA after them, PEM, for `SSL_CERT_FILE` or
+        `REQUESTS_CA_BUNDLE` (§6).
       parameters:
         - name: format
           in: query
           required: false
           schema:
             type: string
-            enum: [pem, der]
+            enum: [pem, der, bundle]
             default: pem
       responses:
         '200':
@@ -4599,6 +4602,14 @@ components:
       properties:
         state:
           $ref: '#/components/schemas/ClientTlsState'
+        source:
+          oneOf:
+            - $ref: '#/components/schemas/ClientTlsSource'
+            - type: 'null'
+          description: |
+            What the doors present: a leaf from the install CA, or the owner's
+            own certificate (`clientCertificateFile` and `clientKeyFile`,
+            LT2-C1's override). `null` while they present nothing.
         names:
           type: array
           items:
@@ -4631,6 +4642,10 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ClientDoor'
+
+    ClientTlsSource:
+      type: string
+      enum: [installCa, supplied]
 
     ClientTlsState:
       type: string

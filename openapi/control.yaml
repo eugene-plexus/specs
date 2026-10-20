@@ -2888,6 +2888,59 @@ paths:
             application/problem+json:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
+  /v1/nodes/{name}/certificate-names:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: {type: string}
+    put:
+      operationId: setNodeCertificateNames
+      tags: [nodes]
+      summary: List the names a node's client certificate may hold
+      description: |
+        **LT2 (`tls-for-clients.md` §4).** The owner lists names a node is
+        reached by beyond its own address and `<name>.local`: the names the
+        container entry point answers for, or a name in the LAN's DNS. One
+        `setNodeCertificateNames` entry; the node asks for a new leaf with
+        them at its next look.
+
+        A session holding the `membership` capability. A name the install
+        CA may not sign (a public name or address, a dotless name) is
+        refused with the name given: use the owner's own certificate for
+        it. A name another node holds or lists is refused too, so no node
+        can present a certificate for another's name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeCertificateNames'
+      responses:
+        '200':
+          description: The node, with its names.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Node'
+        '400':
+          description: A name the install CA may not sign, or not a name.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Another node holds or lists one of the names, or this host is a standby.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
   /v1/nodes/{name}/hosted-sites:
     parameters:
       - name: name
@@ -4084,6 +4137,15 @@ components:
             port.
         machineTls:
           $ref: '#/components/schemas/MachineLink'
+        certificateNames:
+          type: array
+          items:
+            type: string
+          description: |
+            Names the owner listed for this node (LT2,
+            `tls-for-clients.md` §4): its client certificate may hold them
+            beside its own address and `.local` name. Private addresses and
+            local names only. Empty when none are listed.
         role:
           $ref: '#/components/schemas/NodeRole'
         reachable:
@@ -4343,6 +4405,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TlsPin'
+
+    NodeCertificateNames:
+      type: object
+      required: [names]
+      additionalProperties: false
+      properties:
+        names:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            maxLength: 253
 
     NodeCertificateRequest:
       type: object
@@ -4967,7 +5041,12 @@ components:
         - deleteBrowserSignIn
         - labelNode
         - setInstallCa
+        - setNodeCertificateNames
       description: |
+        **`setNodeCertificateNames` (LT2, 2026-10-20)** replaces the names
+        the owner listed for one node's client certificate (`{name,
+        names}`). An operator's, unsigned, like `labelNode`.
+
         **`setInstallCa` (LT2, 2026-10-20)** records the install CA once:
         `{certificate, sealedKey}`, the certificate in PEM and the key's
         PKCS8 DER sealed under the passphrase-derived key, as the other
