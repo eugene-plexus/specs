@@ -8,7 +8,7 @@ Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled pe
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
 default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.
 MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.
-MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) built 2026-10-19 (sections 64-72), 35/35 live; calls MV6-C1 to C5 are Troy's to confirm, their defaults built. MV7 (projects) designed 2026-10-19 (sections 73-81); MV7a built 2026-10-20 (section 82), 27/27 live; calls MV7-C1 to C5 are Troy's to confirm, their defaults built; MV7b (project documents) next.**
+MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) built 2026-10-19 (sections 64-72), 35/35 live; calls MV6-C1 to C5 are Troy's to confirm, their defaults built. MV7 (projects) designed 2026-10-19 (sections 73-81); MV7a built 2026-10-20 (section 82), 27/27 live; MV7b built 2026-10-20 (section 83), 18/18 live; calls MV7-C1 to C5 are Troy's to confirm, their defaults built. The memory reshape MV1-MV7 is built except MV5b, which waits on MV5b-C1.**
 
 ---
 
@@ -1913,3 +1913,45 @@ off, a clean room for each project.
 - **The project page lists its notes simply.** Editing, pinning and moving a note are on the
   Memory page, where the Where filter finds them.
 - **Add a note on the Memory page keeps it to General** whatever the Where filter shows.
+
+### 83. What building MV7b found
+
+**Built as designed, with these changes:**
+
+- **A project's documents are the person's like My documents.** Open, Read again, Remove and
+  the text of one work as for My documents. The first build refused them (404) everywhere but
+  the project's search (the review's blocker).
+- **Moving a project's documents to My documents rewrites their own files too.** Each document's
+  sidecar names its scope, and a Rebuild makes the documents again from those files. Without
+  the rewrite, a Rebuild after Delete project (keep) put them back under the project that was
+  gone, and the next boot deleted them (the review's second blocker). The move is all or
+  nothing: the files of a My documents file it replaces are staged, as `delete_many` does, and
+  put back if anything fails.
+- **A Rebuild makes a project's document again only in a project of the person's.**
+- **Delete project (keep) moves the documents first.** A move that fails leaves the whole
+  project, chats and notes included, to try again. It answers 503 with the reason (review).
+- **At boot, a project's documents go only when some of the person's projects are still
+  there.** With every one of them gone, it may be a store restored from before them, and files
+  the person kept are not deleted on a guess. They wait, unsearched, and the log says so
+  (review).
+- **An upload that races its project's delete is taken back**, and answers 404 (review).
+- **A project's files are read in My documents' turn**, after a chat's attachments (review).
+- **The documents chip and Sources label a project's documents "My documents".** The drawer's
+  `library` counts are what the chat searches: the project's documents, and My documents
+  while the switch is on.
+- **A project's documents count toward the person's passage cap**, as My documents do.
+
+**Verification:**
+- **Tests:** 10 tests in `tests/test_memory_mv7b.py`, and Vitest for the project page's Documents,
+  the switch and the delete question. 2,413 server tests and 3,444 web tests passed, and both
+  Chrome checks pass.
+- **Sabotage:** `--label MV7b`, 10 of 10 caught.
+- **Live run:** 18 of 18 (`docs/acceptance/mv7b-project-documents-run.md`).
+- **Review:** one adversarial review. Its two blockers and its should-fix findings are fixed.
+- **Also fixed:** a Windows CI flake in folder sync's "too new to trust" test. A slow runner first
+  read the file after the 2.5 s window, so it was trusted. The test widens the window.
+
+**Left, recorded:**
+- **A folder kept to a project** (section 76) is not built: folders stay general.
+- **The project page's document rows** carry Open and Read again as well as Remove: they are the
+  Documents screen's rows.
