@@ -256,6 +256,19 @@ def owner_of(port: int) -> str:
     return user.stdout.strip()
 
 
+def account_of(pid: int) -> str:
+    """The account of the app's own process. Since LT2 the agent's door holds
+    the app's port and the app listens on loopback behind it, so the port's
+    listener is the agent by design; the process is what runs as the app."""
+    if WINDOWS:
+        script = f"(Get-Process -Id {pid} -IncludeUserName).UserName"
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-Command", script],
+                             capture_output=True, text=True)
+        return out.stdout.strip()
+    user = subprocess.run(["ps", "-o", "user=", "-p", str(pid)], capture_output=True, text=True)
+    return user.stdout.strip()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", type=Path)
@@ -279,7 +292,7 @@ def main() -> int:
         app = install_app(token)
         port = int(app.get("port") or 0)
         app_url = f"http://127.0.0.1:{port}"
-        account = owner_of(port)
+        account = account_of(int(app["pid"])) if app.get("pid") else owner_of(port)
         fact("account", account)
         check("34", "it runs in an account of its own, not the agent's",
               app.get("isolation") == "own_account" and bool(account)
