@@ -403,6 +403,75 @@ jobs:
         if: needs.plan.outputs.full == 'true'
         run: python specs/scripts/r8-profile-checks.py
 
+  # LT1, the check of record: two containers on a bridge, tcpdump in the
+  # worker's namespace, and the sabotage the design names (tls-between-machines.md §5).
+  lt1-machine-tls:
+    needs: plan
+    if: needs.plan.outputs.runtime == 'true'
+    name: TLS between machines (Docker pair)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          path: specs
+      - name: Read the installer consumer pins
+        id: pins
+        shell: python {0}
+        run: |
+          import os, re
+          from pathlib import Path
+          text = Path("specs/scripts/install.sh").read_text(encoding="utf-8")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              for name in ("AGENT", "CONTROL", "GATEWAY", "LIBRARY", "DRIVER"):
+                  pin = re.search(rf"^PIN_{name}=([0-9a-f]{{40}})$", text, re.M)
+                  assert pin, name
+                  out.write(f"{name.lower()}={pin.group(1)}\n")
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/agent
+          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
+          path: agent
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/control
+          ref: ${{ inputs.control_ref || steps.pins.outputs.control }}
+          path: control
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/gateway
+          ref: ${{ inputs.gateway_ref || steps.pins.outputs.gateway }}
+          path: gateway
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/library
+          ref: ${{ inputs.library_ref || steps.pins.outputs.library }}
+          path: library
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/inference-driver
+          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
+          path: inference-driver
+      - name: Nothing crosses in clear text, and the sabotage is refused
+        run: >-
+          python3 specs/scripts/lt1-machine-tls-acceptance.py --sources .
+          --output "$RUNNER_TEMP/lt1"
+          --labels bad-signature,wrong-pin,root-stopped,removed-machine
+      - name: An upgraded install switches to required by itself
+        if: needs.plan.outputs.full == 'true'
+        run: >-
+          python3 specs/scripts/lt1-machine-tls-acceptance.py --sources .
+          --output "$RUNNER_TEMP/lt1-automatic" --labels automatic
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lt1-machine-tls
+          path: |
+            ${{ runner.temp }}/lt1/result.*
+            ${{ runner.temp }}/lt1-automatic/result.*
+
   # On a push, macOS runs in macos-push.yml so Edge does not wait for it.
   macos:
     needs: plan
