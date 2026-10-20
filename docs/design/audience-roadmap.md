@@ -13,7 +13,16 @@
     ([measurement](../acceptance/m-memory-measurement.md): four starter models pass Troy's bar;
     [acceptance](../acceptance/mr8-suggestions-run.md), 30/30, two people), and
     `reasoning_effort: none` now turns a llama.cpp template's thinking off.
-  - **Next by this roadmap (2026-10-19):** the memory reshape, MV4 (Memory as an app) next.
+  - **The memory reshape is built, MV1 to MV7, except MV5b (2026-10-20).** MV7 (chat projects, with
+    their notes, past chats and documents) is on Edge
+    ([MV7a](../acceptance/mv7a-projects-run.md), 27/27; [MV7b](../acceptance/mv7b-project-documents-run.md),
+    18/18), and so is MV6 (provenance, Still true? from changed documents, the tidy pass;
+    [acceptance](../acceptance/mv6-provenance-run.md), 35/35). MV5b (Hindsight from the catalogue)
+    passed its probe ([record](../acceptance/mv5b-hindsight-probe.md)) and is designed. It waits on
+    Troy's call MV5b-C1: where pg0 keeps its data on Windows. Calls MV6-C1 to C5 and MV7-C1 to C5
+    are Troy's to confirm, with their defaults built. What is next after the reshape is Troy's: the
+    setups review and the candidates below.
+  - **Before that, the reshape:** MV4 (Memory as an app) was built 2026-10-19.
     MV3 (learning and the write policy: per-model Off, Suggest or Keep automatically with
     Eugene's measured recommendation, Measure this model, the write policy Strict, Standard, Open
     or Custom, `remember` with receipts and Undo, Recently learned) is on Edge
@@ -266,7 +275,7 @@ first:**
 | then | **v0.3.0 release** (Troy, 2026-10-18) | `docs/maintenance/testing-and-release.md` | After MR9b. Release qualification on one candidate. The v0.1 data converters stay in v0.3.0 |
 | done 2026-10-19 | Remove the v0.1 data converters, so v0.3.1 has none | memory `project_v020_release` | Shipped to Edge for v0.3.1. Old data is refused by name with the way out (start v0.3.0 once, then update) |
 | done 2026-10-19 | **Memory research**: is Workbench's memory competitive, or should it be extended, reshaped or replaced? | [`memory-research-2026-10.md`](memory-research-2026-10.md) | **Reshape.** Keep the built-in store as the default, rebuild it on CoALA's four memory types, raise the limits, let any model the person allows keep notes under an owner-set write policy, index past chats, add tags with a master list, put one contract in front for optional backends (Hindsight first). Troy took all fourteen calls |
-| **next** (Troy, 2026-10-19) | **Memory reshape, MV1-MV7**: MV1 notes with bodies, procedures, tags and supersession, budgets scaled, relevant memory re-chosen each turn; MV2 past chats; MV3 learning and the write policy; MV4 Memory as an app; MV5 backends; MV6 provenance and tidy; MV7 projects | [`memory-research-2026-10.md`](memory-research-2026-10.md) §7, §10; slice designs in `workbench-memory-v2.md` (MV1 writes it) | Handoff `docs/private/handoff-memory-mv1.md`. MV1 includes a store migration and changes what models receive; MV3 changes who writes memory. Both are high risk: one adversarial review each and a real-environment run |
+| built 2026-10-20 (MV5b waits on MV5b-C1) | **Memory reshape, MV1-MV7**: MV1 notes with bodies, procedures, tags and supersession, budgets scaled, relevant memory re-chosen each turn; MV2 past chats; MV3 learning and the write policy; MV4 Memory as an app; MV5 backends; MV6 provenance and tidy; MV7 projects | [`memory-research-2026-10.md`](memory-research-2026-10.md) §7, §10; slice designs in `workbench-memory-v2.md` (MV1 writes it) | Handoff `docs/private/handoff-memory-mv1.md`. MV1 includes a store migration and changes what models receive; MV3 changes who writes memory. Both are high risk: one adversarial review each and a real-environment run |
 | candidate, after the setups review | **Connect an app on this machine** (Troy, 2026-10-19): a Workbench connection set up by the person's Job Site instead of a pasted command | not designed | The site's worker (the person's own OS account) finds the installed clients (Claude Code, Codex), writes their config with the client's own tool where one exists (`claude mcp add -s user`) or a merging edit with a backup (`~/.codex/config.toml`), and removes it on revoke. The token goes Workbench → worker → file, never through the browser. Approval like the folder tools. Open WebUI is configured by Eugene itself, no site needed. The copied setup stays the expert route. High risk (auth, writes in a home directory): one review and a real-machine run |
 
 ## Not scheduled without Troy
