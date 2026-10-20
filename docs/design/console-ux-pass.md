@@ -21,13 +21,16 @@ Left out:
 - **Operations rights for people other than the owner** break "no role sees
   everything" today, but are a feature, not a fix.
 
-## Open call
+## Calls
 
-- **CX-C1: Machines or nodes.** The menu says Machines; that page says "Add
-  a node" and "No nodes are enrolled" (`ui/src/app/nodes/page.tsx:533,771`),
-  and the picker, Library, Backends, glossary and guide say node. Open since
-  the console copy pass of 2026-10-10. CX1 leaves the wording alone until
-  Troy picks one.
+- **CX-C1: Machines or nodes. Taken: Machines** (Troy, 2026-10-20). The menu
+  said Machines; that page said "Add a node" and "No nodes are enrolled"
+  (`ui/src/app/nodes/page.tsx:533,771`), and the picker, Library, Backends,
+  glossary and guide said node. Every word a person reads in the console
+  says machine. "Node" stays where it is an identifier (`node:<name>`
+  targets, API paths, `ComponentKind`, the `/nodes` route) and as the
+  expert term in the glossary and tooltips. The website's guides follow in
+  its next batch.
 
 ## The slices
 
@@ -75,6 +78,32 @@ adversarial review and a real-environment run.
      (`metrics/page.tsx:584-589`) though saving restarts it;
    - "tokens/s" in `ProfileBenchmark.tsx` where everything else says tok/s.
 
+**Built 2026-10-20** (ui `d3123b4`, shipped to Edge). What building found:
+
+- Saving folders waits up to 20 s for the scan it starts (a 409 means one is
+  already running, and is waited on the same way), then says "Found N
+  models, M of them new", or that the scan is still going, failed or was
+  cancelled. It never claims a count for an unfinished scan.
+- Apps did not group by machine: it is one flat list. A machine that does
+  not answer now gets its own line under the list with the reason, and the
+  empty state says "on the machines that answered".
+- The engine row's sentence covers `starting`, `exited` and `crashed` only;
+  loading, copying and a stop reason already had their own lines. Try again
+  starts the runtime. The tooltip words were made plain too ("readiness
+  probe", "not routable" are gone from the page).
+- "Install and start" is a browser-side install-then-start: it installs
+  through that machine's agent, follows the install, then starts the
+  runtime. The run worker's path was not reused, because it creates a new
+  runtime from a model and this row already has one. Leaving the page
+  during the install loses only the start; the install goes on, and the row
+  then offers Start. An engine that cannot be installed keeps the sentence
+  pointing at Engines below.
+- Discover's starter pick reads "Download and run · N GB" and goes through
+  the same durable run operation as Home's card; "Download only" sits
+  beside it. The list's small "download" buttons still only download.
+- Metrics reads the people list to name a person; only the owner and
+  directory administrators may read it, so anyone else still sees the ID.
+
 ### CX2: setup resumes where it stopped (ui, agent; M; high risk)
 
 *Confirmed.* Screen 1's Continue makes several writes: the agent's
@@ -87,6 +116,63 @@ setup. Finish can then leave an install whose control root has no
 passphrase. Choose the screen from each step's own state, resume from the
 first step not done, and give the error a Retry for that step. Cancel on
 screen 1 also loops (`setup/page.tsx:315-325`).
+
+**Design (2026-10-20).** No new endpoint: each step already says whether it
+is done.
+
+| Step                  | Done when                                                         | Read with                                         |
+| --------------------- | ----------------------------------------------------------------- | ------------------------------------------------- |
+| Agent's passphrase    | `initialized`                                                     | agent `GET /v1/auth/status` (no session)          |
+| Components            | control, gateway and library declared                             | agent `GET /v1/components`; read-only, always run |
+| Control root's        | `initialized`                                                     | control `GET /v1/auth/status` through the proxy   |
+| Enrollment            | `enrolled`                                                        | agent `GET /v1/node`                              |
+| Security mode         | agent and control agree, and agree with a choice this tab made    | both `GET /v1/config`, read only once enrolled    |
+| Folders (screen 2)    | `firstRunComplete`                                                | agent `GET /v1/config`                            |
+
+Which screen opens:
+
+- Not initialized: screen 1 as now.
+- Initialized, no session in this tab: **screen 1 in its resume form**,
+  which asks the passphrase once ("Your passphrase is set. Type it to
+  carry on setting up."). Continue signs in at the agent, then reads the
+  states and goes on. This replaces the bounce to `/login`, so a person
+  who comes back later types their passphrase once, not twice.
+- Initialized with a session: read the states. Anything up to the security
+  mode left opens the resume form, saying what is left in words ("Securing
+  the install", "Joining this machine"); the machine-name box shows only
+  while enrollment is left, and the reboot choice shows prefilled from the
+  agent's own `securityMode`. Nothing left opens screen 2;
+  `firstRunComplete` opens Home, as now.
+- A state that cannot be read (the root not answering) counts as not done:
+  running its step then reports the real error, in its own words.
+
+**The passphrase on a resume.** The control root's `POST /v1/auth/initialize`
+takes whatever it is given and has no reset, so a mistyped passphrase sent
+there would lock the root to the typo. A resume therefore **always signs in
+at the agent with the typed passphrase first** (`POST agent
+/v1/auth/login`), and only after a 200 sends it to the root. The agent is
+not enrolled at that point (enrollment is after the root), so it checks its
+own hash; its rate limit (5 tries in 60 s) applies. The first run needs no
+extra check: the root gets the passphrase the agent accepted moments
+before in the same click. The passphrase stays in component state only,
+kept across a failure so Try again needs no retyping, and is cleared when
+the steps finish. The security mode alone needs no passphrase: the session
+writes it.
+
+**Try again and Cancel.** A failure after the agent's passphrase is set
+keeps the page on screen 1, switched to the resume form with the passphrase
+still held, and the button reads Try again. Try again re-reads every state
+and runs from the first step not done, so a step whose answer was lost
+(the root took the passphrase but the reply did not arrive) is not run
+twice. The root's error no longer tells the person not to run setup again
+or to open Home. **Cancel goes:** before Continue nothing has been written,
+and every page's gate sends an install without setup back here, so there is
+nowhere for Cancel to go; closing the tab is the cancel. A resume has
+nothing to undo either.
+
+What this does not change: a root with no passphrase takes the first
+`initialize` that passes its trusted-host check (`trusted_host.py`), as
+before. Resuming shortens that window; closing it is not this slice.
 
 ### CX3: one-click run asks first (agent, ui; M)
 
