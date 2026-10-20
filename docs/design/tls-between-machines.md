@@ -394,18 +394,21 @@ fix things on `main` meanwhile.
 ### 7.1 Steps, in landing order
 
 0. **The failing check first:** `scripts/lt1-machine-tls-acceptance.py`.
-   - It follows `row3-per-node-keys-acceptance.py`: real processes on
-     ephemeral loopback ports and temporary state.
-   - The root is control plus `agent-a`, with the gateway grant and a gateway.
-   - The worker is `agent-b`, with an inference-driver over a stub
-     OpenAI-compatible engine.
-   - The worker's advertised address points at a **recording relay**, a TCP
-     tap that keeps every byte both ways.
+   - A root (control, plus `agent-a` with the gateway grant and a gateway)
+     and a worker (`agent-b`, with an inference-driver over a stub
+     OpenAI-compatible engine).
    - A prompt carrying a random canary goes through the gateway to the
-     worker. The check asserts that the canary, `Bearer` and `eyJ` are
-     absent from the tap.
+     worker, and the check asserts that the canary, `Bearer` and `eyJ` are
+     absent from what crossed the wire.
    - **It fails today, and is committed failing.**
-   - The relay doubles as the man-in-the-middle for the sabotage pass: it
+   - **The instrument must see the real wire, and one host with a relay
+     cannot.** Control refuses a loopback advertise address for a remote node
+     (`A/routes/node.py:275`), and a worker that advertises a LAN address
+     binds `0.0.0.0`, so a relay cannot stand in front of it.
+   - **Recommended: two containers on a Docker bridge network with `tcpdump`
+     on the bridge.** That runs in CI on GitHub's Linux runners. A Windows
+     worker joined to a container root is the platform check.
+   - For the sabotage pass, a man-in-the-middle container on the bridge
      terminates TLS with its own key, and the caller must refuse it.
 1. **Contracts (specs):**
    - **The address announcement** takes an optional `tlsPin` (base64url
