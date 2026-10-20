@@ -172,6 +172,30 @@ def inside(command: str, argument: dict) -> object:
         stub_server(int(argument["port"]), Path(argument["stats"]))
         return {}
 
+    if command == "bench":
+        import statistics
+        import time as clock
+
+        took: list[float] = []
+        headers = {"Authorization": f"Bearer {argument['token']}"}
+        body = {
+            "model": argument["model"],
+            "messages": [{"role": "user", "content": "hi"}],
+        }
+        with httpx.Client(trust_env=False, timeout=60) as client:
+            for _ in range(int(argument["n"])):
+                started = clock.perf_counter()
+                response = client.post(argument["url"], headers=headers, json=body)
+                took.append((clock.perf_counter() - started) * 1000)
+                response.raise_for_status()
+        took.sort()
+        return {
+            "n": len(took),
+            "p50Ms": round(statistics.median(took), 2),
+            "p95Ms": round(took[int(len(took) * 0.95) - 1], 2),
+            "meanMs": round(statistics.fmean(took), 2),
+        }
+
     if command == "mitm":
         impostor(int(argument["port"]), Path(argument["record"]))
         return {}
@@ -417,6 +441,7 @@ def pcap_flows(data: bytes) -> dict[tuple[str, int, str, int], bytearray]:
 class Record:
     def __init__(self) -> None:
         self.checks: list[dict] = []
+        self.measurements: dict = {}
 
     def add(self, name: str, passed: bool | None, **observed: object) -> None:
         status = "pass" if passed else ("not checked" if passed is None else "FAIL")
@@ -597,7 +622,7 @@ def start_agent(pair: Pair, role: str, directory: str) -> None:
     )
 
 
-def exercise(pair: Pair, record: Record, labels: list[str]) -> bytes:
+def exercise(pair: Pair, record: Record, labels: list[str], measure: int = 0) -> bytes:
     passphrase = secrets.token_urlsafe(18)
     canary = "LT1CANARY" + secrets.token_hex(12)
     local = "http://127.0.0.1"
@@ -805,6 +830,23 @@ def exercise(pair: Pair, record: Record, labels: list[str]) -> bytes:
             else {"answer": got.get("body") or got.get("error")}
         ),
     )
+
+    if measure:
+        # §3.8: the path's own cost, timed in the root container so no docker
+        # exec is in it. Recorded, never judged: run it on main and on this
+        # branch and compare.
+        timing = pair.exec(
+            "root",
+            "bench",
+            {
+                "url": f"{local}:{GATEWAY_PORT}/v1/chat/completions",
+                "token": operator,
+                "model": MODEL,
+                "n": measure,
+            },
+        )
+        record.measurements = {"chatRootToWorker": timing}
+        print(f"MEASURED     {json.dumps(timing)}", flush=True)
 
     def chat(text: str) -> dict:
         return pair.call(
@@ -1073,6 +1115,12 @@ def main() -> None:
         default="",
         help="sabotage to run: bad-signature,wrong-pin,root-stopped,removed-machine | automatic",
     )
+    parser.add_argument(
+        "--measure",
+        type=int,
+        default=0,
+        help="time this many chats root -> worker (§3.8)",
+    )
     args = parser.parse_args()
 
     if args.inside:
@@ -1090,7 +1138,9 @@ def main() -> None:
     wire = b""
     try:
         try:
-            canary = exercise(pair, record, [x for x in args.labels.split(",") if x])
+            canary = exercise(
+                pair, record, [x for x in args.labels.split(",") if x], args.measure
+            )
         finally:
             if pair.name("capture") in pair.containers:
                 wire = pair.stop_capture()
@@ -1102,7 +1152,14 @@ def main() -> None:
         if not args.keep:
             pair.down()
         (args.output / "result.json").write_text(
-            json.dumps({"image": image, "checks": record.checks}, indent=2),
+            json.dumps(
+                {
+                    "image": image,
+                    "checks": record.checks,
+                    "measurements": record.measurements,
+                },
+                indent=2,
+            ),
             encoding="utf-8",
         )
         (args.output / "result.md").write_text(record.markdown(), encoding="utf-8")

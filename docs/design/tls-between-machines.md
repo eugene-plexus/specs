@@ -563,5 +563,8 @@ a container root, one adversarial review, and `ship.py`.
 - **A promoted standby on a version older than LT1** keeps no pins (its apply
   ignores the new fields), and nodes re-announce only on a change, so its list
   is empty until they do.
-- **The cost** (§3.8) is not measured yet: first-token time and tok/s with and
-  without the machine port.
+- **The cost** (§3.8), measured on the Docker pair with `--measure 300`: a
+  non-streaming chat root gateway -> worker driver -> stub engine took p50
+  5.46 ms over the machine port and 4.99 ms plain on `main` (+0.47 ms); p95
+  7.99 ms and 8.18 ms. One host, a stub engine and no streaming: first-token
+  time and tok/s on a real engine are not measured.
