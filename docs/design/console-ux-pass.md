@@ -482,6 +482,41 @@ restart (`ui/src/app/config/page.tsx:309-316`), so a second gateway section
 can PATCH a process on its way out. Label the button "Save and restart the
 gateway", and in Save all restart each component once, after its last save.
 
+**Design (2026-10-20).**
+
+- **Which saves restart comes from the schema**, not a list in the UI:
+  each field's `requiresRestart` (`common.yaml`). No contract change.
+- **The button says it before the click**, for every component and app,
+  not only the gateway: "Save and restart" while an unsaved field needs a
+  restart, else "Save". Beside it one line: "Restarts {name}." The gateway
+  adds "Answers that apps are reading stop.", since its restart is the one
+  that cuts apps mid-answer. No extra confirm: the label is the warning,
+  and a second click on every save would be noise.
+- **Save all restarts each process once.** Sections of one process (same
+  target and config path) are saved in turn with the restart held back.
+  After the last one, the last section that needed a restart runs it (its
+  progress dialog shows), and the others read their values again. The bar
+  reads "Save all and restart" and names what restarts ("Restarts Gateway,
+  once each, after its last save").
+- **One section fails:** it keeps its draft and its error; the others still
+  save; the process still restarts for what was saved, so nothing reads
+  "Restart needed" for ever.
+- **While it restarts** the existing progress dialog shows; it closes itself
+  when the process is back. If the process does not come back, the other
+  sections are not read again and keep "Restart needed", which is true.
+
+**Built 2026-10-20** (ui `71635b19`). Its run,
+`scripts/cx7-save-restart-acceptance.py`, is written and waits for the end
+of the pass. What building found:
+
+- Each section restarted its process from inside its own save, and the
+  read-back that followed raced the restart. Save all now passes
+  `deferRestart`; a single section's own Save restarts at once as before.
+- A refused value has to outlive a restart run by another section: each
+  section keeps what its deferred save refused and puts it back after.
+- The type check caught the Save button passing its click event in as the
+  save's options; it now calls `save()` with none.
+
 ### CX8: failures link to their logs (ui; S-M)
 
 Only Inference links into Logs (`ui/src/lib/logs.ts:141`). Metrics' failed
