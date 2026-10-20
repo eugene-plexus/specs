@@ -8,7 +8,7 @@ Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled pe
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
 default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.
 MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.
-MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) designed 2026-10-19 (sections 64-71), being built at its defaults.**
+MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) built 2026-10-19 (sections 64-72), 35/35 live; calls MV6-C1 to C5 are Troy's to confirm, their defaults built.**
 
 ---
 
@@ -1647,3 +1647,54 @@ default:* duplicates of the same kind (equal titles or stems overlapping 0.6) an
 
 **MV6-C5 (Troy's to confirm; the default is built): 30 days after an event.** *Recommended default:*
 an event is proposed for removal 30 days after its date. Alternatives: at once, or never.
+
+### 72. What building found
+
+**Built as designed, with these changes:**
+
+- **A link keeps where a passage is, never its words.** Only the cited pages and lines are kept,
+  not the heading or snippet. A replaced or removed document's words go (`Index.add`'s
+  promise), and a note's link must not keep them (review).
+- **A merge puts the other note below the kept one's oldest version.** Superseding it by the kept
+  note itself would give that note two earlier versions. `note_history` and `delete_memory_note`
+  follow one line, so deleting the kept note would have left the merged one behind. The merge
+  logs no words: deleting the merged version alone would otherwise leave them in the kept note's
+  log (the review's blocker).
+- **Near duplicates must be able to say the same thing** (`memory_suggest.same_claim`): the same
+  no, the same numbers, and their shared words in the same order. Two events must fall on the
+  same day. Without this, "Prefers tabs over spaces" and "Prefers spaces over tabs", "Has 2 kids"
+  and "Has 3 kids", and "Is allergic to peanuts" and "Is not allergic to peanuts" were each
+  proposed as one note (review). A cost: a reordered duplicate ("short bullet answers") is not
+  proposed.
+- **Candidates are found by prefix filtering**, not the three rarest stems. As many of a note's
+  rarest stems as the 0.6 bar needs are indexed, so two long notes sharing most words are found
+  whatever their rarest are. The finding runs off the event loop (review).
+- **"Ask me next week" holds only while the document stays as it was.** A second change asks again
+  at once (`snoozed_sha`, review).
+- **A question a document raised spends nothing of the project timer's week**, whatever the
+  answer (review).
+- **No index where one was asks nothing.** A store restored without its documents is not a person
+  who removed them all (review).
+- **Linking a document again by hand keeps how and where it was first linked**, and the 20-document
+  cap holds when links are carried over by a merge (review).
+- **Linking and merging are refused while the owner has memory off.** Unlinking and removing are
+  not: they only take away (review).
+- **Edit on a Still true? question opens the note in the page's list.** A note beyond the
+  list's newest 200 does not open from there; its other answers still work.
+
+**Verification:**
+- **Tests:** 22 tests in `tests/test_memory_mv6.py`, and Vitest for Still true?, tidy and Based on
+  a document. 561 tests passed across the memory, past-chats, store, documents, connections, chats
+  and config suites, and 3397 web tests passed.
+- **Sabotage:** `--label MV6`, 12 of 12 caught.
+- **Live run:** 35 of 35 over a schema 25 store (`docs/acceptance/mv6-provenance-run.md`).
+- **Review:** one adversarial review. Its blocker and should-fix findings are fixed; the rest are
+  below.
+
+**Left, recorded:**
+- **A merge drops the other note's body from what is sent.** It stays on the earlier version, but
+  the page does not say so when both had a body.
+- **An undated event a model proposed carries a date 30 days on** (`EVENT_DEFAULT_DAYS`). The tidy
+  pass reads that as its day.
+- **Undoing a learned note that a merge kept brings the merged note back** as current
+  (`undo_learned`).
