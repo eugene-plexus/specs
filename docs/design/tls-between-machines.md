@@ -1,6 +1,8 @@
 # TLS between machines
 
-**Status: designed 2026-10-20. Calls LT-C1 to LT-C4 are open for Troy.**
+**Status: designed 2026-10-20. Troy took LT-C2 (yes), LT-C3 (later) and LT-C4
+(yes) the same day. LT-C1 is revised to 8083, as he asked for no new port, and
+waits for his word.**
 
 Troy, 2026-10-20: *"Let's make TLS between machines change #1. This is more
 important than what we learned from DeepInfer."* He also agreed to the route:
@@ -103,18 +105,28 @@ device. That is an extension of the container's HTTPS entry point
 
 ### 3.1 One TLS door per machine: the machine port
 
-Each agent opens a second listener, the **machine port**: default **8078**,
-TLS only, for other machines (LT-C1). The agent's 8079 stays as it is for the
-browser and moves to TLS in LT2.
+**The machine port is 8083 on every node (LT-C1, revised).** Troy wants no new
+port. 8083 already exists, and it is already the port for machines only: the
+container docs call it "the control root: enrollment and log replication, for
+every GPU machine that joins", and no browser uses it.
+- **On the root,** the agent takes 8083. Control moves behind it to a
+  loopback port, the same way a standby control already picks the first free
+  port from 8083 (`A/standby.py:39,138`).
+- **On a worker,** 8083 is free today.
+- **The published set does not change.** A root publishes 8079, 8080 and
+  8083, as now. A worker stops exposing its driver range, 8090-8189, to the
+  LAN, and exposes 8079 and 8083 instead.
+- **The agent's 8079 stays as it is** for the browser, and moves to TLS in
+  LT2.
 
 The machine port forwards to this machine's own listeners on loopback:
 
 ```
-https://<node>:8078/agent/...                 → the agent's own API
-https://<node>:8078/control/...               → control (on the root)
-https://<node>:8078/library/...               → the library, where this node holds it
-https://<node>:8078/gateway/...               → a gateway on this node
-https://<node>:8078/drivers/<name>/...        → an inference-driver or tool-driver on this node
+https://<node>:8083/agent/...                 → the agent's own API
+https://<node>:8083/control/...               → control (on the root)
+https://<node>:8083/library/...               → the library, where this node holds it
+https://<node>:8083/gateway/...               → a gateway on this node
+https://<node>:8083/drivers/<name>/...        → an inference-driver or tool-driver on this node
 ```
 
 **What the machine port does:**
@@ -193,7 +205,7 @@ certificate.
 - **Agent:**
   - the TLS key, the machine port and its forwarding;
   - announcing the pin;
-  - `advertiseUrl` and `Node.url` built as `https://<host>:8078/...` once
+  - `advertiseUrl` and `Node.url` built as `https://<host>:8083/...` once
     the node has a pin;
   - the remote leg of `/api/proxy` (console hops, N8, N15, X6) moves to
     machine ports;
@@ -212,8 +224,8 @@ certificate.
 - **UI:** each machine's state on Machines (3.6), and the join command
   carrying the root's pin.
 - **Specs:** `agent.yaml` (components and node), `control.yaml` (node record,
-  announcement, the signed list), the container template and compose files
-  (3.7).
+  announcement, the signed list), and the docs that call 8083 control's port.
+  The template and compose files already publish 8083 and need no change.
 
 ### 3.4 Joining
 
@@ -232,9 +244,9 @@ certificate.
 
 **Upgrades need no step from anyone:**
 1. **The root is upgraded first,** as the rule already says. Its agent makes
-   the key, opens 8078 and announces its own pin.
+   the key, takes 8083 and announces its own pin.
 2. **Each worker picks it up when it updates,** by in-app update or update
-   all. It makes its key, opens 8078, announces its pin over the existing
+   all. It makes its key, takes 8083, announces its pin over the existing
    channel (the announcement is signed and public), and fetches the signed
    list.
 3. **Callers use TLS to any node that has a pin and can be reached on its
@@ -249,7 +261,27 @@ certificate.
    - The gateway's client door (8080), the console (8079) and apps stay on
      the LAN until LT2.
 
-When "required" is set is LT-C2. A new install starts with it.
+**Taken (LT-C2):** an upgraded install switches to "required" by itself once
+every enrolled machine has a pin and answers on 8083, with a notice on
+Machines. An expert can turn it back off, with a warning. A new install starts
+required.
+
+**Old and new machines share 8083 during the switch.** A worker that has not
+updated yet still speaks plain HTTP to the root's 8083. Until "required" is
+set, the root's 8083 therefore takes both:
+- A small switch in front reads each connection's first byte. A TLS
+  handshake starts with `0x16`; an HTTP request starts with a letter.
+- TLS goes to the machine port's forwarding. Plain HTTP goes to control, as
+  it does today.
+- Once "required" is set, the plain branch refuses.
+
+Only machines use 8083, so the console's connections never pass through the
+switch. That was the objection to sharing 8079.
+
+**A single-HTTPS-port container** already gives workers a TLS door to the
+root: the nodes name on 8443, pinned through the same signed list
+(`C/root_tls.py`, X8). There, workers reach the root through it, and the root
+reaches workers on their 8083.
 
 ### 3.6 What a person sees
 
@@ -257,7 +289,7 @@ Machines shows each machine's link to the others:
 - **Encrypted**;
 - **Not encrypted: Amish_Station runs v0.3.1; update it**, with the Update
   button that already exists;
-- **Not encrypted: the NAS can't reach Amish_Station's machine port 8078
+- **Not encrypted: the NAS can't reach Amish_Station on port 8083
   (connection refused)**, with the fix for that platform.
 
 A wrong pin is refused, and the failure names it: *"Amish_Station's machine
@@ -270,13 +302,13 @@ security event in the log, not a retry.
   bundled OpenSSL. `firewall_follow` needs no installer change.
 - **Linux and macOS installs** manage no firewall today, so this changes
   nothing there.
-- **Containers in bridge mode,** like the Unraid template (`<Network>bridge`):
-  - 8078 must be published, and the template and compose files gain it.
-  - An existing Unraid container keeps the saved settings it was created
-    with, so its owner adds one port mapping in Unraid's screen.
-  - Machines names that step in its "can't reach" state. It is a GUI step,
-    not a terminal one, and it is the one manual step in the whole upgrade
-    (LT-C1).
+- **Containers in bridge mode,** like the Unraid template (`<Network>bridge`),
+  already publish 8083, so nothing changes in their settings.
+- **Reverse proxies and Cloudflare stay out of machine traffic.** Machines
+  dial each other directly. A proxy that terminates TLS would present its own
+  key, and the pin check refuses it by design. The one case where a proxy
+  holds the certificate, the nodes name behind NPM, is already pinned to that
+  proxy's key (X8).
 
 ### 3.8 Cost
 
@@ -312,8 +344,8 @@ security event in the log, not a retry.
 
 | Slice | What | Risk |
 | --- | --- | --- |
-| **LT1a** | Keys, pins, the signed list, the machine port and its forwarding, `https` advertise URLs, pinned callers in every repo's `_http.py`, mixed mode, Machines status | High (auth, transport): one adversarial review |
-| **LT1b** | Required: plain refused, the loopback bind, join over TLS with the pin in the join token, the template and compose files | High (installers, enrolment) |
+| **LT1a** | Keys, pins, the signed list, 8083 as the machine port (the first-byte switch, control behind it) and its forwarding, `https` advertise URLs, pinned callers in every repo's `_http.py`, mixed mode, Machines status | High (auth, transport): one adversarial review |
+| **LT1b** | Required: plain refused (the 8083 switch's plain branch closes), the loopback bind, join over TLS with the pin in the join token | High (enrolment, binds) |
 | LT2 | Clients and browsers: the HTTPS entry point on every install | Designed separately |
 
 ## 5. Acceptance
@@ -347,7 +379,7 @@ on one stream.
 
 | # | Question | Recommended |
 | --- | --- | --- |
-| LT-C1 | A new machine port (8078), or 8079 shared by detecting TLS on the first byte? | **A new port.** It is plain to reason about, firewall rules follow it on Windows, and uvicorn serves it as it is. The cost is one port mapping for existing bridge-mode containers, which Machines names. Sharing 8079 avoids that step, but every console connection then passes through a byte-sniffing shim in front of uvicorn, on every platform. |
-| LT-C2 | When does an upgraded install switch to "required"? | **By itself, once every enrolled machine has a pin and answers on its machine port,** with a notice on Machines. An expert can turn it back off, with a warning that prompts will cross the LAN in clear text. A new install starts required. |
-| LT-C3 | Mutual TLS in LT1, or later? | **Later.** Tokens authenticate every caller and are encrypted once LT1 lands. Mutual TLS adds "only enrolled machines connect" and connection-bound tokens. It is worth doing, but not at the price of delaying encryption. |
-| LT-C4 | LT2 (clients and browsers) straight after LT1? | **Yes, designed next.** Without it a business LAN still carries most prompts in clear text. Its first decision is where a certificate comes from on a plain install: the owner's domain and ACME, or Eugene's CA pushed to each device (an MSP can do that by policy). |
+| LT-C1 | Which port carries machine traffic? (Revised: Troy wants no new port.) | **8083 on every node.** It is already the port for machines only, and the root already publishes it. On the root, control moves behind the agent to a loopback port. During the switch, 8083 tells TLS from plain HTTP by the first byte, and only machines ever pass through that. Rejected: a new port (one more to publish and proxy), and sharing 8079 (every console connection would pass through the switch). |
+| LT-C2 | When does an upgraded install switch to "required"? | **Taken: yes.** By itself, once every enrolled machine has a pin and answers on its machine port,** with a notice on Machines. An expert can turn it back off, with a warning that prompts will cross the LAN in clear text. A new install starts required. |
+| LT-C3 | Mutual TLS in LT1, or later? | **Taken: later.** Tokens authenticate every caller and are encrypted once LT1 lands. Mutual TLS adds "only enrolled machines connect" and connection-bound tokens. It is worth doing, but not at the price of delaying encryption. |
+| LT-C4 | LT2 (clients and browsers) straight after LT1? | **Taken: yes, designed next.** Without it a business LAN still carries most prompts in clear text. Its first decision is where a certificate comes from on a plain install: the owner's domain and ACME, or Eugene's CA pushed to each device (an MSP can do that by policy). |
