@@ -8,7 +8,7 @@ Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled pe
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
 default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.
 MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.
-MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) built 2026-10-19 (sections 64-72), 35/35 live; calls MV6-C1 to C5 are Troy's to confirm, their defaults built. MV7 (projects) designed 2026-10-19 (sections 73-81); MV7a being built at its defaults.**
+MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) built 2026-10-19 (sections 64-72), 35/35 live; calls MV6-C1 to C5 are Troy's to confirm, their defaults built. MV7 (projects) designed 2026-10-19 (sections 73-81); MV7a built 2026-10-20 (section 82), 27/27 live; calls MV7-C1 to C5 are Troy's to confirm, their defaults built; MV7b (project documents) next.**
 
 ---
 
@@ -1864,3 +1864,52 @@ projects one by one.
 **MV7-C5 (Troy's to confirm; the default is built): Also use my general memory is on by default.**
 *Recommended default:* on: a new project starts knowing what the person told Workbench. Alternative:
 off, a clean room for each project.
+
+### 82. What building MV7a found
+
+**Built as designed, with these changes:**
+
+- **Past chats are kept to their project in MV7a, not MV7b.** Without that, an exchange from a
+  project's chat reached a chat in no project through Use past chats, which breaks MV7-C1. The
+  turn's offer and `search_chats` follow the place, as section 77 says. Search chats, the
+  person's own screen, finds every chat. A connection's `search_chats` finds chats in no
+  project.
+- **A search reaches further than it keeps** (`SPREAD`, five times). It drops other places'
+  notes before any cut: the 200 word hits, the 200 title hits, and the eight best by meaning.
+  Filtering only after the cuts let eight or more better-matching notes elsewhere hide a
+  project's note (review).
+- **"The project's notes first" holds for the pinned block only.** Relevant memory ranks a
+  project's notes and general ones together, by how well they match.
+- **Every way out is kept to its place**, each found by the review:
+  - "Forget ..." offers only notes the chat may be given.
+  - A connection's `read_note` refuses a project's note by id, as its search already did.
+  - A connection's suggestion is compared with general notes only, so its answer never says that
+    a project holds the words.
+  - The learning pass is told no tag that only another place's notes carry.
+- **The same words are one note within one place.** Each place stands alone: a suggestion in a
+  project is not dropped because General holds the same words (review).
+- **Deleting a project leaves nothing under its id.** What its delete did not take becomes
+  general in the same step: a suggestion waiting from a chat moved out of it, an earlier version,
+  a chat made while it ran (review).
+- **The general-memory switch and its chats' frozen blocks change in one step** (review).
+- **The export says where each note is kept**, by the project's name then.
+- **Counting a project's chats and notes is two grouped queries**, not every chat and note read
+  (review).
+- **A project's name may not hold characters nobody sees**, as a note's may not (review).
+
+**Verification:**
+- **Tests:** 22 tests in `tests/test_memory_mv7.py`, and Vitest for the sidebar's projects, the
+  project page, Move to project and the Where filter. 2,400 server tests and 3,439 web tests
+  passed.
+- **Sabotage:** `--label MV7`, 14 of 14 caught.
+- **Live run:** 27 of 27 over a schema 26 store (`docs/acceptance/mv7a-projects-run.md`).
+- **Chrome:** both Chrome checks pass. The documents check timed out once waiting for a
+  chip, then passed on its own.
+- **Review:** one adversarial review, with no blocker. Its should-fix findings are fixed.
+
+**Left, recorded:**
+- **A chat moved into a project keeps on a memory server what was sent before.** Only new
+  exchanges stop. Forgetting them would need the move to queue a forget.
+- **The project page lists its notes simply.** Editing, pinning and moving a note are on the
+  Memory page, where the Where filter finds them.
+- **Add a note on the Memory page keeps it to General** whatever the Where filter shows.
