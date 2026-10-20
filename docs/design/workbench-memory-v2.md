@@ -7,7 +7,8 @@ this doc holds the what. Paths are under `workbench/src/eugene_plexus_workbench/
 Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled per model by MV3's measurement (section 39).
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
 default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.
-MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.**
+MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.
+MV5 (memory servers) designed 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built.**
 
 ---
 
@@ -1029,3 +1030,216 @@ shows the waiting items first while there are any, and nothing when there are no
   relevant memory replaced, so it stops before MV4's Memory steps. `documents-browser.mjs` fails
   later, on a 39 px phone overflow of the composer with four file chips. MV4's Memory page steps in
   Chrome are unrun until #14 is fixed.
+
+---
+
+## MV5: memory servers
+
+What MV5 changes, in one paragraph: research call 9 put one contract in front of memory so outside
+memory systems can plug in. MV5 defines that contract in Workbench and lets a person connect a
+**memory server** of their own over MCP. A connected server sits **beside** the built-in notes: it
+receives the person's chats, as the write policy allows, and is asked for relevant memory every turn
+next to the notes. Eugene's layer stays above it: the person binding, the guards, what was sent, and
+deletion with a check. Hindsight from the agent's catalogue is MV5b, after a feasibility probe
+(section 52).
+
+Read before designing (2026-10-19, three reports): Workbench has no memory seam today (every memory
+module calls `Store` directly), but every guard except secret refusal already sits above the store.
+Workbench already has an MCP client (`tools.py`, `mcp>=2.3`, streamable HTTP), used only for
+owner-picked tool servers, which are install-wide. The agent's catalogue installs Python packages
+only, has no way for one app to depend on or find another, and no generated per-app secret.
+Hindsight is v1.0.0 (2026-10-13), MIT, active; it needs Postgres (embedded `pg0` in `hindsight-all`),
+4-8 GB of RAM, binds `0.0.0.0` with no authentication by default (#5544, closed "not planned"), has
+one shared key at best, lists no local model as tested, and does not guarantee deletion (#5419:
+orphaned observations still recalled). Its MCP server (`/mcp/{bank_id}/`, streamable HTTP) has
+`retain`, `recall(query, max_tokens)`, `list_memories`, `delete_document`, `clear_memories`.
+
+### 46. The contract
+
+`memory_servers.py` holds the contract as a `Protocol` and its MCP adapter:
+
+| Verb | Arguments | Required |
+|---|---|---|
+| `recall` | `query`, `max_tokens` | Yes: a server that cannot be asked is not a memory server |
+| `retain` | `content`, `document_id`, `timestamp`, `context` | No: without it the server is read-only |
+| `forget` | `document_id` | No |
+| `purge` | none | No |
+| `list` | `limit`, `offset` | No: used for export |
+
+- **By tool name, over MCP.** After connecting, Workbench lists the server's tools and maps each
+  verb to the first name present: `recall` (`recall`, `search_memory`); `retain` (`retain`,
+  `remember`); `forget` (`delete_document`, `forget`); `purge` (`clear_memories`, `purge`); `list`
+  (`list_memories`, `list`). Hindsight's own MCP server matches with no adapter, and so does any
+  server written to Eugene's names. The capability flags are which verbs were found; the screen says
+  what each missing one means ("This server cannot forget a chat you delete").
+- **The person is bound by Workbench, never by the server, the model or the client.** The server
+  record belongs to the signed-in person (`owner` = the OIDC `sub`), and only that person's chats go
+  to it and only their turns ask it. A shared server is the person's choice of server; its own
+  scoping (a Hindsight bank in the URL, a token) is theirs, and the screen says Eugene cannot check
+  it.
+- **The built-in notes are not wrapped.** MV1-MV4's notes carry bodies, kinds, tags, supersession,
+  receipts and Still true?, which no outside system has; putting `Store`'s forty memory methods
+  behind the protocol would change nothing a person sees. The contract is where outside memory
+  meets Workbench, not a rewrite of the built-in (call MV5-C1).
+- **Recall results are untrusted data.** Each item is text with an optional id, date and score; the
+  text is cut to 2,000 characters, the `_hidden` characters stripped, and a result whose text looks
+  like a secret is dropped and counted (the drawer says how many). Results are never tool output
+  with authority.
+
+### 47. Connecting a server
+
+On **Memory settings** (`/settings#memory`), a new part **Your memory server**: address, token
+(optional), Connect. One server a person. Connect lists the tools and shows what was found; a
+server with no `recall` is refused, naming it ("No recall tool: this is not a memory server").
+Disconnect forgets the record; it does not delete anything on the server, and says so.
+
+- **What may be connected is the owner's** (`memoryServers`, config trio): `off`; `outside` (the
+  default: any `https` address, or `http` on a private LAN address, never loopback, link-local or
+  this host's own addresses); `any` (testbeds, including loopback). Loopback is refused by default
+  because Workbench runs on the same host as Eugene's own components and could be pointed at them.
+  Redirects are not followed.
+- **A memory server counts as an outside model.** Eugene cannot see which model it runs, so sending
+  it chats follows the outside-model rule for memory: the owner's `memoryExternalModels: never`
+  hides the whole part ("Your install does not allow memory servers"), and a person whose own
+  setting is "never" is told that connecting turns it on for this server only.
+- The token is stored like a tool server's, never returned to the page (the box is empty while one
+  is stored, with "A token is saved").
+- Store migration 24 to 25: `memory_servers (owner PRIMARY KEY, url, token, verbs JSON,
+  connected_at, last_error, last_error_at)`; `memory_server_sent (owner, chat_id, message_id,
+  sent_at)` for what was sent and for forgetting.
+
+### 48. What a server receives
+
+After a turn is answered, in the background (the exchanges index's queue, `exchanges_index.py`),
+Workbench calls `retain` with that exchange, `document_id` = `{chat_id}:{message_id}`, `timestamp` =
+when it was asked, `context` = "Chat: {chat title}". What the exchange holds is the write policy's
+**Source** row (section 32), so one rule governs every writer:
+
+- Strict and Standard: the person's own message, pasted material removed, as MR8's quote check
+  reads it. No answer, tool result, web page or document passage.
+- Open: the message and the answer. Tool results and fetched pages are still not sent: they are the
+  chat's evidence, not the person's memory.
+- Custom: the Source row as set.
+- A turn whose text looks like a secret is not sent (`looks_like_secret`), and Recently learned's
+  counter says "1 turn not sent: it looked like a password or key".
+- Chats in a project or with memory off for the chat (when MV7 adds it) are not sent; a chat started
+  with **Use memory** off is not sent.
+- **Not sent before connecting.** No backfill in MV5 (call MV5-C4): a person who wants their past
+  chats in the server is offered nothing yet, and the part says it starts from now.
+- A failed `retain` is retried twice with the queue's back-off, then recorded as `last_error` and
+  shown on the part ("Not reached since 14:02: connection refused"). Nothing is queued past a day.
+
+### 49. What a server gives
+
+Every turn, in parallel with the notes' Finder (`memory_relevance.Finder.choose`), Workbench calls
+`recall(query = the latest user message, max_tokens = a third of the relevant-memory budget)`:
+
+- **Time limit 2 seconds.** Past it the turn goes on without the server, and the drawer says "Your
+  memory server did not answer in time" (failures name the observed cause). The model is never kept
+  waiting longer.
+- The results join relevant memory as data in the latest user turn, in their own block after the
+  notes' (`<memory-XXXXXXXX>`, "From your memory server"), inside the same budget: notes first, then
+  the server's results until the budget is spent.
+- **Outside models:** a server's results are model-kept and unseen by the person, so under Strict and
+  Standard they are never sent to an outside model, exactly as call 12's unseen notes
+  (`memory_api.leaving`). Under Open and Custom the Unseen-local row decides.
+- **What was sent** records each result's text per turn, as for notes, and the drawer lists them
+  under the server's name.
+- `search_memory` does not reach the server in MV5a: a kept tool result is replayed in later
+  turns, and a server's results would need their own replay rule for a chat whose model changes to
+  an outside one. The per-turn recall carries the server's memory instead.
+- Not over connections: `/mcp`'s `search_notes` does not reach a person's server. The server is
+  theirs to connect to other apps directly.
+
+### 50. Forgetting and export
+
+- **Deleting a chat** calls `forget` for each of its sent exchanges (from `memory_server_sent`). A
+  server with no `forget` is named in the delete question: "Your memory server cannot forget, so
+  what it kept from this chat stays there."
+- **Delete all memory** calls `purge`, then, where the server can `list`, lists to check that nothing
+  is left, and says what it found: "Your memory server still holds 12 memories after it was cleared."
+  A server that cannot purge is named in the question as above.
+- **Checked deletion is best effort and says so.** After `forget`, Workbench recalls with the deleted
+  turn's own text and reports any result that still quotes it. This catches Hindsight's #5419 kind of
+  leftover; it cannot prove absence, and the copy never claims it does ("No longer found", not
+  "Deleted everywhere").
+- **Export** adds `memory-server.json` (from `list`, paged, at most 20,000 items) when the server can
+  list; otherwise the export says the server's memories are not in it.
+
+### 51. Not in MV5a
+
+Hindsight from the catalogue (MV5b, section 52). Backfill of past chats. `search_memory`
+reaching the server (section 49). More than one server a
+person. Install-wide servers the owner sets for everyone. Wrapping the built-in notes in the
+contract. A gateway memory door (rejected in the research, 7.7).
+
+### 52. MV5b: Hindsight from the catalogue
+
+What MV5b needs, and why it is a separate slice: the agent's catalogue has no app-to-app link, no
+generated secret and no dependency on a database, and Hindsight needs all three in some form. Before
+designing it, a **feasibility probe** (no product code, one runner session):
+
+1. `hindsight-all==1.0.0` in a scratch venv on Windows and on Linux (Python 3.12): does embedded
+   `pg0` start, and with what RAM and disk.
+2. Point its LLM, embedder and reranker at a local gateway (`/v1`, `/v1/embeddings`, `/v1/rerank`
+   as Cohere); does it run with no other outbound connection (watch the process's sockets; grep for
+   telemetry and model downloads).
+3. Retain and recall a small labelled set with a local 20B-30B model and with Gemma 4 12B, through
+   the MV3 harness's questions: does recall beat the built-in notes plus past chats on the same
+   questions, and at what ingest time.
+4. Its MCP with its API key on loopback, connected as MV5a's memory server under `memoryServers: any`.
+
+If the probe passes, MV5b designs the catalogue entry (`source: pypi`, embedded store, `{bindHost}`,
+API key from a new generated-secret placeholder, every address ours, labelled experimental, "for
+20B+ models with reliable tool calls") and a link that hands Workbench the address and key of a
+Hindsight on the same host, so a person connects it with one click instead of an address. If it
+fails, MV5b is dropped and the research records why; MV5a still lets a person connect a Hindsight
+they run themselves.
+
+### 53. Risk, tests and acceptance
+
+**High risk** under the testing policy: chats leave Workbench for a server Eugene does not control,
+a person-supplied address is fetched from the host, and what models receive changes. So: one
+adversarial review, sabotage of the new checks, and a real-environment run.
+
+- Unit: the verb mapping; the address rule (loopback, link-local, this host's addresses, redirects,
+  `http` on a public address) per `memoryServers` value; what is sent per write-policy preset
+  (pasted material removed, secret-shaped turns skipped, answers only under Open); recall's limits
+  (time, size, secret drop, budget share); unseen results withheld from outside models; forget on
+  chat delete; purge with the list check; the export file; owner `never` hiding the part.
+- A **reference memory server** for tests and the live run: a small MCP server in
+  `scripts/m-memory-server.py` (specs) with all five verbs, a switch to drop each, and a switch to
+  "forget" without forgetting, so the check in section 50 is observable.
+- **Live run** (`mv5-memory-server-run.md`): a real Workbench and gateway with a local model; connect
+  the reference server; chat; see the exchange arrive with only the person's words under Standard;
+  see a recalled memory in the drawer and in the request; delete the chat and see `forget`; Delete all
+  and see `purge`; a lying server reported; a slow server timed out; loopback refused under
+  `outside`.
+- **Sabotage once:** the loopback refusal, the Source filter, the secret skip, the unseen-local
+  withholding, and the deletion check.
+
+### 54. Calls
+
+**MV5-C1 (taken by Troy, 2026-10-19, at the default): beside, not instead.** *Recommended default:* a
+memory server sits beside the built-in notes: it gets chats and is asked every turn, and the notes,
+tags, pinned block and Memory page stay the built-in's. Alternative: a person switches their whole
+memory to a server, as an engine is switched. That needs every MV1-MV4 feature mapped onto a system
+that has none of them (bodies, kinds, tags, receipts, Still true?), and the Memory page would show
+whatever the server returns. The research's engine analogy holds at the seam, not here.
+
+**MV5-C2 (taken by Troy, 2026-10-19, at the default): Hindsight after a probe.** *Recommended default:* MV5a now; Hindsight
+from the catalogue only if the probe in section 52 passes. Hindsight is six days past 1.0, open by
+default with the fix declined, untested on local models, and 4-8 GB of RAM. MV5a already lets a
+person connect one they run. Alternative: design MV5b now, with the agent changes (app link,
+generated secret), in parallel with MV5a.
+
+**MV5-C3 (taken by Troy, 2026-10-19, at the default): which addresses.** *Recommended default:*
+`memoryServers: outside`: a person may connect any `https` server, or `http` on a private LAN
+address, never loopback or this host. Alternatives: `off` by default (the owner opts in), or `any`.
+Loopback is the request-forgery risk: an unauthenticated Hindsight on loopback is exactly what #5544
+describes.
+
+**MV5-C4 (Troy's to confirm; the default is built): no backfill.** *Recommended default:* a server
+receives chats from when it is connected. Backfill would send months of chats to a server the person
+just met, at the server's ingest cost (Graphiti took 626 s for one sentence on a 12B; research 1).
+Alternative: a "Send my past chats" button with a count and an estimate, in a later slice.
