@@ -1884,6 +1884,53 @@ paths:
         '503':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
+  /v1/trust/ca:
+    get:
+      tags: [control]
+      operationId: getInstallCa
+      summary: The install CA's certificate, for a device to trust.
+      security: []
+      description: |
+        **TLS for clients and browsers (LT2,
+        `docs/design/tls-for-clients.md` §3).** The certificate of the CA
+        this root made once, the first time it was unsealed with LT2: ECDSA
+        P-256, valid 20 years, name-constrained (critical) to private
+        addresses and local names, so its key can sign for nothing on the
+        public internet. Every node's client doors present a leaf it
+        issued (`POST /v1/nodes/{name}/certificate`).
+
+        Public: a certificate is not a secret, and a device fetches it
+        before it trusts anything. PEM by default; `?format=der` answers
+        the DER bytes as `application/pkix-cert`, the form iOS and Android
+        install from a download.
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pem, der]
+            default: pem
+      responses:
+        '200':
+          description: The CA certificate.
+          content:
+            application/x-pem-file:
+              schema:
+                type: string
+            application/pkix-cert:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: |
+            This install has no CA yet: the root has not been unsealed since
+            it was updated to a version with LT2.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   # -------- topology: install-wide --------
 
   /v1/components:
@@ -2755,6 +2802,88 @@ paths:
           $ref: 'components/common.yaml#/components/responses/Problem'
         '409':
           description: This host is a standby and accepts no writes.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+  /v1/nodes/{name}/certificate:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema: {type: string}
+    post:
+      operationId: issueNodeCertificate
+      tags: [nodes]
+      summary: A leaf from the install CA for this node's own key and names.
+      description: |
+        **LT2 (`docs/design/tls-for-clients.md` §4).** A node asks for the
+        certificate its client doors (8079, 8080, app ports) present, with
+        its own service token (`sub: agent`, signed by its key) and a CSR.
+        A node speaks only for itself: another node's token is refused.
+
+        **The key.** The CSR's public key must be one this node registered
+        under its signature (`Node.tlsPins`, LT1): a node cannot obtain a
+        certificate for a key it does not hold.
+
+        **The names.** Every name the CSR asks for must be the node's own,
+        or the whole request is refused and the refusal lists the ones that
+        are not:
+        - the host of its signed address (`Node.url`);
+        - `<node name>.local`;
+        - `localhost`, `127.0.0.1` and `::1`;
+        - the names the owner listed for it.
+
+        A name the CA may not sign for (a public address, a dotless name;
+        §3) is refused the same way. A CSR that asks for no name gets them
+        all, less those the CA may not sign for.
+
+        The leaf is valid 397 days. Nothing is replicated: the CA key is,
+        and a node asks again when its leaf is two thirds through its life
+        or its address changes.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeCertificateRequest'
+      responses:
+        '200':
+          description: The leaf, and the CA that signed it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeCertificate'
+        '400':
+          description: Not a CSR, or one whose signature does not verify.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          description: |
+            Another node's token, a key this node did not register, or a
+            name that is not its own. Nothing was signed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: This host is a standby and signs nothing.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '503':
+          description: |
+            The root is sealed, or has no CA yet. Ask again later; the doors
+            keep the leaf they have.
           content:
             application/problem+json:
               schema:
@@ -4171,6 +4300,16 @@ components:
             Encryption between machines is required (`machineEncryption`):
             no plain HTTP between machines, and drivers and control bind
             to loopback.
+        clientPlainHttp:
+          type: string
+          enum: ['on', 'off']
+          description: |
+            Whether a node's client doors (8079, 8080, app ports) still take
+            plain HTTP from another machine (LT2-C4, the `clientPlainHttp`
+            config field). `off` only by the owner's choice; a node then
+            refuses a plain request from another machine with the
+            `https://` URL named, and loopback stays plain. Absent from an
+            older root's list, which means `on`.
         controlPins:
           type: array
           items:
@@ -4204,6 +4343,36 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TlsPin'
+
+    NodeCertificateRequest:
+      type: object
+      required: [csr]
+      additionalProperties: false
+      properties:
+        csr:
+          type: string
+          description: |
+            A PKCS#10 certificate signing request in PEM, signed with the
+            node's machine key, its names in a subjectAltName extension.
+
+    NodeCertificate:
+      type: object
+      required: [certificate, ca, names, notAfter]
+      properties:
+        certificate:
+          type: string
+          description: The leaf, PEM.
+        ca:
+          type: string
+          description: The install CA that signed it, PEM.
+        names:
+          type: array
+          items:
+            type: string
+          description: The names it holds, IP addresses and DNS names.
+        notAfter:
+          type: string
+          format: date-time
 
     NodeRole:
       type: string
@@ -4797,7 +4966,14 @@ components:
         - putBrowserSignIn
         - deleteBrowserSignIn
         - labelNode
+        - setInstallCa
       description: |
+        **`setInstallCa` (LT2, 2026-10-20)** records the install CA once:
+        `{certificate, sealedKey}`, the certificate in PEM and the key's
+        PKCS8 DER sealed under the passphrase-derived key, as the other
+        sealed keys are. A second one is refused at apply: the CA is made
+        once, so every device's trust holds through a promotion.
+
         **`labelNode` (2026-10-19)** sets or clears one node's `label`, the
         name people see (`{name, label}`, `label` a string or `null`). It is
         its own op because `updateNode` is the node-signed address change and
@@ -5004,6 +5180,17 @@ components:
             The public half of the above, carried in the clear so a
             standby can report the identity it would assume without
             holding the passphrase.
+        installCaCertificate:
+          type: string
+          description: |
+            The install CA's certificate, PEM (LT2): what every device
+            trusts. Absent until `setInstallCa`.
+        sealedInstallCaKey:
+          type: string
+          description: |
+            The install CA's private key, PKCS8 DER sealed under the
+            passphrase-derived key. Replicated so a promoted standby issues
+            leaves under the same CA and no device has to trust a new one.
         permissionGroups:
           type: array
           items: {$ref: '#/components/schemas/PermissionGroup'}

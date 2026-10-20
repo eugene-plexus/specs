@@ -2475,6 +2475,45 @@ paths:
         '409':
           description: This install's links are made and removed by root at the machine (J36).
 
+  /v1/trust/ca:
+    get:
+      tags: [node]
+      operationId: getInstallCa
+      summary: The install CA's certificate, for a device to trust.
+      security: []
+      description: |
+        **LT2 (`docs/design/tls-for-clients.md` §3).** The CA that signed
+        this node's client leaf, as control issued it, so a device can
+        fetch it from any machine it can reach. Public. PEM by default;
+        `?format=der` answers DER as `application/pkix-cert`.
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pem, der]
+            default: pem
+      responses:
+        '200':
+          description: The CA certificate.
+          content:
+            application/x-pem-file:
+              schema:
+                type: string
+            application/pkix-cert:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: |
+            This node holds no leaf from the install CA yet: it is not
+            enrolled, or the root has not issued one.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/node:
     get:
       tags: [node]
@@ -4355,6 +4394,8 @@ components:
             What the control root holds as this node's `Node.url`.
         machine:
           $ref: '#/components/schemas/MachinePort'
+        clientTls:
+          $ref: '#/components/schemas/ClientTls'
         trustBundleVersion:
           type: integer
           format: int64
@@ -4547,6 +4588,96 @@ components:
           description: |
             Seconds since this node last took the root's signed machine
             list. `null` when it holds none.
+
+    ClientTls:
+      type: object
+      description: |
+        This node's client doors and the certificate they present (LT2,
+        `docs/design/tls-for-clients.md`). Each door takes TLS and plain
+        HTTP on the same port, told apart by the first byte.
+      required: [state, plainAllowed, doors]
+      properties:
+        state:
+          type: string
+          enum: [issued, pending, none, error]
+          description: |
+            * `issued`: the doors present a leaf from the install CA.
+            * `pending`: this node has asked and holds no leaf yet (the root
+              is sealed, or has no CA yet).
+            * `none`: not enrolled; a node alone has no CA, and its doors
+              take plain HTTP only.
+            * `error`: the root refused the request; `error` says why.
+        names:
+          type: array
+          items:
+            type: string
+          description: The names the leaf holds.
+        notAfter:
+          type:
+            - string
+            - "null"
+          format: date-time
+        renewAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: |
+            When this node asks for a new leaf: two thirds through its life,
+            or at once when its address leaves the names.
+        error:
+          type:
+            - string
+            - "null"
+          description: The root's refusal, or the failure, in its own words.
+        plainAllowed:
+          type: boolean
+          description: |
+            Plain HTTP from another machine is still taken here (LT2-C4,
+            the root's `clientPlainHttp`). Loopback is always plain.
+        doors:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClientDoor'
+
+    ClientDoor:
+      type: object
+      required: [name, port, listening, tls, plainConnections, plainClients]
+      properties:
+        name:
+          type: string
+          description: '`console`, `gateway`, or `app:<id>`.'
+        port:
+          type: integer
+        listening:
+          type: boolean
+        tls:
+          type: boolean
+          description: TLS is served on this port now (a leaf is held).
+        error:
+          type:
+            - string
+            - "null"
+          description: Why it is not listening, in the words of the failure.
+        plainConnections:
+          type: integer
+          description: |
+            Plain HTTP connections from other machines in the last 7 days.
+            Connections, not requests: one connection carries many.
+        plainClients:
+          type: array
+          description: The same, by client address, most recent first.
+          items:
+            type: object
+            required: [address, count, lastSeen]
+            properties:
+              address:
+                type: string
+              count:
+                type: integer
+              lastSeen:
+                type: string
+                format: date-time
 
     InstalledComponent:
       type: object
