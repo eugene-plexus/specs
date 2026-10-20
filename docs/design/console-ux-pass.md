@@ -272,13 +272,73 @@ contract, ui `b782ccd9`). What building found:
   --output <new dir>` (Windows; disposable install, the pinned UI wheel,
   downloads a 20 MB GGUF and one llama.cpp build).
 
-### CX4: one context for fit (ui, maybe library; M)
+### CX4: one context for fit (library, agent, ui; M)
 
 Home judges fit at 16k (`ui/src/app/page.tsx:103`), Discover at 8k
 (`discover/page.tsx:246`) and the Library at the library's own guidance
 (`library/page.tsx:232`). None of them is the context Run launches with.
 One setting, shown beside every verdict, that Run uses; a running model's
 Library row says the context it serves. Settings never lie.
+
+**Design (2026-10-20).** No contract change.
+
+- **The one number** is the library's existing `guidanceContextLength`,
+  relabelled **Context to plan for**, default raised from 8,192 to 16,384
+  (Home's reason for 16k: a model that fits at 8k and not at 16k is one a
+  person outgrows in one conversation). An install that set it keeps its
+  value. Every fit the library answers without an explicit context is
+  already judged at it.
+- **Home** drops its own 16k and asks the starter set with no context, so
+  the setting applies. **Discover's** control starts from the setting on
+  every visit; moving it is a try for this visit only (a stored
+  `contextLength` preference is no longer read or written), and the line
+  under it says so: "Trying 32k here only: Home, the Library and Run plan
+  for 16k." **The Library** already judged at the setting. Home, Discover
+  and the Library's fit panel each say "Judged at 16k of conversation, the
+  context you plan for. Change", linking to the setting
+  (`/config?sel=library#guidanceContextLength`); nothing is shown until the
+  library answers, never a number that may not be the one in effect.
+- **Run** (the agent's `settings` step, `context_size`): it starts a model
+  with the longest context that fits wholly on the GPU, up to the model's
+  own, which is at least the planned context whenever the verdict said
+  "fits". The gap was the other case: a model that fits wholly only at
+  6k, judged "needs partial CPU offload" at 16k, was started at 6k. Now,
+  **for llama.cpp, Run never starts below the planned context** (or the
+  model's own, if smaller): llama.cpp's own fit puts what the card cannot
+  hold in system memory, which is what the verdict said. vLLM cannot
+  spill, so it keeps the longest context that fits. The agent reads the
+  planned context from the library's fit answer (`fit.contextLength` of a
+  fit asked without a context).
+- **A running model** says what it serves: the Library's fit panel reads
+  "Running on this machine now, serving 32k of conversation" from the
+  runtime's `capabilities.contextLength` (the engine's own resolved
+  window, per conversation), falling back to the old line until the
+  engine reports it.
+
+**CX4-C1 (Troy): Run below the planned context.** Built as: llama.cpp
+starts at the planned context with layers in system memory (slower, the
+context the verdict promised). The alternative is the old rule, the
+longest context that fits wholly on the GPU (faster, less context than
+the verdict was judged at), with the served context then the only place
+that says so. Recommendation: keep what is built; the verdict and the
+running model then agree.
+
+**Built 2026-10-20** (library `ecdfa9f`, agent `85ea7b1`, ui `24311e13`).
+What building found:
+
+- The library already judged every fit asked without a context at
+  `guidanceContextLength`, so the Library page needed no change to its
+  question, only the note and the served context.
+- Discover remembered its own context in the browser, a second number
+  that outlived any change to the setting. It is no longer read or
+  written; a stored value from an older console is ignored.
+- The served context is `capabilities.contextLength` (per conversation),
+  not `contextPoolTokens` (shared by the slots).
+- Not covered by a real run here: a model that fits wholly only below the
+  planned context. No model small enough to download fails that way on a
+  32 GB card; the agent's unit test covers the rule.
+- Owed for the end of the pass: `scripts/cx4-planned-context-acceptance.py
+  --output <new dir>`.
 
 ### CX5: a Connect apps page (ui; M)
 
