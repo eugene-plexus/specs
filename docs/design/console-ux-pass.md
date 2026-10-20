@@ -395,6 +395,84 @@ offered first when the machine is down, saying it revokes the machine's key.
 What becomes of its standby grant, its Job Site links and its local copies
 is part of the design.
 
+**What removal already did (read 2026-10-20).** One `revokeNode` entry
+drops the node record (its label and grants, the standby grant included),
+its declared components and runtimes, and publishes a bundle without its
+key, pushed to the machines that remain. Its tokens stop verifying, and
+console sessions addressed to it die. Every console list (Machines, Hosts,
+Logs, Library, Inference, Discover, the Apps picker) reads control's
+`/v1/nodes`, so the machine leaves them all; nothing else keeps it. The
+removed agent is not told: it learns at its next trust pull (about once a
+minute), takes the bundle, and a standby there stops and deletes its copy
+(`standby.reconcile`). Its own `/v1/node` still says enrolled. Host history
+and local model copies live on that machine's disk and stay there.
+
+**Design (2026-10-20).**
+
+- **Who may remove: the `membership` capability**, which the route already
+  requires (the same one that mints join tokens and gives the standby
+  grant). The console has no capability read, so the button shows to the
+  signed-in operator and a refusal (403) is shown in the root's words.
+- **Refused at the root, not only hidden (409, nothing changes):**
+  - *the root's own machine*, by `node_name` or the probe's
+    `hostsControl` (the standby route's rule). Its key leaving the bundle
+    would end the root's own agent and every console session on it, and
+    it could not re-join the root it runs;
+  - *the last machine that reports a running gateway*, asked live from
+    every machine's `/v1/components` (placement is live, not in the log).
+    A machine that does not answer reports nothing, so **a dead or sold box
+    can always be removed**. "Run a gateway on another machine first."
+- **The button:** "Remove from install" in each row's Status cell, on every
+  machine but the root's. On a down machine it is a plain button; on a
+  running one a quiet link. The confirm ("Remove and revoke its key") says:
+  its key is revoked now; to come back it must join again with a new
+  token; and only when true: it is running now (its programs keep running
+  on it, this install stops sending it work); it is the standby (no standby
+  until you choose another; it deletes its copy when it next checks in);
+  it hosts a person's job site (the site stays; remove it on Job Sites).
+  Model files on its disk stay.
+- **Job Site links:** a site the machine hosted keeps its own enrollment
+  and loses its `hostNode`, so Machines and Job Sites stop naming a
+  machine the install does not have. `_without_node` clears it, inside the
+  same entry, so a replica applies it the same way.
+- **Local copies and host history:** untouched, on that machine's disk.
+  Nothing in control or the library records them per machine.
+- **A running machine that is removed** keeps running what it runs, as a
+  standalone box that no other machine trusts. Re-joining is the agent's
+  leave (`POST /v1/node/unenroll`) and a new join token.
+
+Not in this slice: telling the removed agent at once (it hears within a
+minute), and a removed machine's own console saying "removed" (its
+`/v1/node` still says enrolled). A library run job assigned to a removed
+machine waits until someone cancels it (library#14).
+
+**Built 2026-10-20** (control `2d153b4`, ui `5dd65fbe`; the 409 wording in
+`control.yaml`). Its run, `scripts/cx6-remove-machine-acceptance.py`, is
+written and waits for the end of the pass. What building and the review
+found:
+
+- **The root's machine is known three ways, and any one refuses.** The
+  review showed `node_name` can be unset (a root started before its
+  machine enrolled) or name the standby (`_local_node_name` takes the
+  first `control` *or* `standby` record), and a probe says nothing while
+  the root's agent restarts. The record's `role == control` covers both;
+  `node_name` counts only when it does not name a `standby` record.
+- **Only a gateway that is `running` or `starting` counts**, on both sides:
+  a crashed second gateway does not let the only working one go, and a
+  machine whose own gateway is stopped can be removed.
+- **Removals run one at a time** (an `asyncio.Lock` around the check and
+  the entry), so two at once cannot each count the other's gateway.
+- **A removed standby does delete its copy:** `/v1/trust/bundle` on the
+  LAN needs no credential, the revoked agent keeps pulling it, its grants
+  come back empty, and `standby.reconcile` stops the standby and deletes
+  `standby-state/`. A box that never comes back keeps its copy on its disk
+  (outside what code can reach).
+- **Mixed versions:** clearing `hostNode` changes how `revokeNode` applies.
+  A standby on older code than its root keeps the stale `hostNode` until it
+  is updated. Display only; nothing is authorized by it.
+- The acceptance script cannot exercise "The only gateway" (its harness
+  runs no real gateway); the unit tests cover it.
+
 ### CX7: saves that restart say so (ui; M)
 
 A save whose patch needs a restart restarts at once
