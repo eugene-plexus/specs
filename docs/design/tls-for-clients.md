@@ -1,7 +1,9 @@
 # TLS for clients and browsers (LT2)
 
-**Status: designed 2026-10-20; LT2-C1 (where the certificate comes from) is
-Troy's call and open. Nothing is built until it is taken.**
+**Status: designed 2026-10-20. Troy took every call as recommended the same
+day: LT2-C1 the install CA by default with supplied PEM as the override, LT2-C2
+private addresses and local suffixes only, LT2-C3 the existing doors, LT2-C4
+plain off by the owner, LT2-C5 sign-in follows the page.**
 
 LT2 is the second half of [TLS between machines](tls-between-machines.md)
 (§2, §3.9, LT-C4). LT1 encrypted traffic inside the install, where Eugene holds
@@ -235,8 +237,8 @@ The Docker pair from LT1, plus a client container on the same bridge:
 
 | # | Question | Recommended |
 | --- | --- | --- |
-| LT2-C1 | Where does a client's certificate come from on a plain install? (LT-C4's first decision) | **Open. Eugene's own CA by default, the owner's certificate (supplied PEM) as the override.** The CA works with nothing outside the LAN and an MSP pushes it by policy; it costs a trust step per device and a variable per Python client. The owner's domain costs nothing per device but needs a domain, a DNS API token and LAN DNS that survives rebinding protection. |
-| LT2-C2 | What may the CA sign for? | **Private addresses and local suffixes only** (§3), so a stolen key cannot forge public names; Eugene's URLs use IPs or `<host>.local`, not dotless names. |
-| LT2-C3 | New HTTPS ports, or TLS on the existing doors? | **The existing doors**, told apart by the first byte as 8083 does. No new port to publish or proxy. |
-| LT2-C4 | When is plain HTTP for clients turned off? | **By the owner, offered once no client has used it for 7 days.** Never automatically: Eugene can't know every device trusts the CA. |
-| LT2-C5 | Which issuer does sign-in use during the switch? | **The page's own**: `https://` pages sign in over `https://`, so a password never goes plain from a page that had TLS. |
+| LT2-C1 | Where does a client's certificate come from on a plain install? (LT-C4's first decision) | **Taken: Eugene's own CA by default, the owner's certificate (supplied PEM) as the override.** The CA works with nothing outside the LAN and an MSP pushes it by policy; it costs a trust step per device and a variable per Python client. The owner's domain costs nothing per device but needs a domain, a DNS API token and LAN DNS that survives rebinding protection. |
+| LT2-C2 | What may the CA sign for? | **Taken: private addresses and local suffixes only** (§3), so a stolen key cannot forge public names; Eugene's URLs use IPs or `<host>.local`, not dotless names. |
+| LT2-C3 | New HTTPS ports, or TLS on the existing doors? | **Taken: the existing doors**, told apart by the first byte as 8083 does. No new port to publish or proxy. |
+| LT2-C4 | When is plain HTTP for clients turned off? | **Taken: by the owner, offered once no client has used it for 7 days.** Never automatically: Eugene can't know every device trusts the CA. |
+| LT2-C5 | Which issuer does sign-in use during the switch? | **Taken: the page's own**: `https://` pages sign in over `https://`, so a password never goes plain from a page that had TLS. |
