@@ -774,6 +774,8 @@ removes it, so J14 moves forward (its §2.8 and J29).
   unavailable there today (§2.1).
 - **Corporate proxies that need NTLM or Kerberos.**
 - **TLS between machines on a LAN.** Today that traffic is clear text.
+  Designed 2026-10-20 in [`tls-between-machines.md`](tls-between-machines.md),
+  which also re-checks Appendix A against the code (X1-X10).
 - **Defects found on the way, filed rather than fixed:**
   - [agent#8](https://github.com/eugene-plexus/agent/issues/8): the address
     announcement is never retried, nor re-sent when the address changes;

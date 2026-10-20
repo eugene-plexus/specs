@@ -1,7 +1,9 @@
 # Lessons from DeepInfer
 
 **Status: read 2026-10-20, the day DeepSeek released it. Nothing here is
-scheduled; the calls at the end are Troy's.** Troy's brief: *examine the
+scheduled; the calls at the end are Troy's.** Troy put
+[TLS between machines](tls-between-machines.md) ahead of all of these the same
+day. Troy's brief: *examine the
 DeepInfer codebase and take every design choice that improves ease of use or
 inference speed for our users.*
 
