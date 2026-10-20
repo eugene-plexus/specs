@@ -127,7 +127,7 @@ until the owner turns it off (LT2-C4).
 
   It refuses a CSR for another key, so a node cannot obtain a certificate for
   a key it does not hold.
-- **Valid 397 days, renewed at two thirds,** and re-issued as soon as the
+- **Valid 90 days (397 as designed; LT2-C6), renewed at two thirds,** and re-issued as soon as the
   node announces a new address (DHCP).
 - **The root issues its own** from the same CA, in process.
 - **Kept on disk** beside `node.yaml`, so the doors keep serving with the
@@ -372,3 +372,60 @@ labels pass.
   is made at the first unseal with the fixed set; nothing narrows it.
 - **Rotating the CA**: made once, by design; a stolen key forges only
   private names (the check's forged-leaf label).
+
+### 12.3 The adversarial review of LT1 and LT2 (2026-10-20), and what changed
+
+- **A node could be issued a certificate for another machine's address**
+  (blocker). Nothing stopped a node whose keys were stolen announcing the
+  root's address; issuance trusted the announced host, and the machine
+  tables keyed routes by agent address, so the same move also took over
+  the root's LT1 route. Now: enrolment and announcement refuse another
+  node's address (same origin), its `.local` name or a name listed for it
+  (409, asked again later, so a DHCP shuffle settles once the other
+  machine announces); the same address on another port (two agents on
+  one machine) is let in, and then no leaf names it, because a leaf never
+  holds a name another node holds; a shared agent address, or one equal
+  to the root's, is carried for nobody in either machine table.
+- **Only plain hostname labels are signed** (no `*`, no `_`).
+- **The CA is downloaded over plain HTTP**, so someone in the path could
+  swap in a CA of their own. The console shows the CA's SHA-256
+  fingerprint and Windows thumbprint where they cannot be changed (the
+  Access page, signed in over https; `/trust` on a secure page), and a
+  plain page says where to compare before installing. The first trust is
+  still the person's to check; that is the residual risk of LT2-C1.
+- **The bundle served to devices carried the container's own CA**, which
+  has no name constraint and keeps its key on disk. The served bundle is
+  certifi's roots and the install CA only; the container's CA stays in
+  this machine's apps' bundle.
+- **Leaves lived 397 days** with no revocation, so a revoked or moved
+  machine's leaf stayed good for its old address for a year. 90 days,
+  renewed at 60 (call LT2-C6, below).
+- **The LAN could fill the connection cap** that loopback shared. Loopback
+  is not counted, and an IPv6 /64 is one address. A request-header
+  deadline on 8079 after hand-over is not built (uvicorn has none; 8079
+  had no cap at all before LT2).
+- **An https page could be served as plain during an app restart** (the
+  TLS port refused, the connection fell back to the plain port). Once an
+  app has answered on its TLS port, a TLS connection is never carried to
+  the plain one.
+- **The plain refusal echoed the `Host` header**: a malformed one is
+  dropped, and an IPv6 address is bracketed.
+- **The agent and control disagreed on which names may be signed**: the
+  agent now uses control's ranges and labels.
+- **Not changed, recorded:** with the owner's own certificate and machine
+  encryption required, an app on another machine reaches the gateway's
+  console by its address, and the owner's certificate must name it; the
+  console's probe line still offers "Trust Eugene" on a page opened by an
+  address the owner's certificate does not name.
+- **Found safe:** CA key custody (sealed op, memory only, cleared with
+  the master key, never logged or returned); CSR and SAN handling; the
+  constraint encoding; "this machine" from the real socket; loopback
+  trust through the pumps (no pumped child reads a peer); Workbench's
+  scheme by port, cookie names and issuer choice; the operator's header
+  forwarded only to the enrolled root; plain-off decided per connection.
+
+## 13. Calls for Troy (from building)
+
+| # | Question | Taken by default |
+| --- | --- | --- |
+| LT2-C6 | How long is a node's leaf valid? (§4 said 397 days.) | **90 days, renewed at 60.** Renewal is automatic and offline, so a shorter life costs nothing while the root is up; a revoked or moved machine's leaf lapses within 90 days instead of 397. The trade-off: with the root down for more than 30 days past a renewal, clients see an expired certificate on that node until the root is back. 397 is one constant to put back. |

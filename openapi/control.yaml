@@ -2838,7 +2838,7 @@ paths:
         §3) is refused the same way. A CSR that asks for no name gets them
         all, less those the CA may not sign for.
 
-        The leaf is valid 397 days. Nothing is replicated: the CA key is,
+        The leaf is valid 90 days. Nothing is replicated: the CA key is,
         and a node asks again when its leaf is two thirds through its life
         or its address changes.
       security:
