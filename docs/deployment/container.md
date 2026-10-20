@@ -137,7 +137,7 @@ the HTTPS listener (normally `8443`); the services below bind loopback internall
 | ------ | --------------------------------------------------- | ----------------------------- |
 | `8079` | Web UI, and the browser's pass-through to everything | you, in a browser             |
 | `8080` | The OpenAI-compatible endpoint                       | your tools and agent harnesses |
-| `8083` | The control root: enrollment and log replication     | every GPU machine that joins  |
+| `8083` | The machine port: TLS between this install's machines, with the control root behind it (enrollment and log replication) | every GPU machine that joins  |
 
 `8082` (the library) is deliberately not published: the browser reaches it
 through the agent's proxy on 8079, so exposing it would widen the surface for

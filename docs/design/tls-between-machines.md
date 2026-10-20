@@ -497,3 +497,71 @@ a container root, one adversarial review, and `ship.py`.
   moves.
 - **Python's `ssl` has no verify callback.** Pins are checked after the
   handshake and before the first request byte (`S/root_link.py:199-228`).
+
+### 7.3 What building found (2026-10-20)
+
+**Decisions made while building.**
+- **The carrying lives in `_http`, not at the call sites.** The table the
+  agent writes (`machine_pins.json`, `EUGENE_PLEXUS_MACHINE_PINS_FILE`) maps
+  another machine's plain agent and control addresses to its TLS address
+  (`http://w:8079` → `https://w:8083/agent`), and the internal clients'
+  transport carries the request there and checks the pin. Every caller in
+  every repo is covered with no change (R6-R9, X1-X10, the console's remote
+  leg), and "required" is enforced in that one place. Drivers keep the
+  explicit `Component.machineUrl` of §7.1 step 1: the gateway prefers it when
+  it holds the pin.
+- **The signed list is its own document**, `GET /v1/trust/machines`
+  (`ep-machines+jwt`), not a field on the Job Sites' list: that one answers
+  503 whenever the root cannot read its nodes name, which must not stop
+  machine traffic. It carries `version` for rollback; `iat` alone could not
+  rise twice in a second without dating the list in the future.
+- **The root's own pin comes from its agent, never from a node.** The agent
+  hands control its machine key's pin (`EUGENE_PLEXUS_CONTROL_MACHINE_PINS`);
+  control signs it into the list as `controlPins` and puts it on node join
+  tokens. A node that claimed to host control could otherwise have pinned the
+  root's address to its own key.
+- **A node reaches the root at the address it joined with**, over TLS, under
+  `/control`. The first-byte switch makes that the same host and port, so it
+  holds through a container's port remap with nothing to configure.
+- **A node's machine URL** is `https://<advertise host>:8083`, shifted by the
+  advertised agent port's offset (8279 → 8283, the console's own guess), or
+  the `machineUrl` config field. It is announced only while the port listens.
+- **The machine port binds wide where control's port used to be wide**: the
+  agent binds wide, the node advertises an address, or it is a container.
+- **`machineEncryption` is a control config field** (`automatic`, `required`,
+  `off`), replicated by `patchConfig`, not a new log op: an older standby
+  stops on an op it does not know.
+- **Required still lets two kinds of plain request through the root's 8083**:
+  from this machine (the root's own agent often joined at `127.0.0.1:8083`),
+  and a Job Site's own routes (`/v1/sites/*`, `/v1/trust/tls`), which §2 left
+  as they are; one that joined at a plain LAN address keeps working.
+- **Only drivers restart when required changes.** Control is behind the port
+  already, and restarting it brought it back sealed.
+- **An older root refuses the five-field announcement** (401); the agent then
+  announces the address alone, so a worker updated before its root keeps its
+  address current.
+- **Join tokens are `<secret>.<pin>`**; the root hashes the part before the
+  dot, so it takes either form.
+- **Two agents on one host** set `EUGENE_PLEXUS_AGENT_MACHINE_PORT`. Only the
+  real server entry point opens the port (`machine_port_enabled`), so test
+  apps and in-process harnesses never bind 8083.
+
+**Found by the capture, each now a regression test or a check.**
+- **`transport=None` turned the machine transport off.** Callers pass the
+  test seam through unset; the transport took a present key as a transport,
+  and a worker's topology reads went to the root in plain HTTP with tokens.
+- **The root reached a node it had just enrolled in plain HTTP**: the first
+  bundle push left before its agent's copy of the list named the node. The
+  active root now builds its own table from its own records.
+- **A NAT rule moves new connections only.** A pooled TLS session to the real
+  worker never idles (the gateway polls every second), so the impostor saw
+  nothing until the gateway started again; the `wrong-pin` label restarts it.
+
+**Not built, or not measured.**
+- **Key rotation** (two pins over an overlap): the record and the list hold a
+  list of pins, but a node announces one and nothing rotates it.
+- **A promoted standby on a version older than LT1** keeps no pins (its apply
+  ignores the new fields), and nodes re-announce only on a change, so its list
+  is empty until they do.
+- **The cost** (§3.8) is not measured yet: first-token time and tok/s with and
+  without the machine port.
