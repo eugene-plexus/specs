@@ -665,3 +665,32 @@ files, Delete), which must never happen in Ollama's store.
   worker's own store later.
 - **CX9-C4: models Ollama has not migrated. Taken: list, warn, let Run try.** List them with the warning
   and let Run try (recommended), or hide them until Ollama migrates them.
+
+**Built 2026-10-20** (contract specs `66d0e11` + `535623e`; library
+`c5c5c31`, agent `95ee562`, ui `47ff152d`). One adversarial review. Its
+run, `scripts/cx9-ollama-models-acceptance.py`, builds a stand-in store
+and waits for the end of the pass. What building and the review found:
+
+- **The guard is on the final path, not the folder.** A store nested in a
+  writable folder (`OLLAMA_MODELS=D:\models\ollama` with `D:\models`
+  configured) let a download with a subfolder, and a provenance file
+  beside an entry, land in the store. Every write path now refuses any
+  final path inside a store, found ones included; the walker skips a store
+  it passes through; a folder inside a store is not writable.
+- **Detection never stops the Library starting.** `Path.home()` raises
+  with no home folder (a container under an arbitrary uid); detection
+  returns nothing and logs once. It is cached for 10 s so a dead share is
+  not stat-ed on every request.
+- **Strata's Windows fallback wrote beside the GGUF**: a write probe and a
+  junction to its folder, which for Ollama is `blobs/`. For a blob (a
+  `blobs` folder and a `sha256-<64 hex>` name) it now copies; ordinary
+  folders keep the junction.
+- A manifest over 1 MiB is skipped (a list child's digest could name the
+  model blob), and one malformed manifest is a skip, not a failed scan.
+- `run-operations.json` embeds `LibraryModel`, so it was regenerated too.
+- Ollama's `llamacpp:<sha>` duplicate (#18830) is a model named
+  `llamacpp`; it is skipped. The migration family list is wider than the
+  first read; it lives in one constant citing `compatmigrate`.
+- Open, not blocking: the served name is the sorted first tag, so pulling
+  a tag that sorts earlier renames the alias; a normal folder reached
+  through a symlink into a store is protected only textually.
