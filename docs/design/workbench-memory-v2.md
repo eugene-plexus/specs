@@ -6,7 +6,8 @@ this doc holds the what. Paths are under `workbench/src/eugene_plexus_workbench/
 
 Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled per model by MV3's measurement (section 39).
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
-default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.**
+default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.
+MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.**
 
 ---
 
@@ -929,3 +930,102 @@ MV1-C1 is settled by section 31's measurement (section 39 says how).
 - **Accepted, not fixed (minor):** measurement run counts are kept in memory, so a restart resets
   them. Deleting (not undoing) a model's note that replaced another takes the earlier version with
   it, as every delete does; Undo is the way back.
+
+---
+
+## MV4: Memory as an app
+
+What MV4 changes, in one paragraph: MV1-MV3 added sections to the Memory page in place, so a person
+reached their notes only after the settings, and Suggested notes sat under the learning controls.
+MV4 arranges the page as an app (`feedback_app_before_config`): what waits for the person comes
+first, then their notes, then their past chats, then the tags and their own copy. Every setting
+leaves the page for a new **Settings** page of Workbench, which also takes the Documents settings
+and Connections. No server route, store table or setting changes: a setting does exactly what it
+did, from a different page.
+
+### 40. The Memory page
+
+`/memory`, in this order:
+
+1. **The head:** Memory, **Memory settings** (opens `/settings#memory`), Back to chat. One line of
+   what the page is; the owner-reads warning and the owner-off notice, as today.
+2. **A switch that changes what the page means is said here, and changed there.** With Use memory
+   off: "Memory is off: no model is given your notes. Turn it on in Memory settings." (settings never
+   lie: the page does not look as if notes were in use).
+3. **Waiting for you**, each only when it holds something: **Still true?**, **Suggested notes**,
+   **Recently learned**. These are a person's decisions about notes, so they come before the notes.
+4. **Your notes:** search and the tag filter at the top whenever there are notes (MV1 showed them
+   only past the first page, which left the tag filter call 14 asked for out of reach for most
+   people); usage; Always used, Used when relevant (or when there is room), Past; Add a note; the
+   starter boxes for a person with none.
+5. **Past chats:** one search box. Search opens Search chats (section 19) with those words searched.
+   One screen does the searching; this is its door from Memory.
+6. **Tags:** the list and its import and export (section 5).
+7. **Your data:** export and Delete all memory.
+
+### 41. The Settings page
+
+`/settings`, a page of Workbench reached from the top bar (**Settings**, after Memory) and from each
+page whose settings it holds. One section each, with an anchor:
+
+- **Memory** (`#memory`): Use memory; Models that run outside your machines; Learn from my chats;
+  Which notes a chat is given; What models may write to your memory; Let models search my notes;
+  Let models search my past chats; How much room notes may take. Then **Models that learn** with
+  Measure this model. The section opens with **Open Memory**.
+- **Documents** (`#documents`): Documents in new chats; Models that run outside your machines.
+  Opens with **Open Documents**.
+- **Connections to other apps** (`#connections`): as built in MR9b.
+
+Where the owner has turned Memory off, the Memory section says so and holds no control, as the page
+did. Words elsewhere that sent a person to "the Memory page" for a setting now name Memory settings
+(Suggest notes' confirmation, for one).
+
+### 42. Not in MV4
+
+No API, store or config change, so no migration and no schema bump. Projects (MV7) and backends
+(MV5) will add their own sections to this layout.
+
+### 43. Risk, tests and acceptance
+
+Routine under the testing policy: UI only, and no setting changes what it does. Vitest for the new
+order, the settings' absence from Memory and Documents, the Settings page (each control as before,
+rendered there), the links both ways and the `/settings` address; `web/scripts/memory-browser.mjs`
+and `documents-browser.mjs` follow the moved controls and run in a real browser (runner). No live
+acceptance run: nothing on the server changed.
+
+### 44. Calls
+
+**MV4-C1 (Troy's to confirm; the default is built): where settings go.** *Recommended default,
+built:* a Settings page of Workbench, one place for every setting. Alternative: a Settings section
+at the foot of each page (Memory, Documents). The foot keeps a person on one page, but the settings
+of one thing are then split from those of the next, and the research's own words were "settings move
+to Settings".
+
+**MV4-C2 (Troy's to confirm; the default is built): the Documents page follows.** Its two settings
+sat above the documents, which breaks the same principle. *Recommended default, built:* they move to
+Settings with Memory's. Alternative: leave Documents for its own slice.
+
+**MV4-C3 (Troy's to confirm; the default is built): one page, not tabs.** *Recommended default,
+built:* one page in section 40's order. Alternative: tabs (Notes, Suggested, Past chats, Tags), each
+with its own address. Tabs would hide what waits for the person behind a count, and Troy set a
+condition on an inbox of its own: only if the rest of the notes get the same organisation. One page
+shows the waiting items first while there are any, and nothing when there are none.
+
+### 45. What building found
+
+- **Built as designed**, with no server change. The settings are now `MemorySettings.tsx` and
+  `DocumentsSettings.tsx`, each reading its own page's data (`GET /api/memory`, `GET /api/documents`)
+  and saving through the same routes. `SettingsPage.tsx` holds them, with Connections. `/search?q=`
+  opens Search chats with the words searched, for Memory's Past chats box.
+- **The note search was out of reach for most people.** MV1 showed it only when there were more
+  notes than the first page, so the tag filter call 14 asked for appeared only past about 50 notes.
+  It is now at the top of Your notes whenever there is a note.
+- **Verification:** Vitest 3,379 passed, with new tests for the order, the settings' absence, both
+  links, the Past chats box, `/settings` and `?q=`. Types and lint are clean. In Chrome,
+  `documents-browser.mjs` passed MV4's steps (Documents holds no settings; Settings shows Memory,
+  Documents and Connections in that order).
+- **Two browser scripts were already failing on main, before MV4** (workbench#14).
+  `memory-browser.mjs` is MR1-era: it waits for "1 note sent" for an unpinned note, which MV1's
+  relevant memory replaced, so it stops before MV4's Memory steps. `documents-browser.mjs` fails
+  later, on a 39 px phone overflow of the composer with four file chips. MV4's Memory page steps in
+  Chrome are unrun until #14 is fixed.
