@@ -278,7 +278,17 @@ first:**
 | built 2026-10-20 (MV5b waits on MV5b-C1) | **Memory reshape, MV1-MV7**: MV1 notes with bodies, procedures, tags and supersession, budgets scaled, relevant memory re-chosen each turn; MV2 past chats; MV3 learning and the write policy; MV4 Memory as an app; MV5 backends; MV6 provenance and tidy; MV7 projects | [`memory-research-2026-10.md`](memory-research-2026-10.md) §7, §10; slice designs in `workbench-memory-v2.md` (MV1 writes it) | Handoff `docs/private/handoff-memory-mv1.md`. MV1 includes a store migration and changes what models receive; MV3 changes who writes memory. Both are high risk: one adversarial review each and a real-environment run |
 | candidate, after the setups review | **Connect an app on this machine** (Troy, 2026-10-19): a Workbench connection set up by the person's Job Site instead of a pasted command | not designed | The site's worker (the person's own OS account) finds the installed clients (Claude Code, Codex), writes their config with the client's own tool where one exists (`claude mcp add -s user`) or a merging edit with a backup (`~/.codex/config.toml`), and removes it on revoke. The token goes Workbench → worker → file, never through the browser. Approval like the folder tools. Open WebUI is configured by Eugene itself, no site needed. The copied setup stays the expert route. High risk (auth, writes in a home directory): one review and a real-machine run |
 
+| candidate (Troy, 2026-10-20) | **Console experience pass, CX1-CX9**: folders scan on save, apps on a silent machine, plain engine status, setup that resumes, one-click run asks first, one context for fit, a Connect apps page, remove a machine, saves that restart say so, failures link to logs, models already in Ollama | [`console-ux-pass.md`](console-ux-pass.md) | Not Workbench (its own pass). CX1 is routine Edge work; CX2 and CX6 are high risk. CX-C1 (Machines or nodes) is Troy's |
+
 ## Not scheduled without Troy
+
+- **The standby takes over by itself (Troy, 2026-10-20).** The goal is
+  automatic takeover when the root is gone, not a Promote button. A
+  complicated slice: it has to tell a dead root from a partitioned one,
+  open the sealed material without a person typing the passphrase, and
+  tell every agent the new root's address, which nothing carries today
+  ([`warm-standby.md`](warm-standby.md), "Found, not fixed"). Until then
+  promotion stays on the standby's command line.
 
 - **The check pipeline and the secret filter.** The gateway runs each turn
   through an ordered list of checks, which the sysadmin arranges like

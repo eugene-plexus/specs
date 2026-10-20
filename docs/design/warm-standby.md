@@ -169,7 +169,8 @@ That is safer at rest, but it cannot take over on its own.
   related settings cross-link both ways.
 - **Promotion from the console is banked.** It is called on the standby
   with the passphrase, and is a separate slice. It is not part of
-  control#5.
+  control#5. Troy, 2026-10-20: the goal is automatic takeover, not a
+  console button; see `audience-roadmap.md`, "Not scheduled without Troy".
 
 ## 4. Build order
 
