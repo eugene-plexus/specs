@@ -315,3 +315,60 @@ Built on `lt1`, 2026-10-20. The check of record is
 
 **Run of record for LT2a** (2026-10-20, `run5`): every check and all four
 labels pass.
+
+### 12.2 LT2b
+
+**Decisions made while building.**
+- **Sign-in follows the page with two providers in Workbench.** The issuer
+  the agent hands Workbench is `http://<host>:8079/oidc`; behind its door,
+  Workbench also builds the same issuer over `https://` and an https page
+  (the TLS loopback port) signs in through it. A refresh or a revocation
+  goes to the provider whose issuer issued the token (the token's `iss`,
+  read only to choose; that provider then verifies strictly). Control
+  re-issues a refresh under the token's own issuer whatever endpoint it
+  came through, so neither side had to change how tokens are bound.
+- **The console needed no change for LT2-C5**: the agent's `/oidc` forward
+  already passes the page's scheme, and on 8079 the scheme is the
+  connection's own.
+- **Both return addresses per app.** Each app behind a door registers an
+  `https://` return address beside each `http://` one; from another
+  machine, only `https://` once plain is off (loopback stays plain). The
+  addresses move again (`sign_in_refresh`) when the root's list turns
+  plain off or on. The console opens an app at `http://` while plain is on
+  (the first address), and at `https://` once it is off.
+- **Apps trust the CA through `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE`**: a
+  bundle of certifi's roots, any bundle the agent was already given (the
+  container's), and the install CA. Python's ssl, httpx and requests all
+  read them. Apps read them at start, so running apps restart once when a
+  CA this node did not hold arrives: once in an install's life.
+- **An app on a machine with no gateway reaches the owner's console over
+  `https://`** once this node holds the CA (it is handed
+  `<owner>/api/proxy/gateway`). While the install does not require
+  encryption between machines, the door is tried first and an older
+  machine stays plain; once it requires it, https with no probe, so
+  nobody in the middle can turn an app's traffic plain by blocking TLS.
+- **Owner-listed names** (§4) are a node field set by an operator with the
+  membership capability (`PUT /v1/nodes/{name}/certificate-names`, a
+  `setNodeCertificateNames` entry), checked at the writer: only names the
+  CA may sign, and none another node holds or lists. The Access page edits
+  them.
+- **The container's Caddy on the install CA.** Applying a setup with its
+  own CA lists the setup's names at the root with the operator's own
+  session; once this node's leaf holds every one, Caddy loads it as files
+  (`client_tls.crt`, `client_tls.key`) and makes no CA of its own. Until
+  then, and for a name the install CA may not sign, Caddy keeps its own,
+  as before. The agent's own clients trust the install CA as soon as it
+  holds a leaf.
+- **The owner's own certificate** is two node settings,
+  `clientCertificateFile` and `clientKeyFile`, read again within a minute
+  of either file changing (certbot, acme.sh, a proxy's renewals). A pair
+  that does not load is said in `clientTls.error` and the install's leaf
+  comes back. `clientTls.source` says which is presented; with `supplied`,
+  Connect hides the trust steps.
+
+**Not built, or not measured.**
+- **Built-in ACME (DNS-01) and tailnet certificates** (§8).
+- **An expert narrowing the CA's ranges before it is made** (§3): the CA
+  is made at the first unseal with the fixed set; nothing narrows it.
+- **Rotating the CA**: made once, by design; a stolen key forges only
+  private names (the check's forged-leaf label).

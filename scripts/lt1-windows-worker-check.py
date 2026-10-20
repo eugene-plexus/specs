@@ -103,11 +103,94 @@ def wait_for(check, label: str, timeout: float = 90.0):
     )
 
 
+EDGE = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
+
+
+def powershell(command: str, check: bool = True) -> str:
+    return run(["powershell", "-NoProfile", "-Command", command], check=check)
+
+
+def lt2_edge(
+    record: Record,
+    output: Path,
+    client: httpx.Client,
+    worker: str,
+    operator: str,
+    pc_ip: str,
+    wsl_ip: str,
+) -> None:
+    """LT2 (`tls-for-clients.md` §10, Windows): the worker holds a leaf from
+    the install CA; the CA goes into this account's Root store the way a
+    person adds it (Windows asks to confirm, once); headless Edge, which
+    reads that store, opens the worker's and the root's consoles over https;
+    and the CA is taken out again (Windows asks again)."""
+    headers = {"Authorization": f"Bearer {operator}"}
+
+    def issued() -> dict | None:
+        node = client.get(worker + "/v1/node", headers=headers).json()
+        tls = node.get("clientTls") or {}
+        return tls if tls.get("state") == "issued" else None
+
+    try:
+        tls = wait_for(issued, "the Windows worker's leaf from the install CA", 120)
+    except AssertionError as exc:
+        record.add(
+            "the Windows worker holds a leaf from the install CA", False, error=str(exc)
+        )
+        return
+    record.add(
+        "the Windows worker holds a leaf from the install CA",
+        pc_ip in (tls.get("names") or []),
+        names=tls.get("names"),
+    )
+    der = client.get(worker + "/v1/trust/ca?format=der")
+    ca_file = output / "eugene-plexus-ca.cer"
+    ca_file.write_bytes(der.content)
+    thumbprint = ""
+    try:
+        thumbprint = (
+            powershell(
+                f"(Import-Certificate -FilePath '{ca_file}' "
+                "-CertStoreLocation Cert:\\CurrentUser\\Root).Thumbprint"
+            )
+            .splitlines()[-1]
+            .strip()
+        )
+        seen: dict[str, str] = {}
+        for label, url in (
+            ("worker", f"https://{pc_ip}:{WORKER['agent']}/healthz"),
+            ("root", f"https://{wsl_ip}:{ROOT_PORTS['agent']}/healthz"),
+        ):
+            profile = Path(tempfile.mkdtemp(prefix="ep-lt2-edge-"))
+            seen[label] = run(
+                [str(EDGE), "--headless=new", "--disable-gpu", "--no-first-run",
+                 f"--user-data-dir={profile}", "--dump-dom", url],
+                check=False,
+            )  # fmt: skip
+        record.add(
+            "Edge, with the CA in this account's store, opens both consoles over https",
+            all('"status":"ok"' in dom for dom in seen.values()),
+            **{k: v[:160] for k, v in seen.items()},
+            thumbprint=thumbprint,
+        )
+    finally:
+        if thumbprint:
+            powershell(
+                f"Remove-Item Cert:\\CurrentUser\\Root\\{thumbprint}", check=False
+            )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--image", required=True)
     parser.add_argument("--sources", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--lt2",
+        action="store_true",
+        help="also the install CA in this account's Root store and Edge over https "
+        "(Windows asks to confirm adding and removing it)",
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     record = Record()
@@ -423,6 +506,10 @@ def main() -> None:
             driver=driver_bind,
             required=machine_w.get("required"),
         )
+
+        # ---- LT2: the install CA on Windows, and Edge over https -------------
+        if args.lt2:
+            lt2_edge(record, args.output, client, worker, operator_w, pc_ip, wsl_ip)
     except Exception as exc:
         record.add("the run completed", False, error=f"{type(exc).__name__}: {exc}")
     finally:

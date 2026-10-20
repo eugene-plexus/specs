@@ -86,6 +86,9 @@ lt1 = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(lt1)
 
 REPOS = (*lt1.REPOS, "ui")
+#: Installed by the root's agent as an app, from its own catalogue entry
+#: pointed at this checkout (not pip-installed into the image).
+APP_REPOS = ("workbench",)
 UI_STATIC = "python/eugene_plexus_ui/static"
 AGENT_PORT = lt1.AGENT_PORT
 GATEWAY_PORT = lt1.GATEWAY_PORT
@@ -115,8 +118,11 @@ RUN python -m venv {lt1.VENV} \\
     && {lt1.VENV}/bin/pip install --quiet --no-cache-dir playwright==1.48.0 \\
     && {lt1.VENV}/bin/playwright install --with-deps chromium \\
     && rm -rf /var/lib/apt/lists/*
+RUN pip install --quiet --no-cache-dir uv==0.9.5
 COPY src /src
-RUN {lt1.VENV}/bin/pip install --quiet --no-cache-dir {" ".join(f"/src/{r}" for r in REPOS)}
+RUN {lt1.VENV}/bin/pip install --quiet --no-cache-dir {" ".join(f"/src/{r}" for r in REPOS)} \\
+    && sed -i 's#^  source: https://github.com/eugene-plexus/workbench/archive/.*#  source: /src/workbench#' \\
+        $({lt1.VENV}/bin/python -c "import eugene_plexus_agent, os; print(os.path.dirname(eugene_plexus_agent.__file__))")/apps_catalogue.yaml
 """
 
 
@@ -295,6 +301,28 @@ def _browser(argument: dict) -> dict:
                     }""",
                     argument["passphrase"],
                 )
+            if argument.get("workbench_passphrase"):
+                # Workbench sends the browser to Eugene's sign-in; the page's
+                # own scheme decides which issuer (LT2-C5).
+                page.wait_for_selector("#password", timeout=30000)
+                out["signInPage"] = page.url
+                page.fill("#password", argument["workbench_passphrase"])
+                page.locator("form button, form [type=submit]").last.click()
+                page.wait_for_url("**/#signin=*", timeout=30000)
+                out["back"] = page.url.split("#")[0]
+                secret = page.url.split("#signin=", 1)[1].split("&")[0]
+                out["me"] = page.evaluate(
+                    """async (secret) => {
+                        const r = await fetch('/api/me', {headers: {'X-Workbench-Secret':
+                            decodeURIComponent(secret)}});
+                        return {status: r.status, body: await r.text()};
+                    }""",
+                    secret,
+                )
+                out["cookies"] = [
+                    {"name": c["name"], "secure": c["secure"]}
+                    for c in page.context.cookies()
+                ]
             if argument.get("wait_for_https"):
                 try:
                     page.wait_for_url("https://**", timeout=30000)
@@ -503,7 +531,7 @@ def _tls_server(port: int, pem: str) -> None:
 def copy_sources(sources: Path, into: Path) -> str:
     """As LT1's, plus the UI's built static files, which git ignores."""
     digest = hashlib.sha256(DOCKERFILE.encode())
-    for repo in REPOS:
+    for repo in (*REPOS, *APP_REPOS):
         root = sources / repo
         for raw in sorted(p for p in lt1._ls_files(root) if p):
             rel = raw.decode()
@@ -755,9 +783,58 @@ class Run:
             doors=counted,
         )
 
+        self.workbench()
+
         for label in labels:
             getattr(self, "label_" + label.replace("-", "_"))()
         time.sleep(3)
+
+    def workbench(self) -> None:
+        """Workbench, installed by the root's agent from its catalogue, is
+        opened over https and signs in through Eugene's https sign-in."""
+        pair, up = self.pair, self.up
+        agent = f"http://127.0.0.1:{AGENT_PORT}"
+        got = pair.call(
+            "root", "POST", agent + "/v1/apps/workbench/install", up.operator
+        )
+        assert got["status"] == 202, f"Workbench install: {got}"
+
+        def installed() -> dict | None:
+            progress = pair.call(
+                "root", "GET", agent + "/v1/apps/workbench/install", up.operator
+            )
+            body = progress.get("body") or {}
+            return (
+                body if body.get("state") in {"done", "failed", "cancelled"} else None
+            )
+
+        progress = lt1.wait_for(installed, "Workbench to install", 900)
+        assert progress["state"] == "done", f"Workbench install: {progress}"
+
+        def running() -> dict | None:
+            app = pair.call("root", "GET", agent + "/v1/apps/workbench", up.operator)
+            body = app.get("body") or {}
+            return body if body.get("status") == "running" else None
+
+        app = lt1.wait_for(running, "Workbench to start", 120)
+        origin = f"https://{self.root_ip}:{app['port']}"
+        browsed = pair.exec(
+            "client",
+            "browser",
+            {"url": origin + "/signin", "workbench_passphrase": self.passphrase},
+        )
+        me = browsed.get("me") or {}  # type: ignore[union-attr]
+        cookies = browsed.get("cookies") or []  # type: ignore[union-attr]
+        self.record.add(
+            "Chromium signs in to Workbench over https, through Eugene's https sign-in",
+            str(browsed.get("signInPage") or "").startswith(  # type: ignore[union-attr]
+                f"https://{self.root_ip}:{AGENT_PORT}/oidc/"
+            )
+            and browsed.get("back") == origin + "/"  # type: ignore[union-attr]
+            and me.get("status") == 200
+            and any(c["name"].startswith("__Host-") and c["secure"] for c in cookies),
+            **browsed,  # type: ignore[arg-type]
+        )
 
     # ---- sabotage ------------------------------------------------------------
 
