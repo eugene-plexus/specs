@@ -265,6 +265,12 @@ def _browser(argument: dict) -> dict:
         browser = p.chromium.launch(args=args)
         try:
             page = browser.new_context().new_page()
+            failures: list[str] = []
+            page.on(
+                "requestfailed",
+                lambda r: failures.append(f"{r.url} {r.failure}"),
+            )
+            out["failed"] = failures
             try:
                 response = page.goto(argument["url"], wait_until="load", timeout=30000)
                 out["status"] = response.status if response else None
@@ -273,6 +279,13 @@ def _browser(argument: dict) -> dict:
                 out["error"] = str(exc).splitlines()[0][:300]
                 return out
             if argument.get("passphrase"):
+                # The console may move itself (sign-in, the probe) as it
+                # loads; the sign-in is sent once it has settled.
+                try:
+                    page.wait_for_load_state("networkidle", timeout=15000)
+                except Error:
+                    pass
+                out["settledAt"] = page.url
                 out["login"] = page.evaluate(
                     """async (passphrase) => {
                         const r = await fetch('/v1/auth/login', {method: 'POST',
@@ -290,6 +303,8 @@ def _browser(argument: dict) -> dict:
                     out["moved"] = None
                     out["stayed"] = page.url
                     out["waitError"] = str(exc).splitlines()[0][:200]
+        except Error as exc:
+            out["error"] = str(exc).splitlines()[0][:300]
         finally:
             browser.close()
     return out
@@ -590,10 +605,21 @@ class Run:
         pair.up_extra("client")
         pair.capture("client")
 
-        # 2. The CA, read on the root's own loopback.
-        console_ca = self.run(
-            "root", ["curl", "-sS", f"http://127.0.0.1:{AGENT_PORT}/v1/trust/ca"]
-        )["out"]
+        # 2. The CA, read on the root's own loopback, once the root's agent
+        # holds a leaf from it (it asks as soon as it has joined).
+        console_ca = ""
+
+        def served() -> bool:
+            nonlocal console_ca
+            console_ca = self.run(
+                "root", ["curl", "-sS", f"http://127.0.0.1:{AGENT_PORT}/v1/trust/ca"]
+            )["out"]
+            return "BEGIN CERTIFICATE" in console_ca
+
+        try:
+            lt1.wait_for(served, "the root's console to serve the install CA", 90)
+        except AssertionError:
+            pass
         control_ca = self.run(
             "root", ["curl", "-sS", f"http://127.0.0.1:{MACHINE_PORT}/v1/trust/ca"]
         )["out"]

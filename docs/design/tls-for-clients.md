@@ -242,3 +242,76 @@ The Docker pair from LT1, plus a client container on the same bridge:
 | LT2-C3 | New HTTPS ports, or TLS on the existing doors? | **Taken: the existing doors**, told apart by the first byte as 8083 does. No new port to publish or proxy. |
 | LT2-C4 | When is plain HTTP for clients turned off? | **Taken: by the owner, offered once no client has used it for 7 days.** Never automatically: Eugene can't know every device trusts the CA. |
 | LT2-C5 | Which issuer does sign-in use during the switch? | **Taken: the page's own**: `https://` pages sign in over `https://`, so a password never goes plain from a page that had TLS. |
+
+## 12. What building found
+
+Built on `lt1`, 2026-10-20. The check of record is
+`scripts/lt2-client-tls-acceptance.py` (§10), on the LT1 Docker pair.
+
+### 12.1 LT2a
+
+**Decisions made while building.**
+- **TLS ends on the connection itself, in the agent.** A door reads a
+  connection's first bytes; a handshake gets asyncio's `SSLProtocol` over the
+  same transport (`client_doors`), a plain request the inner protocol
+  directly. On 8079 that inner protocol is uvicorn's own (`Config.http`), so
+  the agent's one server serves both branches: the app sees the real socket,
+  the real peer and `scheme: https`, `/link` still reads the caller's own
+  loopback socket (LT1 §7.2's first trap does not arise), and no hop strips
+  or sets headers. The design's "served in process with the real peer" holds
+  with no loopback hop at all. LT1's machine port keeps its own front.
+- **The gateway keeps its topology URL.** Its door holds the published port
+  (8080) and the gateway is spawned on a loopback port of its own
+  (`BIND_PORT`), so nothing that names the gateway changes: its advertised
+  address, the URL apps are given, the supervisor's health check. The door
+  opens before any child starts. If 8080 is held by something else, the
+  gateway binds it itself, plain only, as before.
+- **An app knows the page's scheme from the port a connection arrives at.**
+  Each app gets two loopback ports behind its door: plain, and one for TLS
+  connections, decrypted (`EUGENE_PLEXUS_APP_TLS_PORT`). Workbench has no
+  per-process request secret to carry a forwarded scheme (§5 assumed one);
+  a port is the socket's own and nothing a caller sends can choose it. An
+  app that does not listen on the second port gets its TLS connections at
+  the first. `{port}` and `{bindHost}` in a manifest name the loopback port.
+- **Plain use is counted by connection, not request.** The pump on 8080 and
+  app ports sees connections only; one carries many requests. Counted per
+  door and client address for 7 days (`client_plain.json`).
+- **This machine is never "another machine".** Loopback, or a connection
+  whose source is the address it arrived at: a process on the root that
+  opens its own console at the LAN address was counted, and would have been
+  refused once plain is off (found by the check's door counts).
+- **The CA is a log op, `setInstallCa`, not a config field** (LT1 used
+  `patchConfig` for `machineEncryption` so an older standby would not stop).
+  A config value would have put the sealed key in `control.yaml` and
+  `GET /v1/config`. An older standby stops on the op until it is updated;
+  LT2 ships with LT1, and every node updates together.
+- **The node's CSR names nothing**; control signs every name of the node's
+  own that the CA may sign for. The agent never has to know the
+  constraints, and asks again when its advertise address changes
+  (`issuedFor`), not when a name is missing: a public address is never in
+  the leaf and would have asked every minute. A CSR that does name something
+  is checked name by name, and one name that is not the node's refuses the
+  whole request.
+- **The CA's subject names the install** (`Eugene Plexus install <6 hex of
+  the control identity> CA`), so two installs' CAs are told apart in one
+  trust store. A leaf's CN is its first DNS name, or empty with a critical
+  SAN.
+- **Connections are capped by transport, not by protocol:** uvicorn swaps
+  the protocol on a WebSocket upgrade, and a count kept by the protocol
+  leaked. Loopback has no per-address cap.
+- **The plain-off switch waits for every machine to answer** before it is
+  offered (the UI), not only for the ones that did to show no plain use.
+
+**Found by the check.**
+- **The leaf took a minute to arrive after a node joined:** the loop looked
+  every 60 s whatever it held. It looks every 15 s until it holds one.
+- **Playwright 1.48's `--with-deps` names Debian 12 packages**; the check's
+  image is `python:3.12-slim-bookworm`.
+- The forged-leaf label proves the constraint on today's clients: curl
+  (OpenSSL 3) refuses a CA-signed leaf for a public name with "permitted
+  subtree violation", Chromium with `ERR_CERT_INVALID`; the same forgery for
+  a private address is accepted by both, so it is the constraint that
+  refuses the first.
+
+**Run of record for LT2a** (2026-10-20, `run5`): every check and all four
+labels pass.
