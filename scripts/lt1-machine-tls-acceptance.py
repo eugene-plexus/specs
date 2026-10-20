@@ -484,6 +484,8 @@ class Pair:
             "mitm": f"172.31.{subnet_octet}.4",
         }
         self.containers: list[str] = []
+        #: The script `exec` runs inside a container (LT2 reuses this class).
+        self.script = HERE.name
         self.capture_dir = output / "capture"
         self.capture_dir.mkdir()
         os.chmod(self.capture_dir, 0o777)
@@ -513,10 +515,10 @@ class Pair:
         )  # fmt: skip
         self.containers.append(name)
 
-    def capture(self) -> None:
+    def capture(self, role: str = "worker") -> None:
         name = self.name("capture")
         docker(
-            "run", "-d", "--name", name, "--network", f"container:{self.name('worker')}",
+            "run", "-d", "--name", name, "--network", f"container:{self.name(role)}",
             "--cap-add", "NET_RAW", "--cap-add", "NET_ADMIN",
             "--mount", f"type=bind,src={self.capture_dir},dst=/capture",
             self.image, "tcpdump", "-i", "eth0", "-s", "0", "-U", "-Z", "root",
@@ -543,7 +545,7 @@ class Pair:
         argv = ["exec"]
         if detach:
             argv.append("-d")
-        argv += [self.name(role), PYTHON, "/instruments/" + HERE.name, "--inside", command,
+        argv += [self.name(role), PYTHON, "/instruments/" + self.script, "--inside", command,
                  "--argument", json.dumps(argument)]  # fmt: skip
         out = docker(*argv)
         if detach:
@@ -622,9 +624,23 @@ def start_agent(pair: Pair, role: str, directory: str) -> None:
     )
 
 
-def exercise(pair: Pair, record: Record, labels: list[str], measure: int = 0) -> bytes:
-    passphrase = secrets.token_urlsafe(18)
-    canary = "LT1CANARY" + secrets.token_hex(12)
+class Up:
+    """What `bring_up` leaves running, for the checks that follow."""
+
+    def __init__(self, **values: object) -> None:
+        self.__dict__.update(values)
+
+
+def bring_up(
+    pair: Pair,
+    record: Record,
+    labels: list[str],
+    passphrase: str,
+    *,
+    capture: bool = True,
+) -> Up:
+    """The root and the worker, joined, with the worker's model listed by the
+    root's gateway. The capture starts with the worker (`Pair.capture`)."""
     local = "http://127.0.0.1"
     root_ip, worker_ip = pair.ip["root"], pair.ip["worker"]
 
@@ -729,7 +745,8 @@ def exercise(pair: Pair, record: Record, labels: list[str], measure: int = 0) ->
 
     # ---- the worker, captured from its first packet ---------------------------
     pair.up("worker")
-    pair.capture()
+    if capture:
+        pair.capture()
     worker_dir = "/data/b"
     pair.exec(
         "worker",
@@ -797,6 +814,24 @@ def exercise(pair: Pair, record: Record, labels: list[str], measure: int = 0) ->
             error=str(exc),
         )
         raise
+    return Up(
+        local=local,
+        root_dir=root_dir,
+        worker_dir=worker_dir,
+        root_session=root_session,
+        operator=operator,
+        login=login,
+        listed=listed,
+    )
+
+
+def exercise(pair: Pair, record: Record, labels: list[str], measure: int = 0) -> bytes:
+    passphrase = secrets.token_urlsafe(18)
+    canary = "LT1CANARY" + secrets.token_hex(12)
+    up = bring_up(pair, record, labels, passphrase)
+    local, root_dir, worker_dir = up.local, up.root_dir, up.worker_dir
+    root_session, operator, listed = up.root_session, up.operator, up.listed
+    worker_ip = pair.ip["worker"]
 
     # ---- the prompt -----------------------------------------------------------
     got = pair.call(
