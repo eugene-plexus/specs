@@ -579,3 +579,89 @@ hash-named blobs the Library does not read
 hostage"). They download them again. Read Ollama's manifests so its models
 appear in the Library without a copy, as their own source. Check Ollama's
 tracker for manifest-format changes first.
+
+**What Ollama keeps, read 2026-10-20** (its source, not its docs):
+
+- `OLLAMA_MODELS`, else `~/.ollama/models` (Windows and macOS) or
+  `/usr/share/ollama/.ollama/models` (Linux service). Blobs are
+  `blobs/sha256-<hex>`; downloads in progress end `-partial` or
+  `-partial-N`.
+- **v0.40.0 (2026-09-25) changed the store.** Ollama now runs a bundled
+  llama-server. Manifests live in `manifests-v2/<host>/<ns>/<model>/<tag>`
+  (host `ollama.com`), falling back to the old
+  `manifests/registry.ollama.ai/library/...`. A manifest may be a *list*
+  (`application/vnd.ollama.manifest.list.v2+json`) whose children name a
+  `runner` (`llamacpp`, `ggml`, `mlx`) and a `format` (`gguf`,
+  `safetensors`). Windows manifests were symlinks that failed to open
+  until 2026-10-07 (#18847); they are now plain files.
+- Layers: `image.model` (the GGUF), `.projector` (vision), `.template` (a
+  Go template, not Jinja), `.params`, `.system`, `.license`, and newer
+  `.tensor`/`.json` (MLX and safetensors models, which llama.cpp cannot
+  load).
+- **Older blobs of some families do not load in upstream llama.cpp**
+  (Ollama-specific tensor layouts: gpt-oss, gemma3/3n/4, llama4,
+  qwen2.5-vl, qwen3-vl, qwen3-next, pixtral and others). Ollama's
+  `compatmigrate` writes llama.cpp-compatible children for them, and says
+  it will be removed later, after which those models must be pulled again.
+- **Ollama deletes blobs:** `ollama rm`, a re-pull to a new digest, and
+  a prune of unreferenced blobs at every start (unless `OLLAMA_NOPRUNE`).
+  On Windows a delete fails while another process has the file open.
+- Known issue: `ollama list` shows duplicates and a `llamacpp:<sha>` tag
+  after the migration (#18830).
+
+**What the Library does today with such a store.** Added as a folder, it
+finds nothing: the scanner skips any directory named `blobs` (as HF cache
+plumbing) and reads only names ending `.gguf`. Much keys on a plain file
+name: the display name, the quant fallback, the engine alias, "already on
+disk" in Discover, shard grouping, projector and draft pairing by
+directory. A model's id is its path, so two tags of one blob are one model.
+And the Library writes beside models (downloads, provenance, prepared
+files, Delete), which must never happen in Ollama's store.
+
+**Design (2026-10-20; calls CX9-C1..C4 taken by Troy the same day, each as recommended).**
+
+- **An Ollama store is a Library folder of a new kind**, `kind: ollama`
+  (default `folder`), read-only. It passes the agent's "under a Library
+  folder" rule and the folder's mounts work as for any folder. A contract
+  change in `library.yaml` first: the folder's `kind`, and a model's
+  `source` and `displayName`.
+- **The scanner reads manifests, not files**, for that kind: v2 then
+  legacy; for a list, the `llamacpp` (else `ggml`) child with
+  `format: gguf`; the `image.model` layer's blob is the model. One entry
+  per blob; its name is `model:tag` (more tags listed beside it). MLX and
+  safetensors manifests are listed as "not for llama.cpp" and not offered
+  to Run. `-partial` blobs are ignored.
+- **Read-only, enforced in code, not only in docs:** no download target,
+  no provenance or prepared file, no Delete. The row says "Ollama manages
+  this model" in its place; telling a person to run `ollama rm` would be a
+  terminal step. Preparing a model writes to the first writable folder.
+- **What breaks on a name is given the name:** the engine alias is the
+  `model:tag` name; the display name too; quant comes from the GGUF
+  header. The projector layer is reported (`gguf.projectorPath`) as for
+  a loose file; wiring `--mmproj` stays the existing manual profile flag.
+- **When Ollama deletes a blob** the model goes `missing`, as any vanished
+  file does. A running engine keeps its handle on Linux; on Windows
+  Ollama's delete fails while we serve it, so the row says so.
+- **Families Ollama marks for migration** (the list above) are listed with
+  "may not load in llama.cpp until Ollama has updated it", and Run is not
+  blocked (an observed failure, not a guess, stops a model).
+
+**Calls (Troy, 2026-10-20: all four as recommended).**
+
+- **CX9-C1: read in place, or keep our own copy? Taken: in place.** In place: no disk
+  used, but the model is Ollama's (gone when Ollama removes it, and
+  Ollama's own delete fails on Windows while we serve it). Keep: a hard
+  link into a Library folder (no extra disk on the same drive, a full copy
+  across drives) that is ours to keep. Recommendation: in place, with
+  "Keep in the Library" (hard link, else copy) as a later action.
+- **CX9-C2: found automatically, or added by hand? Taken: automatically.** the
+  Library looks in Ollama's default place (and `OLLAMA_MODELS`) on its own
+  machine and adds the store read-only when it finds one, with a way to
+  remove it; any other store is added by path as a folder is.
+- **CX9-C3: which machines. Taken: the Library's machine now.** The Library reads only what its own machine
+  can see. Ollama on a worker whose disk the Library cannot read needs
+  that machine's agent to read the manifests and report them, a larger
+  slice. Recommendation: the Library's machine and shared paths now; a
+  worker's own store later.
+- **CX9-C4: models Ollama has not migrated. Taken: list, warn, let Run try.** List them with the warning
+  and let Run try (recommended), or hide them until Ollama migrates them.
