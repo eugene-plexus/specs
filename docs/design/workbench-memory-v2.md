@@ -1297,12 +1297,163 @@ with no connection off loopback in any run.
   it, far from the research's 4-8 GB, which assumed its local torch models.
 - **It keeps noise.** Transient and third-party turns became facts about the person. It has no
   bar like Keep's; the write policy's Source row is the only filter in front of it.
-- **Four conditions for the catalogue entry:** `hindsight-api-slim[embedded-db]` instead of
-  `hindsight-all` (1.07 GiB instead of 1.86 on Windows; no torch); a named pg0 port; `pg0 stop`
-  on stop, since `postgres` outlives a killed `hindsight-api` on Windows; and Hindsight's
-  whole-server API key (`ApiKeyTenantExtension`), since its REST API answered with none.
+- **Five conditions for the catalogue entry:**
+  1. `hindsight-api-slim[embedded-db]` instead of `hindsight-all` (1.07 GiB instead of 1.86 on
+     Windows; no torch).
+  2. A named pg0 port.
+  3. A graceful stop. The agent's `CTRL_BREAK` stops pg0 with Hindsight; a hard kill leaves
+     `postgres` running on Windows.
+  4. Hindsight's whole-server key (`ApiKeyTenantExtension`), since its REST API answered with
+     none. It guards REST only; MCP keeps its own token.
+  5. pg0's data in the app's data folder. On Windows pg0 writes to the account's profile whatever
+     `HOME` says, and Hindsight 1.0.0 cannot name the folder.
 - **A Workbench defect, fixed:** Hindsight's `retain` only queues, so a `forget` sent before the
   exchange was read deleted nothing. Workbench now prefers `sync_retain` (with its own 120 s
   limit), and the probe's re-run showed the forget delete it.
 
-**Next:** design MV5b (section 52's catalogue entry and link) with these four conditions.
+### 57. MV5b: what it is
+
+The owner installs **Hindsight** from the agent's catalogue on the machine that runs Workbench. A
+person turns it on for themselves with one switch on Memory settings, **Use Hindsight on this
+machine**, instead of typing an address and token. Everything MV5a does with a person's own
+server then applies unchanged: what is sent (section 48), what is given (49), and forgetting and
+export (50).
+
+- **One Hindsight per machine, one bank per person.**
+  - Workbench connects each person to `/mcp/{bank}/`, where `bank` is `wb-` plus the first 16 hex
+    characters of the SHA-256 of their `sub`.
+  - The MCP token is the install's and is never shown to anyone, so a person cannot reach another
+    person's bank. The bank is chosen by Workbench, never by the person, the model or the server.
+  - Purge clears that bank only. The probe showed `clear_memories` naming its bank;
+    acceptance must show the other banks untouched.
+- **What MV5b does not change.** A person who connected their own server keeps it; one server per
+  person still holds, so using this machine's Hindsight replaces it. Nothing is backfilled
+  (MV5-C4).
+
+### 58. The catalogue entry
+
+A third entry in `apps_catalogue.yaml`, labelled **Experimental**: "Long-term memory for
+Workbench. Reads your chats with a model you choose. For 20B+ models with reliable tool calls."
+
+- **Package:** `source: pypi`, `package: hindsight-api-slim[embedded-db]`, `version: 1.0.0`,
+  `entry: hindsight_api.main:main`, `python: "3.12"`, `ui: false`, `uses: [inference]`,
+  `localActions: false`, `healthPath: /health`.
+- **Environment, every address ours:**
+  - `HINDSIGHT_API_HOST` = `{bindHost}` and `HINDSIGHT_API_PORT` = `{port}`.
+  - The LLM, embeddings and reranker all go to `{gatewayUrl}/v1`, each with `{clientKey}`:
+    - the reranker as Cohere, at the full `{gatewayUrl}/v1/rerank` path;
+    - the models from `{memoryModel}` (section 60), `{embeddingModel}` and `{rerankModel}`.
+  - `HINDSIGHT_API_LLM_REASONING_EFFORT=none`.
+  - `HINDSIGHT_API_TENANT_EXTENSION=…ApiKeyTenantExtension`, with
+    `HINDSIGHT_API_TENANT_API_KEY` = `{appSecret}`.
+  - `HINDSIGHT_API_MCP_ENABLED=true`, with `HINDSIGHT_API_MCP_AUTH_TOKEN` = `{linkSecret}`
+    (section 59).
+  - `HINDSIGHT_API_OTEL_TRACES_ENABLED=false`.
+  - `HINDSIGHT_API_DATABASE_URL=pg0://hindsight:{auxPort}`.
+- **New placeholders and fields:**
+  - `{auxPort}`: a second port from the apps' range, for pg0.
+  - An `experimental: true` field, shown on the Apps page as the engines' badge is.
+  - `{appSecret}` already exists: it is generated at first start, kept in the app's data folder
+    and read only by the app. That is enough for the REST key, which nothing else needs.
+- **Stopping** is the launcher's existing `CTRL_BREAK` (Windows) or `SIGTERM`, which stops pg0 with
+  it (section 56). A hard kill after the 20 s grace can leave `postgres` running. The next start
+  finds the instance already running and uses it. The run record must show this, or MV5b adds
+  a `pg0 stop` before each start.
+- **pg0's data (condition 5)** is not solved by any of the above: call MV5b-C1.
+
+### 59. The link
+
+There is no app-to-app link today. Each app learns only the gateway's address and its own key. MV5b
+adds one, narrowly:
+
+- **A manifest field, `provides: memory-server`** (with `providesPath: /mcp/`), and a consumer's
+  `uses: [inference, memory-server]`.
+- **The agent generates the link secret** when the provider is installed, in its own apps folder.
+  - The provider gets it as `{linkSecret}`.
+  - The consumer gets the provider's loopback address and the secret's file:
+    `EUGENE_PLEXUS_APP_MEMORY_SERVER_URL` and `EUGENE_PLEXUS_APP_MEMORY_SERVER_TOKEN_FILE`.
+  - Each gets it the way it gets its client key: an owner-only file granted to that app's account
+    on Windows, and a systemd credential on Linux.
+- **Only on the same machine**, and only between the agent's own catalogue entries. A custom entry
+  may not declare `provides`. Uninstalling the provider removes the secret, and the consumer's link
+  goes with it.
+- **A new secret** when the provider is reinstalled with its data deleted. Workbench re-reads the
+  token file when it changes, as it does its client key.
+
+### 60. The model Hindsight reads with
+
+Hindsight needs one chat model for every retain and its reflection. Eugene recommends; the owner
+decides (Troy, 2026-10-19: the harness result is advice, never a lock).
+
+- **The app's page gets one setting, Model.** It lists the gateway's chat models and marks the
+  ones the probe or the MV3 harness measured.
+- **Unset by default.** Hindsight does not start until it is set, and the page says "Choose the
+  model Hindsight reads your chats with". Eugene does not pick a model for the person.
+- **Rendered as `{memoryModel}`**, from a new per-app settings store in the agent (`apps.yaml`,
+  `settings:`). Changing it restarts the app.
+- **Locality.** Workbench treats the linked server as a model on the machines only when that model
+  is local. Otherwise it is an outside model, as any server is in MV5a. Workbench reads the model's
+  locality from the gateway, as it does for chat models.
+
+### 61. Workbench's side
+
+- **Memory settings, Your memory server.** When the link is present and `memoryServers` is not
+  `off`, the part offers **Use Hindsight on this machine** above the address form.
+  - Turning it on records the person's server as `linked`: the URL is the link's plus the bank, and
+    no token is stored per person.
+  - The verbs are found as for any server.
+  - Turning it off forgets the record, as Disconnect does.
+- **The address rule.** The linked address is exempt from `outside`'s loopback refusal. The
+  address is the agent's, not the person's, so a person still cannot point Workbench at loopback.
+  Only the exact address the link names is exempt.
+- **Store migration 25 to 26:** `memory_servers.linked` (0/1). A linked row's `token` stays empty
+  and is read from the link's file at each call.
+
+### 62. Risk, tests and acceptance
+
+**High risk:** a new secret is handed between two apps' accounts; an installer path; chats go to a
+server on the machine.
+
+- **Agent unit tests:** the manifest fields and their validation (`provides` only in the shipped
+  catalogue); the secret's files and their grants; the placeholders; the model setting.
+- **Workbench unit tests:** the linked part, the bank derivation, the address exemption (only the
+  link's exact address), and migration 25 to 26.
+- **Live run**, on Windows and Linux, in the agent's account and in own accounts. The own-account
+  run is elevated and needs Troy.
+  - Installing Hindsight; the setting unset, so it does not start; the setting chosen.
+  - REST refuses no key; MCP refuses no token.
+  - Two people turn it on, and each recalls only their own.
+  - Delete all for one leaves the other's bank.
+  - Uninstall with data deletes the memories (condition 5).
+  - Stop: no `postgres` left. A hard kill, then a start.
+  - No connection off loopback.
+- **Sabotage once:** the bank derivation, the address exemption, a custom entry declaring
+  `provides`, and the secret's grant to a third app.
+
+### 63. Calls
+
+**MV5b-C1 (Troy's): where pg0 keeps the memories on Windows.** Hindsight 1.0.0 cannot name pg0's
+data folder, and pg0 ignores `HOME` on Windows.
+- *Recommended default:* ask Hindsight upstream for a data-folder setting (a `pg0://` URL
+  parameter), and hold MV5b until it ships. Troy files upstream reports himself.
+- Alternatives:
+  - Ship MV5b on Linux and on agent-account installs only, with uninstall running `pg0 drop` by
+    instance name. Windows own-account installs, the common Windows case, would get none.
+  - Publish a small Eugene launcher package that starts Hindsight with pg0's folder set. A new
+    repository to keep.
+
+**MV5b-C2: one Hindsight per machine, a bank per person, the token held by Workbench.**
+*Recommended default:* as section 57. Alternative: one Hindsight per person, which multiplies
+pg0 instances and ports and fits a catalogue badly.
+
+**MV5b-C3: the model is unset until the owner chooses.** *Recommended default:* as section 60.
+Alternative: default to the first local chat model the MV3 harness passed. That is Eugene choosing.
+
+**MV5b-C4: a narrow app-to-app link (`provides: memory-server`).** *Recommended default:* as
+section 59. Alternative: the owner pastes Hindsight's address and token into Workbench's owner
+settings, which needs no agent change but shows the owner a secret.
+
+**MV5b-C5: Experimental.** *Recommended default:* labelled experimental until a release has
+carried it. Hindsight is days past 1.0, and its own defaults are open.
+
+**Order.** MV5b waits on MV5b-C1. MV6 (research section 10) is built meanwhile.

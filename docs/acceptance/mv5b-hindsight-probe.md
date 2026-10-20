@@ -1,6 +1,6 @@
 # MV5b probe: Hindsight 1.0.0 as a local memory server
 
-**2026-10-19. The probe passes, with four conditions for the catalogue entry (below).**
+**2026-10-19. The probe passes, with five conditions for the catalogue entry (below).**
 
 - **Script:** `scripts/mv5b-hindsight-probe.py`. It writes one JSON per run to `docs/acceptance/mv5b-data/`.
 - **Design:** `docs/design/workbench-memory-v2.md`, section 52 (the probe's plan) and section 56 (what
@@ -54,7 +54,7 @@
   that is off unless configured, and the `iris` file parser (Vectorize's API), which is used only
   when named.
 
-## The four conditions for a catalogue entry
+## The conditions for a catalogue entry
 
 1. **Install `hindsight-api-slim[embedded-db]==1.0.0`, not `hindsight-all`.**
    - The slim package is 1.07 GiB on Windows, against 1.86 GiB. The Linux venv's 6.27 GiB is
@@ -62,19 +62,22 @@
    - The slim install started on Windows with stub models and answered retain and recall.
    - It made no outside connections (`mv5b-data/windows-slim.json`).
 2. **Name pg0's port** (`pg0://name:port`). Its default, 5432, is any other PostgreSQL's.
-3. **Stop pg0 explicitly.** On Windows, killing `hindsight-api`'s process tree left `postgres.exe`
-   running, because `pg_ctl` starts it outside that tree.
-   - The probe's teardown now runs `pg0 stop --name <instance>`, which stops it cleanly.
+3. **Stop it gracefully.** On Windows, a hard kill of `hindsight-api`'s process tree left
+   `postgres.exe` running, because `pg_ctl` starts it outside that tree.
+   - The agent's `CTRL_BREAK` stops it cleanly, pg0 included (design experiments, below). A hard
+     kill does not.
+   - The probe's teardown now runs `pg0 stop --name <instance>`.
    - The peak RSS above may miss part of postgres for the same reason.
 4. **Its REST API answered with no key.** The MCP endpoint took its token (`HINDSIGHT_API_MCP_AUTH_TOKEN`).
    - The REST API under `/v1/default/banks/...` answered this run's retain, recall and list calls
      with no key, on loopback.
-   - Any local process could read every memory. The entry must set Hindsight's API key for the
-     whole server, not only for MCP.
-   - Hindsight has a key for this: `HINDSIGHT_API_TENANT_EXTENSION=hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension`
-     with `HINDSIGHT_API_TENANT_API_KEY`, which its docstring says covers MCP too.
-   - That key was not run in this probe. MV5b's acceptance must show that REST and MCP both refuse
-     a missing key.
+   - Any local process could read every memory. The entry must set a key for the whole server.
+   - Hindsight has one: `HINDSIGHT_API_TENANT_EXTENSION=hindsight_api.extensions.builtin.tenant:ApiKeyTenantExtension`
+     with `HINDSIGHT_API_TENANT_API_KEY`.
+   - The design experiments showed it guards REST but not MCP. MCP keeps its own token.
+
+**A fifth condition, from the design experiments.** pg0's data must be in the app's data folder.
+On Windows it goes to the account's profile whatever `HOME` says, and Hindsight 1.0.0 cannot name it.
 
 ## A Workbench defect it found, fixed
 
@@ -102,3 +105,27 @@ words are kept, with its own 120 s limit (`RETAIN_SECONDS`).
   now waits for each server's `/health`.
 - **The Gemma and Qwen runs left their `postgres.exe` running.** They were stopped by pid, before
   the `pg0 stop` teardown was added.
+
+## Design experiments (same night, Windows, stub models, the slim install)
+
+Run with `scratchpad/hs/experiment.py`, a throwaway script. It starts Hindsight with `HOME` and
+`USERPROFILE` set to a temporary folder, with the tenant key, then stops it with `CTRL_BREAK`, as
+the agent's launcher does.
+
+- **The tenant key guards REST, not MCP.**
+  - REST recall with no key, or a wrong one, was refused (401). With the key it answered (404: the
+    bank did not exist yet).
+  - MCP refused no token and refused the tenant key (401). It took only its own token
+    (`HINDSIGHT_API_MCP_AUTH_TOKEN`, 200).
+  - `/health` answers anyone.
+  - So the entry needs both secrets: they can be one value, or two.
+- **A graceful stop takes pg0 with it.** `CTRL_BREAK` stopped Hindsight in 0.6 s, its log says "pg0
+  stopped", and no `postgres.exe` of the instance was left. Only a hard kill orphans postgres, which
+  is what the probe's teardown did.
+- **pg0 ignores `HOME` and `USERPROFILE`.**
+  - The instance's data went to the real profile's `~\.pg0`, not to the temporary folder.
+  - Hindsight 1.0.0 passes pg0 no data directory, and its `pg0://` URL has no setting for one.
+  - So under an app's own account on Windows, the memories would sit in that account's profile,
+    outside the app's data folder. Uninstall with "delete its data" would leave them.
+  - On Linux, pg0 follows `HOME` (it wrote to the WSL home), which the launcher sets to the app's
+    state directory.
