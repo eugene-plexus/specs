@@ -1965,7 +1965,8 @@ components:
           description: |
             The filename with its extension stripped, the directory
             name for safetensors, or the provenance file's name without
-            `.eugene-prepared.json` for `prepared`. **Not derived from metadata**: the
+            `.eugene-prepared.json` for `prepared`, or the first Ollama tag
+            for a model in an Ollama store. **Not derived from metadata**: the
             file's own name is what the operator downloaded, what they
             call it, and what `Runtime.modelAlias` defaults to — so
             plainly-named files mean the obvious name is already the
@@ -2050,6 +2051,8 @@ components:
           $ref: '#/components/schemas/KevCheckpointDetail'
         prepared:
           $ref: '#/components/schemas/PreparedDetail'
+        ollama:
+          $ref: '#/components/schemas/OllamaDetail'
         profileCount:
           type: integer
           minimum: 0
@@ -2079,6 +2082,36 @@ components:
             parse, a permission error, a truncated file. Named rather
             than dropped: a model the operator can see and we cannot
             explain is the worst of the three states.
+
+    OllamaDetail:
+      type: object
+      description: |
+        A model read from an Ollama store (CX9): which of Ollama's names
+        point at this file. Present only for a model in a folder of kind
+        `ollama`. Its `name` is the first of `tags`, and is what
+        `Runtime.modelAlias` is set to, since the file's own name is a
+        hash. Ollama manages the file: the library never writes or
+        deletes it.
+      required:
+        - tags
+      properties:
+        tags:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: |
+            `model:tag` names, as `ollama list` shows them, sorted. Several
+            tags can share one file. A model outside Ollama's own library
+            keeps its namespace (`user/model:tag`); one from another
+            registry keeps its host.
+        needsMigration:
+          type: boolean
+          description: |
+            Its family is one Ollama rewrites for llama.cpp
+            (`compatmigrate`) and this file is the older layout, so
+            upstream llama.cpp may not load it until Ollama has updated
+            it. Run is not refused for it.
 
     ModelStatus:
       type: string

@@ -2722,6 +2722,28 @@ components:
             says which nodes it is for. Order matters only among entries
             of one shape, where the first wins. Empty means "reached at
             `path`, or not at all".
+        kind:
+          $ref: '#/components/schemas/LibraryFolderKind'
+        found:
+          type: boolean
+          readOnly: true
+          description: |
+            Not in `modelRoots`: the library found it on its own machine
+            (an Ollama store, CX9) and lists it while `findOllama` is on.
+            Absent or false for a folder someone added.
+
+    LibraryFolderKind:
+      type: string
+      enum: [folder, ollama]
+      default: folder
+      description: |
+        What the library reads in a folder (CX9, 2026-10-20). `folder`:
+        model files, walked as they are. `ollama`: an Ollama model store
+        (the directory holding `blobs/` and `manifests/` or
+        `manifests-v2/`), read through its manifests and **never written
+        to** -- no download, provenance, prepared file or delete lands
+        there. Its models are Ollama's: one that Ollama removes goes
+        `missing`.
 
     DirectoryListing:
       type: object
