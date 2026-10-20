@@ -528,6 +528,48 @@ the gateway's `refreshed_at` passes the save before showing what a name
 resolves to (`ui/src/app/routing/page.tsx:155,501`), and says why a
 candidate is not ready.
 
+**Design (2026-10-20).**
+
+- **`/logs?q=<text>`** fills "Only lines containing" and asks each agent
+  for only those lines (`contains=`), as typing does. A `q` that finds
+  nothing gets the existing "No line contains “…”." and Clear.
+- **One link helper, `logsHref({node, source, q})`.** No `node` means
+  every machine on one timeline, which suits a request's id (unique, and
+  the gateway may be anywhere) and a machine's name. Every link goes
+  through the console (one console).
+- **"Logs →" beside each failure:**
+  - Metrics: a request with a failed try or an error outcome →
+    `/logs?q=<request id>`. The gateway's failover warning did not carry
+    the id, so it now ends "(request <id>)" (gateway); the id is the one
+    Metrics shows.
+  - Machines (a down machine's error) and Hosts (a machine not answering)
+    → `/logs?q=<machine name>`: its own log cannot be read while it is
+    down, and the root's probe lines name it.
+  - An app's last error → its machine, source `app: <id>`; a failed
+    install → its machine, `q=<id>`.
+- **Routing.** The planned wait for `refreshed_at` is dropped: the gateway
+  reads `modelSlots` on every request (`routing.py`, "read live on every
+  resolve"), so the table read right after Save already resolves with the
+  new lists. The saved line said "reads the lists on its next routing
+  refresh", which was false; it now says "Saved. The gateway uses these
+  lists now". The refresh only changes *which backends are up*, and the
+  page already says "as of" its time.
+- **Why a candidate is not ready**, one word each, after "x of y ready":
+  the runtime's status (`loading`, `stopped`, `crashed`…), "stopping"
+  for the gateway's "is being stopped", else "not ready". No sentence
+  from the gateway, no internals.
+
+**Built 2026-10-20** (ui `e28168fb`, gateway `6a614a2`). Its run,
+`scripts/cx8-logs-links-acceptance.py`, is written and waits for the end of
+the pass. What building found:
+
+- The routing wait in the audit rested on the saved line's own claim. The
+  code reads the lists live, so the fix was the sentence, not a wait.
+- CX7 renamed Save to "Save and restart" on fields that need it, and the
+  app settings test still pressed "Save": CX7's ui CI is red until the
+  follow-up commit lands with CX8. The full ui suite now runs before a
+  ship that renames a shared control.
+
 ### CX9: models already in Ollama (library; L; design first)
 
 Most hobbyists arrive with models pulled by Ollama, which keeps them as
