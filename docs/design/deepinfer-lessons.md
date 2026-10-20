@@ -217,9 +217,11 @@ Failover stays a reread: a machine that is gone has nothing to copy, unless
 DI2 ever adds periodic saves. vLLM's KV connectors (NIXL, LMCache) are the
 equivalent for business installs on vLLM.
 
-**Risk: high.** Conversations cross the network, so the copy uses the
-authenticated node channel, never a plain share. It needs the same privacy
-review as DI2.
+**Risk: high.** Conversations cross the network. The node-to-node channel is
+authenticated but clear text today (`remote-nodes.md` §7, "TLS between
+machines on a LAN"), as is every prompt the gateway already sends to a driver
+on another machine. DI2b waits for LAN TLS rather than adding its own
+encryption. It needs the same privacy review as DI2.
 
 ### DI3. Measure how many people a runtime serves at what speed
 
