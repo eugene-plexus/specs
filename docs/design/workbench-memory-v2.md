@@ -8,7 +8,7 @@ Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled pe
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
 default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.
 MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.
-MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue) waits on its probe (section 52).**
+MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) designed 2026-10-19 (sections 64-71), being built at its defaults.**
 
 ---
 
@@ -1406,7 +1406,7 @@ decides (Troy, 2026-10-19: the harness result is advice, never a lock).
 - **The address rule.** The linked address is exempt from `outside`'s loopback refusal. The
   address is the agent's, not the person's, so a person still cannot point Workbench at loopback.
   Only the exact address the link names is exempt.
-- **Store migration 25 to 26:** `memory_servers.linked` (0/1). A linked row's `token` stays empty
+- **Store migration (the next after MV6's 25 to 26):** `memory_servers.linked` (0/1). A linked row's `token` stays empty
   and is read from the link's file at each call.
 
 ### 62. Risk, tests and acceptance
@@ -1457,3 +1457,193 @@ settings, which needs no agent change but shows the owner a secret.
 carried it. Hindsight is days past 1.0, and its own defaults are open.
 
 **Order.** MV5b waits on MV5b-C1. MV6 (research section 10) is built meanwhile.
+
+---
+
+## MV6: provenance, "Still true?" from changed documents, and the tidy pass
+
+What MV6 changes, in one paragraph:
+- **Provenance.** A note can name the documents it rests on: the passages an answer cited when the
+  person kept it, or a document the person links to it.
+- **Still true?** When such a document changes or is removed, the note asks "Still true?" with the
+  reason. This is the real cause that research section 8 wanted beside the 60-day timer.
+- **The tidy pass.** A deterministic pass proposes merging notes that say the same thing and
+  removing events long past. It proposes, the person decides, and nothing is changed by itself.
+
+### 64. Provenance
+
+- **New table `memory_note_documents`.** Each row records the document as it was when linked:
+  - `owner`, `note_id`;
+  - `doc_id`, `scope`, `source`, `name`, `sha256`;
+  - `place`: the cited passages' pages or lines, heading and snippet, as the answer's Sources showed
+    them, at most 240 characters each;
+  - `how`: `answer` or `person`;
+  - `linked_at`, `snoozed_until`.
+- **Linked from an answer.** Remember on an answer links:
+  - every document the answer **cited** (`cited: true` on a passage source, `answers.mark_cited`),
+    one row per document with its cited passages in `place`;
+  - every document the answer was sent **whole** (a `source_entry` without `passage`).
+
+  Passages that were sent but not cited are not linked: the answer did not rest on them. An answer
+  that cited nothing links nothing.
+- **Linked by the person.** The note's details gain **Based on a document**. It lists the person's
+  documents (My documents and their folders' files), with Unlink. A chat's attachments are linked
+  only through an answer.
+- **No links for other notes** (MV6-C1):
+  - "Remember that ..." in a chat, typed notes, suggestions, Keep automatically, the in-turn tool and
+    connections link nothing.
+  - Their words are the person's or a model's, not a document's.
+  - A model-written note from a turn that had documents would otherwise ask "Still true?" whenever
+    any of those documents changed.
+- **Carried over** when a note is saved as a new version, and when a kept suggestion replaces it.
+  It is the same fact, edited, as pins and tags are carried (`keep_suggestion`).
+- **Limits and deletion.**
+  - At most 20 documents a note.
+  - Deleting a note, Delete all memory, and deleting the person delete its links.
+  - The export carries them (`documents` on each note).
+
+### 65. Still true? from a changed document
+
+**Checked on read.** The notes and the documents live in two SQLite files, so no transaction spans
+both, as one does in Agentic GraphRAG. Instead, when the Memory page is read, Workbench compares
+every link with the person's index, in one query:
+
+| The index now | The link is |
+|---|---|
+| `doc_id` present, same `sha256` | current |
+| `doc_id` present, another `sha256` (read again with new content) | **changed** |
+| `doc_id` gone, and a document with the same scope and origin exists | **changed**: it is that document's new version |
+| `doc_id` gone, nothing of that origin | **removed** |
+
+- **Origin** is `source` for a folder's file or a chat's attachment. For My documents it is the
+  name, since uploading a file of the same name replaces it (`Index.add`).
+- **A file moved with the same content** keeps its id (`move_folder_document`), so it stays current.
+- **A crash between a document's change and a note cannot lose the question**, since nothing is
+  recorded at the moment of change.
+
+**Asked at once, every one** (MV6-C3):
+- A note with a changed or removed link is listed under Still true?, with each reason:
+  - "'{name}' changed on {date}", the new version's `added_at`;
+  - "'{name}' was removed".
+- These have a cause, so they are not held to the timer's one project a week. The 60-day project
+  timer keeps its weekly limit.
+- A note whose links were all snoozed by Later waits until `snoozed_until`.
+
+**What models receive does not change** (MV6-C2). A note waiting for its answer is still sent. The
+change may not touch the fact, and the person decides.
+
+### 66. Answering Still true?
+
+`POST /api/memory/revisit` keeps its body `{noteId, answer}`. For a note asked about because of
+documents:
+- **Still true** moves each changed link to the document as it is now (`doc_id`, `sha256`, `name`).
+  It drops each removed link, recording in the note's history "'{name}' was removed; you said it is
+  still true".
+- **Not any more: delete it** forgets the note, as today.
+- **Ask me next week** snoozes its links for 7 days.
+- **Edit** opens the note. Saving a new version carries the links at the documents' current
+  versions, which answers it.
+
+The page's `revisit` entries gain `reasons: [{name, change: "changed" | "removed", at}]`. A
+project's timer entry has none.
+
+### 67. The tidy pass
+
+**Deterministic, per person, on reading the Memory page, at most once a day** (`tidy_at`). It
+proposes; the person decides. What it proposes is shown under Waiting for you, after Still true?
+and before the inbox.
+
+- **Notes that say the same thing.**
+  - Two active notes of the same kind whose titles are equal after normalising (`note_key`), or
+    whose word stems overlap at least 0.6 (`memory_suggest.overlap`, MR8's near-duplicate measure).
+  - Candidates come from an index of each note's three rarest stems, so 20,000 notes cost a linear
+    pass, not every pair.
+  - At most 20 proposals wait at a time.
+  - Shown as "These look like the same note", with both:
+    - **Keep this one** supersedes the other by it. The history shows "merged into", tags are joined,
+      it is pinned if either was, and document links are joined. A body comes over only when the
+      kept note has none, since two bodies are never merged by code.
+    - **Keep both** remembers the pair, which is never proposed again.
+- **Events long past.**
+  - An `event` note whose date passed more than 30 days ago (MV6-C5): "This was on {date}. Remove
+    it?"
+  - **Remove** forgets it. **Keep** leaves it under Past and it is never asked again.
+- **Supersession chains.** MV1 keeps one active version of a chain at write, so there is nothing
+  deterministic to merge. The pass checks that invariant and logs a broken chain, naming the note.
+- **New table `memory_tidy`:**
+  - `id`, `owner`, `kind` (`duplicate` or `past`);
+  - `note_ids` (JSON, sorted), and `pair` (`UNIQUE(owner, kind, pair)`);
+  - `created_at`, `settled` (null, `merged`, `kept` or `removed`), `settled_at`.
+
+  A proposal whose notes changed, one gone or superseded, is dropped when read.
+- **API:** `tidy: [...]` in `GET /api/memory`, and `POST /api/memory/tidy/{id}` with
+  `{action: "keep" | "keep_both" | "remove" | "keep_event", keepId?}`.
+
+### 68. Store migration 25 to 26
+
+- `memory_note_documents` and `memory_tidy`, both `CREATE TABLE IF NOT EXISTS`.
+- `memory_prefs.tidy_at`.
+- The backup and the single transaction as every step (`_initialize_schema`).
+- Nothing existing is rewritten: notes kept before MV6 have no links.
+
+### 69. Not in MV6
+
+- Model-proposed consolidation, which is a later step under the per-model choice (research 7.5).
+- Links for notes written by models or connections (MV6-C1).
+- A version history of documents: the index keeps none. A link keeps the `sha256` it was based on,
+  and the change is named, not shown as a diff.
+- Provenance from web pages and tool results.
+- Sending a waiting note's question to models.
+- Links on a memory server's results (MV5).
+
+### 70. Risk, tests and acceptance
+
+**High risk** under the testing policy, for its store migration. What models receive changes only
+by the person's merges and removals. So: one adversarial review, sabotage of the new checks, and a
+real-environment run.
+
+- **Unit tests:**
+  - **Links:** Remember on an answer links cited documents and whole ones, not uncited passages; an
+    answer citing none links nothing; the person links and unlinks only their own documents.
+  - **The check on read:** same; read again with new content; replaced by name; a folder's file
+    replaced; moved with the same content; removed; an attachment gone with its chat.
+  - **The answers:** Still true moves or drops links; Later snoozes; Not any more deletes; a new
+    version carries the links.
+  - **Tidy:**
+    - exact and near duplicates, and none across kinds;
+    - Keep merges pins, tags, body and links and records the history;
+    - Keep both is remembered;
+    - a past event at 31 days is proposed, at 29 days it is not;
+    - Remove forgets.
+  - **The rest:** migration 25 to 26 from a schema 25 store; the export carries links.
+- **Vitest:** Still true? with reasons; tidy proposals; Based on a document.
+- **Live run** (`mv6-provenance-run.md`):
+  - A real Workbench and gateway, with a model answering with `[1]`, over a schema 25 store.
+  - An upload, and an answer citing it. Remember links it.
+  - Replacing the upload asks Still true? with the reason. Still true moves the link.
+  - Removing it asks again.
+  - Two near-duplicate notes are proposed and merged. A past event is proposed and removed.
+- **Sabotage once:** the `sha256` comparison, the match by origin, the cited filter, the kind check
+  in tidy, and Keep both's memory.
+
+### 71. Calls
+
+**MV6-C1 (Troy's to confirm; the default is built): which notes name documents.** *Recommended
+default:* notes kept from an answer (the documents it cited or was sent whole) and documents the
+person links. Alternative: also notes a model writes in a turn that had documents. That links what
+the model may not have used, and asks "Still true?" for every change.
+
+**MV6-C2 (Troy's to confirm; the default is built): a waiting note is still sent.** *Recommended
+default:* yes, until the person answers. Alternative: held back from models until answered, which
+silently drops facts the change may not touch.
+
+**MV6-C3 (Troy's to confirm; the default is built): document questions are asked at once.**
+*Recommended default:* every note with a changed document, at once. Alternative: one a week, as the
+project timer.
+
+**MV6-C4 (Troy's to confirm; the default is built): tidy proposes, never acts.** *Recommended
+default:* duplicates of the same kind (equal titles or stems overlapping 0.6) and events past by
+30 days, each a proposal. Alternative: merge exact duplicates automatically.
+
+**MV6-C5 (Troy's to confirm; the default is built): 30 days after an event.** *Recommended default:*
+an event is proposed for removal 30 days after its date. Alternatives: at once, or never.
