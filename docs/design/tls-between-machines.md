@@ -557,6 +557,53 @@ a container root, one adversarial review, and `ship.py`.
   worker never idles (the gateway polls every second), so the impostor saw
   nothing until the gateway started again; the `wrong-pin` label restarts it.
 
+**The adversarial review (2026-10-20), and what changed.**
+- **A node could register another machine's door** (the root's included)
+  with its own key, and the tables merged keys per door. Now: a machine
+  URL's host is the node's own address's host, no two nodes hold one door,
+  and a table never merges keys from two claimants; the root's door is
+  authoritative and a node on it must present the root's own key.
+- **Dot segments slipped past the plain branch's Job Site rule**
+  (`/v1/sites/../nodes/enroll`, normalised by httpx on the way out). Both
+  branches now refuse `.`/`..` segments, encoded dots and backslashes, and
+  forward the raw path, so no two hops read one path differently.
+- **A party in the middle could clear a node's key** by stripping it from a
+  plain announcement: the node took any 401 as "an older root" and announced
+  the address alone. It now falls back only for a root that serves no
+  machine list, settles on what the root took, and announces again whenever
+  the root's signed list records something else.
+- **The front's pumps could hang open** (no idle bound, one side waiting on
+  the other). They end together, idle out after 15 minutes, and connections
+  are capped (2048, 512 from one address).
+- **The list's version was local to one control's files**, so a promoted
+  standby started below what nodes held. It follows the replicated log index
+  now.
+- **Under required, an address the table did not name went plain.** A
+  blanket refusal would break model servers on the LAN, so the rule is
+  about what is sent: no token of this install (a JWS with `typ: ep-*`)
+  goes to another machine in plain HTTP, whatever the table says. This
+  machine under its own LAN address is listed as `local`.
+- **A pin cut short in a copied join command** made the join plain. It is
+  an error now, and the join token's key gives way to the signed list's.
+- **Control moved off 8083 even when the machine port could not open.** It
+  moves only when 8083 is free, and is kept on loopback only behind a
+  machine port that started.
+- **A root whose machine key changed would strand every node**: their pinned
+  calls are refused, the list's included. The list is public, signed and
+  versioned, so a node then fetches it once in plain HTTP (the plain branch
+  serves `/v1/trust/machines` under required for this) and takes it only if
+  it verifies.
+- **Found safe:** the pin form on both sides, IPv6 normalisation, the check
+  before the first byte with no fallback to chain verification, peer
+  restoration only for a loopback immediate client, header stripping, the
+  in-process `/agent` dispatch (`/link` needs plain `http` on loopback), and
+  no open proxy through `/drivers` or `/control`.
+- **Not changed:** pooled sessions are not cut when a machine is removed
+  (its tokens are revoked anyway), and a node with no list yet accepts any
+  validly signed one. Since LT1b a node's first list comes over TLS to the
+  key in its join token; only a node upgraded in place fetches its first
+  list in plain HTTP.
+
 **Not built, or not measured.**
 - **Key rotation** (two pins over an overlap): the record and the list hold a
   list of pins, but a node announces one and nothing rotates it.
