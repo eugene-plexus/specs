@@ -196,13 +196,18 @@ end of the pass (Troy). What building found:
   `GET /v1/node` reads the host firewall.
 - Inputs are disabled while a step runs, so a choice toggled mid-run cannot
   be shown without being applied.
-- **CX2-C1, open for Troy:** a returning browser meets the gate before
-  setup, and with no session the gate sends it to `/login`. So a
-  half-set-up install asks for the passphrase at sign-in and again on
-  setup, because the root still needs it. Opening `/setup` directly asks
-  once. Asking once on every path needs the agent's open
-  `GET /v1/auth/status` to report `firstRunComplete`, which is a contract
-  change.
+- **CX2-C1: the passphrase once on every path. Taken and built**
+  (Troy, 2026-10-20; specs `4d79f06`, agent `56d3dc6`, ui `5a6ee8b2`, on
+  Edge with specs `19f781f`). A returning browser met the gate before
+  setup, and with no session the gate sent it to `/login`. So a
+  half-set-up install asked for the passphrase at sign-in and again on
+  setup, because the root still needed it. The agent's open
+  `GET /v1/auth/status` now carries `firstRunComplete` once initialized,
+  and the gate sends a half-set-up install with no session to `/setup`.
+  A finished install with no session that opens `/setup` goes to sign-in.
+  An older agent that leaves the field out reads as finished. The status
+  route now leaves out fields with no value, as its contract already said
+  for `keyringAvailable`.
 
 ### CX3: one-click run asks first (library, ui; M)
 

@@ -51,18 +51,20 @@ try {
   report.controlInitialized.afterFailure = await rootInitialized();
   await first.close();
 
-  // 2. Later, a new browser: no session. The console sends it to sign in.
+  // 2. Later, a new browser: no session. The status says setup is
+  // unfinished, so the console goes straight to setup, not to sign-in
+  // (CX2-C1), and setup asks for the passphrase once.
   const later = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   watch(later);
   page = await later.newPage();
   page.setDefaultTimeout(30000);
   page.on("pageerror", (error) => report.errors.push(String(error)));
+  page.on("framenavigated", (frame) => {
+    if (frame === page.mainFrame() && /\/login/.test(frame.url())) report.visitedLogin = true;
+  });
   await page.goto(url);
-  await page.waitForURL(/\/login/, { timeout: 30000 });
-  await page.locator("#passphrase").fill(passphrase);
-  await page.getByRole("button", { name: "Unlock", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Finish setting up this install", exact: true })).toBeVisible({ timeout: 60000 });
-  report.stepsLeft = await page.getByTestId("steps-left").textContent();
+  report.passphrasePrompts = 1;
 
   // 3. A wrong passphrase goes nowhere near the root.
   const box = page.getByLabel("Passphrase", { exact: true });
@@ -72,8 +74,13 @@ try {
   report.wrongPassphraseMessage = await page.getByRole("alert").textContent();
   report.controlInitialized.afterWrongPassphrase = await rootInitialized();
 
-  // 4. The right one carries on, then Finish.
+  // 4. The right one signs in and shows what is left; Continue runs it,
+  // with no second prompt; then Finish.
   await box.fill(passphrase);
+  await page.getByRole("button", { name: /^(Continue|Try again)$/ }).click();
+  await expect(page.getByTestId("steps-left")).toContainText(/Securing the install/, { timeout: 60000 });
+  report.stepsLeft = await page.getByTestId("steps-left").textContent();
+  report.askedAgain = (await page.getByLabel("Passphrase", { exact: true }).count()) > 0;
   await page.getByRole("button", { name: /^(Continue|Try again)$/ }).click();
   await expect(page.getByRole("heading", { name: "Where should models live?", exact: true })).toBeVisible({ timeout: 120000 });
   const finish = page.getByRole("button", { name: "Finish", exact: true });

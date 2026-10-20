@@ -163,7 +163,10 @@ def run(root: Path) -> None:
             result["checks"]["agentEnrolled"] = node.status_code == 200 and node.json().get("enrolled") is True
             result["checks"]["agentInitializedOnce"] = result["browser"]["agentInitializeCalls"] == 1
             result["checks"]["reachedHome"] = result["browser"].get("reachedHome") is True
-        result["passed"] = all(result["checks"].values()) and len(result["checks"]) == 7
+            # CX2-C1: straight to setup, and the passphrase asked for once.
+            result["checks"]["noSignInDetour"] = result["browser"].get("visitedLogin") is not True
+            result["checks"]["askedOnce"] = result["browser"].get("askedAgain") is False
+        result["passed"] = all(result["checks"].values()) and len(result["checks"]) == 9
     finally:
         try:
             if agent:
