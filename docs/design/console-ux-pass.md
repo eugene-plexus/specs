@@ -174,7 +174,7 @@ What this does not change: a root with no passphrase takes the first
 `initialize` that passes its trusted-host check (`trusted_host.py`), as
 before. Resuming shortens that window; closing it is not this slice.
 
-### CX3: one-click run asks first (agent, ui; M)
+### CX3: one-click run asks first (library, ui; M)
 
 *Confirmed in part.* "Download and run" asks whether to install the engine
 only after the download (`agent/src/eugene_plexus_agent/run_worker.py:186`,
@@ -183,6 +183,59 @@ a long download comes back to a question, not a running model. Escape on
 the dialog cancels the whole run (`ui/src/components/RunDialog.tsx:19,47`).
 Decide the engine at the click (the button already says "We'll ask before
 installing llama.cpp"), and let Escape only close the dialog.
+
+**Design (2026-10-20).**
+
+- **Where it is asked.** The download chains only: `startDownloadAndRun`
+  (Home's card, Discover's starter, Discover's "Download and run") and
+  `startDownloadAndPrepare` (Discover's prepare). Before anything is
+  submitted, the store reads the target machine's `GET /v1/engines`. A
+  run needs an engine that loads the format (and, for an engine that runs
+  only named files, this file); a preparation needs its own engine. If one
+  is installed, or none is installable, or the machine does not answer,
+  nothing is asked and the run goes as before, so a wrong guess falls back
+  to today's question after the download, never to a silent install. If
+  the engine is missing and installable, the run dialog asks "Install
+  llama.cpp too?" with **Install and run** and **Cancel**. Nothing has been
+  submitted, so Cancel and Escape leave nothing behind. A Run or Prepare on
+  a model already on disk keeps the question after checking: that takes
+  seconds, nobody has walked away.
+- **What the operation records.** `Intent.installEngine` (run-operations
+  contract, optional): the engine the person agreed to install. The
+  **library** honours it: a checkpoint to `awaiting-install` for that
+  engine, with no answer yet, is recorded as the answer `install` and the
+  step `installing`, the same change `POST /answer` makes. Any other engine
+  still waits for an answer: agreeing to llama.cpp is not agreeing to
+  whatever checking picks. In the library, not the agent, so an agent of
+  any version honours it. The agent is unchanged. An older library refuses
+  the field (the intent forbids extras): deploy the root first, as for any
+  intent change.
+- **Escape only closes.** On a run already waiting for its answer, Escape
+  and a new **Later** close the dialog; the run keeps waiting, its tray row
+  says "waiting for your answer: install llama.cpp?", and following that row
+  (or Home's) opens the question again. **Cancel the run** is its own
+  button. Closed questions are remembered per tab; a reload asks again.
+
+Callers checked: Home's card and Discover's starter and model rows reach
+`startDownloadAndRun`; Discover's prepare reaches `startDownloadAndPrepare`
+(or `startPreparation` when the file is owned); the Library's Prepare and
+`RunButton` submit for a model on disk and are unchanged.
+
+**Built 2026-10-20** (library `6f62a81`, agent `40cab45` vendors the
+contract, ui `b782ccd9`). What building found:
+
+- The run operation lives in the library, not the agent, so the slice is
+  library and ui; the agent's worker needed no change.
+- The library treats two submissions with the same intent as one receipt,
+  so a retried click with the same agreement is the same operation.
+- `run-operations-checks.py` (specs CI, pinned library and agent) now runs
+  an agreed install end to end: checking, installing and settings with no
+  answer posted.
+- ui CI had been red since CX1: the theme-token test read
+  `data-testid="status-retry"` as a class. The test now skips test ids.
+- Owed for the end of the pass: `scripts/cx3-ask-first-acceptance.py
+  --output <new dir>` (Windows; disposable install, the pinned UI wheel,
+  downloads a 20 MB GGUF and one llama.cpp build).
 
 ### CX4: one context for fit (ui, maybe library; M)
 

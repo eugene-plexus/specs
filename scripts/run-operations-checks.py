@@ -109,6 +109,21 @@ async def check(directory, kind="llama_cpp"):
 
     client = LibraryFitClient("http://library", None, transport=httpx.MockTransport(transport))
     async with httpx.AsyncClient(transport=real, base_url="http://library") as operator:
+        # CX3: the install agreed at the click is not asked again after the
+        # download; the agent installs it with no answer posted.
+        agreed = {"node": "worker", "modelId": "m", "installEngine": kind}
+        response = await operator.put("/v1/run-operations/agreed", json=agreed)
+        assert response.status_code == 202, response.text
+        other = Engine(kind)
+        for _ in range(2):
+            await RunWorker(node, node_actions=other).tick(client, node="worker")
+        record = app.state.run_operations.get("agreed")
+        assert (record["step"], record["answer"], other.installs) == ("settings", "install", 1), (
+            record["step"],
+            record["answer"],
+            other.installs,
+        )
+        await operator.post("/v1/run-operations/agreed/cancel")
         intent = {"node": "worker", "modelId": "m"}
         response = await operator.put("/v1/run-operations/job", json=intent)
         assert response.status_code == 202, response.text
@@ -161,6 +176,6 @@ if __name__ == "__main__":
             asyncio.run(check(Path(directory), kind))
         print(f"PASS: {kind} context flag preserved through profile, restart and launch")
     print(
-        "PASS: protocol conformance, durable install decision, restart after profile and runtime "
+        "PASS: protocol conformance, durable install decision, install agreed at the click, restart after profile and runtime "
         "commits, one profile/install/runtime/start"
     )
