@@ -8,7 +8,7 @@ Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled pe
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
 default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.
 MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.
-MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) built 2026-10-19 (sections 64-72), 35/35 live; calls MV6-C1 to C5 are Troy's to confirm, their defaults built.**
+MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue): the probe passed 2026-10-19 (section 56), designed (sections 57-63), waits on call MV5b-C1. MV6 (provenance and tidy) built 2026-10-19 (sections 64-72), 35/35 live; calls MV6-C1 to C5 are Troy's to confirm, their defaults built. MV7 (projects) designed 2026-10-19 (sections 73-81); MV7a being built at its defaults.**
 
 ---
 
@@ -1698,3 +1698,169 @@ an event is proposed for removal 30 days after its date. Alternatives: at once, 
   pass reads that as its day.
 - **Undoing a learned note that a merge kept brings the merged note back** as current
   (`undo_learned`).
+
+---
+
+## MV7: chat projects
+
+What MV7 changes, in one paragraph:
+- **Projects.** A person can make **projects**: named groups of chats, each with its own notes and
+  its own documents. This is call 13, "Add chat projects whose notes, procedures and documents can
+  be kept to the project, with an 'also use my general memory' switch", taken at its default.
+- **Inside a project.** A chat in a project is given the project's notes, and the person's general
+  notes too while **Also use my general memory** is on. Its documents work the same way, with
+  **Also search My documents**.
+- **Outside a project.** A chat outside every project is given general notes only. What a project
+  keeps stays in it, as in ChatGPT's project-only memory and Claude's per-project memory.
+
+MV7 is built in two parts:
+- **MV7a:** projects, their chats and project memory.
+- **MV7b:** project documents, and past chats kept to their project.
+
+### 73. A project
+
+- **New table `projects`:**
+  - `id`, `owner`, `name` (1-80 characters, unique per person once normalised);
+  - `general_memory` (0/1, default 1);
+  - `general_documents` (0/1, default 1, MV7b);
+  - `created_at`, `updated_at`.
+- **Chats.** `chats.project_id` is null for a chat in no project. A chat is in at most one project.
+- **Moving a chat** into a project, out of one, or between two clears the chat's frozen pinned
+  block (`memory_snapshot`). The next turn is given the notes of where the chat now is.
+- **Instructions are notes.** A project's brief, style guide or checklist is a note of the
+  `procedure` or `instruction` kind kept to the project, pinned when it should go every turn. No
+  separate instructions field: MV1's notes already have bodies, kinds, pins and versions (MV7-C3).
+- **Limits.** At most 100 projects a person.
+
+### 74. Where projects are
+
+- **The sidebar** gets a **Projects** list above Chats.
+  - Each project opens to show its chats, newest first, and has **New chat in this project**.
+  - Chats in no project stay under Chats, grouped by date as today.
+  - **New project** asks for a name only.
+- **The project page**, `/projects/<id>`:
+  - name (rename), **New chat**, its chats;
+  - its notes (the Memory page's note list, kept to the project), and Add a note;
+  - its documents (MV7b);
+  - its two switches;
+  - **Delete project** (section 77).
+- **The chat's header** names its project, with **Move to project** (a list of the person's
+  projects, and No project) in the chat's settings menu.
+- **The Memory page** gets a **Where** filter beside the tag filter: All, General, or one project.
+  A note in a project says so ("In Garden plans"). A note can be moved: **Move to project**, or
+  **Use everywhere** for one in a project.
+
+### 75. Project memory
+
+- **New column `memory_notes.project_id`.** Null is general.
+- **Where a note is kept.**
+  - A note written in a project chat is kept to the project, by every writer: Remember, "Remember
+    that ...", the in-turn `remember` tool, suggestions and Keep automatically. It belongs where
+    it was said (MV7-C2).
+  - A note typed on the project page is kept to the project; on the Memory page, to General.
+  - A suggestion keeps the project of the chat it came from.
+- **What a chat is given:**
+
+| The chat | Pinned block, relevant memory, `search_memory`, the notes a learning pass knows |
+|---|---|
+| In no project | General notes |
+| In a project, Also use my general memory on | The project's notes, then general notes |
+| In a project, the switch off | The project's notes only |
+
+  - "Then": when the pinned block or the relevant budget is full, the project's notes are chosen
+    first.
+  - Relevant memory ranks the pool it is given (`Finder.choose`). That pool is filtered before it is
+    ranked, never after, so a project's notes are not crowded out of a search's top results by
+    general ones.
+- **Connections** (MR9b: `search_notes` over MCP) search general notes only. A connection is
+  another app, and is not in a project (MV7-C4).
+- **Memory servers** (MV5) are sent no exchange from a chat in a project, as section 48 said. In a
+  project chat they are asked only while Also use my general memory is on.
+- **Supersession and the tidy pass stay within one place.** A suggestion may replace only a note of
+  the same project, or a general note when the switch is on. The tidy pass proposes merging only
+  two notes of the same project, or two general notes.
+
+### 76. Project documents (MV7b)
+
+- **A new index scope, `project:<id>`.**
+  - Uploads on the project page go there.
+  - A project chat with Documents on searches that scope, and My documents too while Also search My
+    documents is on.
+  - The same-name replacement rule holds within a project's scope, as it does in My documents.
+- **Folders (MR7) stay general**, found by every chat that searches My documents. A folder kept to a
+  project is not in MV7.
+- **At boot**, a `project:` scope whose project is gone is removed, as a deleted chat's scope is
+  (`Ingest._reconcile`).
+
+### 77. Past chats and deleting a project (MV7b)
+
+- **Past chats:**
+  - In a project chat, past chats (the turn's offer and `search_chats`) are that project's chats, and
+    every chat while Also use my general memory is on.
+  - Outside a project they are chats in no project.
+  - Search chats, the person's own screen, finds every chat, with a Where filter.
+- **Delete project** asks one question with two answers:
+  - **Delete the project and its chats, notes and documents**, with the counts.
+  - **Delete the project, keep its chats and notes**, which become general. Its documents move to My
+    documents, where a name already there is replaced, as an upload of that name would be.
+
+  Either way nothing of it is left under the project's id.
+
+### 78. Store migration 26 to 27
+
+- `projects`;
+- `chats.project_id` and `memory_notes.project_id`, both nullable, with indexes on
+  `(owner, project_id)`.
+- Nothing existing moves: every chat and note is general until the person makes a project.
+
+### 79. Not in MV7
+
+- Sharing a project with another person.
+- A folder kept to a project.
+- A project's own model or instructions field (MV7-C3).
+- Projects in the owner's read-only view of people's chats, beyond the project's name on a chat.
+
+### 80. Risk, tests and acceptance
+
+**High risk**, for a store migration and for changing what models receive. So: one adversarial
+review, sabotage of the new checks, and a real-environment run, for each of MV7a and MV7b.
+
+- **Unit tests:**
+  - a project's notes go only to its chats;
+  - general notes go to a project chat only with the switch on;
+  - each writer keeps a note in the chat's project;
+  - moving a chat clears its frozen block;
+  - the pool is filtered before ranking (a project note found when 50 general notes outrank it);
+  - connections see general notes only;
+  - project chats are not sent to a memory server;
+  - suggestions and tidy stay within a project;
+  - the migration from 26.
+- **MV7b:** the project scope searched only by its chats; past chats kept to the project; both
+  answers to Delete project; the boot reconcile.
+- **Vitest:** the sidebar's projects, the project page, Move to project, and the Where filter.
+- **Live runs:** `mv7a-projects-run.md` and `mv7b-project-documents-run.md`.
+
+### 81. Calls
+
+**MV7-C1 (Troy's to confirm; the default is built): a project's notes stay in it.** *Recommended
+default:* a chat outside a project is never given a project's notes. Alternative: project notes are
+general notes with a label, given everywhere and first in their project. That is weaker isolation,
+and not what either reference does.
+
+**MV7-C2 (Troy's to confirm; the default is built): a note belongs where it was said.**
+*Recommended default:* a note written in a project chat is kept to the project, whoever wrote it.
+Alternative: notes go to General unless the person picks the project. That is simpler, but a
+project's facts then leak into every chat.
+
+**MV7-C3 (Troy's to confirm; the default is built): instructions are notes.** *Recommended
+default:* a project's instructions are its pinned instruction and procedure notes. Alternative: a
+separate instructions box on the project page, as ChatGPT's projects have. That is a second place
+for the same thing, without versions or tags.
+
+**MV7-C4 (Troy's to confirm; the default is built): connections see general notes.** *Recommended
+default:* MCP `search_notes` searches general notes only. Alternative: a connection is granted
+projects one by one.
+
+**MV7-C5 (Troy's to confirm; the default is built): Also use my general memory is on by default.**
+*Recommended default:* on: a new project starts knowing what the person told Workbench. Alternative:
+off, a clean room for each project.
