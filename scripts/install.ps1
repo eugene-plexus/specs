@@ -135,11 +135,11 @@ $PrefixGiven = [bool]$Prefix
 $PIN = @{
     "agent"            = "85ea7b1076fff0e89f028bd248ddce97de0cc1c0"
     "control"          = "2d153b41d43f31ce7f32d6da271a6de23d10ff6d"
-    "gateway"          = "bac6c512cd56ed9f5886bcd2bad2164024b81d30"
+    "gateway"          = "6a614a2fab7bf530b3a5bf54093655dab52fa910"
     "inference-driver" = "9ef3e7db0d06b832dafaf43bf7e89171ec14ecf5"
     "library"          = "ecdfa9fdf85822b3dbeccbabaad35c7deca1667d"
     "tool-driver"      = "9fcc04734ddf3667b356227bc3b9f03fa27669d7"
-    "ui"               = "24b3061d4bfb26bcd2172c263402d326868a547b"  # branch `dist`, not `main`
+    "ui"               = "d4a79fca8aa3db8b335ac0fd65708da274efcfb0"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
