@@ -174,6 +174,36 @@ What this does not change: a root with no passphrase takes the first
 `initialize` that passes its trusted-host check (`trusted_host.py`), as
 before. Resuming shortens that window; closing it is not this slice.
 
+**Built 2026-10-20** (ui `26f67f6`, on Edge with specs `95b2c0d`). One
+adversarial review: no blocker; seven findings fixed. Its real-environment
+run, `scripts/cx2-setup-resume-acceptance.py`, is written and waits for the
+end of the pass (Troy). What building found:
+
+- Every read of the root, and the root sign-in inside enrollment, carries
+  the session as an explicit `bearer`. Without it, the api client took the
+  root's 401 as a dead session and sent the person to `/login` mid-setup.
+  That happens when the root holds a different passphrase (dev-seed, another
+  tab), or when a sealed root is read on a finished install. That 401 now
+  reads "the control root refused this passphrase, although this machine
+  accepted it".
+- The restart choice a resume offers is the agent's only when screen 1
+  wrote it: the machine has joined and both processes agree, or the agent
+  holds something other than its factory default. Otherwise it is the
+  host's recommendation. A failure before the mode step leaves the factory
+  default behind, and reading that as a choice would quietly drop the
+  keyring.
+- The progress reads get 30 s, not the status probe's 10 s, because
+  `GET /v1/node` reads the host firewall.
+- Inputs are disabled while a step runs, so a choice toggled mid-run cannot
+  be shown without being applied.
+- **CX2-C1, open for Troy:** a returning browser meets the gate before
+  setup, and with no session the gate sends it to `/login`. So a
+  half-set-up install asks for the passphrase at sign-in and again on
+  setup, because the root still needs it. Opening `/setup` directly asks
+  once. Asking once on every path needs the agent's open
+  `GET /v1/auth/status` to report `firstRunComplete`, which is a contract
+  change.
+
 ### CX3: one-click run asks first (library, ui; M)
 
 *Confirmed in part.* "Download and run" asks whether to install the engine
