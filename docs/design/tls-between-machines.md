@@ -382,3 +382,107 @@ on one stream.
 | LT-C2 | When does an upgraded install switch to "required"? | **Taken: yes.** By itself, once every enrolled machine has a pin and answers on its machine port,** with a notice on Machines. An expert can turn it back off, with a warning that prompts will cross the LAN in clear text. A new install starts required. |
 | LT-C3 | Mutual TLS in LT1, or later? | **Taken: later.** Tokens authenticate every caller and are encrypted once LT1 lands. Mutual TLS adds "only enrolled machines connect" and connection-bound tokens. It is worth doing, but not at the price of delaying encryption. |
 | LT-C4 | LT2 (clients and browsers) straight after LT1? | **Taken: yes, designed next.** Without it a business LAN still carries most prompts in clear text. Its first decision is where a certificate comes from on a plain install: the owner's domain and ACME, or Eugene's CA pushed to each device (an MSP can do that by policy). |
+
+## 7. Building LT1a
+
+**Landing.** There is no feature branch: Troy's rule is `main` only. LT1a
+lands on `main` in the steps below. Each step changes nothing until step 4
+turns it on, so a `ship.py` run by another session at any point ships
+nothing half-made. Pull before every commit: the console test-run session may
+fix things on `main` meanwhile.
+
+### 7.1 Steps, in landing order
+
+0. **The failing check first:** `scripts/lt1-machine-tls-acceptance.py`.
+   - It follows `row3-per-node-keys-acceptance.py`: real processes on
+     ephemeral loopback ports and temporary state.
+   - The root is control plus `agent-a`, with the gateway grant and a gateway.
+   - The worker is `agent-b`, with an inference-driver over a stub
+     OpenAI-compatible engine.
+   - The worker's advertised address points at a **recording relay**, a TCP
+     tap that keeps every byte both ways.
+   - A prompt carrying a random canary goes through the gateway to the
+     worker. The check asserts that the canary, `Bearer` and `eyJ` are
+     absent from the tap.
+   - **It fails today, and is committed failing.**
+   - The relay doubles as the man-in-the-middle for the sabotage pass: it
+     terminates TLS with its own key, and the caller must refuse it.
+1. **Contracts (specs):**
+   - **The address announcement** takes an optional `tlsPin` (base64url
+     SHA-256 of the SPKI) and `machineUrl`. Both are covered by the node's
+     signature.
+   - **The node record** gains `tlsPins` and `machineUrl`.
+   - **The signed TLS list** (`ep-root-tls+jwt`) gains
+     `nodes: [{name, machineUrl, pins}]`.
+   - **A component** gains `machineUrl` beside `advertiseUrl`. A new caller
+     prefers it when the target has a pin, and an old caller keeps
+     `advertiseUrl`. That is how mixed mode works with no flag.
+2. **Platform `_http.py`, the pinned backend (inert):**
+   - It works per connection: a host and port listed in the pins file get a
+     no-chain context and the SPKI check before the first request byte.
+     Anything else gets `ssl_context()`'s normal verification.
+   - It covers both async and sync clients.
+   - The file comes from `EUGENE_PLEXUS_MACHINE_PINS_FILE`. With no file,
+     behaviour is exactly today's.
+   - Tests:
+     - a pinned peer is accepted;
+     - a wrong pin is refused, with no byte written;
+     - an unlisted `https` URL is verified normally;
+     - plain `http` is untouched.
+   - The `editor` agent copies it into gateway, control, library,
+     inference-driver, tool-driver and site-host. site-host has uncommitted
+     `_http.py` edits as of 2026-10-20, so those are settled first. The
+     agent's diverged copy is changed by hand.
+3. **Control (root first, inert until agents announce):**
+   - It records pins from a correctly signed announcement as a
+     replicated-log entry, and publishes them in the signed list.
+   - It refuses a pin whose signature does not verify.
+4. **Agent, the turn-on:**
+   - **The node's key.** A P-256 TLS key and a self-signed certificate
+     beside `node.yaml`, and its pin.
+   - **The 8083 front.** A same-process switch on the first byte:
+     - TLS goes to a loopback uvicorn with the machine port's routes;
+     - plain HTTP goes to a loopback control forwarder, on the root only.
+     - Both restore the real peer from the front's map of loopback source
+       ports, strip any incoming peer and forwarding headers, and set the
+       peer header themselves.
+   - **The routes.**
+     - `/agent/*` is served in-process, with the real peer in `scope`.
+     - `/control`, `/library`, `/gateway` and `/drivers/<name>` go over
+       loopback, streamed both ways with no 30 s write timeout.
+     - They resolve against this node's own topology only.
+   - **On the root, control moves** to a loopback port, the first free from
+     8084. Local children are given that URL.
+   - **Pins in, pins out.** The agent announces its pin and `machineUrl`. It
+     fetches the signed list with the bundle every 60 s, and writes the pins
+     file for its children.
+   - **Its own calls.** `machineUrl` is served on components and on the
+     node, and the remote leg of `/api/proxy` uses machine URLs.
+5. **UI:** each machine's state on Machines (3.6).
+
+Then the acceptance of record (§5), the sabotage, a Windows worker joined to
+a container root, one adversarial review, and `ship.py`.
+
+### 7.2 Traps found while planning (2026-10-20)
+
+- **A loopback hop makes a remote caller look local.**
+  - `peer_of` trusts the peer header only when the immediate peer is
+    loopback (`A/peer.py:119-131`, `C/peer.py`).
+  - A raw byte pump on 8083 would therefore let any machine on the LAN name
+    its own address. That means unlimited guesses past control's sign-in
+    rate limit, which is keyed on that address
+    (`C/routes/administration.py:49-56`, `C/routes/auth.py:249`).
+  - Every hop strips incoming peer and forwarding headers and sets its own,
+    as `/api/proxy` already does (`A/routes/proxy.py:627-632`).
+- **`/link` pages identify the person by the loopback socket's owner**
+  (`A/loopback_peer.py`). That is why the agent's own API is served
+  in-process on the machine port: no loopback socket stands in for a remote
+  caller.
+- **A standby control takes the first free port from 8083**
+  (`A/standby.py:39,138`). With the agent on 8083, it takes the next.
+- **site-host's pinned client sets `transport._pool`,** which is private to
+  httpx. The platform version builds its pool through httpcore's public
+  classes, or pins httpx's range with a test that fails when the attribute
+  moves.
+- **Python's `ssl` has no verify callback.** Pins are checked after the
+  handshake and before the first request byte (`S/root_link.py:199-228`).
