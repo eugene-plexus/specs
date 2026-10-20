@@ -80,7 +80,7 @@ Eugene's own keys:
 | Traffic | Ends | Who controls both ends | This design |
 | --- | --- | --- | --- |
 | **Inside the install:** gateway → driver, worker → control, console hops, standby → root, Library uploads | Eugene ↔ Eugene | Eugene | **LT1** |
-| **Into the install:** a laptop's Claude Code or Open WebUI → the gateway on 8080, a browser → the console on 8079, a browser → an app, app sign-in redirects | someone's client ↔ Eugene | Only one end | **LT2**, designed separately |
+| **Into the install:** a laptop's Claude Code or Open WebUI → the gateway on 8080, a browser → the console on 8079, a browser → an app, app sign-in redirects | someone's client ↔ Eugene | Only one end | **LT2**, [`tls-for-clients.md`](tls-for-clients.md) |
 
 **After LT1 alone, prompts from people's apps to the gateway still cross the
 LAN in clear text.** On a business LAN that is most of the prompts.
@@ -345,7 +345,7 @@ security event in the log, not a retry.
 | --- | --- | --- |
 | **LT1a** | Keys, pins, the signed list, 8083 as the machine port (the first-byte switch, control behind it) and its forwarding, `https` advertise URLs, pinned callers in every repo's `_http.py`, mixed mode, Machines status | High (auth, transport): one adversarial review |
 | **LT1b** | Required: plain refused (the 8083 switch's plain branch closes), the loopback bind, join over TLS with the pin in the join token | High (enrolment, binds) |
-| LT2 | Clients and browsers: the HTTPS entry point on every install | Designed separately |
+| LT2 | Clients and browsers: the HTTPS entry point on every install | Designed in [`tls-for-clients.md`](tls-for-clients.md) |
 
 ## 5. Acceptance
 
@@ -381,7 +381,7 @@ on one stream.
 | LT-C1 | Which port carries machine traffic? (Revised: Troy wants no new port.) | **Taken: 8083 on every node.** It is already the port for machines only, and the root already publishes it. On the root, control moves behind the agent to a loopback port. During the switch, 8083 tells TLS from plain HTTP by the first byte, and only machines ever pass through that. Rejected: a new port (one more to publish and proxy), and sharing 8079 (every console connection would pass through the switch). |
 | LT-C2 | When does an upgraded install switch to "required"? | **Taken: yes.** By itself, once every enrolled machine has a pin and answers on its machine port,** with a notice on Machines. An expert can turn it back off, with a warning that prompts will cross the LAN in clear text. A new install starts required. |
 | LT-C3 | Mutual TLS in LT1, or later? | **Taken: later.** Tokens authenticate every caller and are encrypted once LT1 lands. Mutual TLS adds "only enrolled machines connect" and connection-bound tokens. It is worth doing, but not at the price of delaying encryption. |
-| LT-C4 | LT2 (clients and browsers) straight after LT1? | **Taken: yes, designed next.** Without it a business LAN still carries most prompts in clear text. Its first decision is where a certificate comes from on a plain install: the owner's domain and ACME, or Eugene's CA pushed to each device (an MSP can do that by policy). |
+| LT-C4 | LT2 (clients and browsers) straight after LT1? | **Taken: yes, designed next.** Without it a business LAN still carries most prompts in clear text. Its first decision is where a certificate comes from on a plain install: the owner's domain and ACME, or Eugene's CA pushed to each device (an MSP can do that by policy). That decision is LT2-C1 in [`tls-for-clients.md`](tls-for-clients.md). |
 
 ## 7. Building LT1a
 
