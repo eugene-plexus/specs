@@ -8,7 +8,7 @@ Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled pe
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
 default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.
 MV4 (Memory as an app) built 2026-10-19; calls MV4-C1 to C3 are Troy's to confirm, their defaults built.
-MV5 (memory servers) designed 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built.**
+MV5a (memory servers) built 2026-10-19; Troy took MV5-C1 to C3 at their defaults the same day; MV5-C4 is his to confirm, its default built. MV5b (Hindsight from the catalogue) waits on its probe (section 52).**
 
 ---
 
@@ -1243,3 +1243,41 @@ describes.
 receives chats from when it is connected. Backfill would send months of chats to a server the person
 just met, at the server's ingest cost (Graphiti took 626 s for one sentence on a 12B; research 1).
 Alternative: a "Send my past chats" button with a count and an estimate, in a later slice.
+
+### 55. What building found
+
+- **Built as designed, with these changes:**
+  - **No recall check after a chat's `forget`.** Workbench keeps only ids of what it sent, never
+    the words, so once a chat is deleted there is nothing to recall with. The check stays on
+    Delete all memory: `purge`, then `list`, and the result names what is still listed.
+  - **What a server cannot do is said on its Settings part** (one line per missing verb) and in
+    the result of Delete all memory, not in the delete questions.
+  - **`search_memory` does not reach the server** (section 49): it would need its own replay rule.
+  - **The chat's title goes only under Open.** Under Strict and Standard `context` is "A Workbench
+    chat": a title may be drawn from an answer or pasted text (review).
+  - **Eugene's own ports are refused on any private address under `outside`** (8079-8083 and the
+    container's 8279-8283). A container cannot see its host's addresses, so "this host" alone
+    left the host's LAN address open to blind requests at the agent or gateway (review).
+- **The address rule is checked where the connection is made.** A custom `httpcore2` network
+  backend resolves the host itself, refuses it when any address it resolves to is refused, and
+  dials the address it checked, so DNS rebinding finds nothing to rebind. IPv6 forms that carry an
+  IPv4 address (mapped, compatible, NAT64, 6to4, Teredo) are judged by the IPv4 address. Bodies
+  are asked for and accepted uncompressed only, so the 2 MiB cap counts what is read.
+- **The turn's two seconds are a hard limit.** Each call runs as its own task, waited on for its
+  limit; a session that is slow to close is cancelled and left to close in the background.
+- **The Courier** (background sender) settles each row on its own: any failure backs off (1, 5,
+  30, 60 minutes) and a row is given up a day after it was queued. A chat deleted after its
+  exchange was sent starts its day then, not when it was sent (the review's blocker: a chat
+  deleted a day after its answer was never forgotten). An exchange sent while its chat was being
+  deleted is queued to be forgotten like any other. A new token for the same address keeps what
+  is still to be forgotten; another address drops it.
+- **A server forgets only by the id it kept.** `forget` is used only when `retain` takes
+  `document_id`; otherwise forgetting would report success for nothing.
+- **Verification:** 21 unit and HTTP tests (`tests/test_memory_servers.py`), Vitest for the
+  Settings part and the drawer, sabotage `--label MV5` (10 cases), and the live run
+  (`docs/acceptance/mv5-memory-servers-run.md`) with the reference server
+  `scripts/m-memory-server.py` in its own process. One adversarial review: its blocker and should-fix
+  findings are fixed; the rest are listed in the run record.
+- **Not closed:** a signed-in person can still tell an open port from a closed one on a private
+  address by the error, which allowing LAN servers implies. Workbench refuses only Eugene's own
+  ports there.
