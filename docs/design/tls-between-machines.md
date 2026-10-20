@@ -385,11 +385,19 @@ on one stream.
 
 ## 7. Building LT1a
 
-**Landing.** There is no feature branch: Troy's rule is `main` only. LT1a
-lands on `main` in the steps below. Each step changes nothing until step 4
-turns it on, so a `ship.py` run by another session at any point ships
-nothing half-made. Pull before every commit: the console test-run session may
-fix things on `main` meanwhile.
+**Landing (Troy, 2026-10-20: branch only).**
+- LT1a and LT1b are built together on the branch **`lt1`**, in worktrees,
+  and merged once.
+- The steps below are the build order. They no longer have to be inert one
+  by one, since nothing reaches `main` until the merge.
+- **The one set of checks is at the end, before the merge:**
+  - the suites for every touched repo, run by `runner`;
+  - the Docker-pair check of record and its sabotage;
+  - the Windows platform check;
+  - one adversarial review;
+  - CI started by hand on `lt1`.
+- **Then fast-forward, then `ship.py`.** Rebase onto `main` first if it
+  moved. Troy then tests on Edge.
 
 ### 7.1 Steps, in landing order
 

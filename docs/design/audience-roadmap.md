@@ -346,5 +346,7 @@ neither closes nor repeats them.
   use their own ports and folders, and never touch the live install.
   Stopping Amish_Station needs Troy's word each time.
 - **Rebuild `dist` whenever the UI changes** and re-pin both installers.
-- Commit straight to `main` with a DCO sign-off, and **stage by path**:
+- Work on a branch, merged to `main` by fast-forward after one set of checks
+  (CLAUDE.md, "Branch only", Troy 2026-10-20). Sign off for the DCO, and
+  **stage by path**:
   another assistant may be working in the same checkouts.
