@@ -53,7 +53,7 @@ model answering is Gemini.
 | GS6 | A Gemini chat asking for search | **Eugene's search, like every model** (no Gemini-native grounding path) |
 | GS7 | Which account first | **The person sets the order**, on the Routing page as models are ordered there; unset, today's rule (free first, own machine first), shown as the order in effect |
 | GS8 | Domain filters | **A `site:` hint, sources filtered, and Google's answer left out** (it may draw on filtered pages and cannot be edited) |
-| GS9 | Location | **Named as ignored for now**; saying it in words to the searching model is a later slice |
+| GS9 | Location | **Said in words to the searching model** (built 2026-10-20, tool-driver#4): "The person searching is in Austin, Texas, US", from city, region and country, cleaned to words; a location with none of those is still named as ignored |
 
 ## 3. The shape
 
