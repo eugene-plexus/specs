@@ -5331,6 +5331,17 @@ components:
             no keyring choice, and sets the control root to the same
             mode. Absent from an agent that predates the field, and false
             everywhere else.
+        firstRunComplete:
+          type: boolean
+          description: |
+            The agent config's `firstRunComplete`: true once first-run
+            setup has finished (screen 2's Finish). Here so the console's
+            gate can tell a half-set-up install from a finished one before
+            it has a session (console-ux-pass.md CX2-C1). The half-set-up
+            one goes to setup, which signs in and carries on in one
+            passphrase prompt; the finished one goes to sign-in. Present
+            only when `initialized` is true, and absent from an agent that
+            predates the field, so a console treats absent as finished.
 
     ClientKeyLimits:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyLimits'
