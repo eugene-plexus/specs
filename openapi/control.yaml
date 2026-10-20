@@ -4151,12 +4151,20 @@ components:
         Every machine's TLS door and the keys it may present (LT1). A node
         that holds it reaches another node's agent, and this root, only
         over TLS to a key listed here.
-      required: [iat, required, nodes, controlPins]
+      required: [iat, version, required, nodes, controlPins]
       properties:
         iat:
           type: integer
           format: int64
-          description: When it was signed. A node refuses a list older than the one it holds.
+          description: When it was signed.
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+          description: |
+            Rises by one each time the list changes. A node refuses a list
+            whose version is lower than the one it holds, so an old list
+            cannot bring back a key that was dropped.
         required:
           type: boolean
           description: |
