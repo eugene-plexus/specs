@@ -3957,6 +3957,20 @@ components:
             a companion driver on one host routable from a gateway on
             another. Absent on a single-host install, where the two would
             say the same thing.
+        machineUrl:
+          type: string
+          format: uri
+          readOnly: true
+          description: |
+            Where another machine reaches this component **over TLS**
+            (LT1): this node's machine port with the component's path,
+            `https://<host>:8083/drivers/<name>`. Present for an
+            inference-driver or tool-driver this agent spawns, once the
+            node has a machine port. A caller that holds the node's pin
+            (from the root's signed machine list) prefers it to
+            `advertiseUrl`; one that does not, or an older one, keeps
+            `advertiseUrl`, and that is how an install with old and new
+            machines keeps working.
         spawn:
           $ref: "#/components/schemas/SpawnConfig"
           description: |
@@ -4339,6 +4353,8 @@ components:
             Where other hosts reach this agent — the `advertiseUrl` config
             field, or the value derived at enrollment when none was set.
             What the control root holds as this node's `Node.url`.
+        machine:
+          $ref: '#/components/schemas/MachinePort'
         trustBundleVersion:
           type: integer
           format: int64
@@ -4482,6 +4498,55 @@ components:
             compare and is never offered an update.
         container:
           $ref: "#/components/schemas/ContainerInstall"
+
+    MachinePort:
+      type: object
+      description: |
+        This node's machine port (LT1, `docs/design/tls-between-machines.md`):
+        the one TLS door every other machine of the install reaches it
+        through, and what this node holds about the others.
+      required: [pin, listening, required]
+      properties:
+        url:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: |
+            Where other machines reach it, as announced to the root:
+            `https://<advertise host>:<port>`. The port is 8083, shifted by
+            the same offset as the agent's advertised port, or the
+            `machineUrl` config field. `null` while this node advertises
+            no address.
+        port:
+          type: integer
+          description: The port it listens on here.
+        pin:
+          type: string
+          description: |
+            Base64url SHA-256 of this node's machine key's
+            SubjectPublicKeyInfo: what it registered, and what every other
+            machine checks.
+        listening:
+          type: boolean
+        error:
+          type:
+            - string
+            - "null"
+          description: Why it is not listening, in the words of the failure.
+        required:
+          type: boolean
+          description: |
+            The install requires encryption between machines, from the
+            root's signed list: plain HTTP from another machine is refused
+            here, and plain HTTP to another machine is refused.
+        listAgeSeconds:
+          type:
+            - integer
+            - "null"
+          description: |
+            Seconds since this node last took the root's signed machine
+            list. `null` when it holds none.
 
     InstalledComponent:
       type: object

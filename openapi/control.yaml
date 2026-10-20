@@ -1855,6 +1855,35 @@ paths:
         '503':
           $ref: 'components/common.yaml#/components/responses/Problem'
 
+  /v1/trust/machines:
+    get:
+      tags: [control]
+      operationId: getMachineList
+      summary: Every machine's TLS door and key, signed by this root's identity.
+      security: []
+      description: |
+        **TLS between machines (LT1).** Every node's machine URL and the
+        keys it registered under its own signature, plus the keys of the
+        machine port in front of this root, signed with this root's
+        identity key. Agents fetch it with the trust bundle every minute,
+        and at once when the bundle changes, keep it on disk, and give
+        their children the table built from it.
+
+        The same rules as the bundle: a bearer, when sent, must verify, and
+        it is not on the entry point's public route. A sealed root answers
+        with the last list it signed; one that has never signed answers 503.
+      responses:
+        '200':
+          description: The current list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignedMachineList'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '503':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
   # -------- topology: install-wide --------
 
   /v1/components:
@@ -3905,6 +3934,27 @@ components:
             runtime. Recorded verbatim from `EnrollmentRequest.url`; the
             agent is the one that knows how it reached this root, and this
             root does not guess from a source address.
+        machineUrl:
+          type:
+            - string
+            - "null"
+          format: uri
+          description: |
+            This node's machine port (LT1): the one TLS door other
+            machines reach it through, `https://<host>:8083`. From its
+            signed announcement or its enrolment. `null` on a node that
+            runs a version without one.
+        tlsPins:
+          type: array
+          items:
+            $ref: '#/components/schemas/TlsPin'
+          description: |
+            The keys this node's machine port may present, registered
+            under its signature. Every other machine refuses a connection
+            that presents any other. Empty on a node without a machine
+            port.
+        machineTls:
+          $ref: '#/components/schemas/MachineLink'
         role:
           $ref: '#/components/schemas/NodeRole'
         reachable:
@@ -4040,6 +4090,113 @@ components:
             it. Observation, not applied state: a standby has not seen
             what this root saw, so it is never replicated.
 
+    MachineUrl:
+      type: string
+      format: uri
+      description: |
+        Where other machines reach this node's machine port (LT1,
+        `docs/design/tls-between-machines.md`): `https://<host>:<port>`,
+        8083 unless the node's published ports are remapped. Paths under
+        it reach this node's own listeners: `/agent`, `/control` (on the
+        root) and `/drivers/<name>`.
+
+    TlsPin:
+      type: string
+      pattern: '^[A-Za-z0-9_-]{43}$'
+      description: |
+        Base64url (no padding) of the SHA-256 of a machine key's
+        SubjectPublicKeyInfo, the form Job Sites pin too.
+
+    MachineLink:
+      type: object
+      description: |
+        How this root last reached the node, as an observation: never
+        replicated, and absent until it has polled.
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [encrypted, no_key, unreachable, refused, unknown]
+          description: |
+            * `encrypted`: the last poll went over TLS to the key the node
+              registered.
+            * `no_key`: the node runs a version without a machine port, so
+              traffic to it is plain (refused once encryption is required).
+            * `unreachable`: it has a key on record and its machine port did
+              not answer.
+            * `refused`: its machine port presented a key it did not
+              register. A security event; nothing was sent.
+            * `unknown`: not polled yet.
+        detail:
+          type:
+            - string
+            - "null"
+          description: The reason in the probe client's words, for the last three.
+
+    SignedMachineList:
+      type: object
+      required: [jws]
+      properties:
+        jws:
+          type: string
+          description: |
+            A JWS compact serialization with header
+            `{"alg": "EdDSA", "typ": "ep-machines+jwt"}` whose payload is a
+            `MachineList`, signed with this root's identity key: the key
+            every node pinned at enrolment.
+
+    MachineList:
+      type: object
+      description: |
+        Every machine's TLS door and the keys it may present (LT1). A node
+        that holds it reaches another node's agent, and this root, only
+        over TLS to a key listed here.
+      required: [iat, required, nodes, controlPins]
+      properties:
+        iat:
+          type: integer
+          format: int64
+          description: When it was signed. A node refuses a list older than the one it holds.
+        required:
+          type: boolean
+          description: |
+            Encryption between machines is required (`machineEncryption`):
+            no plain HTTP between machines, and drivers and control bind
+            to loopback.
+        controlPins:
+          type: array
+          items:
+            $ref: '#/components/schemas/TlsPin'
+          description: |
+            The keys the machine port in front of this control root may
+            present, given to it by its own machine's agent. A node reaches
+            the root at the address it joined with, over TLS to one of
+            these.
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/MachineListNode'
+
+    MachineListNode:
+      type: object
+      required: [name, pins]
+      properties:
+        name:
+          type: string
+        url:
+          type:
+            - string
+            - "null"
+          description: The agent address other machines know it by (`Node.url`).
+        machineUrl:
+          type:
+            - string
+            - "null"
+        pins:
+          type: array
+          items:
+            $ref: '#/components/schemas/TlsPin'
+
     NodeRole:
       type: string
       enum:
@@ -4128,6 +4285,13 @@ components:
             **Shown once.** Not retrievable afterwards and not stored in
             recoverable form — a lost token is re-minted, never looked
             up.
+
+            **It carries the root's machine key (LT1)** when this root has
+            one: `<secret>.<pin>`, the pin a `TlsPin`. A joining machine
+            enrols over TLS to the root's machine port and checks that key
+            before it sends the token, so nobody on the network can answer
+            in the root's place. The root takes the token with or without
+            the suffix.
         expiresAt:
           type: string
           format: date-time
@@ -4249,6 +4413,10 @@ components:
             interface it used to reach this root; a root deriving it from
             the request's source address would be right on a flat mesh
             network and wrong behind anything else.
+        machineUrl:
+          $ref: '#/components/schemas/MachineUrl'
+        tlsPin:
+          $ref: '#/components/schemas/TlsPin'
         agentVersion:
           type: string
         os:
@@ -4304,6 +4472,15 @@ components:
             stops one node's announcement being replayed against
             another's record.
 
+            **With `machineUrl` or `tlsPin` in the body (LT1), the object
+            signed holds them too**, under the same names, so the key a
+            node registers is covered by the same signature as its
+            address: `{"machineUrl": …, "name": …, "sequence": …,
+            "tlsPin": …, "url": …}`, keys sorted, holding exactly the
+            ones the body holds. An announcement without either signs
+            the three fields above, so an older node's announcement
+            verifies as before.
+
             **Verified against the raw request body, never against a
             parsed `url`.** An OpenAPI `format: uri` becomes a URL type
             in most generators, and those normalize — Pydantic's
@@ -4314,6 +4491,10 @@ components:
             happening. A signature is over bytes on the wire; `format:
             uri` stays here because the validation and the generated
             clients are still worth having.
+        machineUrl:
+          $ref: '#/components/schemas/MachineUrl'
+        tlsPin:
+          $ref: '#/components/schemas/TlsPin'
 
     NodeAddressAck:
       type: object
