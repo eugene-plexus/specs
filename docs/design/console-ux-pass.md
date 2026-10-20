@@ -349,6 +349,43 @@ leaked key cannot be revoked while models are stopped. Move the card to a
 page under Gateway that always renders; Home keeps a summary; Settings,
 Apps and Metrics' per-key usage link to it.
 
+**Design (2026-10-20).**
+
+- **`/connect`, "Connect apps"**, the first page under Gateway (before
+  Metrics and Routing): the gateway's address is the front door's own. The
+  icon is a plug, and the page belongs to the `gateway` branch in the tree.
+- **It always renders the whole card**: address and its live check, model,
+  keys (make, limit, turn off) and the per-app recipes. With no chat model
+  served, the model row says nothing is running, the recipes carry
+  `MODEL_ID`, and one line says so, but the address, its check and every key
+  action work. The data is the same as Home's: the agent's node and
+  components for the address, the gateway's model list, the root's
+  placement for which registry answers. The address guess moves from Home
+  into one helper both pages call.
+- **Home keeps a summary**, always shown: the address it would hand an app,
+  the number of live keys, and "Connect apps →". A Home opened at the old
+  `/#use-from-apps` goes to `/connect`.
+- **Links:** Settings' "Keys for your apps" topic → `/connect`; Apps and an
+  app's own page ("listed on Home") → Connect apps; Metrics' "Usage by
+  client key" gains "Manage keys on Connect apps".
+
+**Built 2026-10-20** (ui `d6ef792d`). Its run,
+`scripts/cx5-connect-apps-acceptance.py`, is written and waits for the end
+of the pass. What building found:
+
+- The card needed no change to work with no model. It already said
+  "nothing is running" and kept `MODEL_ID` in the recipes; only its one
+  caller hid it. The page adds the plain sentence above it, and a separate
+  one when the gateway itself did not answer.
+- The address guess and the saved correction's storage key moved to
+  `lib/connectApps.ts`, so Home's line and the card show the same address,
+  including a correction made on the page.
+- Home's line reads the key registry itself for its count. When the
+  registry cannot be read it leaves the count out rather than saying "no
+  keys".
+- Navigation gained a `Plug` icon. Gateway now has three screens, and the
+  console fifteen.
+
 ### CX6: remove a machine (ui; M; high risk)
 
 *Confirmed.* `DELETE /v1/nodes/{name}` revokes a machine's enrollment, and
