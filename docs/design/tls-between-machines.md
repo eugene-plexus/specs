@@ -1,8 +1,7 @@
 # TLS between machines
 
-**Status: designed 2026-10-20. Troy took LT-C2 (yes), LT-C3 (later) and LT-C4
-(yes) the same day. LT-C1 is revised to 8083, as he asked for no new port, and
-waits for his word.**
+**Status: designed 2026-10-20. Troy took every call the same day: LT-C1 8083
+(no new port), LT-C2 yes, LT-C3 later, LT-C4 yes.**
 
 Troy, 2026-10-20: *"Let's make TLS between machines change #1. This is more
 important than what we learned from DeepInfer."* He also agreed to the route:
@@ -105,7 +104,7 @@ device. That is an extension of the container's HTTPS entry point
 
 ### 3.1 One TLS door per machine: the machine port
 
-**The machine port is 8083 on every node (LT-C1, revised).** Troy wants no new
+**The machine port is 8083 on every node (LT-C1, taken).** Troy wants no new
 port. 8083 already exists, and it is already the port for machines only: the
 container docs call it "the control root: enrollment and log replication, for
 every GPU machine that joins", and no browser uses it.
@@ -379,7 +378,7 @@ on one stream.
 
 | # | Question | Recommended |
 | --- | --- | --- |
-| LT-C1 | Which port carries machine traffic? (Revised: Troy wants no new port.) | **8083 on every node.** It is already the port for machines only, and the root already publishes it. On the root, control moves behind the agent to a loopback port. During the switch, 8083 tells TLS from plain HTTP by the first byte, and only machines ever pass through that. Rejected: a new port (one more to publish and proxy), and sharing 8079 (every console connection would pass through the switch). |
+| LT-C1 | Which port carries machine traffic? (Revised: Troy wants no new port.) | **Taken: 8083 on every node.** It is already the port for machines only, and the root already publishes it. On the root, control moves behind the agent to a loopback port. During the switch, 8083 tells TLS from plain HTTP by the first byte, and only machines ever pass through that. Rejected: a new port (one more to publish and proxy), and sharing 8079 (every console connection would pass through the switch). |
 | LT-C2 | When does an upgraded install switch to "required"? | **Taken: yes.** By itself, once every enrolled machine has a pin and answers on its machine port,** with a notice on Machines. An expert can turn it back off, with a warning that prompts will cross the LAN in clear text. A new install starts required. |
 | LT-C3 | Mutual TLS in LT1, or later? | **Taken: later.** Tokens authenticate every caller and are encrypted once LT1 lands. Mutual TLS adds "only enrolled machines connect" and connection-bound tokens. It is worth doing, but not at the price of delaying encryption. |
 | LT-C4 | LT2 (clients and browsers) straight after LT1? | **Taken: yes, designed next.** Without it a business LAN still carries most prompts in clear text. Its first decision is where a certificate comes from on a plain install: the owner's domain and ACME, or Eugene's CA pushed to each device (an MSP can do that by policy). |

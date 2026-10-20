@@ -6,7 +6,7 @@
   clear text today: prompts, answers and tokens. LT1a (node TLS keys, pins in a root-signed
   list, one machine port per node through its agent, pinned callers) and LT1b (required, the
   loopback bind, a pinned join) come first. LT2 (clients and browsers into the install) is
-  designed next. Calls LT-C1 to C4 are Troy's. It goes ahead of the DeepInfer candidates below.
+  designed next. All four calls were taken 2026-10-20 (8083, no new port). It goes ahead of the DeepInfer candidates below.
 - **Built 2026-10-18: SD1, [speculative decoding](speculative-decoding.md) for llama.cpp**
   ([record](../acceptance/sd1-speculative-decoding.md)). It came from two audience passes on
   2026-10-18: 17 setups from r/LocalAIServers (four run MTP), then YouTube benchmark creators.
