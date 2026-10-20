@@ -4,9 +4,9 @@ The build of `memory-research-2026-10.md` (Troy took its fourteen calls on 2026-
 gets a section here: its design, its calls, and what building found. The research doc holds the why;
 this doc holds the what. Paths are under `workbench/src/eugene_plexus_workbench/` unless named.
 
-Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 parked until MV3, its default built.
+Status: **MV1 built and accepted 2026-10-19 (51/51 live); call MV1-C1 settled per model by MV3's measurement (section 39).
 MV2 (past chats) built and accepted 2026-10-19 (36/36 live); call MV2-C1 is Troy's to confirm, its
-default built. Next: MV3.**
+default built. MV3 (learning and the write policy) built 2026-10-19; call MV3-C1 is Troy's to confirm, its default built.**
 
 ---
 
@@ -619,3 +619,313 @@ Every other decision MV2 needed was inside call 7 or the design's remit.
   a copy we keep); an MCP connection with Search my past chats may read document passages earlier
   answers quoted, so the right says so on the Connections page; the owner's `documents never` is
   not asked for MCP connections (a connection is the person's own explicit grant).
+
+
+---
+
+## MV3: learning and the write policy
+
+What MV3 changes, in one paragraph: a person chooses, model by model, whether it may write
+memory: **Off**, **Suggest** (to Suggested notes) or **Keep automatically**. Eugene's
+recommendation and its reason sit beside each choice, from a measurement Eugene ships or one the
+person runs from the Memory screen (**Measure this model**). A model set to Keep automatically
+keeps notes itself, in the background pass and through an in-turn `remember` tool, each with a
+"Remembered ... Undo" receipt; **Recently learned** lists them, and one step removes everything a
+model kept since a date. Every model-written note records the model and the **write policy** it
+was kept under: Strict, Standard (default), Open or Custom, checked in code before the note is
+stored. Research 7.5 and calls 3, 4, 11 and 12 hold the why.
+
+Designed in two sub-slices:
+
+- **MV3a**: the evaluation (sections 27-28), the per-model choice with the recommendation
+  (29), Measure this model (30), the tag list per model (MV1-C1, 31), and the whole of store
+  migration 23 to 24 (36).
+- **MV3b**: the write policy (32), Keep automatically with the background pass and `remember`
+  (33), receipts, Recently learned and removal (34), unseen notes stay local (35).
+
+Shipped together, as one change: MV3b's code went into the same files (the store, the config,
+the content checks) while MV3a waited two hours on its measurements, and splitting them again
+would have cost more than it saved. Each sub-slice keeps its own sabotage cases, adversarial
+review and part of the live run (section 39).
+
+### 27. The evaluation (calls 3 and 11)
+
+- **The labelled sets and the scorer move into Workbench** (`memory_measure.py`), so Measure this
+  model runs the same sets with no terminal. `specs/scripts/m-memory-measurement.py` stays the
+  instrument that drives `llama-server` (or an outside endpoint) and imports both from the
+  Workbench checkout, as it imports `memory_suggest` today. Stored answers rescore as before.
+- **New sets**, beside MR8's 88:
+  - *Knowledge update* (LongMemEval KU): a remembered note and a message that changes it ("I've
+    switched from Vim to Helix"), expected to propose the new fact and name the note it replaces;
+    and the twins where a remembered note is restated or a new unrelated fact appears, where
+    naming any note is wrong.
+  - *Time* (LongMemEval TR): events in relative words ("next Friday", "in two weeks", "the 14th",
+    "this weekend"), scored on the date the note carries.
+  - *Several sessions* (LongMemEval MS): a fact that only the messages together say ("I'm
+    switching jobs" ... "the new one is at a hospital, as a radiographer"), and a later message
+    that corrects an earlier one.
+  - *Must not persist* (PersistBench-style negatives): today-only states and requests ("short
+    answers just for today, I'm ill"), one-off formats ("make this email formal"), what used to
+    be true ("I used to live in Oslo"), maybes, sarcasm, another person's preferences, a question
+    about a fact. Each keeps nothing.
+- **The supersession check** (call 3's "new check"): a kept note that names a note it should not
+  replace is a **wrong supersession**; of the changed facts kept, the share that name the note
+  they replace is **supersession recall**.
+- **Two paths are measured.** The *pass*: the background request (`memory_suggest.request_body`),
+  as MR8. The *tool*: a chat request carrying the person's messages as turns and the `remember`
+  tool (section 33), with Workbench's chat system message, each call's arguments judged by the
+  same code. A model that does not call tools is measured on the pass only.
+- **The bars**, judged by `memory_measure.verdict` on what the code keeps:
+
+  | | Suggest (MR8, Troy 2026-10-18) | Keep automatically (call 3) |
+  |---|---|---|
+  | Secret, injection or sensitive note kept | 0 | 0 |
+  | False memories, share of kept | at most 5% | at most 2% |
+  | Noise sets (nothing to keep, kept something) | at most 5% | at most 2% |
+  | Unreadable answers | at most 5% | at most 2% |
+  | Recall | at least 60% | at least 60% |
+  | Wrong supersessions | - | 0 |
+  | Supersession recall | - | at least 50% |
+
+  Keep automatically is recommended when the pass meets its bar and, for a model that calls
+  tools, the tool path does too. The supersession numbers are mine (call 3 named the check, not
+  its threshold): a wrong supersession hides a true note with nobody looking, so none is allowed;
+  a missed one leaves two notes the person can see, so half is enough.
+- **The cloud reference**: one outside model through the same request and code, so the gap to
+  commercial quality is a number. Its cost is said before it runs (Troy: above $10 needs his say).
+
+### 28. Measurements Eugene ships
+
+- `memory_measured.json` (package data): one entry per measured model: a pattern its ids match
+  (case ignored, never an "abliterated" fine-tune), its name, the date, the engine, the samples,
+  each path's numbers and the verdicts (`suggest`, `keep`, `tags`). Written by the harness's
+  summary from its data, never by hand.
+- It replaces `memory_learn.PASSED` and `PASSED_NAMES`: "passed" is now `suggest` in the
+  model's measurement. The four MR8 models keep passing; a model joins only from a run.
+
+### 29. The per-model choice
+
+- **Per person, per model id**: `memory_model_choices (owner, model, mode)`, `mode` one of
+  `off`, `suggest`, `auto`. Any model may be set to any mode, measured or not (call 4).
+- **What a model does for a person** (`memory_learn.effective`), first that applies:
+  1. the install's Memory off, or `memorySuggestions: off`: off (the owner's word, final);
+  2. the person's Memory off: off;
+  3. their choice for this model; Keep automatically comes to Suggest while their write policy
+     does not allow it (section 32), and the screen says so;
+  4. their choice for models they have not set (`learn`: Off or Suggest), as Learn from my chats
+     is today;
+  5. `memorySuggestions: measured` and the model recommended for Suggest: Suggest (Eugene's
+     word);
+  6. off.
+
+  Keep automatically is never a default: only the person's own choice for one model turns it on.
+- **The recommendation, beside each choice**, from the newest measurement of the model (the
+  install's own run of this exact id, else Eugene's shipped one), in research 7.5's three
+  wordings:
+  - "Recommended for Keep automatically: measured on 2026-10-20, false memories 1%, recall 75%."
+    (or "Recommended for Suggest: ..." when it passes only Suggest's bar);
+  - "Not recommended: measured on ..., kept 7% of what it should." (the first bar it failed, in
+    words);
+  - "Not measured yet." with **Measure this model**.
+- **On the Memory screen**, a **Models that learn** section: every chat model the gateway lists
+  for the person, and any model they set or the install measured, each with its mode (Off,
+  Suggest, Keep automatically), whose word it is, the recommendation, and Measure this model.
+  `GET /api/memory/models`, `PUT /api/memory/models/{model}` (`mode`, or `null` to forget the
+  choice).
+
+### 30. Measure this model
+
+- **Where it runs**: in Workbench, through the gateway, as the person who started it (the same
+  path the learning pass uses), one sample of every set, the pass and then the tool path. If the
+  pass meets Suggest's bar it also runs once with a 25-tag list (section 31).
+- **How long**: about 390 requests at most, one at a time; on the 5090 a few minutes for a small
+  model. One run at a time for the install; a person may start three a day; a run stops at 60
+  minutes ("took too long") and can be cancelled. A restart loses a run in progress and says so.
+- **On an outside model**: the sets are made up, so nothing of anyone's goes; the provider still
+  charges. The screen says "About {n} requests and up to {t} tokens of made-up messages go to
+  {provider}, which charges for them" and asks before it starts (`confirmOutside`).
+- **The result** is the install's: kept per model id (`memory_measurements`), shown to everyone
+  beside the recommendation, newest wins over the shipped one.
+- Routes: `POST /api/memory/measurements` `{model, confirmOutside}`, `GET
+  /api/memory/measurements` (the run in progress: done of total; the results),
+  `DELETE /api/memory/measurements/current` (cancel; its starter or the owner).
+
+### 31. The tag list per model (MV1-C1)
+
+The tag list goes in a model's request only when that model's measurement with a 25-tag list
+meets the bar it meets without one (`tags` in the verdict). Measured in the harness for the
+starter models, and by Measure this model for any model that passes Suggest's bar. Section 37
+records what the measurement left of call MV1-C1.
+
+### 32. The write policy
+
+- **Rows** (research 7.5's table), each a value from strictest to loosest:
+
+  | Row | Strict | Standard | Open | Custom adds |
+  |---|---|---|---|---|
+  | `source`: what a note may be drawn from | the person's own words | own words | anything in the chat | |
+  | `secrets`: text shaped like a secret | refused | refused | refused | allowed |
+  | `sensitive`: MR8's categories | refused | refused | to the inbox | kept |
+  | `untrusted`: web pages, tool results, document passages, past chats, attachments or pasted material in the turns read | dropped | to the inbox | kept | |
+  | `instructions`: instruction and procedure kinds from a model | never | to the inbox | kept | |
+  | `keepAuto`: Keep automatically | not available | available | available | |
+  | `connections`: suggestions from connected apps | off | to the inbox | to the inbox | |
+  | `unseenLocal`: model-kept notes stay local until seen (call 12) | yes | yes | no | |
+
+- **The owner's**: `memoryWritePolicy` (`strict`, `standard`, `open`, `custom`; default
+  `standard`), the custom rows (`memoryPolicySource`, `memoryPolicySecrets`,
+  `memoryPolicySensitive`, `memoryPolicyUntrusted`, `memoryPolicyInstructions`,
+  `memoryPolicyKeepAuto`, `memoryPolicyConnections`, `memoryPolicyUnseenLocal`, shown only for
+  custom), and `memoryPolicyPeople` (`stricter`, default, or `any`).
+- **A person's**: `memory_prefs.write_policy` (`strict`, `standard`, `open`, or null for the
+  owner's). In effect: with `stricter`, row by row the stricter of theirs and the owner's, so a
+  person may always tighten and never loosen; with `any`, theirs.
+- **Enforced in code where the note is written** (`memory_policy.route`), never as words to the
+  model. Every model write goes through one function, `memory_write.offer`, which judges the
+  proposal (`memory_suggest` rules with the policy's `source`, `secrets` and `sensitive`), routes
+  it by the policy to **keep**, **inbox** or **drop**, and only then calls the store: a
+  suggestion (`add_suggestions`), a kept note (`keep_learned`) or a connection's suggestion
+  (`add_connection_suggestion`). A model on Suggest never keeps: its keep becomes inbox.
+- **Settings never lie**: the Memory screen names the policy in effect, whose word it is, and
+  under Open or Custom what it allows that Standard does not ("Models may keep notes drawn from
+  web pages and tool results").
+- The person's own writes (typed, said, Remember) are not the policy's: they are the person's.
+
+### 33. Keep automatically
+
+- **The background pass** (`memory_learn`), for a model in `auto`: the same request and code;
+  each proposal it keeps goes through `memory_write.offer`. Under `source: own words` the request
+  is today's; under `anything in the chat`, it also carries the answers' final text and the
+  person's messages unstripped, and the quote may come from any of them.
+- **`remember`**, a tool Workbench runs itself, offered to a tool-calling model in `auto` while
+  memory is on for the chat and the policy allows Keep automatically: `text`, `kind`, `quote`
+  (the person's exact words), `date`, `replaces` (the exact title of the note it updates). At most
+  3 calls an answer; the chat's and the day's caps are shared with the pass. Its result to the
+  model is "Kept.", "Offered to the person to review." or "Not kept.", never the rule that said
+  no.
+- **What "the turns read" holds** for the `untrusted` row: for the pass, a read message from
+  which pasted material was removed, or with attachments; and, under `anything in the chat`, an
+  answer that used web search, tools, document passages or past chats. For `remember`, anything
+  of that kind in the chat's path or earlier in the same answer.
+- **Every model-written note records** `model`, `policy` (the rows in effect, with the preset's
+  name) and `auto` (kept with nobody approving); a suggestion records the model and policy too,
+  and keeps them when the person keeps it.
+
+### 34. Receipts, Recently learned and removal
+
+- **The receipt**: a `remember` call in a chat shows "Remembered: {title} · Undo"; the pass's
+  keeps for an open chat arrive as a `memory` event with the same receipt. Undo removes the note
+  and makes the note it replaced current again.
+- **Recently learned** on the Memory screen: notes kept automatically in the last 30 days, newest
+  first, each with its model, policy, date, whether it is still unseen, and Undo. Showing a note
+  there marks it seen (`POST /api/memory/learned/seen`).
+- **Remove what a model kept**: "Remove everything {model} kept since {date}" names how many
+  first (`GET /api/memory/learned/removal?model=&since=`) and removes them in one step (`POST
+  /api/memory/learned/removal`), each undone as Undo does, out of the index as a delete is.
+- A removed note's `remember` result in kept tool rounds becomes "The person removed this note.",
+  as a deleted note's search results are replaced (MV1).
+
+### 35. Unseen notes stay local (call 12)
+
+Under `unseenLocal` (Strict, Standard), a note kept automatically and not yet seen is left out of
+everything that leaves the machines: the pinned block, relevant memory and `search_memory` for a
+model that is not local, the notes shown to a learning model that is not local, and every
+connection's reads. Local models get it at once. Seeing it in Recently learned, editing or pinning
+it ends the wait.
+
+### 36. Store migration 23 to 24
+
+One transaction after the backup, as every migration:
+
+- `memory_notes`: `model TEXT`, `policy TEXT`, `auto INTEGER NOT NULL DEFAULT 0`, `seen_at REAL`
+  (no `CHECK` changes, so no rebuild);
+- `memory_prefs.write_policy TEXT` (null: the owner's);
+- `memory_model_choices (owner, model, mode CHECK IN ('off','suggest','auto'), set_at, PRIMARY
+  KEY (owner, model))`;
+- `memory_measurements (model PRIMARY KEY, measured_at, owner, result TEXT)`.
+
+All of it in MV3a, so MV3b adds no migration.
+
+### 37. Risk, tests and acceptance
+
+High risk (automatic writes, an injection surface, a migration): sabotage of each new critical
+check, one adversarial review of the diff focused on injection (a web page, tool result, pasted
+text or document passage that tries to make a model keep or change a note under each policy), and
+a real-environment run per sub-slice (`workbench/scripts/mv3-learning-acceptance.py`, ports
+8490-8501, every `EUGENE_PLEXUS_*` dropped, torn down by pid):
+
+- **MV3a**: a schema 23 store migrates; the per-model choice sets what learns (a Suggest model
+  suggests, an Off model does not, the default follows the recommendation); Measure this model
+  runs end to end on a real small model and its result shows beside the choice; an outside model
+  needs confirmation.
+- **MV3b**: under each preset a real model keeps, offers or drops a note as the policy says; an
+  injected page or paste never yields a kept note under Standard or Strict; `remember` with its
+  receipt and Undo; Recently learned and removal by model and date; an unseen note is not sent to
+  an outside model or a connection until seen.
+
+### 38. Calls
+
+**MV3-C1 (new, Troy's to confirm; the default is built): which sets Suggest's bar is judged
+on.** The new sets (knowledge update, time, several sessions, must-not-persist) are harder than
+MR8's 88, and on them Gemma 4 E4B misses Suggest's own bar (false memories 12%, recall 59%) and
+Gemma 4 12B its noise limit (6.7%), though both pass it on MR8's sets, where Troy set it. Judging
+Suggest on every set would turn default suggestions off for those models' people.
+*Recommended default, built:* Suggest's bar is judged on MR8's 88 sets (the bar and the sets it
+was set on, unchanged: who suggests by default does not change), and Keep automatically's on all
+123 (the new sets were made for it, calls 3 and 11). A suggestion waits for the person, so a
+noisier model there costs a click; a kept note does not wait. Alternative: judge Suggest on
+every set too (fewer models suggest by default; the person can still choose Suggest for any).
+
+MV1-C1 is settled by section 31's measurement (section 39 says how).
+
+### 39. What building found
+
+- **The measurement** ([record](../acceptance/m-memory-measurement-mv3.md)): five starter models and
+  GPT-5.5 through OpenRouter (about $3) as the cloud reference.
+  - **Keep automatically:** no model meets the stricter bar. Qwen3.8-27B is the closest, at 2.2%
+    noise against 2%; GPT-5.5 is at 3.3% noise. So none is recommended for it, and the screen says
+    why.
+  - **Suggest:** the four MR8 models still pass on MR8's sets (call MV3-C1).
+  - **MV1-C1 is settled per model, as section 31 says:** the tag list goes to Gemma 4 12B,
+    Qwen3.6-35B-A3B and Qwen3.8-27B (at most 25 tags, the length measured). It does not go to Gemma
+    4 E4B, which gave 19% false memories with the list.
+- **Local models seldom call `remember`.**
+  - Recall on the tool path was 5-21%, against 59-80% on the pass. GPT-5.5 reached 75%.
+  - In the first trials none called it until the system message said the tool was there.
+  - The system message now carries a one-line hint (`memory_suggest.REMEMBER_HINT`). It is guidance,
+    and the measurement sends it too. The rules stay in code.
+- **Keep automatically needs its tool path measured** for a model that calls tools, so it is never
+  recommended from the pass alone.
+- **Only the owner's own run sets a default.**
+  - Any person may run Measure this model.
+  - A run by someone who is not the owner is shown as advice beside the choice. It turns nothing on by
+    default for anyone (review).
+  - A run in which more than 10% of requests got no answer keeps nothing: a gateway that is down is
+    not a measurement.
+  - The install has a cap of 12 runs a day.
+- **What a model may replace by itself** (review, the one blocker). An automatic keep may replace only
+  a note a model wrote, of the same kind, unpinned and with no details. Any other change waits in
+  Suggested notes, where Keep new shows the old note beside the new. Measured supersession was good,
+  but a wrong one hides the person's own note with nobody looking.
+- **Untrusted covers more than section 33 said** (review):
+  - text an app's surface put in the chat's context;
+  - a person's message over 400 characters or of several paragraphs, which may hold a paste the
+    paste rules missed.
+
+  And a note worded as an instruction ("always ...", "from now on ...") is routed as one, whatever
+  kind the model gave it.
+- **Other review fixes:**
+  - Editing or pinning a note a model kept makes it the person's: no longer undone, removed by model,
+    or held back as unseen.
+  - The owner's read-only view hides `remember`'s receipt and arguments.
+  - A kept `search_memory` result is not replayed to an outside model while the person has an unseen
+    model-kept note.
+- **MR8's paste rule read an apostrophe as a quotation mark** (found by the live run): "I'm a
+  nurse working night shifts. What's ..." lost every word between the two. A single mark now
+  quotes only where it opens and closes at a word's edge; a sentence in single quotes is still
+  dropped. The measurement's data was judged again; no verdict changed.
+- **Shipped as one change** (top of this section): MV3b's code went into the files MV3a touched
+  while MV3a waited on its measurements.
+- **Accepted, not fixed (minor):** measurement run counts are kept in memory, so a restart resets
+  them. Deleting (not undoing) a model's note that replaced another takes the earlier version with
+  it, as every delete does; Undo is the way back.

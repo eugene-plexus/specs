@@ -13,16 +13,20 @@
     ([measurement](../acceptance/m-memory-measurement.md): four starter models pass Troy's bar;
     [acceptance](../acceptance/mr8-suggestions-run.md), 30/30, two people), and
     `reasoning_effort: none` now turns a llama.cpp template's thinking off.
-  - **Next by this roadmap (2026-10-19):** the memory reshape, MV3 (learning and the write
-    policy) next. MV2 (past chats: Search chats, Use past chats, `search_chats` for models and
-    connections, deletion with the chat) is on Edge ([design](workbench-memory-v2.md) sections
-    14-26, [acceptance](../acceptance/mv2-past-chats-run.md), 36/36 live); its call MV2-C1 (who
-    may receive past chats) is Troy's to confirm, with its default built. MV1 (long notes,
-    procedures, tags, versions, notes chosen every turn) is on Edge
-    ([acceptance](../acceptance/mv1-memory-run.md), 51/51 live); its call MV1-C1 is parked until
-    MV3. The memory research recommended
-    reshaping Workbench's memory rather than replacing it, and Troy took all fourteen calls
-    ([research and calls](memory-research-2026-10.md)).
+  - **Next by this roadmap (2026-10-19):** the memory reshape, MV4 (Memory as an app) next.
+    MV3 (learning and the write policy: per-model Off, Suggest or Keep automatically with
+    Eugene's measured recommendation, Measure this model, the write policy Strict, Standard, Open
+    or Custom, `remember` with receipts and Undo, Recently learned) is on Edge
+    ([design](workbench-memory-v2.md) sections 27-39,
+    [measurement](../acceptance/m-memory-measurement-mv3.md),
+    [acceptance](../acceptance/mv3-learning-run.md)). No model meets Keep automatically's
+    stricter bar yet, the cloud reference included. Its call MV3-C1 (Suggest judged on MR8's
+    sets) is Troy's to confirm, with its default built; MV1-C1 is settled per model. MV2 (past
+    chats) is on Edge ([acceptance](../acceptance/mv2-past-chats-run.md), 36/36 live), its
+    call MV2-C1 Troy's to confirm. MV1 (long notes, procedures, tags, versions, notes chosen
+    every turn) is on Edge ([acceptance](../acceptance/mv1-memory-run.md), 51/51 live). The
+    memory research recommended reshaping Workbench's memory rather than replacing it, and
+    Troy took all fourteen calls ([research and calls](memory-research-2026-10.md)).
   - **Business candidates, not scheduled:** a live vLLM run on current Edge (the last was
     2026-09-10, [record](../acceptance/m4-vllm-run.md)); vLLM installed from its official
     container image; a gateway load test at 1-256 concurrent streams, the evidence any Rust
