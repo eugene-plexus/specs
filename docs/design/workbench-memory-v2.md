@@ -1281,3 +1281,28 @@ Alternative: a "Send my past chats" button with a count and an estimate, in a la
 - **Not closed:** a signed-in person can still tell an open port from a closed one on a private
   address by the error, which allowing LAN servers implies. Workbench refuses only Eugene's own
   ports there.
+
+### 56. The MV5b probe: what it found
+
+**It passes** (2026-10-19, `docs/acceptance/mv5b-hindsight-probe.md`). Hindsight 1.0.0 ran on
+embedded pg0 on Windows and Linux, its LLM, embedder and reranker all through Eugene's gateway,
+with no connection off loopback in any run.
+
+- **Recall.** On one labelled person (36 sessions from MV3's sets, 21 questions), it answered all
+  21 in its top 5 with Gemma 4 12B and with Qwen3.8-27B. The embedder's cosine answered 19 and
+  BM25 16. A superseded fact still ranked above the current one 4 times with Gemma and once with
+  Qwen; the current one was always in the top 3.
+- **Cost.** Ingest took a median 3.9 s (Gemma) to 5.1 s (Qwen) an exchange on the 5090. Recall
+  took a median 0.2 s. Hindsight's own process tree peaked under 0.5 GiB with the models outside
+  it, far from the research's 4-8 GB, which assumed its local torch models.
+- **It keeps noise.** Transient and third-party turns became facts about the person. It has no
+  bar like Keep's; the write policy's Source row is the only filter in front of it.
+- **Four conditions for the catalogue entry:** `hindsight-api-slim[embedded-db]` instead of
+  `hindsight-all` (1.07 GiB instead of 1.86 on Windows; no torch); a named pg0 port; `pg0 stop`
+  on stop, since `postgres` outlives a killed `hindsight-api` on Windows; and Hindsight's
+  whole-server API key (`ApiKeyTenantExtension`), since its REST API answered with none.
+- **A Workbench defect, fixed:** Hindsight's `retain` only queues, so a `forget` sent before the
+  exchange was read deleted nothing. Workbench now prefers `sync_retain` (with its own 120 s
+  limit), and the probe's re-run showed the forget delete it.
+
+**Next:** design MV5b (section 52's catalogue entry and link) with these four conditions.

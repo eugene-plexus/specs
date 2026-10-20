@@ -1,0 +1,853 @@
+{
+ "name": "gemma-4-12b",
+ "model": "C:\\mr8-models\\gemma-4-12b\\gemma-4-12b-it-Q4_K_M.gguf",
+ "platform": "win32",
+ "python": "3.12.10",
+ "work": "C:\\Users\\troyc\\AppData\\Local\\Temp\\ep-mv5b-folxi30t",
+ "venv_bytes": 1995001182,
+ "pg0_dirs_before": [],
+ "preflight_chat": [
+  200,
+  "{\"id\":\"chatcmpl-cbb183d8e2244a98920cfb10803b52a5\",\"object\":\"chat.completion\",\"created\":1792463581,\"model\":\"C:\\\\mr8-models\\\\gemma-4-12b\\\\gemma-4-12b-it-Q4_K_M.gguf\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"OK\",\"reasoning\":null,\"name\":null,\"tool_calls\":null,\"tool_call_id\":null,\"a"
+ ],
+ "preflight_embed": [
+  200,
+  1024
+ ],
+ "preflight_rerank": [
+  200,
+  "{\"id\":\"rerank-d66f62e2399b45f399e7a869da54bda9\",\"object\":\"list\",\"model\":\"probe-rerank\",\"results\":[{\"index\":0,\"relevance_score\":0.8971098474543364},{\"index\":1,\"relevance_score\":8.46948228054837e-05}],\"usage\":{\"prompt_tokens\":15,\"total_tokens\":15},\"x_eugene_plexus\":{\"driver\":\"probe-rerank\",\"backend\":\""
+ ],
+ "start": {
+  "ok": true,
+  "seconds": 11.7,
+  "rss_at_ready": "0.48 GiB"
+ },
+ "retain": {
+  "sessions": 36,
+  "total_seconds": 140.0,
+  "median_seconds": 3.9,
+  "max_seconds": 6.2,
+  "failures": [],
+  "memories_listed": 109,
+  "memories": [
+   "User is inquiring about exchanging yen to dollars at a bank | When: October 21, 2026 | Involving: user | User cancelled their trip to Tokyo and now needs to exchange currency",
+   "User cancelled a planned trip to Tokyo | When: November 2026 | Involving: user",
+   "User wants to move WhatsApp chats from iPhone to Pixel 9 to migrate data after switching devices.",
+   "User wants to move WhatsApp chats from iPhone to Pixel 9 | Involving: user | To migrate data after switching devices",
+   "User switched from an iPhone to a Pixel 9 | Involving: user",
+   "User switched from an iPhone to a Pixel 9.",
+   "User is looking for quick salmon recipes.",
+   "User is looking for quick salmon recipes | Involving: user | User now eats fish",
+   "User is no longer vegetarian and now eats fish.",
+   "User is no longer vegetarian and now eats fish | Involving: user",
+   "User is seeking guidance on how to write a good bug report.",
+   "User is seeking guidance on how to write a good bug report | Involving: user | User is now working as a software tester",
+   "User transitioned from being a teacher to working as a software tester | Involving: user",
+   "User transitioned from being a teacher to working as a software tester.",
+   "User is looking for a good weekend hike near Portland.",
+   "User is looking for a good weekend hike near Portland | When: October 17, 2026 | Involving: user | User recently moved to the area",
+   "User moved from Denver to Portland | When: September 2026 | Involving: user",
+   "User moved from Denver to Portland in September 2026.",
+   "User switched from Vim to Helix as their editor | Involving: user",
+   "User switched from Vim to Helix as their editor.",
+   "User requested information about what Madrid is like in winter.",
+   "El usuario solicitó información sobre cómo es Madrid en invierno | When: 2026-10-15 | Involving: user",
+   "User is considering taking up pottery as a hobby and is inquiring about the costs.",
+   "User is inquiring about the cost of pottery as a hobby | Involving: user",
+   "User's boss prefers reports formatted in bullet points.",
+   "User's boss prefers reports formatted in bullet points | Involving: User's boss",
+   "User is considering taking up pottery in the future | Involving: user",
+   "User is inquiring about the best season to visit Oslo.",
+   "User is inquiring about the best season to visit Oslo | Involving: user",
+   "User used to live in Oslo years ago.",
+   "User is ill and requested short answers for the day on 2026-10-13.",
+   "User used to live in Oslo years ago | Involving: user",
+   "User is ill and requested short answers for the day | When: 2026-10-13 | Involving: user | User is feeling unwell",
+   "The user is looking for a cake or baked good recipe for Sam's birthday.",
+   "User is looking for a cake/baked good recipe for Sam's birthday | Involving: user, Sam | Sam's birthday",
+   "User is inquiring about the potential salary of a dentist in Canada.",
+   "Sam is a friend of the user who is vegan and allergic to nuts.",
+   "User is inquiring about the potential salary of a dentist in Canada | Involving: user",
+   "Sam is vegan and allergic to nuts | Involving: Sam (user's friend)",
+   "User requested an explanation of the differences between TCP and UDP protocols.",
+   "User asked for the calculation of 15% of 240.",
+   "User requested an explanation of the differences between TCP and UDP protocols. | When: 2026-10-11 | Involving: user",
+   "User asked for the calculation of 15% of 240 | When: 2026-10-11 | Involving: user",
+   "User wants to set up a cron job to run every night at 2am to manage the Raspberry Pi/Pi-hole setup.",
+   "User wants to set up a cron job to run every night at 2am | Involving: user | To manage the Raspberry Pi/Pi-hole setup",
+   "User has a Raspberry Pi running Pi-hole for the whole house.",
+   "User has a Raspberry Pi running Pi-hole for the whole house | Involving: user",
+   "User has a job interview for a data analyst role on Thursday, October 15, 2026.",
+   "User has a job interview for a data analyst role | When: Thursday, October 15, 2026 | Involving: user",
+   "User is seeking advice on the frequency of long runs for marathon training.",
+   "User is seeking advice on the frequency of long runs for marathon training | When: October 09, 2026 | Involving: user",
+   "User is flying to Tokyo for two weeks from 2026-11-03 to 2026-11-17.",
+   "User is training for their first marathon in April 2027.",
+   "User is flying to Tokyo for two weeks | When: 2026-11-03 to 2026-11-17 | Involving: user",
+   "User is training for their first marathon | When: April 2027 | Involving: user",
+   "User is writing a fantasy novel set in a desert city and is currently on chapter 12.",
+   "User is currently on chapter 12 of the novel | Involving: user",
+   "User is building a home NAS using Unraid with 6 drives and is seeking advice on the appropriate parity setup.",
+   "User is seeking advice on which parity setup to use for their 6-drive Unraid NAS | Involving: user",
+   "User is writing a fantasy novel set in a desert city | Involving: user",
+   "User is building a home NAS using Unraid with 6 drives | Involving: user",
+   "User requested a two-line thank-you note for their landlord on 2026-10-07.",
+   "User requested a two-line thank-you note for their landlord | When: 2026-10-07 | Involving: user, landlord",
+   "User prefers British spelling in all written content.",
+   "User prefers British spelling in all written content | Involving: user",
+   "User prefers short answers and bullet points.",
+   "User prefers short answers and bullet points. | Involving: user",
+   "User is seeking advice on which CUDA version to install for llama.cpp.",
+   "User is seeking advice on which CUDA version to install for llama.cpp | Involving: user",
+   "User has just started calligraphy as of 2026-10-06.",
+   "User has just started calligraphy | When: 2026-10-06 | Involving: user",
+   "User is running Windows 11 with an RTX 5090 GPU.",
+   "User is running Windows 11 with an RTX 5090 GPU | Involving: user",
+   "User is left-handed.",
+   "User is left-handed | Involving: user",
+   "User requested an explanation on the difference between the Japanese particles 'wa' and 'ga' to improve Japanese language proficiency.",
+   "User is inquiring if Ceph is worth implementing for a homelab of that size.",
+   "User requested an explanation on the difference between the Japanese particles 'wa' and 'ga' | When: 2026-10-05 | Involving: user | To improve Japanese language proficiency",
+   "User is inquiring if Ceph is worth implementing for a homelab of that size | When: 2026-10-05 | Involving: user",
+   "User is learning Japanese and is currently at the JLPT N4 level.",
+   "User's homelab runs Proxmox on three old Dell Optiplexes.",
+   "User is learning Japanese and is currently at the JLPT N4 level | Involving: user",
+   "User's homelab runs Proxmox on three old Dell Optiplexes | Involving: user",
+   "User is looking for board game recommendations suitable for ages 6 and 9 to provide an alternative to screen time.",
+   "User is looking for board game recommendations suitable for ages 6 and 9 | Involving: user | To provide an alternative to screen time",
+   "User is trying to reduce screen time for their children.",
+   "User is trying to reduce screen time for their children | Involving: user | To manage children's screen time",
+   "User is seeking clarification on why the Rust borrow checker rejects a second mutable borrow.",
+   "User is seeking clarification on why the Rust borrow checker rejects a second mutable borrow | Involving: user",
+   "User has two children aged 6 and 9.",
+   "User has two children aged 6 and 9 | Involving: user",
+   "User codes mostly in Rust, having transitioned from C++.",
+   "User codes mostly in Rust these days, having transitioned from C++ | Involving: user",
+   "User wants to know how to list installed packages by size.",
+   "User wants to know how to list installed packages by size | Involving: user",
+   "User wants to turn off keyboard clicks on their iPhone | Involving: user",
+   "User runs Arch Linux on their laptop.",
+   "User runs Arch Linux on their laptop | Involving: user",
+   "User uses an iPhone | Involving: user",
+   "User is looking for a vegetarian recipe using chickpeas and spinach as of 2026-10-02.",
+   "User is looking for a vegetarian recipe using chickpeas and spinach | When: 2026-10-02 | Involving: user",
+   "User is seeking strategies to manage a class of 30 students during a test to maintain classroom quiet.",
+   "User is seeking strategies to manage a class of 30 students during a test | Involving: user | To maintain classroom quiet during assessments",
+   "User is vegetarian | Involving: user",
+   "User works as a teacher | Involving: user",
+   "User is looking for locations to see aspens changing color as of 2026-10-01.",
+   "User is looking for locations to see aspens changing color | When: 2026-10-01 | Involving: user",
+   "User lives in Denver | Involving: user",
+   "User uses Vim as their text editor | Involving: user"
+  ]
+ },
+ "recall": {
+  "rows": [
+   {
+    "question": "What operating system is on my laptop?",
+    "seconds": 1.39,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User runs Arch Linux on their laptop.",
+     "User runs Arch Linux on their laptop | Involving: user",
+     "User is running Windows 11 with an RTX 5090 GPU | Involving: user",
+     "User has a Raspberry Pi running Pi-hole for the whole house | Involving: user",
+     "User is running Windows 11 with an RTX 5090 GPU."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "Which programming language do I mostly use?",
+    "seconds": 0.28,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User codes mostly in Rust these days, having transitioned from C++ | Involving: user",
+     "User codes mostly in Rust, having transitioned from C++.",
+     "User switched from Vim to Helix as their editor | Involving: user",
+     "User is learning Japanese and is currently at the JLPT N4 level | Involving: user",
+     "User is learning Japanese and is currently at the JLPT N4 level."
+    ],
+    "cosine": {
+     "answered": false,
+     "rank": null,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 3,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "How many children do I have?",
+    "seconds": 0.26,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User has two children aged 6 and 9.",
+     "User has two children aged 6 and 9 | Involving: user",
+     "User asked for the calculation of 15% of 240 | When: 2026-10-11 | Involving: user",
+     "User is trying to reduce screen time for their children.",
+     "User prefers short answers and bullet points."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": false,
+     "rank": null,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What runs in my homelab?",
+    "seconds": 0.27,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User's homelab runs Proxmox on three old Dell Optiplexes.",
+     "User's homelab runs Proxmox on three old Dell Optiplexes | Involving: user",
+     "User is inquiring if Ceph is worth implementing for a homelab of that size.",
+     "User is inquiring if Ceph is worth implementing for a homelab of that size | When: 2026-10-05 | Involving: user",
+     "User has a Raspberry Pi running Pi-hole for the whole house."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "Which language am I learning?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User is learning Japanese and is currently at the JLPT N4 level | Involving: user",
+     "User is learning Japanese and is currently at the JLPT N4 level.",
+     "User codes mostly in Rust, having transitioned from C++.",
+     "User codes mostly in Rust these days, having transitioned from C++ | Involving: user",
+     "User prefers British spelling in all written content | Involving: user"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "Am I left-handed or right-handed?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User is left-handed.",
+     "User is left-handed | Involving: user",
+     "User is ill and requested short answers for the day on 2026-10-13.",
+     "User is ill and requested short answers for the day | When: 2026-10-13 | Involving: user | User is feeling unwell",
+     "User prefers short answers and bullet points. | Involving: user"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What GPU do I have?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User is running Windows 11 with an RTX 5090 GPU | Involving: user",
+     "User is running Windows 11 with an RTX 5090 GPU.",
+     "User has a Raspberry Pi running Pi-hole for the whole house | Involving: user",
+     "User has a Raspberry Pi running Pi-hole for the whole house.",
+     "User is seeking advice on which CUDA version to install for llama.cpp."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": false,
+     "rank": null,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "How do I like my answers formatted?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User prefers short answers and bullet points.",
+     "User prefers short answers and bullet points. | Involving: user",
+     "User's boss prefers reports formatted in bullet points.",
+     "User's boss prefers reports formatted in bullet points | Involving: User's boss",
+     "User prefers British spelling in all written content."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 2,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "Which spelling should you use for me?",
+    "seconds": 0.26,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User prefers British spelling in all written content.",
+     "User prefers British spelling in all written content | Involving: user",
+     "User prefers short answers and bullet points.",
+     "User is ill and requested short answers for the day | When: 2026-10-13 | Involving: user | User is feeling unwell",
+     "User is looking for a cake/baked good recipe for Sam's birthday | Involving: user, Sam | Sam's birthday"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What NAS am I building?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User is building a home NAS using Unraid with 6 drives | Involving: user",
+     "User is building a home NAS using Unraid with 6 drives and is seeking advice on the appropriate parity setup.",
+     "User is seeking advice on which parity setup to use for their 6-drive Unraid NAS | Involving: user",
+     "User has a Raspberry Pi running Pi-hole for the whole house | Involving: user",
+     "User has a Raspberry Pi running Pi-hole for the whole house."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What am I writing at the moment?",
+    "seconds": 0.27,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User is writing a fantasy novel set in a desert city and is currently on chapter 12.",
+     "User is writing a fantasy novel set in a desert city | Involving: user",
+     "User is seeking guidance on how to write a good bug report | Involving: user | User is now working as a software tester",
+     "User codes mostly in Rust these days, having transitioned from C++ | Involving: user",
+     "User is ill and requested short answers for the day | When: 2026-10-13 | Involving: user | User is feeling unwell"
+    ],
+    "cosine": {
+     "answered": false,
+     "rank": null,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 2,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What race am I training for?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User is training for their first marathon in April 2027.",
+     "User is training for their first marathon | When: April 2027 | Involving: user",
+     "User is seeking advice on the frequency of long runs for marathon training | When: October 09, 2026 | Involving: user",
+     "User is seeking advice on the frequency of long runs for marathon training.",
+     "User is learning Japanese and is currently at the JLPT N4 level."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What job am I interviewing for?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User has a job interview for a data analyst role on Thursday, October 15, 2026.",
+     "User has a job interview for a data analyst role | When: Thursday, October 15, 2026 | Involving: user",
+     "User transitioned from being a teacher to working as a software tester | Involving: user",
+     "User works as a teacher | Involving: user",
+     "User is seeking guidance on how to write a good bug report | Involving: user | User is now working as a software tester"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What does my Raspberry Pi run?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User has a Raspberry Pi running Pi-hole for the whole house.",
+     "User has a Raspberry Pi running Pi-hole for the whole house | Involving: user",
+     "User wants to set up a cron job to run every night at 2am to manage the Raspberry Pi/Pi-hole setup.",
+     "User wants to set up a cron job to run every night at 2am | Involving: user | To manage the Raspberry Pi/Pi-hole setup",
+     "User runs Arch Linux on their laptop."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "Which text editor do I use?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": true
+    },
+    "hindsight_top": [
+     "User uses Vim as their text editor | Involving: user",
+     "User switched from Vim to Helix as their editor | Involving: user",
+     "User switched from Vim to Helix as their editor.",
+     "User codes mostly in Rust, having transitioned from C++.",
+     "User codes mostly in Rust these days, having transitioned from C++ | Involving: user"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": true
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 2,
+     "stale_first": true
+    }
+   },
+   {
+    "question": "Which city do I live in?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 2,
+     "stale_first": true
+    },
+    "hindsight_top": [
+     "User lives in Denver | Involving: user",
+     "User used to live in Oslo years ago | Involving: user",
+     "User moved from Denver to Portland in September 2026.",
+     "User moved from Denver to Portland | When: September 2026 | Involving: user",
+     "User used to live in Oslo years ago."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 2,
+     "stale_first": true
+    },
+    "bm25": {
+     "answered": false,
+     "rank": null,
+     "stale_first": true
+    }
+   },
+   {
+    "question": "What do I do for work?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User transitioned from being a teacher to working as a software tester | Involving: user",
+     "User transitioned from being a teacher to working as a software tester.",
+     "User prefers short answers and bullet points. | Involving: user",
+     "User works as a teacher | Involving: user",
+     "User is ill and requested short answers for the day | When: 2026-10-13 | Involving: user | User is feeling unwell"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": true
+    }
+   },
+   {
+    "question": "Do I eat fish?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User is no longer vegetarian and now eats fish | Involving: user",
+     "User is no longer vegetarian and now eats fish.",
+     "User is looking for quick salmon recipes | Involving: user | User now eats fish",
+     "User is vegetarian | Involving: user",
+     "User is looking for a vegetarian recipe using chickpeas and spinach | When: 2026-10-02 | Involving: user"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What phone do I have?",
+    "seconds": 0.25,
+    "hindsight": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": true
+    },
+    "hindsight_top": [
+     "User uses an iPhone | Involving: user",
+     "User switched from an iPhone to a Pixel 9 | Involving: user",
+     "User switched from an iPhone to a Pixel 9.",
+     "User wants to move WhatsApp chats from iPhone to Pixel 9 | Involving: user | To migrate data after switching devices",
+     "User wants to move WhatsApp chats from iPhone to Pixel 9 to migrate data after switching devices."
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": false,
+     "rank": null,
+     "stale_first": true
+    }
+   },
+   {
+    "question": "Am I still going to Tokyo in November?",
+    "seconds": 0.27,
+    "hindsight": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    },
+    "hindsight_top": [
+     "User cancelled a planned trip to Tokyo | When: November 2026 | Involving: user",
+     "User is flying to Tokyo for two weeks | When: 2026-11-03 to 2026-11-17 | Involving: user",
+     "User is inquiring about exchanging yen to dollars at a bank | When: October 21, 2026 | Involving: user | User cancelled their trip to Tokyo and now needs to exchange currency",
+     "User is ill and requested short answers for the day on 2026-10-13.",
+     "User is ill and requested short answers for the day | When: 2026-10-13 | Involving: user | User is feeling unwell"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": false
+    },
+    "bm25": {
+     "answered": true,
+     "rank": 0,
+     "stale_first": false
+    }
+   },
+   {
+    "question": "What should I cook for my own dinner, given my diet?",
+    "seconds": 0.26,
+    "hindsight": {
+     "answered": true,
+     "rank": 2,
+     "stale_first": true
+    },
+    "hindsight_top": [
+     "User is looking for a vegetarian recipe using chickpeas and spinach as of 2026-10-02.",
+     "User is looking for a vegetarian recipe using chickpeas and spinach | When: 2026-10-02 | Involving: user",
+     "User is looking for quick salmon recipes | Involving: user | User now eats fish",
+     "User is looking for a cake/baked good recipe for Sam's birthday | Involving: user, Sam | Sam's birthday",
+     "User is ill and requested short answers for the day | When: 2026-10-13 | Involving: user | User is feeling unwell"
+    ],
+    "cosine": {
+     "answered": true,
+     "rank": 1,
+     "stale_first": true
+    },
+    "bm25": {
+     "answered": false,
+     "rank": null,
+     "stale_first": false
+    }
+   }
+  ],
+  "hindsight": {
+   "answered": 21,
+   "stale_first": 4,
+   "of": 21
+  },
+  "cosine": {
+   "answered": 19,
+   "stale_first": 3,
+   "of": 21
+  },
+  "bm25": {
+   "answered": 16,
+   "stale_first": 4,
+   "of": 21
+  },
+  "median_seconds": 0.25,
+  "max_seconds": 1.39,
+  "over_2s": 0
+ },
+ "adapter": {
+  "discover": {
+   "name": "hindsight-mcp-server",
+   "verbs": {
+    "recall": "recall",
+    "retain": "retain",
+    "forget": "delete_document",
+    "purge": "clear_memories",
+    "list": "list_memories"
+   },
+   "seconds": 0.26
+  },
+  "recall_in_turn": [
+   {
+    "query": "Which text editor do I use?",
+    "ok": true,
+    "items": [
+     "User uses Vim as their text editor | Involving: user",
+     "User switched from Vim to Helix as their editor | Involving: user",
+     "User switched from Vim to Helix as their editor.",
+     "User codes mostly in Rust, having transitioned from C++.",
+     "User codes mostly in Rust these days, having transitioned from C++ | Involving: user"
+    ],
+    "n": 58,
+    "seconds": 0.28
+   },
+   {
+    "query": "What GPU do I have?",
+    "ok": true,
+    "items": [
+     "User is running Windows 11 with an RTX 5090 GPU | Involving: user",
+     "User is running Windows 11 with an RTX 5090 GPU.",
+     "User has a Raspberry Pi running Pi-hole for the whole house | Involving: user",
+     "User has a Raspberry Pi running Pi-hole for the whole house.",
+     "User is seeking advice on which CUDA version to install for llama.cpp."
+    ],
+    "n": 56,
+    "seconds": 0.28
+   },
+   {
+    "query": "Which city do I live in?",
+    "ok": true,
+    "items": [
+     "User lives in Denver | Involving: user",
+     "User used to live in Oslo years ago | Involving: user",
+     "User moved from Denver to Portland in September 2026.",
+     "User moved from Denver to Portland | When: September 2026 | Involving: user",
+     "User used to live in Oslo years ago."
+    ],
+    "n": 59,
+    "seconds": 0.28
+   }
+  ],
+  "retain": {
+   "ok": true,
+   "items": [
+    "{\"status\":\"accepted\",\"message\":\"Memory storage initiated\",\"operation_id\":\"c096d1de-8495-4c14-a59c-1cfbe588bc74\"}"
+   ],
+   "n": 1,
+   "seconds": 0.02
+  },
+  "recall_bees": {
+   "ok": true,
+   "items": [
+    "User is considering taking up pottery as a hobby and is inquiring about the costs.",
+    "User is ill and requested short answers for the day | When: 2026-10-13 | Involving: user | User is feeling unwell",
+    "User is inquiring about the cost of pottery as a hobby | Involving: user",
+    "User prefers short answers and bullet points. | Involving: user",
+    "User is ill and requested short answers for the day on 2026-10-13."
+   ],
+   "n": 64,
+   "seconds": 0.28
+  },
+  "forget": {
+   "ok": true,
+   "items": [
+    "{\"status\":\"deleted\",\"document_id\":\"chat-bees:1\",\"document_deleted\":0,\"memory_units_deleted\":0}"
+   ],
+   "n": 1,
+   "seconds": 0.02
+  },
+  "recall_after_forget": {
+   "ok": true,
+   "items": [
+    "User is writing a fantasy novel set in a desert city and is currently on chapter 12.",
+    "User is looking for board game recommendations suitable for ages 6 and 9 to provide an alternative to screen time.",
+    "User is left-handed.",
+    "User has a job interview for a data analyst role | When: Thursday, October 15, 2026 | Involving: user",
+    "User is looking for locations to see aspens changing color | When: 2026-10-01 | Involving: user"
+   ],
+   "n": 59,
+   "seconds": 0.34
+  },
+  "list": {
+   "ok": true,
+   "items": [
+    "User is inquiring about exchanging yen to dollars at a bank as of October 21, 2026.",
+    "User is inquiring about exchanging yen to dollars at a bank | When: October 21, 2026 | Involving: user | User cancelled their trip to Tokyo and now needs to exc",
+    "User cancelled a planned trip to Tokyo | When: November 2026 | Involving: user",
+    "User wants to move WhatsApp chats from iPhone to Pixel 9 to migrate data after switching devices.",
+    "User wants to move WhatsApp chats from iPhone to Pixel 9 | Involving: user | To migrate data after switching devices"
+   ],
+   "n": 100,
+   "seconds": 0.02
+  },
+  "purge": {
+   "ok": true,
+   "items": [
+    "{\"status\":\"cleared\",\"bank_id\":\"probe\",\"memory_units_deleted\":109,\"entities_deleted\":76,\"documents_deleted\":36}"
+   ],
+   "n": 1,
+   "seconds": 0.03
+  },
+  "list_after_purge": {
+   "ok": true,
+   "items": [],
+   "n": 0,
+   "seconds": 0.02
+  }
+ },
+ "sockets": {
+  "samples": 741,
+  "outside": {},
+  "listening_outside": [],
+  "processes": [
+   "cmd.exe",
+   "conhost.exe",
+   "hindsight-api.exe",
+   "initdb.exe",
+   "pg0.exe",
+   "pg_ctl.exe",
+   "postgres.exe",
+   "psql.exe",
+   "python.exe"
+  ]
+ },
+ "peak_rss": "0.48 GiB",
+ "pg0_dirs_after": {
+  "C:\\Users\\troyc\\.pg0": "0.22 GiB"
+ }
+}

@@ -1,0 +1,38 @@
+{
+ "name": "linux",
+ "model": null,
+ "platform": "linux",
+ "python": "3.12.14",
+ "work": "/tmp/ep-mv5b-kltxqguo",
+ "venv_bytes": 6736047058,
+ "pg0_dirs_before": [],
+ "start": {
+  "ok": true,
+  "seconds": 7.1,
+  "rss_at_ready": "0.41 GiB"
+ },
+ "linux_retain": [
+  200,
+  "{\"success\":true,\"bank_id\":\"probe\",\"items_count\":1,\"async\":false,\"operation_id\":null,\"operation_ids\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0,\"cached_tokens\":0,\"thoughts_tokens\":0}}"
+ ],
+ "linux_recall": [
+  200,
+  "{\"results\":[{\"id\":\"8d203c9e-e690-4858-b12d-b661d0768a76\",\"text\":\"I keep bees.\",\"type\":\"world\",\"entities\":null,\"context\":\"\",\"occurred_start\":null,\"occurred_end\":null,\"mentioned_at\":\"2026-10-20T02:32:17.190449+00:00\",\"document_id\":\"x\",\"metadata\":{},\"chunk_id\":\"probe_x_0\",\"tags\":[],\"source_fact_ids\":nu"
+ ],
+ "sockets": {
+  "samples": 35,
+  "outside": {},
+  "listening_outside": [],
+  "processes": [
+   "hindsight-api",
+   "initdb",
+   "pg0",
+   "postgres",
+   "sh"
+  ]
+ },
+ "peak_rss": "0.41 GiB",
+ "pg0_dirs_after": {
+  "/home/tcorbin/.pg0": "0.15 GiB"
+ }
+}

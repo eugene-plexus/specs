@@ -1,0 +1,47 @@
+{
+ "name": "linux",
+ "model": null,
+ "platform": "win32",
+ "python": "3.12.10",
+ "work": "C:\\Users\\troyc\\AppData\\Local\\Temp\\ep-mv5b-75a1dr1o",
+ "venv_bytes": 1143919687,
+ "pg0_dirs_before": [
+  "C:\\Users\\troyc\\.pg0"
+ ],
+ "start": {
+  "ok": true,
+  "seconds": 9.7,
+  "rss_at_ready": "0.43 GiB"
+ },
+ "linux_retain": [
+  200,
+  "{\"success\":true,\"bank_id\":\"probe\",\"items_count\":1,\"async\":false,\"operation_id\":null,\"operation_ids\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"total_tokens\":0,\"cached_tokens\":0,\"thoughts_tokens\":0}}"
+ ],
+ "linux_recall": [
+  200,
+  "{\"results\":[{\"id\":\"89fec36c-19e6-45c7-a84a-a554f190f1dc\",\"text\":\"I keep bees.\",\"type\":\"world\",\"entities\":null,\"context\":\"\",\"occurred_start\":null,\"occurred_end\":null,\"mentioned_at\":\"2026-10-20T02:47:43.570978+00:00\",\"document_id\":\"x\",\"metadata\":{},\"chunk_id\":\"probe_x_0\",\"tags\":[],\"source_fact_ids\":nu"
+ ],
+ "sockets": {
+  "samples": 46,
+  "outside": {},
+  "listening_outside": [],
+  "processes": [
+   "cmd.exe",
+   "conhost.exe",
+   "hindsight-api.exe",
+   "initdb.exe",
+   "pg0.exe",
+   "postgres.exe",
+   "psql.exe",
+   "python.exe"
+  ]
+ },
+ "peak_rss": "0.43 GiB",
+ "pg0_stop": [
+  0,
+  "Stopping PostgreSQL instance 'mv5b-slim' (pid: 56724)...\nwaiting for server to shut down.... done\nserver stopped\nPostgreSQL instance 'mv5b-slim' stopped.\n"
+ ],
+ "pg0_dirs_after": {
+  "C:\\Users\\troyc\\.pg0": "0.41 GiB"
+ }
+}
