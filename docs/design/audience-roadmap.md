@@ -36,6 +36,11 @@
     every turn) is on Edge ([acceptance](../acceptance/mv1-memory-run.md), 51/51 live). The
     memory research recommended reshaping Workbench's memory rather than replacing it, and
     Troy took all fourteen calls ([research and calls](memory-research-2026-10.md)).
+  - **From DeepInfer (read 2026-10-20), not scheduled:** [`deepinfer-lessons.md`](deepinfer-lessons.md)
+    proposes DI1-DI8. The recommended order is DI4 (control-token spellings in tool results act
+    as control tokens on llama-server), DI3 (people served at a speed, a sweep through the
+    gateway, replacing three items below), DI1 (checked, rolling engine updates) and DI2 (the
+    prompt cache kept on disk across restarts). Calls DI-C1 to C5 are Troy's.
   - **Business candidates, not scheduled:** a live vLLM run on current Edge (the last was
     2026-09-10, [record](../acceptance/m4-vllm-run.md)); vLLM installed from its official
     container image; a gateway load test at 1-256 concurrent streams, the evidence any Rust
