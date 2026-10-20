@@ -424,6 +424,23 @@ labels pass.
   scheme by port, cookie names and issuer choice; the operator's header
   forwarded only to the enrolled root; plain-off decided per connection.
 
+### 12.4 The branch's one set of checks (2026-10-20)
+
+On the final code of `lt1` (LT1 and LT2), after the review's fixes:
+- **Suites:** agent 2715 passed (one test listing settings fixed after the
+  run, rerun); control, Workbench and the UI passed but for load-timing
+  flakes that pass alone (control 626, Workbench 2414, UI 2273).
+- **LT1 Docker pair:** `--labels bad-signature,wrong-pin,root-stopped,
+  removed-machine`, then `--labels automatic`: every check passes.
+- **LT2 Docker pair** (`ep-lt2:7e558d71bb9a7bd7`): every check and all four
+  labels pass, Workbench's https sign-in included.
+- **Windows** (`lt1-windows-worker-check.py --lt2`): the worker joins over
+  TLS, its leaf names `192.168.16.75` and `windows-worker.local`, Edge with
+  the CA in the current user's Root store opens the worker's and the root's
+  consoles over https, the wire is TLS only; the CA was removed after.
+- **CI** on `lt1` in all ten repos (specs with every component's `lt1` head
+  as its candidate).
+
 ## 13. Calls for Troy (from building)
 
 | # | Question | Taken by default |
