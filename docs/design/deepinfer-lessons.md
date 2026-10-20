@@ -171,6 +171,56 @@ about reading chats. That needs one adversarial review (DI-C4).
 vLLM and MLX come later. vLLM offloads KV cache to CPU, and LMCache adds
 disk. `mlx_lm` can save a prompt cache to a file.
 
+#### Later: move a machine's conversations before maintenance (DI2b)
+
+Troy, 2026-10-20: a large install takes machines offline for maintenance, and
+moving their KV to another machine may beat having every client's next turn
+reread it. DeepSeek does this: a decode engine told to shut down gets a
+one-minute grace period, then forwards its unfinished requests with their KV
+to other engines (Q&A, "Autoscaling & fault tolerance").
+
+**A planned drain changes the arithmetic** that rules out moving KV at
+failover (see "Not taking"):
+- **Nobody waits for the copy.** It runs during the drain and between turns,
+  not while a client waits for its first token.
+- **Evacuation is a herd.** Every conversation the machine held rereads on
+  the remaining machines at about the same time, competing with their own
+  users. Moving the KV turns that compute spike into network traffic.
+- **Large installs favour the copy.** They have 10-25 GbE or faster, and
+  larger models. Prefill work grows with parameters, while a GQA model's KV
+  grows more slowly: a dense 70B is 320 KiB per token
+  (80 × 8 × 128 × 2 × 2 bytes) against an 8B's 128 KiB, for about nine times
+  the prefill work. A 30,000-token conversation on the 70B is 9.2 GiB, about
+  8 s on 10 GbE. This is arithmetic; DI3's sweep and DI5's prefill fit give
+  the reread side.
+
+**The shape, on DI2's save and restore:**
+1. The drain saves each conversation's slot (DI2).
+2. The gateway picks each conversation's new replica.
+3. The file goes over the node-to-node channel.
+4. The target restores it, and the affinity table moves to the target.
+
+**Which conversations move.** Move a conversation only when its estimated
+copy time beats its estimated reread time on the target. Move the most
+recently used first. Let the rest reread.
+
+**The constraint.** A file is valid only on a replica with the same model
+file, engine build and cache type (DI2's key). During a DI1 rollout that
+narrows the targets to replicas already on the same build.
+
+**Measure first:**
+- whether a llama.cpp slot file saved on one machine restores on another
+  with the same build, including across GPU vendors;
+- the copy and restore time against a reread, on a 10 GbE pair.
+
+Failover stays a reread: a machine that is gone has nothing to copy, unless
+DI2 ever adds periodic saves. vLLM's KV connectors (NIXL, LMCache) are the
+equivalent for business installs on vLLM.
+
+**Risk: high.** Conversations cross the network, so the copy uses the
+authenticated node channel, never a plain share. It needs the same privacy
+review as DI2.
+
 ### DI3. Measure how many people a runtime serves at what speed
 
 **What DeepSeek does:** its benchmarks are Pareto curves of total throughput
@@ -397,7 +447,9 @@ Each of these is a check, not a finding.
     differ.
   - vLLM's disaggregated prefill is the only route. Reconsider it if a
     business user runs vLLM on one multi-GPU machine.
-- **Moving a conversation's KV between machines.**
+- **Moving a conversation's KV between machines at failover, on a small
+  install.** A planned drain on a large install is different, and DI2b
+  covers it.
   - The KV of a dense 8B at f16 is 128 KiB per token
     (32 layers × 8 KV heads × 128 × 2 × 2 bytes). A 30,000-token conversation
     is therefore 3.7 GiB.
