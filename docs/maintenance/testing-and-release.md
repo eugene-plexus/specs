@@ -139,6 +139,15 @@ qualified commit or a documentation-only descendant, so a failed candidate
 never needs a tag moved (2026-10-19). A tag that already exists must name the
 qualified commit.
 
+A patch release is qualified the same way, on its line's record commit
+(`scripts/release-line.py`, then `scripts/release.py` from the line's
+worktree; [`release-script.md`](../design/release-script.md), "Patch
+releases"). It moves only the line's own refs. Its notes and record reach
+`main` after publication, as one documentation-only commit. Only the newest
+line takes a patch, except for a security fix (`--security`).
+`scripts/release-patch-acceptance.py` runs this path offline in CI on Linux
+and Windows.
+
 Dispatched with `release_tag` empty, or on its weekly schedule against `main`,
 the workflow is a **rehearsal**: every job runs, its container builds as an
 Edge candidate, and no receipt is produced, so it can never publish. Run one

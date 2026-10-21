@@ -250,6 +250,12 @@ jobs:
         run: python scripts/platform-checks.py
       - name: Check release artifact bytes and component pin agreement
         run: python scripts/release-artifacts-checks.py
+      - name: Release script and release lines, offline (row 6)
+        run: |
+          python -m unittest discover -s scripts -p test_release.py -v
+          python -m unittest discover -s scripts -p test_release_line.py -v
+      - name: Cut a patch release from a release tag while main has moved, on bare file repositories (row 6)
+        run: python scripts/release-patch-acceptance.py
       - name: Verify retained A8 measurement integrity and declared targets
         run: python scripts/a8-summarize.py docs/acceptance/a8-data
 

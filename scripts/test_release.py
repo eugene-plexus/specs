@@ -1,17 +1,31 @@
-"""release.py's own logic, offline: versions, resuming, the record and the release body."""
+"""release.py's own logic, offline: versions, resuming, the record and the release body,
+and patch releases from a release line (against the bare repositories of
+release-patch-acceptance.py)."""
 
 from __future__ import annotations
 
+import ast
+import importlib.util
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+SCRIPTS = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPTS))
 
 import release  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location(
+    "release_patch_acceptance", SCRIPTS / "release-patch-acceptance.py"
+)
+assert _spec is not None and _spec.loader is not None
+fixture = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(fixture)
 
 PINS = {
     "agent": "a" * 40,
@@ -166,6 +180,417 @@ class CandidateGuardTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(release.Stop, "--from candidate"):
                     release.record(r)
+
+
+# --- patch releases ------------------------------------------------------------
+
+TAGS = ["v0.1.0-alpha.2", "v0.2.0", "v0.2.3", "v0.3.0"]
+
+
+def git_env() -> dict[str, str]:
+    return {
+        **{k: v for k, v in os.environ.items() if not k.startswith("GIT_")},
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.invalid",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.invalid",
+        "GIT_CONFIG_NOSYSTEM": "1",
+    }
+
+
+def plain_git(
+    repo: Path, *args: str, env: dict[str, str] | None = None, stdin: str = ""
+) -> str:
+    return subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", *args],
+        cwd=repo,
+        env={**git_env(), **(env or {})},
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+class PatchVersionTests(unittest.TestCase):
+    def test_patch_version_must_follow_the_latest(self) -> None:
+        self.assertEqual(
+            release.patch_previous(
+                "v0.3.1", (0, 3), TAGS, "v0.3.0", security=False, rehearsal=False
+            ),
+            "v0.3.0",
+        )
+        for version in ("v0.3.2", "v0.3.0"):  # a skip, and a reuse
+            with (
+                self.subTest(version=version),
+                self.assertRaisesRegex(release.Stop, "must follow v0.3.0"),
+            ):
+                release.patch_previous(
+                    version, (0, 3), TAGS, "v0.3.0", security=False, rehearsal=False
+                )
+        with self.assertRaisesRegex(release.Stop, "older than the latest.*--security"):
+            release.patch_previous(
+                "v0.2.4", (0, 2), TAGS, "v0.3.0", security=False, rehearsal=False
+            )
+
+    def test_an_older_line_takes_a_security_fix_as_its_next_patch(self) -> None:
+        self.assertEqual(
+            release.patch_previous(
+                "v0.2.4", (0, 2), TAGS, "v0.3.0", security=True, rehearsal=False
+            ),
+            "v0.2.3",
+        )
+        with self.assertRaisesRegex(release.Stop, "must follow v0.2.3"):
+            release.patch_previous(
+                "v0.2.5", (0, 2), TAGS, "v0.3.0", security=True, rehearsal=False
+            )
+
+    def test_a_version_must_be_on_the_checkouts_line(self) -> None:
+        with self.assertRaisesRegex(release.Stop, "not on line v0.3"):
+            release.patch_previous(
+                "v0.4.1", (0, 3), TAGS, "v0.3.0", security=False, rehearsal=False
+            )
+        with self.assertRaisesRegex(release.Stop, "no release"):
+            release.patch_previous(
+                "v0.5.1", (0, 5), TAGS, "v0.3.0", security=False, rehearsal=False
+            )
+
+    def test_a_suffix_needs_rehearsal_and_a_rehearsal_needs_its_suffix(self) -> None:
+        self.assertEqual(
+            release.patch_previous(
+                "v0.3.1-rehearsal.1",
+                (0, 3),
+                TAGS,
+                "v0.3.0",
+                security=False,
+                rehearsal=True,
+            ),
+            "v0.3.0",
+        )
+        with self.assertRaisesRegex(release.Stop, "three numbers"):
+            release.patch_previous(
+                "v0.3.1-rehearsal.1",
+                (0, 3),
+                TAGS,
+                "v0.3.0",
+                security=False,
+                rehearsal=False,
+            )
+        with self.assertRaisesRegex(release.Stop, "rehearsal.N"):
+            release.patch_previous(
+                "v0.3.1", (0, 3), TAGS, "v0.3.0", security=False, rehearsal=True
+            )
+
+
+class PushGuardTests(unittest.TestCase):
+    def test_the_push_guard_refuses_main_dist_and_edge_on_a_line(self) -> None:
+        line = {"branch": "release/v0.3", "version": "v0.3.1", "root": "nowhere"}
+        repo = Path(tempfile.gettempdir()) / "agent"
+        with (
+            mock.patch.object(release, "LINE", line),
+            mock.patch.object(release, "git") as git,
+        ):
+            for ref in (
+                "main",
+                "refs/heads/main",
+                "refs/heads/dist",
+                "refs/heads/edge",
+                "refs/heads/release/v0.2",
+                "refs/tags/v0.3.2",
+            ):
+                with self.subTest(ref=ref), self.assertRaises(release.Refused):
+                    release.push(repo, "HEAD", ref)
+            with self.assertRaises(release.Refused):
+                release.push(repo, "", "refs/heads/release/v0.3", delete=True)
+            with self.assertRaises(release.Refused):
+                release.push(
+                    repo, "", "refs/heads/release-candidate/v0.4.0", delete=True
+                )
+            self.assertEqual(git.call_count, 0)
+            for ref in (
+                "refs/heads/release/v0.3",
+                "refs/heads/release/v0.3-dist",
+                "refs/heads/release-candidate/v0.3.1",
+                "refs/tags/v0.3.1",
+            ):
+                release.push(repo, "abc", ref)
+            self.assertEqual(
+                [c.args[-1] for c in git.call_args_list],
+                [
+                    "abc:refs/heads/release/v0.3",
+                    "abc:refs/heads/release/v0.3-dist",
+                    "abc:refs/heads/release-candidate/v0.3.1",
+                    "abc:refs/tags/v0.3.1",
+                ],
+            )
+
+    def test_edge_is_never_pushed_and_only_scratch_branches_are_deleted(self) -> None:
+        with (
+            mock.patch.object(release, "LINE", None),
+            mock.patch.object(release, "git") as git,
+        ):
+            with self.assertRaises(release.Refused):
+                release.push(Path("specs"), "HEAD", "refs/heads/edge")
+            with self.assertRaises(release.Refused):
+                release.push(Path("specs"), "", "refs/heads/main", delete=True)
+            release.push(Path("specs"), "HEAD", "refs/heads/main")
+            release.push(Path("specs"), "", "release-candidate/v0.4.0", delete=True)
+        self.assertEqual(
+            [c.args[1:] for c in git.call_args_list],
+            [
+                ("push", "-q", "origin", "HEAD:refs/heads/main"),
+                (
+                    "push",
+                    "-q",
+                    "origin",
+                    "--delete",
+                    "refs/heads/release-candidate/v0.4.0",
+                ),
+            ],
+        )
+
+
+class DocsOnlyTests(unittest.TestCase):
+    def test_docs_only_refuses_renames_modes_submodules_and_other_paths(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            repo = Path(scratch)
+            plain_git(repo, "init", "-q")
+            (repo / "docs").mkdir()
+            (repo / "scripts").mkdir()
+            (repo / "docs" / "a.md").write_text("a\n", encoding="utf-8")
+            (repo / "scripts" / "x.py").write_text("x = 1\n", encoding="utf-8")
+            plain_git(repo, "add", "-A")
+            plain_git(repo, "commit", "-q", "-m", "base")
+            base = plain_git(repo, "rev-parse", "HEAD")
+            blob = plain_git(repo, "rev-parse", "HEAD:docs/a.md")
+            new = plain_git(repo, "hash-object", "-w", "--stdin", stdin="changed\n")
+
+            def tree_commit(*operations: list[str]) -> str:
+                env = {"GIT_INDEX_FILE": str(repo / ".git" / "scratch-index")}
+                plain_git(repo, "read-tree", base, env=env)
+                for operation in operations:
+                    plain_git(repo, *operation, env=env)
+                tree = plain_git(repo, "write-tree", env=env)
+                return plain_git(repo, "commit-tree", tree, "-p", base, "-m", "x")
+
+            def cacheinfo(mode: str, sha: str, path: str) -> list[str]:
+                return ["update-index", "--add", "--cacheinfo", f"{mode},{sha},{path}"]
+
+            good = tree_commit(
+                cacheinfo("100644", new, "docs/a.md"),
+                cacheinfo("100644", blob, "docs/b.md"),
+            )
+            self.assertEqual(
+                release.docs_only(repo, base, good), ["docs/a.md", "docs/b.md"]
+            )
+            bad = {
+                "another path": [cacheinfo("100644", new, "scripts/x.py")],
+                "a rename": [
+                    ["update-index", "--force-remove", "docs/a.md"],
+                    cacheinfo("100644", blob, "docs/c.md"),
+                ],
+                "a deletion": [["update-index", "--force-remove", "docs/a.md"]],
+                "a mode change": [cacheinfo("100755", blob, "docs/a.md")],
+                "a submodule": [cacheinfo("160000", base, "docs/sub")],
+                "a symlink": [cacheinfo("120000", blob, "docs/link")],
+            }
+            for name, operations in bad.items():
+                with (
+                    self.subTest(name),
+                    self.assertRaisesRegex(release.Refused, "documentation-only"),
+                ):
+                    release.docs_only(repo, base, tree_commit(*operations))
+
+
+class DistTests(unittest.TestCase):
+    def test_the_dist_parent_is_the_last_releases_dist_never_origin_dist(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            repo = Path(scratch)
+            plain_git(repo, "init", "-q")
+            empty = plain_git(repo, "hash-object", "-t", "tree", "-w", "--stdin")
+
+            def commit(message: str, *parents: str) -> str:
+                flags = [x for p in parents for x in ("-p", p)]
+                return plain_git(repo, "commit-tree", empty, *flags, "-m", message)
+
+            pin = commit("the last release's dist")
+            earlier_candidate = commit("an earlier candidate", pin)
+            main_dist = commit("main's dist")
+            ref = "refs/remotes/origin/release/v0.3-dist"
+            self.assertEqual(release.dist_parent(repo, pin, "release/v0.3-dist"), pin)
+            plain_git(repo, "update-ref", ref, pin)
+            self.assertEqual(release.dist_parent(repo, pin, "release/v0.3-dist"), pin)
+            plain_git(repo, "update-ref", ref, earlier_candidate)
+            self.assertEqual(
+                release.dist_parent(repo, pin, "release/v0.3-dist"), earlier_candidate
+            )
+            plain_git(repo, "update-ref", ref, main_dist)
+            with self.assertRaisesRegex(release.Stop, "does not hold"):
+                release.dist_parent(repo, pin, "release/v0.3-dist")
+
+    def test_built_from_reads_the_message_and_refuses_one_that_names_no_parent(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as scratch:
+            repo = Path(scratch)
+            plain_git(repo, "init", "-q")
+            empty = plain_git(repo, "hash-object", "-t", "tree", "-w", "--stdin")
+            source = plain_git(repo, "commit-tree", empty, "-m", "source")
+            other = plain_git(repo, "commit-tree", empty, "-m", "other")
+            dist = plain_git(
+                repo,
+                "commit-tree",
+                empty,
+                "-p",
+                other,
+                "-p",
+                source,
+                "-m",
+                f"Publish\n\nbuilt-from: eugene-plexus/ui@{source}",
+            )
+            self.assertEqual(release.built_from(repo, "ui", dist), source)
+            forged = plain_git(
+                repo,
+                "commit-tree",
+                empty,
+                "-p",
+                other,
+                "-m",
+                f"Publish\n\nbuilt-from: eugene-plexus/ui@{source}",
+            )
+            with self.assertRaisesRegex(release.Stop, "not one of its parents"):
+                release.built_from(repo, "ui", forged)
+
+
+class LockTests(unittest.TestCase):
+    def test_a_dependency_change_stops_the_candidate_until_the_lock_is_resolved(
+        self,
+    ) -> None:
+        sources = {name: "s" for name in release.LINE_REPOS}
+        heads = {**sources, "gateway": "h"}
+
+        def dependencies(repo: Path, ref: str) -> list[str]:
+            if repo.name == "gateway" and ref == "h":
+                return ["hatchling", "httpx", "rich"]
+            return ["hatchling", "httpx"]
+
+        with (
+            tempfile.TemporaryDirectory() as scratch,
+            mock.patch.object(release, "SPECS", Path(scratch)),
+            mock.patch.object(release, "LINE", {"branch": "release/v0.3"}),
+            mock.patch.object(release.ship, "dependencies", side_effect=dependencies),
+        ):
+            listed = Path(scratch) / "release" / "requirements.in"
+            listed.parent.mkdir()
+            listed.write_text("hatchling\nhttpx\n", encoding="utf-8")
+            release.check_lock(sources, sources)  # nothing moved
+            with self.assertRaisesRegex(release.Stop, "gateway.*--resolve"):
+                release.check_lock(sources, heads)
+            listed.write_text("hatchling\nhttpx\nrich\n", encoding="utf-8")
+            release.check_lock(sources, heads)  # resolved on the line
+
+
+class SeamTests(unittest.TestCase):
+    def test_every_push_and_gh_call_goes_through_one_function(self) -> None:
+        """A patch release's guard sees every push; the acceptance's stand-in
+        sees every GitHub call. No ship.* helper that pushes is reachable."""
+        for script in ("release.py", "release-line.py"):
+            tree = ast.parse((SCRIPTS / script).read_text(encoding="utf-8"))
+            owner: dict[int, str] = {}
+            for function in ast.walk(tree):
+                if isinstance(function, ast.FunctionDef):
+                    for node in ast.walk(function):
+                        owner[id(node)] = function.name
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Constant) and node.value in ("push", "gh"):
+                    want = "push" if node.value == "push" else "run_gh"
+                    self.assertEqual(
+                        owner.get(id(node)),
+                        want,
+                        f"{script}:{node.lineno}: {node.value!r}",
+                    )
+                if (
+                    isinstance(node, ast.Attribute)
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id == "ship"
+                ):
+                    self.assertNotIn(
+                        node.attr,
+                        ("publish_dist", "pin_in_agent", "ship", "wait_for_edge"),
+                        f"{script}:{node.lineno}",
+                    )
+
+
+class PatchLineTests(unittest.TestCase):
+    """open, pick and release.py on the bare repositories of the acceptance."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.scratch = Path(tempfile.mkdtemp(prefix="ep-patch-test-"))
+        cls.fx = fixture.Fixture(cls.scratch).build()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        fixture.remove_tree(cls.scratch)
+
+    def ok(self, result: tuple[int, str], code: int = 0) -> str:
+        self.assertEqual(result[0], code, result[1][-3000:])
+        return result[1]
+
+    def test_a_patch_never_pushes_main_dist_or_edge(self) -> None:
+        fx = self.fx
+        fx.reset_pushes()
+        self.ok(fx.line("open", "v1.2"))
+        fixes = [f"{n}:{fx.fix[n]}" for n in ("agent", "gateway", "workbench")]
+        self.ok(fx.line("pick", "v1.2", *fixes))
+        specs = fx.lines / "v1.2" / "specs"
+        notes = specs / "docs" / "releases" / "v1.2.1.md"
+        notes.parent.mkdir(parents=True, exist_ok=True)
+        notes.write_text("# Eugene Plexus v1.2.1\n\nA patch.\n", encoding="utf-8")
+        self.ok(fx.release(specs, "v1.2.1", stop_after="tag"))
+        pushed = {ref for _, ref, _, _ in fx.pushes()}
+        self.assertEqual(
+            pushed,
+            {
+                "refs/heads/release/v1.2",
+                "refs/heads/release/v1.2-dist",
+                "refs/heads/release-candidate/v1.2.1",
+                "refs/tags/v1.2.1",
+            },
+        )
+        # The candidate is v1.2.0's commits plus the picks.
+        shell = fx.show("specs", "v1.2.1:scripts/install.sh")
+        self.assertIn(f"PIN_CONTROL={fx.pins['control']}", shell)
+        self.assertIn(f"PIN_SITE_HOST={fx.pins['site-host']}", shell)
+        gateway = fx.rev("gateway", "release/v1.2")
+        self.assertIn(f"PIN_GATEWAY={gateway}", shell)
+        self.assertIn(
+            f"(cherry picked from commit {fx.fix['gateway']})",
+            fx.show("gateway", gateway),
+        )
+        self.assertNotIn(fx.later["gateway"], shell)
+
+    def test_an_older_line_needs_security_and_a_new_dependency_needs_the_lock(
+        self,
+    ) -> None:
+        fx = self.fx
+        fx.reset_pushes()
+        self.assertIn("--security", self.ok(fx.line("open", "v1.1"), 2))
+        self.ok(fx.line("open", "v1.1", "--security"))
+        self.ok(fx.line("pick", "v1.1", f"gateway:{fx.feature['gateway']}"))
+        specs = fx.lines / "v1.1" / "specs"
+        self.assertIn("--security", self.ok(fx.release(specs, "v1.1.1"), 2))
+        out = self.ok(
+            fx.release(specs, "v1.1.1", "--security", stop_after="candidate"), 2
+        )
+        self.assertRegex(out, "gateway.*--resolve")
+        self.assertEqual(
+            {ref for _, ref, _, _ in fx.pushes()}, {"refs/heads/release/v1.1"}
+        )
 
 
 if __name__ == "__main__":
