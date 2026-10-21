@@ -308,10 +308,20 @@ def run(root: Path, copy_folder: Path | None) -> None:
         with httpx.Client(
             headers={"Authorization": "Bearer " + session}, trust_env=False
         ) as client:
-            wait(
-                lambda: client.get(library_url + "/v1/models").status_code == 200,
-                "Library",
-            )
+            last: list[str] = []
+
+            def library_ready() -> bool:
+                response = client.get(library_url + "/v1/models")
+                last[:] = [f"{response.status_code} {response.text[:300]}"]
+                return response.status_code == 200
+
+            try:
+                wait(library_ready, "Library")
+            except AssertionError as exc:
+                raise AssertionError(
+                    f"{exc}; the last answer through the Library host's proxy was: "
+                    + (last[0] if last else "none (no connection)")
+                ) from None
 
             def scanned():
                 rows = client.get(library_url + "/v1/models").json()["models"]
@@ -460,6 +470,13 @@ def run(root: Path, copy_folder: Path | None) -> None:
                 process.wait(timeout=10)
         for log in logs:
             log.close()
+        if sys.exc_info()[0] is not None:
+            # A failed run names its cause: the processes' own words, which CI
+            # would otherwise lose with the temporary output folder.
+            for log in logs:
+                lines = Path(log.name).read_text(encoding="utf-8", errors="replace")
+                print(f"--- {Path(log.name).name} (last 60 lines) ---", file=sys.stderr)
+                print("\n".join(lines.splitlines()[-60:]), file=sys.stderr)
 
 
 if __name__ == "__main__":
