@@ -16,6 +16,14 @@ from pathlib import Path
 import yaml
 
 
+#: Names the entry sets for a library Open WebUI installs, so its own source never reads them:
+#: huggingface_hub's cache directory, chromadb's telemetry switch and scarf's two opt-outs.
+#: A name here is not checked for drift. Remove one when its library leaves the app.
+READ_BY_DEPENDENCIES = frozenset(
+    {"HF_HOME", "ANONYMIZED_TELEMETRY", "DO_NOT_TRACK", "SCARF_NO_ANALYTICS"}
+)
+
+
 def inspect_sources(sources: dict[str, str], environment: dict[str, str]) -> list[str]:
     reads: set[str] = set()
     findings: list[str] = []
@@ -69,8 +77,7 @@ def inspect_sources(sources: dict[str, str], environment: dict[str, str]) -> lis
                     node.slice.value, str
                 ):
                     reads.add(node.slice.value)
-    # HF_HOME is read by huggingface_hub, whose cache directory the app uses.
-    reads.add("HF_HOME")
+    reads |= READ_BY_DEPENDENCIES
     for name in sorted(environment.keys() - reads):
         findings.append(
             f"{name}: this version no longer reads this environment variable"

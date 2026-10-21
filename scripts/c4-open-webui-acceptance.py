@@ -18,6 +18,18 @@ gives or Open WebUI's placeholder; a chat answers through the gateway on the
 app's key; a new key after a reinstall is taken (the one-start reset), and a
 plain restart keeps what its admin set; uninstall takes everything away.
 
+**Row 34 adds** (specs docs/design/rows/row-34.md): web search through the
+gateway's `/v1/web_search` door on the app's key, with the result pages never
+fetched; images through the gateway's images door from a model added after
+the first start (Reset on Windows; a refusal that names its cause on a Linux
+system install, where the new key at the reinstall carries the model
+instead); and an update that copies Open WebUI's database first, shows the
+cause of a start that fails, and goes back. The update runs on Windows. A
+Linux system install keeps the app's data in systemd's private state, which
+the install helper cannot copy, so there the update is refused and the run
+checks that it names the cause and changes nothing. The two versions come
+from the agent's catalogue file, edited for the run.
+
 Try candidates before pinning them: EP_PIN_AGENT, EP_PIN_CONTROL and the
 other EP_PIN_* take full SHAs, as C1's run does.
 """
@@ -60,12 +72,26 @@ PERSON_PASSWORD = "a-person-password-1"
 OWNER_NAME = "operator"
 #: The words the launcher prints when it resets an app's settings for one start.
 RESET_WORDS = "What%20Eugene%20gives%20this%20app%20changed"
+SEARX_PORT = 18991
+ROUTER_PORT = 18992
+PAINTER = "acme/painter"
+OLD_VERSION = "0.11.4"
+#: A 1x1 PNG, the image the stand-in makes.
+PNG_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+)
+SEARX_ANSWER = HERE / "fixtures" / "searxng-answer.json"
 
 # --------------------------------------------------------------------------- #
 # the fixture model, which records the bearer each request arrived with
 # --------------------------------------------------------------------------- #
 
 SEEN: list[dict] = []
+#: What the stand-in search engine was asked, the result pages anyone fetched, and the
+#: prompts the stand-in image model was given.
+SEARCHED: list[dict] = []
+PAGES: list[str] = []
+PAINTED: list[dict] = []
 
 
 class Model(BaseHTTPRequestHandler):
@@ -81,7 +107,34 @@ class Model(BaseHTTPRequestHandler):
         self.wfile.write(raw)
 
     def do_GET(self) -> None:
-        if self.path.rstrip("/").endswith("/models"):
+        path = self.path.split("?")[0].rstrip("/")
+        if path == "/searx/search":
+            # SearXNG's JSON answer as measured; every result page is this server's own, so
+            # a fetch of one shows (Open WebUI must use the snippets and fetch none).
+            answer = json.loads(SEARX_ANSWER.read_text(encoding="utf-8"))
+            query = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(self.path).query))
+            SEARCHED.append(query)
+            for i, result in enumerate(answer.get("results", [])):
+                result["url"] = f"http://127.0.0.1:{FIXTURE_PORT}/pages/{i}"
+            self._send(200, answer)
+        elif path.startswith("/pages/"):
+            PAGES.append(path)
+            self._send(200, b"<html>a result page</html>", "text/html")
+        elif path == "/or/v1/models/user":
+            self._send(200, {"data": [{
+                "id": PAINTER, "name": PAINTER, "context_length": 4096,
+                "architecture": {"input_modalities": ["text"], "output_modalities": ["image"]},
+                "supported_parameters": [],
+            }]})
+        elif path == "/or/v1/images/models":
+            self._send(200, {"data": [{"id": PAINTER, "supports_streaming": False,
+                                       "supported_parameters": {
+                "output_format": {"type": "enum", "values": ["png", "jpeg"]},
+                "n": {"type": "range", "min": 1, "max": 1},
+                "input_references": {"type": "range", "min": 0, "max": 0}}}]})
+        elif path == "/or/v1/videos/models":
+            self._send(200, {"data": []})
+        elif self.path.rstrip("/").endswith("/models"):
             self._send(200, {"object": "list", "data": [{"id": MODEL, "object": "model"}]})
         else:
             self._send(200, {})
@@ -89,6 +142,13 @@ class Model(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         length = int(self.headers.get("content-length") or 0)
         body = json.loads(self.rfile.read(length) or b"{}")
+        if self.path.split("?")[0].rstrip("/") in ("/or/v1/images", "/or/v1/images/generations"):
+            PAINTED.append(body)
+            self._send(200, {"created": int(time.time()),
+                             "data": [{"b64_json": PNG_B64, "media_type": "image/png"}],
+                             "usage": {"prompt_tokens": 6, "completion_tokens": 4096,
+                                       "total_tokens": 4102}})
+            return
         SEEN.append({"path": self.path, "stream": bool(body.get("stream"))})
         message = {"role": "assistant", "content": ANSWER}
         usage = {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12}
@@ -201,6 +261,252 @@ def add_model(token: str) -> None:
     must("22", "the gateway routes the fixture model", bool(wait_for(listed, 120, 3)))
 
 
+def add_search(token: str) -> None:
+    say("a search account behind the gateway, the way the console adds one")
+    status, body = api("POST", f"{AGENT}/v1/components", token, {
+        "name": "searx", "kind": "tool-driver", "url": f"http://127.0.0.1:{SEARX_PORT}",
+        "spawn": {"configFile": "searx.yaml"},
+    })
+    must("23", "the search account is declared", status in (200, 201), body)
+    patch = {"provider": "searxng", "baseUrl": f"http://127.0.0.1:{FIXTURE_PORT}/searx",
+             "probeMinutes": 0}
+    proxy = f"{AGENT}/api/proxy/searx/v1/config"
+    ok = wait_for(lambda: api("PATCH", proxy, token, patch)[0] == 200, 90, 2)
+    must("24", "its settings are saved", bool(ok))
+
+    def searched():
+        status, _ = api("POST", f"{AGENT}/api/proxy/gateway/v1/web_search", token,
+                        {"query": "readiness", "count": 1})
+        return status == 200 or None
+
+    must("25", "the gateway searches through it", bool(wait_for(searched, 180, 3)))
+
+
+def add_router(token: str) -> None:
+    say("an image model added after Open WebUI first started")
+    status, body = api("POST", f"{AGENT}/v1/components", token, {
+        "name": "router", "kind": "inference-driver", "url": f"http://127.0.0.1:{ROUTER_PORT}",
+        "spawn": {"configFile": "router.yaml"},
+    })
+    must("80", "the image backend is declared", status in (200, 201), body)
+    patch = {"provider": "openrouter", "baseUrl": f"http://127.0.0.1:{FIXTURE_PORT}/or",
+             "apiKey": "fixture-not-a-key"}
+    ok = wait_for(lambda: api("PATCH", f"{AGENT}/api/proxy/router/v1/config", token, patch)[0] == 200,
+                  90, 2)
+    must("81", "its settings are saved", bool(ok))
+    api("POST", f"{AGENT}/v1/components/router/restart", token)
+
+    def listed():
+        status, body = api("GET", f"{AGENT}/api/proxy/gateway/v1/models", token)
+        ids = [m.get("id", "") for m in (body or {}).get("data", [])] if status == 200 else []
+        return any(i.endswith("painter") for i in ids) or None
+
+    must("82", "the gateway lists the stand-in image model", bool(wait_for(listed, 180, 3)))
+
+
+def gateway_rows(token: str) -> list[dict]:
+    _, body = api("GET", f"{AGENT}/api/proxy/gateway/v1/metrics/requests?limit=500", token)
+    return (body or {}).get("requests", [])
+
+
+def images_config(app_url: str, token: str | None) -> dict:
+    _, config = api("GET", f"{app_url}/api/v1/images/config", token)
+    return config if isinstance(config, dict) else {}
+
+
+def paint(app_url: str, token: str | None) -> tuple[int | None, object]:
+    return api("POST", f"{app_url}/api/v1/images/generations", token,
+               {"prompt": "a red fox in snow", "n": 1, "size": "512x512"}, timeout=180)
+
+
+def wait_running(token: str) -> dict | None:
+    time.sleep(3)
+
+    def running():
+        _, app = api("GET", f"{AGENT}/v1/apps/{APP}", token)
+        return app if (app or {}).get("status") == "running" else None
+
+    return wait_for(running, 600, 3)
+
+
+# --- the update run: the catalogue file is edited, so one install can hold two versions ---
+
+
+def catalogue_file() -> Path:
+    found = sorted((c1.PREFIX / "venv").glob("**/eugene_plexus_agent/apps_catalogue.yaml"))
+    assert found, "the installed agent's catalogue file"
+    return found[0]
+
+
+def read_catalogue() -> str:
+    path = catalogue_file()
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return subprocess.run(["sudo", "cat", str(path)], capture_output=True, text=True,
+                              check=True).stdout
+
+
+def put_catalogue(text: str) -> None:
+    path = catalogue_file()
+    if WINDOWS:
+        path.write_text(text, encoding="utf-8", newline="\n")
+        return
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as f:
+        f.write(text)
+    subprocess.run(["sudo", "cp", f.name, str(path)], check=True)
+    subprocess.run(["sudo", "chmod", "644", str(path)], check=True)
+
+
+def variant(original: str, *, version: str | None = None, old_env: bool = False,
+            broken: bool = False) -> str:
+    """The open-webui entry at `version`, with the variables an older entry lacked, or with a
+    variable that stops Open WebUI starting."""
+    start = original.index("- id: open-webui")
+    end = original.find("\n- id:", start + 1)
+    end = len(original) if end == -1 else end
+    block = original[start:end]
+    if version:
+        block, n = re.subn(r"^  version: \S+$", f"  version: {version}", block, count=1, flags=re.M)
+        assert n == 1
+    if old_env:
+        block = re.sub(r"^    AUDIO_REALTIME_[A-Z_]+: .*\n", "", block, flags=re.M)
+    if broken:
+        block = block.replace('    ENABLE_PLUGINS: "true"\n',
+                              '    ENABLE_PLUGINS: "true"\n    DATABASE_URL: "nosuchdialect://x"\n', 1)
+        assert "nosuchdialect" in block
+    return original[:start] + block + original[end:]
+
+
+def restart_agent() -> str:
+    if WINDOWS:
+        subprocess.run(["powershell.exe", "-NoProfile", "-Command",
+                        "Restart-Service EugenePlexusAgent -Force"], check=True)
+    else:
+        subprocess.run(["sudo", "systemctl", "restart", "eugene-plexus-agent"], check=True)
+    time.sleep(5)
+    must("90", "the agent comes back after a restart", bool(wait_for(healthy(AGENT), 240)))
+    wait_for(healthy(CONTROL), 240)
+    token = wait_for(lambda: (api("POST", f"{AGENT}/v1/auth/login",
+                                  body={"passphrase": PASSPHRASE})[1] or {}).get("sessionToken"),
+                     240, 3)
+    must("91", "a session after the restart", bool(token))
+    return token
+
+
+def catalogue_entry(token: str) -> dict:
+    _, catalogue = api("GET", f"{AGENT}/v1/app-catalogue", token)
+    return next((a for a in (catalogue or {}).get("apps", []) if a["manifest"]["id"] == APP), {})
+
+
+def chat_titles(app_url: str, token: str | None) -> str:
+    _, chats = api("GET", f"{app_url}/api/v1/chats/", token)
+    return json.dumps(chats)
+
+
+def new_chat(app_url: str, token: str | None, title: str) -> int | None:
+    status, _ = api("POST", f"{app_url}/api/v1/chats/new", token, {"chat": {
+        "title": title, "models": [MODEL], "messages": [],
+        "history": {"messages": {}, "currentId": None},
+    }})
+    return status
+
+
+def update_run(token: str) -> None:
+    say("an update that copies Open WebUI's data first")
+    shipped = read_catalogue()
+    new_version = re.search(r"^  version: (\S+)$", shipped[shipped.index("- id: open-webui"):],
+                            flags=re.M).group(1)
+
+    def finished():
+        _, state = api("GET", f"{AGENT}/v1/apps/{APP}/install", token)
+        return state if (state or {}).get("state") in ("done", "failed", "cancelled") else None
+
+    try:
+        put_catalogue(variant(shipped, version=OLD_VERSION, old_env=True))
+        token = restart_agent()
+        must("92", "the catalogue offers the old version",
+             catalogue_entry(token).get("manifest", {}).get("version") == OLD_VERSION)
+        app = install_app(token)
+        app_url = f"http://127.0.0.1:{int(app.get('port') or 0)}"
+        owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
+        must("93", "the old version runs and its owner signs in", "token" in owner,
+             owner.get("error"))
+        must("94", "a chat is made on it",
+             new_chat(app_url, owner["token"], "C4 before update") == 200)
+
+        put_catalogue(variant(shipped, broken=True) if WINDOWS else shipped)
+        token = restart_agent()
+        entry = catalogue_entry(token)
+        check("95", "the catalogue says the update resets Open WebUI's settings",
+              entry.get("installedVersion") == OLD_VERSION and entry.get("resetsSettings") is True,
+              {k: entry.get(k) for k in ("installedVersion", "resetsSettings")})
+        status, body = api("POST", f"{AGENT}/v1/apps/{APP}/install", token)
+        must("96", "the update starts", status in (200, 202), body)
+        state = wait_for(finished, 1800, 5) or {}
+        if not WINDOWS:
+            text = json.dumps(state)
+            check("97", "on a Linux system install the update is refused and names its cause",
+                  state.get("state") == "failed" and "systemd account of its own" in text, text[:500])
+            _, now = api("GET", f"{AGENT}/v1/apps/{APP}", token)
+            check("98", "and nothing changed: the old version still runs",
+                  (now or {}).get("version") == OLD_VERSION and (now or {}).get("status") == "running",
+                  {k: (now or {}).get(k) for k in ("version", "status")})
+            status, body = api("POST", f"{AGENT}/v1/apps/{APP}/rollback", token)
+            check("99", "Go back is refused with the same cause",
+                  status == 409 and "systemd account of its own" in json.dumps(body), body)
+            return
+        must("97", "the new version installs", state.get("state") == "done", state)
+
+        def failed():
+            _, view = api("GET", f"{AGENT}/v1/apps/{APP}", token)
+            view = view or {}
+            return view if view.get("status") != "running" and (
+                view.get("lastError") or view.get("detail")) else None
+
+        view = wait_for(failed, 600, 5) or api("GET", f"{AGENT}/v1/apps/{APP}", token)[1] or {}
+        check("98", "its start fails and the app page names the cause",
+              view.get("status") != "running" and bool(view.get("lastError") or view.get("detail")),
+              {k: view.get(k) for k in ("status", "lastError", "detail")})
+        check("99", "a backup of the old version is kept",
+              view.get("previousVersion") == OLD_VERSION
+              and (view.get("updateBackup") or {}).get("version") == OLD_VERSION,
+              {k: view.get(k) for k in ("previousVersion", "updateBackup")})
+        database = c1.PREFIX / "apps" / APP / "data" / "webui.db"
+        try:
+            database.write_bytes(b"the new version damaged this")
+            fact("database damaged before Go back", True)
+        except OSError as exc:
+            fact("database damaged before Go back", f"no: {exc}")
+        status, body = api("POST", f"{AGENT}/v1/apps/{APP}/rollback", token, timeout=300)
+        must("100", "Go back is accepted", status == 200, body)
+        back = wait_running(token)
+        check("101", "the old version runs again", bool(back) and back.get("version") == OLD_VERSION,
+              {k: (back or {}).get(k) for k in ("version", "status")})
+        owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
+        check("102", "and the earlier chat is back",
+              "C4 before update" in chat_titles(app_url, owner.get("token")), owner.get("error"))
+
+        put_catalogue(shipped)
+        token = restart_agent()
+        status, body = api("POST", f"{AGENT}/v1/apps/{APP}/install", token)
+        must("103", "the update, with nothing broken, starts", status in (200, 202), body)
+        state = wait_for(finished, 1800, 5) or {}
+        must("104", "it installs", state.get("state") == "done", state)
+        now = wait_running(token)
+        check("105", f"it runs on {new_version}", bool(now) and now.get("version") == new_version,
+              {k: (now or {}).get(k) for k in ("version", "status")})
+        owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
+        check("106", "the chat made on the old version is there after the update",
+              "C4 before update" in chat_titles(app_url, owner.get("token")), owner.get("error"))
+        check("107", "the update left a backup to go back to",
+              ((api("GET", f"{AGENT}/v1/apps/{APP}", token)[1] or {}).get("updateBackup") or {})
+              .get("version") == OLD_VERSION)
+    finally:
+        put_catalogue(shipped)
+        api("DELETE", f"{AGENT}/v1/apps/{APP}?purge=true", token)
+
+
 def install_app(token: str) -> dict:
     status, body = api("POST", f"{AGENT}/v1/apps/{APP}/install", token)
     must("31", "Open WebUI's install starts", status in (200, 202), body)
@@ -279,6 +585,7 @@ def main() -> int:
         c1.phase_install(c1.installer_copy(work))
         token = c1.phase_onboard()
         add_model(token)
+        add_search(token)
 
         say("Open WebUI in the catalogue")
         _, catalogue = api("GET", f"{AGENT}/v1/app-catalogue", token)
@@ -335,10 +642,67 @@ def main() -> int:
         status, answer = chat(app_url, owner["token"])
         text = json.dumps(answer)
         must("50", "a chat answers from the fixture model", status == 200 and "C4-ANSWER" in text, text[:300])
-        _, requests = api("GET", f"{AGENT}/api/proxy/gateway/v1/metrics/requests?limit=200", token)
-        keys = {r.get("clientKeyName") for r in (requests or {}).get("requests", [])}
+        # The operator's readiness search (step 25) is the install's own, not the app's.
+        keys = {r.get("clientKeyName") for r in gateway_rows(token)
+                if not (r.get("door") == "web_search" and not r.get("clientKeyName"))}
         check("51", "the gateway records its requests under the app's key and no other",
               keys == {app.get("keyName")}, sorted(map(str, keys)))
+
+        say("web search through the gateway, on the app's key")
+        searched_before = len(SEARCHED)
+        status, found = api("POST", f"{app_url}/api/v1/retrieval/process/web/search",
+                            owner["token"], {"queries": ["eugene plexus fixture"]}, timeout=180)
+        text = json.dumps(found)
+        check("52", "Open WebUI's web search returns the stand-in engine's results",
+              status == 200 and f"127.0.0.1:{FIXTURE_PORT}/pages/" in text, text[:300])
+        check("53", "the engine was asked once through the install's search account",
+              len(SEARCHED) > searched_before, SEARCHED[-3:])
+        rows = [r for r in gateway_rows(token) if r.get("door") == "web_search"
+                and r.get("clientKeyName") == app.get("keyName")]
+        check("54", "the gateway records the search under the app's key", bool(rows),
+              [(r.get("door"), r.get("clientKeyName")) for r in gateway_rows(token)][-5:])
+        check("55", "no result page was fetched: Open WebUI used the snippets", not PAGES, PAGES)
+
+        say("images: none until a model is served, then Reset")
+        new_chat(app_url, owner["token"], "C4 before reset")
+        before = images_config(app_url, owner["token"])
+        check("56", "with no image model at the first start, image generation is off",
+              before.get("ENABLE_IMAGE_GENERATION") is False, {k: before.get(k) for k in (
+                  "ENABLE_IMAGE_GENERATION", "IMAGE_GENERATION_MODEL")})
+        if not WINDOWS:
+            _, given = api("GET", f"{AGENT}/v1/apps/{APP}", token)
+            check("57", "the app page does not claim settings it cannot read here",
+                  not (given or {}).get("givenSettings"), (given or {}).get("givenSettings"))
+        else:
+            _, given = api("GET", f"{AGENT}/v1/apps/{APP}", token)
+            check("57", "the app page says what Eugene gave: search on, no image model",
+                  ((given or {}).get("givenSettings") or {}).get("webSearchEnabled") is True
+                  and not ((given or {}).get("givenSettings") or {}).get("imageModel"),
+                  (given or {}).get("givenSettings"))
+        add_router(token)
+        _, offered = api("GET", f"{AGENT}/v1/apps/{APP}", token)
+        check("58", "the app page offers the image model Open WebUI was not given",
+              str((offered or {}).get("availableImageModel") or "").endswith("painter"),
+              (offered or {}).get("availableImageModel"))
+        status, body = api("POST", f"{AGENT}/v1/apps/{APP}/restart", token, {"resetSettings": True},
+                           timeout=180)
+        if WINDOWS:
+            must("59", "Reset restarts it once", status == 200, body)
+            wait_running(token)
+            owner = sign_in(app_url, PASSPHRASE, OWNER_NAME)
+            after = images_config(app_url, owner.get("token"))
+            check("66", "after Reset the image model is on",
+                  after.get("ENABLE_IMAGE_GENERATION") is True
+                  and str(after.get("IMAGE_GENERATION_MODEL", "")).endswith("painter"),
+                  {k: after.get(k) for k in ("ENABLE_IMAGE_GENERATION", "IMAGE_GENERATION_MODEL")})
+            check("67", "and the earlier chat is still there",
+                  "C4 before reset" in chat_titles(app_url, owner.get("token")), owner.get("error"))
+            status, image = paint(app_url, owner.get("token"))
+            check("68", "an image request is answered by the stand-in model through the gateway",
+                  status == 200 and bool(PAINTED), (status, str(image)[:200], PAINTED[-1:]))
+        else:
+            check("59", "on a Linux system install Reset is refused and names its cause",
+                  status == 409 and "systemd account of its own" in json.dumps(body), (status, body))
 
         say("what its admin sets survives a restart; a new key is taken")
         banner = {"id": "c4", "type": "info", "title": "", "content": "C4 banner",
@@ -370,6 +734,17 @@ def main() -> int:
         check("65", "the reinstall minted a different key", bool(old_key) and old_key != app.get("keyId"),
               [old_key, app.get("keyId")])
 
+        status, image = paint(app_url, owner.get("token"))
+        now = images_config(app_url, owner.get("token"))
+        check("69", "the reinstall's new key carries the image model too: images work",
+              now.get("ENABLE_IMAGE_GENERATION") is True and status == 200 and bool(PAINTED),
+              {"config": now.get("ENABLE_IMAGE_GENERATION"), "status": status,
+               "painted": len(PAINTED), "body": str(image)[:200]})
+        rows = [r for r in gateway_rows(token) if r.get("clientKeyName") == app.get("keyName")
+                and (r.get("door") or "") in ("images", "generations", "edits")]
+        check("73", "the gateway records the image request under the app's key", bool(rows),
+              sorted({str(r.get("door")) for r in gateway_rows(token)}))
+
         say("uninstall takes it away")
         status, _ = api("DELETE", f"{AGENT}/v1/apps/{APP}?purge=true", token)
         must("70", "uninstalled with its data", status == 204, status)
@@ -377,6 +752,8 @@ def main() -> int:
         names = [c.get("name") for c in (clients or {}).get("clients", [])]
         check("71", "its sign-in is gone at the root", "Open WebUI" not in names, names)
         check("72", "nothing listens on its port", not owner_of(port), owner_of(port))
+
+        update_run(token)
     except Abort as stop:
         print(f"\nstopped: {stop}", flush=True)
     finally:

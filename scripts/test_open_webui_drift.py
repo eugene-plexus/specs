@@ -33,6 +33,27 @@ ENABLE_PLUGINS = os.getenv("ENABLE_PLUGINS", "True").lower() == "true"
     assert any("ENABLE_PLUGINS default: True" in line for line in findings)
 
 
+def test_names_read_by_a_dependency_are_not_reported():
+    sources = {
+        "open_webui/config.py": "import os",
+        "open_webui/env.py": (
+            "import os\n"
+            "ENABLE_PLUGINS = os.getenv('ENABLE_PLUGINS', 'True').lower() == 'true'\n"
+        ),
+    }
+    module = drift()
+    environment = {
+        "ENABLE_PLUGINS": "true",
+        "HF_HOME": "x",
+        "ANONYMIZED_TELEMETRY": "false",
+    }
+    assert module.failures(module.inspect_sources(sources, environment)) == []
+    assert any(
+        "REMOVED" in line
+        for line in module.inspect_sources(sources, {**environment, "REMOVED": "1"})
+    )
+
+
 def test_covered_settings_and_explicit_plugins_pass():
     sources = {
         "open_webui/config.py": """
