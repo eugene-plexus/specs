@@ -42,8 +42,10 @@
     every turn) is on Edge ([acceptance](../acceptance/mv1-memory-run.md), 51/51 live). The
     memory research recommended reshaping Workbench's memory rather than replacing it, and
     Troy took all fourteen calls ([research and calls](memory-research-2026-10.md)).
-  - **From DeepInfer (read 2026-10-20), not scheduled:** [`deepinfer-lessons.md`](deepinfer-lessons.md)
-    proposes DI1-DI8. The recommended order is DI4 (control-token spellings in tool results act
+  - **From DeepInfer (read 2026-10-20):** [`deepinfer-lessons.md`](deepinfer-lessons.md)
+    proposes DI1-DI8. **DI4 built 2026-10-21** (control-token spellings in messages are broken at the
+    gateway; DI-C1 and DI-C2 defaults built, both Troy's to confirm; the switch is install-wide). The rest
+    are not scheduled. The recommended order is DI4 (control-token spellings in tool results act
     as control tokens on llama-server), DI3 (people served at a speed, a sweep through the
     gateway, replacing three items below), DI1 (checked, rolling engine updates) and DI2 (the
     prompt cache kept on disk across restarts). Calls DI-C1 to C5 are Troy's.

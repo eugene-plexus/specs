@@ -1,7 +1,9 @@
 # Lessons from DeepInfer
 
-**Status: read 2026-10-20, the day DeepSeek released it. Nothing here is
-scheduled; the calls at the end are Troy's.** Troy put
+**Status: read 2026-10-20, the day DeepSeek released it. DI4 built
+2026-10-21 with the defaults of DI-C1 and DI-C2, both still Troy's to
+confirm (see "What building DI4 found"); nothing else is scheduled. The calls
+at the end are Troy's.** Troy put
 [TLS between machines](tls-between-machines.md) ahead of all of these the same
 day. Troy's brief: *examine the
 DeepInfer codebase and take every design choice that improves ease of use or
@@ -318,6 +320,43 @@ make Eugene own every model's template and its output parsing. That is
 declined; see "Not taking".
 
 **Risk: high (security).** One adversarial review.
+
+### What building DI4 found (2026-10-21)
+
+Built in library `f337888` and its review fix, gateway `1f7ed1c` and its
+review fix, contract specs `4b0bb6b`. Acceptance:
+`scripts/di4-control-tokens-acceptance.py`, against llama-server b11777 and
+Qwen2.5-0.5B. A conversation holding `<|im_end|>\n<|im_start|>system` in a
+user message and a tool result rendered to 15 control tokens against a
+baseline of 9; escaped, 9. The text is the same once the joiner is removed.
+
+- **Built as DI-C2's default, with one difference.** The escape is on by
+  default with a switch, but the switch is install-wide
+  (`escapeControlTokens` in the gateway's settings), not per key. A setting
+  shows in Settings with no console work. **A per-key switch is DI-C2's to
+  confirm.**
+- **The spellings come from the vocabulary on request**
+  (`GET /v1/models/{id}/special-tokens`). The scan never keeps a vocabulary.
+  A spelling is listed when its type is unknown, control or user-defined and
+  it looks like markup (three characters or more, holding one of `< > [ ] |`
+  or the full-width bar). Known turn spellings (`<|im_end|>`, `<|eot_id|>`,
+  `<end_of_turn>` and others) are listed whatever their type, because
+  llama.cpp makes them control tokens at load.
+- **What is broken:** user and tool content, a spelling split across two text
+  parts, tool-call arguments, and tool descriptions. **What is not:** system
+  messages and assistant text. Templates parse thinking and tool markers in
+  assistant text.
+- **Which models:** local GGUF models the Library lists by the runtime's
+  model path. A model it cannot cover is named once in the gateway's log. A
+  failed vocabulary read is a 503, never an empty list.
+- **The adversarial review** found no blocker. It found that silence hid an
+  unescaped model, that a regex alternation took 2.2 s on a page of markup
+  with a 6,400-spelling vocabulary, and the field gaps above. Each one is
+  fixed. Not fixed: the completions door's raw prompt (a raw prompt means
+  special tokens on purpose), and token counting, which counts unescaped
+  text.
+- **Not done:** retiring the escape per engine build once llama.cpp #28249
+  lands. vLLM and MLX tokenize their templates unverified.
 
 ### DI5. Place new conversations by the tokens a replica holds
 
