@@ -109,9 +109,11 @@ def run(root: Path) -> None:
                 try:
                     agent.wait(timeout=45)
                 except subprocess.TimeoutExpired:
-                    # Its shutdown can wait on an open connection for ever
-                    # (agent#20); a disposable install's whole tree goes.
-                    print("the agent did not stop in 45 s; killing its process tree", flush=True)
+                    # A stop takes at most 5 s plus the children's own stops since
+                    # agent#20 (a connection Windows reset kept uvicorn waiting for
+                    # ever). Past 45 s that fix has failed: say so, and the tree goes.
+                    print("the agent did not stop in 45 s (agent#20 again?); killing its process tree",
+                          flush=True)
                     subprocess.run(["taskkill", "/PID", str(agent.pid), "/T", "/F"],
                                    capture_output=True, check=False)
         finally:
