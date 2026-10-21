@@ -17,7 +17,12 @@ Then, as a person would:
    them twice, a commit that is not on main, and one that conflicts;
 3. `release.py v1.2.2` (refused), then `release.py v1.2.1` through every phase,
    writing the release notes when it stops for them, then `release-line.py
-   close v1.2`.
+   close v1.2`;
+4. a security fix on the older line: `open v1.1` (refused), `open v1.1
+   --security`, `release.py v1.1.1` (refused), `release.py v1.1.1 --security`:
+   published with --latest=false, the website untouched, the record saying so;
+5. `release.py v1.2.2` stops for its notes, v1.3.0 becomes Latest meanwhile,
+   and the resumed run publishes v1.2.2 without taking Latest back.
 
 release.py runs in its own process, from the line's specs worktree, with the
 tooling that `open` brought onto the line. A recording stand-in answers its
@@ -338,6 +343,22 @@ class Fixture:
         return [
             json.loads(x) for x in log.read_text(encoding="utf-8").splitlines() if x
         ]
+
+    def set_latest(self, tag: str) -> None:
+        """GitHub's Latest release, as the stand-in answers it: another line shipped."""
+        path = self.root / "gh-state.json"
+        state = json.loads(path.read_text(encoding="utf-8"))
+        state["latest"] = tag
+        path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    def write_notes(self, specs: Path, version: str) -> None:
+        notes = specs / "docs" / "releases" / f"{version}.md"
+        notes.parent.mkdir(parents=True, exist_ok=True)
+        notes.write_text(
+            f"# Eugene Plexus {version}\n\nA patch.\n\n## Fixed crashes on start\n\nx\n",
+            encoding="utf-8",
+            newline="\n",
+        )
 
     # --- building ---------------------------------------------------------
 
@@ -1171,6 +1192,93 @@ def scenario(fx: Fixture, check: Checks) -> None:
     )
 
 
+def not_latest(
+    fx: Fixture, check: Checks, version: str, latest: str, site_before: str
+) -> str:
+    """Checks for a patch published while another line is Latest; returns its record."""
+    creates = [c for c in fx.gh_calls() if c[:3] == ["release", "create", version]]
+    check(
+        f"{version} is published once, with --latest=false",
+        len(creates) == 1
+        and "--latest=false" in creates[0]
+        and "--latest" not in creates[0],
+        json.dumps(creates),
+    )
+    state = json.loads((fx.root / "gh-state.json").read_text(encoding="utf-8"))
+    check(f"{latest} stays GitHub's Latest", state["latest"] == latest, state["latest"])
+    site_pushes = [p for p in fx.pushes() if p[0] == "website"]
+    check(
+        "the website is not pushed and still offers the newest line",
+        not site_pushes and fx.rev("website", "main") == site_before,
+        json.dumps(site_pushes),
+    )
+    record = fx.show("specs", f"main:docs/acceptance/{version}-release-run.md")
+    check(
+        f"the record on main says {version} is not Latest and the website is unchanged",
+        f"not as Latest ({latest} stays Latest)" in record
+        and "The website was not changed" in record
+        and "is not Latest, so an installed agent's" in record,
+        record[-2500:],
+    )
+    return record
+
+
+def older_line(fx: Fixture, check: Checks) -> None:
+    """4. A security fix on the older line v1.1, while v1.2.1 is Latest."""
+    fx.reset_pushes()
+    site_before = fx.rev("website", "main")
+    code, out = fx.line("open", "v1.1")
+    check(
+        "open v1.1 is refused without --security",
+        code == 2 and "--security" in out,
+        out,
+    )
+    code, out = fx.line("open", "v1.1", "--security")
+    check("open v1.1 --security", code == 0, out)
+    code, out = fx.line("pick", "v1.1", f"gateway:{fx.fix['gateway']}")
+    check("pick the fix onto v1.1", code == 0, out)
+    specs = fx.lines / "v1.1" / "specs"
+    code, out = fx.release(specs, "v1.1.1")
+    check(
+        "release.py v1.1.1 is refused without --security",
+        code == 2 and "older than the latest release, v1.2.1" in out,
+        out,
+    )
+    fx.write_notes(specs, "v1.1.1")
+    code, out = fx.release(specs, "v1.1.1", "--security")
+    check("release.py v1.1.1 --security runs every phase", code == 0, out)
+    record = not_latest(fx, check, "v1.1.1", "v1.2.1", site_before)
+    check(
+        "the record names the security fix on the older line",
+        "**Security fix.** Line `release/v1.1` is older than the latest release, v1.2.1"
+        in record,
+        record[:1500],
+    )
+    code, out = fx.line("close", "v1.1")
+    check("close v1.1", code == 0, out)
+
+
+def latest_moved(fx: Fixture, check: Checks) -> None:
+    """5. v1.2.2 waits for its notes; meanwhile v1.3.0 ships and is Latest. The
+    resumed run must not take Latest back to the older line v1.2."""
+    fx.reset_pushes()
+    site_before = fx.rev("website", "main")
+    code, out = fx.line("open", "v1.2")
+    check("open v1.2 again, at v1.2.1's pins", code == 0, out)
+    code, out = fx.line("pick", "v1.2", f"control:{fx.fix['control']}")
+    check("pick a fix for v1.2.2", code == 0, out)
+    specs = fx.lines / "v1.2" / "specs"
+    code, out = fx.release(specs, "v1.2.2")
+    check("release.py v1.2.2 stops for its notes (exit 3)", code == 3, out)
+    fx.set_latest("v1.3.0")
+    fx.write_notes(specs, "v1.2.2")
+    code, out = fx.release(specs, "v1.2.2")
+    check("the resumed v1.2.2 runs every phase", code == 0, out)
+    not_latest(fx, check, "v1.2.2", "v1.3.0", site_before)
+    code, out = fx.line("close", "v1.2")
+    check("close v1.2", code == 0, out)
+
+
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--inner":
         return inner(sys.argv[2:])
@@ -1185,6 +1293,8 @@ def main() -> int:
     try:
         fx = Fixture(root).build()
         scenario(fx, check)
+        older_line(fx, check)
+        latest_moved(fx, check)
     finally:
         if not args.keep:
             remove_tree(root)

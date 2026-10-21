@@ -494,6 +494,101 @@ class LockTests(unittest.TestCase):
             release.check_lock(sources, heads)  # resolved on the line
 
 
+class DocsToMainTests(unittest.TestCase):
+    """The notes and the record reach specs main; only a real race is retried."""
+
+    def setUp(self) -> None:
+        self.scratch = Path(tempfile.mkdtemp(prefix="ep-docs-main-"))
+        env = mock.patch.dict(
+            os.environ, fixture.hermetic_env(self.scratch), clear=True
+        )
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(fixture.remove_tree, self.scratch)
+        self.bare = self.scratch / "origin.git"
+        self.git(self.scratch, "init", "-q", "--bare", str(self.bare))
+        self.specs = self.scratch / "specs"
+        self.git(self.scratch, "clone", "-q", self.bare.as_uri(), str(self.specs))
+        self.commit(self.specs, {"docs/a.md": "a\n", "scripts/x.py": "x = 1\n"}, "base")
+        self.git(self.specs, "push", "-q", "origin", "main")
+        self.git(self.specs, "checkout", "-q", "-b", "release/v0.3")
+        self.commit(
+            self.specs,
+            {
+                "docs/acceptance/v0.3.1-release-run.md": "# v0.3.1 release run\n",
+                "docs/releases/v0.3.1.md": "# Eugene Plexus v0.3.1\n",
+                "release/manifest.json": "{}\n",
+            },
+            "the line's candidate and record",
+        )
+        self.git(self.specs, "push", "-q", "origin", "release/v0.3")
+        line = {
+            "branch": "release/v0.3",
+            "version": "v0.3.1",
+            "root": str(self.scratch),
+        }
+        for name, value in (("SPECS", self.specs), ("LINE", line)):
+            patch = mock.patch.object(release, name, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.r = release.Release("v0.3.1", None)
+
+    def git(self, cwd: Path, *args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    def commit(self, work: Path, files: dict[str, str], message: str) -> None:
+        for name, text in files.items():
+            (work / name).parent.mkdir(parents=True, exist_ok=True)
+            (work / name).write_text(text, encoding="utf-8", newline="\n")
+        self.git(work, "add", "-A")
+        self.git(work, "commit", "-q", "-m", message)
+
+    def test_a_refused_push_names_its_cause_and_is_not_retried(self) -> None:
+        hooks = self.bare / "hooks"
+        hook = hooks / "pre-receive"
+        hook.write_text(
+            '#!/bin/sh\necho attempt >> attempts.log\necho "denied by policy" >&2\nexit 1\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+        os.chmod(hook, 0o755)
+        self.git(self.bare, "config", "core.hooksPath", hooks.as_posix())
+        with self.assertRaisesRegex(
+            release.Failed, "(?s)did not move.*denied by policy"
+        ):
+            release.push_docs_to_main(self.r)
+        attempts = (self.bare / "attempts.log").read_text(encoding="utf-8")
+        self.assertEqual(attempts.count("attempt"), 1)
+
+    def test_main_that_moved_meanwhile_is_retried_on_its_new_head(self) -> None:
+        other = self.scratch / "other"
+        self.git(self.scratch, "clone", "-q", self.bare.as_uri(), str(other))
+        real, calls = release.push, []
+
+        def racing(repo: Path, src: str, ref: str, **kwargs: bool) -> None:
+            calls.append(ref)
+            if len(calls) == 1:  # another session lands on main after the fetch
+                self.commit(other, {"docs/other.md": "other\n"}, "another session")
+                self.git(other, "push", "-q", "origin", "main")
+            real(repo, src, ref, **kwargs)
+
+        with mock.patch.object(release, "push", side_effect=racing):
+            release.push_docs_to_main(self.r)
+        self.assertEqual(len(calls), 2)
+        parent = self.git(self.bare, "rev-parse", "main^")
+        self.assertEqual(
+            self.git(self.bare, "log", "-1", "--format=%s", parent), "another session"
+        )
+        self.assertEqual(
+            sorted(
+                self.git(self.bare, "diff", "--name-only", parent, "main").splitlines()
+            ),
+            ["docs/acceptance/v0.3.1-release-run.md", "docs/releases/v0.3.1.md"],
+        )
+
+
 class SeamTests(unittest.TestCase):
     def test_every_push_and_gh_call_goes_through_one_function(self) -> None:
         """A patch release's guard sees every push; the acceptance's stand-in

@@ -177,4 +177,20 @@ python scripts/release-line.py close v0.3                # worktrees go; branche
   therefore only fast-forwards. A Workbench build of the same source is used
   again, so a rerun makes no second agent pin commit.
 - **ui and Workbench CI run on a push of `release/vX.Y-dist`.** Their
-  `ci.yml` ignores only `dist`. The runs are harmless, but they cost CI time.
+  `ci.yml` ignores only `dist`. The runs are harmless, but they cost CI time
+  (ui#24, workbench#18).
+- **`--security` is the operator's claim.** Nothing checks that the picks fix
+  a security problem. The record names the flag, so the claim is on record
+  for whoever reads it.
+- **Latest can change while a run waits.** A run that stops for its notes can
+  resume after a newer release is Latest. `publish` and `website` read Latest
+  again: a patch older than Latest is published without `--latest`, and the
+  website is not changed.
+- **A failed push to main stops with its cause.** At the close, only a race is
+  retried (main moved after the fetch). A refusing hook, a permission error or
+  a network failure stops the run and names the error.
+- **The first real rehearsal is the compatibility test.** The first
+  `--rehearsal` on v0.3 tests main's `release.py` with the v0.3.0 tag's other
+  tooling: `release-inputs.py`, `release-artifacts.py`, the `ci.yml` that
+  qualification calls, and the evidence scripts. The offline acceptance
+  cannot show that.

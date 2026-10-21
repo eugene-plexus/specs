@@ -1810,7 +1810,7 @@ def publish(r: Release) -> None:
     ]
     # Only the newest line's release is Latest: an older line's security patch
     # must not take the updaters and the website off the newest line.
-    older = bool(r.state.get("olderLine"))
+    older = older_line_now(r)
     try:
         gh("release", "view", r.version)
         exists = True
@@ -1867,8 +1867,27 @@ def publish(r: Release) -> None:
     say(f"published {view['url']}")
 
 
+def older_line_now(r: Release) -> bool:
+    """Whether a newer release than this patch is GitHub's Latest now. Preflight's
+    answer can be stale: a newer line can ship while a run waits for its notes,
+    and the patch must then not take Latest, or the website, back from it."""
+    if LINE is None:
+        return False
+    latest = gh_api(f"repos/{ORG}/specs/releases/latest")["tag_name"]
+    older = latest != r.version and version_key(latest) > version_key(r.version)
+    if older and not r.state.get("olderLine"):
+        say(
+            f"{latest} became Latest while this ran: {r.version} is published "
+            f"without Latest, and the website keeps {latest}"
+        )
+    if older:
+        r["latest"] = latest
+    r["olderLine"] = older
+    return older
+
+
 def website(r: Release) -> None:
-    if r.state.get("olderLine"):
+    if older_line_now(r):
         say(
             "website: unchanged; it offers the newest line, and this patches an older one"
         )
@@ -2112,8 +2131,17 @@ def push_docs_to_main(r: Release) -> None:
             push(SPECS, commit, "refs/heads/main", docs_to_main=True)
         except Refused:
             raise
-        except Stop:
-            continue  # main moved: build on its new head
+        except Stop as stop:
+            # Retry only a race: main moved after the fetch. Anything else (a
+            # permission error, a refusing hook, the network) is the cause.
+            git(SPECS, "fetch", "-q", "origin", "main")
+            if git(SPECS, "rev-parse", "origin/main") == base:
+                raise Failed(
+                    "specs: the notes and the record did not reach main, and main "
+                    f"did not move: {stop}"
+                ) from None
+            say("specs main moved meanwhile; building on its new head")
+            continue
         say(f"specs main {commit[:7]}: the notes and the record")
         return
     raise Failed(
