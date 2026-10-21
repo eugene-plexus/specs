@@ -163,6 +163,15 @@ class WiringTests(unittest.TestCase):
                 if component in REF_INPUTS:
                     self.assertIn(f"needs.plan.outputs.{component}_ref", step["with"]["ref"])
 
+    def test_durable_run_protocol_uses_the_planned_library_ref(self) -> None:
+        step = next(
+            step
+            for step in workflow("ci.yml")["jobs"]["r7-signing"]["steps"]
+            if step.get("name") == "Verify durable run protocol when both consumers provide it"
+        )
+        self.assertEqual(step["env"]["LIBRARY_REF"], "${{ needs.plan.outputs.library_ref }}")
+        self.assertIn('"specs/scripts/run-operations-checks.py"', step["run"])
+
     def test_every_pinned_integration_step_runs_once_per_system(self) -> None:
         job = workflow("ci.yml")["jobs"]["r7-signing"]
         legs = job["strategy"]["matrix"]["include"]

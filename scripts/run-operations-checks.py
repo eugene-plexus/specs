@@ -4,7 +4,7 @@ process boundaries and a fake engine; no GPU, download or user install is touche
 """
 
 import asyncio
-import json
+import os
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +20,8 @@ from eugene_plexus_library.routes.models import router as models_router
 from eugene_plexus_library.run_operations import Journal
 from eugene_plexus_library.store import StateStore
 from fastapi import FastAPI
+
+from run_protocol import verify_run_protocol
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -70,14 +72,18 @@ class Engine:
         return {"name": name, "status": "ready"}
 
 
-async def check(directory, kind="llama_cpp"):
+def check_protocol():
     protocol = FastAPI(title="Eugene Plexus durable run protocol", version="1.0.0")
     protocol.include_router(router)
     actual = protocol.openapi()
-    # UTF-8, as it is written: Windows reads cp1252 by default (LS5's CI).
-    canonical = json.loads((ROOT / "openapi/run-operations.json").read_text(encoding="utf-8"))
-    assert actual["paths"] == canonical["paths"], "run protocol paths drifted"
-    assert actual["components"] == canonical["components"], "run protocol schemas drifted"
+    verify_run_protocol(
+        actual,
+        ROOT / "openapi/run-operations.json",
+        library_ref=os.environ.get("LIBRARY_REF", ""),
+    )
+
+
+async def check(directory, kind="llama_cpp"):
     # The Library the worker talks to: the run protocol, and the judge it asks
     # which engine runs the model (POST /v1/eligibility, LS1).
     app = FastAPI()
@@ -87,7 +93,11 @@ async def check(directory, kind="llama_cpp"):
     store = StateStore(directory / "state.json")
     store.load()
     model = LibraryModel(
-        id="m", name="Example 8B", path="/models/m.gguf", format="gguf", status="present"
+        id="m",
+        name="Example 8B",
+        path="/models/m.gguf",
+        format="gguf",
+        status="present",
     )
     store.replace_models([model], scanned_at=datetime.now(UTC))
     app.state.state_store = store
@@ -118,7 +128,11 @@ async def check(directory, kind="llama_cpp"):
         for _ in range(2):
             await RunWorker(node, node_actions=other).tick(client, node="worker")
         record = app.state.run_operations.get("agreed")
-        assert (record["step"], record["answer"], other.installs) == ("settings", "install", 1), (
+        assert (record["step"], record["answer"], other.installs) == (
+            "settings",
+            "install",
+            1,
+        ), (
             record["step"],
             record["answer"],
             other.installs,
@@ -171,6 +185,7 @@ async def check(directory, kind="llama_cpp"):
 
 
 if __name__ == "__main__":
+    check_protocol()
     for kind in ("llama_cpp", "vllm"):
         with tempfile.TemporaryDirectory(prefix="ep-run-check-") as directory:
             asyncio.run(check(Path(directory), kind))
