@@ -363,6 +363,19 @@ jobs:
         run: python -m pip install --no-deps --no-build-isolation -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver
       - name: Check installed dependency consistency
         run: python -m pip check
+      - name: Keep Ollama files through the real machine proxy
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
+        shell: python {0}
+        run: |
+          import os, subprocess, sys, tempfile
+          from pathlib import Path
+          second_disk = Path(os.environ["SystemRoot"]) / "Temp" if os.name == "nt" else Path("/dev/shm")
+          with tempfile.TemporaryDirectory(prefix="row65-", dir=Path.cwd()) as local:
+              with tempfile.TemporaryDirectory(prefix="row65-copy-", dir=second_disk) as other:
+                  subprocess.run([
+                      sys.executable, "specs/scripts/row65-ollama-protocol.py",
+                      "--output", str(Path(local) / "protocol"), "--copy-folder", other,
+                  ], check=True)
       - name: Verify durable run protocol when both consumers provide it
         if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         shell: python {0}

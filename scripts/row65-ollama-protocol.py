@@ -2,7 +2,7 @@
 
 The worker hosts the production report loop and send route with a disposable
 signed trust bundle. This tests the transfer protocol independently of the
-installer/browser acceptance. --copy-folder must be on another filesystem.
+installer/browser acceptance. --copy-folder also tests a copy on another filesystem.
 Run through cx9-ollama-models-acceptance.py --row65 --copy-folder <folder>.
 No live services, default ports, accounts or model stores are used.
 """
@@ -29,18 +29,20 @@ REPOS = HERE.parent.parent
 
 
 def python(repo: str) -> Path:
-    return (
+    local = (
         REPOS
         / repo
         / ".venv"
         / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     )
+    # Pinned integration installs both consumers in its selected interpreter.
+    return local if local.is_file() else Path(sys.executable)
 
 
-def ports() -> tuple[int, int]:
+def ports() -> tuple[int, ...]:
     held = []
     try:
-        for _ in range(2):
+        for _ in range(3):
             sock = socket.socket()
             sock.bind(("127.0.0.1", 0))
             held.append(sock)
@@ -53,11 +55,9 @@ def ports() -> tuple[int, int]:
 def serve(kind: str, root: Path) -> None:
     import uvicorn
 
-    sys.path.insert(0, str(REPOS / kind / "src"))
-    prefix = "eugene_plexus_" + kind
-    tokens = __import__(prefix + ".tokens", fromlist=["tokens"])
+    package = "library" if kind == "library" else "agent"
+    sys.path.insert(0, str(REPOS / package / "src"))
     data = json.loads((root / "trust.json").read_text())
-    bundle = tokens.parse_bundle(data["bundle"], authority=data["authority"])
     if kind == "library":
         from eugene_plexus_library.app import create_app
         from eugene_plexus_library.settings import Settings
@@ -66,7 +66,7 @@ def serve(kind: str, root: Path) -> None:
             settings=Settings(
                 config_file=root / "library.yaml",
                 state_file=root / "library-state.json",
-                agent_url=data["workerUrl"],
+                agent_url=data["libraryAgentUrl"],
                 trust_bundle_file=str(root / "bundle.json"),
                 trust_authority=data["authority"],
                 auth_recipient="node:library",
@@ -75,43 +75,72 @@ def serve(kind: str, root: Path) -> None:
         )
         port = data["libraryPort"]
     else:
-        from eugene_plexus_agent.admission import LibraryFitClient
+        from eugene_plexus_agent._generated.models import ComponentKind
+        from eugene_plexus_agent._http import aclose_shared
         from eugene_plexus_agent.auth_state import AuthState
+        from eugene_plexus_agent.install_proxy import RemoteNode
+        from eugene_plexus_agent.node_identity import IdentityRecord
         from eugene_plexus_agent.ollama_report import run as report
         from eugene_plexus_agent.routes.ollama import router
+        from eugene_plexus_agent.routes.proxy import router as proxy_router
+        from eugene_plexus_agent.trust import NodeTrust
         from fastapi import FastAPI
 
         @asynccontextmanager
         async def lifespan(app):
-            task = asyncio.create_task(report(app))
+            task = asyncio.create_task(report(app)) if kind == "agent" else None
             try:
                 yield
             finally:
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+                if task:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                client = getattr(app.state, "ui_proxy_client", None)
+                if client:
+                    await client.aclose()
+                await aclose_shared()
 
         app = FastAPI(lifespan=lifespan)
-        trust = SimpleNamespace(
-            recipient="node:worker",
-            verify=lambda token, classes: tokens.verify(
-                token, bundle=bundle, recipient="node:worker", classes=classes
+        name = "worker" if kind == "agent" else "library"
+        identity = SimpleNamespace(
+            record=IdentityRecord(
+                name=name,
+                control_url="http://control.invalid",
+                control_public_key=data["authority"],
+                token_private_key=data[
+                    "workerKey" if kind == "agent" else "libraryKey"
+                ],
+            )
+        )
+        trust = NodeTrust(identity, root / "bundle.json")
+        trust.load()
+        app.state.auth_state = AuthState(trust=trust)
+        app.state.agent_state = SimpleNamespace(
+            get_config=lambda key: True,
+            list_topology_entries=lambda: (
+                [SimpleNamespace(kind=ComponentKind.library, url=data["libraryUrl"])]
+                if kind == "library-agent"
+                else []
             ),
         )
-        app.state.auth_state = AuthState(trust=trust)
-        app.state.library_fit_client = LibraryFitClient(
-            data["libraryUrl"], data["workerService"]
-        )
-        app.state.agent_state = SimpleNamespace(
-            get_config=lambda key: True, list_topology_entries=list
-        )
-        app.state.node_identity = SimpleNamespace(
-            record=SimpleNamespace(enrolled=True, name="worker")
-        )
+        app.state.node_identity = identity
+        port = data["workerPort" if kind == "agent" else "libraryAgentPort"]
+        app.state.settings = SimpleNamespace(bind_host="127.0.0.1", bind_port=port)
+
+        class Topology:
+            """Disposable node addresses; production proxy and credentials below."""
+
+            async def owner_of(self, target, **kwargs):
+                assert target == "library"
+                return RemoteNode("library", data["libraryAgentUrl"])
+
+            async def agent_url_of(self, node, **kwargs):
+                assert node == "worker"
+                return data["workerUrl"]
+
+        app.state.install_topology = Topology()
+        app.include_router(proxy_router)
         app.include_router(router)
-        # Stand-in topology hop; the production sender still verifies the job
-        # with its own service token before opening its local store.
-        app.include_router(router, prefix="/api/proxy/node:worker")
-        port = data["workerPort"]
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
@@ -128,25 +157,28 @@ def wait(check, description: str):
     raise AssertionError("Timed out: " + description)
 
 
-def run(root: Path, copy_folder: Path) -> None:
+def run(root: Path, copy_folder: Path | None) -> None:
     sys.path.insert(0, str(REPOS / "library" / "src"))
     import hashlib
 
     from eugene_plexus_library import tokens
 
     root.mkdir(parents=True, exist_ok=False)
-    assert copy_folder.is_dir(), "--copy-folder must already exist"
-    assert root.stat().st_dev != copy_folder.stat().st_dev, (
-        "--copy-folder must be on another filesystem"
-    )
-    copy_root = copy_folder / root.name
-    copy_root.mkdir(exist_ok=False)
-    library_port, worker_port = ports()
-    assert not {library_port, worker_port} & set(range(8079, 8084))
+    copy_root = None
+    if copy_folder is not None:
+        assert copy_folder.is_dir(), "--copy-folder must already exist"
+        assert root.stat().st_dev != copy_folder.stat().st_dev, (
+            "--copy-folder must be on another filesystem"
+        )
+        copy_root = copy_folder / root.name
+        copy_root.mkdir(exist_ok=False)
+    library_port, worker_port, library_agent_port = ports()
+    assert not {library_port, worker_port, library_agent_port} & set(range(8079, 8084))
     authority = tokens.generate_private_key()
     control = tokens.Signer(tokens.generate_private_key(), "control")
     worker = tokens.Signer(tokens.generate_private_key(), "node:worker")
     local = tokens.Signer(tokens.generate_private_key(), "node:library")
+    console = tokens.Signer(tokens.generate_private_key(), "node:console")
     bundle = tokens.build_bundle(
         authority=authority,
         version=1,
@@ -155,14 +187,16 @@ def run(root: Path, copy_folder: Path) -> None:
             control.trust_key(["authority"]),
             worker.trust_key(["node"]),
             local.trust_key(["node"]),
+            console.trust_key(["node"]),
         ],
     )
     tokens.write_bundle_file(root / "bundle.json", bundle)
     session, _ = control.mint(
         typ=tokens.TYP_SESSION,
         sub="operator",
-        aud=["node:library", "node:worker"],
-        ttl_seconds=3600,
+        aud=["node:library"],
+        ttl_seconds=300,
+        extra={"act": {"sub": "node:console"}},
     )
     service, _ = worker.mint(
         typ=tokens.TYP_SERVICE, sub="agent", aud=["node:library"], ttl_seconds=3600
@@ -174,6 +208,7 @@ def run(root: Path, copy_folder: Path) -> None:
         f"http://127.0.0.1:{library_port}",
         f"http://127.0.0.1:{worker_port}",
     )
+    library_agent_url = f"http://127.0.0.1:{library_agent_port}"
     # Read back the public signed bundle in its on-disk envelope format.
     envelope = json.loads((root / "bundle.json").read_text())
     (root / "trust.json").write_text(
@@ -183,17 +218,23 @@ def run(root: Path, copy_folder: Path) -> None:
                 "authority": tokens.public_b64(authority),
                 "libraryUrl": library_url,
                 "workerUrl": worker_url,
+                "libraryAgentUrl": library_agent_url,
+                "libraryAgentPort": library_agent_port,
                 "libraryPort": library_port,
                 "workerPort": worker_port,
                 "workerService": service,
                 "libraryService": lib_service,
+                "workerKey": tokens.private_to_b64(worker.key),
+                "libraryKey": tokens.private_to_b64(local.key),
             }
         )
     )
     models = root / "models"
     models.mkdir()
     (root / "library.yaml").write_text(
-        json.dumps({"modelRoots": [str(models), str(copy_root)]})
+        json.dumps(
+            {"modelRoots": [str(models), *([str(copy_root)] if copy_root else [])]}
+        )
     )
 
     def text(value):
@@ -231,7 +272,11 @@ def run(root: Path, copy_folder: Path) -> None:
         )
     processes, logs = [], []
     try:
-        for kind, store in zip(("library", "agent"), stores, strict=True):
+        for kind, store in [
+            ("library", stores[0]),
+            ("library-agent", stores[0]),
+            ("agent", stores[1]),
+        ]:
             env = {
                 k: v
                 for k, v in os.environ.items()
@@ -243,7 +288,7 @@ def run(root: Path, copy_folder: Path) -> None:
             processes.append(
                 subprocess.Popen(
                     [
-                        str(python(kind)),
+                        str(python("library" if kind == "library" else "agent")),
                         str(Path(__file__)),
                         "--serve",
                         kind,
@@ -257,6 +302,9 @@ def run(root: Path, copy_folder: Path) -> None:
                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
                 )
             )
+        # The console's first hop has already exchanged its session for the
+        # Library host. It cannot be exchanged again or used at the worker.
+        library_url = library_agent_url + "/api/proxy/library"
         with httpx.Client(
             headers={"Authorization": "Bearer " + session}, trust_env=False
         ) as client:
@@ -338,18 +386,27 @@ def run(root: Path, copy_folder: Path) -> None:
             assert os.path.samefile(
                 linked["target"], stores[0] / "blobs" / ("sha256-" + digest)
             )
-            copied = keep(f"/v1/models/{model['id']}/keep", {"folder": str(copy_root)})
-            assert copied["method"] == "copy"
-            assert (
-                hashlib.sha256(Path(copied["target"]).read_bytes()).hexdigest()
-                == digest
-            )
+            if copy_root:
+                copied = keep(
+                    f"/v1/models/{model['id']}/keep", {"folder": str(copy_root)}
+                )
+                assert copied["method"] == "copy"
+                assert (
+                    hashlib.sha256(Path(copied["target"]).read_bytes()).hexdigest()
+                    == digest
+                )
             # Free the default destination for the worker's separate Keep.
             remote_root = root / "remote-models"
             remote_root.mkdir()
             client.patch(
                 library_url + "/v1/config",
-                json={"modelRoots": [str(models), str(copy_root), str(remote_root)]},
+                json={
+                    "modelRoots": [
+                        str(models),
+                        *([str(copy_root)] if copy_root else []),
+                        str(remote_root),
+                    ]
+                },
             )
             wait(
                 lambda: client.get(library_url + "/v1/nodes/ollama").json()["nodes"],
@@ -409,7 +466,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--copy-folder", type=Path)
-    parser.add_argument("--serve", choices=["library", "agent"])
+    parser.add_argument("--serve", choices=["library", "library-agent", "agent"])
     parser.add_argument("--check-copy", action="store_true")
     args = parser.parse_args()
     if args.check_copy:
@@ -432,5 +489,7 @@ if __name__ == "__main__":
     elif args.serve:
         serve(args.serve, args.output)
     else:
-        assert args.copy_folder, "--copy-folder is required"
-        run(args.output.resolve(), args.copy_folder.resolve())
+        run(
+            args.output.resolve(),
+            args.copy_folder.resolve() if args.copy_folder else None,
+        )

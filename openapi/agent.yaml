@@ -3244,8 +3244,12 @@ paths:
       operationId: sendOllamaModel
       summary: Send an Ollama model to its Keep job in the Library.
       description: |
-        Operator-only, called by the Library on behalf of the Keep
-        action. Before reading bytes, fetch `GET /v1/keep-jobs/{job}`
+        Accept an operator session or a `sub: agent` service token from
+        the Library's host, as identified by the install topology. The
+        Library calls its local agent with its own service credential;
+        that agent sends the request with its machine identity and
+        never forwards an operator session to the worker.
+        Before reading bytes, fetch `GET /v1/keep-jobs/{job}`
         from this install's Library using this agent's own service
         token. The job must be running, name this machine as `node`, and
         name the requested digest. Find that digest in a detected local

@@ -106,6 +106,8 @@ class OllamaContractTests(unittest.TestCase):
         self.assertFalse(request["additionalProperties"])
         self.assertIn("403", operation["responses"])
         self.assertIn("16 MiB", operation["description"])
+        self.assertIn("Library's host", operation["description"])
+        self.assertIn("never forwards an operator session", operation["description"])
         self.assertIn(
             "reportOllama", self.agent["paths"]["/v1/config"]["get"]["description"]
         )
