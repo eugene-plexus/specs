@@ -70,7 +70,41 @@ def workflow(name: str) -> dict:
     )
 
 
+def can_run_on_windows(job: dict) -> bool:
+    """True when a job may run on a Windows runner (a matrix it cannot read counts)."""
+    runs_on = job.get("runs-on", "")
+    if isinstance(runs_on, str) and "matrix." not in runs_on:
+        return "windows" in runs_on
+    matrix = (job.get("strategy") or {}).get("matrix")
+    if not isinstance(matrix, dict):
+        return True
+    names = matrix.get("os") or []
+    if isinstance(names, str):
+        return "windows" in names
+    names = [*names, *(entry.get("os", "") for entry in matrix.get("include") or [])]
+    return any("windows" in name for name in names)
+
+
 class WiringTests(unittest.TestCase):
+    def test_no_step_on_windows_runs_under_the_default_shell(self) -> None:
+        """The runner's default pwsh fails a step only on the exit code of its last
+        native command: a failing command followed by a passing one is green, and
+        the agent's Windows pytest step once passed with 2 failed tests (W0.13).
+        Every run step of a job that can run on Windows names its shell, as a
+        step, job or workflow default."""
+        default = []
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            document = workflow(path.name)
+            workflow_shell = ((document.get("defaults") or {}).get("run") or {}).get("shell")
+            for job_id, job in (document.get("jobs") or {}).items():
+                if not can_run_on_windows(job):
+                    continue
+                job_shell = ((job.get("defaults") or {}).get("run") or {}).get("shell")
+                for number, step in enumerate(job.get("steps") or [], 1):
+                    if "run" in step and not (step.get("shell") or job_shell or workflow_shell):
+                        default.append(f"{path.name} {job_id} step {number}: {step.get('name', '')}")
+        self.assertEqual(default, [])
+
     def test_container_checks_install_yaml_in_the_selected_interpreter(self) -> None:
         steps = workflow("container.yml")["jobs"]["build-verify-publish"]["steps"]
         setup = next(

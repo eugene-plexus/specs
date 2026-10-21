@@ -227,6 +227,15 @@ jobs:
     if: needs.plan.outputs.instruments == 'true'
     name: S10 acceptance instruments (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # bash for every step, Windows included (W0.13). The runner's default pwsh
+    # fails a step only on the exit code of its last native command, so a
+    # block with a failing command followed by a passing one is green, and the
+    # agent's Windows pytest step once reported success with 2 failed tests.
+    # bash -e -o pipefail stops at the first failing command. The same default
+    # is set on every job below that runs on Windows.
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -268,6 +277,10 @@ jobs:
     # Job Sites waits up to 75 s for a site's own bundle pull (2026-10-05).
     # The tools-are-assumed pair acceptance runs about three minutes (2026-10-12).
     timeout-minutes: 25
+    # bash for every step, Windows included (see S10 acceptance instruments).
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -645,6 +658,10 @@ jobs:
     name: R7 launch boundary (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    # bash for every step, Windows included (see S10 acceptance instruments).
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -779,6 +796,10 @@ jobs:
     if: needs.plan.outputs.uninstall == 'true'
     name: Offline removal (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # bash for every step, Windows included (see S10 acceptance instruments).
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
