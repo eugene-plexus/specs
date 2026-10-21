@@ -597,11 +597,13 @@ paths:
         reset endpoint by accident.
 
         **A machine that left an install with no passphrase of its own
-        (agent#22)** takes one only from the machine itself: the TCP peer,
-        or the HTTPS entry point's verified client address, must be
-        loopback, until a passphrase is set. It still listens where other
-        machines reached it, and the first caller on the network would own
-        it. Any other caller gets **403**.
+        (agent#22)** takes one only from the machine itself, until a
+        passphrase is set: the real peer (the TCP peer, the HTTPS entry
+        point's verified client, or the peer this agent's own proxy saw)
+        is loopback, no forwarding header is present, and the Host is a
+        loopback name. It still listens where other machines reached it,
+        and the first caller on the network would own it. Any other caller
+        gets **403**.
       requestBody:
         required: true
         content:
