@@ -80,6 +80,13 @@ requires a successful push CI receipt plus real Linux/Windows runtime-job
 receipts for identical inputs. A green documentation commit cannot conceal a
 canceled or failed runtime check. Skipped jobs are not evidence.
 
+Pinned integration runs in three parts per system side by side (W0.3); each
+acceptance step runs in exactly one part, under the profile condition it had
+before. The runtime receipts keep the unsplit job's names, `Pinned
+integration (ubuntu-latest)` and `(windows-latest)`, and pass only when every
+part on both systems passed; the publisher also requires every job named
+`Pinned integration (...)`, each part included, to have passed.
+
 Runtime fingerprints include tracked code, contracts, dependency locks,
 workflows, harnesses and configuration. Image fingerprints include installers,
 release inputs, all scripts, platform files, Docker/Unraid inputs, Docker ignore

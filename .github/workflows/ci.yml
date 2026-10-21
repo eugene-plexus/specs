@@ -220,10 +220,18 @@ jobs:
       - name: Verify retained A8 measurement integrity and declared targets
         run: python scripts/a8-summarize.py docs/acceptance/a8-data
 
+  # Pinned integration in parts (W0.3): three parts per system, run side by
+  # side. Each part installs the same pinned components; every acceptance
+  # step after the install runs in exactly one part per system (its
+  # `matrix.shard` clause) under the profile condition it always had. Parts
+  # are balanced by the step times of the full runs of 2026-10-20/21 (run
+  # 39540266361 and its neighbours): about 5.5 minutes of steps each; on
+  # Linux, Job Sites (about 5.3 minutes) has a part to itself. Publish Edge
+  # reads the two aggregate jobs below, not these.
   r7-signing:
     needs: plan
     if: needs.plan.outputs.runtime == 'true'
-    name: Pinned integration (${{ matrix.os }})
+    name: Pinned integration (${{ matrix.os }}, part ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
     # C3 builds an app's environment from its archive with uv (2026-10-01).
     # Job Sites waits up to 75 s for a site's own bundle pull (2026-10-05).
@@ -232,7 +240,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            shard: L1
+          - os: ubuntu-latest
+            shard: L2
+          - os: ubuntu-latest
+            shard: L3
+          - os: windows-latest
+            shard: W1
+          - os: windows-latest
+            shard: W2
+          - os: windows-latest
+            shard: W3
     steps:
       - uses: actions/checkout@v6
         with:
@@ -314,7 +334,7 @@ jobs:
       - name: Check installed dependency consistency
         run: python -m pip check
       - name: Verify durable run protocol when both consumers provide it
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         shell: python {0}
         run: |
           import importlib.util, subprocess, sys
@@ -325,123 +345,154 @@ jobs:
           else:
               print("Pre-operation release pins: legacy compatibility checks still apply; run recovery activates when both consumers are upgraded.")
       - name: Score the shipped starter set for 8 GB GPU and 16 GB RAM
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/s10-starter-check.py
       - name: One token module in five repos, and nothing of the shared-key model left
+        if: matrix.shard == 'L1' || matrix.shard == 'W3'
         run: python specs/scripts/r7-signing-checks.py
       - name: Rotate the root's token key across two live agents
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
       - name: A stolen worker key tried against every other process, then revoked
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/row3-per-node-keys-acceptance.py --lan
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
       - name: Verify engines declare what they accept and the Library judges (LS1)
+        if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/ls1-eligibility-acceptance.py
       - name: Verify Discover's verdicts before download, against a fake hub on loopback (LS2)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls2-discover-acceptance.py
       - name: Verify a prepared model is a Library model, Run to ready on a stand-in Strata (LS3)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls3-prepared-acceptance.py
       - name: Verify catalogue sources are a list and Strata publishes its own, against two fake hubs (LS4)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls4-sources-acceptance.py
       - name: Verify LS5 timeout diagnostics preserve the operation state
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls5-preparation-checks.py
       - name: Verify preparation is a job on the engine's node, with a stand-in Strata setup (LS5)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls5-preparation-acceptance.py
       - name: Verify runtime Stop waits for descendants and refuses stale Strata listeners
+        if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/runtime-stop-acceptance.py
       - name: Verify each engine owns its fit model, from declaration to judge to admission (LS6)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls6-fit-acceptance.py
       - name: Verify a node runs a prepared model from its own copy of the Library's files (LS7a)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls7-copy-acceptance.py
       - name: Verify the Library says what is known of a prepared model (LS7b)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls7b-facts-acceptance.py
       - name: Verify a model is deleted from the Library, any format, all or nothing (LS8)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls8-delete-acceptance.py
       - name: Verify A3 client-key revocation and outage bounds across five processes
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/a3-client-keys-acceptance.py
       - name: Verify A5 scoped keys, shared limits, cancellation and usage across gateways
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/a5-scoped-keys-acceptance.py
       - name: Verify A6 local-only routing through signed components and real drivers
+        if: matrix.shard == 'L3' || matrix.shard == 'W3'
         run: python specs/scripts/a6-local-only-acceptance.py
       - name: Verify A6b uncertain outcomes, cooldown, deadlines and CLI side effects
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/a6b-failover-acceptance.py
       - name: Verify P2a audio and PDF inputs at every door through signed processes
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p2-media-acceptance.py
       - name: Verify P3 streaming timing is independent of request startup
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p3-audio-checks.py
       - name: Verify P3 speech and transcription through signed processes and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p3-audio-acceptance.py
       - name: Verify P4 image generation and edits through signed processes and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p4-images-acceptance.py
       - name: Verify P5 video jobs through signed processes, a gateway restart and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p5-videos-acceptance.py
       - name: Verify P6 moderations, model lookup and completions through signed processes and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p6-acceptance.py
       - name: Verify P8 web search through agent-spawned search accounts and the unchanged OpenAI and Anthropic SDKs
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p8-search-acceptance.py
       - name: Verify Google Search beside Brave (grounded answer verbatim, real addresses, Search Suggestions on every door, the person's search order)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/google-search-acceptance.py
       - name: Verify a Gemini account (native API, thought signatures, every surface) through signed processes and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/gemini-acceptance.py
       - name: Verify the gateway and driver pair on stand-in providers (tools are assumed - header agreement, slots, counts, stream heads)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/tools-assumed-acceptance.py
       - name: Verify interactive UI inference prerequisites through gateway and drivers
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/genui-inference-acceptance.py --report genui-inference.json
       - name: Verify the UI inference gate detects lost structured-output settings
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/genui-inference-sabotage.py
       - name: Keep UI inference prerequisite evidence
-        if: always() && needs.plan.outputs.full == 'true'
+        if: always() && (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: genui-inference-${{ matrix.os }}
           path: genui-inference.json
           if-no-files-found: ignore
       - name: Verify C2 sign-in with Eugene through an agent, with a real OpenID Connect client
+        if: matrix.shard == 'L1' || matrix.shard == 'W3'
         run: python specs/scripts/c2-sign-in-acceptance.py
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/c3-workbench-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py
       - name: Verify the warm standby is granted, follows, is revoked and promotes (control#5)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/standby-acceptance.py
       - name: Verify Job Sites through the public node route, real Caddy and a joined site
         # The entry point is the Linux container's; the Windows topology (the
         # root in WSL2) is run by hand with --root-wsl.
-        if: runner.os == 'Linux' && needs.plan.outputs.full == 'true'
+        if: matrix.shard == 'L1' && runner.os == 'Linux' && needs.plan.outputs.full == 'true'
         run: python specs/scripts/job-sites-acceptance.py
       - name: Verify A7 encrypted checkpoints and destructive restore refusals
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/a7-recovery-checks.py
       - name: Detect deliberately broken R8 profile defaults
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r8-profile-checks.py
+
+  # The receipts Publish Edge reads (edge_marker.RUNTIME_JOBS), under the
+  # unsplit job's names. Each passes only if every part on Linux and Windows
+  # passed: a failed, skipped or cancelled part fails both.
+  pinned-integration:
+    needs: [plan, r7-signing]
+    if: ${{ !cancelled() && needs.plan.outputs.runtime == 'true' }}
+    name: Pinned integration (${{ matrix.os }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Every part on Linux and Windows passed
+        env:
+          PARTS: ${{ needs.r7-signing.result }}
+        run: |
+          if [ "$PARTS" != success ]; then
+            echo "::error::The pinned integration parts concluded '$PARTS'; every part on both systems must pass"
+            exit 1
+          fi
+          echo "Every pinned integration part on Linux and Windows passed."
 
   # LT1, the check of record: two containers on a bridge, tcpdump in the
   # worker's namespace, and the sabotage the design names (tls-between-machines.md §5).

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import unittest
 from pathlib import Path
 
+import edge_marker
 import yaml
 from ci_plan import CHECKS, OUTPUTS, REF_INPUTS
 
@@ -102,6 +104,66 @@ class WiringTests(unittest.TestCase):
                 component = repository.removeprefix("eugene-plexus/").replace("-", "_")
                 if component in REF_INPUTS:
                     self.assertIn(f"needs.plan.outputs.{component}_ref", step["with"]["ref"])
+
+    def test_every_pinned_integration_step_runs_once_per_system(self) -> None:
+        job = workflow("ci.yml")["jobs"]["r7-signing"]
+        legs = job["strategy"]["matrix"]["include"]
+        systems = {"ubuntu-latest": "L", "windows-latest": "W"}
+        self.assertEqual(
+            sorted((leg["os"], leg["shard"]) for leg in legs),
+            sorted((system, f"{letter}{part}") for system, letter in systems.items() for part in "123"),
+        )
+        clause = re.compile(r"matrix\.shard == '([LW][123])'")
+        steps = job["steps"]
+        first = next(i for i, step in enumerate(steps) if "matrix.shard" in step.get("if", ""))
+        self.assertEqual(steps[first - 1]["name"], "Check installed dependency consistency")
+        # Every part installs the same components: no setup step is split.
+        for step in steps[:first]:
+            self.assertNotIn("matrix.shard", step.get("if", ""))
+        for step in steps[first:]:
+            with self.subTest(step=step["name"]):
+                condition = step.get("if", "")
+                parts = clause.findall(condition)
+                linux = [part for part in parts if part.startswith("L")]
+                windows = [part for part in parts if part.startswith("W")]
+                self.assertEqual(len(linux), 1)
+                if "runner.os == 'Linux'" in condition:
+                    self.assertEqual(windows, [])
+                else:
+                    self.assertEqual(len(windows), 1)
+                # The part clause is ANDed onto a condition the unsplit job had.
+                bare = " || ".join(f"matrix.shard == '{part}'" for part in linux + windows)
+                part = f"({bare})" if windows else bare
+                full = "needs.plan.outputs.full == 'true'"
+                self.assertIn(
+                    condition,
+                    {
+                        bare,
+                        f"{part} && {full}",
+                        f"always() && {part} && {full}",
+                        f"{part} && runner.os == 'Linux' && {full}",
+                    },
+                )
+
+    def test_publish_edge_reads_aggregates_that_need_every_part(self) -> None:
+        jobs = workflow("ci.yml")["jobs"]
+        aggregate = jobs["pinned-integration"]
+        self.assertEqual(aggregate["needs"], ["plan", "r7-signing"])
+        self.assertEqual(
+            aggregate["if"], "${{ !cancelled() && needs.plan.outputs.runtime == 'true' }}"
+        )
+        names = {
+            aggregate["name"].replace("${{ matrix.os }}", system)
+            for system in aggregate["strategy"]["matrix"]["os"]
+        }
+        self.assertEqual(names, set(edge_marker.RUNTIME_JOBS))
+        check = aggregate["steps"][0]
+        self.assertEqual(check["env"]["PARTS"], "${{ needs.r7-signing.result }}")
+        self.assertIn('if [ "$PARTS" != success ]; then', check["run"])
+        self.assertIn("exit 1", check["run"])
+        # Every part's name falls under the prefix Publish Edge requires to pass.
+        self.assertTrue(jobs["r7-signing"]["name"].startswith(edge_marker.RUNTIME_PREFIX))
+        self.assertEqual(jobs["r7-signing"]["strategy"]["fail-fast"], "false")
 
     def test_planner_outputs_and_scoped_jobs_are_connected(self) -> None:
         jobs = workflow("ci.yml")["jobs"]
