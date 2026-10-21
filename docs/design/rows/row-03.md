@@ -191,3 +191,25 @@ Branch `r3-machine-key` in specs, agent and control.
   arrives, which is asked for at the switch.
 - An agent older than row 3 reports no list version, so a change waits the
   full 3 minutes for it.
+
+**The adversarial review (2026-10-21), and what changed.** Four blockers,
+each now a fault-injection test that failed first:
+1. **node.yaml written after memory took the switch.** A failed write left
+   memory switched, so a retry reported done and announced the old key; a
+   restart then presented a key the root refused. Now node.yaml is written
+   before the record is held, a switch it cannot keep puts the old key back
+   on the port, and the status keeps the observed cause.
+2. **An agent older than row 3, off for the whole change of the root's
+   key**, came back with only the old root key and never recovered (its pull
+   stops at the refused bundle). The root now remembers which machines have
+   reported a list version (`notReady` names the rest), and the root's own
+   change does not switch while any is named, with no time bound. Another
+   machine's change is not held up.
+3. **The list version was reported before the children could read the
+   table** (or when the file write failed, and taking the same list again
+   did not retry). Now only the version in the file, written, and past the
+   children's one-second cache is reported.
+4. **Done on the root's acknowledgement.** A root restarted sealed takes the
+   drop but signs nothing and keeps serving both keys. Now done needs a
+   verified signed list that names the new key alone; until then the status
+   says what it waits for, naming a sealed root.
