@@ -34,7 +34,8 @@ INPUTS = {**REF_INPUTS, "ui": "ui", "workbench": "workbench"}
 
 def dispatch(branch: str, *, full: bool) -> tuple[str, list[str]]:
     """The ref CI runs at and the `gh workflow run` command for this branch."""
-    git(SPECS, "fetch", "--quiet", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main")
+    main = "+refs/heads/main:refs/remotes/origin/main"
+    git(SPECS, "fetch", "--quiet", "--no-tags", "origin", main)
     specs = remote_branch("specs", branch)
     if specs:
         git(
@@ -120,7 +121,8 @@ def main() -> int:
     subprocess.run(command, check=True)
     url = started_run(ref, since)
     if url is None:
-        print(f"Dispatched; see `gh run list --repo {REPOSITORY} --workflow ci.yml --branch {ref}`.")
+        listing = f"gh run list --repo {REPOSITORY} --workflow ci.yml --branch {ref}"
+        print(f"Dispatched; see `{listing}`.")
         return 0
     print(url)
     return 0

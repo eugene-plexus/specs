@@ -111,7 +111,11 @@ class WiringTests(unittest.TestCase):
         systems = {"ubuntu-latest": "L", "windows-latest": "W"}
         self.assertEqual(
             sorted((leg["os"], leg["shard"]) for leg in legs),
-            sorted((system, f"{letter}{part}") for system, letter in systems.items() for part in "123"),
+            sorted(
+                (system, f"{letter}{part}")
+                for system, letter in systems.items()
+                for part in "123"
+            ),
         )
         clause = re.compile(r"matrix\.shard == '([LW][123])'")
         steps = job["steps"]
@@ -164,6 +168,25 @@ class WiringTests(unittest.TestCase):
         # Every part's name falls under the prefix Publish Edge requires to pass.
         self.assertTrue(jobs["r7-signing"]["name"].startswith(edge_marker.RUNTIME_PREFIX))
         self.assertEqual(jobs["r7-signing"]["strategy"]["fail-fast"], "false")
+
+    def test_a_reduced_run_on_main_needs_the_previous_push_to_have_passed(self) -> None:
+        guard = workflow("ci.yml")["jobs"]["previous-push"]
+        self.assertEqual(guard["needs"], "plan")
+        self.assertEqual(
+            guard["if"],
+            "github.repository == 'eugene-plexus/specs' && github.event_name == 'push' "
+            "&& github.ref == 'refs/heads/main' && needs.plan.outputs.full == 'false'",
+        )
+        step = guard["steps"][-1]
+        self.assertEqual(step["env"]["PREVIOUS"], "${{ github.event.before }}")
+        self.assertEqual(step["run"], 'python3 scripts/previous_push.py "$PREVIOUS"')
+        self.assertGreater(int(guard["timeout-minutes"]), 55)
+        checks = next(
+            step["run"]
+            for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
+            if step.get("name") == "Check CI planning"
+        )
+        self.assertIn("test_ship.py", checks)
 
     def test_planner_outputs_and_scoped_jobs_are_connected(self) -> None:
         jobs = workflow("ci.yml")["jobs"]

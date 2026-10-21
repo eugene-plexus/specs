@@ -4,6 +4,7 @@
     python scripts/ship.py workbench gateway  # just these
     python scripts/ship.py --dry-run          # say what would ship; change nothing
     python scripts/ship.py --wait             # then wait until Edge carries it
+    python scripts/ship.py --one-push         # merged specs commits ride with the pins
 
 It does every hop a pin needs, in the order CLAUDE.md gives: each repo's
 `main` is pushed if it is ahead; `ui` and `workbench` get a `dist` commit
@@ -13,6 +14,13 @@ index, so no stale `dist` checkout can be picked up); `workbench` and
 specs manifest, both installers and their generated block are updated,
 committed and pushed. Specs CI and the image build then publish Edge by
 themselves (`edge.yml`); `--wait` watches for that or names the failure.
+
+The pin commit is pushed alone (P11): merged specs commits that `main` holds
+beyond `origin/main` are pushed first, on their own, so their run plans their
+change and the pin push's run plans the pins only (the reduced profile). CI
+passes the pin push's run only once the merged work's run has passed
+(`scripts/previous_push.py`). When a merged specs script needs the new
+component code, it must go out with the pins: pass `--one-push`.
 
 What it checks before anything is pushed: each repo is on `main` with no
 uncommitted tracked changes and not behind `origin/main`, and `ruff check` /
@@ -358,7 +366,9 @@ def pin_in_agent(
     return agent
 
 
-def ship(names: list[str], *, dry_run: bool, co_author: str | None) -> str | None:
+def ship(
+    names: list[str], *, dry_run: bool, co_author: str | None, one_push: bool = False
+) -> str | None:
     if git(SPECS, "rev-parse", "--abbrev-ref", "HEAD") != "main":
         raise Stop("specs: not on main")
     if git(SPECS, "status", "--porcelain", "--untracked-files=no"):
@@ -368,6 +378,8 @@ def ship(names: list[str], *, dry_run: bool, co_author: str | None) -> str | Non
     git(SPECS, "fetch", "-q", "origin", "main")
     if not is_ancestor(SPECS, "origin/main", "HEAD"):
         raise Stop("specs: main is behind origin/main; pull first")
+    merged = int(git(SPECS, "rev-list", "--count", "origin/main..HEAD"))
+    merged_head = git(SPECS, "rev-parse", "HEAD")
     pins = current_pins()
     explicit = bool(names)
     unknown = set(names) - set(ORDER)
@@ -403,6 +415,16 @@ def ship(names: list[str], *, dry_run: bool, co_author: str | None) -> str | Non
     for plan in plans.values():
         if plan.push_main and not dry_run:
             git(plan.repo, "push", "-q", "origin", "HEAD:main")
+    if merged and not one_push:
+        # Their own push, before the pin commit exists: its run plans their
+        # change, and the pin push's run plans the pins alone (P11).
+        if dry_run:
+            print(f"  specs: would push {merged} merged commit(s) first, on their own")
+        else:
+            git(SPECS, "push", "-q", "origin", f"{merged_head}:refs/heads/main")
+            print(
+                f"  specs: pushed {merged} merged commit(s) to {merged_head[:7]} on their own"
+            )
     for name in ("ui", "workbench"):
         if name in plans:
             plans[name].new_pin = publish_dist(plans[name], co_author, dry_run)
@@ -419,6 +441,10 @@ def ship(names: list[str], *, dry_run: bool, co_author: str | None) -> str | Non
         if name in plans:
             plans[name].new_pin = plans[name].head
     if dry_run:
+        if merged and one_push:
+            print(f"  specs: the pin commit would carry {merged} merged commit(s) in one push")
+        else:
+            print("  specs: the pin commit would be pushed alone")
         print("Dry run: nothing pushed, specs unchanged.")
         return None
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
@@ -446,7 +472,10 @@ def ship(names: list[str], *, dry_run: bool, co_author: str | None) -> str | Non
         co_author,
     )
     git(SPECS, "push", "-q", "origin", "HEAD:main")
-    print(f"Pushed specs {commit[:7]}. Edge publishes once its CI and image pass.")
+    alone = "" if one_push and merged else " alone"
+    print(
+        f"Pushed specs {commit[:7]}{alone}. Edge publishes once its CI and image pass."
+    )
     return commit
 
 
@@ -482,7 +511,9 @@ def wait_for_edge(commit: str, minutes: float) -> int:
                 "databaseId,status,conclusion",
             )
             for entry in runs if isinstance(runs, list) else []:
-                # A newer push cancels this one's CI; Edge can still carry it.
+                # A cancelled run is not a failure here. A failed run of the
+                # merged work pushed first fails this commit's run as well
+                # (its "previous push" job), and is named through it.
                 if entry["status"] == "completed" and entry["conclusion"] in (
                     "failure",
                     "timed_out",
@@ -521,6 +552,12 @@ def main() -> int:
     parser.add_argument(
         "--wait-for", metavar="SPECS_COMMIT", help="only wait, for this commit"
     )
+    parser.add_argument(
+        "--one-push",
+        action="store_true",
+        help="push merged specs commits with the pin commit (one push, their plan); "
+        "for a merged script that needs the new component code",
+    )
     parser.add_argument("--minutes", type=float, default=30)
     parser.add_argument(
         "--co-author",
@@ -531,7 +568,12 @@ def main() -> int:
     try:
         if args.wait_for:
             return wait_for_edge(git(SPECS, "rev-parse", args.wait_for), args.minutes)
-        commit = ship(args.repos, dry_run=args.dry_run, co_author=args.co_author)
+        commit = ship(
+            args.repos,
+            dry_run=args.dry_run,
+            co_author=args.co_author,
+            one_push=args.one_push,
+        )
         if commit and args.wait:
             return wait_for_edge(commit, args.minutes)
     except Stop as stop:
