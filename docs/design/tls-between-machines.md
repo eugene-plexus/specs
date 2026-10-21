@@ -605,8 +605,9 @@ a container root, one adversarial review, and `ship.py`.
   list in plain HTTP.
 
 **Not built, or not measured.**
-- **Key rotation** (two pins over an overlap): the record and the list hold a
-  list of pins, but a node announces one and nothing rotates it.
+- **Key rotation** (two pins over an overlap): built in row 3
+  ([`rows/row-03.md`](rows/row-03.md)), `POST /v1/node/machine-key` on any
+  machine, the root included. The console button is not built yet.
 - **A promoted standby on a version older than LT1** keeps no pins (its apply
   ignores the new fields), and nodes re-announce only on a change, so its list
   is empty until they do.
