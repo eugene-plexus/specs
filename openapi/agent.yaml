@@ -3238,6 +3238,63 @@ paths:
               schema:
                 $ref: "#/components/schemas/LibraryFolderReach"
 
+  /v1/ollama/send:
+    post:
+      tags: [runtimes]
+      operationId: sendOllamaModel
+      summary: Send an Ollama model to its Keep job in the Library.
+      description: |
+        Operator-only, called by the Library on behalf of the Keep
+        action. Before reading bytes, fetch `GET /v1/keep-jobs/{job}`
+        from this install's Library using this agent's own service
+        token. The job must be running, name this machine as `node`, and
+        name the requested digest. Find that digest in a detected local
+        Ollama store; no supplied filesystem path or destination URL.
+
+        Send the weights and any projector through that job's Library
+        file routes, using the LS10 state, offset and complete protocol
+        in chunks of at most 16 MiB. The Library checks each file against
+        the report's digest and size. Resume from its received offset.
+        This request completes after the send; a failure names its
+        observed cause. Nothing in Ollama is changed or deleted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OllamaSendRequest"
+      responses:
+        "200":
+          description: Every file was sent and verified by the Library.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OllamaSendResult"
+        "403":
+          description: An operator session is required, or the Keep job belongs to another machine.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "404":
+          description: The Keep job or the local Ollama digest was not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
+          description: The Keep job is not running, its digest differs, or the source cannot be read.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "502":
+          description: The Library could not receive or verify the file; detail states its cause.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+
   /v1/model-copies/clear:
     post:
       tags: [runtimes]
@@ -3312,6 +3369,15 @@ paths:
         makes spawned components bind `0.0.0.0` rather than loopback,
         because a component that must be reached from another host
         cannot bind only to this one; engines are never widened.
+
+        **`reportOllama`** (`boolean`, default `true`) reports this
+        machine's Ollama stores to the Library at start, then checks
+        every 60 seconds and reports when the listing changes. It sends
+        names, sizes and digests only; bytes move only after Keep. The
+        Library's own machine is read locally and does not send a report.
+        The machine's page exposes this switch through the config trio;
+        turning it off stops reports and leaves the last report's actual
+        `readAt` visible so its age stays honest.
       responses:
         "200":
           description: Current config.
@@ -7058,6 +7124,29 @@ components:
           type: integer
           minimum: 0
           description: How many of them are whole on this node's disk so far.
+
+    OllamaSendRequest:
+      type: object
+      additionalProperties: false
+      required: [job, digest]
+      properties:
+        job:
+          type: string
+          description: The Library's Keep job id, used to discover the authorized destination.
+        digest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+
+    OllamaSendResult:
+      type: object
+      required: [job, bytesSent]
+      properties:
+        job:
+          type: string
+        bytesSent:
+          type: integer
+          minimum: 0
+          description: Bytes sent in this request, including a projector when present.
 
     ModelCopyClearResult:
       type: object
