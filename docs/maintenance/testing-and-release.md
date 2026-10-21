@@ -1,28 +1,37 @@
 # Testing and release policy
 
-Approved 2026-10-17. Edge is for rapid development; Release is a separately
-qualified immutable candidate. Keep existing regression tests, but stop
-repeating release qualification for every work slice.
+Approved 2026-10-17; work slices revised 2026-10-21 (development plan P2, P3,
+P5, P10: [`development-plan.md`](../design/development-plan.md)). Edge is for
+rapid development; Release is a separately qualified immutable candidate. Keep
+existing regression tests, but stop repeating release qualification for every
+work slice.
 
 ## Work slices
 
-| Change                                                                                   | Required local evidence                                        |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Documentation or metadata only                                                           | Applicable integrity, link and whitespace checks               |
-| Routine behavior                                                                         | Focused regression tests and applicable static checks          |
-| Cross-component behavior                                                                 | Acceptance for the changed boundary                            |
-| Auth, privileges, destructive filesystem operations, migrations, installers, publication | Focused real-environment acceptance and one adversarial review |
+The merge gate is green CI on the branch. A builder runs only the tests for
+the files it changed and the pre-commit hooks locally.
 
-No automatic new acceptance harness, sabotage pass, adversarial review or run
-document for a low-risk slice. Reuse a suitable existing test. An acceptance
-defect gets a regression that fails without the repair. Sabotage a new or
-changed critical check once; do not replay unchanged mutations for every edit.
-Never restore sabotage with a destructive checkout of a developer's files.
+| Change | Required before merge |
+| --- | --- |
+| Documentation or metadata only | Applicable integrity, link and whitespace checks |
+| Routine behavior | A regression test that fails without the change; green CI on the branch |
+| Cross-component behavior | The same, plus the specs branch integration in CI (`scripts/branch-ci.py <branch>`, or a specs branch of the same name) |
+| Auth, privileges, destructive filesystem operations, migrations, installers, publication | The same, plus an acceptance script that runs in CI on real Linux and Windows processes, and one adversarial review by a second model while CI runs. Only a blocker finding stops the merge. A change to the Windows service or UAC also gets one elevated run on the maintainer's machine |
 
-Do not run full component suites locally merely to repeat CI. Reuse results
-while their inputs remain unchanged. Unknown impact means broader coverage,
-not guessed test exclusions. Platform-specific changes still test their actual
-platform. Shared inference/control APIs do not justify dropping security tests.
+No acceptance record, run document or handoff for a row: its GitHub issue
+holds the brief and status, and the design doc gets a short "what building
+found". A release keeps its acceptance record. Reuse a suitable existing test.
+An acceptance defect gets a regression that fails without the repair.
+Sabotage a new or changed critical check once; do not replay unchanged
+mutations for every edit. Never restore sabotage with a destructive checkout
+of a developer's files.
+
+A flaky test is fixed the same day, or skipped with the issue number in its
+reason. It is never re-run silently.
+
+Unknown impact means broader coverage, not guessed test exclusions.
+Platform-specific changes still test their actual platform. Shared
+inference/control APIs do not justify dropping security tests.
 
 ## Automatic CI
 
