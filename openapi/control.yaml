@@ -4353,6 +4353,18 @@ components:
           description: |
             Machines this root could not reach on its last poll. The node
             does not wait for them: each fetches the list when it is back.
+        notReady:
+          type: array
+          items:
+            type: string
+          description: |
+            Machines with a machine key that this root has never seen
+            report a machine list version: they run an agent older than
+            row 3, which cannot take the root's new key by itself if it
+            misses the change. A change of the key of the machine that
+            runs this root does not switch while any is listed (update
+            them, or remove a machine that is gone). Another machine's
+            change is not held up by them.
 
     MachineLink:
       type: object
