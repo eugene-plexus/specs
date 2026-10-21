@@ -486,6 +486,15 @@ jobs:
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/c3-workbench-acceptance.py
+      # Row 7: Workbench at the candidate (a dispatch's workbench_ref, or the
+      # same-named branch on a branch push), else its main: the agent's
+      # catalogue pin is the last Workbench shipped, older than main between
+      # a merge and the next ship.
+      - name: Verify a removed person's data is hidden, then deleted from the store and every copy (row 7)
+        if: matrix.shard == 'L3' || matrix.shard == 'W2'
+        env:
+          R7_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row7-person-removal-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
         if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py
