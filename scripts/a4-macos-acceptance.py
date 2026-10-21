@@ -203,7 +203,8 @@ def wait_for(predicate, seconds: float, interval: float = 1.0):
 
 
 def listener_pid(port: int) -> int | None:
-    out = run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], timeout=20).stdout.split()
+    # Root's lsof: the daemon's sockets are its account's, not the runner's.
+    out = run(["sudo", "-n", "lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"], timeout=20).stdout.split()
     return int(out[0]) if out else None
 
 
@@ -366,7 +367,7 @@ def phase_install(installer: Path, prefix: Path, port: int) -> dict:
     check("3", "the install's Python is native arm64 CPython 3.12",
           len(probe) == 2 and probe[0] == "arm64" and probe[1].startswith("3.12"), " ".join(probe))
     check("4", "a LaunchDaemon plist was written, naming Eugene's account", PLIST.is_file()
-          and run(["plutil", "-extract", "UserName", "raw", "-o", "-", str(PLIST)]).stdout == ACCOUNT, PLIST)
+          and run(["plutil", "-extract", "UserName", "raw", "-o", "-", str(PLIST)]).stdout.strip() == ACCOUNT, PLIST)
     printed = sudo("launchctl", "print", f"system/{LABEL}", timeout=30).stdout
     state = re.search(r"^\s*state = (\S+)", printed, re.M)
     job_pid = re.search(r"^\s*pid = (\d+)", printed, re.M)

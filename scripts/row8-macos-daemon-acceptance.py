@@ -16,8 +16,11 @@ Two phases.
  3. launchd runs it; the agent's uid is the account's (never 0, never the
     runner's); its parent is pid 1
  4. the runner cannot read node.yaml, agent.yaml or the passphrase file
- 5. health answers; nothing of the run listens on 8079-8083 (this harness
-    holds them, so the install must walk off them)
+ 5. health answers; nothing of the run listens on 8079-8082 (this harness
+    holds them, so the install must walk off them). 8083 is left to the
+    install's machine port, the one door other machines use: every node
+    opens it there and the installer has no setting for it, and the
+    enrolment below must reach it (the root's join token pins it)
  6. onboarding: agent and control use passphrase_file; the file is 0400 and
     the account's
  7. Reach says launchd, "starts at boot", can restart
@@ -78,7 +81,10 @@ AGENT_PLIST = HOME / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 USER_PREFIX = HOME / ".local" / "share" / "eugene-plexus"
 MODELS = HOME / "Eugene Models"
 PORT = 18279
-HELD = range(8079, 8084)
+HELD = range(8079, 8083)
+#: The machine port (LT1): the root's control root is reached through it, in
+#: plain HTTP from this machine as A4 does, and enrolment needs its TLS.
+MACHINE = "http://127.0.0.1:8083"
 PASSPHRASE = "row8-disposable-passphrase-on-a-runner"
 GGUF_REPO = "unsloth/Qwen3-0.6B-GGUF"
 GGUF_QUANT = "Q4_K_M"
@@ -208,16 +214,19 @@ def account_uid() -> int | None:
 
 
 def dscl_read(path: str, key: str) -> str | None:
+    """One attribute's value. dscl writes `Key: value`, and an attribute it
+    has no standard name for as `dsAttrTypeNative:Key: value`."""
     out = run(["dscl", ".", "-read", path, key], timeout=20)
     if out.returncode != 0:
         return None
-    text = out.stdout.strip()
+    text = out.stdout.strip().removeprefix("dsAttrTypeNative:")
     return text.split(":", 1)[1].strip() if ":" in text else text
 
 
 def plist_value(path: Path, key: str) -> str | None:
     out = run(["plutil", "-extract", key, "raw", "-o", "-", str(path)], timeout=20)
-    return out.stdout if out.returncode == 0 else None
+    # `raw` ends the value with a newline.
+    return out.stdout.rstrip("\n") if out.returncode == 0 else None
 
 
 def root_read(path: Path) -> str:
@@ -236,7 +245,7 @@ def job_pid(domain: str) -> int | None:
 
 
 def hold_default_ports() -> list[socket.socket]:
-    """Idle listeners on 8079-8083, so the install must keep off them."""
+    """Idle listeners on 8079-8082, so the install must keep off them."""
     held = []
     for port in HELD:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -312,10 +321,11 @@ def onboard(base: str, read_agent_yaml, *, keyring: bool) -> dict:
 
     `read_agent_yaml` reads the install's agent.yaml (as root for the
     daemon's); the topology is waited for, since the agent declares it as
-    it starts."""
-    control = wait_for(lambda: component_url(read_agent_yaml(), "control"), 90)
-    if not control:
-        raise Abort(f"no control root declared in agent.yaml: {read_agent_yaml()[:400]}")
+    it starts. The control root is reached through the machine port, as A4
+    reaches it, since its join token pins that port (agent#27)."""
+    declared = wait_for(lambda: component_url(read_agent_yaml(), "control"), 90)
+    fact("control declared at", declared)
+    control = MACHINE
     wait_for(lambda: api("GET", f"{control}/healthz")[0] == 200, 120)
     status, _ = api("POST", f"{control}/v1/auth/initialize", body={"passphrase": PASSPHRASE})
     must("ob1", "control initializes", status == 204, status)
@@ -406,7 +416,7 @@ def phase_fresh(installer: Path) -> dict:
     status, _ = api("GET", f"{base}/healthz")
     ours = os.getpid()
     others = {port: [p for p in listener_pids(port) if p != ours] for port in HELD}
-    check("5", "health answers, and nothing of the run listens on 8079-8083",
+    check("5", "health answers, and nothing of the run listens on 8079-8082",
           status == 200 and not any(others.values()), {"health": status, "others": others})
 
     agent_yaml = root_read(PREFIX / "agent.yaml")
@@ -694,7 +704,7 @@ def phase_move(installer: Path, ctx: dict) -> None:
           str(USER_PREFIX) not in agent_yaml and str(PREFIX) in agent_yaml
           and (not ctx["keyring"] or re.search(r"^securityMode: passphrase_file$", agent_yaml, re.M) is not None),
           re.findall(r"^securityMode:.*$", agent_yaml, re.M))
-    control = component_url(agent_yaml, "control") or ctx["control"]
+    control = ctx["control"]
     if unlocked(control) is not True:
         api("POST", f"{control}/v1/auth/login", body={"passphrase": PASSPHRASE})
     before = listener_pid(PORT)
