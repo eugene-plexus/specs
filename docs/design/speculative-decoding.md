@@ -1,6 +1,6 @@
 # Speculative decoding and MTP
 
-**Status: designed 2026-10-18; Troy took S1-S5 the same day. SD1 built 2026-10-18** (see "What building SD1 found"). SD2 is not built.
+**Status: designed 2026-10-18; Troy took S1-S5 the same day. SD1 built 2026-10-18; SD2 adapter built 2026-10-21, live check pending** (see the building notes below).
 
 ## Why
 
@@ -176,6 +176,33 @@ The same settings map to `--speculative-config`, which takes **one** method:
 
 Accepted counts come from vLLM's own metrics. The live check runs in WSL2, and
 it doubles as the overdue vLLM run on current Edge.
+
+### What building SD2 found
+
+- The adapter's install recipes name **v0.30.0**. Its
+  [`vllm/config/speculative.py`](https://github.com/vllm-project/vllm/blob/v0.30.0/vllm/config/speculative.py)
+  confirms `mtp`, `draft_model`, `model` and `num_speculative_tokens`.
+  N-gram uses `prompt_lookup_min` and `prompt_lookup_max`; its validator
+  defaults both to 5, despite the field's help text saying the minimum is 1.
+  Eugene passes both as 5, and uses 3 tokens per step unless the profile
+  chooses a count. That count is Eugene's default, since vLLM requires one.
+- Repeated text is on by default (S3). A chosen head or companion takes
+  precedence, and the run says n-gram is not in effect. A config in
+  `extraArgs`, including `--speculative-config=...`, is passed unchanged;
+  the run says it was set by hand.
+- The cached `vllm serve --help=all` probe gates the flag. A build that does
+  not list it, or cannot be asked, gets no generated config. The log and
+  running view say why. The view reads the command line without probing.
+- [`vllm/v1/spec_decode/metrics.py`](https://github.com/vllm-project/vllm/blob/v0.30.0/vllm/v1/spec_decode/metrics.py)
+  exports `vllm:spec_decode_num_draft_tokens_total` and
+  `vllm:spec_decode_num_accepted_tokens_total`. The reader sums labelled
+  engine samples. The shared command-line check now recognises vLLM so the
+  existing supervisor polls these counters. Missing counters stay unknown.
+- The settings builder rejects engines other than llama.cpp and constructs
+  llama-specific trials. Timing vLLM needs engine-specific work and remains
+  out of SD2. No contract change was needed. The live WSL2 run, speed,
+  acceptance and memory measurements remain for the acceptance owner;
+  building this adapter did not start an engine or agent.
 
 ### Not in scope
 
