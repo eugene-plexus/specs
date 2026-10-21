@@ -16,8 +16,13 @@ no `EUGENE_PLEXUS_*` variable from the calling shell:
 7. The worker's agent, started again with its old enrollment, stops its
    standby and deletes `standby-state/` within 3 minutes (the trust pull is
    about once a minute): "a removed standby deletes its copy".
-8. Re-joining: the worker leaves its old enrollment (`POST /v1/node/unenroll`,
-   `notifyControl: false`), enrolls with a new join token and is listed again.
+8. Re-joining (agent#21): the worker leaves its old enrollment by itself, at
+   its first trust pull after the removal, and its own passphrase signs in
+   again. Any sign-in in between is a 409 that says the machine was removed.
+   It then enrolls with a new join token and is listed again.
+9. Leaving by passphrase (agent#21): while the install lists the worker, its
+   own passphrase with no session is refused (409); with the root stopped,
+   the same request leaves (200, `controlNotified: false`).
 
 Waits poll the real endpoint or directory. A check that cannot run is recorded
 as "not checked", never as a pass. Reuses the process helpers of
@@ -191,9 +196,23 @@ def exercise(root: Path, record: Record) -> None:
 
             wait_for(up, f"{name} health")
 
+        refused: list[dict] = []
+
         def login(name: str) -> str | None:
             response = call(name, "POST", "/v1/auth/login", json={"passphrase": passphrase})
-            return response.json()["sessionToken"] if response.status_code == 200 else None
+            if response.status_code == 200:
+                return response.json()["sessionToken"]
+            if response.status_code == 409:
+                refused.append({"agent": name, "body": response.json().get("detail")})
+            return None
+
+        def enrolled(name: str) -> bool | None:
+            """Whether the agent reports itself enrolled; None when it will not
+            sign us in."""
+            session = login(name)
+            if session is None:
+                return None
+            return call(name, "GET", "/v1/node", session).json().get("enrolled")
 
         def roster(session: str) -> dict[str, dict]:
             listed = call("control", "GET", "/v1/nodes", session)
@@ -432,13 +451,22 @@ def exercise(root: Path, record: Record) -> None:
                 standbyStatesSeen=seen,
             )
 
-            # ---- 8. re-join ----------------------------------------------------------
-            session_b = login("agent-b")
-            assert session_b, "the worker would not sign in to leave its old enrollment"
-            left = call(
-                "agent-b", "POST", "/v1/node/unenroll", session_b, json={"notifyControl": False}
+            # ---- 8. re-join: the worker left by itself --------------------------------
+            took = wait_for(
+                lambda: enrolled("agent-b") is False,
+                "the removed worker to leave its old enrollment and sign in on its own",
+                REJOIN_BOUND_SECONDS,
             )
-            assert left.status_code == 200, f"unenroll: {left.status_code} {left.text}"
+            removed = [r for r in refused if r["agent"] == "agent-b"]
+            for row in removed:
+                assert row["body"]["title"] == "This machine was removed from the install", row
+            record.add(
+                "8a removed worker left by itself; its own passphrase signs in",
+                "pass",
+                seconds=round(took, 1),
+                removedSignInsSeen=len(removed),
+                lastRemovedSignIn=removed[-1]["body"] if removed else None,
+            )
             enroll_worker(session_root)
             session_root = login("control")
             assert session_root, "root login after re-join"
@@ -450,7 +478,33 @@ def exercise(root: Path, record: Record) -> None:
             took = wait_for(listed_once, "the worker listed reachable again", 90)
             names = [n for n in roster(session_root) if n == WORKER]
             assert len(names) == 1, names
-            record.add("8 worker re-joined and is listed once", "pass", seconds=round(took, 1))
+            record.add("8b worker re-joined and is listed once", "pass", seconds=round(took, 1))
+
+            # ---- 9. leaving by passphrase, with no session ---------------------------
+            def leave_by_passphrase():
+                return call(
+                    "agent-b", "POST", "/v1/node/unenroll", json={"passphrase": passphrase}
+                )
+
+            listed = leave_by_passphrase()
+            assert listed.status_code == 409, f"{listed.status_code} {listed.text}"
+            title = listed.json()["detail"]["title"]
+            assert title == "The install still lists this machine", listed.text
+            assert enrolled("agent-b") is True, "the listed worker left"
+            record.add("9a listed worker refuses to leave by passphrase", "pass", title=title)
+            stop("control")
+            started = time.perf_counter()
+            gone = leave_by_passphrase()
+            elapsed = time.perf_counter() - started
+            assert gone.status_code == 200, f"{gone.status_code} {gone.text}"
+            assert gone.json()["controlNotified"] is False, gone.text
+            assert enrolled("agent-b") is False, "the worker still reports itself enrolled"
+            record.add(
+                "9b with the root stopped, the worker leaves by passphrase",
+                "pass",
+                seconds=round(elapsed, 2),
+                body=gone.json().get("detail"),
+            )
         except BaseException:
             for name in ("control", "agent-a", "agent-b"):
                 handle = logs.get(name)

@@ -31,7 +31,14 @@ def serve(root: Path, port: int) -> None:
     install_console_capture(log_dir=root / "logs")
     app = create_app(settings=Settings(config_file=root / "agent.yaml", bind_port=port,
                                       default_topology=False))
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, access_log=False))
+    # As `build_server` does: a stop waits a bounded time for open requests,
+    # then stops the children anyway (agent#20). Older agents have no bound.
+    try:
+        from eugene_plexus_agent.__main__ import GRACEFUL_SHUTDOWN_SECONDS as bound
+    except ImportError:
+        bound = None
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, access_log=False,
+                                           timeout_graceful_shutdown=bound))
 
     async def run() -> None:
         task = asyncio.create_task(server.serve())
