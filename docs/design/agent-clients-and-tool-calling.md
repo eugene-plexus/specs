@@ -1,6 +1,8 @@
 # Agent clients, tool calling, and what the playground is for
 
-**Status: design, 2026-09-11. Nothing here is built.** Every claim marked
+**Status: design, 2026-09-11. Built since: §5.2
+([record](../acceptance/anthropic-messages-run.md)); §5.3 and §6.2 were
+fixed by R3.1, R3.4 and R3.8.** Every claim marked
 *verified* was checked against a file, a registry or a live source on the
 day of writing; everything else is reasoning and is marked as such — the
 same convention as

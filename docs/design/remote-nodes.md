@@ -2,7 +2,8 @@
 
 **Status:** a design, 2026-10-05. **Every call (J1-J18) was decided by Troy
 the same day** (§6), three more as slice 1 started (§6.1), six as slice 2
-started (§6.2) and three during it (§6.3). Slice 2 is in progress (§5.2). **Slice 1 is built (2026-10-05)**: what it found is §5.1, and
+started (§6.2) and three during it (§6.3). Slice 2, 2b.1-2b.4, J14a and J14b are built (2026-10-08). Slice 3,
+cross-site copy, is deferred by Troy (2026-10-13). **Slice 1 is built (2026-10-05)**: what it found is §5.1, and
 the run is [`docs/acceptance/job-sites-run.md`](../acceptance/job-sites-run.md).
 
 The file keeps the name `remote-nodes.md` because it began as that

@@ -4,7 +4,7 @@ Status: included in the 2026-10-04 Edge release. Troy approved the architecture:
 one Eugene node installation, independently enabled inference and file support,
 one enrollment, and Workbench hosted either locally or centrally.
 
-**To be retired (Troy, 2026-10-06, [`remote-nodes.md`](remote-nodes.md) §6.4,
+**Retired in Job Sites slice 2b.1.** It was to be retired (Troy, 2026-10-06, [`remote-nodes.md`](remote-nodes.md) §6.4,
 J19-J20).** A machine will share files only as a job site, with its own
 enrollment and a person as its owner. Operator-managed node folders, the People
 panel that turns them on, and the by-hand folder permission all go. Migrating

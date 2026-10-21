@@ -1,7 +1,7 @@
 # Person-held keys, checked at the site (J14)
 
-**Status:** a design, 2026-10-06. Nothing in it is built. **Calls J39-J49
-(§6) are Troy's to take.** It is the session J29 asked for: the check that
+**Status:** a design, 2026-10-06. **Built as J14a and J14b, by 2026-10-08**
+([record](../acceptance/j14b-signed-calls-run.md)). Calls J39-J49 (§6) were taken. It is the session J29 asked for: the check that
 goes back once J20 removes the by-hand folder permission. It builds on
 [`job-sites-own-enrollment.md`](job-sites-own-enrollment.md) §2.8 (the
 sketch) and J29 (the release gate), and on [`remote-nodes.md`](remote-nodes.md)

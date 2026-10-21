@@ -2,7 +2,8 @@
 
 **Product direction accepted from Troy, 2026-10-04. First Strata implementation
 is included in Edge; [usage](../deployment/experimental-engines.md) and
-[verification](../acceptance/strata-engine-run.md). Real-model validation remains.**
+[verification](../acceptance/strata-engine-run.md). Real-model validation done 2026-10-09
+([LS5](../acceptance/ls5-preparation-run.md)).**
 Weekend tinkerers will try specialized engines for speed even when those
 engines support few models, devices or API features. Eugene should make these
 experiments manageable without requiring the integration depth of llama.cpp.

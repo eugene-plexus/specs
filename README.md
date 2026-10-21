@@ -77,7 +77,7 @@ Hardware and first-time-user verification remain uneven:
 The [support matrix](docs/support-matrix.md) records measured, simulated,
 pending and unsupported cases through v0.2.0; read it with the
 [v0.3.0 changes and release limits](docs/releases/v0.3.0.md).
-Development priorities live in the [audience roadmap](docs/design/audience-roadmap.md).
+Development priorities live in the [roadmap](docs/design/roadmap.md).
 
 ## Installing it
 
@@ -372,7 +372,7 @@ Historical pins and documentation are retained.
 
 The [September 2026 README status snapshot](docs/history/readme-status-2026-09.md)
 preserves the earlier development status and review findings. Subsequent fixes
-are recorded in the [release roadmap](docs/design/release-roadmap.md); use
+are recorded in the [release roadmap](docs/history/release-roadmap.md); use
 [Current status](#current-status) above for the released product.
 
 ## Versioning

@@ -119,8 +119,8 @@ run `docs/acceptance/mr8-suggestions-run.md`):
 The memory research of 2026-10-19 ([`memory-research-2026-10.md`](memory-research-2026-10.md)) chose to
 reshape memory, and Troy took its calls. The memory reshape, MV1 to MV7, supersedes this document's memory
 limits, budgets and write rules. Its section 11 corrects two claims made here: the "97.8% junk" figure and
-Open WebUI's "27B floor". The documents half (MR2-MR7) stays as built. Owed: a live run of MR6b's sorting
-on real questions (Troy's).
+Open WebUI's "27B floor". The documents half (MR2-MR7) stays as built. A live run of MR6b's sorting on real
+questions was cleared from the roadmap on 2026-10-21: only a person's test was owed.
 
 ---
 

@@ -31,6 +31,9 @@ an allowance. Inference acquires a reservation before routing or waking and
 retains it through response streaming. Accepted attempts consume the rolling
 rate allowance even if they later fail or are cancelled. Internal fallback is
 one request, not another rate charge. Refused admission does not enter a queue.
+**Reversed by Troy, 2026-10-21 (LD-C2 in [`llm-d-lessons.md`](llm-d-lessons.md)):** a
+request over its key's concurrency limit waits in a bounded queue instead of a 429.
+The limit on requests running at once stays. Until LD1 is built, refusal is what runs.
 HTTP 429 includes Retry-After; unavailable coordination gives client-only 503.
 Operator/service repair paths remain usable. A3's cached authentication policy
 still distinguishes revoked/invalid credentials, but cannot authorize inference

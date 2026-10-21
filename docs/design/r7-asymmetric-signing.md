@@ -1,5 +1,9 @@
 # R7 asymmetric token signing and migration
 
+**Superseded 2026-09-25** by [per-node token keys](per-node-token-keys.md)
+(D11), which removed HS256, `AUTH_VERIFY_KEY` and rekey. Do not build the
+migration below.
+
 Agent and control mint tokens. Gateway, library and inference-driver verify
 them. New installs and explicit key rotations use Ed25519 with JWT `alg: EdDSA`.
 The existing audiences, lifetimes, revocation rules, and clock-skew policy stay

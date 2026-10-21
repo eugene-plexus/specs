@@ -1,7 +1,7 @@
 # Job Sites as their own enrollment, with the workspace server (slice 2b)
 
-**Status:** a design, 2026-10-06. Nothing in it is built. **Calls J23-J35
-(§4) are Troy's to take.** Troy answered J26, J27, J30 and J34 the same
+**Status:** a design, 2026-10-06. **Built: slices 2b.1-2b.4, by
+2026-10-08.** Calls J23-J35 (§4) were taken. Troy answered J26, J27, J30 and J34 the same
 day (§4.1): one install serves every person on a machine, each as their own
 local account. The text below is revised to match, which changed J24 and
 J27 and grew slice 2b.2. It builds on J1-J22 and J6a-J6i

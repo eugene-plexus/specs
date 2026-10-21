@@ -1406,7 +1406,7 @@ decides (Troy, 2026-10-19: the harness result is advice, never a lock).
 - **The address rule.** The linked address is exempt from `outside`'s loopback refusal. The
   address is the agent's, not the person's, so a person still cannot point Workbench at loopback.
   Only the exact address the link names is exempt.
-- **Store migration (the next after MV6's 25 to 26):** `memory_servers.linked` (0/1). A linked row's `token` stays empty
+- **Store migration (the next after MV7's 26 to 27):** `memory_servers.linked` (0/1). A linked row's `token` stays empty
   and is read from the link's file at each call.
 
 ### 62. Risk, tests and acceptance
@@ -1417,7 +1417,7 @@ server on the machine.
 - **Agent unit tests:** the manifest fields and their validation (`provides` only in the shipped
   catalogue); the secret's files and their grants; the placeholders; the model setting.
 - **Workbench unit tests:** the linked part, the bank derivation, the address exemption (only the
-  link's exact address), and migration 25 to 26.
+  link's exact address), and migration 27 to 28.
 - **Live run**, on Windows and Linux, in the agent's account and in own accounts. The own-account
   run is elevated and needs Troy.
   - Installing Hindsight; the setting unset, so it does not start; the setting chosen.
@@ -1579,7 +1579,7 @@ and before the inbox.
 - **API:** `tidy: [...]` in `GET /api/memory`, and `POST /api/memory/tidy/{id}` with
   `{action: "keep" | "keep_both" | "remove" | "keep_event", keepId?}`.
 
-### 68. Store migration 25 to 26
+### 68. Store migration 27 to 28
 
 - `memory_note_documents` and `memory_tidy`, both `CREATE TABLE IF NOT EXISTS`.
 - `memory_prefs.tidy_at`.
@@ -1615,7 +1615,7 @@ real-environment run.
     - Keep both is remembered;
     - a past event at 31 days is proposed, at 29 days it is not;
     - Remove forgets.
-  - **The rest:** migration 25 to 26 from a schema 25 store; the export carries links.
+  - **The rest:** migration 27 to 28 from a schema 27 store; the export carries links.
 - **Vitest:** Still true? with reasons; tidy proposals; Based on a document.
 - **Live run** (`mv6-provenance-run.md`):
   - A real Workbench and gateway, with a model answering with `[1]`, over a schema 25 store.

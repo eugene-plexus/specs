@@ -34,8 +34,8 @@ log** — answers are recorded here as they are made.
 | **5**  | Where `install.sh` is hosted: `eugeneplexus.com`, or a raw GitHub URL first?             | §4   | **Raw GitHub URL, in `specs/scripts/`**     | **DONE 2026-09-11, §12**   |
 | **6**  | What does `install.sh` install FROM, given nothing is published and the release is last?  | §6.1 | **GitHub archives at pinned commits — and the UI from a `dist` branch** | **DONE 2026-09-11, §12** |
 | **7**  | Windows service: `pywin32` or NSSM?                                                      | §11.1 | **`pywin32`, as a Windows-only `[service]` extra** | **DONE 2026-09-11, §12** |
-| **8**  | Windows non-NVIDIA GPUs: probe and serve them, or keep handing them a CPU build?          | §7.1 | **Probe (`Win32_VideoController`, via the WMI path `agent/firewall/windows.py` already uses — 112 ms, measured) and serve `win-vulkan`/`win-rocm`; add `vulkan` to `Accelerator`** — today a 7900 XTX owner silently gets `win-cpu-x64`, is scored as having no GPU, and is offered the SMALLEST starter model | **OPEN 2026-09-17** (review §6 #11; roadmap R2.3) |
-| **9**  | Windows autostart: fix the wizard's copy, or change the mechanism?                        | §11.1 | **Fix the copy and render the mechanism the agent already reports.** A boot-time S4U task costs the interactive session — the mapped drive letter AND the UNC Library mount the live install depends on — and whether it keeps a console, i.e. the graceful stop, is unmeasured; the service path cannot land before the elevated-reinstall fix | **OPEN 2026-09-17** (review §6 #26; roadmap R2.2) |
+| **8**  | Windows non-NVIDIA GPUs: probe and serve them, or keep handing them a CPU build?          | §7.1 | **Probe (`Win32_VideoController`, via the WMI path `agent/firewall/windows.py` already uses — 112 ms, measured) and serve `win-vulkan`/`win-rocm`; add `vulkan` to `Accelerator`** — today a 7900 XTX owner silently gets `win-cpu-x64`, is scored as having no GPU, and is offered the SMALLEST starter model | **Built as R2.3** (was OPEN 2026-09-17; review §6 #11) |
+| **9**  | Windows autostart: fix the wizard's copy, or change the mechanism?                        | §11.1 | **Fix the copy and render the mechanism the agent already reports.** A boot-time S4U task costs the interactive session — the mapped drive letter AND the UNC Library mount the live install depends on — and whether it keeps a console, i.e. the graceful stop, is unmeasured; the service path cannot land before the elevated-reinstall fix | **Built as R2.2** (was OPEN 2026-09-17; review §6 #26) |
 
 **#1 was one call and is now two**, which is the substantive change
 from the first draft. Troy's question — *"I intend for the UI to get
@@ -415,7 +415,7 @@ badge in a UI the operator may never open is weaker than a wall. If the
 refusal stays, it should become *actionable* instead — a verified
 source-build script rather than a paragraph.
 
-## 7.1 Windows non-NVIDIA — OPEN 2026-09-17: nothing probes for the card
+## 7.1 Windows non-NVIDIA — built as R2.3 (was OPEN 2026-09-17: nothing probes for the card)
 
 **§7 expired because an asset appeared. This one is open because a probe was
 never written** — the same shape on the other platform, and the more expensive

@@ -111,8 +111,9 @@ C6's built-in folder tools are built and pinned 2026-10-03, with
 [person-specific grants](workbench-files.md) and approval for each call.
 These do not sandbox owner-installed local programs. Dedicated media screens can
 use the gateway's existing media doors; managing local media engines also
-needs the resource ledger. Answer versions and the working animation remain
-separate Workbench slices.
+needs the resource ledger. Answer versions, the working animation and the media
+screens were built as separate Workbench slices (2026-10-07 and
+2026-10-08). The open work is in [`roadmap.md`](roadmap.md).
 
 ## Evidence required
 
