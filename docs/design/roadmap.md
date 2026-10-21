@@ -174,34 +174,9 @@ These are blocked until the call is taken:
 
 ## Calls waiting for Troy
 
-- **Blocking a row:**
-  - B2-REV (row 1)
-  - MRC27 (row 7)
-  - LD-C5 (row 9)
-  - LD-C3, LD-C4, WAKE and CB-C (row 11)
-  - DI-C3 (row 13)
-  - DI-C4 (row 15)
-  - MV5-C4 (row 27)
-  - MRC25 (row 47)
-  - MRC24 (row 56)
-  - MV5b-C1 (see "Waiting on a call from Troy")
-- **Defaults already built, to confirm:**
-  - MV2-C1, MV3-C1, MV4-C1 to C3, MV6-C1 to C5, MV7-C1 to C5
-  - DI-C2
-  - LT2-C6 (a 90-day leaf; decide it before stable installs hand leaves out)
-  - CX4-C1
-- **Settled by this roadmap unless Troy changes it:** DI-C1 (all of DI1-DI8 are placed above) and LD-C1.
-- **Other:**
-  - DI-C5 (recommended: do not wrap DeepInfer)
-  - LD-C6 (how Eugene describes itself)
-  - MRC26 and MRC28
-  - MD-24 (reasoning rendered as Markdown)
-  - more than one standby
-  - the console logo's outline
-  - config shown four times in the map panel
-  - keeping the ~48 GB of measurement models in `C:\mr8-models`
-  - when to deploy the website batch
-  - keeping the `lt1` and `lt1-image` branches
+Every open call is in Troy's calls file, `docs/private/calls.md` (not in git;
+Troy, 2026-10-21). The rows above name the calls they need. Each answer is
+written into its design doc.
 
 ## Cleared: only a person's test was owed
 

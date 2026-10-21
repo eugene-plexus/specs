@@ -215,38 +215,9 @@ and can reorder the rows.
 
 ## 9. Calls to answer before the lanes start
 
-**The plan itself:**
-- P1-P11 (§3): approve all, or approve one at a time.
-- **P12, concurrency:** six builders at the start. The GitHub Free plan allows
-  about 20 concurrent jobs, and one full specs CI run uses about 29. The Team
-  plan allows about 60 (check GitHub's current numbers). Recommended: start on
-  Free; if queueing shows at K0, move to Team.
-- **P13, other harnesses:** which agents, and how many. Recommended: put them
-  on the WEB and AG2 lanes, and use one as the second-model reviewer.
-
-**Rows in the first lanes.** Under P4 these are built with the recommended
-option, and Troy can overturn them:
-- **B2-REV (row 1):** add the field, so the contract tells the truth.
-- **MRC27 (row 7):** removing a person offers "Export their data" first.
-  Their data is kept, hidden, for 30 days, then deleted. A person created
-  later with the same name gets a new identity. Deletion is the risky part,
-  so it ships switched off until Troy confirms.
-- **LD-C5 (row 9):** measure the cache-update pause first, then 25% of the
-  free RAM, between 8 and 64 GiB.
-- **LD-C3 (row 11):** fairness per person when Eugene knows the person,
-  otherwise per key.
-- **LD-C4 (row 11):** the operator sets each key's or app's band. A request
-  may only lower its own band.
-- **WAKE (row 11):** a request waits for a runtime that is still starting.
-  It joins the one queue.
-- **CB-C (row 11):** the budget reserves the answer length a conversation
-  has actually used (its recent p95), or 4,096 tokens for a new one, rather
-  than the whole `max_tokens`. An overflow is still a capacity refusal, not a
-  broken backend.
-- **DI-C3 (row 13):** on a machine with one replica, ask before switching,
-  and show the check's result.
-- **DI-C4 (row 15):** the disk prompt cache keeps chats at rest, so it ships
-  switched off until Troy confirms. Recommended once confirmed: 3 days, 20 GiB.
+They are in Troy's calls file, `docs/private/calls.md`, sections 1 and 2:
+P1-P13 for this plan, and the calls of the rows the first lanes build. Under
+P4, builders build each recommendation until Troy answers otherwise.
 
 ## 10. Using agents in other harnesses
 
@@ -329,6 +300,8 @@ release pins and the roadmap (docs/design/roadmap.md).
 - Comment on your issue: what changed, what building found, and the defaults
   you built for open calls.
 - Label the issue green when CI is green.
+- A question for Troy goes on your issue. The orchestrator adds it to his
+  calls file. Build the recommended option meanwhile.
 
 ## Product rules (they apply to every change)
 - A setting never shows a value other than the one in effect.
