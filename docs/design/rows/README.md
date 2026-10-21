@@ -13,3 +13,7 @@ The roadmap is [`../roadmap.md`](../roadmap.md); the row data is
 **Workbench store migrations** are numbered in the order rows merge, not in
 the order they were designed. A design's number is provisional; the
 orchestrator assigns the real one in the row's brief when the row starts.
+
+**Calls answered after a design was written** go in a section "Calls answered
+by Troy (date)" at the end of the design. Where that section and the body
+differ, the section wins. A builder reads it first.
