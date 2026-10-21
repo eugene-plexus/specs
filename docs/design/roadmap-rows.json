@@ -927,7 +927,8 @@
     "agent",
     "site-host",
     "workbench",
-    "ui"
+    "ui",
+    "control"
    ],
    "contract": "agent.yaml? site-host.yaml?",
    "hot_files": [
@@ -935,11 +936,11 @@
     "agent/src/eugene_plexus_agent/apps.py",
     "site-host/src/eugene_plexus_site_host/workspace_tools.py"
    ],
-   "design_state": "full",
-   "needs": [
-    24
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "rows/row-25.md"
    ],
-   "design_docs": [],
    "calls": [],
    "issue": 52
   },
@@ -965,9 +966,11 @@
     "workbench/src/eugene_plexus_workbench/conversation.py",
     "workbench/src/eugene_plexus_workbench/store.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-26.md"
+   ],
    "calls": [],
    "issue": 53
   },
