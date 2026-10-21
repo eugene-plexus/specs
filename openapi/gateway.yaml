@@ -946,8 +946,9 @@ paths:
 
         ### Compatibility hints and explicit refusals (A2)
 
-        `cache_control` and `context_management` remain accepted for Claude Code
-        compatibility but are not enforced. `output_config.effort` is carried as
+        `context_management` remains accepted for Claude Code compatibility but is
+        not enforced. `cache_control` is carried to a backend that can use it, as a
+        hint, and not enforced elsewhere (see below). `output_config.effort` is carried as
         the shared reasoning-effort preference to supporting backends.
         `thinking` decides whether reasoning is returned as `thinking` blocks,
         and `disabled` also requests effort `none` where supported. Ignored hints are named in
@@ -978,9 +979,16 @@ paths:
         instead.
 
         `cache_control` appears on system blocks, on the last user
-        content block **and on `tool_result` blocks**; prompt caching is
+        content block **and on `tool_result` blocks**. Prompt caching is
         a property of a hosted service and means nothing to a local
-        engine holding the KV cache itself.
+        engine holding the KV cache itself. **Carry the client's, add
+        none** (`docs/design/prompt-cache.md`, PC6): when any mark is
+        present, the backend is sent the hint (`cacheControl`, with the
+        longest `ttl` any mark named), and a backend that takes it
+        (an OpenRouter `anthropic/*` model) caches the conversation. A
+        request that marked nothing sends nothing. The header names
+        `cache_control` only when the backend that answered did not
+        carry it: for a stream, the first backend tried.
 
         **`thinking` is dropped rather than refused, and that was
         measured rather than assumed.** It is on every request Claude
@@ -6831,7 +6839,8 @@ components:
         Request body for `POST /v1/messages`, in Anthropic's shape.
 
         Measured Claude Code hints (`cache_control`, `context_management`)
-        are accepted with a response header naming ignored settings;
+        are accepted with a response header naming the ignored ones
+        (`cache_control` only when the answering backend did not carry it);
         `thinking` chooses whether reasoning is returned. Metadata is
         discarded. Claude Code's `safeguards`, `speed`, `thread` and
         `diagnostics` are accepted and named as ignored; any other unknown
@@ -7018,10 +7027,13 @@ components:
           type: object
           additionalProperties: true
           description: |
-            Prompt-cache hints, read and dropped wherever they appear —
-            on system blocks, on the last user content block, and on
-            `tool_result` blocks. A local engine owns its own KV cache
-            and there is nothing here to honour.
+            Prompt-cache hints, read wherever they appear — on system
+            blocks, on the last user content block, and on `tool_result`
+            blocks. Carried to a hosted backend that caches on request
+            (an OpenRouter `anthropic/*` model) and dropped, and named on
+            `x-eugene-plexus-ignored-settings`, by any other. A local
+            engine owns its own KV cache and there is nothing here to
+            honour.
 
     AnthropicCountTokensRequest:
       type: object
