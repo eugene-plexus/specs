@@ -383,6 +383,13 @@ jobs:
       - name: One token module in five repos, and nothing of the shared-key model left
         if: matrix.shard == 'L1' || matrix.shard == 'W3'
         run: python specs/scripts/r7-signing-checks.py
+      # Ten acceptance scripts start their agent through the shared harness
+      # (s8-ui-acceptance.py --serve). Row 2: it runs the agent's own start path,
+      # so a check through it tests the agent an install runs.
+      - name: The shared acceptance harness starts the agent's own start path (row 2)
+        run: python -m pytest specs/scripts/test_s8_harness.py -q -p no:cacheprovider
+      - name: The shared acceptance harness is the real server - console log copy, machine port, client doors, stop file (row 2)
+        run: python specs/scripts/harness-acceptance.py
       - name: Rotate the root's token key across two live agents
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
