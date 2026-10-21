@@ -137,7 +137,7 @@ $PIN = @{
     "control"          = "d19249831a764cdad06fbc6a4d1c4b76d3a621e0"
     "gateway"          = "dd0ef74a8a91ad266508d0005cb09e41bd151b8f"
     "inference-driver" = "01e40d5aedd5ea1ad4255a075df25ce3f907931e"
-    "library"          = "487cb8c5db307cbe5c4bf2da50f9c59da8e61748"
+    "library"          = "3dd4d716c10003d2680c470c9683ba8c050b0148"
     "tool-driver"      = "3d63f6bd062293b0f14d06050098a445aca56ab1"
     "ui"               = "e90afbd10eff5a07f63e5d1f66383c9ca5c81044"  # branch `dist`, not `main`
 }
