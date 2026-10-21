@@ -314,7 +314,7 @@ def exercise(root: Path, record: Record) -> None:
             record.add(
                 "1 root's own machine refused, roster and log index unchanged",
                 "pass",
-                status=own.status_code,
+                httpStatus=own.status_code,
                 body=own.text[:200],
                 appliedIndex=index_after,
             )
@@ -323,7 +323,7 @@ def exercise(root: Path, record: Record) -> None:
             anonymous = call("control", "DELETE", f"/v1/nodes/{WORKER}")
             assert anonymous.status_code in (401, 403), f"{anonymous.status_code} {anonymous.text}"
             assert WORKER in roster(session_root), "the worker left the roster without a session"
-            record.add("2 removal without a session refused", "pass", status=anonymous.status_code)
+            record.add("2 removal without a session refused", "pass", httpStatus=anonymous.status_code)
 
             # ---- 3. the worker becomes the standby ---------------------------------
             made = call("control", "PUT", f"/v1/nodes/{WORKER}/standby", session_root)
@@ -358,7 +358,7 @@ def exercise(root: Path, record: Record) -> None:
             record.add(
                 "4 removal of a down worker answers 202 with revokedNode, not hanging",
                 "pass",
-                status=removed.status_code,
+                httpStatus=removed.status_code,
                 seconds=round(elapsed, 2),
                 body=removed.json(),
             )
