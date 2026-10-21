@@ -9,3 +9,7 @@ go in Troy's calls file).
 
 The roadmap is [`../roadmap.md`](../roadmap.md); the row data is
 [`../roadmap-rows.json`](../roadmap-rows.json).
+
+**Workbench store migrations** are numbered in the order rows merge, not in
+the order they were designed. A design's number is provisional; the
+orchestrator assigns the real one in the row's brief when the row starts.

@@ -680,9 +680,10 @@
     "agent/src/eugene_plexus_agent/engines/speculation.py",
     "library/src/eugene_plexus_library/scanner.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-17.md",
     "speculative-decoding.md"
    ],
    "calls": [],
@@ -997,6 +998,7 @@
     7
    ],
    "design_docs": [
+    "rows/row-27.md",
     "workbench-memory-v2.md"
    ],
    "calls": [
@@ -1087,12 +1089,13 @@
    "contract": "components/job-sites.yaml?",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/knowledge/ingest.py",
-    "workbench/src/eugene_plexus_workbench/folder_sync.py",
+    "workbench/src/eugene_plexus_workbench/knowledge/folder_sync.py",
     "workbench/src/eugene_plexus_workbench/store.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-30.md",
     "workbench-memory-and-documents.md",
     "workbench-folders.md"
    ],
@@ -1121,9 +1124,10 @@
     "workbench/web/src/components/MessageView.tsx",
     "workbench/src/eugene_plexus_workbench/artifacts.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-31.md",
     "workbench-reading.md"
    ],
    "calls": [],
@@ -1213,9 +1217,10 @@
     "agent/src/eugene_plexus_agent/apps.py",
     "agent/src/eugene_plexus_agent/apps_catalogue.yaml"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-34.md",
     "c4-open-webui.md"
    ],
    "calls": [],
@@ -1243,9 +1248,10 @@
     "agent/src/eugene_plexus_agent/tray.py",
     "agent/src/eugene_plexus_agent/tokens.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-35.md",
     "windows-comes-back-by-itself.md"
    ],
    "calls": [],
@@ -2160,9 +2166,11 @@
     "library/src/eugene_plexus_library/starter.py",
     "library/src/eugene_plexus_library/starter_models.yaml"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-64.md"
+   ],
    "calls": [],
    "issue": 91
   },
@@ -2188,9 +2196,10 @@
     "library/src/eugene_plexus_library/ollama_detect.py",
     "library/src/eugene_plexus_library/formats/ollama.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-65.md",
     "console-ux-pass.md"
    ],
    "calls": [],
