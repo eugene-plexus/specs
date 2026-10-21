@@ -189,8 +189,15 @@ Branch `r3-machine-key` in specs, agent and control.
 - The client doors' leaf for the old key is not revoked (LT2 has no
   revocation), and its key stays in the client-TLS files until the new leaf
   arrives, which is asked for at the switch.
-- An agent older than row 3 reports no list version, so a change waits the
-  full 3 minutes for it.
+- An agent older than row 3 reports no list version, so a change of another
+  machine's key waits the full 3 minutes for it, and **a change of the
+  root's own key waits for every agent older than row 3, reachable or not**,
+  with no time bound (`notReady`).
+- **Machine lists carry no `exp`.** A replayed list newer than the one a
+  machine holds, but older than the current one, is accepted.
+- **A machine offline across a key change** done because the old key was
+  stolen still trusts the old key until it reaches the root again and takes
+  the new list.
 
 **The adversarial review (2026-10-21), and what changed.** Four blockers,
 each now a fault-injection test that failed first:
