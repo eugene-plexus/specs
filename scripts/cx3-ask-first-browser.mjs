@@ -77,10 +77,14 @@ try {
   await library("GET", waiting).catch(() => null); // signs in; the run does not exist yet
   const node = (await (await fetch(url + "/v1/node", { headers: { authorization: `Bearer ${token}` } })).json()).name;
   await library("PUT", waiting, { node, download: tiny });
-  await expect(async () => {
+  // A run that ended will never ask: stop there rather than at the deadline.
+  for (const until = Date.now() + 900000; ; ) {
     const step = await stepOf(waiting);
-    if (step !== "awaiting-install") throw new Error(`still ${step}`);
-  }).toPass({ timeout: 900000, intervals: [2000] });
+    if (step === "awaiting-install") break;
+    if (["failed", "cancelled"].includes(step)) throw new Error(`the waiting run went to ${step}, not awaiting-install`);
+    if (Date.now() > until) throw new Error(`still ${step} after 15 minutes`);
+    await page.waitForTimeout(2000);
+  }
   await page.goto(url);
   await expect(dialog).toContainText("Install llama.cpp?", { timeout: 60000 });
   await page.keyboard.press("Escape");
