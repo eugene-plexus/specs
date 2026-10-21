@@ -169,6 +169,9 @@ jobs:
           python -m unittest discover -s scripts -p test_roadmap_issues.py -v
           python -m unittest discover -s scripts -p test_worktree.py -v
           python -m unittest discover -s scripts -p test_ship.py -v
+          python -m unittest discover -s scripts -p test_repin_branch.py -v
+      - name: Check CPU proof contract
+        run: python scripts/test_cpu_proof_contract.py
       - name: Compute gates
         id: select
         env:
@@ -551,7 +554,8 @@ jobs:
     if: needs.plan.outputs.runtime == 'true'
     name: TLS between machines (Docker pair)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Row 3's key changes add about 12 minutes on a pair of their own.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
         with:
@@ -605,6 +609,14 @@ jobs:
         run: >-
           python3 specs/scripts/lt1-machine-tls-acceptance.py --sources .
           --output "$RUNNER_TEMP/lt1-automatic" --labels automatic
+      # Row 3: a machine's key changes under load with nothing refused, the
+      # old key is refused after, the root dying mid-change, and a worker off
+      # for the whole change of the root's key recovering by itself.
+      - name: A machine key changes with no stop in traffic
+        if: always()
+        run: >-
+          python3 specs/scripts/lt1-machine-tls-acceptance.py --sources .
+          --output "$RUNNER_TEMP/lt1-key-change" --labels key-change,root-key-change
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -612,6 +624,7 @@ jobs:
           path: |
             ${{ runner.temp }}/lt1/result.*
             ${{ runner.temp }}/lt1-automatic/result.*
+            ${{ runner.temp }}/lt1-key-change/result.*
 
   # On a push to main, macOS runs in macos-push.yml so Edge does not wait for
   # it. A branch push runs it here: a branch's CI is its merge gate.
