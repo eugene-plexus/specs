@@ -206,7 +206,7 @@ def exercise(root: Path, record: Record) -> None:
                 refused.append({"agent": name, "body": response.json().get("detail")})
             return None
 
-        def enrolled(name: str) -> bool | None:
+        def reports_enrolled(name: str) -> bool | None:
             """Whether the agent reports itself enrolled; None when it will not
             sign us in."""
             session = login(name)
@@ -453,19 +453,19 @@ def exercise(root: Path, record: Record) -> None:
 
             # ---- 8. re-join: the worker left by itself --------------------------------
             took = wait_for(
-                lambda: enrolled("agent-b") is False,
+                lambda: reports_enrolled("agent-b") is False,
                 "the removed worker to leave its old enrollment and sign in on its own",
                 REJOIN_BOUND_SECONDS,
             )
-            removed = [r for r in refused if r["agent"] == "agent-b"]
-            for row in removed:
+            removed_sign_ins = [r for r in refused if r["agent"] == "agent-b"]
+            for row in removed_sign_ins:
                 assert row["body"]["title"] == "This machine was removed from the install", row
             record.add(
                 "8a removed worker left by itself; its own passphrase signs in",
                 "pass",
                 seconds=round(took, 1),
-                removedSignInsSeen=len(removed),
-                lastRemovedSignIn=removed[-1]["body"] if removed else None,
+                removedSignInsSeen=len(removed_sign_ins),
+                lastRemovedSignIn=removed_sign_ins[-1]["body"] if removed_sign_ins else None,
             )
             enroll_worker(session_root)
             session_root = login("control")
@@ -490,7 +490,7 @@ def exercise(root: Path, record: Record) -> None:
             assert listed.status_code == 409, f"{listed.status_code} {listed.text}"
             title = listed.json()["detail"]["title"]
             assert title == "The install still lists this machine", listed.text
-            assert enrolled("agent-b") is True, "the listed worker left"
+            assert reports_enrolled("agent-b") is True, "the listed worker left"
             record.add("9a listed worker refuses to leave by passphrase", "pass", title=title)
             stop("control")
             started = time.perf_counter()
@@ -498,7 +498,7 @@ def exercise(root: Path, record: Record) -> None:
             elapsed = time.perf_counter() - started
             assert gone.status_code == 200, f"{gone.status_code} {gone.text}"
             assert gone.json()["controlNotified"] is False, gone.text
-            assert enrolled("agent-b") is False, "the worker still reports itself enrolled"
+            assert reports_enrolled("agent-b") is False, "the worker still reports itself enrolled"
             record.add(
                 "9b with the root stopped, the worker leaves by passphrase",
                 "pass",
