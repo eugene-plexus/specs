@@ -634,6 +634,15 @@ paths:
         If the root does not answer, this is a **503** saying so.
         Sessions already issued keep working, and so does inference.
 
+        **A removed machine (agent#21).** When the root's session does not
+        name this machine, the install no longer lists it. The session is
+        not returned: this is a **409** that says so. Before it answers,
+        the agent asks the root for its trust bundle; when the bundle no
+        longer lists this machine's key, the machine leaves the install
+        by itself (as it does at its next minute's trust pull) and the
+        409 says it is standalone now, so the next sign-in uses this
+        machine's own passphrase.
+
         **Standalone** (not enrolled), this agent verifies the Argon2id
         hash set during the first-run wizard and mints the session
         itself.
@@ -657,6 +666,14 @@ paths:
                 $ref: "components/common.yaml#/components/schemas/AuthLoginResponse"
         "401":
           description: Wrong passphrase.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
+          description: |
+            The install no longer lists this machine (it was removed).
+            The detail says whether it has left the install already.
           content:
             application/problem+json:
               schema:
@@ -2622,6 +2639,9 @@ paths:
       tags: [node]
       operationId: unenrollNode
       summary: Leave an install — forget its trust bundle and become standalone again.
+      security:
+        - bearerAuth: []
+        - {}
       description: |
         Operator-only, and the exact inverse of `POST /v1/node/enroll`.
         The agent discards the install's trust bundle, the epoch, the
@@ -2651,6 +2671,26 @@ paths:
         **This logs out every session on this node**, exactly as
         enrollment does and for the same reason: the authority those
         sessions were signed by is no longer trusted here.
+
+        **Leaving by passphrase, with no session (agent#21).** A machine
+        the install removed, or one whose root is gone, can get no
+        session its own agent accepts: sessions come from the root. So
+        a body with `passphrase` and no `Authorization` header is
+        checked against **this machine's own** stored passphrase (the
+        sign-in rate limit applies), and then the agent asks the root
+        for its trust bundle:
+
+        - the bundle no longer lists this machine's key: it leaves
+          (nothing is owed at the root, so `controlNotified` is true);
+        - the root does not answer, or answers with no bundle this
+          machine can trust: it leaves, and `controlNotified` is false;
+        - the bundle still lists this machine: **409**. Leave with a
+          session, or remove the machine at the install first.
+
+        A machine with no passphrase of its own cannot leave this way
+        (409); it still leaves by itself at its next trust pull once the
+        root no longer lists it. The root is never told on this path:
+        there is no session to forward.
       requestBody:
         required: false
         content:
@@ -2669,7 +2709,16 @@ paths:
         "401":
           $ref: "components/common.yaml#/components/responses/Problem"
         "409":
-          description: This agent is not enrolled, so there is nothing to leave.
+          description: |
+            This agent is not enrolled, so there is nothing to leave; or,
+            leaving by passphrase, the install still lists this machine,
+            or this machine has no passphrase of its own.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "429":
+          description: Leaving by passphrase, rate-limited as sign-in is.
           content:
             application/problem+json:
               schema:
@@ -5459,6 +5508,13 @@ components:
             Call `DELETE /v1/nodes/{name}` at the control root first, so
             the install drops this node's key and stops trusting it. Set false to skip the attempt entirely — it does not
             change what happens *here*, only whether the root is told.
+        passphrase:
+          type: string
+          writeOnly: true
+          description: |
+            Leave with no session, by this machine's own passphrase
+            (agent#21). Only when no `Authorization` header is sent; see
+            the operation for when it is allowed. The root is not told.
 
     UnenrollResult:
       type: object
