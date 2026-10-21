@@ -343,7 +343,8 @@
    "lane_order": 4,
    "repos": [
     "specs",
-    "agent"
+    "agent",
+    "ui"
    ],
    "contract": "",
    "hot_files": [
@@ -351,9 +352,10 @@
     "specs/scripts/install.ps1",
     "agent/src/eugene_plexus_agent/reach.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-08.md",
     "windows-comes-back-by-itself.md",
     "node-labels.md"
    ],
@@ -418,11 +420,12 @@
     "specs/scripts (new sweep)",
     "agent/src/eugene_plexus_agent/benchmarks.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     2
    ],
    "design_docs": [
+    "rows/row-10.md",
     "deepinfer-lessons.md",
     "llm-d-lessons.md"
    ],
@@ -490,7 +493,9 @@
    "lane_order": 3,
    "repos": [
     "gateway",
-    "agent"
+    "agent",
+    "control",
+    "ui"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
@@ -498,11 +503,12 @@
     "gateway/src/eugene_plexus_gateway/routes/metrics.py",
     "gateway/src/eugene_plexus_gateway/decisions.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     11
    ],
    "design_docs": [
+    "rows/row-12.md",
     "llm-d-lessons.md",
     "m8-retained-request-metrics.md",
     "metrics-dashboard.md"
@@ -540,6 +546,7 @@
     11
    ],
    "design_docs": [
+    "rows/row-13.md",
     "deepinfer-lessons.md"
    ],
    "calls": [
@@ -860,9 +867,10 @@
     "workbench/src/eugene_plexus_workbench/folder_windows.py",
     "workbench/src/eugene_plexus_workbench/folder_linux.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-23.md",
     "workbench-files.md"
    ],
    "calls": [],
@@ -1017,9 +1025,10 @@
     "workbench/src/eugene_plexus_workbench/answers.py",
     "workbench/src/eugene_plexus_workbench/store.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-28.md",
     "workbench-answer-versions.md"
    ],
    "calls": [],
