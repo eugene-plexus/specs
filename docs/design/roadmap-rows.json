@@ -334,7 +334,7 @@
    "title": "Installer pass",
    "summary": "Installer pass. Run the Mac service as a system daemon, which makes the macOS autostart claim true, and let both installers take `--label`",
    "from": "R2.6-mac, PLAT-START, NL-INST",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high",
    "who": "Mac, multi-machine",
