@@ -3,8 +3,11 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # Every branch (P1): a branch push plans against its merge-base with main
+  # and tests the same-named branches of the component repositories. `edge`
+  # is moved by the publisher alone; Dependabot's branches run as PRs.
   push:
-    branches: [main]
+    branches: ["**", "!edge", "!dependabot/**"]
   schedule:
     - cron: "23 3 * * 0"
   workflow_dispatch:
@@ -15,6 +18,10 @@ on:
         type: choice
         options: [edge, full]
         default: full
+      base:
+        description: "Optional planner base commit for the edge profile (scripts/branch-ci.py gives the merge-base with main); empty means full coverage"
+        required: false
+        type: string
       agent_ref:
         description: "Optional agent candidate commit; defaults to the release pin"
         required: false
@@ -58,6 +65,10 @@ on:
         required: false
         type: string
         default: full
+      base:
+        description: "Optional planner base commit for the edge profile; empty means full coverage"
+        required: false
+        type: string
       agent_ref:
         description: "Optional agent candidate commit; defaults to the release pin"
         required: false
@@ -98,9 +109,13 @@ on:
 permissions:
   contents: read
 
+# A newer push to a branch, or to a PR, cancels the older run. Each push to
+# main has a group of its own, so it is never cancelled or held pending
+# behind another: a ship's pin push must not stop the full run of the merged
+# work pushed before it (P11). Scheduled and dispatched runs are not cancelled.
 concurrency:
-  group: ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+  group: ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  cancel-in-progress: ${{ (github.event_name == 'push' || github.event_name == 'pull_request') && github.ref != 'refs/heads/main' }}
 
 # The agents the acceptance scripts start list engine builds from GitHub's
 # API. A shared runner address meets the anonymous limit of 60 an hour
@@ -123,6 +138,16 @@ jobs:
       instruments: ${{ steps.select.outputs.instruments }}
       macos: ${{ steps.select.outputs.macos }}
       container: ${{ steps.select.outputs.container }}
+      # The planner's base, and each component candidate: a given input, or
+      # on a branch push the component's same-named branch; empty is the pin.
+      base: ${{ steps.select.outputs.base }}
+      agent_ref: ${{ steps.select.outputs.agent_ref }}
+      control_ref: ${{ steps.select.outputs.control_ref }}
+      gateway_ref: ${{ steps.select.outputs.gateway_ref }}
+      inference_driver_ref: ${{ steps.select.outputs.inference_driver_ref }}
+      library_ref: ${{ steps.select.outputs.library_ref }}
+      tool_driver_ref: ${{ steps.select.outputs.tool_driver_ref }}
+      site_host_ref: ${{ steps.select.outputs.site_host_ref }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -143,14 +168,27 @@ jobs:
       - name: Compute gates
         id: select
         env:
-          CI_BASE: ${{ github.event.before || github.event.pull_request.base.sha }}
+          CI_BASE: ${{ github.event.before || github.event.pull_request.base.sha || inputs.base }}
           CI_FULL: ${{ github.event_name == 'schedule' || inputs.profile == 'full' || github.repository != 'eugene-plexus/specs' }}
+          CI_BRANCH: ${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name || '' }}
+          AGENT_REF: ${{ inputs.agent_ref }}
+          CONTROL_REF: ${{ inputs.control_ref }}
+          GATEWAY_REF: ${{ inputs.gateway_ref }}
+          INFERENCE_DRIVER_REF: ${{ inputs.inference_driver_ref }}
+          LIBRARY_REF: ${{ inputs.library_ref }}
+          TOOL_DRIVER_REF: ${{ inputs.tool_driver_ref }}
+          SITE_HOST_REF: ${{ inputs.site_host_ref }}
         shell: python {0}
         run: |
           import os, subprocess, sys
           command = [sys.executable, 'scripts/ci_plan.py', '--base', os.environ.get('CI_BASE', ''), '--head', 'HEAD']
           if os.environ.get('CI_FULL') == 'true':
               command.append('--full')
+          if os.environ.get('CI_BRANCH'):
+              command += ['--branch', os.environ['CI_BRANCH']]
+          for name in ('agent', 'control', 'gateway', 'inference_driver', 'library', 'tool_driver', 'site_host'):
+              if os.environ.get(f'{name.upper()}_REF'):
+                  command += ['--ref', f"{name}={os.environ[f'{name.upper()}_REF']}"]
           subprocess.run(command, check=True)
 
   s10-instruments:
@@ -219,32 +257,32 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
+          ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/control
-          ref: ${{ inputs.control_ref || steps.pins.outputs.control }}
+          ref: ${{ needs.plan.outputs.control_ref || steps.pins.outputs.control }}
           path: control
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/gateway
-          ref: ${{ inputs.gateway_ref || steps.pins.outputs.gateway }}
+          ref: ${{ needs.plan.outputs.gateway_ref || steps.pins.outputs.gateway }}
           path: gateway
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/library
-          ref: ${{ inputs.library_ref || steps.pins.outputs.library }}
+          ref: ${{ needs.plan.outputs.library_ref || steps.pins.outputs.library }}
           path: library
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
-          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
+          ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/tool-driver
-          ref: ${{ inputs.tool_driver_ref || steps.pins.outputs.tool_driver }}
+          ref: ${{ needs.plan.outputs.tool_driver_ref || steps.pins.outputs.tool_driver }}
           path: tool-driver
       # The site host the agent installs, at the commit the agent pins: the
       # Job Sites acceptance installs it from this checkout (J6, 2026-10-05).
@@ -262,7 +300,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/site-host
-          ref: ${{ inputs.site_host_ref || steps.site_host.outputs.commit }}
+          ref: ${{ needs.plan.outputs.site_host_ref || steps.site_host.outputs.commit }}
           path: site-host
       # Component dev extras pin independent lint/codegen toolchains. Only the
       # shared test runner belongs in this cross-component environment.
@@ -434,27 +472,27 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
+          ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/control
-          ref: ${{ inputs.control_ref || steps.pins.outputs.control }}
+          ref: ${{ needs.plan.outputs.control_ref || steps.pins.outputs.control }}
           path: control
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/gateway
-          ref: ${{ inputs.gateway_ref || steps.pins.outputs.gateway }}
+          ref: ${{ needs.plan.outputs.gateway_ref || steps.pins.outputs.gateway }}
           path: gateway
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/library
-          ref: ${{ inputs.library_ref || steps.pins.outputs.library }}
+          ref: ${{ needs.plan.outputs.library_ref || steps.pins.outputs.library }}
           path: library
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
-          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
+          ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
       - name: Nothing crosses in clear text, and the sabotage is refused
         run: >-
@@ -474,16 +512,17 @@ jobs:
             ${{ runner.temp }}/lt1/result.*
             ${{ runner.temp }}/lt1-automatic/result.*
 
-  # On a push, macOS runs in macos-push.yml so Edge does not wait for it.
+  # On a push to main, macOS runs in macos-push.yml so Edge does not wait for
+  # it. A branch push runs it here: a branch's CI is its merge gate.
   macos:
     needs: plan
-    if: needs.plan.outputs.macos == 'true' && github.event_name != 'push'
+    if: needs.plan.outputs.macos == 'true' && (github.event_name != 'push' || github.ref != 'refs/heads/main')
     uses: ./.github/workflows/a4-macos.yml
     with:
-      agent_ref: ${{ inputs.agent_ref }}
-      library_ref: ${{ inputs.library_ref }}
-      gateway_ref: ${{ inputs.gateway_ref }}
-      driver_ref: ${{ inputs.inference_driver_ref }}
+      agent_ref: ${{ needs.plan.outputs.agent_ref }}
+      library_ref: ${{ needs.plan.outputs.library_ref }}
+      gateway_ref: ${{ needs.plan.outputs.gateway_ref }}
+      driver_ref: ${{ needs.plan.outputs.inference_driver_ref }}
       platforms: ${{ needs.plan.outputs.full == 'true' && '["macos-14","macos-15","macos-26"]' || '["macos-26"]' }}
 
   app-accounts:
@@ -491,25 +530,25 @@ jobs:
     if: needs.plan.outputs.full == 'true'
     uses: ./.github/workflows/c1-app-accounts.yml
     with:
-      agent_ref: ${{ inputs.agent_ref }}
-      control_ref: ${{ inputs.control_ref }}
-      gateway_ref: ${{ inputs.gateway_ref }}
+      agent_ref: ${{ needs.plan.outputs.agent_ref }}
+      control_ref: ${{ needs.plan.outputs.control_ref }}
+      gateway_ref: ${{ needs.plan.outputs.gateway_ref }}
 
   open-webui:
     needs: plan
     if: needs.plan.outputs.full == 'true'
     uses: ./.github/workflows/c4-open-webui.yml
     with:
-      agent_ref: ${{ inputs.agent_ref }}
-      control_ref: ${{ inputs.control_ref }}
-      gateway_ref: ${{ inputs.gateway_ref }}
+      agent_ref: ${{ needs.plan.outputs.agent_ref }}
+      control_ref: ${{ needs.plan.outputs.control_ref }}
+      gateway_ref: ${{ needs.plan.outputs.gateway_ref }}
 
   folder-tools:
     needs: plan
     if: needs.plan.outputs.full == 'true'
     uses: ./.github/workflows/c6-folder-tools.yml
     with:
-      agent_ref: ${{ inputs.agent_ref }}
+      agent_ref: ${{ needs.plan.outputs.agent_ref }}
 
   r7-launch-boundary:
     needs: plan
@@ -545,12 +584,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
+          ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
-          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
+          ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
       - name: Install locked runtime and build dependencies
         run: |
@@ -605,11 +644,12 @@ jobs:
         # This commit's own installer is what the helper downloads, so the
         # target must be one raw.githubusercontent.com can serve: a pull
         # request's merge commit is not.
-        # On a push the install starts from the previous push's installer,
-        # so a commit that moves a pin is a real version change.
+        # On a push the install starts from the planner's base (the previous
+        # push on main, the merge-base on a branch), so a commit that moves a
+        # pin is a real version change.
         env:
           EP_TARGET: ${{ github.event.pull_request.head.sha || github.sha }}
-          EP_FROM: ${{ github.event.before || github.event.pull_request.base.sha }}
+          EP_FROM: ${{ needs.plan.outputs.base }}
         run: |
           sudo env EP_PERSON="$(id -un)" EP_TARGET="$EP_TARGET" EP_FROM="$EP_FROM" \
             bash scripts/updates-system-install-acceptance.sh 2>&1 | tee update-run.log

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 import yaml
-from ci_plan import CHECKS
+from ci_plan import CHECKS, OUTPUTS, REF_INPUTS
 
 WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
 
@@ -44,9 +44,69 @@ class WiringTests(unittest.TestCase):
             [sys.executable, "-c", imports], cwd=WORKFLOWS.parent.parent, check=True
         )
 
+    def test_branch_pushes_run_ci_and_main_pushes_are_never_cancelled(self) -> None:
+        ci = workflow("ci.yml")
+        self.assertEqual(ci["on"]["push"]["branches"], ["**", "!edge", "!dependabot/**"])
+        self.assertEqual(ci["on"]["pull_request"]["branches"], ["main"])
+        self.assertTrue(ci["on"]["schedule"])
+        group = ci["concurrency"]["group"]
+        cancel = ci["concurrency"]["cancel-in-progress"]
+        # Main's pushes each get a group of their own; others keep the old group.
+        self.assertTrue(
+            group.startswith(
+                "ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}"
+            )
+        )
+        self.assertIn(
+            "github.event_name == 'push' && github.ref == 'refs/heads/main' && "
+            "format('-{0}', github.sha)",
+            group,
+        )
+        self.assertIn("github.ref != 'refs/heads/main'", cancel)
+        self.assertIn("github.event_name == 'pull_request'", cancel)
+        self.assertNotIn("schedule", cancel)
+        self.assertNotIn("workflow_dispatch", cancel)
+        macos = workflow("macos-push.yml")["concurrency"]
+        self.assertIn("github.sha", macos["group"])
+        self.assertEqual(macos["cancel-in-progress"], "false")
+
+    def test_only_a_specs_branch_push_resolves_component_branches(self) -> None:
+        select = next(
+            step
+            for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
+            if step.get("id") == "select"
+        )
+        self.assertEqual(
+            select["env"]["CI_BRANCH"],
+            "${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' "
+            "&& github.ref != 'refs/heads/main' && github.ref_name || '' }}",
+        )
+        # Main pushes and PRs keep their base; a dispatch may give one.
+        self.assertEqual(
+            select["env"]["CI_BASE"],
+            "${{ github.event.before || github.event.pull_request.base.sha || inputs.base }}",
+        )
+        for name in REF_INPUTS:
+            self.assertEqual(select["env"][f"{name.upper()}_REF"], f"${{{{ inputs.{name}_ref }}}}")
+
+    def test_every_job_tests_the_planned_component_refs(self) -> None:
+        ci = workflow("ci.yml")
+        text = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+        jobs_text = text.split("\n  s10-instruments:\n", 1)[1]
+        for name in REF_INPUTS:
+            with self.subTest(ref=name):
+                self.assertNotIn(f"inputs.{name}_ref", jobs_text)
+        for job in ci["jobs"].values():
+            for step in job.get("steps", []):
+                repository = step.get("with", {}).get("repository", "")
+                component = repository.removeprefix("eugene-plexus/").replace("-", "_")
+                if component in REF_INPUTS:
+                    self.assertIn(f"needs.plan.outputs.{component}_ref", step["with"]["ref"])
+
     def test_planner_outputs_and_scoped_jobs_are_connected(self) -> None:
         jobs = workflow("ci.yml")["jobs"]
-        self.assertEqual(set(jobs["plan"]["outputs"]), set(CHECKS))
+        self.assertEqual(set(jobs["plan"]["outputs"]), set(OUTPUTS))
+        self.assertLessEqual(set(CHECKS), set(OUTPUTS))
         for name, gate in {
             "r7-signing": "runtime",
             "r7-launch-boundary": "launch",

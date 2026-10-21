@@ -55,8 +55,17 @@ the reduced plan. Markdown fixtures under scripts are not documentation.
   A scheduled failure is visible but does not automatically veto every Edge build.
   A discovered security or data-loss defect requires the safety hold below.
 
-Superseded push/PR validation may be canceled. Qualification and publication are
-not canceled in progress. The reusable platform/service workflows no longer
+A push to any branch runs CI (2026-10-21, P1). On `main` the planner's base is
+the previous push. On any other branch it is the branch's merge-base with
+`main`, and each component repository's branch of the same name, if it has
+one, is tested in place of that component's pin. A candidate counts as a pin
+change of its component; a site-host candidate selects full coverage, as a
+site-host ship does. `scripts/branch-ci.py <branch>` dispatches the same run
+by hand, after component branches move or when specs has no such branch.
+
+Superseded branch and PR validation may be canceled. Each push to `main` runs
+to the end, never canceled or held behind another push. Qualification and
+publication are not canceled in progress. The reusable platform/service workflows no longer
 also run independently for the same push. Component repositories retain their
 own CI; this change does not remove their unit suites or codegen checks.
 

@@ -6,10 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ci_plan import CHECKS, COMPONENTS, plan
+from ci_plan import CHECKS, COMPONENTS, REF_INPUTS, branch_base, plan, resolve_refs
 
 
-class PlanTests(unittest.TestCase):
+class Fixture(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory(prefix="ep-ci-plan-")
         self.addCleanup(self.temporary.cleanup)
@@ -40,6 +40,8 @@ class PlanTests(unittest.TestCase):
     def selected(self) -> dict[str, bool]:
         return plan(self.root, self.base, self.commit())
 
+
+class PlanTests(Fixture):
     def test_documentation_does_not_run_runtime_checks(self) -> None:
         self.write("docs/acceptance/example.md", "Evidence, not a runtime input.\n")
         self.assertFalse(any(self.selected().values()))
@@ -119,6 +121,79 @@ class PlanTests(unittest.TestCase):
         self.manifest["components"]["new-component"] = "b" * 40
         self.write("release/manifest.json", json.dumps(self.manifest))
         self.assertTrue(all(self.selected().values()))
+
+
+class BranchTests(Fixture):
+    """A branch push: planned from its merge-base, with component candidates."""
+
+    def branch(self) -> tuple[str, str]:
+        """Main moves on with a script change after the branch leaves it."""
+        self.command("checkout", "-q", "-b", "row")
+        self.write("docs/design/row.md", "The row's design.\n")
+        head = self.commit()
+        self.command("checkout", "-q", "-")
+        self.write("scripts/new-check.py", "print('main moved')\n")
+        main = self.commit()
+        self.command("checkout", "-q", "row")
+        return head, main
+
+    def test_a_docs_branch_is_planned_from_its_merge_base_not_from_main(self) -> None:
+        head, main = self.branch()
+        base = branch_base(self.root, head, main)
+        self.assertEqual(base, self.base)
+        self.assertFalse(any(plan(self.root, base, head).values()))
+        # Against main's head the branch would seem to undo main's script.
+        self.assertTrue(all(plan(self.root, main, head).values()))
+
+    def test_unknown_merge_base_means_full(self) -> None:
+        self.assertEqual(branch_base(self.root, "HEAD", "no-such-ref"), "")
+        self.assertTrue(all(plan(self.root, "", "HEAD").values()))
+
+    def test_a_component_candidate_selects_its_pin_checks(self) -> None:
+        head = self.commit()
+        selected = plan(self.root, self.base, head, candidates=frozenset({"agent"}))
+        self.assertEqual(
+            {name for name, enabled in selected.items() if enabled},
+            {"runtime", "instruments", "container", "launch", "installers", "macos"},
+        )
+        selected = plan(self.root, self.base, head, candidates=frozenset({"control"}))
+        self.assertEqual(
+            {name for name, enabled in selected.items() if enabled},
+            {"runtime", "instruments", "container"},
+        )
+
+    def test_a_site_host_candidate_selects_everything(self) -> None:
+        head = self.commit()
+        self.assertTrue(
+            all(plan(self.root, self.base, head, candidates=frozenset({"site-host"})).values())
+        )
+
+    def test_a_candidate_cannot_excuse_installer_pins_the_manifest_did_not_move(self) -> None:
+        self.write("scripts/install.sh", "PIN_AGENT=" + "b" * 40 + "\necho install\n")
+        head = self.commit()
+        self.assertTrue(
+            all(plan(self.root, self.base, head, candidates=frozenset({"agent"})).values())
+        )
+
+    def test_refs_come_from_inputs_first_then_same_named_branches(self) -> None:
+        branches = {"agent": "a" * 40, "site-host": "c" * 40}
+        asked = []
+
+        def lookup(repository: str, branch: str) -> str | None:
+            asked.append((repository, branch))
+            return branches.get(repository)
+
+        refs = resolve_refs("row", {"agent": "b" * 40}, lookup)
+        self.assertEqual(refs, {"agent": "b" * 40, "site_host": "c" * 40})
+        self.assertNotIn(("agent", "row"), asked)
+        self.assertEqual(len(asked), len(REF_INPUTS) - 1)
+
+    def test_main_pushes_and_scheduled_runs_look_up_no_branches(self) -> None:
+        def lookup(repository: str, branch: str) -> str | None:
+            raise AssertionError("no branch lookup without a branch")
+
+        self.assertEqual(resolve_refs("", {}, lookup), {})
+        self.assertEqual(resolve_refs("", {"gateway": "d" * 40}, lookup), {"gateway": "d" * 40})
 
 
 if __name__ == "__main__":
