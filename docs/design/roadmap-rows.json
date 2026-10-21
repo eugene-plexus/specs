@@ -1,0 +1,2225 @@
+{
+ "generated": "2026-10-21",
+ "lanes": {
+  "OPS": [
+   1,
+   2,
+   6,
+   8,
+   10,
+   69
+  ],
+  "TRUST": [
+   3,
+   4,
+   5,
+   46,
+   45,
+   36,
+   39,
+   37
+  ],
+  "GW": [
+   24,
+   11,
+   12,
+   14,
+   19,
+   57,
+   54,
+   55,
+   40,
+   29,
+   59,
+   58,
+   56,
+   49
+  ],
+  "ENG": [
+   9,
+   18,
+   13,
+   17,
+   20,
+   15,
+   41,
+   42,
+   63,
+   66,
+   50,
+   68,
+   44
+  ],
+  "WB": [
+   7,
+   27,
+   28,
+   30,
+   26,
+   47,
+   32
+  ],
+  "LIB": [
+   16,
+   22,
+   21,
+   65,
+   64,
+   48,
+   61,
+   43,
+   67
+  ],
+  "WEB": [
+   33,
+   62,
+   31,
+   38
+  ],
+  "AG2": [
+   23,
+   35,
+   34,
+   51,
+   52,
+   25,
+   60
+  ],
+  "DESIGN": [
+   53
+  ]
+ },
+ "rows": [
+  {
+   "row": 1,
+   "part": 1,
+   "title": "Contract cleanup in one regeneration",
+   "summary": "Contract cleanup in one regeneration. Cover four things: the decision backend's model revision (the contract promises a field the gateway drops), the dead `uiTheme`/`uiFontSize` settings, client `cache_control` carried to hosted Claude, and a check that every consumer's codegen lists each `openapi/*.yaml`",
+   "from": "B2-REV, SET-1, PC6, codegen audit",
+   "size": "S",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "everyone; PC6 cuts hosted-Claude cost",
+   "notes": "Every consumer regenerates once, not four times, before rows 10-11 change contracts again. Call B2-REV (add the field, or fix the sentence)",
+   "lane": "OPS",
+   "lane_order": 1,
+   "repos": [
+    "specs",
+    "gateway",
+    "inference-driver",
+    "agent",
+    "control"
+   ],
+   "contract": "gateway.yaml inference-driver.yaml agent.yaml control.yaml",
+   "hot_files": [
+    "*/scripts/codegen.py",
+    "gateway/src/eugene_plexus_gateway/decisions.py",
+    "inference-driver/src/eugene_plexus_inference_driver/engines/openai_compat_http.py"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "settings-accuracy.md",
+    "prompt-cache.md"
+   ],
+   "calls": [
+    "B2-REV"
+   ]
+  },
+  {
+   "row": 2,
+   "part": 1,
+   "title": "The shared acceptance harness behaves like the real server",
+   "summary": "The shared acceptance harness behaves like the real server. It needs the console log copy, the machine port and the client doors",
+   "from": "memory `project_acceptance_and_instrument_traps`",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "developers",
+   "notes": "Every later acceptance run goes through it. Today a check through it tests the harness, which is the project's recurring failure",
+   "lane": "OPS",
+   "lane_order": 2,
+   "repos": [
+    "specs",
+    "agent"
+   ],
+   "contract": "",
+   "hot_files": [
+    "specs/scripts/s8-ui-acceptance.py",
+    "agent/src/eugene_plexus_agent/__main__.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 3,
+   "part": 1,
+   "title": "Rotate a machine's TLS key",
+   "summary": "Rotate a machine's TLS key. Two pins across an overlap",
+   "from": "LT-ROT (`tls-between-machines.md`, later)",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "multi-machine",
+   "notes": "Today a changed root key strands every node. It needs a short design",
+   "lane": "TRUST",
+   "lane_order": 1,
+   "repos": [
+    "agent",
+    "control"
+   ],
+   "contract": "control.yaml?",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/machine_port.py",
+    "agent/src/eugene_plexus_agent/node_identity.py",
+    "control/src/eugene_plexus_control/machine_list.py",
+    "control/src/eugene_plexus_control/trust.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "tls-between-machines.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 4,
+   "part": 1,
+   "title": "Agents learn a promoted root's address",
+   "summary": "Agents learn a promoted root's address. The endpoint and epoch reach the agents, and a pre-LT1 standby gets its pins",
+   "from": "WS-ADDR, LT-OLDSB (`warm-standby.md`, \"Found, not fixed\")",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "multi-machine",
+   "notes": "The \"root moved\" contract that automatic takeover and every later standby build on",
+   "lane": "TRUST",
+   "lane_order": 2,
+   "repos": [
+    "control",
+    "agent"
+   ],
+   "contract": "control.yaml",
+   "hot_files": [
+    "control/src/eugene_plexus_control/replication.py",
+    "control/src/eugene_plexus_control/trust.py",
+    "agent/src/eugene_plexus_agent/trust.py",
+    "agent/src/eugene_plexus_agent/standby.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    3
+   ],
+   "design_docs": [
+    "warm-standby.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 5,
+   "part": 1,
+   "title": "Rotate the sign-in key, and change Eugene's passphrase",
+   "summary": "Rotate the sign-in key, and change Eugene's passphrase (re-sealing, the standby's copy included)",
+   "from": "SI-ROT, SI-PASS (`sign-in-with-eugene.md`)",
+   "size": "S+M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "everyone who signs in",
+   "notes": "Rotation is cheapest while few apps cache the key. A passphrase that can never change is a hole",
+   "lane": "TRUST",
+   "lane_order": 3,
+   "repos": [
+    "control",
+    "agent",
+    "ui"
+   ],
+   "contract": "control.yaml",
+   "hot_files": [
+    "control/src/eugene_plexus_control/oidc.py",
+    "control/src/eugene_plexus_control/sealing.py",
+    "control/src/eugene_plexus_control/passphrase_file.py",
+    "control/src/eugene_plexus_control/keyring_store.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    4
+   ],
+   "design_docs": [
+    "sign-in-with-eugene.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 6,
+   "part": 1,
+   "title": "Cut a patch release from a release tag while `main` has moved",
+   "summary": "Cut a patch release from a release tag while `main` has moved",
+   "from": "REL-PATCH (`release-script.md`; memory `project_issue_intake`)",
+   "size": "S-M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "everyone on stable",
+   "notes": "`release.py` qualifies `main`. A fix for stable has no path today",
+   "lane": "OPS",
+   "lane_order": 3,
+   "repos": [
+    "specs"
+   ],
+   "contract": "",
+   "hot_files": [
+    "specs/scripts/release.py",
+    "specs/scripts/release_gate.py",
+    "specs/scripts/release-inputs.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "release-script.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 7,
+   "part": 1,
+   "title": "Remove a person's data when the person is removed",
+   "summary": "Remove a person's data when the person is removed. This covers chats, notes, documents, the past-chat index, server banks and connections, plus the rule for a person re-created later",
+   "from": "W4, MRC27 (`workbench-v1.md`, `workbench-memory-and-documents.md`)",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "multi-person installs",
+   "notes": "Each new store adds another place to purge. Call MRC27",
+   "lane": "WB",
+   "lane_order": 1,
+   "repos": [
+    "workbench",
+    "control"
+   ],
+   "contract": "control.yaml?",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/store.py",
+    "workbench/src/eugene_plexus_workbench/past_chats.py",
+    "workbench/src/eugene_plexus_workbench/memory_servers.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "workbench-v1.md",
+    "workbench-memory-and-documents.md"
+   ],
+   "calls": [
+    "MRC27"
+   ]
+  },
+  {
+   "row": 8,
+   "part": 1,
+   "title": "Installer pass",
+   "summary": "Installer pass. Run the Mac service as a system daemon, which makes the macOS autostart claim true, and let both installers take `--label`",
+   "from": "R2.6-mac, PLAT-START, NL-INST",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "Mac, multi-machine",
+   "notes": "Moving from a LaunchAgent is a migration, cheapest while Mac installs are near zero. Accept on GitHub's macOS runners",
+   "lane": "OPS",
+   "lane_order": 4,
+   "repos": [
+    "specs",
+    "agent"
+   ],
+   "contract": "",
+   "hot_files": [
+    "specs/scripts/install.sh",
+    "specs/scripts/install.ps1",
+    "agent/src/eugene_plexus_agent/reach.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "windows-comes-back-by-itself.md",
+    "node-labels.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 9,
+   "part": 1,
+   "title": "Engine cache settings on a profile, sized from the machine",
+   "summary": "Engine cache settings on a profile, sized from the machine. This means `--cache-ram`, `--cache-reuse` and `--ctx-checkpoints`, with a RAM cache computed from free RAM; vLLM's CPU KV offload; and admission counting both",
+   "from": "PC7, LD2",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "everyone running local models",
+   "notes": "The home of CB4's setting, DI2 and LD2. Measure llama-server's cache-update pause first. Call LD-C5",
+   "lane": "ENG",
+   "lane_order": 1,
+   "repos": [
+    "agent",
+    "ui"
+   ],
+   "contract": "agent.yaml?",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/llama_cpp.py",
+    "agent/src/eugene_plexus_agent/engines/vllm.py",
+    "agent/src/eugene_plexus_agent/admission.py"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "prompt-cache.md",
+    "llm-d-lessons.md"
+   ],
+   "calls": [
+    "LD-C5"
+   ]
+  },
+  {
+   "row": 10,
+   "part": 1,
+   "title": "Measure people served at a speed",
+   "summary": "Measure people served at a speed. A 1..N stream sweep through the gateway, adding agent-shaped load: hour-long sessions, the published pauses, and sub-agent bursts of 7-51. Report the knee, kept per runtime with its provenance",
+   "from": "DI3, LD5 (replaces the 1-256 load test and creators items 1 and 3)",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "businesses; feeds rows 11, 13, 14",
+   "notes": "Its result record is read by LD1's acceptance, DI5/LD3, the speed nudge and the creators' cards. Handoff `docs/private/handoff-di3.md`",
+   "lane": "OPS",
+   "lane_order": 5,
+   "repos": [
+    "specs",
+    "agent",
+    "ui"
+   ],
+   "contract": "agent.yaml",
+   "hot_files": [
+    "specs/scripts (new sweep)",
+    "agent/src/eugene_plexus_agent/benchmarks.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    2
+   ],
+   "design_docs": [
+    "deepinfer-lessons.md",
+    "llm-d-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 11,
+   "part": 1,
+   "title": "One fair queue in the gateway",
+   "summary": "One fair queue in the gateway. Waiting for a starting runtime, waiting for room in a pool, and a key over its concurrency limit become one queue, ordered by band, then person, then arrival. Refusals name their cause, and queue time is recorded",
+   "from": "LD1, with WAKE and CB-C",
+   "size": "M-L",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "every shared machine and agent user",
+   "notes": "One waiting mechanism before a second one appears. LD-C2 taken 2026-10-21: queue, reversing A5's no-queue rule. Calls LD-C3, LD-C4, WAKE and CB-C. One adversarial review",
+   "lane": "GW",
+   "lane_order": 2,
+   "repos": [
+    "gateway",
+    "control",
+    "agent",
+    "ui"
+   ],
+   "contract": "components/client-keys.yaml gateway.yaml control.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/budget.py",
+    "gateway/src/eugene_plexus_gateway/admission.py",
+    "gateway/src/eugene_plexus_gateway/routing.py",
+    "control/src/eugene_plexus_control/client_admission.py"
+   ],
+   "design_state": "ready",
+   "needs": [
+    10,
+    24
+   ],
+   "design_docs": [
+    "llm-d-lessons.md",
+    "cache-aware-balancing.md",
+    "scoped-client-access.md"
+   ],
+   "calls": [
+    "LD-C3",
+    "LD-C4",
+    "WAKE",
+    "CB-C"
+   ]
+  },
+  {
+   "row": 12,
+   "part": 1,
+   "title": "Metrics export with names that last",
+   "summary": "Metrics export with names that last. Prometheus `/metrics` on the gateway's own port, an optional OTLP exporter set from the console, decisions written as request rows, and the stored rollups served",
+   "from": "LD4, B2-MET, MET-RU, the setups pass's Prometheus item",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "businesses",
+   "notes": "Metric names become a public contract. Settle them once, before alerts and dashboards (row 38) depend on them",
+   "lane": "GW",
+   "lane_order": 3,
+   "repos": [
+    "gateway",
+    "agent"
+   ],
+   "contract": "gateway.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/metrics.py",
+    "gateway/src/eugene_plexus_gateway/routes/metrics.py",
+    "gateway/src/eugene_plexus_gateway/decisions.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    11
+   ],
+   "design_docs": [
+    "llm-d-lessons.md",
+    "m8-retained-request-metrics.md",
+    "metrics-dashboard.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 13,
+   "part": 1,
+   "title": "Checked engine updates, and the drain they need",
+   "summary": "Checked engine updates, and the drain they need. Check a new build against the old one, roll the replicas, keep the old build on failure, and stop a gateway restart cutting streams",
+   "from": "DI1, rolling upgrades (release §8, adoption, open threads)",
+   "size": "L",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "every install",
+   "notes": "Every install updates engines. The drain is reused by rows 15 and 40. Call DI-C3",
+   "lane": "ENG",
+   "lane_order": 3,
+   "repos": [
+    "agent",
+    "gateway",
+    "ui"
+   ],
+   "contract": "agent.yaml gateway.yaml",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/acquisition.py",
+    "agent/src/eugene_plexus_agent/runtimes.py",
+    "gateway/src/eugene_plexus_gateway/routes/admin.py",
+    "gateway/src/eugene_plexus_gateway/lifecycle.py"
+   ],
+   "design_state": "ready",
+   "needs": [
+    11
+   ],
+   "design_docs": [
+    "deepinfer-lessons.md"
+   ],
+   "calls": [
+    "DI-C3"
+   ]
+  },
+  {
+   "row": 14,
+   "part": 2,
+   "title": "Wait or move by predicted time to first token; place new conversations by the tokens a replica holds",
+   "summary": "Wait or move by predicted time to first token; place new conversations by the tokens a replica holds. Calibrate peak prefill per runtime (retained metrics, or a prompt-processing run in the profile benchmark), and read vLLM's `/load`",
+   "from": "DI5, LD3, M4-LOAD, MD `--n-prompt` sweep",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "multi-replica installs",
+   "notes": "Needs row 10. Adopt only what beats CB3's rule",
+   "lane": "GW",
+   "lane_order": 4,
+   "repos": [
+    "gateway",
+    "agent",
+    "inference-driver"
+   ],
+   "contract": "gateway.yaml?",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/routing.py",
+    "gateway/src/eugene_plexus_gateway/affinity.py",
+    "gateway/src/eugene_plexus_gateway/budget.py"
+   ],
+   "design_state": "ready",
+   "needs": [
+    10,
+    11
+   ],
+   "design_docs": [
+    "deepinfer-lessons.md",
+    "llm-d-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 15,
+   "part": 2,
+   "title": "Keep the prompt cache on disk across restarts",
+   "summary": "Keep the prompt cache on disk across restarts",
+   "from": "DI2",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high (chats at rest)",
+   "who": "everyone running local models",
+   "notes": "Needs rows 9 and 13, and a privacy review. Measure a hybrid model too. Call DI-C4",
+   "lane": "ENG",
+   "lane_order": 6,
+   "repos": [
+    "agent",
+    "inference-driver",
+    "gateway",
+    "ui"
+   ],
+   "contract": "agent.yaml inference-driver.yaml",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/llama_cpp.py",
+    "inference-driver/src/eugene_plexus_inference_driver/slots.py",
+    "gateway/src/eugene_plexus_gateway/affinity.py"
+   ],
+   "design_state": "ready",
+   "needs": [
+    9,
+    13,
+    14
+   ],
+   "design_docs": [
+    "deepinfer-lessons.md"
+   ],
+   "calls": [
+    "DI-C4"
+   ]
+  },
+  {
+   "row": 16,
+   "part": 2,
+   "title": "Apple unified memory in fit",
+   "summary": "Apple unified memory in fit. Fit misjudges a Mac worker today",
+   "from": "LIB-PLATFORM",
+   "size": "S",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "Mac",
+   "notes": "A fit verdict that is wrong is a setting that lies",
+   "lane": "LIB",
+   "lane_order": 1,
+   "repos": [
+    "library"
+   ],
+   "contract": "",
+   "hot_files": [
+    "library/src/eugene_plexus_library/fit.py",
+    "library/src/eugene_plexus_library/hardware.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 17,
+   "part": 2,
+   "title": "DFlash and EAGLE3 draft sidecars",
+   "summary": "DFlash and EAGLE3 draft sidecars. ggml-org already ships the files, which Eugene hides",
+   "from": "SD-x, DFLASH",
+   "size": "S-M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "speed seekers",
+   "notes": "Builds on SD1",
+   "lane": "ENG",
+   "lane_order": 4,
+   "repos": [
+    "agent",
+    "library"
+   ],
+   "contract": "",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/speculation.py",
+    "library/src/eugene_plexus_library/scanner.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "speculative-decoding.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 18,
+   "part": 2,
+   "title": "DeepInfer's small checks",
+   "summary": "DeepInfer's small checks. A truncated GGUF found before launch, vLLM's compile cache surviving a restart, 400s naming the field, trust-remote-code off by default",
+   "from": "DI checks",
+   "size": "S",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "everyone",
+   "notes": "Cheap. Each check that finds something is fixed in the same slice",
+   "lane": "ENG",
+   "lane_order": 2,
+   "repos": [
+    "library",
+    "agent",
+    "gateway"
+   ],
+   "contract": "",
+   "hot_files": [
+    "library/src/eugene_plexus_library/formats/gguf.py",
+    "library/src/eugene_plexus_library/preflight.py",
+    "agent/src/eugene_plexus_agent/engines/vllm.py"
+   ],
+   "design_state": "ready",
+   "needs": [
+    9
+   ],
+   "design_docs": [
+    "deepinfer-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 19,
+   "part": 2,
+   "title": "Repetition stop on by default, with evidence",
+   "summary": "Repetition stop on by default, with evidence",
+   "from": "REP (`repetition-protection.md`)",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "everyone",
+   "notes": "Labelled evaluation, then compare with vLLM's detector",
+   "lane": "GW",
+   "lane_order": 5,
+   "repos": [
+    "gateway",
+    "specs"
+   ],
+   "contract": "",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/repetition.py"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "repetition-protection.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 20,
+   "part": 2,
+   "title": "\"Same answer every time\" setting",
+   "summary": "\"Same answer every time\" setting",
+   "from": "DI7",
+   "size": "S",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "businesses, evaluations",
+   "notes": "vLLM's batch-invariant mode; measured on llama.cpp",
+   "lane": "ENG",
+   "lane_order": 5,
+   "repos": [
+    "agent"
+   ],
+   "contract": "",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/vllm.py",
+    "agent/src/eugene_plexus_agent/engines/llama_cpp.py"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "deepinfer-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 21,
+   "part": 3,
+   "title": "The model author's sampling as a profile's defaults",
+   "summary": "The model author's sampling as a profile's defaults (shown today, not applied)",
+   "from": "M2-SAMP",
+   "size": "S",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "everyone",
+   "notes": "Small and touches every chat",
+   "lane": "LIB",
+   "lane_order": 3,
+   "repos": [
+    "library",
+    "gateway",
+    "ui"
+   ],
+   "contract": "library.yaml",
+   "hot_files": [
+    "library/src/eugene_plexus_library/profile_storage.py",
+    "library/src/eugene_plexus_library/routes/profiles.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "m2-model-library.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 22,
+   "part": 3,
+   "title": "Re-point a Library entry whose file moved",
+   "summary": "Re-point a Library entry whose file moved",
+   "from": "M2-RELOC",
+   "size": "S",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "everyone",
+   "notes": "Must never apply a profile to the wrong file",
+   "lane": "LIB",
+   "lane_order": 2,
+   "repos": [
+    "library",
+    "ui"
+   ],
+   "contract": "library.yaml",
+   "hot_files": [
+    "library/src/eugene_plexus_library/store.py",
+    "library/src/eugene_plexus_library/routes/models.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "m2-model-library.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 23,
+   "part": 3,
+   "title": "Folder access for Workbench without a terminal",
+   "summary": "Folder access for Workbench without a terminal. The agent sets and removes the folder permission from the UI",
+   "from": "C6-ACL (`workbench-files.md`)",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high (privileges)",
+   "who": "every Workbench folder user",
+   "notes": "Today an administrator runs `icacls`, which breaks the no-terminal rule. One review",
+   "lane": "AG2",
+   "lane_order": 1,
+   "repos": [
+    "agent",
+    "workbench",
+    "ui"
+   ],
+   "contract": "agent.yaml",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/routes/directories.py",
+    "workbench/src/eugene_plexus_workbench/folder_windows.py",
+    "workbench/src/eugene_plexus_workbench/folder_linux.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "workbench-files.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 24,
+   "part": 3,
+   "title": "Client keys: rotate, and record last use",
+   "summary": "Client keys: rotate, and record last use (`lastUsedAt` is never written)",
+   "from": "CLIENT-KEYS (memory `project_agent_findings`)",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "every app and tool user",
+   "notes": "Key hygiene for every connected client",
+   "lane": "GW",
+   "lane_order": 1,
+   "repos": [
+    "control",
+    "gateway",
+    "ui"
+   ],
+   "contract": "components/client-keys.yaml",
+   "hot_files": [
+    "control/src/eugene_plexus_control/routes/client_keys.py",
+    "control/src/eugene_plexus_control/client_admission.py",
+    "gateway/src/eugene_plexus_gateway/client_keys.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "scoped-client-access.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 25,
+   "part": 3,
+   "title": "Connect an app on this machine",
+   "summary": "Connect an app on this machine. The person's Job Site writes Claude Code's and Codex's setup, and Open WebUI gets a ready setup",
+   "from": "CONNECT (audience roadmap), MR9b Open WebUI",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high (auth, home-folder writes)",
+   "who": "agent-client users",
+   "notes": "Needs a design. One review and a real-machine run",
+   "lane": "AG2",
+   "lane_order": 6,
+   "repos": [
+    "agent",
+    "site-host",
+    "workbench",
+    "ui"
+   ],
+   "contract": "agent.yaml? site-host.yaml?",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/client_doors.py",
+    "agent/src/eugene_plexus_agent/apps.py",
+    "site-host/src/eugene_plexus_site_host/workspace_tools.py"
+   ],
+   "design_state": "full",
+   "needs": [
+    24
+   ],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 26,
+   "part": 3,
+   "title": "Long chats that outgrow the context",
+   "summary": "Long chats that outgrow the context. Workbench compacts or summarises a chat that grows past its model's context",
+   "from": "rich-content roadmap, out-of-scope list",
+   "size": "L",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "every Workbench user",
+   "notes": "Design first",
+   "lane": "WB",
+   "lane_order": 5,
+   "repos": [
+    "workbench"
+   ],
+   "contract": "",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/context.py",
+    "workbench/src/eugene_plexus_workbench/conversation.py",
+    "workbench/src/eugene_plexus_workbench/store.py"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 27,
+   "part": 3,
+   "title": "Memory extras",
+   "summary": "Memory extras. Send my past chats to a memory server; model-proposed merges; provenance from web and tool results; more servers and install-wide servers; projects with their own folder, model and owner view",
+   "from": "MV5-backfill, MV6-later, MV5a-later, MV7-later (not sharing)",
+   "size": "S-M each",
+   "risk": "cross",
+   "risk_note": "low-cross",
+   "who": "every Workbench user",
+   "notes": "Call MV5-C4 for the backfill",
+   "lane": "WB",
+   "lane_order": 2,
+   "repos": [
+    "workbench"
+   ],
+   "contract": "",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/memory_servers.py",
+    "workbench/src/eugene_plexus_workbench/projects.py",
+    "workbench/src/eugene_plexus_workbench/store.py"
+   ],
+   "design_state": "ready",
+   "needs": [
+    7
+   ],
+   "design_docs": [
+    "workbench-memory-v2.md"
+   ],
+   "calls": [
+    "MV5-C4"
+   ]
+  },
+  {
+   "row": 28,
+   "part": 3,
+   "title": "Answer branches: delete, name, compare",
+   "summary": "Answer branches: delete, name, compare",
+   "from": "AV-later",
+   "size": "S-M",
+   "risk": "low",
+   "risk_note": "delete is destructive",
+   "who": "every Workbench user",
+   "notes": "",
+   "lane": "WB",
+   "lane_order": 3,
+   "repos": [
+    "workbench"
+   ],
+   "contract": "",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/answers.py",
+    "workbench/src/eugene_plexus_workbench/store.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "workbench-answer-versions.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 29,
+   "part": 3,
+   "title": "Pictures in tool results",
+   "summary": "Pictures in tool results. One shared contract for images sent to the model, with the Job Site and MCP caps",
+   "from": "RC3-caps",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "every Workbench user",
+   "notes": "The contract lands in specs before any consumer uses it",
+   "lane": "GW",
+   "lane_order": 10,
+   "repos": [
+    "specs",
+    "gateway",
+    "inference-driver",
+    "workbench",
+    "site-host",
+    "control"
+   ],
+   "contract": "gateway.yaml inference-driver.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/chat_contract.py",
+    "gateway/src/eugene_plexus_gateway/responses.py",
+    "workbench/src/eugene_plexus_workbench/tools.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 30,
+   "part": 3,
+   "title": "Documents and folders extras",
+   "summary": "Documents and folders extras. Map-reduce over whole documents, opt-in OCR, PDF click-through, collections, Job Site folders, a file watcher, per-folder intervals",
+   "from": "MR-later, MR7-later, MRC26",
+   "size": "M each",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "every Workbench user",
+   "notes": "",
+   "lane": "WB",
+   "lane_order": 4,
+   "repos": [
+    "workbench",
+    "site-host"
+   ],
+   "contract": "components/job-sites.yaml?",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/knowledge/ingest.py",
+    "workbench/src/eugene_plexus_workbench/folder_sync.py",
+    "workbench/src/eugene_plexus_workbench/store.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "workbench-memory-and-documents.md",
+    "workbench-folders.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 31,
+   "part": 3,
+   "title": "Reading and rich-content extras",
+   "summary": "Reading and rich-content extras. Display settings, speaker labels, CJK, a heading outline, artifacts from tool results, revision diffs, more chart types, a per-chat run switch, Firefox and Safari",
+   "from": "RD-later, RC-later",
+   "size": "S-M each",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "every Workbench user",
+   "notes": "Do them in batches",
+   "lane": "WEB",
+   "lane_order": 3,
+   "repos": [
+    "workbench"
+   ],
+   "contract": "",
+   "hot_files": [
+    "workbench/web/src/components/Markdown.tsx",
+    "workbench/web/src/components/MessageView.tsx",
+    "workbench/src/eugene_plexus_workbench/artifacts.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "workbench-reading.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 32,
+   "part": 3,
+   "title": "Skills",
+   "summary": "Skills (Anthropic-style)",
+   "from": "memory research",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "every Workbench user",
+   "notes": "Design first",
+   "lane": "WB",
+   "lane_order": 7,
+   "repos": [
+    "workbench",
+    "gateway?"
+   ],
+   "contract": "",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/tools.py",
+    "workbench/src/eugene_plexus_workbench/context.py"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [
+    "memory-research-2026-10.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 33,
+   "part": 3,
+   "title": "Console: keyboard navigation in the resource tree, and settings search in the header",
+   "summary": "Console: keyboard navigation in the resource tree, and settings search in the header",
+   "from": "UI-TREE-A11Y, SET-x",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "console users, accessibility",
+   "notes": "",
+   "lane": "WEB",
+   "lane_order": 1,
+   "repos": [
+    "ui"
+   ],
+   "contract": "",
+   "hot_files": [
+    "ui/src/components/ResourceTree.tsx",
+    "ui/src/lib/resourceTree.ts",
+    "ui/src/lib/settingsTopics.ts"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "ui-tree-navigation.md",
+    "ui-settings-reorganisation.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 34,
+   "part": 3,
+   "title": "Open WebUI: hub search, images, updates",
+   "summary": "Open WebUI: hub search, images, updates",
+   "from": "C4-NEXT",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "Open WebUI users",
+   "notes": "Includes deciding on `ENABLE_PLUGINS`",
+   "lane": "AG2",
+   "lane_order": 3,
+   "repos": [
+    "agent",
+    "gateway",
+    "tool-driver"
+   ],
+   "contract": "",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/apps.py",
+    "agent/src/eugene_plexus_agent/apps_catalogue.yaml"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "c4-open-webui.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 35,
+   "part": 3,
+   "title": "Tray: unload models and keep serving",
+   "summary": "Tray: unload models and keep serving",
+   "from": "R2.6-TRAY",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high (a new credential)",
+   "who": "Windows",
+   "notes": "Needs a narrow credential the tray can hold",
+   "lane": "AG2",
+   "lane_order": 2,
+   "repos": [
+    "agent",
+    "control"
+   ],
+   "contract": "agent.yaml? control.yaml?",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/tray.py",
+    "agent/src/eugene_plexus_agent/tokens.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "windows-comes-back-by-itself.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 36,
+   "part": 4,
+   "title": "Machines says why a machine's announcement was refused",
+   "summary": "Machines says why a machine's announcement was refused",
+   "from": "R2.4-a",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "multi-machine",
+   "notes": "Today it shows a probe error. A contract field plus an issue kind",
+   "lane": "TRUST",
+   "lane_order": 6,
+   "repos": [
+    "control",
+    "agent",
+    "ui"
+   ],
+   "contract": "control.yaml",
+   "hot_files": [
+    "control/src/eugene_plexus_control/routes/nodes.py",
+    "control/src/eugene_plexus_control/machine_list.py",
+    "agent/src/eugene_plexus_agent/enrollment.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 37,
+   "part": 4,
+   "title": "Routing profiles per person or group",
+   "summary": "Routing profiles per person or group (shared accounts, part two)",
+   "from": "SSO-ROLES (`shared-accounts-and-sso.md`)",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "businesses",
+   "notes": "Designed 2026-10-16. Fix its data format before more per-person settings arrive",
+   "lane": "TRUST",
+   "lane_order": 8,
+   "repos": [
+    "control",
+    "gateway",
+    "workbench",
+    "ui"
+   ],
+   "contract": "control.yaml gateway.yaml",
+   "hot_files": [
+    "control/src/eugene_plexus_control/person_access.py",
+    "control/src/eugene_plexus_control/permissions.py",
+    "gateway/src/eugene_plexus_gateway/routing.py"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [
+    "shared-accounts-and-sso.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 38,
+   "part": 4,
+   "title": "Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost",
+   "summary": "Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost",
+   "from": "ADM, HH-NEXT, MD-x",
+   "size": "L",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "businesses",
+   "notes": "Needs row 12",
+   "lane": "WEB",
+   "lane_order": 4,
+   "repos": [
+    "ui",
+    "gateway",
+    "agent"
+   ],
+   "contract": "gateway.yaml",
+   "hot_files": [
+    "ui/src/components/GatewayOperations.tsx",
+    "ui/src/lib/gatewayDashboard.ts",
+    "gateway/src/eugene_plexus_gateway/metrics.py"
+   ],
+   "design_state": "full",
+   "needs": [
+    12
+   ],
+   "design_docs": [
+    "gateway-operations-dashboard.md",
+    "host-history.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 39,
+   "part": 4,
+   "title": "Operations rights for people who are not the owner",
+   "summary": "Operations rights for people who are not the owner",
+   "from": "CX-OPS",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "businesses",
+   "notes": "",
+   "lane": "TRUST",
+   "lane_order": 7,
+   "repos": [
+    "control",
+    "agent",
+    "ui"
+   ],
+   "contract": "control.yaml",
+   "hot_files": [
+    "control/src/eugene_plexus_control/permissions.py",
+    "control/src/eugene_plexus_control/administration.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    37
+   ],
+   "design_docs": [
+    "console-ux-pass.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 40,
+   "part": 4,
+   "title": "Usage and money limits per person and key",
+   "summary": "Usage and money limits per person and key",
+   "from": "KEY$, Shop, AD-BILL",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "businesses",
+   "notes": "Builds on A5's attribution",
+   "lane": "GW",
+   "lane_order": 9,
+   "repos": [
+    "gateway",
+    "control",
+    "ui"
+   ],
+   "contract": "components/client-keys.yaml gateway.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/admission.py",
+    "gateway/src/eugene_plexus_gateway/client_keys.py",
+    "control/src/eugene_plexus_control/client_admission.py"
+   ],
+   "design_state": "full",
+   "needs": [
+    11,
+    24
+   ],
+   "design_docs": [
+    "openai-inference-compatibility.md",
+    "scoped-client-access.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 41,
+   "part": 4,
+   "title": "Speculative decoding on vLLM",
+   "summary": "Speculative decoding on vLLM, including the overdue live vLLM run on current Edge",
+   "from": "SD2",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "vLLM",
+   "notes": "",
+   "lane": "ENG",
+   "lane_order": 7,
+   "repos": [
+    "agent"
+   ],
+   "contract": "",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/vllm.py",
+    "agent/src/eugene_plexus_agent/engines/speculation.py"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "speculative-decoding.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 42,
+   "part": 4,
+   "title": "vLLM from its official container image",
+   "summary": "vLLM from its official container image",
+   "from": "VDK (business candidate)",
+   "size": "M-L",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "vLLM, businesses",
+   "notes": "",
+   "lane": "ENG",
+   "lane_order": 8,
+   "repos": [
+    "agent",
+    "specs"
+   ],
+   "contract": "agent.yaml?",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/vllm.py",
+    "agent/src/eugene_plexus_agent/engines/acquisition.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    41
+   ],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 43,
+   "part": 4,
+   "title": "Hardware health readout, and restarting on the cards that are left",
+   "summary": "Hardware health readout, and restarting on the cards that are left",
+   "from": "HWR, DI6",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "multi-GPU",
+   "notes": "Host history already has temperatures",
+   "lane": "LIB",
+   "lane_order": 8,
+   "repos": [
+    "agent",
+    "library",
+    "ui"
+   ],
+   "contract": "agent.yaml",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/host_probes.py",
+    "agent/src/eugene_plexus_agent/engines/gpu_probe.py",
+    "library/src/eugene_plexus_library/fit.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    16
+   ],
+   "design_docs": [
+    "deepinfer-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 44,
+   "part": 4,
+   "title": "Move a conversation's cache before planned maintenance",
+   "summary": "Move a conversation's cache before planned maintenance",
+   "from": "DI2b",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "multi-machine",
+   "notes": "Needs rows 13 and 15",
+   "lane": "ENG",
+   "lane_order": 13,
+   "repos": [
+    "agent",
+    "inference-driver",
+    "gateway"
+   ],
+   "contract": "agent.yaml inference-driver.yaml",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/peer.py",
+    "gateway/src/eugene_plexus_gateway/affinity.py"
+   ],
+   "design_state": "full",
+   "needs": [
+    13,
+    15
+   ],
+   "design_docs": [
+    "deepinfer-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 45,
+   "part": 4,
+   "title": "TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079",
+   "summary": "TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079",
+   "from": "LT2-ACME, LT2-CA",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "businesses",
+   "notes": "",
+   "lane": "TRUST",
+   "lane_order": 5,
+   "repos": [
+    "agent",
+    "control"
+   ],
+   "contract": "control.yaml? agent.yaml?",
+   "hot_files": [
+    "control/src/eugene_plexus_control/install_ca.py",
+    "agent/src/eugene_plexus_agent/entrypoint.py",
+    "agent/src/eugene_plexus_agent/client_tls.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "tls-for-clients.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 46,
+   "part": 4,
+   "title": "Node keys that cannot be exported, and freeze enforcement",
+   "summary": "Node keys that cannot be exported, and freeze enforcement",
+   "from": "TOK-RES",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "multi-machine",
+   "notes": "",
+   "lane": "TRUST",
+   "lane_order": 4,
+   "repos": [
+    "agent",
+    "control"
+   ],
+   "contract": "?",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/node_identity.py",
+    "agent/src/eugene_plexus_agent/keyring_store.py",
+    "control/src/eugene_plexus_control/tokens.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    3
+   ],
+   "design_docs": [
+    "per-node-token-keys.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 47,
+   "part": 4,
+   "title": "Shared team knowledge, and sharing a project",
+   "summary": "Shared team knowledge, and sharing a project",
+   "from": "MRC25, MV7 sharing",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "businesses, MSPs",
+   "notes": "Call MRC25",
+   "lane": "WB",
+   "lane_order": 6,
+   "repos": [
+    "workbench",
+    "control"
+   ],
+   "contract": "control.yaml?",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/store.py",
+    "workbench/src/eugene_plexus_workbench/projects.py"
+   ],
+   "design_state": "full",
+   "needs": [
+    27
+   ],
+   "design_docs": [
+    "workbench-memory-and-documents.md",
+    "workbench-memory-v2.md"
+   ],
+   "calls": [
+    "MRC25"
+   ]
+  },
+  {
+   "row": 48,
+   "part": 4,
+   "title": "The Library at scale",
+   "summary": "The Library at scale. Paginate `/v1/models`, then design an answer to \"the Library is down\"",
+   "from": "M2-PAGE, LIB-RED",
+   "size": "S, then L",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "businesses",
+   "notes": "Redundancy is design first",
+   "lane": "LIB",
+   "lane_order": 6,
+   "repos": [
+    "library",
+    "gateway",
+    "ui"
+   ],
+   "contract": "library.yaml",
+   "hot_files": [
+    "library/src/eugene_plexus_library/routes/models.py",
+    "gateway/src/eugene_plexus_gateway/profiles.py"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "m2-model-library.md",
+    "library-folders-and-reach.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 49,
+   "part": 4,
+   "title": "Which machine hosts a model",
+   "summary": "Which machine hosts a model",
+   "from": "M6-PLACE",
+   "size": "L",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "multi-machine",
+   "notes": "Design first, after row 14",
+   "lane": "GW",
+   "lane_order": 14,
+   "repos": [
+    "control",
+    "agent",
+    "gateway"
+   ],
+   "contract": "control.yaml",
+   "hot_files": [],
+   "design_state": "full",
+   "needs": [
+    14
+   ],
+   "design_docs": [
+    "m6-lifecycle-policy.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 50,
+   "part": 4,
+   "title": "One model across machines with llama.cpp's `rpc-server`",
+   "summary": "One model across machines with llama.cpp's `rpc-server`",
+   "from": "RPC (setups pass)",
+   "size": "L",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "multi-machine",
+   "notes": "Design first",
+   "lane": "ENG",
+   "lane_order": 11,
+   "repos": [
+    "agent"
+   ],
+   "contract": "agent.yaml",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/llama_cpp.py"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 51,
+   "part": 4,
+   "title": "Job Sites, banked items",
+   "summary": "Job Sites, banked items. QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin",
+   "from": "J-BANKED",
+   "size": "S-M each",
+   "risk": "high",
+   "risk_note": "some high",
+   "who": "multi-machine",
+   "notes": "",
+   "lane": "AG2",
+   "lane_order": 4,
+   "repos": [
+    "site-host",
+    "control",
+    "workbench"
+   ],
+   "contract": "site-host.yaml components/job-sites.yaml",
+   "hot_files": [
+    "site-host/src/eugene_plexus_site_host/join.py",
+    "site-host/src/eugene_plexus_site_host/worker.py",
+    "site-host/src/eugene_plexus_site_host/signing.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "person-held-keys.md",
+    "job-sites-own-enrollment.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 52,
+   "part": 4,
+   "title": "Per-person isolation for local MCP programs",
+   "summary": "Per-person isolation for local MCP programs",
+   "from": "C5b-iso",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high",
+   "who": "multi-person installs",
+   "notes": "",
+   "lane": "AG2",
+   "lane_order": 5,
+   "repos": [
+    "workbench",
+    "site-host"
+   ],
+   "contract": "",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/local_tools.py",
+    "workbench/src/eugene_plexus_workbench/mcp_sandbox.py"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [
+    "workbench-mcp.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 53,
+   "part": 5,
+   "title": "One store for the platform half",
+   "summary": "One store for the platform half. Design how files, batches, vector stores and stored responses are kept, owned and expired",
+   "from": "PLAT (memory `project_platform_half_on_roadmap`)",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high (store, migrations)",
+   "who": "developers",
+   "notes": "Rows 54-56 share it, so design it once",
+   "lane": "DESIGN",
+   "lane_order": 1,
+   "repos": [
+    "specs"
+   ],
+   "contract": "design only",
+   "hot_files": [
+    "specs/docs/design/"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [
+    "openai-inference-compatibility.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 54,
+   "part": 5,
+   "title": "Stored responses, with the chain as the conversation key",
+   "summary": "Stored responses, with the chain as the conversation key",
+   "from": "LD6",
+   "size": "M",
+   "risk": "high",
+   "risk_note": "high (chats at rest)",
+   "who": "agent clients",
+   "notes": "Today `previous_response_id` gets a 400",
+   "lane": "GW",
+   "lane_order": 7,
+   "repos": [
+    "gateway"
+   ],
+   "contract": "gateway.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/responses.py",
+    "gateway/src/eugene_plexus_gateway/affinity.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    53,
+    57
+   ],
+   "design_docs": [
+    "llm-d-lessons.md",
+    "responses-and-completions.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 55,
+   "part": 5,
+   "title": "Batch jobs in idle time",
+   "summary": "Batch jobs in idle time, run as background-band traffic",
+   "from": "LD7",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "developers, home batch jobs",
+   "notes": "Needs rows 11 and 53",
+   "lane": "GW",
+   "lane_order": 8,
+   "repos": [
+    "gateway"
+   ],
+   "contract": "gateway.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/routes/inference.py",
+    "gateway/src/eugene_plexus_gateway/budget.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    11,
+    53
+   ],
+   "design_docs": [
+    "llm-d-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 56,
+   "part": 5,
+   "title": "Files, vector stores and `file_search`",
+   "summary": "Files, vector stores and `file_search`",
+   "from": "MRC24",
+   "size": "L",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "developers",
+   "notes": "Call MRC24",
+   "lane": "GW",
+   "lane_order": 13,
+   "repos": [
+    "gateway",
+    "workbench"
+   ],
+   "contract": "gateway.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/server_tools.py"
+   ],
+   "design_state": "full",
+   "needs": [
+    53
+   ],
+   "design_docs": [
+    "workbench-memory-and-documents.md"
+   ],
+   "calls": [
+    "MRC24"
+   ]
+  },
+  {
+   "row": 57,
+   "part": 5,
+   "title": "Responses: non-function tools and `compact`",
+   "summary": "Responses: non-function tools and `compact`",
+   "from": "RSP-T",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "developers",
+   "notes": "",
+   "lane": "GW",
+   "lane_order": 6,
+   "repos": [
+    "gateway"
+   ],
+   "contract": "gateway.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/responses.py",
+    "gateway/src/eugene_plexus_gateway/server_tools.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "openai-inference-compatibility.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 58,
+   "part": 5,
+   "title": "A Gemini API door",
+   "summary": "A Gemini API door, and the small Gemini items (mp3/opus speech, countTokens, dimensions)",
+   "from": "GEM-D (gateway#5), GEM-x (inference-driver#7)",
+   "size": "L, S each",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "Gemini SDK users",
+   "notes": "",
+   "lane": "GW",
+   "lane_order": 12,
+   "repos": [
+    "gateway",
+    "inference-driver"
+   ],
+   "contract": "gateway.yaml inference-driver.yaml",
+   "hot_files": [
+    "gateway/src/eugene_plexus_gateway/door_paths.py",
+    "inference-driver/src/eugene_plexus_inference_driver/engines/gemini_api.py"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [
+    "gemini-door.md",
+    "gemini-provider.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 59,
+   "part": 5,
+   "title": "More server-run tools",
+   "summary": "More server-run tools. Tavily, and remote MCP on Responses",
+   "from": "P8-later",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "developers",
+   "notes": "",
+   "lane": "GW",
+   "lane_order": 11,
+   "repos": [
+    "tool-driver",
+    "gateway"
+   ],
+   "contract": "tool-driver.yaml gateway.yaml",
+   "hot_files": [
+    "tool-driver/src/eugene_plexus_tool_driver/providers.py",
+    "gateway/src/eugene_plexus_gateway/server_tools.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    57
+   ],
+   "design_docs": [
+    "server-run-tools.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 60,
+   "part": 5,
+   "title": "Full interop conformance",
+   "summary": "Full interop conformance. A separate-origin MCP proxy, network and device grants, sampling and elicitation, A2UI beyond forms",
+   "from": "G-later",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high (sandbox)",
+   "who": "developers",
+   "notes": "",
+   "lane": "AG2",
+   "lane_order": 7,
+   "repos": [
+    "workbench"
+   ],
+   "contract": "workbench yamls?",
+   "hot_files": [
+    "workbench/src/eugene_plexus_workbench/mcp_apps.py",
+    "workbench/src/eugene_plexus_workbench/mcp_sandbox.py"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [
+    "workbench-ui-interoperability.md",
+    "workbench-mcp-apps-v1.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 61,
+   "part": 5,
+   "title": "LoRA adapters as Library items",
+   "summary": "LoRA adapters as Library items, routed to replicas holding them",
+   "from": "M2-LORA",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "developers",
+   "notes": "",
+   "lane": "LIB",
+   "lane_order": 7,
+   "repos": [
+    "library",
+    "agent",
+    "gateway"
+   ],
+   "contract": "library.yaml",
+   "hot_files": [
+    "library/src/eugene_plexus_library/scanner.py",
+    "library/src/eugene_plexus_library/routes/models.py",
+    "gateway/src/eugene_plexus_gateway/routing.py"
+   ],
+   "design_state": "short",
+   "needs": [
+    14
+   ],
+   "design_docs": [
+    "m2-model-library.md",
+    "llm-d-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 62,
+   "part": 5,
+   "title": "A `runtime_name` dropdown",
+   "summary": "A `runtime_name` dropdown in place of free text",
+   "from": "M4-DROP",
+   "size": "S",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "developers",
+   "notes": "",
+   "lane": "WEB",
+   "lane_order": 2,
+   "repos": [
+    "ui"
+   ],
+   "contract": "",
+   "hot_files": [
+    "ui/src/components/ConfigField.tsx",
+    "ui/src/lib/configValue.ts"
+   ],
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "m4-second-engine-vllm.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 63,
+   "part": 6,
+   "title": "Strata: the speed projection, and several GPUs",
+   "summary": "Strata: the speed projection, and several GPUs",
+   "from": "STR-14 (agent#14)",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "multi-GPU",
+   "notes": "",
+   "lane": "ENG",
+   "lane_order": 9,
+   "repos": [
+    "agent",
+    "library"
+   ],
+   "contract": "",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/strata.py",
+    "library/src/eugene_plexus_library/engine_fit.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "library-sources-and-engines.md",
+    "strata-engine.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 64,
+   "part": 6,
+   "title": "Starter set: proof of CPU speed",
+   "summary": "Starter set: proof of CPU speed",
+   "from": "LIB-STARTER",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "CPU-only users",
+   "notes": "",
+   "lane": "LIB",
+   "lane_order": 5,
+   "repos": [
+    "library",
+    "specs"
+   ],
+   "contract": "",
+   "hot_files": [
+    "library/src/eugene_plexus_library/starter.py",
+    "library/src/eugene_plexus_library/starter_models.yaml"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [],
+   "calls": []
+  },
+  {
+   "row": 65,
+   "part": 6,
+   "title": "Ollama: keep a model in the Library, and read a worker's own Ollama store",
+   "summary": "Ollama: keep a model in the Library, and read a worker's own Ollama store",
+   "from": "CX9-KEEP",
+   "size": "S-M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "Ollama users",
+   "notes": "",
+   "lane": "LIB",
+   "lane_order": 4,
+   "repos": [
+    "library",
+    "agent"
+   ],
+   "contract": "library.yaml?",
+   "hot_files": [
+    "library/src/eugene_plexus_library/ollama_detect.py",
+    "library/src/eugene_plexus_library/formats/ollama.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "console-ux-pass.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 66,
+   "part": 6,
+   "title": "Experimental engines: TensorSharp, NInfer, imp",
+   "summary": "Experimental engines: TensorSharp, NInfer, imp",
+   "from": "ENG-X, A8-NEXT",
+   "size": "M each",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "tinkerers",
+   "notes": "",
+   "lane": "ENG",
+   "lane_order": 10,
+   "repos": [
+    "agent",
+    "library"
+   ],
+   "contract": "agent.yaml?",
+   "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/__init__.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "experimental-engines.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 67,
+   "part": 6,
+   "title": "Local image models and local media",
+   "summary": "Local image models and local media, with their own admission design and more catalogue sources",
+   "from": "IMG, MEDIA-LOCAL, MED-later, SRC",
+   "size": "L",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "image users",
+   "notes": "The audience research found no demand yet. Troy banked it for after v0.2",
+   "lane": "LIB",
+   "lane_order": 9,
+   "repos": [
+    "library",
+    "agent",
+    "gateway",
+    "inference-driver",
+    "workbench"
+   ],
+   "contract": "several",
+   "hot_files": [],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [
+    "workbench-media-screens.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 68,
+   "part": 6,
+   "title": "DeepSeek V4.x Flash through Eugene",
+   "summary": "DeepSeek V4.x Flash through Eugene",
+   "from": "DI8",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "Mac, businesses",
+   "notes": "Needs borrowed hardware",
+   "lane": "ENG",
+   "lane_order": 12,
+   "repos": [
+    "library",
+    "agent"
+   ],
+   "contract": "",
+   "hot_files": [
+    "library/src/eugene_plexus_library/formats/gguf.py",
+    "library/src/eugene_plexus_library/preflight.py"
+   ],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "deepinfer-lessons.md"
+   ],
+   "calls": []
+  },
+  {
+   "row": 69,
+   "part": 6,
+   "title": "Creators items 2, 4, 5 and 6",
+   "summary": "Creators items 2, 4, 5 and 6. A benchmark matrix, a shareable card, a presentation view, a public dataset (which needs a privacy design)",
+   "from": "CR2, CR4-CR6",
+   "size": "M-L",
+   "risk": "high",
+   "risk_note": "low; dataset high",
+   "who": "creators",
+   "notes": "Troy put these at the back (2026-10-18). Needs row 10",
+   "lane": "OPS",
+   "lane_order": 6,
+   "repos": [
+    "specs",
+    "website",
+    "ui"
+   ],
+   "contract": "",
+   "hot_files": [
+    "website/src"
+   ],
+   "design_state": "short",
+   "needs": [
+    10
+   ],
+   "design_docs": [],
+   "calls": []
+  }
+ ]
+}
