@@ -6879,7 +6879,8 @@ components:
         offload (`--kv-offloading-size`). Read from the command line the
         engine was launched with, so it is the value in effect and never the
         profile's wish: a setting a build does not offer reads
-        `unsupported`, and a size typed into `extraArgs` reads `extra_args`.
+        `unsupported`, and a size typed into `extraArgs` or the runtime's
+        `env` reads `extra_args`.
 
         An engine's prompt cache fills over time, so this is a limit and
         not a reading of what is held. Admission counts the whole limit
@@ -6923,7 +6924,9 @@ components:
         shows when the profile leaves it unset, which Eugene always passes so
         that an upstream change of default cannot make the setting wrong.
         `extra_args` is a size typed into `extraArgs`, which comes after the
-        profile on the command line and wins. `off` is a cache of zero bytes.
+        profile on the command line and wins, or set in the runtime's `env`
+        (`LLAMA_ARG_CACHE_RAM`), which Eugene does not override with its
+        default. `off` is a cache of zero bytes.
         `unsupported` is a build that does not list the flag, so nothing was
         passed.
 
