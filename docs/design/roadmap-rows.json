@@ -2356,17 +2356,18 @@
    "notes": "Today each feature has its own model setting in its own place (decision model, embedder, the model that keeps notes); they move onto roles. Needs a design",
    "lane": "LIB",
    "repos": [
-    "library",
+    "specs",
     "gateway",
     "ui",
-    "workbench",
-    "specs"
+    "workbench"
    ],
    "contract": "library.yaml gateway.yaml",
    "hot_files": [],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-71.md"
+   ],
    "calls": [
     "MODEL-JOBS"
    ],
