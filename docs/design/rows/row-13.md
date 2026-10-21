@@ -193,6 +193,8 @@ Then one acceptance run, and one review of the token change.
 
 ## Calls answered by Troy (2026-10-21)
 
-- **DI-C3: one replica at a time, when the rest can carry the load.** With two or more replicas, Eugene updates one replica at a time, and only while the others can carry the current demand (measured from the queue and the slots in use). Otherwise it waits. The one-replica case is asked again (DI-C3b). Default until he answers: switch when the runtime has been idle for 5 minutes.
-- **R13-CHECK: the check is not a gate on numbers.** A new build may carry a security fix or a critical bug fix. Speed and agreement are measured and shown, and never block. Asked again (R13-CHECK-2) for one case. Default until he answers: a build that cannot start or cannot answer with a model is not used for that model, and the page says what failed.
+- **DI-C3: one replica at a time, when the rest can carry the load.** With two or more replicas, Eugene updates one replica at a time, and only while the others can carry the current demand (measured from the queue and the slots in use). Otherwise it waits.
+- **DI-C3b: Choice 3.** A model with only one copy switches to the new build at once. Requests wait in the queue during the restart.
+- **R13-CHECK: the check is not a gate on numbers.** A new build may carry a security fix or a critical bug fix. Speed and agreement are measured and shown, and never block.
+- **R13-CHECK-2: Choice 1.** A build that cannot load a model, crashes, or returns an error instead of an answer is not used for that model, and the page says what failed ("b11800 cannot load qwen3-8b: unknown tensor type"). Other models move to it. Eugene tries the next build when it comes.
 - **R13-DRAIN: Choice 1, with a count.** Wait up to 120 seconds. The console shows how many answers the restart waits for.

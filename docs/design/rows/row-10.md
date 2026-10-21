@@ -142,5 +142,5 @@ ui `servingSentence.test.ts`: the three sentences.
 ## Calls answered by Troy (2026-10-21)
 
 - **MEASURE-KEY: Choice 1.** The run's key lives at most one day and is revoked when the run ends.
-- **MEASURE-KNEE: asked again (MEASURE-KNEE-2).** The run measures the owner's own machine, never Troy's. The thresholds say when an answer counts as slow. Default until he answers: the recommended thresholds, and the owner can change both on the run page.
+- **MEASURE-KNEE-2: Choice 1.** The run measures the owner's own machine. The thresholds (first word after more than 1 second; speed below two thirds of one person's) are the defaults, and the owner can change both on the run page.
 - **MEASURE-REPLICAS: Choice 1.** Measure one copy; ask before stopping the others.

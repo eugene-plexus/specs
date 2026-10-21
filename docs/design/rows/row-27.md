@@ -171,5 +171,5 @@ The reviewer should attack the bank derivation, the token's exposure, an owner r
 ## Calls answered by Troy (2026-10-21)
 
 - **MEM-MERGE: Choice 2.** Merge proposals are on for every model set to "Keep automatically".
-- **MEM-INSTALL: per group.** The owner adds a memory server to a permission group. It is on for every member, and a member cannot turn it off. Until Workbench can read a person's groups, the owner's choice is install-wide.
+- **MEM-INSTALL: per group.** The owner adds a memory server to a permission group, as a policy from row 70. It is on for every member, and a member cannot turn it off. This row needs row 70.
 - **MEM-TOOLS: Choice 1.** A tool result is linked only when the person ticks it.

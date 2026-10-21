@@ -214,4 +214,5 @@ After the last step, one acceptance run and one adversarial review come before t
 - **LD-C3 and LD-C4: priority from groups, then first come, first served.** See "Order" and "Band from a person's group" in section 2.
 - **KEY-OWNER: Choice 1.** A key with no owner is its own fairness id until rows 37 or 40 add an owner.
 - **TIER-SPILL: Choice 1, built as rules.** Tier moves are a list of rules, each a condition and an action, stored as data. The first and only rule today is "waited more than 60 seconds: move to the next tier". Administrators get more conditions later. The Metrics page counts every move.
-- **CB-C: asked again (CB-C2), with the trade-offs.** Default until he answers: the recommendation (the conversation's recent p95 answer length, or 4,096 tokens for a new one).
+- **CB-C2: Choice 3.** Each request holds back the length of its conversation's recent long answers (95 of 100 are shorter), or 4,096 tokens for a new conversation, but never less than a floor the owner sets (a gateway setting, default 1,024). The Metrics page counts each answer that ran out of room.
+- **GROUP-POLICY: Choice 2.** All group policies come first, in row 70. This row reads the queue band from row 70's policies; part 11e is dropped from this row, and row 11 needs row 70.

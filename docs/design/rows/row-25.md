@@ -207,3 +207,7 @@ One acceptance run, one adversarial review and the real-machine run come after 2
 - **CONNECT-C3: Choice 2.** Reset an older Open WebUI, with the person's permission first.
 - **CONNECT-C4: Choice 2.** Open WebUI is left out of this row.
 - **CONNECT-C5: Choice 2.** The owner may approve setups for others.
+
+## Taken off the roadmap (2026-10-21)
+
+ROW25-SCOPE, Choice 1: Troy sees Workbench as an alternative to Claude Code and Codex, not a helper for them. This row is not built. The Connect apps page stays. The design is kept for the record.

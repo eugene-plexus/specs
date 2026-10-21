@@ -174,4 +174,5 @@ It checks:
 ## Calls answered by Troy (2026-10-21)
 
 - **R7-OWNER-EXPORT: Choice 2.** The owner can always export a removed person's data. Each export is logged with who, when and what. Troy's reason: legal requests in the USA. Federal discovery (FRCP 26 and 34) reaches data in an organisation's "possession, custody, or control", and a litigation hold must keep it. This is not legal advice; an organisation's counsel decides its own duties.
-- **R7-REGIVE: asked again (R7-REGIVE-2).** A person's account is keyed by an internal id. The email field is optional and Eugene does not verify it. Default until he answers: Choice 1, no link to old data.
+- **R7-REGIVE-2: Choice 1.** When a new account signs in through an outside identity provider that says the email is verified, and that email matches a removed person's, Eugene links the old data to the new account by itself and tells the owner. Only while the data is still kept. Built as part **7b** after this row merges; this row keeps the removed person's email with the hidden data so 7b can match it.
+- **LEGAL-HOLD: a retention setting instead.** The owner chooses how long a removed person's data is kept: 30 days (the default) or not at all. With "not at all", removal runs the true delete at once. Changing the setting does not shorten the time of people already removed. Built in this row.

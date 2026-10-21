@@ -226,6 +226,6 @@ After 26b comes the real-engine run.
 ## Calls answered by Troy (2026-10-21)
 
 - **CTX-C1: Choice 1.** The chat's own model writes the summary; an expert can choose another.
-- **CTX-C2: per group.** Each permission group sets its own percent. Until groups carry policies (row 37), one install-wide setting holds it: 80%, and 128,000 tokens for cloud models.
+- **CTX-C2: per group.** Each permission group sets its own percent, as a policy from row 70 (GROUP-POLICY Choice 2: group policies come first). This row reads it; the default is 80%, and cloud models with very large contexts also summarise at 128,000 tokens.
 - **CTX-C3: Choice 1.** Summarised messages fold away under "Earlier messages summarised. Show them".
 - **CTX-C4: Choice 1.** On by default, also for chats made before the update.

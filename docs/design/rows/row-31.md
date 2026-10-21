@@ -199,3 +199,7 @@ Low risk. Changed-file tests, typecheck, lint and format; for each batch, one Pl
 - **31-C1: speaker labels.** Recommended: off by default, as a Display setting. This is taste call C14.
 - **31-C2: settled by Troy's standing rule (2026-10-14):** a tool result's artifact runs by itself, like an answer's. The isolated frame (RC5) is what keeps it safe, so the reviewer attacks the frame.
 - **31-C3: what the README claims for Safari.** Recommended: "checked with WebKit only", until a Mac run.
+
+## Added by Troy's answers (2026-10-21)
+
+- **31h, MD-24: a model's reasoning rendered as Markdown,** in the same style as answers, collapsed by default. TypeScript only; size S.

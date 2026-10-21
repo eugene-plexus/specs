@@ -11,6 +11,7 @@
   ],
   "TRUST": [
    3,
+   70,
    4,
    5,
    46,
@@ -44,15 +45,18 @@
    15,
    41,
    42,
+   73,
    63,
    66,
    50,
    68,
-   44
+   44,
+   74
   ],
   "WB": [
    7,
    27,
+   72,
    28,
    30,
    26,
@@ -63,6 +67,7 @@
    16,
    22,
    21,
+   71,
    65,
    64,
    48,
@@ -82,7 +87,6 @@
    34,
    51,
    52,
-   25,
    60
   ],
   "DESIGN": [
@@ -203,7 +207,7 @@
    "who": "multi-machine",
    "notes": "The \"root moved\" contract that automatic takeover and every later standby build on",
    "lane": "TRUST",
-   "lane_order": 2,
+   "lane_order": 3,
    "repos": [
     "control",
     "agent"
@@ -238,7 +242,7 @@
    "who": "everyone who signs in",
    "notes": "Rotation is cheapest while few apps cache the key. A passphrase that can never change is a hole",
    "lane": "TRUST",
-   "lane_order": 3,
+   "lane_order": 4,
    "repos": [
     "control",
     "agent",
@@ -462,7 +466,8 @@
    "design_state": "ready",
    "needs": [
     10,
-    24
+    24,
+    70
    ],
    "design_docs": [
     "rows/row-11.md",
@@ -911,40 +916,6 @@
    "issue": 51
   },
   {
-   "row": 25,
-   "part": 3,
-   "title": "Connect an app on this machine",
-   "summary": "Connect an app on this machine. The person's Job Site writes Claude Code's and Codex's setup, and Open WebUI gets a ready setup",
-   "from": "CONNECT (audience roadmap), MR9b Open WebUI",
-   "size": "M",
-   "risk": "high",
-   "risk_note": "high (auth, home-folder writes)",
-   "who": "agent-client users",
-   "notes": "Needs a design. One review and a real-machine run",
-   "lane": "AG2",
-   "lane_order": 6,
-   "repos": [
-    "agent",
-    "site-host",
-    "workbench",
-    "ui",
-    "control"
-   ],
-   "contract": "agent.yaml? site-host.yaml?",
-   "hot_files": [
-    "agent/src/eugene_plexus_agent/client_doors.py",
-    "agent/src/eugene_plexus_agent/apps.py",
-    "site-host/src/eugene_plexus_site_host/workspace_tools.py"
-   ],
-   "design_state": "ready",
-   "needs": [],
-   "design_docs": [
-    "rows/row-25.md"
-   ],
-   "calls": [],
-   "issue": 52
-  },
-  {
    "row": 26,
    "part": 3,
    "title": "Long chats that outgrow the context",
@@ -956,7 +927,7 @@
    "who": "every Workbench user",
    "notes": "Design first",
    "lane": "WB",
-   "lane_order": 5,
+   "lane_order": 6,
    "repos": [
     "workbench"
    ],
@@ -967,7 +938,9 @@
     "workbench/src/eugene_plexus_workbench/store.py"
    ],
    "design_state": "ready",
-   "needs": [],
+   "needs": [
+    70
+   ],
    "design_docs": [
     "rows/row-26.md"
    ],
@@ -998,7 +971,8 @@
    ],
    "design_state": "ready",
    "needs": [
-    7
+    7,
+    70
    ],
    "design_docs": [
     "rows/row-27.md",
@@ -1021,7 +995,7 @@
    "who": "every Workbench user",
    "notes": "",
    "lane": "WB",
-   "lane_order": 3,
+   "lane_order": 4,
    "repos": [
     "workbench"
    ],
@@ -1084,7 +1058,7 @@
    "who": "every Workbench user",
    "notes": "",
    "lane": "WB",
-   "lane_order": 4,
+   "lane_order": 5,
    "repos": [
     "workbench",
     "site-host"
@@ -1096,7 +1070,9 @@
     "workbench/src/eugene_plexus_workbench/store.py"
    ],
    "design_state": "ready",
-   "needs": [],
+   "needs": [
+    71
+   ],
    "design_docs": [
     "rows/row-30.md",
     "workbench-memory-and-documents.md",
@@ -1109,7 +1085,7 @@
    "row": 31,
    "part": 3,
    "title": "Reading and rich-content extras",
-   "summary": "Reading and rich-content extras. Display settings, speaker labels, CJK, a heading outline, artifacts from tool results, revision diffs, more chart types, a per-chat run switch, Firefox and Safari",
+   "summary": "Reading and rich-content extras. Display settings, speaker labels, CJK, a heading outline, artifacts from tool results, revision diffs, more chart types, a per-chat run switch, Firefox and Safari; a model's reasoning rendered as Markdown, collapsed (MD-24)",
    "from": "RD-later, RC-later",
    "size": "S-M each",
    "risk": "low",
@@ -1148,7 +1124,7 @@
    "who": "every Workbench user",
    "notes": "Design first",
    "lane": "WB",
-   "lane_order": 7,
+   "lane_order": 8,
    "repos": [
     "workbench",
     "gateway?"
@@ -1272,7 +1248,7 @@
    "who": "multi-machine",
    "notes": "Today it shows a probe error. A contract field plus an issue kind",
    "lane": "TRUST",
-   "lane_order": 6,
+   "lane_order": 7,
    "repos": [
     "control",
     "agent",
@@ -1294,7 +1270,7 @@
    "row": 37,
    "part": 4,
    "title": "Routing profiles per person or group",
-   "summary": "Routing profiles per person or group (shared accounts, part two)",
+   "summary": "Routing profiles per person or group (shared accounts, part two). Each group gets routing rules per model role (row 71)",
    "from": "SSO-ROLES (`shared-accounts-and-sso.md`)",
    "size": "L",
    "risk": "high",
@@ -1302,7 +1278,7 @@
    "who": "businesses",
    "notes": "Designed 2026-10-16. Fix its data format before more per-person settings arrive",
    "lane": "TRUST",
-   "lane_order": 8,
+   "lane_order": 9,
    "repos": [
     "control",
     "gateway",
@@ -1316,7 +1292,10 @@
     "gateway/src/eugene_plexus_gateway/routing.py"
    ],
    "design_state": "full",
-   "needs": [],
+   "needs": [
+    70,
+    71
+   ],
    "design_docs": [
     "shared-accounts-and-sso.md"
    ],
@@ -1370,7 +1349,7 @@
    "who": "businesses",
    "notes": "",
    "lane": "TRUST",
-   "lane_order": 7,
+   "lane_order": 8,
    "repos": [
     "control",
     "agent",
@@ -1498,7 +1477,7 @@
    "who": "multi-GPU",
    "notes": "Host history already has temperatures",
    "lane": "LIB",
-   "lane_order": 8,
+   "lane_order": 9,
    "repos": [
     "agent",
     "library",
@@ -1532,7 +1511,7 @@
    "who": "multi-machine",
    "notes": "Needs rows 13 and 15",
    "lane": "ENG",
-   "lane_order": 13,
+   "lane_order": 14,
    "repos": [
     "agent",
     "inference-driver",
@@ -1566,7 +1545,7 @@
    "who": "businesses",
    "notes": "",
    "lane": "TRUST",
-   "lane_order": 5,
+   "lane_order": 6,
    "repos": [
     "agent",
     "control"
@@ -1597,7 +1576,7 @@
    "who": "multi-machine",
    "notes": "",
    "lane": "TRUST",
-   "lane_order": 4,
+   "lane_order": 5,
    "repos": [
     "agent",
     "control"
@@ -1630,7 +1609,7 @@
    "who": "businesses, MSPs",
    "notes": "Call MRC25",
    "lane": "WB",
-   "lane_order": 6,
+   "lane_order": 7,
    "repos": [
     "workbench",
     "control"
@@ -1665,7 +1644,7 @@
    "who": "businesses",
    "notes": "Redundancy is design first",
    "lane": "LIB",
-   "lane_order": 6,
+   "lane_order": 7,
    "repos": [
     "library",
     "gateway",
@@ -1727,7 +1706,7 @@
    "who": "multi-machine",
    "notes": "Design first",
    "lane": "ENG",
-   "lane_order": 11,
+   "lane_order": 12,
    "repos": [
     "agent"
    ],
@@ -2034,7 +2013,7 @@
    "who": "developers",
    "notes": "",
    "lane": "AG2",
-   "lane_order": 7,
+   "lane_order": 6,
    "repos": [
     "workbench"
    ],
@@ -2064,7 +2043,7 @@
    "who": "developers",
    "notes": "",
    "lane": "LIB",
-   "lane_order": 7,
+   "lane_order": 8,
    "repos": [
     "library",
     "agent",
@@ -2128,7 +2107,7 @@
    "who": "multi-GPU",
    "notes": "",
    "lane": "ENG",
-   "lane_order": 9,
+   "lane_order": 10,
    "repos": [
     "agent",
     "library"
@@ -2159,7 +2138,7 @@
    "who": "CPU-only users",
    "notes": "",
    "lane": "LIB",
-   "lane_order": 5,
+   "lane_order": 6,
    "repos": [
     "library",
     "specs"
@@ -2189,7 +2168,7 @@
    "who": "Ollama users",
    "notes": "",
    "lane": "LIB",
-   "lane_order": 4,
+   "lane_order": 5,
    "repos": [
     "library",
     "agent"
@@ -2220,7 +2199,7 @@
    "who": "tinkerers",
    "notes": "",
    "lane": "ENG",
-   "lane_order": 10,
+   "lane_order": 11,
    "repos": [
     "agent",
     "library"
@@ -2249,7 +2228,7 @@
    "who": "image users",
    "notes": "The audience research found no demand yet. Troy banked it for after v0.2",
    "lane": "LIB",
-   "lane_order": 9,
+   "lane_order": 10,
    "repos": [
     "library",
     "agent",
@@ -2279,7 +2258,7 @@
    "who": "Mac, businesses",
    "notes": "Needs borrowed hardware",
    "lane": "ENG",
-   "lane_order": 12,
+   "lane_order": 13,
    "repos": [
     "library",
     "agent"
@@ -2326,6 +2305,155 @@
    "design_docs": [],
    "calls": [],
    "issue": 96
+  },
+  {
+   "row": 70,
+   "part": 1,
+   "title": "Policies per permission group",
+   "summary": "Policies per permission group. A group gets a Policies section that the owner edits in the console: queue priority (read by row 11), the percent of context where Workbench starts summarising (row 26), and shared memory servers that its members cannot turn off (row 27). The gateway and Workbench read a person's policies from the root. A person in two groups gets the most generous value of each",
+   "from": "GROUP-POLICY (Troy chose one row first, 2026-10-21), LD-C3, LD-C4, CTX-C2, MEM-INSTALL",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high (permissions)",
+   "who": "businesses, families sharing machines",
+   "notes": "Built before rows 11, 26 and 27, which read it. Permission groups already exist in control; this adds the policies to them. Needs a design. One adversarial review",
+   "lane": "TRUST",
+   "repos": [
+    "control",
+    "gateway",
+    "workbench",
+    "ui",
+    "specs"
+   ],
+   "contract": "control.yaml",
+   "hot_files": [
+    "control/src/eugene_plexus_control/permissions.py",
+    "control/src/eugene_plexus_control/routes/people.py",
+    "control/src/eugene_plexus_control/applied.py"
+   ],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [
+    "shared-accounts-and-sso.md"
+   ],
+   "calls": [
+    "GROUP-POLICY"
+   ],
+   "lane_order": 2
+  },
+  {
+   "row": 71,
+   "part": 3,
+   "title": "Model roles",
+   "summary": "Model roles. The owner tags each model with the jobs it does: chat, agentic, image, voice, music, reads pages, embeddings and others. Apps ask Eugene for the model of a role instead of a model name, and row 30's page reading is the first to. Per-group routing by role comes with row 37",
+   "from": "MODEL-JOBS (Troy, 2026-10-21)",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "every install with more than one model",
+   "notes": "Today each feature has its own model setting in its own place (decision model, embedder, the model that keeps notes); they move onto roles. Needs a design",
+   "lane": "LIB",
+   "repos": [
+    "library",
+    "gateway",
+    "ui",
+    "workbench",
+    "specs"
+   ],
+   "contract": "library.yaml gateway.yaml",
+   "hot_files": [],
+   "design_state": "full",
+   "needs": [],
+   "design_docs": [],
+   "calls": [
+    "MODEL-JOBS"
+   ],
+   "lane_order": 4
+  },
+  {
+   "row": 72,
+   "part": 3,
+   "title": "Hindsight memory server from the catalogue (MV5b)",
+   "summary": "Hindsight memory server from the catalogue (MV5b). One Hindsight per machine with a bank per person, the model unset until the owner chooses, a narrow `provides: memory-server` app link, labelled experimental. On Linux and agent-account installs only (MV5b-C1); Windows person installs later",
+   "from": "MV5b, calls MV5b-C1 to C5 (answered 2026-10-21)",
+   "size": "M",
+   "risk": "cross",
+   "risk_note": "cross",
+   "who": "Workbench users who want a memory server",
+   "notes": "Its store migration number is assigned when it starts",
+   "lane": "WB",
+   "repos": [
+    "workbench",
+    "agent"
+   ],
+   "contract": "",
+   "hot_files": [],
+   "design_state": "ready",
+   "needs": [
+    7
+   ],
+   "design_docs": [
+    "workbench-memory-v2.md"
+   ],
+   "calls": [],
+   "lane_order": 3
+  },
+  {
+   "row": 73,
+   "part": 4,
+   "title": "Eugene installs and updates vLLM, as it does llama.cpp",
+   "summary": "Eugene installs and updates vLLM, as it does llama.cpp. It picks the build for the machine's GPU and CUDA, keeps two builds, checks a new one before switching (row 13's check), and supervises it",
+   "from": "Troy, 2026-10-21 (\"supported like llama.cpp eventually\")",
+   "size": "L",
+   "risk": "high",
+   "risk_note": "high (installs software)",
+   "who": "vLLM users, businesses",
+   "notes": "After row 42 (vLLM from its official container) and row 13 (checked engine updates). Needs a design",
+   "lane": "ENG",
+   "repos": [
+    "agent",
+    "specs",
+    "ui"
+   ],
+   "contract": "agent.yaml",
+   "hot_files": [],
+   "design_state": "full",
+   "needs": [
+    13,
+    42
+   ],
+   "design_docs": [
+    "m4-second-engine-vllm.md"
+   ],
+   "calls": [],
+   "lane_order": 9
+  },
+  {
+   "row": 74,
+   "part": 6,
+   "title": "DeepInfer as an experimental engine",
+   "summary": "DeepInfer as an experimental engine. Wrap it as the other experimental engines are wrapped. First check that it has an online server and runs on a consumer card",
+   "from": "DI-C5 (Troy, 2026-10-21: yes, at the end of the roadmap)",
+   "size": "M",
+   "risk": "low",
+   "risk_note": "low",
+   "who": "people trying new engines",
+   "notes": "Last on purpose",
+   "lane": "ENG",
+   "repos": [
+    "agent",
+    "library"
+   ],
+   "contract": "",
+   "hot_files": [],
+   "design_state": "short",
+   "needs": [],
+   "design_docs": [
+    "deepinfer-lessons.md",
+    "experimental-engines.md"
+   ],
+   "calls": [],
+   "lane_order": 15
   }
  ]
 }

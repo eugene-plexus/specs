@@ -143,4 +143,4 @@ Rows 36 (`machine_list.py`) and 45 (`client_tls.py`) are in this lane and come l
 
 ## Calls answered by Troy (2026-10-21)
 
-- **R3-SCHEDULE: asked again (R3-SCHEDULE-2).** Troy chose a yearly change if the keys expire by themselves. They do not: a machine key is self-signed and pinned by its SPKI hash, and the browser certificate renews every 60 days on the same key. Default until he answers: Eugene changes each machine key once a year by itself, as a small follow-up after this row merges, because this row makes a change safe for offline machines.
+- **R3-SCHEDULE-2: Choice 1.** Machine keys do not expire by themselves, but Eugene changes each machine key once a year by itself, and also when an administrator asks. Built as part **3b**, a small follow-up after this row merges: a yearly timer per machine, spread by a random offset so the machines of one install do not change on the same day, and shown on Machines ("Next key change: March 2027").
