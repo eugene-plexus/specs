@@ -169,6 +169,7 @@ jobs:
           python -m unittest discover -s scripts -p test_roadmap_issues.py -v
           python -m unittest discover -s scripts -p test_worktree.py -v
           python -m unittest discover -s scripts -p test_ship.py -v
+          python -m unittest discover -s scripts -p test_repin_branch.py -v
       - name: Compute gates
         id: select
         env:
