@@ -114,6 +114,10 @@ class ShipTests(unittest.TestCase):
         patcher = patch.object(ship, "static_checks", lambda plan: None)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # GitHub's verdict on main's last run: green unless a test says otherwise.
+        self.red_main = patch.object(ship, "failed_main_run", return_value=None)
+        self.failed_main_run = self.red_main.start()
+        self.addCleanup(self.red_main.stop)
 
     def pushes(self) -> list[str]:
         """Each value origin's main took, oldest first."""
@@ -160,6 +164,18 @@ class ShipTests(unittest.TestCase):
         self.assertIn("would push 1 merged commit(s) first, on their own", output)
         self.assertIn("the pin commit would be pushed alone", output)
         self.assertEqual(git(self.specs, "rev-parse", "HEAD"), self.merged)
+
+    def test_a_red_main_is_named_when_ci_would_hold_the_first_push(self) -> None:
+        self.failed_main_run.return_value = ("failure", "https://example.invalid/runs/5")
+        # Merged work that plans full coverage stands alone: no hold, no warning.
+        _, output = self.ship(dry_run=True)
+        self.assertNotIn("runs/5", output)
+        # With nothing merged, the pin push is reduced and would be held.
+        git(self.specs, "reset", "-q", "--hard", self.initial)
+        _, output = self.ship(dry_run=True)
+        self.assertIn("CI's run of main's head failure: https://example.invalid/runs/5", output)
+        self.assertIn("re-run and passes or a full-plan push lands", output)
+        self.failed_main_run.assert_called_with(self.initial)
 
     def test_a_stop_before_the_first_push_pushes_nothing(self) -> None:
         write(

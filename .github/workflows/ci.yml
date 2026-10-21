@@ -112,9 +112,12 @@ permissions:
 # A newer push to a branch, or to a PR, cancels the older run. Each push to
 # main has a group of its own, so it is never cancelled or held pending
 # behind another: a ship's pin push must not stop the full run of the merged
-# work pushed before it (P11). Scheduled and dispatched runs are not cancelled.
+# work pushed before it (P11). Every other run (a dispatch, the weekly run,
+# and a call from another workflow, which carries its caller's event and run
+# ID) has a group of its own too, so none is held pending or replaced: two
+# branch-ci.py dispatches on main, or Release qualification's call, both run.
 concurrency:
-  group: ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('-{0}', github.sha) || '' }}
+  group: ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('-{0}', github.sha) || (github.event_name != 'push' && github.event_name != 'pull_request' && format('-run-{0}', github.run_id) || '') }}
   cancel-in-progress: ${{ (github.event_name == 'push' || github.event_name == 'pull_request') && github.ref != 'refs/heads/main' }}
 
 # The agents the acceptance scripts start list engine builds from GitHub's
@@ -186,7 +189,8 @@ jobs:
           if os.environ.get('CI_FULL') == 'true':
               command.append('--full')
           if os.environ.get('CI_BRANCH'):
-              command += ['--branch', os.environ['CI_BRANCH']]
+              # One argument, so a branch named like an option stays a value.
+              command.append(f"--branch={os.environ['CI_BRANCH']}")
           for name in ('agent', 'control', 'gateway', 'inference_driver', 'library', 'tool_driver', 'site_host'):
               if os.environ.get(f'{name.upper()}_REF'):
                   command += ['--ref', f"{name}={os.environ[f'{name.upper()}_REF']}"]
@@ -197,6 +201,12 @@ jobs:
   # their pin commit alone (P11), so a reduced run on main passes only once
   # the run of the push before it has passed: Edge never publishes a pin
   # commit over merged work whose full run failed or has not finished.
+  # No job-level `permissions: actions: read`: a called workflow's job may not
+  # ask for more than its caller grants, even when skipped, and Release
+  # qualification and the components' Candidate integration grant contents
+  # only (a probe caller granting `contents: read` ended in startup_failure,
+  # run 39627576506). This repository is public; the run's token reads its
+  # Actions runs without it, as Publish Edge's does.
   previous-push:
     needs: plan
     if: github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.full == 'false'
@@ -507,9 +517,16 @@ jobs:
       - name: Every part on Linux and Windows passed
         env:
           PARTS: ${{ needs.r7-signing.result }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
         run: |
           if [ "$PARTS" != success ]; then
-            echo "::error::The pinned integration parts concluded '$PARTS'; every part on both systems must pass"
+            # Name the parts that did not pass; the verdict never depends on this lookup.
+            failed=$(gh api "repos/$REPOSITORY/actions/runs/$RUN/jobs?per_page=100&filter=latest" \
+              --jq '[.jobs[] | select((.name | contains("Pinned integration (")) and (.name | contains(", part ")) and .conclusion != "success") | "\(.name): \(.conclusion // .status)"] | join("; ")' \
+              2>/dev/null || true)
+            echo "::error::The pinned integration parts concluded '$PARTS'${failed:+ ($failed)}; every part on both systems must pass"
             exit 1
           fi
           echo "Every pinned integration part on Linux and Windows passed."

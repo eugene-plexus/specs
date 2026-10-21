@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest.mock import patch
 
-from ci_plan import CHECKS, COMPONENTS, REF_INPUTS, branch_base, plan, resolve_refs
+from ci_plan import (
+    CHECKS,
+    COMPONENTS,
+    REF_INPUTS,
+    branch_base,
+    parser,
+    plan,
+    remote_branch,
+    resolve_refs,
+)
 
 
 class Fixture(unittest.TestCase):
@@ -187,6 +199,21 @@ class BranchTests(Fixture):
         self.assertEqual(refs, {"agent": "b" * 40, "site_host": "c" * 40})
         self.assertNotIn(("agent", "row"), asked)
         self.assertEqual(len(asked), len(REF_INPUTS) - 1)
+
+    def test_a_failed_branch_lookup_names_git_s_own_error(self) -> None:
+        failure = subprocess.CalledProcessError(
+            128, ["git", "ls-remote"], stderr="fatal: unable to access: Could not resolve host\n"
+        )
+        with patch("ci_plan.subprocess.run", side_effect=failure):
+            with self.assertRaisesRegex(RuntimeError, "Could not resolve host") as raised:
+                remote_branch("agent", "row")
+        self.assertIn("'row' in agent", str(raised.exception))
+        self.assertIn("exited 128", str(raised.exception))
+
+    def test_a_branch_named_like_an_option_stays_a_value(self) -> None:
+        self.assertEqual(parser().parse_args(["--branch=-x"]).branch, "-x")
+        with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
+            parser().parse_args(["--branch", "-x"])  # why the workflow passes --branch=NAME
 
     def test_main_pushes_and_scheduled_runs_look_up_no_branches(self) -> None:
         def lookup(repository: str, branch: str) -> str | None:

@@ -7,10 +7,61 @@ import unittest
 from pathlib import Path
 
 import edge_marker
+import ship
 import yaml
 from ci_plan import CHECKS, OUTPUTS, REF_INPUTS
 
 WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
+
+# Pinned integration as it stood unsplit (main at 049a602): 15 install steps,
+# then these acceptance steps, by script (or step name), with the profile
+# each runs in ("every" profile, "full" only, or "always-full": even after a
+# failure, full only) and its systems. A change here is a gate change.
+SETUP_STEPS = 15
+FULL, EVERY = "full", "every"
+PINNED_STEPS = {
+    "run-operations-checks.py": (FULL, "both"),
+    "s10-starter-check.py": (FULL, "both"),
+    "r7-signing-checks.py": (EVERY, "both"),
+    "r7-rotation-acceptance.py": (FULL, "both"),
+    "row3-per-node-keys-acceptance.py": (EVERY, "both"),
+    "r8-profile-acceptance.py": (EVERY, "both"),
+    "ls1-eligibility-acceptance.py": (EVERY, "both"),
+    "ls2-discover-acceptance.py": (FULL, "both"),
+    "ls3-prepared-acceptance.py": (FULL, "both"),
+    "ls4-sources-acceptance.py": (FULL, "both"),
+    "ls5-preparation-checks.py": (FULL, "both"),
+    "ls5-preparation-acceptance.py": (FULL, "both"),
+    "runtime-stop-acceptance.py": (EVERY, "both"),
+    "ls6-fit-acceptance.py": (FULL, "both"),
+    "ls7-copy-acceptance.py": (FULL, "both"),
+    "ls7b-facts-acceptance.py": (FULL, "both"),
+    "ls8-delete-acceptance.py": (FULL, "both"),
+    "a3-client-keys-acceptance.py": (FULL, "both"),
+    "a5-scoped-keys-acceptance.py": (FULL, "both"),
+    "a6-local-only-acceptance.py": (EVERY, "both"),
+    "a6b-failover-acceptance.py": (FULL, "both"),
+    "p2-media-acceptance.py": (FULL, "both"),
+    "p3-audio-checks.py": (FULL, "both"),
+    "p3-audio-acceptance.py": (FULL, "both"),
+    "p4-images-acceptance.py": (FULL, "both"),
+    "p5-videos-acceptance.py": (FULL, "both"),
+    "p6-acceptance.py": (FULL, "both"),
+    "p8-search-acceptance.py": (FULL, "both"),
+    "google-search-acceptance.py": (FULL, "both"),
+    "gemini-acceptance.py": (FULL, "both"),
+    "tools-assumed-acceptance.py": (FULL, "both"),
+    "genui-inference-acceptance.py": (FULL, "both"),
+    "genui-inference-sabotage.py": (FULL, "both"),
+    "Keep UI inference prerequisite evidence": ("always-full", "both"),
+    "c2-sign-in-acceptance.py": (EVERY, "both"),
+    "c3-workbench-acceptance.py": (EVERY, "both"),
+    "update-all-acceptance.py": (FULL, "both"),
+    "standby-acceptance.py": (FULL, "both"),
+    "job-sites-acceptance.py": (FULL, "linux"),
+    "a7-recovery-checks.py": (FULL, "both"),
+    "r8-profile-checks.py": (FULL, "both"),
+}
 
 
 def workflow(name: str) -> dict:
@@ -62,6 +113,13 @@ class WiringTests(unittest.TestCase):
         self.assertIn(
             "github.event_name == 'push' && github.ref == 'refs/heads/main' && "
             "format('-{0}', github.sha)",
+            group,
+        )
+        # Dispatches, the weekly run and calls (which carry the caller's event
+        # and run ID) each get a group of their own: none waits or is replaced.
+        self.assertIn(
+            "github.event_name != 'push' && github.event_name != 'pull_request' && "
+            "format('-run-{0}', github.run_id)",
             group,
         )
         self.assertIn("github.ref != 'refs/heads/main'", cancel)
@@ -122,8 +180,10 @@ class WiringTests(unittest.TestCase):
         first = next(i for i, step in enumerate(steps) if "matrix.shard" in step.get("if", ""))
         self.assertEqual(steps[first - 1]["name"], "Check installed dependency consistency")
         # Every part installs the same components: no setup step is split.
+        self.assertEqual(first, SETUP_STEPS)
         for step in steps[:first]:
             self.assertNotIn("matrix.shard", step.get("if", ""))
+        found: dict[str, tuple[str, str]] = {}
         for step in steps[first:]:
             with self.subTest(step=step["name"]):
                 condition = step.get("if", "")
@@ -131,23 +191,26 @@ class WiringTests(unittest.TestCase):
                 linux = [part for part in parts if part.startswith("L")]
                 windows = [part for part in parts if part.startswith("W")]
                 self.assertEqual(len(linux), 1)
-                if "runner.os == 'Linux'" in condition:
-                    self.assertEqual(windows, [])
-                else:
-                    self.assertEqual(len(windows), 1)
+                self.assertLessEqual(len(windows), 1)
                 # The part clause is ANDed onto a condition the unsplit job had.
                 bare = " || ".join(f"matrix.shard == '{part}'" for part in linux + windows)
                 part = f"({bare})" if windows else bare
                 full = "needs.plan.outputs.full == 'true'"
-                self.assertIn(
-                    condition,
-                    {
-                        bare,
-                        f"{part} && {full}",
-                        f"always() && {part} && {full}",
-                        f"{part} && runner.os == 'Linux' && {full}",
-                    },
-                )
+                gates = {
+                    bare: "every",
+                    f"{part} && {full}": "full",
+                    f"always() && {part} && {full}": "always-full",
+                    f"{part} && runner.os == 'Linux' && {full}": "full",
+                }
+                self.assertIn(condition, gates)
+                script = re.search(r"specs/scripts/([\w.-]+\.py)", step.get("run", ""))
+                key = script.group(1) if script else step["name"]
+                self.assertNotIn(key, found)
+                found[key] = (gates[condition], "both" if windows else "linux")
+        # The unsplit job's steps, each with its profile and systems: dropping
+        # a step, or moving it between profiles or systems, fails here.
+        self.assertEqual(found, PINNED_STEPS)
+        self.assertEqual(len(steps), SETUP_STEPS + len(PINNED_STEPS))
 
     def test_publish_edge_reads_aggregates_that_need_every_part(self) -> None:
         jobs = workflow("ci.yml")["jobs"]
@@ -177,6 +240,7 @@ class WiringTests(unittest.TestCase):
             "github.repository == 'eugene-plexus/specs' && github.event_name == 'push' "
             "&& github.ref == 'refs/heads/main' && needs.plan.outputs.full == 'false'",
         )
+        self.assertEqual(guard["name"], ship.GUARD_JOB)
         step = guard["steps"][-1]
         self.assertEqual(step["env"]["PREVIOUS"], "${{ github.event.before }}")
         self.assertEqual(step["run"], 'python3 scripts/previous_push.py "$PREVIOUS"')
@@ -187,6 +251,27 @@ class WiringTests(unittest.TestCase):
             if step.get("name") == "Check CI planning"
         )
         self.assertIn("test_ship.py", checks)
+
+    def test_no_ci_job_asks_for_more_than_its_callers_grant(self) -> None:
+        # A called workflow's job asking for more than its caller grants fails
+        # the caller at startup, even when the job is skipped (run 39627576506).
+        # Release qualification and the components' Candidate integration grant
+        # contents: read (and packages, which no CI job asks for).
+        ci = workflow("ci.yml")
+        self.assertEqual(ci["permissions"], {"contents": "read"})
+        for name, job in ci["jobs"].items():
+            with self.subTest(job=name):
+                self.assertIn(job.get("permissions", {"contents": "read"}), [{"contents": "read"}])
+        granted = workflow("release-qualification.yml")["permissions"]
+        self.assertEqual(granted.get("contents"), "read")
+
+    def test_the_branch_reaches_the_planner_as_one_argument(self) -> None:
+        select = next(
+            step
+            for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
+            if step.get("id") == "select"
+        )
+        self.assertIn("command.append(f\"--branch={os.environ['CI_BRANCH']}\")", select["run"])
 
     def test_planner_outputs_and_scoped_jobs_are_connected(self) -> None:
         jobs = workflow("ci.yml")["jobs"]

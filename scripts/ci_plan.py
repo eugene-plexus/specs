@@ -144,14 +144,24 @@ def remote_branch(repository: str, branch: str) -> str | None:
 
     A failed lookup raises: a run must not quietly test the pins instead."""
     ref = f"refs/heads/{branch}"
-    listing = subprocess.run(
-        ["git", "ls-remote", f"{ORGANIZATION}/{repository}", ref],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-        timeout=120,
-    ).stdout
+    try:
+        listing = subprocess.run(
+            ["git", "ls-remote", f"{ORGANIZATION}/{repository}", ref],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            timeout=120,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            f"could not look up branch {branch!r} in {repository}: "
+            f"git ls-remote exited {error.returncode}: {(error.stderr or '').strip()}"
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(
+            f"could not look up branch {branch!r} in {repository}: no answer in 120 s"
+        ) from error
     for line in listing.splitlines():
         commit, _, name = line.partition("\t")
         if name == ref and re.fullmatch(r"[a-f0-9]{40}", commit):
@@ -177,7 +187,7 @@ def resolve_refs(
     return refs
 
 
-def main() -> None:
+def parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="")
     parser.add_argument("--head", default="HEAD")
@@ -195,15 +205,20 @@ def main() -> None:
         metavar="INPUT=COMMIT",
         help=f"a candidate given for an <input>_ref input; inputs: {', '.join(REF_INPUTS)}",
     )
-    arguments = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    options = parser()
+    arguments = options.parse_args()
     root = Path(__file__).resolve().parent.parent
     given = {}
     for item in arguments.ref:
         name, _, commit = item.partition("=")
         if name not in REF_INPUTS:
-            parser.error(f"unknown ref input {name!r}")
+            options.error(f"unknown ref input {name!r}")
         if commit and not re.fullmatch(r"[A-Za-z0-9._/-]+", commit):
-            parser.error(f"{name}_ref is not a commit or branch name: {commit!r}")
+            options.error(f"{name}_ref is not a commit or branch name: {commit!r}")
         given[name] = commit
     base = arguments.base
     if arguments.branch:

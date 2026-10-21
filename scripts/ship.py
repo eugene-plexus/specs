@@ -45,6 +45,8 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+import ci_plan
+
 SPECS = Path(__file__).resolve().parent.parent
 ROOT = SPECS.parent
 MANIFEST = SPECS / "release" / "manifest.json"
@@ -60,6 +62,8 @@ MANIFEST_REPOS = (
 )
 ORDER = (*MANIFEST_REPOS[1:], "site-host", "workbench", "agent", "ui")
 SHA = re.compile(r"[a-f0-9]{40}")
+# CI's job that holds a reduced-plan push to main until the push before it passed.
+GUARD_JOB = "The previous push to main passed CI"
 WB_PIN = re.compile(
     r"(workbench/archive/)([a-f0-9]{40})(\.tar\.gz\n  version: )([a-f0-9]{40})"
 )
@@ -412,6 +416,21 @@ def ship(
                     "  python scripts/release-inputs.py --resolve --uv <uv>"
                 )
         static_checks(plan)
+    # CI holds a reduced-plan push to main until the push before it passed
+    # (scripts/previous_push.py); say so before pushing on top of a red run.
+    first_reduced = (
+        not ci_plan.plan(SPECS, git(SPECS, "rev-parse", "origin/main"), merged_head)["full"]
+        if merged
+        else "site-host" not in plans  # a site-host pin moves PIN_SITE_HOST: full
+    )
+    if first_reduced:
+        red = failed_main_run(git(SPECS, "rev-parse", "origin/main"))
+        if red:
+            print(
+                f"  specs: CI's run of main's head {red[0]}: {red[1]}\n"
+                "    This ship's first push plans reduced coverage, so CI holds it, and Edge,\n"
+                "    until that run is re-run and passes or a full-plan push lands on main."
+            )
     for plan in plans.values():
         if plan.push_main and not dry_run:
             git(plan.repo, "push", "-q", "origin", "HEAD:main")
@@ -483,6 +502,34 @@ def gh_json(*args: str) -> object:
     return json.loads(run(SPECS, "gh", *args, quiet=True) or "null")
 
 
+def failed_main_run(commit: str) -> tuple[str, str] | None:
+    """(conclusion, URL) when the newest finished CI run of `commit`'s push to
+    main did not pass; None when it passed, is running, or GitHub cannot say."""
+    try:
+        runs = gh_json(
+            "run",
+            "list",
+            "--workflow",
+            "ci.yml",
+            "--commit",
+            commit,
+            "--event",
+            "push",
+            "--branch",
+            "main",
+            "--json",
+            "databaseId,status,conclusion,url",
+        )
+    except (Stop, ValueError):
+        return None
+    newest = max(
+        runs if isinstance(runs, list) else [], key=lambda entry: entry["databaseId"], default=None
+    )
+    if newest and newest["status"] == "completed" and newest["conclusion"] != "success":
+        return newest["conclusion"], newest["url"]
+    return None
+
+
 def wait_for_edge(commit: str, minutes: float) -> int:
     """Return 0 once `edge` contains `commit`; 1 with the failing jobs if CI fails."""
     deadline = time.perf_counter() + minutes * 60
@@ -530,6 +577,14 @@ def wait_for_edge(commit: str, minutes: float) -> int:
                         f"{workflow} failed for {commit[:7]}: {', '.join(failed) or entry['conclusion']}"
                     )
                     print(f"  gh run view {entry['databaseId']} --log-failed")
+                    if GUARD_JOB in failed:
+                        print(
+                            "  The push before this one did not pass CI, so this reduced-plan\n"
+                            "  run is held. Merged specs work that needs the new component code\n"
+                            "  fails against the old pins: ship such work with --one-push. Only a\n"
+                            "  re-run of that run that passes, or a full-plan push to main,\n"
+                            "  clears the hold."
+                        )
                     return 1
         time.sleep(30)
     print(

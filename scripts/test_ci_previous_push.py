@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -60,6 +61,51 @@ class WaitTests(unittest.TestCase):
                 self.assertFalse(passed)
                 self.assertIn(conclusion, reason)
                 self.assertIn("runs/7", reason)
+                # What clears it, and that a pin-only fix does not.
+                self.assertIn("re-run of that run that passes", reason)
+                self.assertIn("plan is full coverage", reason)
+                self.assertIn("pin-only fix is a reduced push and is held", reason)
+                self.assertNotIn("push a fix", reason)
+
+    def test_a_failing_lookup_keeps_waiting_until_github_answers(self) -> None:
+        clock = Clock()
+        replies = iter(
+            [OSError("connection reset"), ValueError("bad JSON"), run("completed", "success")]
+        )
+
+        def lookup(commit: str) -> dict | None:
+            reply = next(replies)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+
+        passed, _ = previous_push.wait(COMMIT, lookup, sleep=clock.sleep, clock=clock)
+        self.assertTrue(passed)
+        self.assertEqual(clock.now, 2 * previous_push.POLL_SECONDS)
+
+    def test_a_lookup_failing_to_the_deadline_fails_and_says_why(self) -> None:
+        clock = Clock()
+
+        def lookup(commit: str) -> dict | None:
+            raise OSError("GitHub is down")
+
+        passed, reason = previous_push.wait(COMMIT, lookup, sleep=clock.sleep, clock=clock)
+        self.assertFalse(passed)
+        self.assertIn("GitHub is down", reason)
+        self.assertGreaterEqual(clock.now, previous_push.WAIT_SECONDS)
+
+    @patch("previous_push.api")
+    def test_one_api_error_is_retried_with_backoff(self, api) -> None:
+        slept: list[float] = []
+        error = subprocess.CalledProcessError(1, ["gh", "api"])
+        api.side_effect = [error, {"message": "Server Error"}, {"workflow_runs": [run("queued")]}]
+        self.assertEqual(previous_push.newest_run(COMMIT, sleep=slept.append)["status"], "queued")
+        self.assertEqual(slept, list(previous_push.RETRY_SECONDS[:2]))
+        api.side_effect = [error] * (len(previous_push.RETRY_SECONDS) + 1)
+        slept.clear()
+        with self.assertRaises(subprocess.CalledProcessError):
+            previous_push.newest_run(COMMIT, sleep=slept.append)
+        self.assertEqual(slept, list(previous_push.RETRY_SECONDS))
 
     def test_no_run_for_the_previous_push_fails(self) -> None:
         passed, reason, waited = self.wait([None])
