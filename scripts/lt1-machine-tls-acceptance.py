@@ -1474,9 +1474,15 @@ def exercise(pair: Pair, record: Record, labels: list[str], measure: int = 0) ->
             )
 
         elif label in ("key-change", "root-key-change"):
-            key_changes(
-                pair, record, up, label=label, chat=chat, worker_record=worker_record
-            )
+            # One label's failure is recorded and the next still runs.
+            try:
+                key_changes(
+                    pair, record, up, label=label, chat=chat, worker_record=worker_record
+                )
+            except Exception as exc:
+                record.add(
+                    f"{label}: the run completed", False, error=f"{type(exc).__name__}: {exc}"
+                )
 
         elif label == "root-stopped":
             pids = docker(
