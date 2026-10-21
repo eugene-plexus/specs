@@ -1005,8 +1005,8 @@ paths:
       - {name: id, in: path, required: true, schema: {type: string}}
     put:
       operationId: replacePermissionGroup
-      summary: Replace a group's name and grants
-      description: Owner or manageGroups administrator. Existing member IDs stay assigned; new authorizations and refreshes use the new grants.
+      summary: Replace a group's name, grants and policies
+      description: Owner or manageGroups administrator. Existing member IDs stay assigned; new authorizations and refreshes use the new grants and policies. The next admission check uses the new queue band.
       requestBody:
         required: true
         content:
@@ -6055,19 +6055,21 @@ components:
       properties:
         queueBand: {$ref: '#/components/schemas/QueueBand'}
         summaryContextPercent: {type: integer, minimum: 50, maximum: 95}
-        setBy:
-          type: object
-          additionalProperties: false
-          description: For each value in effect, the ids of the groups that set that value.
-          properties:
-            queueBand:
-              type: array
-              maxItems: 64
-              items: {type: string, minLength: 1, maxLength: 64}
-            summaryContextPercent:
-              type: array
-              maxItems: 64
-              items: {type: string, minLength: 1, maxLength: 64}
+        setBy: {$ref: '#/components/schemas/PoliciesSetBy'}
+
+    PoliciesSetBy:
+      type: object
+      additionalProperties: false
+      description: For each policy value in effect, the ids of the groups that set that value, sorted by group name.
+      properties:
+        queueBand:
+          type: array
+          maxItems: 64
+          items: {type: string}
+        summaryContextPercent:
+          type: array
+          maxItems: 64
+          items: {type: string}
 
     PermissionGroupList:
       type: object
