@@ -115,3 +115,7 @@ Also `test_different_file_is_refused` (one changed block gives 409) and `test_li
 
 1. **Move a unique `same` match by itself?** Recommend no. A drive that is unplugged makes its models missing. If their profiles moved to a copy, the original would come back without them.
 2. **Allow `likely` at all?** Recommend yes, behind the confirmation. Only models that went missing before this ships are affected.
+
+## Calls answered by Troy (2026-10-21)
+
+- **R22-MOVE: Choice 2.** When the fingerprints are equal (`same`), the profiles move to the new file by themselves, and the entry says where they went. A `likely` match still asks first. Built as a follow-up branch after this row merges.

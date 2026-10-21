@@ -170,3 +170,8 @@ It checks:
 3. **Should the purge clear a person's own memory server?** Recommend no. Forget only what Workbench sent.
 4. **How many removals at once trip the brake?** Recommend 3.
 5. **The `.bak` copies.** Decided by Troy's MRC27 answer: the purge removes the person from each copy and keeps the copy for everyone else.
+
+## Calls answered by Troy (2026-10-21)
+
+- **R7-OWNER-EXPORT: Choice 2.** The owner can always export a removed person's data. Each export is logged with who, when and what. Troy's reason: legal requests in the USA. Federal discovery (FRCP 26 and 34) reaches data in an organisation's "possession, custody, or control", and a litigation hold must keep it. This is not legal advice; an organisation's counsel decides its own duties.
+- **R7-REGIVE: asked again (R7-REGIVE-2).** A person's account is keyed by an internal id. The email field is optional and Eugene does not verify it. Default until he answers: Choice 1, no link to old data.

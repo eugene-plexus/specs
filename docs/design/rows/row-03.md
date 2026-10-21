@@ -140,3 +140,7 @@ Rows 36 (`machine_list.py`) and 45 (`client_tls.py`) are in this lane and come l
 - **Size:** M. About 350 lines in the agent, 120 in control and 120 in the UI. No split is needed.
 - **Risk:** a locked root does not probe the other machines. The 3-minute bound covers that.
 - **Risk:** the old key's client leaf is not revoked, because LT2 has no revocation. A stolen old key can impersonate the node to browsers for up to 90 days. Record this as a limit.
+
+## Calls answered by Troy (2026-10-21)
+
+- **R3-SCHEDULE: asked again (R3-SCHEDULE-2).** Troy chose a yearly change if the keys expire by themselves. They do not: a machine key is self-signed and pinned by its SPKI hash, and the browser certificate renews every 60 days on the same key. Default until he answers: Eugene changes each machine key once a year by itself, as a small follow-up after this row merges, because this row makes a change safe for offline machines.

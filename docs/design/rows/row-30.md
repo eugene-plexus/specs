@@ -164,3 +164,9 @@ The reviewer should attack the background refresh token (it must not rotate the 
 - **The watcher.** Build it as a hint, off by default (recommended), or keep MR7's call 3 and drop it.
 - **Click-through.** A rendered picture of the page (recommended), or bundling pdf.js (about 1 MB, and it runs PDF code in the page).
 - **One migration (33)** for 30d, 30e and 30g. Recommended.
+
+## Calls answered by Troy (2026-10-21)
+
+- **DOC-SCAN: models are given jobs.** The owner assigns the model that reads pages. When one is assigned, reading pages is on for everyone. This is the first "model job"; call MODEL-JOBS asks where the general idea goes.
+- **DOC-WHOLE: Choice 2.** A question about a whole document reads it in parts without asking.
+- **DOC-WATCH: Choice 1.** A file watcher as an option, off by default; the timer stays.

@@ -87,3 +87,7 @@ Eugene always passes all three, so an upstream change of default cannot make a s
 - **Risk:** small machines get less than upstream's 8 GiB (`left / 2`). That protects them, and it is shown.
 - **LD-C5 (Troy):** recommendation: build the computed default, and ship it only if Step 0's rule passes. Otherwise 8 GiB, with the larger size as the setting.
 - **Open:** "about 9 conversations of this model" (LD2) needs KV bytes per token at the slot's context. Recommendation: later, from row 10's records.
+
+## Calls answered by Troy (2026-10-21)
+
+- **LD-C5: the owner can resize the cache.** The default follows the measurement in this design. The size is a setting on the runtime's profile, with the default shown.

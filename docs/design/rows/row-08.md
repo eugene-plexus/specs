@@ -107,3 +107,8 @@ Linux and Windows run the `--label` stub checks. **Not in CI:** a reboot and sig
 **Found while drafting:**
 - The wizard's sentence is fixed text, false on `--user` and `-NoService`. File a ui issue: print `restart.detail`.
 - `reach._systemd_restart` uses `systemctl --user` whenever the process is not root, as a Linux system install (`User=eugene-plexus`) never is. Check it, and file an agent issue if Reach's restart fails there.
+
+## Calls answered by Troy (2026-10-21)
+
+- **MAC-ACCT: Choice 2.** Eugene runs on a Mac in an account of its own, as on Linux. The row grows from M to L: folder access, macOS privacy permissions and the engine store move to that account.
+- **MAC-KEY: Choice 1.** The passphrase is kept in a file that only Eugene's own account can read.

@@ -192,3 +192,7 @@ Pause as a lever for someone allowed to stop the service is accepted: that accou
 2. **A pause lasts through a reboot.** Recommend yes: a reboot during a game must not load the card again.
 3. **A pause stops answers in progress.** Recommend yes now, and reuse row 13's drain later.
 4. **A pause cancels a running benchmark or settings build.** Recommend yes.
+
+## Calls answered by Troy (2026-10-21)
+
+- **TRAY-1 to TRAY-4: Choice 1 each.** The tray holds no key and asks over a local channel; a pause survives a reboot; it stops answers in progress; it cancels a running benchmark.

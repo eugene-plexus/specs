@@ -142,3 +142,7 @@ Together these add about 5 minutes.
 - **Risks:**
   - The re-seal must reach every sealed value.
   - The agent's new wrap changes how its master key is derived. Every existing install starts with no wrap.
+
+## Calls answered by Troy (2026-10-21)
+
+- **R5-RESEAL: Choice 1.** This row re-wraps each machine's key under the new passphrase and does not re-lock each machine's secrets. Re-locking with new keys is a later row.

@@ -199,3 +199,11 @@ One acceptance run, one adversarial review and the real-machine run come after 2
 - **CONNECT-C3, Open WebUI installs from before this row.** Recommended: no reset; show the values to add. The alternative resets Open WebUI's in-app settings once, at the update.
 - **CONNECT-C4, Open WebUI's administrators.** Admin-pasted functions can read users' forwarded tokens (`functions.py:279`), so the owner, as Open WebUI's admin, could read the notes of a person who turned it on. Recommended: per-person opt-in, off by default, with that sentence in the dialog. The alternative drops 25c.
 - **CONNECT-C5, the owner's own machine.** Recommended: a setup always waits for the person's key, the owner's too. This is stricter than J52, because the write lands in a program that runs commands.
+
+## Calls answered by Troy (2026-10-21)
+
+- **CONNECT-C1: Troy sees Workbench as an alternative to Claude Code and Codex, not a complement.** The row's scope is asked again (ROW25-SCOPE). The row does not start until he answers.
+- **CONNECT-C2: Choice 1.** Claude Code, Codex and Open WebUI.
+- **CONNECT-C3: Choice 2.** Reset an older Open WebUI, with the person's permission first.
+- **CONNECT-C4: Choice 2.** Open WebUI is left out of this row.
+- **CONNECT-C5: Choice 2.** The owner may approve setups for others.

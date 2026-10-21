@@ -167,3 +167,9 @@ The reviewer should attack the bank derivation, the token's exposure, an owner r
 - **27-C3: install-wide servers.** Recommend opt-in per person. The owner turning one on for everyone would keep people's chats somewhere new by default.
 - **27-C4: tool results as provenance.** Recommend linked only when the person ticks them.
 - **27-C5: when to build 27f.** Recommend after MV5b lands, since 27f re-keys MV5b's `linked` column.
+
+## Calls answered by Troy (2026-10-21)
+
+- **MEM-MERGE: Choice 2.** Merge proposals are on for every model set to "Keep automatically".
+- **MEM-INSTALL: per group.** The owner adds a memory server to a permission group. It is on for every member, and a member cannot turn it off. Until Workbench can read a person's groups, the owner's choice is install-wide.
+- **MEM-TOOLS: Choice 1.** A tool result is linked only when the person ticks it.
