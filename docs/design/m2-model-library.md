@@ -303,11 +303,13 @@ normalizes server-side and returns the entry or nothing.
 
 **The consequence, stated plainly: move a model and it reads as a new
 model.** Its old entry goes `missing` and keeps its profiles, so the
-flags that took an afternoon to tune are still there to copy. Nothing
-guesses that a file which vanished from one root and appeared in another
-is the same file. A relocate action is cheap to add and deliberately not
-in M2 (§7) — a wrong guess here silently applies one model's tuning to
-another.
+flags that took an afternoon to tune are still there. Nothing guesses that
+a file which vanished from one root and appeared in another is the same
+file. M2 left the move to the person's hands; row 22 added it
+(`POST /v1/models/{id}/relocate`), and the proof that the new file is the
+same one is a content fingerprint, never the name or the size
+([row-22.md](rows/row-22.md)). It moves the profiles after a click and
+never by itself.
 
 **What persists:** profiles, and only profiles. The model list is a scan
 projection joined against the profile store. An entry appears if it was
@@ -483,11 +485,10 @@ profile editor in the UI.
   milestone is only about models already on the disk.
 - **Quant guidance and hardware fit scoring.** M3, and it hangs off Trap
   3's `file_type`. M2 reports the quant; it does not opine.
-- **Relocate / re-point a missing entry.** One endpoint, deliberately
-  deferred: the interesting version guesses which new file is the moved
-  one, and a wrong guess silently applies one model's tuning to another.
-  Until then the profiles survive on the `missing` entry and can be
-  copied by hand.
+- **Relocate / re-point a missing entry.** Deferred from M2, because a
+  wrong guess silently applies one model's tuning to another. Built in
+  row 22, with a content fingerprint as the proof and a click to move
+  (see §2).
 - **Adopting `general.sampling.*` into a profile or a request.** Trap 8's
   find is reported and stops there. The gateway owns request params, and
   the right place for "use the author's recommendation" is a gateway
