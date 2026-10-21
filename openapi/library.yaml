@@ -2854,6 +2854,12 @@ components:
         configPath:
           type: string
           description: Absolute path to `config.json`, the file that made this a model.
+        recommendedSampling:
+          $ref: '#/components/schemas/RecommendedSampling'
+          description: |
+            Author sampling from `generation_config.json`, reported only
+            when `do_sample` is true. Greedy decoding contributes no
+            sampling defaults.
 
     MlxQuantization:
       type: object
@@ -3067,15 +3073,17 @@ components:
       type: object
       description: |
         Sampling parameters the model's author put in the file
-        (`general.sampling.*` in GGUF). **Reported, never applied.**
+        (`general.sampling.*` in GGUF or `generation_config.json` for
+        safetensors), applied by the gateway as defaults when neither
+        the request nor the default profile sets a value. Author values
+        also apply when the model has no profile. A default profile with
+        `authorSampling: false` turns them off.
 
-        The locked rule is that the gateway owns every
-        LLM-output-affecting parameter and no component substitutes a
-        local default; that rule is unchanged. But the file having an
-        opinion is real information, and dropping it means the operator
-        has to go read the model card to find out. Whether anything can
-        adopt these with one click is a gateway decision, not a library
-        one.
+        The Library only reports these values. The gateway owns and
+        sends every sampling value, falling back to its own defaults
+        when no request, profile or enabled author value exists. An
+        inference driver never substitutes its own defaults. The author's
+        repeat penalty is not applied.
       properties:
         temperature:
           type: number
@@ -3083,6 +3091,19 @@ components:
           type: integer
         topP:
           type: number
+        minP:
+          type: number
+          minimum: 0
+          maximum: 1
+        source:
+          $ref: '#/components/schemas/RecommendedSamplingSource'
+
+    RecommendedSamplingSource:
+      type: string
+      enum: [gguf, generation_config]
+      description: |
+        Where the author stated the sampling values: `general.sampling.*`
+        in a GGUF file, or a safetensors model's `generation_config.json`.
 
     # -------- Profiles --------
 
@@ -3149,12 +3170,23 @@ components:
           default: false
           description: |
             The profile offered first when launching this model.
-            Its maxTokens, temperature and topP also supply omitted
-            generation parameters at the gateway, without restarting
-            an existing runtime. Explicit request values always win.
+            Its maxTokens, temperature, topP, topK and minP also supply
+            omitted generation parameters at the gateway, without
+            restarting an existing runtime. Explicit request values
+            always win.
             Setting it clears the flag on whichever profile held it; the
             first profile saved for a model gets it whether it asks or
             not.
+        authorSampling:
+          type: boolean
+          default: true
+          description: |
+            Use the model author's sampling where this default profile
+            and the request set none. Absent means true, including for
+            stored profiles; no storage migration is needed. Author
+            values also apply when the model has no profile. False skips
+            author values, so the gateway uses its own defaults where
+            the request and profile set none.
         maxTokens:
           type: integer
           minimum: 1
@@ -3168,7 +3200,22 @@ components:
           type: number
           minimum: 0
           maximum: 1
-          description: Nucleus sampling cutoff when omitted by the caller. Absent leaves it unspecified.
+          description: Nucleus sampling cutoff when omitted by the caller. Absent uses enabled author values, then the gateway default.
+        topK:
+          type: integer
+          minimum: 0
+          description: |
+            Sample from only the K most likely tokens when omitted by
+            the caller; 0 disables the cut. Absent uses enabled author
+            values, then the gateway default.
+        minP:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            Discard tokens less likely than this fraction of the most
+            likely token when omitted by the caller. Absent uses enabled
+            author values, then the gateway default.
         engine:
           $ref: 'components/common.yaml#/components/schemas/EngineKind'
           description: |
@@ -3333,6 +3380,13 @@ components:
           type: string
         default:
           type: boolean
+        authorSampling:
+          type: boolean
+          default: true
+          description: |
+            Whether to use the model author's sampling for omitted
+            values, as saved (`ModelProfileSpec.authorSampling`). Absent
+            means true for stored profiles.
         maxTokens:
           type: integer
           minimum: 1
@@ -3341,6 +3395,13 @@ components:
           minimum: 0
           maximum: 2
         topP:
+          type: number
+          minimum: 0
+          maximum: 1
+        topK:
+          type: integer
+          minimum: 0
+        minP:
           type: number
           minimum: 0
           maximum: 1
