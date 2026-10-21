@@ -230,6 +230,20 @@ def exercise(args):
             "control", "POST", "/v1/auth/initialize", json={"passphrase": phrase}
         ).raise_for_status()
         operator = login("control")
+        # Both agents share this host and advertise loopback, so neither has
+        # a machine URL, and a new install requires encryption between
+        # machines (LT-C2): the root's gateway would leave the worker's driver
+        # out. This check is about recovery, not machine TLS, so encryption
+        # is off; the same-host case under "required" is gateway#17.
+        call(
+            "control", "PATCH", "/v1/config", operator, json={"machineEncryption": "off"}
+        ).raise_for_status()
+        # Machines join at the root's machine port, as the console's join
+        # command says (LT1): control's own port is loopback behind it, and a
+        # join token carries the key that port presents.
+        door = call("root", "GET", "/v1/node", agent_token).json().get("machine") or {}
+        assert door.get("listening"), f"the root's machine port is not listening: {door}"
+        root_address = f"http://127.0.0.1:{door['port']}"
         for name in ("root", "worker"):
             if name == "worker":
                 start(name)
@@ -242,17 +256,18 @@ def exercise(args):
             join = call(
                 "control", "POST", "/v1/nodes/join-token", operator, json={"grants": grants}
             ).json()["token"]
-            call(
+            enrolled = call(
                 name,
                 "POST",
                 "/v1/node/enroll",
                 agent_token,
                 json={
-                    "controlUrl": url("control"),
+                    "controlUrl": root_address,
                     "token": join,
                     "name": "a7-" + name,
                 },
-            ).raise_for_status()
+            )
+            assert enrolled.status_code == 200, (name, enrolled.status_code, enrolled.text)
         operator = login("root")
         # A session is good on the machine it was signed in on and the
         # root; the worker takes its own.
