@@ -329,11 +329,14 @@ info:
     a long-lived named key the agent mints
     (`POST /v1/auth/client-keys`) for an app outside the install --
     Continue, Cline, Open WebUI, SillyTavern, the OpenAI SDK, `curl`.
-    **This gateway accepts it on the five front-door paths and nowhere
-    else** -- the three OpenAI-compatible ones; since R4
+    **This gateway accepts it on the inference and tool front-door paths
+    and nowhere else** -- the three OpenAI-compatible ones; since R4
     `POST /v1/messages`, the same audience arriving through a different
     protocol; and since B2 `POST /v1/systemone`, the TypeSafe-shaped
-    decision door, for the same reason. `/v1/config`, `/v1/admin/*` and `/v1/metrics` refuse
+    decision door, for the same reason. `POST /v1/web_search` also accepts
+    it for Open WebUI's external search engine (row 34), with the key's
+    tool scope, locality, rate and concurrency limits and attribution.
+    `/v1/config`, `/v1/admin/*` and `/v1/metrics` refuse
     it exactly as they refuse a driver's service token, and so does
     every other component in the install: an `ep-client+jwt` is a class
     no other route accepts. It must also be signed by a key the trust
@@ -370,7 +373,8 @@ info:
 
     The front-door paths -- `GET /v1/models`,
     `POST /v1/chat/completions`, `POST /v1/embeddings`,
-    `POST /v1/messages` and `POST /v1/responses` -- answer CORS,
+    `POST /v1/messages`, `POST /v1/responses` and
+    `POST /v1/web_search` -- answer CORS,
     so a web page on another origin can use the front door the way a
     non-browser client always could: the UI playground's direct mode,
     Open WebUI in a tab, a web app on the OpenAI SDK. **`/v1/messages`
@@ -428,6 +432,8 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: tools
+    description: Tools run through the install's accounts, with the caller's key limits.
   - name: inference
     description: |
       The OpenAI-compatible front door. snake_case field names and
@@ -2236,6 +2242,99 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
 
+  /v1/web_search:
+    post:
+      tags: [tools]
+      operationId: webSearch
+      summary: Search through the install's accounts for Open WebUI.
+      security:
+        - bearerAuth: []
+      description: |
+        The shape Open WebUI's external search engine sends and reads
+        (row 34). The gateway runs `server_tools.SearchRunner` on the
+        install's search accounts in their configured order, with the
+        same failover rule as a chat's `web_search`. It maps each result's
+        address, title and excerpt to `link`, `title` and `snippet`.
+        It shortens the returned list without changing the account's own
+        result count or fetching any result page. An empty successful
+        search returns `[]`.
+
+        **Admission is the same as on every front door.** A client key's
+        `limits.allowedTools` must permit `web_search` (null permits all;
+        empty permits none). A `limits.localOnly` key is refused before
+        any account runs, including a search account on the LAN: a query
+        goes to the internet. The request counts against the key's rate
+        and concurrency limits and is attributed to that key. Refusals
+        use `SearchRunner`'s `why_not` wording.
+
+        **Google accounts are not skipped** (OW-GOOGLE, 2026-10-21).
+        A search provider's terms are the account holder's to keep. This
+        response carries only links, titles and snippets; it cannot carry
+        Search Suggestions or a provider's other display fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebSearchRequest'
+      responses:
+        '200':
+          description: |
+            At most `count` results and at most the account's own result
+            count. When `count` is absent, the account's count applies,
+            capped at 20. A successful search with no results is `[]`.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 20
+                items:
+                  $ref: '#/components/schemas/WebSearchResult'
+        '400':
+          description: |
+            Invalid request. An invalid query says
+            "query: must be 1 to 2000 characters."
+            An invalid count names its allowed range, 1 to 20.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          description: |
+            The key's tool scope or locality refuses the search, with
+            `why_not`'s words. For example: "this key is local-only, and
+            a web search sends a query made from the prompt to the internet".
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '429':
+          description: |
+            The key's admission limit or the search provider's rate limit.
+            A provider's `Retry-After` is carried through unchanged.
+          headers:
+            Retry-After:
+              description: The provider's retry hint, or the key's admission retry delay.
+              schema:
+                type: string
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '503':
+          description: |
+            No usable search account, or every account failed. With no
+            account: "no search account is set up; add one under Backends,
+            then Add a search account". An account that is not ready names
+            what it needs. When all accounts fail, the detail carries each
+            account's observed cause from `SearchRunner`'s `reasons`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   /v1/images/generations:
     post:
       tags: [inference]
@@ -2249,6 +2348,11 @@ paths:
         or not (captured). The model is any with the `image` surface on
         `GET /v1/models`: an OpenRouter image model (Gemini's image+text ones
         included, measured) or OpenAI's.
+
+        Open WebUI uses this same door and the same key policy (OW-IMAGES,
+        2026-10-21). A paid external model is allowed when its key permits
+        it. `limits.localOnly` refuses every cloud backend, including
+        fallback targets; an app key has no exception.
 
         **Tiers, as chat** (§5, call #4), filtered at every tier to models
         that take what the request asks. **A setting is routed by the model's
@@ -3648,6 +3752,39 @@ components:
         the wrong one.
 
   schemas:
+    WebSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        count:
+          type: integer
+          minimum: 1
+          maximum: 20
+          description: |
+            Upper bound on the returned list. Does not raise or replace
+            the search account's own result count. Omitted, the account's
+            count applies, capped at 20.
+
+    WebSearchResult:
+      type: object
+      additionalProperties: false
+      required: [link, title, snippet]
+      properties:
+        link:
+          type: string
+          format: uri
+          description: The result's address.
+        title:
+          type: string
+        snippet:
+          type: string
+          description: The search provider's excerpt; no result page is fetched.
+
     RuntimeSwitchRequest:
       type: object
       required: [source, target]
