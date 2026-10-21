@@ -124,7 +124,8 @@
    ],
    "calls": [
     "B2-REV"
-   ]
+   ],
+   "issue": 28
   },
   {
    "row": 2,
@@ -151,7 +152,8 @@
    "design_state": "short",
    "needs": [],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 29
   },
   {
    "row": 3,
@@ -182,7 +184,8 @@
    "design_docs": [
     "tls-between-machines.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 30
   },
   {
    "row": 4,
@@ -215,7 +218,8 @@
    "design_docs": [
     "warm-standby.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 31
   },
   {
    "row": 5,
@@ -249,7 +253,8 @@
    "design_docs": [
     "sign-in-with-eugene.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 32
   },
   {
    "row": 6,
@@ -278,7 +283,8 @@
    "design_docs": [
     "release-script.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 33
   },
   {
    "row": 7,
@@ -311,7 +317,8 @@
    ],
    "calls": [
     "MRC27"
-   ]
+   ],
+   "issue": 34
   },
   {
    "row": 8,
@@ -342,7 +349,8 @@
     "windows-comes-back-by-itself.md",
     "node-labels.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 35
   },
   {
    "row": 9,
@@ -375,7 +383,8 @@
    ],
    "calls": [
     "LD-C5"
-   ]
+   ],
+   "issue": 36
   },
   {
    "row": 10,
@@ -408,7 +417,8 @@
     "deepinfer-lessons.md",
     "llm-d-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 37
   },
   {
    "row": 11,
@@ -451,7 +461,8 @@
     "LD-C4",
     "WAKE",
     "CB-C"
-   ]
+   ],
+   "issue": 38
   },
   {
    "row": 12,
@@ -485,7 +496,8 @@
     "m8-retained-request-metrics.md",
     "metrics-dashboard.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 39
   },
   {
    "row": 13,
@@ -521,7 +533,8 @@
    ],
    "calls": [
     "DI-C3"
-   ]
+   ],
+   "issue": 40
   },
   {
    "row": 14,
@@ -556,7 +569,8 @@
     "deepinfer-lessons.md",
     "llm-d-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 41
   },
   {
    "row": 15,
@@ -594,7 +608,8 @@
    ],
    "calls": [
     "DI-C4"
-   ]
+   ],
+   "issue": 42
   },
   {
    "row": 16,
@@ -620,7 +635,8 @@
    "design_state": "short",
    "needs": [],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 43
   },
   {
    "row": 17,
@@ -649,7 +665,8 @@
    "design_docs": [
     "speculative-decoding.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 44
   },
   {
    "row": 18,
@@ -682,7 +699,8 @@
    "design_docs": [
     "deepinfer-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 45
   },
   {
    "row": 19,
@@ -710,7 +728,8 @@
    "design_docs": [
     "repetition-protection.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 46
   },
   {
    "row": 20,
@@ -738,7 +757,8 @@
    "design_docs": [
     "deepinfer-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 47
   },
   {
    "row": 21,
@@ -768,7 +788,8 @@
    "design_docs": [
     "m2-model-library.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 48
   },
   {
    "row": 22,
@@ -797,7 +818,8 @@
    "design_docs": [
     "m2-model-library.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 49
   },
   {
    "row": 23,
@@ -828,7 +850,8 @@
    "design_docs": [
     "workbench-files.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 50
   },
   {
    "row": 24,
@@ -859,7 +882,8 @@
    "design_docs": [
     "scoped-client-access.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 51
   },
   {
    "row": 25,
@@ -891,7 +915,8 @@
     24
    ],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 52
   },
   {
    "row": 26,
@@ -918,7 +943,8 @@
    "design_state": "full",
    "needs": [],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 53
   },
   {
    "row": 27,
@@ -951,7 +977,8 @@
    ],
    "calls": [
     "MV5-C4"
-   ]
+   ],
+   "issue": 54
   },
   {
    "row": 28,
@@ -979,7 +1006,8 @@
    "design_docs": [
     "workbench-answer-versions.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 55
   },
   {
    "row": 29,
@@ -1011,7 +1039,8 @@
    "design_state": "short",
    "needs": [],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 56
   },
   {
    "row": 30,
@@ -1042,7 +1071,8 @@
     "workbench-memory-and-documents.md",
     "workbench-folders.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 57
   },
   {
    "row": 31,
@@ -1071,7 +1101,8 @@
    "design_docs": [
     "workbench-reading.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 58
   },
   {
    "row": 32,
@@ -1100,7 +1131,8 @@
    "design_docs": [
     "memory-research-2026-10.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 59
   },
   {
    "row": 33,
@@ -1130,7 +1162,8 @@
     "ui-tree-navigation.md",
     "ui-settings-reorganisation.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 60
   },
   {
    "row": 34,
@@ -1160,7 +1193,8 @@
    "design_docs": [
     "c4-open-webui.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 61
   },
   {
    "row": 35,
@@ -1189,7 +1223,8 @@
    "design_docs": [
     "windows-comes-back-by-itself.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 62
   },
   {
    "row": 36,
@@ -1218,7 +1253,8 @@
    "design_state": "short",
    "needs": [],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 63
   },
   {
    "row": 37,
@@ -1250,7 +1286,8 @@
    "design_docs": [
     "shared-accounts-and-sso.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 64
   },
   {
    "row": 38,
@@ -1284,7 +1321,8 @@
     "gateway-operations-dashboard.md",
     "host-history.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 65
   },
   {
    "row": 39,
@@ -1316,7 +1354,8 @@
    "design_docs": [
     "console-ux-pass.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 66
   },
   {
    "row": 40,
@@ -1351,7 +1390,8 @@
     "openai-inference-compatibility.md",
     "scoped-client-access.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 67
   },
   {
    "row": 41,
@@ -1379,7 +1419,8 @@
    "design_docs": [
     "speculative-decoding.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 68
   },
   {
    "row": 42,
@@ -1408,7 +1449,8 @@
     41
    ],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 69
   },
   {
    "row": 43,
@@ -1441,7 +1483,8 @@
    "design_docs": [
     "deepinfer-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 70
   },
   {
    "row": 44,
@@ -1474,7 +1517,8 @@
    "design_docs": [
     "deepinfer-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 71
   },
   {
    "row": 45,
@@ -1504,7 +1548,8 @@
    "design_docs": [
     "tls-for-clients.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 72
   },
   {
    "row": 46,
@@ -1536,7 +1581,8 @@
    "design_docs": [
     "per-node-token-keys.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 73
   },
   {
    "row": 47,
@@ -1570,7 +1616,8 @@
    ],
    "calls": [
     "MRC25"
-   ]
+   ],
+   "issue": 74
   },
   {
    "row": 48,
@@ -1601,7 +1648,8 @@
     "m2-model-library.md",
     "library-folders-and-reach.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 75
   },
   {
    "row": 49,
@@ -1630,7 +1678,8 @@
    "design_docs": [
     "m6-lifecycle-policy.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 76
   },
   {
    "row": 50,
@@ -1655,7 +1704,8 @@
    "design_state": "full",
    "needs": [],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 77
   },
   {
    "row": 51,
@@ -1687,7 +1737,8 @@
     "person-held-keys.md",
     "job-sites-own-enrollment.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 78
   },
   {
    "row": 52,
@@ -1716,7 +1767,8 @@
    "design_docs": [
     "workbench-mcp.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 79
   },
   {
    "row": 53,
@@ -1743,7 +1795,8 @@
    "design_docs": [
     "openai-inference-compatibility.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 80
   },
   {
    "row": 54,
@@ -1775,7 +1828,8 @@
     "llm-d-lessons.md",
     "responses-and-completions.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 81
   },
   {
    "row": 55,
@@ -1806,7 +1860,8 @@
    "design_docs": [
     "llm-d-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 82
   },
   {
    "row": 56,
@@ -1838,7 +1893,8 @@
    ],
    "calls": [
     "MRC24"
-   ]
+   ],
+   "issue": 83
   },
   {
    "row": 57,
@@ -1866,7 +1922,8 @@
    "design_docs": [
     "openai-inference-compatibility.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 84
   },
   {
    "row": 58,
@@ -1896,7 +1953,8 @@
     "gemini-door.md",
     "gemini-provider.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 85
   },
   {
    "row": 59,
@@ -1927,7 +1985,8 @@
    "design_docs": [
     "server-run-tools.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 86
   },
   {
    "row": 60,
@@ -1956,7 +2015,8 @@
     "workbench-ui-interoperability.md",
     "workbench-mcp-apps-v1.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 87
   },
   {
    "row": 61,
@@ -1990,7 +2050,8 @@
     "m2-model-library.md",
     "llm-d-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 88
   },
   {
    "row": 62,
@@ -2018,7 +2079,8 @@
    "design_docs": [
     "m4-second-engine-vllm.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 89
   },
   {
    "row": 63,
@@ -2048,7 +2110,8 @@
     "library-sources-and-engines.md",
     "strata-engine.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 90
   },
   {
    "row": 64,
@@ -2075,7 +2138,8 @@
    "design_state": "short",
    "needs": [],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 91
   },
   {
    "row": 65,
@@ -2104,7 +2168,8 @@
    "design_docs": [
     "console-ux-pass.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 92
   },
   {
    "row": 66,
@@ -2132,7 +2197,8 @@
    "design_docs": [
     "experimental-engines.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 93
   },
   {
    "row": 67,
@@ -2161,7 +2227,8 @@
    "design_docs": [
     "workbench-media-screens.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 94
   },
   {
    "row": 68,
@@ -2190,7 +2257,8 @@
    "design_docs": [
     "deepinfer-lessons.md"
    ],
-   "calls": []
+   "calls": [],
+   "issue": 95
   },
   {
    "row": 69,
@@ -2219,7 +2287,8 @@
     10
    ],
    "design_docs": [],
-   "calls": []
+   "calls": [],
+   "issue": 96
   }
  ]
 }
