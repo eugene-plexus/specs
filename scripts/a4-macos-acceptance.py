@@ -59,7 +59,9 @@ PLIST = Path("/Library/LaunchDaemons") / f"{LABEL}.plist"
 ACCOUNT = "_eugeneplexus"
 DEFAULT_PREFIX = Path("/usr/local/eugene-plexus")
 PASSPHRASE = "a4-disposable-passphrase-on-a-runner"
-MLX_ENV = HOME / "eugene-mlx"
+# Eugene's account runs the engines, and its home is its prefix (row 8): the
+# recipe's `~/eugene-mlx` is this folder when that account runs it.
+MLX_ENV = Path("/usr/local/eugene-plexus") / "eugene-mlx"
 #: The mlx-lm the agent's install notes pin (its `UPSTREAM_VERSION_PINNED`):
 #: 0.31.3 until 2026-10-03, when the upstream drift audit moved it to 0.32.0.
 MLX_LM_PIN = "0.32.0"
@@ -226,7 +228,8 @@ def alive(pid: int) -> bool:
 
 
 def pids_matching(pattern: str) -> list[int]:
-    out = run(["pgrep", "-f", pattern], timeout=20).stdout.split()
+    # Root's pgrep: another account's arguments are not the runner's to read.
+    out = run(["sudo", "-n", "pgrep", "-f", pattern], timeout=20).stdout.split()
     me = os.getpid()
     return [int(p) for p in out if p.isdigit() and int(p) != me]
 
@@ -513,10 +516,22 @@ def engine(ctx: dict, name: str) -> dict:
     return next((e for e in body.get("engines", []) if e.get("engine") == name), {})
 
 
+def account_shell(command: str, home: Path, *, rosetta: bool = False,
+                  timeout: float = 900) -> subprocess.CompletedProcess:
+    """The recipe verbatim, in a shell of Eugene's account with `home` as `~`.
+
+    Since row 8 the agent runs as `_eugeneplexus`, whose home is its prefix,
+    and the recipe names the uv in that prefix, which only the account (and
+    root) can run. So the recipe runs as the account: an administrator's
+    `sudo -u _eugeneplexus`, from `/`, which the account can enter."""
+    argv = ["sudo", "-n", "-u", ACCOUNT, "env", f"HOME={home}"]
+    if rosetta:
+        argv += ["arch", "-x86_64"]
+    return run(argv + ["/bin/sh", "-c", f"cd / && {command}"], timeout=timeout)
+
+
 def phase_mlx_install(ctx: dict) -> None:
-    say("installing MLX the way the agent tells the person to")
-    if MLX_ENV.exists():
-        shutil.rmtree(MLX_ENV)
+    say("installing MLX the way the agent's notes say, as the account that runs it")
     mlx = engine(ctx, "mlx")
     acquisition = mlx.get("acquisition") or {}
     manual = acquisition.get("manualInstall") or {}
@@ -530,29 +545,27 @@ def phase_mlx_install(ctx: dict) -> None:
 
     # Rosetta first, into a scratch HOME so `~` lands elsewhere: the recipe
     # must not be able to build an x86_64 environment from a Rosetta shell.
-    scratch = Path(tempfile.mkdtemp(prefix="a4-rosetta-home-"))
-    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
-    env["HOME"] = str(scratch)
-    out = run(["arch", "-x86_64", "/bin/sh", "-c", command], timeout=900, env=env)
+    scratch = Path(as_account("mktemp", "-d", "/tmp/a4-rosetta-home.XXXXXX").stdout.strip())
+    out = account_shell(command, scratch, rosetta=True)
     rosetta_python = scratch / "eugene-mlx" / "bin" / "python"
-    machine = (run([str(rosetta_python), "-c", "import platform; print(platform.machine())"]).stdout.strip()
-               if rosetta_python.exists() else f"(no env; exit {out.returncode}: {(out.stdout + out.stderr)[-300:]})")
+    probe = as_account(rosetta_python, "-c", "import platform; print(platform.machine())")
+    machine = (probe.stdout.strip() if probe.returncode == 0
+               else f"(no env; exit {out.returncode}: {(out.stdout + out.stderr)[-300:]})")
     check("25", "the command, run verbatim from a Rosetta shell, still builds a native arm64 environment",
           machine == "arm64", machine)
-    shutil.rmtree(scratch, ignore_errors=True)
+    sudo("rm", "-rf", str(scratch))
 
-    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
     started = time.perf_counter()
-    out = run(["/bin/sh", "-c", command], timeout=900, env=env)
+    out = account_shell(command, MLX_ENV.parent)
     fact("mlx install seconds", round(time.perf_counter() - started, 1))
     server = MLX_ENV / "bin" / "mlx_lm.server"
-    must("26", "the command, run verbatim in the person's own shell, installs mlx_lm.server",
-         out.returncode == 0 and server.exists(), (out.stdout + out.stderr)[-600:])
-    info = run([str(MLX_ENV / "bin" / "python"), "-c",
-                "import json, platform, importlib.metadata as m, mlx.core as mx; "
-                "print(json.dumps({'machine': platform.machine(), 'mlx_lm': m.version('mlx-lm'), "
-                "'mlx': m.version('mlx'), 'metal': mx.metal.is_available(), "
-                "'device_info': mx.device_info()}))"]).stdout
+    must("26", "the command, run verbatim as Eugene's account, installs mlx_lm.server in its home",
+         out.returncode == 0 and sudo("test", "-x", server).returncode == 0, (out.stdout + out.stderr)[-600:])
+    info = as_account(MLX_ENV / "bin" / "python", "-c",
+                      "import json, platform, importlib.metadata as m, mlx.core as mx; "
+                      "print(json.dumps({'machine': platform.machine(), 'mlx_lm': m.version('mlx-lm'), "
+                      "'mlx': m.version('mlx'), 'metal': mx.metal.is_available(), "
+                      "'device_info': mx.device_info()}))").stdout
     try:
         info = json.loads(info)
     except ValueError:
@@ -565,14 +578,11 @@ def phase_mlx_install(ctx: dict) -> None:
           (info.get("device_info") or {}).get("max_recommended_working_set_size")
           == metal.get("recommendedMaxWorkingSetSize"), info.get("device_info"))
 
-    # The notes say `~/eugene-mlx/...`, and `~` is the person's home where
-    # they run the command. The daemon's own `~` is its prefix (row 8), so
-    # the setting names the folder whole.
-    fact("mlxBinary for the daemon", str(server))
+    # The notes' `~` is the account's home, the same folder the daemon's own
+    # `~` names (agent#30: the notes still say the person's shell).
     status, body = api("PATCH", f"{ctx['base']}/v1/config", ctx["token"],
-                       {"mlxBinary": str(server)})
-    check("29", "mlxBinary is set to the environment the person made", status == 200,
-          body if status != 200 else "")
+                       {"mlxBinary": "~/eugene-mlx/bin/mlx_lm.server"})
+    check("29", "mlxBinary is set as the notes say, with a ~", status == 200, body if status != 200 else "")
     mlx = engine(ctx, "mlx")
     python = mlx.get("python") or {}
     check("30", "the agent now finds MLX, reads its version and names the environment's interpreter",
@@ -583,7 +593,7 @@ def phase_mlx_install(ctx: dict) -> None:
     flags = json.loads(as_account(ctx["python"], "-c",
                                   "import json; from eugene_plexus_agent.engines.mlx import _FLAG_CLI_NAMES as f; "
                                   "print(json.dumps(f))").stdout or "{}")
-    helptext = run([str(server), "--help"]).stdout
+    helptext = as_account("env", f"HOME={MLX_ENV.parent}", server, "--help").stdout
     missing = [cli for cli in flags.values() if cli not in helptext]
     check("31", "every curated flag the agent can render is an mlx_lm.server option",
           bool(flags) and not missing, missing or f"{len(flags)} flags")
@@ -658,8 +668,10 @@ def phase_upstream_claims(ctx: dict) -> None:
     base = f"http://127.0.0.1:{port}"
     log = tempfile.NamedTemporaryFile("w+", suffix=".log", delete=False)
     started = time.perf_counter()
+    # As the account that owns the environment; sudo hands the stop on.
     proc = subprocess.Popen(
-        [str(MLX_ENV / "bin" / "mlx_lm.server"), "--model", ctx["qwen"]["path"],
+        ["sudo", "-n", "-u", ACCOUNT, "env", f"HOME={MLX_ENV.parent}",
+         str(MLX_ENV / "bin" / "mlx_lm.server"), "--model", ctx["qwen"]["path"],
          "--host", "127.0.0.1", "--port", str(port)],
         stdin=subprocess.DEVNULL,
         stdout=log, stderr=subprocess.STDOUT,
