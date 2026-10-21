@@ -28,6 +28,11 @@ uncommitted tracked changes and not behind `origin/main`, and `ruff check` /
 test suites: CI does, after the push (docs/maintenance/testing-and-release.md).
 A dependency change stops it, because the lock must be re-resolved first
 (`python scripts/release-inputs.py --resolve --uv <uv>`).
+
+"Not shipped: ..." means nothing was pushed. A stop after a push says so
+instead: "Pushed; could not watch CI: ..." when only the wait failed (a GitHub
+rate limit, say), or "Pushed part of the ship; then it stopped: ..." when a
+later step failed, and both list the pushes. Every stop exits 2.
 """
 
 from __future__ import annotations
@@ -72,6 +77,16 @@ SH_PIN = re.compile(r'(?m)^(SITE_HOST_COMMIT = ")([a-f0-9]{40})(")')
 
 class Stop(Exception):
     """A reason not to ship, worded for the person reading the terminal."""
+
+
+# What this process has pushed so far, for the message when a later step stops
+# it: a stop after a push is not "Not shipped".
+PUSHED: list[str] = []
+
+
+def push(repo: Path, label: str, *args: str) -> None:
+    git(repo, "push", "-q", "origin", *args)
+    PUSHED.append(label)
 
 
 def run(
@@ -297,7 +312,7 @@ def publish_dist(plan: Plan, co_author: str | None, dry_run: bool) -> str:
             str(message),
         )
     if not dry_run:
-        git(repo, "push", "-q", "origin", f"{commit}:refs/heads/dist")
+        push(repo, f"{plan.name} dist {commit[:7]}", f"{commit}:refs/heads/dist")
     return commit
 
 
@@ -373,6 +388,7 @@ def pin_in_agent(
 def ship(
     names: list[str], *, dry_run: bool, co_author: str | None, one_push: bool = False
 ) -> str | None:
+    PUSHED.clear()
     if git(SPECS, "rev-parse", "--abbrev-ref", "HEAD") != "main":
         raise Stop("specs: not on main")
     if git(SPECS, "status", "--porcelain", "--untracked-files=no"):
@@ -433,14 +449,14 @@ def ship(
             )
     for plan in plans.values():
         if plan.push_main and not dry_run:
-            git(plan.repo, "push", "-q", "origin", "HEAD:main")
+            push(plan.repo, f"{plan.name} main {plan.head[:7]}", "HEAD:main")
     if merged and not one_push:
         # Their own push, before the pin commit exists: its run plans their
         # change, and the pin push's run plans the pins alone (P11).
         if dry_run:
             print(f"  specs: would push {merged} merged commit(s) first, on their own")
         else:
-            git(SPECS, "push", "-q", "origin", f"{merged_head}:refs/heads/main")
+            push(SPECS, f"specs main {merged_head[:7]}", f"{merged_head}:refs/heads/main")
             print(
                 f"  specs: pushed {merged} merged commit(s) to {merged_head[:7]} on their own"
             )
@@ -455,7 +471,7 @@ def ship(
     if agent is not None:
         plans["agent"] = agent
         if agent.push_main and not dry_run:
-            git(agent.repo, "push", "-q", "origin", "HEAD:main")
+            push(agent.repo, f"agent main {agent.head[:7]}", "HEAD:main")
     for name in MANIFEST_REPOS:
         if name in plans:
             plans[name].new_pin = plans[name].head
@@ -490,7 +506,7 @@ def ship(
         f"Ship to Edge: {shipped}",
         co_author,
     )
-    git(SPECS, "push", "-q", "origin", "HEAD:main")
+    push(SPECS, f"specs main {commit[:7]}", "HEAD:main")
     alone = "" if one_push and merged else " alone"
     print(
         f"Pushed specs {commit[:7]}{alone}. Edge publishes once its CI and image pass."
@@ -623,18 +639,41 @@ def main() -> int:
     try:
         if args.wait_for:
             return wait_for_edge(git(SPECS, "rev-parse", args.wait_for), args.minutes)
+    except Stop as stop:
+        return report_stop(stop, waiting=True)
+    try:
         commit = ship(
             args.repos,
             dry_run=args.dry_run,
             co_author=args.co_author,
             one_push=args.one_push,
         )
-        if commit and args.wait:
-            return wait_for_edge(commit, args.minutes)
     except Stop as stop:
-        print(f"Not shipped: {stop}", file=sys.stderr)
-        return 2
+        return report_stop(stop, waiting=False)
+    if commit and args.wait:
+        try:
+            return wait_for_edge(commit, args.minutes)
+        except Stop as stop:
+            return report_stop(stop, waiting=True)
     return 0
+
+
+def report_stop(stop: Stop, *, waiting: bool) -> int:
+    """Say why the run stopped, and what it had already pushed. Always exit 2.
+
+    "Not shipped" is true only when nothing was pushed. A stop after the
+    pushes, when only the wait fails (a rate limit, say), leaves the pins on
+    origin, so it says so."""
+    if not PUSHED:
+        lead = "Could not watch CI" if waiting else "Not shipped"
+        print(f"{lead}: {stop}", file=sys.stderr)
+        return 2
+    lead = "Pushed; could not watch CI" if waiting else "Pushed part of the ship; then it stopped"
+    print(f"{lead}: {stop}", file=sys.stderr)
+    print("Already pushed:", file=sys.stderr)
+    for item in PUSHED:
+        print(f"  {item}", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":
