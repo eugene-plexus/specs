@@ -12,9 +12,11 @@ on:
 permissions:
   contents: read
 
+# Each push to main runs to the end, as in CI: a ship's pin push must not
+# cancel the full macOS run of the merged work pushed before it (P11).
 concurrency:
-  group: macos-push-${{ github.ref }}
-  cancel-in-progress: true
+  group: macos-push-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
 
 env:
   GITHUB_TOKEN: ${{ github.token }}

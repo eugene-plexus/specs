@@ -3,8 +3,11 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # Every branch (P1): a branch push plans against its merge-base with main
+  # and tests the same-named branches of the component repositories. `edge`
+  # is moved by the publisher alone; Dependabot's branches run as PRs.
   push:
-    branches: [main]
+    branches: ["**", "!edge", "!dependabot/**"]
   schedule:
     - cron: "23 3 * * 0"
   workflow_dispatch:
@@ -15,6 +18,10 @@ on:
         type: choice
         options: [edge, full]
         default: full
+      base:
+        description: "Optional planner base commit for the edge profile (scripts/branch-ci.py gives the merge-base with main); empty means full coverage"
+        required: false
+        type: string
       agent_ref:
         description: "Optional agent candidate commit; defaults to the release pin"
         required: false
@@ -58,6 +65,10 @@ on:
         required: false
         type: string
         default: full
+      base:
+        description: "Optional planner base commit for the edge profile; empty means full coverage"
+        required: false
+        type: string
       agent_ref:
         description: "Optional agent candidate commit; defaults to the release pin"
         required: false
@@ -98,9 +109,16 @@ on:
 permissions:
   contents: read
 
+# A newer push to a branch, or to a PR, cancels the older run. Each push to
+# main has a group of its own, so it is never cancelled or held pending
+# behind another: a ship's pin push must not stop the full run of the merged
+# work pushed before it (P11). Every other run (a dispatch, the weekly run,
+# and a call from another workflow, which carries its caller's event and run
+# ID) has a group of its own too, so none is held pending or replaced: two
+# branch-ci.py dispatches on main, or Release qualification's call, both run.
 concurrency:
-  group: ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+  group: ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && format('-{0}', github.sha) || (github.event_name != 'push' && github.event_name != 'pull_request' && format('-run-{0}', github.run_id) || '') }}
+  cancel-in-progress: ${{ (github.event_name == 'push' || github.event_name == 'pull_request') && github.ref != 'refs/heads/main' }}
 
 # The agents the acceptance scripts start list engine builds from GitHub's
 # API. A shared runner address meets the anonymous limit of 60 an hour
@@ -123,6 +141,16 @@ jobs:
       instruments: ${{ steps.select.outputs.instruments }}
       macos: ${{ steps.select.outputs.macos }}
       container: ${{ steps.select.outputs.container }}
+      # The planner's base, and each component candidate: a given input, or
+      # on a branch push the component's same-named branch; empty is the pin.
+      base: ${{ steps.select.outputs.base }}
+      agent_ref: ${{ steps.select.outputs.agent_ref }}
+      control_ref: ${{ steps.select.outputs.control_ref }}
+      gateway_ref: ${{ steps.select.outputs.gateway_ref }}
+      inference_driver_ref: ${{ steps.select.outputs.inference_driver_ref }}
+      library_ref: ${{ steps.select.outputs.library_ref }}
+      tool_driver_ref: ${{ steps.select.outputs.tool_driver_ref }}
+      site_host_ref: ${{ steps.select.outputs.site_host_ref }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -139,18 +167,59 @@ jobs:
           python -m unittest discover -s scripts -p test_edge_marker.py -v
           python -m unittest discover -s scripts -p test_release_gate.py -v
           python -m unittest discover -s scripts -p test_roadmap_issues.py -v
+          python -m unittest discover -s scripts -p test_worktree.py -v
+          python -m unittest discover -s scripts -p test_ship.py -v
       - name: Compute gates
         id: select
         env:
-          CI_BASE: ${{ github.event.before || github.event.pull_request.base.sha }}
+          CI_BASE: ${{ github.event.before || github.event.pull_request.base.sha || inputs.base }}
           CI_FULL: ${{ github.event_name == 'schedule' || inputs.profile == 'full' || github.repository != 'eugene-plexus/specs' }}
+          CI_BRANCH: ${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name || '' }}
+          AGENT_REF: ${{ inputs.agent_ref }}
+          CONTROL_REF: ${{ inputs.control_ref }}
+          GATEWAY_REF: ${{ inputs.gateway_ref }}
+          INFERENCE_DRIVER_REF: ${{ inputs.inference_driver_ref }}
+          LIBRARY_REF: ${{ inputs.library_ref }}
+          TOOL_DRIVER_REF: ${{ inputs.tool_driver_ref }}
+          SITE_HOST_REF: ${{ inputs.site_host_ref }}
         shell: python {0}
         run: |
           import os, subprocess, sys
           command = [sys.executable, 'scripts/ci_plan.py', '--base', os.environ.get('CI_BASE', ''), '--head', 'HEAD']
           if os.environ.get('CI_FULL') == 'true':
               command.append('--full')
+          if os.environ.get('CI_BRANCH'):
+              # One argument, so a branch named like an option stays a value.
+              command.append(f"--branch={os.environ['CI_BRANCH']}")
+          for name in ('agent', 'control', 'gateway', 'inference_driver', 'library', 'tool_driver', 'site_host'):
+              if os.environ.get(f'{name.upper()}_REF'):
+                  command += ['--ref', f"{name}={os.environ[f'{name.upper()}_REF']}"]
           subprocess.run(command, check=True)
+
+  # A reduced plan tests what changed since the previous push to main and
+  # trusts that push's own run for the rest. Ships push merged work first and
+  # their pin commit alone (P11), so a reduced run on main passes only once
+  # the run of the push before it has passed: Edge never publishes a pin
+  # commit over merged work whose full run failed or has not finished.
+  # No job-level `permissions: actions: read`: a called workflow's job may not
+  # ask for more than its caller grants, even when skipped, and Release
+  # qualification and the components' Candidate integration grant contents
+  # only (a probe caller granting `contents: read` ended in startup_failure,
+  # run 39627576506). This repository is public; the run's token reads its
+  # Actions runs without it, as Publish Edge's does.
+  previous-push:
+    needs: plan
+    if: github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.full == 'false'
+    name: The previous push to main passed CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Wait for the previous push's CI run, and require that it passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIOUS: ${{ github.event.before }}
+        run: python3 scripts/previous_push.py "$PREVIOUS"
 
   s10-instruments:
     needs: plan
@@ -181,10 +250,18 @@ jobs:
       - name: Verify retained A8 measurement integrity and declared targets
         run: python scripts/a8-summarize.py docs/acceptance/a8-data
 
+  # Pinned integration in parts (W0.3): three parts per system, run side by
+  # side. Each part installs the same pinned components; every acceptance
+  # step after the install runs in exactly one part per system (its
+  # `matrix.shard` clause) under the profile condition it always had. Parts
+  # are balanced by the step times of the full runs of 2026-10-20/21 (run
+  # 39540266361 and its neighbours): about 5.5 minutes of steps each; on
+  # Linux, Job Sites (about 5.3 minutes) has a part to itself. Publish Edge
+  # reads the two aggregate jobs below, not these.
   r7-signing:
     needs: plan
     if: needs.plan.outputs.runtime == 'true'
-    name: Pinned integration (${{ matrix.os }})
+    name: Pinned integration (${{ matrix.os }}, part ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
     # C3 builds an app's environment from its archive with uv (2026-10-01).
     # Job Sites waits up to 75 s for a site's own bundle pull (2026-10-05).
@@ -193,7 +270,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            shard: L1
+          - os: ubuntu-latest
+            shard: L2
+          - os: ubuntu-latest
+            shard: L3
+          - os: windows-latest
+            shard: W1
+          - os: windows-latest
+            shard: W2
+          - os: windows-latest
+            shard: W3
     steps:
       - uses: actions/checkout@v6
         with:
@@ -218,32 +307,32 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
+          ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/control
-          ref: ${{ inputs.control_ref || steps.pins.outputs.control }}
+          ref: ${{ needs.plan.outputs.control_ref || steps.pins.outputs.control }}
           path: control
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/gateway
-          ref: ${{ inputs.gateway_ref || steps.pins.outputs.gateway }}
+          ref: ${{ needs.plan.outputs.gateway_ref || steps.pins.outputs.gateway }}
           path: gateway
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/library
-          ref: ${{ inputs.library_ref || steps.pins.outputs.library }}
+          ref: ${{ needs.plan.outputs.library_ref || steps.pins.outputs.library }}
           path: library
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
-          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
+          ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/tool-driver
-          ref: ${{ inputs.tool_driver_ref || steps.pins.outputs.tool_driver }}
+          ref: ${{ needs.plan.outputs.tool_driver_ref || steps.pins.outputs.tool_driver }}
           path: tool-driver
       # The site host the agent installs, at the commit the agent pins: the
       # Job Sites acceptance installs it from this checkout (J6, 2026-10-05).
@@ -261,7 +350,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/site-host
-          ref: ${{ inputs.site_host_ref || steps.site_host.outputs.commit }}
+          ref: ${{ needs.plan.outputs.site_host_ref || steps.site_host.outputs.commit }}
           path: site-host
       # Component dev extras pin independent lint/codegen toolchains. Only the
       # shared test runner belongs in this cross-component environment.
@@ -275,7 +364,7 @@ jobs:
       - name: Check installed dependency consistency
         run: python -m pip check
       - name: Verify durable run protocol when both consumers provide it
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         shell: python {0}
         run: |
           import importlib.util, subprocess, sys
@@ -286,123 +375,161 @@ jobs:
           else:
               print("Pre-operation release pins: legacy compatibility checks still apply; run recovery activates when both consumers are upgraded.")
       - name: Score the shipped starter set for 8 GB GPU and 16 GB RAM
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/s10-starter-check.py
       - name: One token module in five repos, and nothing of the shared-key model left
+        if: matrix.shard == 'L1' || matrix.shard == 'W3'
         run: python specs/scripts/r7-signing-checks.py
       - name: Rotate the root's token key across two live agents
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
       - name: A stolen worker key tried against every other process, then revoked
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/row3-per-node-keys-acceptance.py --lan
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
       - name: Verify engines declare what they accept and the Library judges (LS1)
+        if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/ls1-eligibility-acceptance.py
       - name: Verify Discover's verdicts before download, against a fake hub on loopback (LS2)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls2-discover-acceptance.py
       - name: Verify a prepared model is a Library model, Run to ready on a stand-in Strata (LS3)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls3-prepared-acceptance.py
       - name: Verify catalogue sources are a list and Strata publishes its own, against two fake hubs (LS4)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls4-sources-acceptance.py
       - name: Verify LS5 timeout diagnostics preserve the operation state
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls5-preparation-checks.py
       - name: Verify preparation is a job on the engine's node, with a stand-in Strata setup (LS5)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls5-preparation-acceptance.py
       - name: Verify runtime Stop waits for descendants and refuses stale Strata listeners
+        if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/runtime-stop-acceptance.py
       - name: Verify each engine owns its fit model, from declaration to judge to admission (LS6)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls6-fit-acceptance.py
       - name: Verify a node runs a prepared model from its own copy of the Library's files (LS7a)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls7-copy-acceptance.py
       - name: Verify the Library says what is known of a prepared model (LS7b)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls7b-facts-acceptance.py
       - name: Verify a model is deleted from the Library, any format, all or nothing (LS8)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls8-delete-acceptance.py
       - name: Verify A3 client-key revocation and outage bounds across five processes
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/a3-client-keys-acceptance.py
       - name: Verify A5 scoped keys, shared limits, cancellation and usage across gateways
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/a5-scoped-keys-acceptance.py
       - name: Verify A6 local-only routing through signed components and real drivers
+        if: matrix.shard == 'L3' || matrix.shard == 'W3'
         run: python specs/scripts/a6-local-only-acceptance.py
       - name: Verify A6b uncertain outcomes, cooldown, deadlines and CLI side effects
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/a6b-failover-acceptance.py
       - name: Verify P2a audio and PDF inputs at every door through signed processes
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p2-media-acceptance.py
       - name: Verify P3 streaming timing is independent of request startup
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p3-audio-checks.py
       - name: Verify P3 speech and transcription through signed processes and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p3-audio-acceptance.py
       - name: Verify P4 image generation and edits through signed processes and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p4-images-acceptance.py
       - name: Verify P5 video jobs through signed processes, a gateway restart and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p5-videos-acceptance.py
       - name: Verify P6 moderations, model lookup and completions through signed processes and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p6-acceptance.py
       - name: Verify P8 web search through agent-spawned search accounts and the unchanged OpenAI and Anthropic SDKs
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/p8-search-acceptance.py
       - name: Verify Google Search beside Brave (grounded answer verbatim, real addresses, Search Suggestions on every door, the person's search order)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/google-search-acceptance.py
       - name: Verify a Gemini account (native API, thought signatures, every surface) through signed processes and the unchanged OpenAI SDK
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/gemini-acceptance.py
       - name: Verify the gateway and driver pair on stand-in providers (tools are assumed - header agreement, slots, counts, stream heads)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/tools-assumed-acceptance.py
       - name: Verify interactive UI inference prerequisites through gateway and drivers
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/genui-inference-acceptance.py --report genui-inference.json
       - name: Verify the UI inference gate detects lost structured-output settings
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/genui-inference-sabotage.py
       - name: Keep UI inference prerequisite evidence
-        if: always() && needs.plan.outputs.full == 'true'
+        if: always() && (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: genui-inference-${{ matrix.os }}
           path: genui-inference.json
           if-no-files-found: ignore
       - name: Verify C2 sign-in with Eugene through an agent, with a real OpenID Connect client
+        if: matrix.shard == 'L1' || matrix.shard == 'W3'
         run: python specs/scripts/c2-sign-in-acceptance.py
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/c3-workbench-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py
       - name: Verify the warm standby is granted, follows, is revoked and promotes (control#5)
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/standby-acceptance.py
       - name: Verify Job Sites through the public node route, real Caddy and a joined site
         # The entry point is the Linux container's; the Windows topology (the
         # root in WSL2) is run by hand with --root-wsl.
-        if: runner.os == 'Linux' && needs.plan.outputs.full == 'true'
+        if: matrix.shard == 'L1' && runner.os == 'Linux' && needs.plan.outputs.full == 'true'
         run: python specs/scripts/job-sites-acceptance.py
       - name: Verify A7 encrypted checkpoints and destructive restore refusals
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/a7-recovery-checks.py
       - name: Detect deliberately broken R8 profile defaults
-        if: needs.plan.outputs.full == 'true'
+        if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r8-profile-checks.py
+
+  # The receipts Publish Edge reads (edge_marker.RUNTIME_JOBS), under the
+  # unsplit job's names. Each passes only if every part on Linux and Windows
+  # passed: a failed, skipped or cancelled part fails both.
+  pinned-integration:
+    needs: [plan, r7-signing]
+    if: ${{ !cancelled() && needs.plan.outputs.runtime == 'true' }}
+    name: Pinned integration (${{ matrix.os }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - name: Every part on Linux and Windows passed
+        env:
+          PARTS: ${{ needs.r7-signing.result }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+        run: |
+          if [ "$PARTS" != success ]; then
+            # Name the parts that did not pass; the verdict never depends on this lookup.
+            failed=$(gh api "repos/$REPOSITORY/actions/runs/$RUN/jobs?per_page=100&filter=latest" \
+              --jq '[.jobs[] | select((.name | contains("Pinned integration (")) and (.name | contains(", part ")) and .conclusion != "success") | "\(.name): \(.conclusion // .status)"] | join("; ")' \
+              2>/dev/null || true)
+            echo "::error::The pinned integration parts concluded '$PARTS'${failed:+ ($failed)}; every part on both systems must pass"
+            exit 1
+          fi
+          echo "Every pinned integration part on Linux and Windows passed."
 
   # LT1, the check of record: two containers on a bridge, tcpdump in the
   # worker's namespace, and the sabotage the design names (tls-between-machines.md §5).
@@ -433,27 +560,27 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
+          ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/control
-          ref: ${{ inputs.control_ref || steps.pins.outputs.control }}
+          ref: ${{ needs.plan.outputs.control_ref || steps.pins.outputs.control }}
           path: control
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/gateway
-          ref: ${{ inputs.gateway_ref || steps.pins.outputs.gateway }}
+          ref: ${{ needs.plan.outputs.gateway_ref || steps.pins.outputs.gateway }}
           path: gateway
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/library
-          ref: ${{ inputs.library_ref || steps.pins.outputs.library }}
+          ref: ${{ needs.plan.outputs.library_ref || steps.pins.outputs.library }}
           path: library
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
-          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
+          ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
       - name: Nothing crosses in clear text, and the sabotage is refused
         run: >-
@@ -473,16 +600,17 @@ jobs:
             ${{ runner.temp }}/lt1/result.*
             ${{ runner.temp }}/lt1-automatic/result.*
 
-  # On a push, macOS runs in macos-push.yml so Edge does not wait for it.
+  # On a push to main, macOS runs in macos-push.yml so Edge does not wait for
+  # it. A branch push runs it here: a branch's CI is its merge gate.
   macos:
     needs: plan
-    if: needs.plan.outputs.macos == 'true' && github.event_name != 'push'
+    if: needs.plan.outputs.macos == 'true' && (github.event_name != 'push' || github.ref != 'refs/heads/main')
     uses: ./.github/workflows/a4-macos.yml
     with:
-      agent_ref: ${{ inputs.agent_ref }}
-      library_ref: ${{ inputs.library_ref }}
-      gateway_ref: ${{ inputs.gateway_ref }}
-      driver_ref: ${{ inputs.inference_driver_ref }}
+      agent_ref: ${{ needs.plan.outputs.agent_ref }}
+      library_ref: ${{ needs.plan.outputs.library_ref }}
+      gateway_ref: ${{ needs.plan.outputs.gateway_ref }}
+      driver_ref: ${{ needs.plan.outputs.inference_driver_ref }}
       platforms: ${{ needs.plan.outputs.full == 'true' && '["macos-14","macos-15","macos-26"]' || '["macos-26"]' }}
 
   app-accounts:
@@ -490,25 +618,25 @@ jobs:
     if: needs.plan.outputs.full == 'true'
     uses: ./.github/workflows/c1-app-accounts.yml
     with:
-      agent_ref: ${{ inputs.agent_ref }}
-      control_ref: ${{ inputs.control_ref }}
-      gateway_ref: ${{ inputs.gateway_ref }}
+      agent_ref: ${{ needs.plan.outputs.agent_ref }}
+      control_ref: ${{ needs.plan.outputs.control_ref }}
+      gateway_ref: ${{ needs.plan.outputs.gateway_ref }}
 
   open-webui:
     needs: plan
     if: needs.plan.outputs.full == 'true'
     uses: ./.github/workflows/c4-open-webui.yml
     with:
-      agent_ref: ${{ inputs.agent_ref }}
-      control_ref: ${{ inputs.control_ref }}
-      gateway_ref: ${{ inputs.gateway_ref }}
+      agent_ref: ${{ needs.plan.outputs.agent_ref }}
+      control_ref: ${{ needs.plan.outputs.control_ref }}
+      gateway_ref: ${{ needs.plan.outputs.gateway_ref }}
 
   folder-tools:
     needs: plan
     if: needs.plan.outputs.full == 'true'
     uses: ./.github/workflows/c6-folder-tools.yml
     with:
-      agent_ref: ${{ inputs.agent_ref }}
+      agent_ref: ${{ needs.plan.outputs.agent_ref }}
 
   r7-launch-boundary:
     needs: plan
@@ -544,12 +672,12 @@ jobs:
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/agent
-          ref: ${{ inputs.agent_ref || steps.pins.outputs.agent }}
+          ref: ${{ needs.plan.outputs.agent_ref || steps.pins.outputs.agent }}
           path: agent
       - uses: actions/checkout@v6
         with:
           repository: eugene-plexus/inference-driver
-          ref: ${{ inputs.inference_driver_ref || steps.pins.outputs.driver }}
+          ref: ${{ needs.plan.outputs.inference_driver_ref || steps.pins.outputs.driver }}
           path: inference-driver
       - name: Install locked runtime and build dependencies
         run: |
@@ -604,11 +732,12 @@ jobs:
         # This commit's own installer is what the helper downloads, so the
         # target must be one raw.githubusercontent.com can serve: a pull
         # request's merge commit is not.
-        # On a push the install starts from the previous push's installer,
-        # so a commit that moves a pin is a real version change.
+        # On a push the install starts from the planner's base (the previous
+        # push on main, the merge-base on a branch), so a commit that moves a
+        # pin is a real version change.
         env:
           EP_TARGET: ${{ github.event.pull_request.head.sha || github.sha }}
-          EP_FROM: ${{ github.event.before || github.event.pull_request.base.sha }}
+          EP_FROM: ${{ needs.plan.outputs.base }}
         run: |
           sudo env EP_PERSON="$(id -un)" EP_TARGET="$EP_TARGET" EP_FROM="$EP_FROM" \
             bash scripts/updates-system-install-acceptance.sh 2>&1 | tee update-run.log

@@ -59,20 +59,20 @@ set -eu
 
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
-PIN_AGENT=74d84275c62dd0ef117290fd436dcb0b3b08e95b
-PIN_CONTROL=f083a3c4b36df9fa110c2e77eecb4b1f6a4c4e01
-PIN_GATEWAY=c81c70b165c0144bfd2776146c330d14b525b29d
-PIN_DRIVER=fe020c6519289d2f5f0e70539d310fa8269d2287
-PIN_LIBRARY=d38304c8dfb8c159c1da194376e13e82460a547f
-PIN_TOOL_DRIVER=2cad2af12d85e67720dc47bc518eb877efce40a2
-PIN_UI=ea2e1913c21d745b74c6c32e0ee2d260221d369a   # branch `dist`, not `main`
+PIN_AGENT=88e269ff9d8414e28e424d14aba28eb795a7ed75
+PIN_CONTROL=3353010b83371361720ab8571b8187132e93bdbe
+PIN_GATEWAY=3573226af5ba984412c9ee635b35034dd59fd350
+PIN_DRIVER=8cff45c11cbab066fbab3251a1be5fda9e5a49c4
+PIN_LIBRARY=ee90e7e0c72d1a1ca8d49c7d48178c02e81ead3c
+PIN_TOOL_DRIVER=202cee4f159e6bb006ee80ec3a5ca9c0bab5fb89
+PIN_UI=1722adba03eaeed8b1cba4a52c5ebb11d46aa8f5   # branch `dist`, not `main`
 
 # The job-site host (Linux system installs only; root installs and runs it,
 # see "a job site on a Linux system install" below). Not in the generated
 # block above: it is not one of the seven packages in the agent's prefix. It
 # must equal SITE_HOST_COMMIT in agent/src/eugene_plexus_agent/site_host.py,
 # and it moves at landing, with the agent's pin.
-PIN_SITE_HOST=5a4e3515177a02ed565210050250f70354ce5d03
+PIN_SITE_HOST=ec0d79af75c58205cb9a97fff4abfa7d53970220
 
 PY_VERSION=3.12
 # **The oldest uv this installer keeps** (2026-10-03). An install keeps the

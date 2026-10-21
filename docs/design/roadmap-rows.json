@@ -343,7 +343,8 @@
    "lane_order": 4,
    "repos": [
     "specs",
-    "agent"
+    "agent",
+    "ui"
    ],
    "contract": "",
    "hot_files": [
@@ -351,9 +352,10 @@
     "specs/scripts/install.ps1",
     "agent/src/eugene_plexus_agent/reach.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-08.md",
     "windows-comes-back-by-itself.md",
     "node-labels.md"
    ],
@@ -418,11 +420,12 @@
     "specs/scripts (new sweep)",
     "agent/src/eugene_plexus_agent/benchmarks.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     2
    ],
    "design_docs": [
+    "rows/row-10.md",
     "deepinfer-lessons.md",
     "llm-d-lessons.md"
    ],
@@ -490,7 +493,9 @@
    "lane_order": 3,
    "repos": [
     "gateway",
-    "agent"
+    "agent",
+    "control",
+    "ui"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
@@ -498,11 +503,12 @@
     "gateway/src/eugene_plexus_gateway/routes/metrics.py",
     "gateway/src/eugene_plexus_gateway/decisions.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     11
    ],
    "design_docs": [
+    "rows/row-12.md",
     "llm-d-lessons.md",
     "m8-retained-request-metrics.md",
     "metrics-dashboard.md"
@@ -540,6 +546,7 @@
     11
    ],
    "design_docs": [
+    "rows/row-13.md",
     "deepinfer-lessons.md"
    ],
    "calls": [
@@ -673,9 +680,10 @@
     "agent/src/eugene_plexus_agent/engines/speculation.py",
     "library/src/eugene_plexus_library/scanner.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-17.md",
     "speculative-decoding.md"
    ],
    "calls": [],
@@ -860,9 +868,10 @@
     "workbench/src/eugene_plexus_workbench/folder_windows.py",
     "workbench/src/eugene_plexus_workbench/folder_linux.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-23.md",
     "workbench-files.md"
    ],
    "calls": [],
@@ -918,7 +927,8 @@
     "agent",
     "site-host",
     "workbench",
-    "ui"
+    "ui",
+    "control"
    ],
    "contract": "agent.yaml? site-host.yaml?",
    "hot_files": [
@@ -926,11 +936,11 @@
     "agent/src/eugene_plexus_agent/apps.py",
     "site-host/src/eugene_plexus_site_host/workspace_tools.py"
    ],
-   "design_state": "full",
-   "needs": [
-    24
+   "design_state": "ready",
+   "needs": [],
+   "design_docs": [
+    "rows/row-25.md"
    ],
-   "design_docs": [],
    "calls": [],
    "issue": 52
   },
@@ -956,9 +966,11 @@
     "workbench/src/eugene_plexus_workbench/conversation.py",
     "workbench/src/eugene_plexus_workbench/store.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-26.md"
+   ],
    "calls": [],
    "issue": 53
   },
@@ -989,6 +1001,7 @@
     7
    ],
    "design_docs": [
+    "rows/row-27.md",
     "workbench-memory-v2.md"
    ],
    "calls": [
@@ -1017,9 +1030,10 @@
     "workbench/src/eugene_plexus_workbench/answers.py",
     "workbench/src/eugene_plexus_workbench/store.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-28.md",
     "workbench-answer-versions.md"
    ],
    "calls": [],
@@ -1078,12 +1092,13 @@
    "contract": "components/job-sites.yaml?",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/knowledge/ingest.py",
-    "workbench/src/eugene_plexus_workbench/folder_sync.py",
+    "workbench/src/eugene_plexus_workbench/knowledge/folder_sync.py",
     "workbench/src/eugene_plexus_workbench/store.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-30.md",
     "workbench-memory-and-documents.md",
     "workbench-folders.md"
    ],
@@ -1112,9 +1127,10 @@
     "workbench/web/src/components/MessageView.tsx",
     "workbench/src/eugene_plexus_workbench/artifacts.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-31.md",
     "workbench-reading.md"
    ],
    "calls": [],
@@ -1204,9 +1220,10 @@
     "agent/src/eugene_plexus_agent/apps.py",
     "agent/src/eugene_plexus_agent/apps_catalogue.yaml"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-34.md",
     "c4-open-webui.md"
    ],
    "calls": [],
@@ -1234,9 +1251,10 @@
     "agent/src/eugene_plexus_agent/tray.py",
     "agent/src/eugene_plexus_agent/tokens.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-35.md",
     "windows-comes-back-by-itself.md"
    ],
    "calls": [],
@@ -2151,9 +2169,11 @@
     "library/src/eugene_plexus_library/starter.py",
     "library/src/eugene_plexus_library/starter_models.yaml"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-64.md"
+   ],
    "calls": [],
    "issue": 91
   },
@@ -2179,9 +2199,10 @@
     "library/src/eugene_plexus_library/ollama_detect.py",
     "library/src/eugene_plexus_library/formats/ollama.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-65.md",
     "console-ux-pass.md"
    ],
    "calls": [],

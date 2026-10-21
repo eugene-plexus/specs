@@ -304,6 +304,32 @@ class EdgeTests(unittest.TestCase):
         api.return_value["jobs"][1]["conclusion"] = "success"
         self.assertTrue(edge_marker.runtime_passed({"id": 1}))
 
+    @patch("edge_marker.api")
+    def test_every_part_of_split_pinned_integration_must_pass(self, api) -> None:
+        def receipt(part_conclusion, aggregates: bool = True) -> dict:
+            jobs = [
+                {"name": f"Pinned integration ({system}, part {part})", "conclusion": "success"}
+                for system, parts in (("ubuntu-latest", "L"), ("windows-latest", "W"))
+                for part in (f"{parts}1", f"{parts}2", f"{parts}3")
+            ]
+            jobs[4]["conclusion"] = part_conclusion
+            if aggregates:
+                jobs += [
+                    {"name": "Pinned integration (ubuntu-latest)", "conclusion": "success"},
+                    {"name": "Pinned integration (windows-latest)", "conclusion": "success"},
+                ]
+            jobs.append({"name": "Secret scan (gitleaks)", "conclusion": "skipped"})
+            return {"jobs": jobs, "total_count": len(jobs)}
+
+        for conclusion in ("skipped", "failure", "cancelled", None):
+            with self.subTest(part=conclusion):
+                api.return_value = receipt(conclusion)
+                self.assertFalse(edge_marker.runtime_passed({"id": 1}))
+        api.return_value = receipt("success", aggregates=False)
+        self.assertFalse(edge_marker.runtime_passed({"id": 1}))
+        api.return_value = receipt("success")
+        self.assertTrue(edge_marker.runtime_passed({"id": 1}))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -55,8 +55,26 @@ the reduced plan. Markdown fixtures under scripts are not documentation.
   A scheduled failure is visible but does not automatically veto every Edge build.
   A discovered security or data-loss defect requires the safety hold below.
 
-Superseded push/PR validation may be canceled. Qualification and publication are
-not canceled in progress. The reusable platform/service workflows no longer
+A push to any branch runs CI (2026-10-21, P1). On `main` the planner's base is
+the previous push. On any other branch it is the branch's merge-base with
+`main`, and each component repository's branch of the same name, if it has
+one, is tested in place of that component's pin. A candidate counts as a pin
+change of its component; a site-host candidate selects full coverage, as a
+site-host ship does. `scripts/branch-ci.py <branch>` dispatches the same run
+by hand, after component branches move or when specs has no such branch.
+
+Superseded branch and PR validation may be canceled. Each push to `main` runs
+to the end, never canceled or held behind another push; so does each dispatch,
+weekly run and call from another workflow (Release qualification's included). `ship.py` pushes
+merged specs commits first and its pin commit alone (P11), so the pin push
+plans the pins only; `--one-push` keeps them together for a merged script that
+needs the new component code. A reduced plan on `main` trusts the previous
+push's run for everything it did not change, so that run passes only after the
+previous push's CI has passed (`scripts/previous_push.py`); the chain ends at a
+run that planned full coverage. A red run on `main` therefore holds every later
+reduced push, pin-only fixes included, until it is re-run and passes or a
+full-plan push lands. Qualification and
+publication are not canceled in progress. The reusable platform/service workflows no longer
 also run independently for the same push. Component repositories retain their
 own CI; this change does not remove their unit suites or codegen checks.
 
@@ -70,6 +88,13 @@ The publisher walks main's actual first-parent history, newest first, and
 requires a successful push CI receipt plus real Linux/Windows runtime-job
 receipts for identical inputs. A green documentation commit cannot conceal a
 canceled or failed runtime check. Skipped jobs are not evidence.
+
+Pinned integration runs in three parts per system side by side (W0.3); each
+acceptance step runs in exactly one part, under the profile condition it had
+before. The runtime receipts keep the unsplit job's names, `Pinned
+integration (ubuntu-latest)` and `(windows-latest)`, and pass only when every
+part on both systems passed; the publisher also requires every job named
+`Pinned integration (...)`, each part included, to have passed.
 
 Runtime fingerprints include tracked code, contracts, dependency locks,
 workflows, harnesses and configuration. Image fingerprints include installers,

@@ -1,14 +1,67 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import unittest
 from pathlib import Path
 
+import edge_marker
+import ship
 import yaml
-from ci_plan import CHECKS
+from ci_plan import CHECKS, OUTPUTS, REF_INPUTS
 
 WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
+
+# Pinned integration as it stood unsplit (main at 049a602): 15 install steps,
+# then these acceptance steps, by script (or step name), with the profile
+# each runs in ("every" profile, "full" only, or "always-full": even after a
+# failure, full only) and its systems. A change here is a gate change.
+SETUP_STEPS = 15
+FULL, EVERY = "full", "every"
+PINNED_STEPS = {
+    "run-operations-checks.py": (FULL, "both"),
+    "s10-starter-check.py": (FULL, "both"),
+    "r7-signing-checks.py": (EVERY, "both"),
+    "r7-rotation-acceptance.py": (FULL, "both"),
+    "row3-per-node-keys-acceptance.py": (EVERY, "both"),
+    "r8-profile-acceptance.py": (EVERY, "both"),
+    "ls1-eligibility-acceptance.py": (EVERY, "both"),
+    "ls2-discover-acceptance.py": (FULL, "both"),
+    "ls3-prepared-acceptance.py": (FULL, "both"),
+    "ls4-sources-acceptance.py": (FULL, "both"),
+    "ls5-preparation-checks.py": (FULL, "both"),
+    "ls5-preparation-acceptance.py": (FULL, "both"),
+    "runtime-stop-acceptance.py": (EVERY, "both"),
+    "ls6-fit-acceptance.py": (FULL, "both"),
+    "ls7-copy-acceptance.py": (FULL, "both"),
+    "ls7b-facts-acceptance.py": (FULL, "both"),
+    "ls8-delete-acceptance.py": (FULL, "both"),
+    "a3-client-keys-acceptance.py": (FULL, "both"),
+    "a5-scoped-keys-acceptance.py": (FULL, "both"),
+    "a6-local-only-acceptance.py": (EVERY, "both"),
+    "a6b-failover-acceptance.py": (FULL, "both"),
+    "p2-media-acceptance.py": (FULL, "both"),
+    "p3-audio-checks.py": (FULL, "both"),
+    "p3-audio-acceptance.py": (FULL, "both"),
+    "p4-images-acceptance.py": (FULL, "both"),
+    "p5-videos-acceptance.py": (FULL, "both"),
+    "p6-acceptance.py": (FULL, "both"),
+    "p8-search-acceptance.py": (FULL, "both"),
+    "google-search-acceptance.py": (FULL, "both"),
+    "gemini-acceptance.py": (FULL, "both"),
+    "tools-assumed-acceptance.py": (FULL, "both"),
+    "genui-inference-acceptance.py": (FULL, "both"),
+    "genui-inference-sabotage.py": (FULL, "both"),
+    "Keep UI inference prerequisite evidence": ("always-full", "both"),
+    "c2-sign-in-acceptance.py": (EVERY, "both"),
+    "c3-workbench-acceptance.py": (EVERY, "both"),
+    "update-all-acceptance.py": (FULL, "both"),
+    "standby-acceptance.py": (FULL, "both"),
+    "job-sites-acceptance.py": (FULL, "linux"),
+    "a7-recovery-checks.py": (FULL, "both"),
+    "r8-profile-checks.py": (FULL, "both"),
+}
 
 
 def workflow(name: str) -> dict:
@@ -44,9 +97,186 @@ class WiringTests(unittest.TestCase):
             [sys.executable, "-c", imports], cwd=WORKFLOWS.parent.parent, check=True
         )
 
+    def test_branch_pushes_run_ci_and_main_pushes_are_never_cancelled(self) -> None:
+        ci = workflow("ci.yml")
+        self.assertEqual(ci["on"]["push"]["branches"], ["**", "!edge", "!dependabot/**"])
+        self.assertEqual(ci["on"]["pull_request"]["branches"], ["main"])
+        self.assertTrue(ci["on"]["schedule"])
+        group = ci["concurrency"]["group"]
+        cancel = ci["concurrency"]["cancel-in-progress"]
+        # Main's pushes each get a group of their own; others keep the old group.
+        self.assertTrue(
+            group.startswith(
+                "ci-${{ github.repository }}-${{ github.event_name }}-${{ github.ref }}"
+            )
+        )
+        self.assertIn(
+            "github.event_name == 'push' && github.ref == 'refs/heads/main' && "
+            "format('-{0}', github.sha)",
+            group,
+        )
+        # Dispatches, the weekly run and calls (which carry the caller's event
+        # and run ID) each get a group of their own: none waits or is replaced.
+        self.assertIn(
+            "github.event_name != 'push' && github.event_name != 'pull_request' && "
+            "format('-run-{0}', github.run_id)",
+            group,
+        )
+        self.assertIn("github.ref != 'refs/heads/main'", cancel)
+        self.assertIn("github.event_name == 'pull_request'", cancel)
+        self.assertNotIn("schedule", cancel)
+        self.assertNotIn("workflow_dispatch", cancel)
+        macos = workflow("macos-push.yml")["concurrency"]
+        self.assertIn("github.sha", macos["group"])
+        self.assertEqual(macos["cancel-in-progress"], "false")
+
+    def test_only_a_specs_branch_push_resolves_component_branches(self) -> None:
+        select = next(
+            step
+            for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
+            if step.get("id") == "select"
+        )
+        self.assertEqual(
+            select["env"]["CI_BRANCH"],
+            "${{ github.repository == 'eugene-plexus/specs' && github.event_name == 'push' "
+            "&& github.ref != 'refs/heads/main' && github.ref_name || '' }}",
+        )
+        # Main pushes and PRs keep their base; a dispatch may give one.
+        self.assertEqual(
+            select["env"]["CI_BASE"],
+            "${{ github.event.before || github.event.pull_request.base.sha || inputs.base }}",
+        )
+        for name in REF_INPUTS:
+            self.assertEqual(select["env"][f"{name.upper()}_REF"], f"${{{{ inputs.{name}_ref }}}}")
+
+    def test_every_job_tests_the_planned_component_refs(self) -> None:
+        ci = workflow("ci.yml")
+        text = (WORKFLOWS / "ci.yml").read_text(encoding="utf-8")
+        jobs_text = text.split("\n  s10-instruments:\n", 1)[1]
+        for name in REF_INPUTS:
+            with self.subTest(ref=name):
+                self.assertNotIn(f"inputs.{name}_ref", jobs_text)
+        for job in ci["jobs"].values():
+            for step in job.get("steps", []):
+                repository = step.get("with", {}).get("repository", "")
+                component = repository.removeprefix("eugene-plexus/").replace("-", "_")
+                if component in REF_INPUTS:
+                    self.assertIn(f"needs.plan.outputs.{component}_ref", step["with"]["ref"])
+
+    def test_every_pinned_integration_step_runs_once_per_system(self) -> None:
+        job = workflow("ci.yml")["jobs"]["r7-signing"]
+        legs = job["strategy"]["matrix"]["include"]
+        systems = {"ubuntu-latest": "L", "windows-latest": "W"}
+        self.assertEqual(
+            sorted((leg["os"], leg["shard"]) for leg in legs),
+            sorted(
+                (system, f"{letter}{part}")
+                for system, letter in systems.items()
+                for part in "123"
+            ),
+        )
+        clause = re.compile(r"matrix\.shard == '([LW][123])'")
+        steps = job["steps"]
+        first = next(i for i, step in enumerate(steps) if "matrix.shard" in step.get("if", ""))
+        self.assertEqual(steps[first - 1]["name"], "Check installed dependency consistency")
+        # Every part installs the same components: no setup step is split.
+        self.assertEqual(first, SETUP_STEPS)
+        for step in steps[:first]:
+            self.assertNotIn("matrix.shard", step.get("if", ""))
+        found: dict[str, tuple[str, str]] = {}
+        for step in steps[first:]:
+            with self.subTest(step=step["name"]):
+                condition = step.get("if", "")
+                parts = clause.findall(condition)
+                linux = [part for part in parts if part.startswith("L")]
+                windows = [part for part in parts if part.startswith("W")]
+                self.assertEqual(len(linux), 1)
+                self.assertLessEqual(len(windows), 1)
+                # The part clause is ANDed onto a condition the unsplit job had.
+                bare = " || ".join(f"matrix.shard == '{part}'" for part in linux + windows)
+                part = f"({bare})" if windows else bare
+                full = "needs.plan.outputs.full == 'true'"
+                gates = {
+                    bare: "every",
+                    f"{part} && {full}": "full",
+                    f"always() && {part} && {full}": "always-full",
+                    f"{part} && runner.os == 'Linux' && {full}": "full",
+                }
+                self.assertIn(condition, gates)
+                script = re.search(r"specs/scripts/([\w.-]+\.py)", step.get("run", ""))
+                key = script.group(1) if script else step["name"]
+                self.assertNotIn(key, found)
+                found[key] = (gates[condition], "both" if windows else "linux")
+        # The unsplit job's steps, each with its profile and systems: dropping
+        # a step, or moving it between profiles or systems, fails here.
+        self.assertEqual(found, PINNED_STEPS)
+        self.assertEqual(len(steps), SETUP_STEPS + len(PINNED_STEPS))
+
+    def test_publish_edge_reads_aggregates_that_need_every_part(self) -> None:
+        jobs = workflow("ci.yml")["jobs"]
+        aggregate = jobs["pinned-integration"]
+        self.assertEqual(aggregate["needs"], ["plan", "r7-signing"])
+        self.assertEqual(
+            aggregate["if"], "${{ !cancelled() && needs.plan.outputs.runtime == 'true' }}"
+        )
+        names = {
+            aggregate["name"].replace("${{ matrix.os }}", system)
+            for system in aggregate["strategy"]["matrix"]["os"]
+        }
+        self.assertEqual(names, set(edge_marker.RUNTIME_JOBS))
+        check = aggregate["steps"][0]
+        self.assertEqual(check["env"]["PARTS"], "${{ needs.r7-signing.result }}")
+        self.assertIn('if [ "$PARTS" != success ]; then', check["run"])
+        self.assertIn("exit 1", check["run"])
+        # Every part's name falls under the prefix Publish Edge requires to pass.
+        self.assertTrue(jobs["r7-signing"]["name"].startswith(edge_marker.RUNTIME_PREFIX))
+        self.assertEqual(jobs["r7-signing"]["strategy"]["fail-fast"], "false")
+
+    def test_a_reduced_run_on_main_needs_the_previous_push_to_have_passed(self) -> None:
+        guard = workflow("ci.yml")["jobs"]["previous-push"]
+        self.assertEqual(guard["needs"], "plan")
+        self.assertEqual(
+            guard["if"],
+            "github.repository == 'eugene-plexus/specs' && github.event_name == 'push' "
+            "&& github.ref == 'refs/heads/main' && needs.plan.outputs.full == 'false'",
+        )
+        self.assertEqual(guard["name"], ship.GUARD_JOB)
+        step = guard["steps"][-1]
+        self.assertEqual(step["env"]["PREVIOUS"], "${{ github.event.before }}")
+        self.assertEqual(step["run"], 'python3 scripts/previous_push.py "$PREVIOUS"')
+        self.assertGreater(int(guard["timeout-minutes"]), 55)
+        checks = next(
+            step["run"]
+            for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
+            if step.get("name") == "Check CI planning"
+        )
+        self.assertIn("test_ship.py", checks)
+
+    def test_no_ci_job_asks_for_more_than_its_callers_grant(self) -> None:
+        # A called workflow's job asking for more than its caller grants fails
+        # the caller at startup, even when the job is skipped (run 39627576506).
+        # Release qualification and the components' Candidate integration grant
+        # contents: read (and packages, which no CI job asks for).
+        ci = workflow("ci.yml")
+        self.assertEqual(ci["permissions"], {"contents": "read"})
+        for name, job in ci["jobs"].items():
+            with self.subTest(job=name):
+                self.assertIn(job.get("permissions", {"contents": "read"}), [{"contents": "read"}])
+        granted = workflow("release-qualification.yml")["permissions"]
+        self.assertEqual(granted.get("contents"), "read")
+
+    def test_the_branch_reaches_the_planner_as_one_argument(self) -> None:
+        select = next(
+            step
+            for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
+            if step.get("id") == "select"
+        )
+        self.assertIn("command.append(f\"--branch={os.environ['CI_BRANCH']}\")", select["run"])
+
     def test_planner_outputs_and_scoped_jobs_are_connected(self) -> None:
         jobs = workflow("ci.yml")["jobs"]
-        self.assertEqual(set(jobs["plan"]["outputs"]), set(CHECKS))
+        self.assertEqual(set(jobs["plan"]["outputs"]), set(OUTPUTS))
+        self.assertLessEqual(set(CHECKS), set(OUTPUTS))
         for name, gate in {
             "r7-signing": "runtime",
             "r7-launch-boundary": "launch",

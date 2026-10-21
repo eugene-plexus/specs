@@ -178,17 +178,32 @@ def successful_run(workflow: str, commit: str) -> Receipt | None:
     return None
 
 
-def passed_jobs(receipt: Receipt) -> set[str]:
+# CI's runtime receipt. Pinned integration runs in parts (W0.3); these two
+# jobs keep the unsplit job's names and pass only when every part passed.
+# Every other job named like them (each part) must have passed as well, so a
+# skipped, failed or cancelled part is never hidden behind the two names.
+RUNTIME_JOBS = frozenset(
+    {"Pinned integration (ubuntu-latest)", "Pinned integration (windows-latest)"}
+)
+RUNTIME_PREFIX = "Pinned integration ("
+
+
+def latest_jobs(receipt: Receipt) -> list[Receipt]:
     body = api(f"actions/runs/{receipt['id']}/jobs?per_page=100&filter=latest")
     jobs = body.get("jobs") if isinstance(body, dict) else None
     if not isinstance(jobs, list) or body.get("total_count", 0) > 100:
         raise ValueError("GitHub did not return complete Edge gate jobs")
-    return {job["name"] for job in jobs if job.get("conclusion") == "success"}
+    return jobs
+
+
+def passed_jobs(receipt: Receipt) -> set[str]:
+    return {job["name"] for job in latest_jobs(receipt) if job.get("conclusion") == "success"}
 
 
 def runtime_passed(receipt: Receipt) -> bool:
-    required = {"Pinned integration (ubuntu-latest)", "Pinned integration (windows-latest)"}
-    return required <= passed_jobs(receipt)
+    runtime = [job for job in latest_jobs(receipt) if job["name"].startswith(RUNTIME_PREFIX)]
+    passed = {job["name"] for job in runtime if job.get("conclusion") == "success"}
+    return RUNTIME_JOBS <= passed and all(job.get("conclusion") == "success" for job in runtime)
 
 
 def current_marker() -> str | None:
