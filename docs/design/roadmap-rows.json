@@ -113,12 +113,13 @@
    "contract": "gateway.yaml inference-driver.yaml agent.yaml control.yaml",
    "hot_files": [
     "*/scripts/codegen.py",
-    "gateway/src/eugene_plexus_gateway/decisions.py",
-    "inference-driver/src/eugene_plexus_inference_driver/engines/openai_compat_http.py"
+    "inference-driver/src/eugene_plexus_inference_driver/engines/openai_compat_http.py",
+    "gateway/src/eugene_plexus_gateway/routes/inference.py"
    ],
    "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-01.md",
     "settings-accuracy.md",
     "prompt-cache.md"
    ],
@@ -149,9 +150,11 @@
     "specs/scripts/s8-ui-acceptance.py",
     "agent/src/eugene_plexus_agent/__main__.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-02.md"
+   ],
    "calls": [],
    "issue": 29
   },
@@ -179,9 +182,10 @@
     "control/src/eugene_plexus_control/machine_list.py",
     "control/src/eugene_plexus_control/trust.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-03.md",
     "tls-between-machines.md"
    ],
    "calls": [],
@@ -211,11 +215,12 @@
     "agent/src/eugene_plexus_agent/trust.py",
     "agent/src/eugene_plexus_agent/standby.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     3
    ],
    "design_docs": [
+    "rows/row-04.md",
     "warm-standby.md"
    ],
    "calls": [],
@@ -246,11 +251,12 @@
     "control/src/eugene_plexus_control/passphrase_file.py",
     "control/src/eugene_plexus_control/keyring_store.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     4
    ],
    "design_docs": [
+    "rows/row-05.md",
     "sign-in-with-eugene.md"
    ],
    "calls": [],
@@ -278,9 +284,10 @@
     "specs/scripts/release_gate.py",
     "specs/scripts/release-inputs.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-06.md",
     "release-script.md"
    ],
    "calls": [],
@@ -309,9 +316,10 @@
     "workbench/src/eugene_plexus_workbench/past_chats.py",
     "workbench/src/eugene_plexus_workbench/memory_servers.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-07.md",
     "workbench-v1.md",
     "workbench-memory-and-documents.md"
    ],
@@ -378,6 +386,7 @@
    "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-09.md",
     "prompt-cache.md",
     "llm-d-lessons.md"
    ],
@@ -437,7 +446,8 @@
     "gateway",
     "control",
     "agent",
-    "ui"
+    "ui",
+    "workbench"
    ],
    "contract": "components/client-keys.yaml gateway.yaml control.yaml",
    "hot_files": [
@@ -452,6 +462,7 @@
     24
    ],
    "design_docs": [
+    "rows/row-11.md",
     "llm-d-lessons.md",
     "cache-aware-balancing.md",
     "scoped-client-access.md"
@@ -632,9 +643,11 @@
     "library/src/eugene_plexus_library/fit.py",
     "library/src/eugene_plexus_library/hardware.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-16.md"
+   ],
    "calls": [],
    "issue": 43
   },
@@ -783,9 +796,10 @@
     "library/src/eugene_plexus_library/profile_storage.py",
     "library/src/eugene_plexus_library/routes/profiles.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-21.md",
     "m2-model-library.md"
    ],
    "calls": [],
@@ -813,9 +827,10 @@
     "library/src/eugene_plexus_library/store.py",
     "library/src/eugene_plexus_library/routes/models.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-22.md",
     "m2-model-library.md"
    ],
    "calls": [],
@@ -877,9 +892,10 @@
     "control/src/eugene_plexus_control/client_admission.py",
     "gateway/src/eugene_plexus_gateway/client_keys.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-24.md",
     "scoped-client-access.md"
    ],
    "calls": [],
