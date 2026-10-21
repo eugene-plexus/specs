@@ -231,13 +231,10 @@ def exercise(args):
         ).raise_for_status()
         operator = login("control")
         # Both agents share this host and advertise loopback, so neither has
-        # a machine URL, and a new install requires encryption between
-        # machines (LT-C2): the root's gateway would leave the worker's driver
-        # out. This check is about recovery, not machine TLS, so encryption
-        # is off; the same-host case under "required" is gateway#17.
-        call(
-            "control", "PATCH", "/v1/config", operator, json={"machineEncryption": "off"}
-        ).raise_for_status()
+        # a machine URL. A new install requires encryption between machines
+        # (LT-C2), and since gateway#17 a loopback address on this host goes
+        # plain under "required": the worker's driver is served with the
+        # default left as it is.
         # Machines join at the root's machine port, as the console's join
         # command says (LT1): control's own port is loopback behind it, and a
         # join token carries the key that port presents.
