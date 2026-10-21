@@ -37,7 +37,7 @@ try {
   page.setDefaultTimeout(30000);
   page.on("pageerror", (error) => report.errors.push(String(error)));
   // Every refused request, with the component's own reason: a 401 on a
-  // session clears it, so the reason is the evidence.
+  // session clears it, so the reason is the evidence (library#15).
   report.refused = [];
   page.on("response", async (response) => {
     if (response.status() !== 401) return;

@@ -190,7 +190,14 @@ def run(root: Path) -> None:
         try:
             if agent:
                 (prefix / "stop").touch()
-                agent.wait(timeout=45)
+                try:
+                    agent.wait(timeout=45)
+                except subprocess.TimeoutExpired:
+                    # Its shutdown can wait on an open connection for ever
+                    # (agent#20); a disposable install's whole tree goes.
+                    print("the agent did not stop in 45 s; killing its process tree", flush=True)
+                    subprocess.run(["taskkill", "/PID", str(agent.pid), "/T", "/F"],
+                                   capture_output=True, check=False)
         finally:
             for log in logs:
                 log.close()

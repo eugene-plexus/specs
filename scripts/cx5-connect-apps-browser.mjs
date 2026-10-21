@@ -17,6 +17,15 @@ try {
   page = await context.newPage();
   page.setDefaultTimeout(30000);
   page.on("pageerror", (error) => report.errors.push(String(error)));
+  // Every refused request, with the component's own reason: a 401 on a
+  // session clears it, so the reason is the evidence (library#15).
+  report.refused = [];
+  page.on("response", async (response) => {
+    if (response.status() !== 401) return;
+    const entry = { at: new Date().toISOString(), url: response.url(), status: 401 };
+    report.refused.push(entry);
+    entry.body = await response.text().catch((error) => `unreadable: ${error.message}`);
+  });
   await expect(async () => {
     const response = await page.goto(url, { timeout: 5000 });
     if (response.status() !== 200) throw new Error(`status ${response.status()}`);
