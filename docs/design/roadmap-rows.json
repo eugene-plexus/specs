@@ -2331,9 +2331,10 @@
     "control/src/eugene_plexus_control/routes/people.py",
     "control/src/eugene_plexus_control/applied.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-70.md",
     "shared-accounts-and-sso.md"
    ],
    "calls": [
