@@ -120,12 +120,27 @@ def key_of(sub: str) -> str:
     return hashlib.sha256(sub.encode("utf-8")).hexdigest()[:32]
 
 
+def holds(data: bytes, needle: bytes) -> bool:
+    """Whether these bytes hold `needle`, inside a ZIP's members too: a download is
+    compressed, so its raw bytes never show a word it keeps."""
+    if needle in data:
+        return True
+    if data[:4] != b"PK\x03\x04":
+        return False
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            return any(holds(archive.read(name), needle) for name in archive.namelist())
+    except zipfile.BadZipFile:
+        return False
+
+
 def holding(directory: Path, mark: str) -> list[str]:
+    """Every file under `directory` that holds `mark`, a ZIP's members included."""
     needle = mark.encode()
     found = []
     for path in directory.rglob("*"):
         try:
-            if path.is_file() and needle in path.read_bytes():
+            if path.is_file() and holds(path.read_bytes(), needle):
                 found.append(str(path.relative_to(directory)))
         except OSError:
             continue
@@ -453,9 +468,11 @@ def exercise(work: Path, commit: str) -> None:
         folders = [p for p in (data / "knowledge" / key_of(made["ann"]), data / "files" / key_of(made["ann"]))
                    if p.exists()]
         check("5b", "and no folder", folders == [], folders)
+        kept = [p.name for p in (data / "exports").glob(f"{mine['id']}*")]
+        check("5b2", "her own download's file is gone", kept == [], kept)
         left = holding(data, MARK["ann"]) + holding(agent_dir / "logs", MARK["ann"])
-        check("5c", "her mark is in no file: the store, its log, the copy, downloads, indexes, logs",
-              left == [], left)
+        check("5c", "her mark is in no file, nor inside any download: the store, its log, the "
+              "copy, downloads, indexes, logs", left == [], left)
         state = call("memory", "GET", "/state").json()
         check("5d", "her memory server was asked to forget her exchange only, and never cleared",
               set(state["forgotten"]) == sent and state["cleared"] == 0, {"forgotten": state["forgotten"], "sent": sorted(sent)})
