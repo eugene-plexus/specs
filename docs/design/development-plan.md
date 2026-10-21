@@ -1,8 +1,9 @@
 # Development plan: building the roadmap fast and safely
 
-**Status: proposal, 2026-10-21, for Troy. None of it is in force until Troy
-approves it.** Each approved rule then goes into `AGENTS.md`, which every
-harness reads, and `CLAUDE.md` points to it.
+**Status: approved by Troy, 2026-10-21 (P1-P12), with two changes: P4 lets
+risky defaults ship on when Claude judges them better, and P7 ships at most
+every 60 minutes.** The rules are in `AGENTS.md`, which every harness reads;
+`CLAUDE.md` points to it. P13 (other harnesses) is still open.
 
 **Goal:** build the [roadmap](roadmap.md) as fast as is safe.
 
@@ -74,10 +75,10 @@ Each row below is one decision for Troy (P1-P11).
 | P1 | Component CI runs on `main` pushes and PRs. A branch run is a hand dispatch | Every repo's CI runs on every push to every branch. A new push cancels the older run on the same branch | Removes a hand step. The result is ready by merge time | The repos are public, so Actions minutes cost nothing. The real limit is concurrent jobs (§11) |
 | P2 | Before a merge, `runner` runs full suites and acceptance locally | The merge gate is green CI on the branch: component CI in each repo the row touches, plus specs branch integration when two or more repos change. Locally, a builder runs only the changed files' tests and the pre-commit hooks | Local runs were the largest cost | CI runs the same suites on Linux and Windows. The Edge gate does not change |
 | P3 | A high-risk row needs a real-environment acceptance run by a session and one adversarial review, one after the other | The acceptance is a script that runs in CI on real Linux and Windows processes. One adversarial review by a second model runs at the same time as CI. Only a blocker finding stops the merge | The checks stay; only the waiting goes | Changes to the Windows service or UAC still get one elevated run on this machine. The builder asks Troy for it |
-| P4 | An open call stops a row, or a session asks Troy | Build the recommended option and mark it "default built" in the design. An option that deletes data, or keeps people's chats somewhere new, ships switched off until Troy confirms. Troy answers calls in one batch at each checkpoint | Calls were the longest waits | Troy can overturn any default. The risky defaults stay off until he says |
+| P4 | An open call stops a row, or a session asks Troy | Build the recommended option and mark it "default built" in the design. An option that deletes data, or keeps people's chats somewhere new, may ship on by default when Claude judges it better for the project; Claude calls it out to Troy after the build (Troy, 2026-10-21). Troy answers calls in `docs/private/calls.md` | Calls were the longest waits | Troy can overturn any default, and every risky default is called out to him |
 | P5 | Each slice gets an acceptance record, a run document and a handoff | A row's GitHub issue holds its brief and status. The design doc gets 3-10 lines of "what building found". Only a release keeps an acceptance record | Writing records cost time and nobody read most of them | The issue, the commits and the CI runs are the record |
 | P6 | A fresh session per slice. Design, review and merges stay in the main session | One orchestrator session runs the whole push, with auto-compaction on. Builders build the rows | Parallel building | The orchestrator reads every diff before it merges |
-| P7 | Merge per piece of work, after one set of checks | Merge each row when its CI is green and its review has no blocker. Rebase on `main` first. Merge green rows in batches and run `ship.py` once per batch, at most every 30 minutes | Keeps Edge from changing too often while rows land quickly | Each batch passes the Edge gate |
+| P7 | Merge per piece of work, after one set of checks | Merge each row when its CI is green and its review has no blocker. Rebase on `main` first. Merge green rows in batches and run `ship.py` once per batch, at most every 60 minutes (Troy, 2026-10-21) | Keeps Edge from changing too often while rows land quickly | Each batch passes the Edge gate |
 | P8 | `AGENTS.md` says "commit on `main`"; `CLAUDE.md` says branch only | One rule set in `AGENTS.md` for every harness (Appendix A). `CLAUDE.md` points to it | Agents in other harnesses do not read `CLAUDE.md` or memory | One source of rules |
 | P9 | Subagents default to Sonnet, and the weekly allowance binds | For this push: Opus builders for high-risk and size-L rows, Sonnet for S and M rows, Haiku for CI waits | Weak builders cost rework | Troy's call on budget |
 | P10 | A flaky test gets run again | Fix a flaky test the same day, or skip it with an issue number. Never re-run it silently | Flakes block every lane | Each skip has an owner and a deadline |
@@ -190,8 +191,8 @@ install.
 14. Read the diff, and the review if there is one.
 15. If `main` moved, have the builder rebase. Wait for CI to pass again.
 16. Fast-forward `main` in each repo, specs last.
-17. When the batch is ready, run `python scripts/ship.py --wait` in the
-    background.
+17. When the batch is ready, and at least 60 minutes after the last ship,
+    run `python scripts/ship.py --wait` in the background.
 18. When Edge carries the row, close the issue and mark the row built in the
     roadmap.
 
@@ -246,7 +247,7 @@ P4, builders build each recommendation until Troy answers otherwise.
 | Workbench store migrations collide | One WB lane. The brief assigns the migration number |
 | CI jobs queue | Superseded runs are cancelled. Specs branch integration runs only for cross-repo rows. W0.3 splits the long jobs. Move to the Team plan if queues show |
 | The orchestrator becomes the bottleneck | Precise briefs. Reviewers screen high-risk diffs. Merges go in batches |
-| Edge changes too often for Troy's own install | One ship every 30 minutes at most (P7). Checkpoints for testing |
+| Edge changes too often for Troy's own install | One ship every 60 minutes at most (P7). Checkpoints for testing |
 | Speed lowers quality | A failing test first. A second-model review for high-risk rows. The Edge gate. Release qualification unchanged. Troy's tests at checkpoints |
 | The weekly allowance runs out | The model mix in P9. Troy's call |
 
