@@ -4,6 +4,9 @@ import { createRequire } from "node:module";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 const require = createRequire(new URL("../../ui/package.json", import.meta.url));
+// Next.js keeps its own route announcer at role="alert"; the console's
+// message is the other one.
+const alert = (page) => page.locator('[role="alert"]:not(#__next-route-announcer__)');
 const { chromium, expect } = require("@playwright/test");
 const [settingsFile] = process.argv.slice(2);
 const { url, output, passphrase, control } = JSON.parse(await readFile(settingsFile, "utf8"));
@@ -47,7 +50,7 @@ try {
   if ((await unlock.count()) && (await unlock.isChecked()) && (await unlock.isEnabled())) await unlock.uncheck();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("button", { name: "Try again", exact: true })).toBeVisible({ timeout: 60000 });
-  report.failureMessage = await page.getByRole("alert").textContent();
+  report.failureMessage = await alert(page).textContent();
   report.controlInitialized.afterFailure = await rootInitialized();
   await first.close();
 
@@ -70,8 +73,8 @@ try {
   const box = page.getByLabel("Passphrase", { exact: true });
   await box.fill("not-the-passphrase-at-all");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText(/not this install's passphrase/i, { timeout: 30000 });
-  report.wrongPassphraseMessage = await page.getByRole("alert").textContent();
+  await expect(alert(page)).toContainText(/not this install's passphrase/i, { timeout: 30000 });
+  report.wrongPassphraseMessage = await alert(page).textContent();
   report.controlInitialized.afterWrongPassphrase = await rootInitialized();
 
   // 4. The right one signs in and shows what is left; Continue runs it,
