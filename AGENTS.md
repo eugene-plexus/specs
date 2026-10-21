@@ -69,6 +69,12 @@ the release pins and the [roadmap](docs/design/roadmap.md).
   you built for open calls.
 - When CI is green in every repository, set the issue to `status:green`.
 - The orchestrator rebases if needed, merges, and ships at most once an hour.
+- **A clean catch-up needs no new CI run (MERGE-REBASE, Troy 2026-10-21).** A branch
+  whose CI was green on its head may merge after catching up with `main` without a
+  new run, when the catch-up is clean and no commit `main` gained touches the same
+  files. Otherwise CI runs again. A specs branch that other repos pin catches up by
+  merging `main` in, so the pinned commits stay reachable. A merge that turns `main`
+  red is fixed or reverted before anything else.
 
 ## Product rules (every change)
 
