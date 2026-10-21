@@ -124,7 +124,10 @@ class Standin:
                 if name in calls:
                     calls[name] += 1
                 if name == "primary":
-                    self._send(503, {"error": {"message": "cx8 stand-in refuses"}})
+                    # llama-server's own refusal while it loads: nothing was
+                    # computed, so the gateway may try the backup. A 503 in
+                    # other words is "outcome unknown" and is not replayed.
+                    self._send(503, {"error": {"message": "Loading model"}})
                     return
                 self._send(200, {
                     "model": name,
