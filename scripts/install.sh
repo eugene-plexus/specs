@@ -17,28 +17,39 @@
 # `eugene-plexus`, in /var/lib/eugene-plexus, and this script asks for
 # sudo once to set that up. `--user` keeps the old layout: everything
 # under your home, running as you, no sudo -- and anything you run can
-# control Eugene. macOS always gets the per-user layout for now.
+# control Eugene.
+#
+# **On macOS too, since row 8 (2026-10-21).** Eugene runs as a
+# LaunchDaemon in its own hidden account, `_eugeneplexus`, in
+# /usr/local/eugene-plexus: it starts at boot, before anyone signs in, and
+# a program the person runs cannot read its keys. A Mac that already runs
+# Eugene as a LaunchAgent (the old per-user layout) moves to the daemon on
+# a plain re-run: its identity, settings, port and Library come along, and
+# if anything fails the LaunchAgent is put back as it was. `--user` keeps
+# the LaunchAgent.
 #
 # What it does, in the order it does it, so that reading this comment is
 # a substitute for reading the script (install-paths §11: `curl | sh`
 # has to stay auditable):
 #
-#   0. (Linux, default) creates the `eugene-plexus` account and its
-#      prefix, with sudo; the steps below then run AS that account, so
-#      no package's build step ever runs as root,
+#   0. (default) creates Eugene's own account (`eugene-plexus` on Linux,
+#      `_eugeneplexus` on a Mac) and its prefix, with sudo; the steps
+#      below then run AS that account, so no package's build step ever
+#      runs as root,
 #   1. fetches `uv` into the install prefix and nowhere else -- and fetches
 #      it again over one older than UV_MINIMUM,
 #   2. makes a virtualenv there with a Python `uv` downloads itself,
 #   3. installs the seven Eugene Plexus packages into it,
 #   4. checks that what landed can actually serve — see VERIFY below,
 #   5. writes a systemd unit (Linux: a system unit, or a user unit with
-#      --user) or launchd agent (macOS),
+#      --user) or a launchd job (macOS: a LaunchDaemon, or a LaunchAgent
+#      with --user),
 #   6. starts it and waits for the agent to answer.
 #
 # It touches nothing outside `$PREFIX` except the service file, the
 # account, and (by default) a `Eugene Models` folder in your home, and
-# `--uninstall` removes the first three. Only the default Linux layout
-# needs root.
+# `--uninstall` removes the first three. Only the default layout needs
+# root.
 #
 # WHERE THE PACKAGES COME FROM. GitHub source archives at pinned
 # commits — the same mechanism `SPECS_REF` has used in every consumer
@@ -85,6 +96,13 @@ PY_VERSION=3.12
 UV_MINIMUM=0.12.18
 SERVICE_LABEL=eugene-plexus-agent
 LAUNCHD_LABEL=com.eugeneplexus.agent
+# The Mac's system job (row 8), root:wheel 0644, and the root-owned folder
+# beside it that keeps what removal needs to know: whether this installer
+# made Eugene's account, the firewall entry it added, the removal app, and
+# the removal script itself -- never inside the prefix, which Eugene's own
+# account can write.
+LAUNCHD_DAEMON=/Library/LaunchDaemons/$LAUNCHD_LABEL.plist
+MAC_RECEIPTS=/usr/local/lib/eugene-plexus
 
 SYSTEM_ACCOUNT=eugene-plexus
 SYSTEM_PREFIX=/var/lib/eugene-plexus
@@ -98,6 +116,7 @@ DO_START=1
 JOIN_CONTROL=
 JOIN_TOKEN=
 JOIN_NAME=
+JOIN_LABEL=
 JOIN_ADVERTISE=
 JOIN_SITE=0
 JOIN_OWNER=
@@ -130,6 +149,10 @@ while [ $# -gt 0 ]; do
         --join) JOIN_CONTROL=$2; shift 2 ;;
         --token) JOIN_TOKEN=$2; shift 2 ;;
         --name) JOIN_NAME=$2; shift 2 ;;
+        --label)
+            [ $# -ge 2 ] || { echo "install.sh: --label needs the name to show, in quotes if it has spaces" >&2; exit 2; }
+            JOIN_LABEL=$2; shift 2 ;;
+        --label=*) JOIN_LABEL=${1#--label=}; shift ;;
         --advertise) JOIN_ADVERTISE=$2; shift 2 ;;
         --job-site) JOIN_SITE=1; shift ;;
         --owner) JOIN_OWNER=$2; shift 2 ;;
@@ -146,16 +169,16 @@ while [ $# -gt 0 ]; do
         --password-stdin) PASSWORD_STDIN=1; shift ;;
         --update) UPDATE=1; shift ;;
         -h|--help)
-            sed -n '2,52p' "$0" 2>/dev/null || true
+            sed -n '2,66p' "$0" 2>/dev/null || true
             echo "options: --user  --prefix DIR  --no-service  --no-start  --uninstall"
-            echo "           --user  (Linux: install under your own account, no sudo; anything"
-            echo "                   you run can then control Eugene)"
+            echo "           --user  (install under your own account, no sudo; anything you run"
+            echo "                   can then control Eugene. On a Mac it starts when you sign in)"
             echo "           --purge-downloads  (with --uninstall: delete this install's model"
             echo "                              copies and engine builds)"
             echo "           --purge-data  (Mac/user install: delete settings, app data and logs)"
             echo "           --interactive  (Mac: show the removal choices)"
-            echo "  worker node: --join URL --token JWT [--name NAME] [--advertise URL]"
-            echo "  job site (on a node): --join URL --token TOKEN --job-site --owner NAME [--root-key KEY] [--name NAME]"
+            echo "  worker node: --join URL --token JWT [--name NAME] [--label \"SHOWN AS\"] [--advertise URL]"
+            echo "  job site (on a node): --join URL --token TOKEN --job-site --owner NAME [--root-key KEY] [--name NAME] [--label \"SHOWN AS\"]"
             echo "                        [--site-account USER] [--password-stdin]"
             echo "  link a person to their account on a job site (Linux system install, as root):"
             echo "           --site-link --person NAME [--site-account USER] [--password-stdin]"
@@ -180,6 +203,14 @@ fi
 say()  { printf '\033[1m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# **--label names this machine when it joins** (row 8): the agent's
+# `join --label`, or a job site's `site join --label`. Nothing else reads
+# it, so without --join it would be dropped without a word.
+if [ -n "$JOIN_LABEL" ] && [ -z "$JOIN_CONTROL" ]; then
+    printf '\033[31merror:\033[0m %s\n' "--label names this machine when it joins an install. The first machine's name is asked on its setup page." >&2
+    exit 2
+fi
 
 # **Every network step said nothing about why it failed** (review §6.2
 # #24). `uv venv` and `uv pip install` both ran under `>/dev/null 2>&1`,
@@ -245,33 +276,33 @@ if [ "$PLATFORM" = macos ]; then
         PY_REQUEST=cpython-$PY_VERSION-macos-aarch64-none
         say "Apple Silicon detected; selecting native arm64 Python (also from a Rosetta terminal)"
     fi
+    # Eugene's own account on a Mac: a hidden one, named as macOS names
+    # its own service accounts. The prefix has no space in it: a space in
+    # the virtualenv's path breaks every script's #! line.
+    SYSTEM_ACCOUNT=_eugeneplexus
+    SYSTEM_PREFIX=/usr/local/eugene-plexus
 fi
 
 # --- which layout -----------------------------------------------------
-# **system**: Linux with a service, the default. The agent runs as its
-# own account, so a program running as the person cannot read its key,
-# its environment or its memory. It reaches the person's model folders
-# through their group (Troy's call, 2026-09-24): the unit adds the
-# person's primary group, which is what a 0750 home lets in. It has no
-# desktop session and so no keyring, so it unlocks from a passphrase file
-# only it can read (`securityMode: passphrase_file`).
+# **system**: with a service, the default on Linux and, since row 8, on
+# macOS. The agent runs as its own account, so a program running as the
+# person cannot read its key, its environment or its memory. It reaches
+# the person's model folders through their group (Troy's call,
+# 2026-09-24): the unit adds the person's primary group, which is what a
+# 0750 home lets in -- on a Mac that group is `staff`, and the account
+# joins it. It has no desktop session and so no keyring, so it unlocks
+# from a passphrase file only it can read (`securityMode:
+# passphrase_file`; on a Mac, Troy's call MAC-KEY, 2026-10-21).
 #
-# **user**: `--user`, `--no-service` (nothing to run under an account --
-# the container build and anyone starting the agent by hand), and macOS,
-# where a LaunchDaemon under its own account needs a Mac this project
-# does not have to test its GPU and file access on.
-if [ "$PLATFORM" = macos ] || [ "$USER_MODE" = 1 ] || [ "$DO_SERVICE" = 0 ]; then
+# **user**: `--user`, and `--no-service` (nothing to run under an account
+# -- the container build and anyone starting the agent by hand).
+if [ "$USER_MODE" = 1 ] || [ "$DO_SERVICE" = 0 ]; then
     MODE=user
 else
     MODE=system
 fi
-if [ -z "$PREFIX" ]; then
-    if [ "$MODE" = system ]; then PREFIX=$SYSTEM_PREFIX; else PREFIX=$USER_PREFIX; fi
-fi
-VENV=$PREFIX/venv
-PYBIN=$VENV/bin/python
-UV=$PREFIX/bin/uv
-CONFIG=$PREFIX/agent.yaml
+PREFIX_GIVEN=0
+[ -z "$PREFIX" ] || PREFIX_GIVEN=1
 
 # The person this install is for: whoever ran it, or whoever ran sudo.
 # Nobody, when a root shell runs it directly -- then there is no group to
@@ -280,11 +311,41 @@ if [ "$(id -u)" = 0 ]; then PERSON=${SUDO_USER:-}; else PERSON=$(id -un); fi
 [ "$PERSON" != root ] || PERSON=
 PERSON_HOME=
 PERSON_GROUP=
+PERSON_UID=
 if [ -n "$PERSON" ]; then
-    PERSON_HOME=$(getent passwd "$PERSON" 2>/dev/null | cut -d: -f6 || true)
+    if [ "$PLATFORM" = macos ]; then
+        # No getent on a Mac; the directory service knows the home.
+        PERSON_HOME=$(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null \
+            | sed -n 's/^NFSHomeDirectory: //p' | head -n 1 || true)
+    else
+        PERSON_HOME=$(getent passwd "$PERSON" 2>/dev/null | cut -d: -f6 || true)
+    fi
     [ -n "$PERSON_HOME" ] || PERSON_HOME=$HOME
     PERSON_GROUP=$(id -gn "$PERSON")
+    PERSON_UID=$(id -u "$PERSON")
 fi
+# The person's own Mac install, the LaunchAgent layout this row moves from.
+PERSON_LAUNCH_AGENT=
+[ -z "$PERSON_HOME" ] || PERSON_LAUNCH_AGENT=$PERSON_HOME/Library/LaunchAgents/$LAUNCHD_LABEL.plist
+
+# **On a Mac, what is installed decides an update, a removal and a job
+# site**, not what the default is now: an update never moves an install
+# (`--update` keeps the LaunchAgent it finds), removal removes the install
+# that is there, and a job site joins beside the per-user install it was
+# built for. Only when no daemon is here and the person's LaunchAgent is.
+if [ "$PLATFORM" = macos ] && [ "$MODE" = system ] && [ "$PREFIX_GIVEN" = 0 ] \
+        && [ -z "${EUGENE_PLEXUS_HOME:-}" ] \
+        && { [ "$UPDATE" = 1 ] || [ "$DO_UNINSTALL" = 1 ] || [ "$JOIN_SITE" = 1 ]; } \
+        && [ ! -f "$LAUNCHD_DAEMON" ] && [ -n "$PERSON_LAUNCH_AGENT" ] && [ -f "$PERSON_LAUNCH_AGENT" ]; then
+    MODE=user
+fi
+if [ -z "$PREFIX" ]; then
+    if [ "$MODE" = system ]; then PREFIX=$SYSTEM_PREFIX; else PREFIX=$USER_PREFIX; fi
+fi
+VENV=$PREFIX/venv
+PYBIN=$VENV/bin/python
+UV=$PREFIX/bin/uv
+CONFIG=$PREFIX/agent.yaml
 
 # Run as root: directly when this is root, through sudo when not.
 as_root() {
@@ -320,6 +381,12 @@ as_service() {
 # as this shell otherwise.
 in_prefix() {
     if [ "$MODE" = system ]; then as_service "$@"; else "$@"; fi
+}
+
+# As the person this install is for: this shell, or them when sudo started
+# it as root, so what is made in their home stays theirs.
+as_person() {
+    if [ "$(id -u)" = 0 ] && [ -n "$PERSON" ]; then sudo -u "$PERSON" -- "$@"; else "$@"; fi
 }
 
 # The version the prefix's uv says it is -- its words are
@@ -1230,6 +1297,11 @@ site_commands_ask() {
 # What every --job-site / --site-link / --site-unlink on a system install
 # needs first.
 site_system_preflight() {
+    # Row 8: a Mac's system install is a LaunchDaemon in its own account,
+    # and a job site beside it (root running each person's worker) is
+    # built for Linux only. Nothing is changed.
+    [ "$PLATFORM" = linux ] || die "$1 is built for Linux system installs. On a Mac a job site joins beside
+       a per-user install (--user), where its tools run as you. Nothing was changed."
     [ "$MODE" = system ] || die "$1 needs Eugene installed as a system service (the default on Linux). A per-user
        install (--user) serves only the person who installed it, so it has nothing to link."
     [ -d /run/systemd/system ] || die "this machine is not running systemd, so a job site cannot run its workers here"
@@ -1303,7 +1375,8 @@ site_join_system() {
     as_root test -x "$VENV/bin/eugene-plexus-agent" || die "this machine is not a node yet.
        Install Eugene here and join it to your install first, then run this
        again. A machine that is only a job site waits for the standalone install."
-    SITE_LABEL=${JOIN_NAME:-$(hostname)}
+    # --label first (row 8), then --name, then this machine's host name.
+    SITE_LABEL=${JOIN_LABEL:-${JOIN_NAME:-$(hostname)}}
     # Before anything is changed: a link that cannot be made stops the run
     # now, not after the machine has joined.
     site_resolve_account
@@ -1358,6 +1431,472 @@ service_stop() {
     else
         [ -f "$LAUNCHD_PLIST" ] || return 0
         launchctl bootout "gui/$(id -u)/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+    fi
+}
+
+# What says a system install is here: the systemd unit on Linux, the
+# LaunchDaemon on a Mac.
+SYSTEM_SERVICE_FILE=$SYSTEM_UNIT
+[ "$PLATFORM" != macos ] || SYSTEM_SERVICE_FILE=$LAUNCHD_DAEMON
+
+# --- the Mac's system install (row 8) ----------------------------------
+# A LaunchDaemon in Eugene's own hidden account, as the Linux system
+# install is a system unit in its own: the Mac's tools are dscl for the
+# account, launchctl's system domain for the job, and a passphrase file for
+# the unlock, because the Keychain stays locked until somebody signs in.
+NL='
+'
+MIGRATE=0 MIGRATING=0 MIGRATE_DONE=0 MIGRATE_FRESH_PREFIX=0 MIGRATED_ENGINES=0
+MIGRATE_PORT= MIGRATE_HOST= GROUP_CREATED=0 DAEMON_STARTED=0
+
+# plist_get FILE KEY.PATH: one value out of a plist, or a failure. plutil
+# reads it on macOS 12 and later, PlistBuddy on anything older.
+plist_get() {
+    if _pv=$(plutil -extract "$2" raw -o - "$1" 2>/dev/null); then
+        printf '%s' "$_pv"
+        return 0
+    fi
+    _pv=$(/usr/libexec/PlistBuddy -c "Print :$(printf '%s' "$2" | tr . :)" "$1" 2>/dev/null) || return 1
+    printf '%s' "$_pv"
+}
+
+# Text for a plist's <string>: &, < and > escaped, so a path holding one
+# is still that path. The heredoc this replaced wrote invalid XML for it.
+xml_text() {
+    case "$1" in *"$NL"*) die "a path with a line break in it cannot go into a launchd job: $1" ;; esac
+    printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+
+plist_env() { printf '        <key>%s</key><string>%s</string>\n' "$1" "$(xml_text "$2")"; }
+
+# One word for sh, whatever it holds: single quotes, each ' closed, escaped, reopened.
+sh_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# launchd_xml daemon|agent: the job, on standard output. Each environment
+# value on one line with its key, so `--update` reads the port back as it
+# always has. The daemon runs as Eugene's account (UserName, GroupName) with
+# the Linux system unit's environment; the agent runs as the person.
+launchd_xml() {
+    printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+        '<plist version="1.0">' '<dict>'
+    printf '    <key>Label</key><string>%s</string>\n' "$LAUNCHD_LABEL"
+    if [ "$1" = daemon ]; then
+        printf '    <key>UserName</key><string>%s</string>\n' "$(xml_text "$SYSTEM_ACCOUNT")"
+        printf '    <key>GroupName</key><string>%s</string>\n' "$(xml_text "$SYSTEM_ACCOUNT")"
+    fi
+    printf '    <key>ProgramArguments</key>\n    <array>\n'
+    printf '        <string>%s</string>\n' "$(xml_text "$VENV/bin/eugene-plexus-agent")"
+    printf '        <string>--unattended</string>\n    </array>\n'
+    printf '    <key>EnvironmentVariables</key>\n    <dict>\n'
+    if [ "$1" = daemon ]; then
+        plist_env HOME "$PREFIX"
+        plist_env USER "$SYSTEM_ACCOUNT"
+    fi
+    plist_env EUGENE_PLEXUS_AGENT_CONFIG_FILE "$CONFIG"
+    if [ "$1" = daemon ]; then
+        plist_env EUGENE_PLEXUS_AGENT_ENGINE_ROOT "$PREFIX/engines"
+        # No Keychain before somebody signs in: the passphrase is kept here,
+        # readable by Eugene's account only (MAC-KEY), and the control root
+        # on this machine reads the same file.
+        plist_env EUGENE_PLEXUS_AGENT_PASSPHRASE_FILE "$PREFIX/passphrase"
+        plist_env EUGENE_PLEXUS_CONTROL_PASSPHRASE_FILE "$PREFIX/passphrase"
+        plist_env EUGENE_PLEXUS_LIBRARY_DEFAULT_MODEL_ROOTS "$MODELS_DIR"
+    fi
+    if [ "$WIDE" = 1 ]; then plist_env EUGENE_PLEXUS_AGENT_BIND_HOST 0.0.0.0; fi
+    if [ "$PORT" != 8079 ]; then plist_env EUGENE_PLEXUS_AGENT_BIND_PORT "$PORT"; fi
+    printf '    </dict>\n'
+    printf '    <key>WorkingDirectory</key><string>%s</string>\n' "$(xml_text "$PREFIX")"
+    printf '    <key>RunAtLoad</key><true/>\n'
+    if [ "$1" = daemon ]; then
+        # Always brought back, so the agent can restart itself by ending:
+        # its account cannot ask launchd to restart a system job.
+        printf '    <key>KeepAlive</key><true/>\n'
+        printf '    <key>ThrottleInterval</key><integer>10</integer>\n'
+    else
+        printf '    <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>\n'
+    fi
+    printf '    <key>StandardOutPath</key><string>%s</string>\n' "$(xml_text "$PREFIX/logs/launchd.out.log")"
+    printf '    <key>StandardErrorPath</key><string>%s</string>\n' "$(xml_text "$PREFIX/logs/launchd.err.log")"
+    printf '%s\n' '</dict>' '</plist>'
+}
+
+# **Never root** (row 8). A system job with no UserName runs as root, and
+# this one's program lives in a folder Eugene's account can write -- so a
+# job naming nobody, root or anyone but that account would hand it root.
+# Read back from the file as written, and the account itself checked: a
+# service account below 500, never uid 0, never in wheel or admin.
+check_daemon_account() {
+    _du=$(plist_get "$1" UserName) || _du=
+    _dg=$(plist_get "$1" GroupName) || _dg=
+    case "$_du" in
+        ''|root|0) die "refusing a startup job that would run Eugene as root (UserName '${_du}'). Nothing was started." ;;
+    esac
+    if [ "$_du" != "$SYSTEM_ACCOUNT" ] || [ "$_dg" != "$SYSTEM_ACCOUNT" ]; then
+        die "refusing a startup job that runs Eugene as $_du:$_dg; it runs as $SYSTEM_ACCOUNT. Nothing was started."
+    fi
+    _duid=$(id -u "$SYSTEM_ACCOUNT" 2>/dev/null) || die "the $SYSTEM_ACCOUNT account does not exist. Nothing was started."
+    _dgid=$(id -g "$SYSTEM_ACCOUNT" 2>/dev/null) || _dgid=0
+    if [ "$_duid" = 0 ] || [ "$_dgid" = 0 ] || [ "$_duid" -ge 500 ]; then
+        die "the $SYSTEM_ACCOUNT account has uid $_duid and gid $_dgid. Eugene's account must be a service
+       account, numbered below 500 and outside wheel. Nothing was started."
+    fi
+    for _priv in admin wheel; do
+        if dseditgroup -o checkmember -m "$SYSTEM_ACCOUNT" "$_priv" >/dev/null 2>&1; then
+            die "the $SYSTEM_ACCOUNT account is in the $_priv group. Eugene's account must hold no privilege. Nothing was started."
+        fi
+    done
+}
+
+# A number from 400 down to 200 that is neither an account's nor a group's.
+mac_free_id() {
+    _taken=$( { dscl . -list /Users UniqueID; dscl . -list /Groups PrimaryGroupID; } 2>/dev/null \
+        | awk '{print $NF}')
+    _fid=400
+    while [ "$_fid" -ge 200 ]; do
+        if ! printf '%s\n' "$_taken" | grep -qx "$_fid"; then
+            printf '%s' "$_fid"
+            return 0
+        fi
+        _fid=$((_fid - 1))
+    done
+    return 1
+}
+
+# Eugene's account: hidden, no password, no login shell, its home the
+# prefix. Its group first, under the same number when that is free. What
+# was made is recorded root-only outside the prefix, so removal deletes
+# only an account (and a group) this installer made.
+mac_create_account() {
+    _aid=$(mac_free_id) || die "no account number from 200 to 400 is free for $SYSTEM_ACCOUNT"
+    say "creating the $SYSTEM_ACCOUNT account (hidden, no password, no login shell)"
+    if dscl . -read "/Groups/$SYSTEM_ACCOUNT" PrimaryGroupID >/dev/null 2>&1; then
+        _agid=$(dscl . -read "/Groups/$SYSTEM_ACCOUNT" PrimaryGroupID | awk '{print $2}')
+    else
+        { as_root dscl . -create "/Groups/$SYSTEM_ACCOUNT" \
+            && as_root dscl . -create "/Groups/$SYSTEM_ACCOUNT" PrimaryGroupID "$_aid" \
+            && as_root dscl . -create "/Groups/$SYSTEM_ACCOUNT" RealName "Eugene Plexus" \
+            && as_root dscl . -create "/Groups/$SYSTEM_ACCOUNT" Password '*'; } \
+            || die "could not create the $SYSTEM_ACCOUNT group"
+        _agid=$_aid
+        GROUP_CREATED=1
+    fi
+    { as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" \
+        && as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" UniqueID "$_aid" \
+        && as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" PrimaryGroupID "$_agid" \
+        && as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" UserShell /usr/bin/false \
+        && as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" NFSHomeDirectory "$PREFIX" \
+        && as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" RealName "Eugene Plexus" \
+        && as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" IsHidden 1 \
+        && as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" Password '*'; } \
+        || die "could not create the $SYSTEM_ACCOUNT account"
+    ACCOUNT_CREATED=1
+    printf 'account %s %s %s\n' "$_aid" "$_agid" "$GROUP_CREATED" \
+        | as_root tee "$MAC_RECEIPTS/account.txt" >/dev/null
+    as_root chmod 0644 "$MAC_RECEIPTS/account.txt"
+    # Exactly one account holds that number, and it is this one.
+    _holders=$(dscl . -list /Users UniqueID 2>/dev/null | awk -v id="$_aid" '$2 == id {print $1}')
+    [ "$_holders" = "$SYSTEM_ACCOUNT" ] \
+        || die "account number $_aid is held by '$(printf '%s' "$_holders" | tr '\n' ' ')' as well as $SYSTEM_ACCOUNT"
+}
+
+# Undo mac_create_account, for a run that is putting the machine back.
+mac_delete_account() {
+    [ -f "$MAC_RECEIPTS/account.txt" ] || return 0
+    read -r _k _did _dgid _dgroup < "$MAC_RECEIPTS/account.txt" || true
+    if [ -n "$_did" ] && [ "$_did" != 0 ] && [ "$(id -u "$SYSTEM_ACCOUNT" 2>/dev/null)" = "$_did" ]; then
+        if [ -n "$PERSON_GROUP" ]; then
+            as_root dseditgroup -o edit -d "$SYSTEM_ACCOUNT" -t user "$PERSON_GROUP" >/dev/null 2>&1 || true
+        fi
+        as_root dscl . -delete "/Users/$SYSTEM_ACCOUNT" >/dev/null 2>&1 || true
+    fi
+    if [ "$_dgroup" = 1 ] && [ -n "$_dgid" ] && [ "$_dgid" != 0 ] \
+            && [ "$(dscl . -read "/Groups/$SYSTEM_ACCOUNT" PrimaryGroupID 2>/dev/null | awk '{print $2}')" = "$_dgid" ]; then
+        as_root dscl . -delete "/Groups/$SYSTEM_ACCOUNT" >/dev/null 2>&1 || true
+    fi
+    as_root rm -f "$MAC_RECEIPTS/account.txt"
+}
+
+# Every run: the account stays without a login shell and hidden, and in
+# the person's own group (`staff` on a Mac), which a 0750 home lets through
+# to the models folder. On a Mac `staff` is every person's primary group.
+mac_account_settings() {
+    as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" UserShell /usr/bin/false \
+        || die "could not set $SYSTEM_ACCOUNT's shell"
+    as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" IsHidden 1 || true
+    if [ -n "$PERSON_GROUP" ]; then
+        as_root dseditgroup -o edit -a "$SYSTEM_ACCOUNT" -t user "$PERSON_GROUP" >/dev/null 2>&1 \
+            || warn "could not add $SYSTEM_ACCOUNT to the $PERSON_GROUP group, so Eugene may not reach the
+    models in your home: sudo dseditgroup -o edit -a $SYSTEM_ACCOUNT -t user $PERSON_GROUP"
+    fi
+}
+
+# The daemon's plist: written under a temporary name, checked, renamed.
+write_launch_daemon() {
+    as_root rm -f "$LAUNCHD_DAEMON.new"
+    launchd_xml daemon | (umask 022; as_root tee "$LAUNCHD_DAEMON.new" >/dev/null)
+    as_root chown root:wheel "$LAUNCHD_DAEMON.new"
+    as_root chmod 0644 "$LAUNCHD_DAEMON.new"
+    _lint=$(as_root plutil -lint "$LAUNCHD_DAEMON.new" 2>&1) \
+        || die "the startup job written for Eugene is not a valid plist: $_lint"
+    check_daemon_account "$LAUNCHD_DAEMON.new"
+    as_root mv -f "$LAUNCHD_DAEMON.new" "$LAUNCHD_DAEMON"
+}
+
+# Start (or restart) the daemon. launchd sometimes refuses a bootstrap for
+# a moment after a bootout of the same label, so a refusal is tried again
+# for a few seconds before its words are the answer.
+start_launch_daemon() {
+    as_root launchctl bootout "system/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+    _try=0
+    while :; do
+        if _said=$(as_root launchctl bootstrap system "$LAUNCHD_DAEMON" 2>&1); then
+            DAEMON_STARTED=1
+            return 0
+        fi
+        _try=$((_try + 1))
+        [ "$_try" -lt 5 ] || die "macOS refused to start Eugene's startup job: ${_said:-launchctl gave no reason}"
+        sleep 1
+    done
+}
+
+# When the agent binds wide, macOS's firewall would ask whether to allow
+# incoming connections -- and a daemon has nobody to ask. Allow this
+# install's own Python, and record it where removal looks.
+mac_allow_firewall() {
+    _fw=/usr/libexec/ApplicationFirewall/socketfilterfw
+    [ -x "$_fw" ] || return 0
+    _py=$(in_prefix "$PYBIN" -I -c 'import os, sys; print(os.path.realpath(sys.executable))' 2>/dev/null) || _py=
+    case "$_py" in
+        "$PREFIX"/*) ;;
+        *) warn "could not find this install's Python to allow it through the macOS firewall"; return 0 ;;
+    esac
+    case "$_py" in *"$NL"*) return 0 ;; esac
+    if as_root "$_fw" --add "$_py" >/dev/null 2>&1 && as_root "$_fw" --unblockapp "$_py" >/dev/null 2>&1; then
+        if ! as_root grep -qxF -- "$_py" "$MAC_RECEIPTS/firewall.txt" 2>/dev/null; then
+            printf '%s\n' "$_py" | as_root tee -a "$MAC_RECEIPTS/firewall.txt" >/dev/null
+        fi
+    else
+        warn "the macOS firewall did not take Eugene's Python ($_py); allow it in System Settings >
+    Network > Firewall > Options if other devices cannot connect"
+    fi
+}
+
+# Root's own copy of the removal script, outside the prefix, and the
+# Finder app that runs it -- in the person's Applications, as theirs. A
+# move writes the app only once it has finished: until then the app there
+# is the old install's, and a move that is put back keeps it.
+mac_write_removal() {
+    removal_script | (umask 022; as_root tee "$MAC_RECEIPTS/remove.sh.new" >/dev/null)
+    as_root chown root:wheel "$MAC_RECEIPTS/remove.sh.new"
+    as_root chmod 0755 "$MAC_RECEIPTS/remove.sh.new"
+    as_root mv -f "$MAC_RECEIPTS/remove.sh.new" "$MAC_RECEIPTS/remove.sh"
+    if [ "$MIGRATE" != 1 ] || [ "$MIGRATE_DONE" = 1 ]; then mac_write_removal_app; fi
+}
+
+mac_write_removal_app() {
+    [ -n "$PERSON_HOME" ] || return 0
+    _app="$PERSON_HOME/Applications/Remove Eugene Plexus.app"
+    as_person mkdir -p "$_app/Contents/MacOS" "$_app/Contents/Resources" || return 0
+    {
+        printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0">' '<dict>' \
+            '    <key>CFBundleIdentifier</key><string>com.eugeneplexus.remove</string>' \
+            '    <key>CFBundleName</key><string>Remove Eugene Plexus</string>' \
+            '    <key>CFBundleDisplayName</key><string>Remove Eugene Plexus</string>' \
+            '    <key>CFBundleExecutable</key><string>remove</string>' \
+            '    <key>CFBundlePackageType</key><string>APPL</string>' \
+            '    <key>CFBundleVersion</key><string>1</string>' \
+            '    <key>LSUIElement</key><true/>' '</dict>' '</plist>'
+    } | as_person tee "$_app/Contents/Info.plist" >/dev/null
+    printf '#!/bin/sh\nexec /bin/sh %s --prefix %s --interactive\n' \
+        "$(sh_quote "$MAC_RECEIPTS/remove.sh")" "$(sh_quote "$PREFIX")" \
+        | as_person tee "$_app/Contents/MacOS/remove" >/dev/null
+    as_person chmod 0755 "$_app/Contents/MacOS/remove"
+    printf '%s\n' "$PREFIX" | as_person tee "$_app/Contents/Resources/prefix.txt" >/dev/null
+    printf '%s\n' "$_app" | as_root tee "$MAC_RECEIPTS/mac-app.txt" >/dev/null
+    say "removal: open \"Remove Eugene Plexus\" in $PERSON_HOME/Applications"
+}
+
+# --- moving a Mac's LaunchAgent install to the daemon --------------------
+# A plain re-run over the old per-user layout (row 8, "Migration"). The old
+# prefix is never written: its state is COPIED into the new prefix, the
+# copy becomes the daemon, and only once the daemon answers is the old
+# LaunchAgent removed and its folder moved aside (not deleted). Until then
+# any failure -- a refused download, launchd's refusal, an agent that never
+# answers, an interrupt -- boots the daemon out, removes the copy and the
+# account this run made, and starts the untouched LaunchAgent again.
+mac_migrate_check() {
+    _old=$PERSON_USER_PREFIX
+    if [ -f "$LAUNCHD_DAEMON" ]; then
+        die "this Mac has two Eugene startup jobs: the daemon ($LAUNCHD_DAEMON) and your own
+       LaunchAgent ($PERSON_LAUNCH_AGENT). Remove the per-user one first:
+         curl -fsSL $INSTALLER_URL | sh -s -- --user --uninstall
+       then run this again."
+    fi
+    _old_program=$(plist_get "$PERSON_LAUNCH_AGENT" ProgramArguments.0) || _old_program=
+    case "$_old_program" in
+        "$_old"/*) ;;
+        *) die "Eugene's startup job in your account ($PERSON_LAUNCH_AGENT) starts
+       ${_old_program:-nothing this installer can read}, which is not the install at $_old.
+       Remove that install with its own removal, then run this again. Nothing was changed." ;;
+    esac
+    [ -f "$_old/agent.yaml" ] || die "Eugene's startup job in your account names $_old, which holds no install.
+       Remove $PERSON_LAUNCH_AGENT, then run this again. Nothing was changed."
+    if grep -q '^signingKey:' "$_old/node.yaml" 2>/dev/null; then
+        die "the Eugene install at $_old is from alpha.2 or earlier and cannot move. Remove it
+       (--user --uninstall keeps its files), then run this again."
+    fi
+    # Keep the port and the bind host the old job started the agent with.
+    MIGRATE_PORT=$(plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) || MIGRATE_PORT=
+    MIGRATE_HOST=$(plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_HOST) || MIGRATE_HOST=
+    case "$MIGRATE_PORT" in ''|*[!0-9]*) MIGRATE_PORT= ;; esac
+    # The move is checked by starting the daemon; without that it could end
+    # with two startup jobs, or none that works.
+    [ "$DO_START" = 1 ] || die "moving Eugene to start at boot starts it once to check the move.
+       Re-run without --no-start. Nothing was changed."
+    # The words first, then the one password.
+    say "Eugene will start when this Mac starts, before anyone signs in, in an account of its own."
+    say "  This needs your password once. After the move, sign in to Eugene once; from then on"
+    say "  it unlocks by itself."
+    if [ "$(id -u)" != 0 ]; then
+        sudo -v || die "sudo was refused, so Eugene was left as it is: it starts when you sign in.
+       To keep it that way and update it, re-run with --user."
+    fi
+    if [ -e "$PREFIX" ] || [ -L "$PREFIX" ]; then
+        if as_root test -L "$PREFIX" || [ -n "$(as_root ls -A "$PREFIX" 2>/dev/null)" ]; then
+            die "$PREFIX already holds files, so Eugene was not moved there. Move them away,
+       then run this again. Nothing was changed."
+        fi
+    else
+        MIGRATE_FRESH_PREFIX=1
+    fi
+    MIGRATE=1
+}
+
+# Stop the LaunchAgent and copy what it keeps. Called once the account and
+# the new prefix exist, before anything is downloaded into it.
+mac_migrate_copy() {
+    _old=$PERSON_USER_PREFIX
+    _engines=$PERSON_HOME/.eugene-plexus/engines
+    MIGRATING=1
+    say "stopping Eugene in your account; it starts again from $PREFIX"
+    launchctl bootout "gui/$PERSON_UID/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+    _waited=0
+    while :; do
+        _left=$(ps -axo pid=,comm= | awk -v a="$_old/" -v b="$_engines/" \
+            '{pid=$1; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); if (index($0, a) == 1 || index($0, b) == 1) print pid}')
+        [ -n "$_left" ] || break
+        [ "$_waited" -lt 15 ] || die "Eugene is still running from $_old (process $(printf '%s' "$_left" | tr '\n' ' '))
+       15 seconds after it was asked to stop, so it was not moved."
+        sleep 1
+        _waited=$((_waited + 1))
+    done
+    say "copying its identity, settings and Library to $PREFIX"
+    for _item in "$_old"/* "$_old"/.[!.]*; do
+        [ -e "$_item" ] || [ -L "$_item" ] || continue
+        case "${_item##*/}" in
+            venv|pythons|bin|.cache|uninstall|update|install-check.py|release-requirements.lock) continue ;;
+        esac
+        as_root ditto "$_item" "$PREFIX/${_item##*/}" || die "could not copy $_item to $PREFIX"
+    done
+    if [ -d "$_engines" ] && [ ! -L "$_engines" ]; then
+        as_root ditto "$_engines" "$PREFIX/engines" || die "could not copy the engine builds in $_engines"
+        MIGRATED_ENGINES=1
+    fi
+    # -P: a link inside is given to the account itself, never followed.
+    as_root chown -R -P "$SYSTEM_ACCOUNT:$SYSTEM_ACCOUNT" "$PREFIX" \
+        || die "could not give $PREFIX to $SYSTEM_ACCOUNT"
+    as_root chmod 0750 "$PREFIX"
+}
+
+# The copy's settings named the old folder; they name the new one now. And
+# an install that unlocked from the Keychain unlocks from the passphrase
+# file: the daemon has no Keychain (MAC-KEY). Its first sign-in writes it.
+mac_migrate_rewrite() {
+    in_prefix "$PYBIN" -I - "$PERSON_USER_PREFIX" "$PREFIX" <<'PYEOF' \
+        || die "could not point the moved settings at $PREFIX"
+import pathlib
+import re
+import sys
+
+old, new = sys.argv[1], sys.argv[2]
+inside = re.compile(re.escape(old) + r"(?=[/\"'\s,\]}]|$)", re.M)
+for path in sorted(pathlib.Path(new).glob("*.yaml")) + sorted(pathlib.Path(new).glob("*.json")):
+    if path.is_symlink() or not path.is_file():
+        continue
+    text = path.read_text(encoding="utf-8")
+    moved = inside.sub(lambda _: new, text)
+    if path.name in ("agent.yaml", "control.yaml"):
+        moved = re.sub(r"(?m)^securityMode:\s*os_keyring\s*$", "securityMode: passphrase_file", moved)
+    if moved != text:
+        temporary = path.with_name(path.name + ".moving")
+        temporary.write_text(moved, encoding="utf-8", newline="\n")
+        temporary.replace(path)
+PYEOF
+}
+
+# The daemon answers: the LaunchAgent goes, the old folder is moved aside
+# and kept, the old engine store (now copied) goes, and so does the old
+# removal app, which named the old folder.
+mac_migrate_finish() {
+    _old=$PERSON_USER_PREFIX
+    MIGRATE_DONE=1
+    as_person rm -f "$PERSON_LAUNCH_AGENT" || warn "could not remove $PERSON_LAUNCH_AGENT"
+    _aside=$_old.moved-$(date +%Y%m%d%H%M%S)
+    if as_person mv "$_old" "$_aside"; then
+        say "the old install is kept at $_aside; nothing was deleted from it"
+    else
+        warn "could not move $_old aside; it no longer starts, and can be deleted"
+    fi
+    if [ "$MIGRATED_ENGINES" = 1 ]; then
+        as_person rm -rf "$PERSON_HOME/.eugene-plexus/engines" || true
+    fi
+    _oldapp="$PERSON_HOME/Applications/Remove Eugene Plexus.app"
+    if [ -f "$_oldapp/Contents/Resources/prefix.txt" ] \
+            && [ "$(cat "$_oldapp/Contents/Resources/prefix.txt")" = "$_old" ]; then
+        as_person rm -rf "$_oldapp" || true
+    fi
+    mac_write_removal_app
+}
+
+# A failed move puts the Mac back: the daemon booted out, the copy and the
+# account this run made removed, the untouched LaunchAgent started again.
+mac_migrate_rollback() {
+    [ "$MIGRATING" = 1 ] && [ "$MIGRATE_DONE" = 0 ] || return 0
+    MIGRATING=0
+    as_root launchctl bootout "system/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+    as_root rm -f "$LAUNCHD_DAEMON" "$LAUNCHD_DAEMON.new"
+    # Only a folder this run made, and never a link.
+    if [ "$MIGRATE_FRESH_PREFIX" = 1 ] && ! as_root test -L "$PREFIX"; then
+        case "$PREFIX" in ''|/|/usr|/usr/local|/Users|"$PERSON_HOME") ;; *) as_root rm -rf "$PREFIX" || true ;; esac
+    fi
+    # The firewall entry this run added, for a Python that is gone now.
+    if as_root test -f "$MAC_RECEIPTS/firewall.txt"; then
+        as_root cat "$MAC_RECEIPTS/firewall.txt" | while IFS= read -r _program; do
+            case "$_program" in "$PREFIX"/*)
+                as_root /usr/libexec/ApplicationFirewall/socketfilterfw --remove "$_program" >/dev/null 2>&1 || true ;;
+            esac
+        done
+    fi
+    as_root rm -f "$MAC_RECEIPTS/firewall.txt" "$MAC_RECEIPTS/remove.sh" "$MAC_RECEIPTS/mac-app.txt"
+    if [ "$ACCOUNT_CREATED" = 1 ]; then mac_delete_account; fi
+    if launchctl bootstrap "gui/$PERSON_UID" "$PERSON_LAUNCH_AGENT" >/dev/null 2>&1; then
+        _back=$(plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) || _back=8079
+        _i=0
+        while [ "$_i" -lt 30 ]; do
+            if curl -fsS -o /dev/null "http://127.0.0.1:${_back:-8079}/healthz" 2>/dev/null; then
+                printf '       Eugene runs again from %s, starting when you sign in, as before.\n' "$PERSON_USER_PREFIX" >&2
+                return 0
+            fi
+            _i=$((_i + 1))
+            sleep 1
+        done
+        printf '       Eugene was started again from %s but has not answered yet.\n' "$PERSON_USER_PREFIX" >&2
+    else
+        printf '       Eugene in your account could not be started again: launchctl bootstrap gui/%s %s\n' \
+            "$PERSON_UID" "$PERSON_LAUNCH_AGENT" >&2
     fi
 }
 
@@ -1697,25 +2236,221 @@ def install_macos(prefix: Path) -> None:
 if __name__ == "__main__":
     main()
 EUGENE_REMOVAL_INVENTORY_PY
-    cat > "$PREFIX/uninstall/remove.sh" <<'EUGENE_REMOVAL_REMOVE_SH'
+    removal_script > "$PREFIX/uninstall/remove.sh"
+    cat > "$PREFIX/uninstall/Remove Eugene.command" <<'EUGENE_REMOVAL_COMMAND'
+#!/bin/sh
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+exec /bin/sh "$HERE/remove.sh" --interactive
+EUGENE_REMOVAL_COMMAND
+    chmod 700 "$PREFIX/uninstall/Remove Eugene.command" "$PREFIX/uninstall/remove.sh"
+}
+removal_script() {
+    cat <<'EUGENE_REMOVAL_REMOVE_SH'
 #!/bin/sh
 # Offline removal. The installer embeds this script and inventory.py.
 set -eu
 PREFIX=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
-INTERACTIVE=0 PURGE_DOWNLOADS=0 PURGE_DATA=0
+INTERACTIVE=0 PURGE_DOWNLOADS=0 PURGE_DATA=0 PERSON=
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --prefix) PREFIX=$2; shift 2 ;;
         --interactive) INTERACTIVE=1; shift ;;
         --purge-downloads|--purge-model-copies) PURGE_DOWNLOADS=1; shift ;;
         --purge-data) PURGE_DATA=1; shift ;;
+        --person) PERSON=$2; shift 2 ;;
         *) echo "Unknown removal option: $1" >&2; exit 2 ;;
     esac
 done
 PLATFORM=$(uname -s)
-case "$PREFIX" in ''|/|"$HOME"|/Applications|/usr|/var|/opt|*/../*|*/./*) echo "Not an installation folder: $PREFIX" >&2; exit 1 ;; esac
+case "$PREFIX" in ''|/|"$HOME"|/Applications|/usr|/usr/local|/var|/opt|*/../*|*/./*) echo "Not an installation folder: $PREFIX" >&2; exit 1 ;; esac
 if [ ! -d "$PREFIX" ]; then echo "Nothing installed at $PREFIX"; exit 0; fi
 if [ -L "$PREFIX" ]; then echo "Refusing a linked installation folder: $PREFIX" >&2; exit 1; fi
+
+# --- a Mac's system install (row 8) -----------------------------------------
+# Eugene runs as a LaunchDaemon in its own account, `_eugeneplexus`, from a
+# prefix only that account can read. Removing it is root's work: stop the
+# job, keep the files as root's alone, and remove the account only when the
+# installer recorded making it. Nothing from the prefix runs here, because
+# that account can write it: this is root's own copy of the script, outside
+# the prefix, and only system tools run as root. A daemon whose program is
+# in another folder is another install's, and is left alone.
+DAEMON_LABEL=com.eugeneplexus.agent
+DAEMON_PLIST=/Library/LaunchDaemons/$DAEMON_LABEL.plist
+RECEIPTS=/usr/local/lib/eugene-plexus
+SERVICE_ACCOUNT=_eugeneplexus
+IS_DAEMON=0 PLIST_OURS=0
+if [ "$PLATFORM" = Darwin ]; then
+    if [ -f "$DAEMON_PLIST" ]; then
+        PROGRAM=$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - "$DAEMON_PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c 'Print :ProgramArguments:0' "$DAEMON_PLIST" 2>/dev/null || true)
+        REAL_PREFIX=$(CDPATH= cd -- "$PREFIX" 2>/dev/null && pwd -P || printf '%s' "$PREFIX")
+        case "$PROGRAM" in "$PREFIX"/*|"$REAL_PREFIX"/*) PLIST_OURS=1 ;; esac
+    fi
+    # A prefix Eugene's account owns is the daemon layout even with its job
+    # gone, and root must never run the Python in it (the steps below do).
+    if [ "$PLIST_OURS" = 1 ] || [ "$(stat -f %Su "$PREFIX" 2>/dev/null)" = "$SERVICE_ACCOUNT" ]; then
+        IS_DAEMON=1
+    fi
+fi
+if [ "$IS_DAEMON" = 1 ]; then
+    dialog() {
+        [ "$INTERACTIVE" = 1 ] || return 0
+        /usr/bin/osascript - "$1" "$2" <<'APPLE' >/dev/null 2>&1 || true
+on run argv
+    display dialog (item 2 of argv) with title (item 1 of argv) buttons {"OK"} default button "OK"
+end run
+APPLE
+    }
+    die_daemon() {
+        printf 'error: %s\n' "$*" >&2
+        dialog "Eugene removal did not finish" "$*"
+        exit 1
+    }
+    if [ "$(id -u)" != 0 ]; then
+        # Root runs this script again, so it must be root's: owned by root,
+        # written by nobody else, in a folder only root can write.
+        SELF=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")
+        for path in "$SELF" "$(dirname -- "$SELF")"; do
+            [ "$(stat -f %u "$path" 2>/dev/null)" = 0 ] || die_daemon "Removing Eugene needs root's own copy of its removal: run $RECEIPTS/remove.sh. Nothing was removed."
+            case "$(stat -f %Sp "$path" 2>/dev/null)" in
+                ?????w*|????????w*) die_daemon "$path can be changed by others, so it was not run as root. Nothing was removed." ;;
+            esac
+        done
+        set -- /bin/sh "$SELF" --prefix "$PREFIX" --person "$(id -un)"
+        [ "$PURGE_DOWNLOADS" != 1 ] || set -- "$@" --purge-downloads
+        [ "$PURGE_DATA" != 1 ] || set -- "$@" --purge-data
+        if [ "$INTERACTIVE" != 1 ]; then
+            exec sudo "$@"
+        fi
+        if ! /usr/bin/osascript - "$PREFIX" <<'APPLE' >/dev/null 2>&1
+on run argv
+    display dialog ("Remove Eugene from this Mac?" & return & "It stops starting at boot, and its own account is removed. Its settings are kept, readable by administrators only, beside " & item 1 of argv & ".") with title "Remove Eugene Plexus" buttons {"Cancel", "Remove Eugene"} default button "Cancel" cancel button "Cancel" with icon caution
+end run
+APPLE
+        then echo 'Removal cancelled.'; exit 0; fi
+        if REPORT=$(/usr/bin/osascript - "$@" <<'APPLE' 2>&1
+on run argv
+    set command to ""
+    repeat with anArgument in argv
+        set command to command & " " & quoted form of (contents of anArgument)
+    end repeat
+    do shell script command with administrator privileges
+end run
+APPLE
+        ); then
+            printf '%s\n' "$REPORT"
+            dialog "Eugene removal" "$REPORT"
+            exit 0
+        fi
+        die_daemon "Eugene was not removed: $REPORT"
+    fi
+
+    # Root from here on.
+    WARNINGS=$(mktemp "/tmp/eugene-plexus-removal.XXXXXX")
+    warn() { printf 'warning: %s\n' "$*" >&2; printf '%s\n' "$*" >> "$WARNINGS"; }
+    if [ "$PLIST_OURS" = 1 ]; then
+        if launchctl print "system/$DAEMON_LABEL" >/dev/null 2>&1; then
+            if ! SAID=$(launchctl bootout "system/$DAEMON_LABEL" 2>&1); then
+                rm -f "$WARNINGS"
+                die_daemon "macOS refused to stop Eugene's startup job: ${SAID:-launchctl gave no reason}. Nothing was removed."
+            fi
+        fi
+        rm -f "$DAEMON_PLIST"
+    fi
+    # Anything still running from the prefix, its engines included. Match
+    # an executable's path, never a pattern.
+    PIDS=$(ps -axo pid=,comm= | awk -v root="$PREFIX/" '{pid=$1; sub(/^[[:space:]]*[0-9]+[[:space:]]+/, ""); if(index($0,root)==1) print pid}')
+    for pid in $PIDS; do kill -TERM "$pid" 2>/dev/null || true; done
+    tries=0
+    while [ "$tries" -lt 15 ]; do
+        alive=0
+        for pid in $PIDS; do if kill -0 "$pid" 2>/dev/null; then alive=1; fi; done
+        [ "$alive" = 0 ] && break
+        sleep 1; tries=$((tries + 1))
+    done
+    for pid in $PIDS; do
+        if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || warn "Eugene process $pid did not stop."; fi
+    done
+    # The firewall entry the installer added for this install's Python.
+    if [ -f "$RECEIPTS/firewall.txt" ]; then
+        while IFS= read -r program; do
+            case "$program" in "$PREFIX"/*) ;; *) continue ;; esac
+            /usr/libexec/ApplicationFirewall/socketfilterfw --remove "$program" >/dev/null 2>&1 \
+                || warn "Firewall entry kept: $program. Remove it in System Settings > Network > Firewall > Options."
+        done < "$RECEIPTS/firewall.txt"
+    fi
+    # Keychain entries the person's own install made before it moved to the
+    # daemon (os_keyring); they are named by this install's master salt.
+    SALT=$(sed -n 's/^[[:space:]]*masterSalt:[[:space:]]*//p' "$PREFIX/agent.yaml" 2>/dev/null | head -n 1 | tr -d "'\"")
+    if [ -n "$PERSON" ] && [ -n "$SALT" ] && id -u "$PERSON" >/dev/null 2>&1 && [ "$PERSON" != root ]; then
+        FP=$(printf '%s' "$SALT" | base64 --decode 2>/dev/null | shasum -a 256 | cut -c1-12)
+        for service in eugene-plexus-agent eugene-plexus-control; do
+            for name in "master-key:$FP" "master-key-$FP"; do
+                rc=0
+                sudo -u "$PERSON" /usr/bin/security delete-generic-password -s "$service" -a "$name" >/dev/null 2>&1 || rc=$?
+                case "$rc" in 0|44) ;; *) warn "Keychain entry kept: $service ($name). Remove it in Keychain Access." ;; esac
+            done
+        done
+    fi
+    # The files stay, as root's alone: the account goes next, and files
+    # left with its number would belong to whichever account gets it.
+    KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
+    [ ! -e "$KEEP" ] || die_daemon "The retained folder already exists: $KEEP. Nothing more was removed."
+    mv -- "$PREFIX" "$KEEP" || die_daemon "Could not move $PREFIX to $KEEP. Eugene no longer starts; run the removal again."
+    chown -R -P root:wheel "$KEEP" || warn "Could not give $KEEP to root."
+    chmod 0700 "$KEEP"
+    # The engine builds and model copies this install downloaded, as the
+    # Linux system removal names them: the account's home is the prefix.
+    if [ "$PURGE_DOWNLOADS" = 1 ]; then rm -rf -- "$KEEP/engines" "$KEEP/.eugene-plexus" || warn "Could not remove the engine builds in $KEEP."; fi
+    if [ "$PURGE_DATA" = 1 ]; then
+        # Everything but a models folder, which holds a person's files.
+        for item in "$KEEP"/* "$KEEP"/.[!.]*; do
+            [ -e "$item" ] || [ -L "$item" ] || continue
+            [ "${item##*/}" = models ] && continue
+            rm -rf -- "$item" || warn "Could not remove $item."
+        done
+        rmdir "$KEEP" 2>/dev/null || true
+    fi
+    # The account, only when the installer made it, and only that account.
+    if [ -f "$RECEIPTS/account.txt" ]; then
+        read -r _kind UID_MADE GID_MADE GROUP_MADE < "$RECEIPTS/account.txt" || true
+        if [ "$(id -u "$SERVICE_ACCOUNT" 2>/dev/null)" = "$UID_MADE" ] && [ -n "$UID_MADE" ] && [ "$UID_MADE" != 0 ]; then
+            for group in $(id -Gn "$SERVICE_ACCOUNT" 2>/dev/null); do
+                [ "$group" = "$SERVICE_ACCOUNT" ] && continue
+                dseditgroup -o edit -d "$SERVICE_ACCOUNT" -t user "$group" >/dev/null 2>&1 || true
+            done
+            dscl . -delete "/Users/$SERVICE_ACCOUNT" || warn "Could not remove the $SERVICE_ACCOUNT account: sudo dscl . -delete /Users/$SERVICE_ACCOUNT"
+        fi
+        if [ "$GROUP_MADE" = 1 ] && [ -n "$GID_MADE" ] && [ "$GID_MADE" != 0 ] \
+                && [ "$(dscl . -read "/Groups/$SERVICE_ACCOUNT" PrimaryGroupID 2>/dev/null | awk '{print $2}')" = "$GID_MADE" ]; then
+            dscl . -delete "/Groups/$SERVICE_ACCOUNT" || warn "Could not remove the $SERVICE_ACCOUNT group: sudo dscl . -delete /Groups/$SERVICE_ACCOUNT"
+        fi
+    fi
+    # The removal app, only ours (its recorded prefix is this one).
+    if [ -f "$RECEIPTS/mac-app.txt" ]; then
+        APP=$(cat "$RECEIPTS/mac-app.txt")
+        case "$APP" in */Applications/"Remove Eugene Plexus"*.app)
+            if [ -f "$APP/Contents/Resources/prefix.txt" ] && [ "$(cat "$APP/Contents/Resources/prefix.txt")" = "$PREFIX" ]; then rm -rf -- "$APP"; fi ;;
+        esac
+    fi
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
+    rmdir "$RECEIPTS" 2>/dev/null || true
+    echo "Eugene's removal finished. It no longer starts at boot."
+    if [ -d "$KEEP" ]; then
+        echo "Its settings and logs are kept, readable by administrators only: $KEEP"
+        echo "Delete them when you are sure: sudo rm -rf '$KEEP'"
+    fi
+    echo 'Your model folders were kept.'
+    if [ -s "$WARNINGS" ]; then echo 'Items to review:'; cat "$WARNINGS"; rm -f "$WARNINGS"; exit 1; fi
+    rm -f "$WARNINGS"
+    exit 0
+fi
+# A per-user install is removed by its person: as root this would run the
+# Python in their folder as root.
+if [ "$PLATFORM" = Darwin ] && [ "$(id -u)" = 0 ]; then
+    echo "The install at $PREFIX belongs to a person's own account. Run its removal as that person, without sudo. Nothing was removed." >&2
+    exit 1
+fi
 if [ ! -f "$PREFIX/agent.yaml" ] && [ ! -f "$PREFIX/node.yaml" ] && [ ! -f "$PREFIX/bin/uv" ] && [ ! -f "$PREFIX/uninstall/receipt/inventory.json" ]; then
     echo "No Eugene installation or removal receipt at $PREFIX. Nothing was removed." >&2; exit 1
 fi
@@ -1918,12 +2653,6 @@ APPLE
 fi
 [ ! -s "$WARNINGS" ] || exit 1
 EUGENE_REMOVAL_REMOVE_SH
-    cat > "$PREFIX/uninstall/Remove Eugene.command" <<'EUGENE_REMOVAL_COMMAND'
-#!/bin/sh
-HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
-exec /bin/sh "$HERE/remove.sh" --interactive
-EUGENE_REMOVAL_COMMAND
-    chmod 700 "$PREFIX/uninstall/Remove Eugene.command" "$PREFIX/uninstall/remove.sh"
 }
 # END GENERATED OFFLINE REMOVAL
 
@@ -2013,7 +2742,7 @@ model_copy_dir() {
 if [ "$DO_UNINSTALL" = 1 ]; then
     # What is installed decides, not what the default is now: a per-user
     # install made before 2026-09-24 is uninstalled as one, without sudo.
-    if [ "$MODE" = system ] && [ ! -f "$SYSTEM_UNIT" ] \
+    if [ "$MODE" = system ] && [ ! -f "$SYSTEM_SERVICE_FILE" ] \
             && ! id "$SYSTEM_ACCOUNT" >/dev/null 2>&1; then
         MODE=user
         if [ "$PREFIX" = "$SYSTEM_PREFIX" ] && [ -z "${EUGENE_PLEXUS_HOME:-}" ]; then
@@ -2022,6 +2751,38 @@ if [ "$DO_UNINSTALL" = 1 ]; then
             PYBIN=$VENV/bin/python
         fi
     fi
+fi
+
+# **A Mac's system install is removed by root's own copy of the removal
+# script** (row 8): this version's, written root-only outside the prefix,
+# run as root. It stops the daemon, keeps the files as root's alone, and
+# removes the account only when this installer recorded making it.
+if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
+    if [ "$(id -u)" != 0 ]; then
+        sudo -v || die "removing Eugene's own account needs sudo, and sudo was refused"
+    fi
+    if [ ! -f "$LAUNCHD_DAEMON" ] && ! as_root test -d "$PREFIX"; then
+        say "nothing installed at $PREFIX"
+        exit 0
+    fi
+    _remover=$(as_root mktemp /tmp/eugene-plexus-remove.XXXXXX) || die "could not make a temporary file for the removal"
+    removal_script | as_root tee "$_remover" >/dev/null
+    as_root chmod 0700 "$_remover"
+    set -- --prefix "$PREFIX"
+    [ -z "$PERSON" ] || set -- "$@" --person "$PERSON"
+    [ "$DO_PURGE_COPIES" != 1 ] || set -- "$@" --purge-downloads
+    [ "$DO_PURGE_DATA" != 1 ] || set -- "$@" --purge-data
+    _rc=0
+    as_root /bin/sh "$_remover" "$@" || _rc=$?
+    as_root rm -f "$_remover"
+    # A daemon plist naming another folder was not this install's.
+    if [ "$_rc" = 0 ] && [ -f "$LAUNCHD_DAEMON" ]; then
+        warn "the startup job at $LAUNCHD_DAEMON belongs to another install and was left alone"
+    fi
+    if [ -n "$PERSON_HOME" ] && [ -d "$PERSON_HOME/Eugene Models" ]; then
+        say "your models in $PERSON_HOME/Eugene Models are yours, and were not touched"
+    fi
+    exit "$_rc"
 fi
 
 if [ "$DO_UNINSTALL" = 1 ] && [ "$MODE" = system ]; then
@@ -2121,6 +2882,13 @@ ACCOUNT_CREATED=0
 SYS_UNIT_BACKUP= SYS_WAS_ACTIVE=0 SYS_WAS_ENABLED=0
 USR_UNIT_BACKUP= USR_WAS_ACTIVE=0 USR_WAS_ENABLED=0
 PLIST_BACKUP= PLIST_WAS_LOADED=0
+DAEMON_BACKUP= DAEMON_WAS_LOADED=0
+
+# Remove the account this run made, on the way back to how it was.
+remove_created_account() {
+    if [ "$PLATFORM" = macos ]; then mac_delete_account
+    else as_root userdel "$SYSTEM_ACCOUNT" >/dev/null 2>&1 || true; fi
+}
 
 # Move one folder aside, as root for the system layout.
 set_aside_one() {
@@ -2160,6 +2928,23 @@ take_over_existing() {
             as_root systemctl disable "$SERVICE_LABEL" >/dev/null 2>&1 || true
             as_root rm -f "$SYSTEM_UNIT"
             as_root systemctl daemon-reload >/dev/null 2>&1 || true
+        fi
+        if [ -d "$SYSTEM_PREFIX" ]; then set_aside_one root "$SYSTEM_PREFIX"; fi
+    fi
+    # A Mac's daemon (row 8): its job stopped and kept aside, its prefix
+    # moved aside as root, both put back if the join fails.
+    if [ "$PLATFORM" = macos ] && { [ -f "$LAUNCHD_DAEMON" ] || [ -d "$SYSTEM_PREFIX" ]; }; then
+        if [ "$(id -u)" != 0 ]; then
+            say "Eugene is already installed here under its own account; moving it aside needs sudo"
+            sudo -v || die "sudo was refused, so the install that is here was left as it is."
+        fi
+        if [ -f "$LAUNCHD_DAEMON" ]; then
+            DAEMON_BACKUP=$(mktemp "${TMPDIR:-/tmp}/eugene-plexus-daemon.XXXXXX")
+            cp "$LAUNCHD_DAEMON" "$DAEMON_BACKUP"
+            if as_root launchctl print "system/$LAUNCHD_LABEL" >/dev/null 2>&1; then DAEMON_WAS_LOADED=1; fi
+            say "stopping Eugene's startup job"
+            as_root launchctl bootout "system/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+            as_root rm -f "$LAUNCHD_DAEMON"
         fi
         if [ -d "$SYSTEM_PREFIX" ]; then set_aside_one root "$SYSTEM_PREFIX"; fi
     fi
@@ -2206,7 +2991,12 @@ restore_existing() {
             if [ "$MODE" = system ]; then as_root rm -rf "$FRESH_PREFIX" || true
             else rm -rf "$FRESH_PREFIX" || true; fi ;;
     esac
-    if [ "$ACCOUNT_CREATED" = 1 ]; then as_root userdel "$SYSTEM_ACCOUNT" >/dev/null 2>&1 || true; fi
+    if [ "$ACCOUNT_CREATED" = 1 ]; then remove_created_account; fi
+    if [ "$PLATFORM" = macos ] && [ "$MODE" = system ]; then
+        # The job this run may have written goes before the old one comes back.
+        as_root launchctl bootout "system/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+        as_root rm -f "$LAUNCHD_DAEMON" "$LAUNCHD_DAEMON.new"
+    fi
     printf '%s' "$SET_ASIDE_LIST" | awk '{ lines[NR] = $0 } END { for (i = NR; i > 0; i--) print lines[i] }' |
     while IFS='|' read -r _kind _path _aside; do
         [ -n "$_path" ] || continue
@@ -2238,6 +3028,18 @@ restore_existing() {
         cp "$PLIST_BACKUP" "$LAUNCHD_PLIST" && rm -f "$PLIST_BACKUP" || warn "could not restore $LAUNCHD_PLIST"
         if [ "$PLIST_WAS_LOADED" = 1 ]; then launchctl bootstrap "gui/$(id -u)" "$LAUNCHD_PLIST" >/dev/null 2>&1 || true; fi
     fi
+    if [ -n "$DAEMON_BACKUP" ]; then
+        { as_root cp "$DAEMON_BACKUP" "$LAUNCHD_DAEMON" && as_root chown root:wheel "$LAUNCHD_DAEMON" \
+            && as_root chmod 0644 "$LAUNCHD_DAEMON" && rm -f "$DAEMON_BACKUP"; } \
+            || warn "could not restore $LAUNCHD_DAEMON"
+        if [ "$DAEMON_WAS_LOADED" = 1 ]; then
+            if as_root launchctl bootstrap system "$LAUNCHD_DAEMON" >/dev/null 2>&1; then
+                say "Eugene's startup job is running again"
+            else
+                warn "could not start Eugene's startup job again: sudo launchctl bootstrap system $LAUNCHD_DAEMON"
+            fi
+        fi
+    fi
 }
 
 # Whatever stops this run after installs were set aside and before the
@@ -2250,6 +3052,11 @@ on_exit() {
     if [ "$_code" != 0 ] && [ -n "$SET_ASIDE_STAMP" ] && [ "$JOIN_COMMITTED" = 0 ] && [ "$RESTORED" = 0 ]; then
         restore_existing
         printf '       This machine is back as it was.\n' >&2
+    fi
+    # A Mac's move to the daemon that did not finish (row 8).
+    if [ "$_code" != 0 ] && [ "$MIGRATING" = 1 ] && [ "$MIGRATE_DONE" = 0 ]; then
+        printf '       Eugene was not moved. Putting this Mac back as it was.\n' >&2
+        mac_migrate_rollback
     fi
 }
 trap on_exit EXIT
@@ -2315,7 +3122,8 @@ if [ "$JOIN_SITE" = 1 ]; then
     [ -x "$VENV/bin/eugene-plexus-agent" ] || die "this machine is not a node yet.
        Install Eugene here and join it to your install first, then run this
        again. A machine that is only a job site waits for the standalone install."
-    SITE_LABEL=${JOIN_NAME:-$(hostname)}
+    # --label first (row 8), then --name, then this machine's host name.
+    SITE_LABEL=${JOIN_LABEL:-${JOIN_NAME:-$(hostname)}}
     set -- site join --url "$JOIN_CONTROL" --token "$JOIN_TOKEN" --owner "$JOIN_OWNER" --label "$SITE_LABEL"
     if [ -n "$JOIN_ROOT_KEY" ]; then set -- "$@" --root-key "$JOIN_ROOT_KEY"; fi
     if [ -n "$SITE_LINK_ACCOUNT" ]; then set -- "$@" --site-account "$SITE_LINK_ACCOUNT"; fi
@@ -2339,7 +3147,23 @@ fi
 # says how to update the one that is there.
 PERSON_USER_PREFIX=${PERSON_HOME:-$HOME}/.local/share/eugene-plexus
 PERSON_USER_UNIT=${PERSON_HOME:-$HOME}/.config/systemd/user/$SERVICE_LABEL.service
-if [ "$MODE" = system ] \
+if [ "$PLATFORM" = macos ]; then
+    # A Mac moves its per-user install across (row 8) rather than refusing
+    # beside it: see "moving a Mac's LaunchAgent install to the daemon".
+    if [ "$MODE" = system ] && [ -n "$PERSON_LAUNCH_AGENT" ] && [ -f "$PERSON_LAUNCH_AGENT" ]; then
+        mac_migrate_check
+    elif [ "$MODE" = system ] && [ -f "$PERSON_USER_PREFIX/agent.yaml" ]; then
+        die "this Mac already has Eugene installed under your own account, at
+    $PERSON_USER_PREFIX
+  and nothing starts it, so it cannot be moved to an account of its own as it is.
+  To update it:  re-run with --user
+  To move it:    re-run with --user once (that gives it its startup job), then run
+                 this again without --user."
+    fi
+    if [ "$MODE" = user ] && [ "$DO_SERVICE" = 1 ] && [ -f "$LAUNCHD_DAEMON" ]; then
+        die "This Mac already starts Eugene at boot. Re-run without --user to update it."
+    fi
+elif [ "$MODE" = system ] \
         && { [ -f "$PERSON_USER_UNIT" ] || [ -f "$PERSON_USER_PREFIX/agent.yaml" ]; }; then
     die "this machine already has Eugene installed under your own account, at
     $PERSON_USER_PREFIX
@@ -2349,40 +3173,59 @@ if [ "$MODE" = system ] \
   then re-run without --user. Moving an install across is not built yet, so the
   machine then starts as a new install and any machines joined to it join again."
 fi
-if [ "$MODE" = user ] && [ "$DO_SERVICE" = 1 ] && [ -f "$SYSTEM_UNIT" ]; then
+if [ "$PLATFORM" = linux ] && [ "$MODE" = user ] && [ "$DO_SERVICE" = 1 ] && [ -f "$SYSTEM_UNIT" ]; then
     die "this machine already has Eugene installed under its own account (the
   $SERVICE_LABEL system service, in $SYSTEM_PREFIX). Re-run without --user to update it."
 fi
 
-# --- 0. Eugene's own account (the default on Linux) ----------------------
+# --- 0. Eugene's own account (the default) -------------------------------
 if [ "$MODE" = system ]; then
-    [ -d /run/systemd/system ] || die "this machine is not running systemd, so Eugene cannot run as a
+    if [ "$PLATFORM" = linux ]; then
+        [ -d /run/systemd/system ] || die "this machine is not running systemd, so Eugene cannot run as a
   service under its own account here. Re-run with --user to install it under your own
   account instead (anything you run can then control Eugene), or with --no-service
   to start it yourself."
+    fi
     if [ "$(id -u)" != 0 ]; then
         command -v sudo >/dev/null 2>&1 || die "Eugene runs under its own account, and setting that up
   needs root, but sudo is not installed. Run this as root, or re-run with --user."
-        say "Eugene will run under its own account, $SYSTEM_ACCOUNT, so the programs you run"
-        say "  cannot read its keys. Setting that up needs sudo, once."
+        if [ "$MIGRATE" != 1 ]; then
+            say "Eugene will run under its own account, $SYSTEM_ACCOUNT, so the programs you run"
+            say "  cannot read its keys. Setting that up needs sudo, once."
+        fi
         sudo -v || die "sudo was refused. Re-run with --user to install Eugene under your own
   account instead, without sudo."
     fi
+    if [ "$PLATFORM" = macos ]; then
+        # Root's record of what this installer made, outside the prefix.
+        if [ -L "$MAC_RECEIPTS" ] || [ -L "$PREFIX" ]; then
+            die "$MAC_RECEIPTS or $PREFIX is a link; Eugene's folders must be real ones. Nothing was changed."
+        fi
+        as_root install -d -m 0755 -o root -g wheel "$MAC_RECEIPTS"
+    fi
     if ! id "$SYSTEM_ACCOUNT" >/dev/null 2>&1; then
-        say "creating the $SYSTEM_ACCOUNT account"
-        NOLOGIN=/usr/sbin/nologin
-        [ -x "$NOLOGIN" ] || NOLOGIN=/sbin/nologin
-        [ -x "$NOLOGIN" ] || NOLOGIN=/bin/false
-        as_root useradd --system --user-group --home-dir "$PREFIX" --no-create-home \
-            --shell "$NOLOGIN" "$SYSTEM_ACCOUNT" \
-            || die "could not create the $SYSTEM_ACCOUNT account"
+        if [ "$PLATFORM" = macos ]; then
+            mac_create_account
+        else
+            say "creating the $SYSTEM_ACCOUNT account"
+            NOLOGIN=/usr/sbin/nologin
+            [ -x "$NOLOGIN" ] || NOLOGIN=/sbin/nologin
+            [ -x "$NOLOGIN" ] || NOLOGIN=/bin/false
+            as_root useradd --system --user-group --home-dir "$PREFIX" --no-create-home \
+                --shell "$NOLOGIN" "$SYSTEM_ACCOUNT" \
+                || die "could not create the $SYSTEM_ACCOUNT account"
+        fi
         ACCOUNT_CREATED=1
     fi
+    [ "$PLATFORM" != macos ] || mac_account_settings
     # 0750: Eugene's account, and nobody but root, can look inside -- which
     # is the whole point. Applied on every run, so a prefix somebody opened
     # up by hand is closed again.
     as_root install -d -m 0750 -o "$SYSTEM_ACCOUNT" -g "$SYSTEM_ACCOUNT" \
         "$PREFIX" "$PREFIX/bin" "$PREFIX/logs"
+    # A Mac moving its LaunchAgent install across: stop it and copy its
+    # state in now, before anything is downloaded into the new prefix.
+    if [ "$MIGRATE" = 1 ]; then mac_migrate_copy; fi
 fi
 
 # **An install from alpha.2 or earlier cannot be upgraded, and says so**
@@ -2436,8 +3279,12 @@ elif [ "$MODE" = system ]; then
     say "$UV_FETCH"
     command -v curl >/dev/null 2>&1 || die "curl is required"
     # Fetched as this shell and run as Eugene's account, which cannot read
-    # a file this shell's umask made private -- hence the chmod.
-    UV_BOOTSTRAP=$(mktemp "${TMPDIR:-/tmp}/uv-install.XXXXXX")
+    # a file this shell's umask made private -- hence the chmod. On a Mac
+    # TMPDIR is the person's own 0700 folder, which that account cannot
+    # enter, so the file goes in /tmp there.
+    _shared_tmp=${TMPDIR:-/tmp}
+    [ "$PLATFORM" != macos ] || _shared_tmp=/tmp
+    UV_BOOTSTRAP=$(mktemp "$_shared_tmp/uv-install.XXXXXX")
     UV_FETCH_ERR=$(mktemp "${TMPDIR:-/tmp}/uv-fetch.XXXXXX")
     if ! curl -fsSL -o "$UV_BOOTSTRAP" https://astral.sh/uv/install.sh 2>"$UV_FETCH_ERR"; then
         printf '\033[31merror:\033[0m could not fetch https://astral.sh/uv/install.sh\n' >&2
@@ -2511,7 +3358,7 @@ else
 fi
 
 if [ "$NATIVE_APPLE" = 1 ]; then
-    PY_ARCH=$("$PYBIN" -c 'import platform; print(platform.machine())') \
+    PY_ARCH=$(in_prefix "$PYBIN" -c 'import platform; print(platform.machine())') \
         || die "could not inspect the Python interpreter at $PYBIN; nothing was installed into it"
     case "$PY_ARCH" in
         arm64|aarch64) : ;;
@@ -3983,6 +4830,7 @@ PYEOF
 
 in_prefix test -x "$VENV/bin/eugene-plexus-agent" || die "the eugene-plexus-agent command did not install"
 say "all seven packages present, with a web UI"
+if [ "$MIGRATE" = 1 ]; then mac_migrate_rewrite; fi
 
 # --- 4b. join, if this machine is a worker ----------------------------
 # **The installer owns the one onboarding question, because this is the
@@ -4018,6 +4866,8 @@ if [ -n "$JOIN_CONTROL" ]; then
     say "joining $JOIN_CONTROL as a worker node"
     if [ -n "$JOIN_ADVERTISE" ]; then set -- "$@" --advertise "$JOIN_ADVERTISE"; fi
     if [ -n "$JOIN_NAME" ]; then set -- "$@" --name "$JOIN_NAME"; fi
+    # How people see this machine (row 8); the name stays its identity.
+    if [ -n "$JOIN_LABEL" ]; then set -- "$@" --label "$JOIN_LABEL"; fi
     JOIN_RC=0
     in_prefix env EUGENE_PLEXUS_AGENT_CONFIG_FILE="$CONFIG" "$VENV/bin/eugene-plexus-agent" "$@" \
         || JOIN_RC=$?
@@ -4096,14 +4946,14 @@ fi
 
 # --- 5. service -------------------------------------------------------
 
-# Set once, used by both unit writers below.
-if [ "$JOINED" = 1 ] || [ "$ADVERTISED" = 1 ]; then
+# Set once, used by every unit and plist writer below. A Mac install that
+# moves to the daemon keeps the bind host its LaunchAgent had.
+WIDE=0
+if [ "$JOINED" = 1 ] || [ "$ADVERTISED" = 1 ] || [ "$MIGRATE_HOST" = 0.0.0.0 ]; then WIDE=1; fi
+if [ "$WIDE" = 1 ]; then
     WIDE_BIND_UNIT="Environment=EUGENE_PLEXUS_AGENT_BIND_HOST=0.0.0.0"
-    WIDE_BIND_PLIST="
-        <key>EUGENE_PLEXUS_AGENT_BIND_HOST</key><string>0.0.0.0</string>"
 else
     WIDE_BIND_UNIT="# this install is single-machine; the agent stays on loopback"
-    WIDE_BIND_PLIST=""
 fi
 
 # **The one lever when 8079 is taken, and it reached nothing** (review
@@ -4118,7 +4968,7 @@ PORT=${EUGENE_PLEXUS_AGENT_BIND_PORT:-8079}
 # starts the agent on -- not whatever the update's own environment says.
 # The update helper and a transient user unit both start with none.
 if [ "$UPDATE" = 1 ]; then
-    if [ "$MODE" = system ]; then _kept=$SYSTEM_UNIT
+    if [ "$MODE" = system ]; then _kept=$SYSTEM_SERVICE_FILE
     elif [ "$PLATFORM" = linux ]; then _kept=$SYSTEMD_UNIT
     else _kept=$LAUNCHD_PLIST; fi
     PORT=$(sed -n \
@@ -4127,13 +4977,12 @@ if [ "$UPDATE" = 1 ]; then
         "$_kept" 2>/dev/null | head -n 1)
     PORT=${PORT:-8079}
 fi
+# A Mac install that moves to the daemon keeps its LaunchAgent's port.
+if [ -n "$MIGRATE_PORT" ]; then PORT=$MIGRATE_PORT; fi
 if [ "$PORT" != 8079 ]; then
     PORT_UNIT="Environment=EUGENE_PLEXUS_AGENT_BIND_PORT=$PORT"
-    PORT_PLIST="
-        <key>EUGENE_PLEXUS_AGENT_BIND_PORT</key><string>$PORT</string>"
 else
     PORT_UNIT="# the agent takes its default port, 8079"
-    PORT_PLIST=""
 fi
 
 write_systemd_unit() {
@@ -4172,6 +5021,12 @@ EOF
 # that downloads can land. It is created as you and owned by you: it is
 # your folder, the library's default, and nothing this install removes.
 # With nobody to make it for (a root shell), it goes under the prefix.
+# A file's mode as `ls -l` shows it: GNU stat on Linux, BSD stat on a Mac.
+mode_of() {
+    if [ "$PLATFORM" = macos ]; then stat -f %Sp "$1" 2>/dev/null || true
+    else stat -c %A "$1" 2>/dev/null || true; fi
+}
+
 prepare_models_dir() {
     if [ -z "$PERSON_HOME" ]; then
         MODELS_DIR=$PREFIX/models
@@ -4188,7 +5043,7 @@ prepare_models_dir() {
         fi
         say "made $MODELS_DIR for your models (Eugene reads and writes it through your group)"
     else
-        case $(stat -c %A "$MODELS_DIR" 2>/dev/null) in
+        case $(mode_of "$MODELS_DIR") in
             ?????w*) : ;;
             *) warn "Eugene reads $MODELS_DIR through your group, and downloads into it
     need that group to be able to write:  chmod g+ws '$MODELS_DIR'" ;;
@@ -4197,7 +5052,7 @@ prepare_models_dir() {
     # Your home has to let the group through at all. 0750 is Ubuntu's
     # default; 0700 (Fedora's) lets nobody else in, Eugene included --
     # said, not changed, because your home's permissions are yours.
-    case $(stat -c %A "$PERSON_HOME" 2>/dev/null) in
+    case $(mode_of "$PERSON_HOME") in
         ??????[xs]*) : ;;
         *) warn "your home folder lets nobody else in (it is not group-searchable), so
     Eugene cannot reach the models in it. Either let your own group in:
@@ -4253,42 +5108,33 @@ WantedBy=multi-user.target
 EOF
 }
 
+# The person's own LaunchAgent (--user on a Mac), with the escaping and the
+# check the daemon's has.
 write_launchd_plist() {
     mkdir -p "$(dirname "$LAUNCHD_PLIST")"
-    cat > "$LAUNCHD_PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>$LAUNCHD_LABEL</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$VENV/bin/eugene-plexus-agent</string>
-        <string>--unattended</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>EUGENE_PLEXUS_AGENT_CONFIG_FILE</key><string>$CONFIG</string>$WIDE_BIND_PLIST$PORT_PLIST
-    </dict>
-    <key>WorkingDirectory</key><string>$PREFIX</string>
-    <key>RunAtLoad</key><true/>
-    <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
-    <key>StandardOutPath</key><string>$PREFIX/logs/launchd.out.log</string>
-    <key>StandardErrorPath</key><string>$PREFIX/logs/launchd.err.log</string>
-</dict>
-</plist>
-EOF
+    launchd_xml agent > "$LAUNCHD_PLIST.new"
+    _lint=$(plutil -lint "$LAUNCHD_PLIST.new" 2>&1) || die "the startup job written for Eugene is not a valid plist: $_lint"
+    mv -f "$LAUNCHD_PLIST.new" "$LAUNCHD_PLIST"
 }
 
 if [ "$UPDATE" = 1 ]; then
     # The unit stays as it was written; the update helper is this
     # version's, since a newer installer may carry a newer one.
-    if [ "$MODE" = system ]; then
+    if [ "$MODE" = system ] && [ "$PLATFORM" = linux ]; then
         write_update_helper; write_app_units
         # A failure here must not stop the agent's own update before it is
         # restarted: a subshell, so `die` and `run_step` end only this step.
         ( update_site_host ) || warn "the job-site host was not updated (see above); the agent was"
+    elif [ "$MODE" = system ]; then
+        # A Mac keeps its job; root's removal script is this version's.
+        mac_write_removal
     fi
+elif [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
+    prepare_models_dir
+    say "writing $LAUNCHD_DAEMON (Eugene starts at boot, as $SYSTEM_ACCOUNT)"
+    write_launch_daemon
+    if [ "$WIDE" = 1 ]; then mac_allow_firewall; fi
+    mac_write_removal
 elif [ "$MODE" = system ]; then
     prepare_models_dir
     say "writing $SYSTEM_UNIT"
@@ -4342,11 +5188,14 @@ warn_same_account() {
         echo "    For Eugene to run under its own account instead, uninstall this one"
         echo "    (--user --uninstall) and re-run without --user."
     else
-        echo "    On macOS, Eugene cannot run under its own account yet."
+        echo "    For Eugene to run under its own account and start at boot instead,"
+        echo "    re-run without --user: it moves this install there."
     fi
 }
 
-if [ "$MODE" = system ]; then
+if [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
+    LOGS_HINT="sudo tail -50 $PREFIX/logs/agent.log   (files: sudo ls $PREFIX/logs)"
+elif [ "$MODE" = system ]; then
     LOGS_HINT="sudo journalctl -u $SERVICE_LABEL   (files: sudo ls $PREFIX/logs)"
 else
     LOGS_HINT="$PREFIX/logs/    config: $CONFIG"
@@ -4354,7 +5203,13 @@ fi
 
 if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
     say "starting the agent"
-    if [ "$MODE" = system ]; then
+    if [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
+        if [ "$UPDATE" = 1 ] && as_root launchctl print "system/$LAUNCHD_LABEL" >/dev/null 2>&1; then
+            as_root launchctl kickstart -k "system/$LAUNCHD_LABEL" >/dev/null 2>&1 || start_launch_daemon
+        else
+            start_launch_daemon
+        fi
+    elif [ "$MODE" = system ]; then
         as_root systemctl restart "$SERVICE_LABEL"
     elif [ "$PLATFORM" = linux ]; then
         systemctl --user restart "$SERVICE_LABEL"
@@ -4367,6 +5222,11 @@ if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
     while [ "$i" -lt 60 ]; do
         if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/healthz" 2>/dev/null; then
             printf '\n'
+            if [ "$MIGRATE" = 1 ]; then
+                mac_migrate_finish
+                say "Eugene moved: it starts when this Mac starts, as $SYSTEM_ACCOUNT. Sign in to it once"
+                say "  at http://127.0.0.1:$PORT/ and it unlocks by itself from then on."
+            fi
             say "Eugene Plexus is running — open http://127.0.0.1:$PORT/"
             say "logs:  $LOGS_HINT"
             warn_same_account
@@ -4375,6 +5235,13 @@ if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
         i=$((i + 1))
         sleep 1
     done
+    if [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
+        # The agent's own last words, which this shell cannot read itself.
+        _said=$(as_root tail -n 12 "$PREFIX/logs/launchd.err.log" 2>/dev/null | sed 's/^/    /' || true)
+        die "the agent did not answer on port $PORT within 60s.${_said:+ What it said:
+$_said}
+    Check: sudo launchctl print system/$LAUNCHD_LABEL"
+    fi
     warn "the agent did not answer on port $PORT within 60s. Check:"
     if [ "$MODE" = system ]; then
         echo "    sudo systemctl status $SERVICE_LABEL"
@@ -4389,7 +5256,9 @@ if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
 fi
 
 say "installed. Start it with:"
-if [ "$MODE" = system ]; then
+if [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
+    echo "    sudo launchctl bootstrap system $LAUNCHD_DAEMON"
+elif [ "$MODE" = system ]; then
     echo "    sudo systemctl start $SERVICE_LABEL"
 elif [ "$DO_SERVICE" = 1 ] && [ "$PLATFORM" = linux ]; then
     echo "    systemctl --user start $SERVICE_LABEL"

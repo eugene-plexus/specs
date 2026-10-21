@@ -20,9 +20,13 @@ EP_PIN_AGENT / EP_PIN_LIBRARY / EP_PIN_GATEWAY / EP_PIN_DRIVER / EP_PIN_CONTROL
 
     python3 scripts/a4-macos-acceptance.py [--report a4-report.json]
 
-It refuses to run anywhere but macOS on Apple silicon, and it installs a
-launchd agent under the invoking account, so it is for a disposable
-machine: a CI runner, or a rented Mac that is wiped afterwards.
+It refuses to run anywhere but macOS on Apple silicon, and it installs
+Eugene as the Mac's default install makes it since row 8 -- a LaunchDaemon
+in its own account, `_eugeneplexus`, with sudo -- so it is for a disposable
+machine with passwordless sudo: a CI runner, or a rented Mac that is wiped
+afterwards. What the agent's account owns (its prefix, its logs, the
+engines it installs) this harness reads with sudo, as an administrator
+would.
 """
 
 from __future__ import annotations
@@ -50,7 +54,10 @@ HERE = Path(__file__).resolve().parent
 HOME = Path.home()
 UID = os.getuid()
 LABEL = "com.eugeneplexus.agent"
-PLIST = HOME / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+# Row 8: the Mac's install is a LaunchDaemon in Eugene's own account.
+PLIST = Path("/Library/LaunchDaemons") / f"{LABEL}.plist"
+ACCOUNT = "_eugeneplexus"
+DEFAULT_PREFIX = Path("/usr/local/eugene-plexus")
 PASSPHRASE = "a4-disposable-passphrase-on-a-runner"
 MLX_ENV = HOME / "eugene-mlx"
 #: The mlx-lm the agent's install notes pin (its `UPSTREAM_VERSION_PINNED`):
@@ -118,6 +125,15 @@ def run(argv, *, timeout: float = 600, env=None, input_text=None) -> subprocess.
 
 def sh(command: str, **kw) -> subprocess.CompletedProcess:
     return run(["/bin/sh", "-c", command], **kw)
+
+
+def sudo(*argv, timeout: float = 120) -> subprocess.CompletedProcess:
+    return run(["sudo", "-n", *[str(a) for a in argv]], timeout=timeout)
+
+
+def as_account(*argv, timeout: float = 600) -> subprocess.CompletedProcess:
+    """Run as Eugene's account: its prefix is closed to everyone else."""
+    return run(["sudo", "-n", "-u", ACCOUNT, *[str(a) for a in argv]], timeout=timeout)
 
 
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -195,7 +211,8 @@ def ppid_of(pid: int) -> int | None:
 
 
 def command_of(pid: int) -> str:
-    return run(["ps", "-o", "command=", "-p", str(pid)], timeout=20).stdout.strip()
+    # Another account's arguments are root's to read on macOS.
+    return sudo("ps", "-o", "command=", "-p", str(pid), timeout=20).stdout.strip()
 
 
 def alive(pid: int) -> bool:
@@ -262,10 +279,9 @@ class Log:
         self.path = path
 
     def text(self) -> str:
-        try:
-            return self.path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return ""
+        # The daemon's logs are its account's; an administrator reads them.
+        out = sudo("cat", str(self.path), timeout=60)
+        return out.stdout if out.returncode == 0 else ""
 
     def mark(self) -> int:
         return len(self.text())
@@ -327,26 +343,28 @@ def phase_rosetta_install(installer: Path, workdir: Path) -> None:
 
 def phase_install(installer: Path, prefix: Path, port: int) -> dict:
     say("install.sh and launchd")
-    if prefix.exists():
-        shutil.rmtree(prefix)
-    check("1", "the prefix does not exist before the run", not prefix.exists(), prefix)
+    must("1", "the prefix does not exist before the run", not prefix.exists(), prefix)
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
     if port != 8079:
         env["EUGENE_PLEXUS_AGENT_BIND_PORT"] = str(port)
     started = time.perf_counter()
-    out = run(["/bin/sh", str(installer), "--prefix", str(prefix)], timeout=1200, env=env)
+    argv = ["/bin/sh", str(installer)]
+    if prefix != DEFAULT_PREFIX:
+        argv += ["--prefix", str(prefix)]
+    out = run(argv, timeout=1200, env=env)
     fact("install seconds", round(time.perf_counter() - started, 1))
     text = out.stdout + out.stderr
     must("2", "install.sh completes and says the agent is running",
          out.returncode == 0 and "Eugene Plexus is running" in text, text[-800:])
 
     python = prefix / "venv" / "bin" / "python"
-    probe = run([str(python), "-c",
-                 "import platform, sys; print(platform.machine(), sys.version.split()[0])"]).stdout.split()
+    probe = as_account(python, "-c",
+                       "import platform, sys; print(platform.machine(), sys.version.split()[0])").stdout.split()
     check("3", "the install's Python is native arm64 CPython 3.12",
           len(probe) == 2 and probe[0] == "arm64" and probe[1].startswith("3.12"), " ".join(probe))
-    check("4", "a LaunchAgent plist was written", PLIST.is_file(), PLIST)
-    printed = run(["launchctl", "print", f"gui/{UID}/{LABEL}"], timeout=30).stdout
+    check("4", "a LaunchDaemon plist was written, naming Eugene's account", PLIST.is_file()
+          and run(["plutil", "-extract", "UserName", "raw", "-o", "-", str(PLIST)]).stdout == ACCOUNT, PLIST)
+    printed = sudo("launchctl", "print", f"system/{LABEL}", timeout=30).stdout
     state = re.search(r"^\s*state = (\S+)", printed, re.M)
     job_pid = re.search(r"^\s*pid = (\d+)", printed, re.M)
     check("5", "launchd has the job loaded and running",
@@ -363,7 +381,7 @@ def phase_install(installer: Path, prefix: Path, port: int) -> dict:
     status, page = api("GET", f"{base}/")
     check("8", "the UI is served at /", status == 200 and isinstance(page, str) and "<!DOCTYPE html>" in page,
           str(page)[:120])
-    declared = (prefix / "agent.yaml").read_text(encoding="utf-8") if (prefix / "agent.yaml").exists() else ""
+    declared = sudo("cat", str(prefix / "agent.yaml"), timeout=20).stdout
     kinds = re.findall(r"^- kind: (\S+)", declared, re.M)
     check("9", "the agent declared control, gateway and library", sorted(kinds) == ["control", "gateway", "library"],
           kinds)
@@ -416,9 +434,10 @@ def phase_onboard(ctx: dict) -> None:
     mechanism = ((node or {}).get("install") or {}).get("mechanism") if status == 200 else None
     check("16", "the agent knows launchd is what starts it", mechanism == "launchd", mechanism)
     restart = (((node or {}).get("reach") or {}).get("restart") or {}) if status == 200 else {}
-    check("17", "...and says it can restart itself through launchd",
+    check("17", "...and says it starts at boot and can restart itself through launchd",
           restart.get("mechanism") == "launchd" and restart.get("canSelfRestart") is True
-          and f"gui/{UID}/{LABEL}" in (restart.get("command") or ""), restart)
+          and f"system/{LABEL}" in (restart.get("command") or "")
+          and "starts at boot" in (restart.get("detail") or ""), restart)
     ctx["node"] = node
 
     # What the wizard's first screen does: the keyring where this host has
@@ -428,15 +447,22 @@ def phase_onboard(ctx: dict) -> None:
     fact("keyring available to the launchd agent", keyring)
     _, clogin = api("POST", f"{control}/v1/auth/login", body={"passphrase": PASSPHRASE})
     ctoken = (clogin or {}).get("sessionToken")
-    if keyring:
-        a, _ = api("PATCH", f"{base}/v1/config", ctx["token"], {"securityMode": "os_keyring"})
-        c, _ = api("PATCH", f"{control}/v1/config", ctoken, {"securityMode": "os_keyring"})
-        check("17b", "the keyring is chosen on both, as the wizard chooses it", a == 200 and c == 200,
+    # The daemon has no Keychain before anyone signs in (row 8, MAC-KEY):
+    # it says it keeps a passphrase file, and the wizard then sets the
+    # control root to the same mode.
+    file_mode = bool((auth or {}).get("passphraseFile"))
+    fact("the daemon unlocks from a passphrase file", file_mode)
+    mode = "os_keyring" if keyring else ("passphrase_file" if file_mode else None)
+    if mode:
+        a, _ = api("PATCH", f"{base}/v1/config", ctx["token"], {"securityMode": mode})
+        c, _ = api("PATCH", f"{control}/v1/config", ctoken, {"securityMode": mode})
+        check("17b", f"{mode} is chosen on both, as the wizard chooses it", a == 200 and c == 200,
               f"agent={a} control={c}")
         api("POST", f"{control}/v1/auth/login", body={"passphrase": PASSPHRASE})
+        api("POST", f"{base}/v1/auth/login", body={"passphrase": PASSPHRASE})
     _, cstatus = api("GET", f"{control}/v1/auth/status")
     check("17c", "the control root is unlocked after sign-in", (cstatus or {}).get("unlocked") is True, cstatus)
-    ctx["keyring"], ctx["control"] = keyring, control
+    ctx["keyring"], ctx["control"] = bool(mode), control
 
 
 # --------------------------------------------------------------------------- #
@@ -539,9 +565,14 @@ def phase_mlx_install(ctx: dict) -> None:
           (info.get("device_info") or {}).get("max_recommended_working_set_size")
           == metal.get("recommendedMaxWorkingSetSize"), info.get("device_info"))
 
+    # The notes say `~/eugene-mlx/...`, and `~` is the person's home where
+    # they run the command. The daemon's own `~` is its prefix (row 8), so
+    # the setting names the folder whole.
+    fact("mlxBinary for the daemon", str(server))
     status, body = api("PATCH", f"{ctx['base']}/v1/config", ctx["token"],
-                       {"mlxBinary": "~/eugene-mlx/bin/mlx_lm.server"})
-    check("29", "mlxBinary is set as the notes say, with a ~", status == 200, body if status != 200 else "")
+                       {"mlxBinary": str(server)})
+    check("29", "mlxBinary is set to the environment the person made", status == 200,
+          body if status != 200 else "")
     mlx = engine(ctx, "mlx")
     python = mlx.get("python") or {}
     check("30", "the agent now finds MLX, reads its version and names the environment's interpreter",
@@ -549,9 +580,9 @@ def phase_mlx_install(ctx: dict) -> None:
           and str(MLX_ENV) in (python.get("interpreter") or ""),
           {k: mlx.get(k) for k in ("available", "version", "binaryPath", "error")} | {"python": python})
 
-    flags = json.loads(run([str(ctx["python"]), "-c",
-                            "import json; from eugene_plexus_agent.engines.mlx import _FLAG_CLI_NAMES as f; "
-                            "print(json.dumps(f))"]).stdout or "{}")
+    flags = json.loads(as_account(ctx["python"], "-c",
+                                  "import json; from eugene_plexus_agent.engines.mlx import _FLAG_CLI_NAMES as f; "
+                                  "print(json.dumps(f))").stdout or "{}")
     helptext = run([str(server), "--help"]).stdout
     missing = [cli for cli in flags.values() if cli not in helptext]
     check("31", "every curated flag the agent can render is an mlx_lm.server option",
@@ -861,10 +892,10 @@ def phase_runtimes(ctx: dict) -> None:
     engines_before = sorted(pids_matching("mlx_lm.server"))
     agent_before = ctx["agent_pid"]
     mark = log.mark()
-    out = run(["launchctl", "kickstart", "-k", f"gui/{UID}/{LABEL}"], timeout=60)
+    out = sudo("launchctl", "kickstart", "-k", f"system/{LABEL}", timeout=60)
     new_agent = wait_for(lambda: (lambda p: p if p and p != agent_before else None)(
         listener_pid(int(ctx["base"].rsplit(":", 1)[1]))), 60, 1)
-    check("61", "`launchctl kickstart -k` restarts the agent under launchd",
+    check("61", "`sudo launchctl kickstart -k system/...` restarts the agent under launchd",
           out.returncode == 0 and bool(new_agent) and ppid_of(new_agent) == 1,
           f"old={agent_before} new={new_agent} rc={out.returncode} {out.stderr.strip()}")
     ctx["agent_pid"] = new_agent or agent_before
@@ -876,10 +907,10 @@ def phase_runtimes(ctx: dict) -> None:
     unlocked = (cstatus or {}).get("unlocked")
     fact("control root after an unattended restart", cstatus)
     if ctx.get("keyring"):
-        check("61b", "with the keyring chosen, the root comes back unlocked with nobody signing in",
+        check("61b", "with its unlock kept, the root comes back unlocked with nobody signing in",
               unlocked is True, cstatus)
     else:
-        check("61b", "with no keyring, the root comes back sealed and says so", unlocked is False, cstatus)
+        check("61b", "with nothing to unlock from, the root comes back sealed and says so", unlocked is False, cstatus)
     _, login = api("POST", f"{ctx['base']}/v1/auth/login", body={"passphrase": PASSPHRASE})
     ctx["token"] = (login or {}).get("sessionToken", ctx["token"])
     back = [wait_status(ctx, n, "ready", 300).get("status") for n in ("qwen-mlx", "smol-mlx")]
@@ -936,7 +967,9 @@ def phase_llama_cpp(ctx: dict) -> None:
         must("65", "the agent installs it", llama.get("available") is True,
              {"install": status, "engine": {k: llama.get(k) for k in ("available", "version", "error")}})
         binary = Path(llama.get("binaryPath") or "")
-    devices = run([str(binary), "--list-devices"], timeout=60)
+    # As the account the daemon runs it as: the agent's own engines are in
+    # its prefix, closed to everyone else.
+    devices = as_account(binary, "--list-devices", timeout=60)
     listed = devices.stdout + devices.stderr
     fact("llama-server --list-devices", listed.strip()[-400:])
     check("66", "the installed build lists the Metal device", "MTL" in listed or "Metal" in listed, "")
@@ -1009,22 +1042,28 @@ def phase_wired_limit(ctx: dict) -> None:
 def phase_uninstall(installer: Path, prefix: Path) -> None:
     say("uninstall")
     engines_before = pids_matching("mlx_lm.server") + pids_matching("llama-server")
-    out = run(["/bin/sh", str(installer), "--prefix", str(prefix), "--uninstall"], timeout=300)
+    argv = ["/bin/sh", str(installer), "--uninstall"]
+    if prefix != DEFAULT_PREFIX:
+        argv += ["--prefix", str(prefix)]
+    out = run(argv, timeout=300)
     kept = re.search(rf"{re.escape(str(prefix))}\.removed-\d+", out.stdout + out.stderr)
-    check("70", "--uninstall removes the LaunchAgent and keeps the config",
-          out.returncode == 0 and not PLIST.exists() and bool(kept) and (Path(kept.group(0)) / "agent.yaml").exists(),
+    check("70", "--uninstall removes the LaunchDaemon and keeps the config, as root's",
+          out.returncode == 0 and not PLIST.exists() and bool(kept)
+          and sudo("test", "-f", str(Path(kept.group(0)) / "agent.yaml")).returncode == 0,
           (out.stdout + out.stderr)[-300:])
     time.sleep(3)
     left = [p for p in pids_matching(str(prefix)) + engines_before if alive(p)]
     check("71", "nothing it started is still running, engines included", not left,
           [command_of(p)[:120] for p in left])
-    loaded = run(["launchctl", "print", f"gui/{UID}/{LABEL}"], timeout=30).returncode == 0
+    loaded = sudo("launchctl", "print", f"system/{LABEL}", timeout=30).returncode == 0
     check("72", "launchd no longer knows the job", not loaded)
+    gone = run(["id", "-u", ACCOUNT], timeout=20).returncode != 0
+    check("72b", "and Eugene's account, which this install made, is gone", gone)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--prefix", type=Path, default=HOME / "ep-a4")
+    parser.add_argument("--prefix", type=Path, default=DEFAULT_PREFIX)
     parser.add_argument("--port", type=int, default=8079)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--skip-llama", action="store_true")
@@ -1040,6 +1079,13 @@ def main() -> int:
     fact("macOS", run(["sw_vers", "-productVersion"]).stdout.strip())
     fact("chip", run(["sysctl", "-n", "machdep.cpu.brand_string"]).stdout.strip())
     fact("virtual machine", run(["sysctl", "-n", "kern.hv_vmm_present"]).stdout.strip() == "1")
+    # Eugene's account reaches the models and the MLX environment in this
+    # home through `staff`, as a Mac's default 0750 home lets it (row 8).
+    mode = run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip()
+    fact("home folder mode", mode)
+    if len(mode) > 6 and mode[6] not in "xs":
+        run(["chmod", "g+x", str(HOME)])
+        fact("home folder mode, as a Mac makes it", run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip())
     workdir = Path(tempfile.mkdtemp(prefix="a4-"))
     installer = installer_copy(workdir)
     ctx: dict = {}

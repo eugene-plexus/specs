@@ -109,6 +109,8 @@ param(
     [string]$Join,
     [string]$Token,
     [string]$NodeName,
+    # Row 8: how people see this machine ("Studio PC"), given to the join.
+    [string]$Label,
     [string]$Advertise,
     [switch]$JobSite,
     [string]$Owner,
@@ -205,6 +207,23 @@ if ($Isolated) {
     }
     if (Test-Path -LiteralPath $Prefix) {
         Die "-Isolated requires a new prefix; the target already exists"
+    }
+}
+
+# **-Label names this machine when it joins** (row 8), and nothing else
+# reads it. Refused before anything is looked at: Windows PowerShell 5.1
+# hands a native program an argument holding a double quote, or ending in
+# a backslash, wrongly, so the join would get a different name or none.
+# The agent and the control root check the rest of it.
+if ($Label) {
+    if (-not $Join) {
+        Die "-Label names this machine when it joins an install. The first machine's name is asked on its setup page."
+    }
+    if ($Label.Contains('"')) {
+        Die "-Label cannot hold a double quote: Windows PowerShell would not pass it on as typed. Choose a name without one."
+    }
+    if ($Label.EndsWith('\')) {
+        Die "-Label cannot end with a backslash: Windows PowerShell would not pass it on as typed. Choose a name without one."
     }
 }
 
@@ -1824,7 +1843,7 @@ this machine is not a node yet.
        again. A machine that is only a job site waits for the standalone install.
 "@
     }
-    $siteLabel = if ($NodeName) { $NodeName } else { $env:COMPUTERNAME }
+    $siteLabel = if ($Label) { $Label } elseif ($NodeName) { $NodeName } else { $env:COMPUTERNAME }
     $siteArgs = @("site", "join", "--url", $Join, "--token", $Token, "--owner", $Owner, "--label", $siteLabel)
     if ($RootKey) { $siteArgs += @("--root-key", $RootKey) }
     if ($SiteAccount) { $siteArgs += @("--site-account", $SiteAccount) }
@@ -3466,6 +3485,7 @@ if ($Join) {
     $joinArgs = @("join", "--control", $Join, "--token", $Token)
     Say "joining $Join as a worker node"
     if ($NodeName) { $joinArgs += @("--name", $NodeName) }
+    if ($Label) { $joinArgs += @("--label", $Label) }
     if ($Advertise) { $joinArgs += @("--advertise", $Advertise) }
     $env:EUGENE_PLEXUS_AGENT_CONFIG_FILE = $Config
     & $AgentEx @joinArgs
