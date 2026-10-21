@@ -303,6 +303,16 @@ class RepinTests(RepinCase):
         self.assertIn("no regeneration is needed", out)
         self.assertNotIn("Contracts that changed", out)
 
+    def test_when_main_has_not_moved_nothing_is_rebased_or_re_pinned(self) -> None:
+        before = self.snapshot()
+        code, out, err = self.call("--dry-run")
+        self.assertEqual(code, 0, err + out)
+        self.assertIn("already based on origin/main", out)
+        code, out, err = self.call()
+        self.assertEqual(code, 0, err + out)
+        self.assertEqual(self.snapshot(), before)
+        self.assertNotIn("committed", out)
+
     def test_a_conflict_aborts_the_rebase_and_names_the_files(self) -> None:
         self.advance_main(conflicting=True)
         before = self.snapshot()

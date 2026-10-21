@@ -433,9 +433,12 @@ def run(args: argparse.Namespace) -> int:
     if args.dry_run:
         trial_rebase(plan)
         say("Dry run: nothing changed. A trial rebase in a throwaway worktree applied cleanly.")
-        lines = [
-            render("specs", plan.old_head, "(rebased)", "would force-push with --push"),
-        ]
+        if plan.rebase_needed:
+            lines = [render("specs", plan.old_head, "(rebased)", "would force-push with --push")]
+        else:
+            lines = [
+                f"{'specs':<18} {short(plan.old_head)}  unchanged: already based on origin/main"
+            ]
         for one in plan.consumers:
             if one.index is None:
                 lines.append(f"{one.repo:<18} {short(one.pin)}  unchanged: {one.note}")
