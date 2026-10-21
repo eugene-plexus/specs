@@ -3,13 +3,13 @@
   "python": "3.12",
   "uvMinimum": "0.12.18",
   "components": {
-    "agent": "88e269ff9d8414e28e424d14aba28eb795a7ed75",
-    "control": "3353010b83371361720ab8571b8187132e93bdbe",
-    "gateway": "3573226af5ba984412c9ee635b35034dd59fd350",
-    "library": "ee90e7e0c72d1a1ca8d49c7d48178c02e81ead3c",
+    "agent": "dc848045ad09364d641ed3872223b18dfa67f745",
+    "control": "423145c7253d1d5d0d8ab756e5d0b7514113b599",
+    "gateway": "9dd49d341f9d29bf308ee14b8ed30bfe069b1d42",
+    "library": "3c366b92612ac23df59a818d15cf510972f9f3c1",
     "tool-driver": "202cee4f159e6bb006ee80ec3a5ca9c0bab5fb89",
-    "ui": "1722adba03eaeed8b1cba4a52c5ebb11d46aa8f5",
-    "inference-driver": "8cff45c11cbab066fbab3251a1be5fda9e5a49c4"
+    "ui": "2e76417bd5b8464c3693fbb78fa36237f08a22d5",
+    "inference-driver": "121f5a37d39a5735e253358fc5ca6850ce2d32cf"
   },
   "dependenciesSha256": "266568e25707278b36f6ef0f1439dffd94b2a9f44e7a50bf5cf3c6b633ef5498"
 }
