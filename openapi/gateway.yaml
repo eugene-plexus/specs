@@ -6023,6 +6023,12 @@ components:
             no runtime of ours.
         backend:
           $ref: 'components/common.yaml#/components/schemas/BackendKind'
+        reported_model:
+          type: string
+          description: |
+            What the backend said served this request, verbatim. Provenance,
+            never a routing key. Only the decision door sets it today;
+            absent when the backend reported none.
         latency_ms:
           type: integer
           description: Gateway-side wall-clock time, including any failed attempts.
@@ -8052,8 +8058,8 @@ components:
             The public alias that served the request — after a cascade
             it names what answered, exactly as the chat doors do. The
             backend's own model revision is preserved on the driver's
-            `reportedModel` for provenance and surfaced in
-            `x_eugene_plexus`.
+            `reportedModel` for provenance and surfaced as
+            `x_eugene_plexus.reported_model`.
         answers:
           type: object
           additionalProperties:

@@ -690,6 +690,7 @@ jobs:
         with:
           repository: eugene-plexus/specs
           ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
@@ -717,6 +718,15 @@ jobs:
             echo "::endgroup::"
           done
           exit $status
+
+      # A consumer whose pin holds a document its codegen does not name gets no
+      # types for it and no error (scripts/codegen-inputs.py). Reads each
+      # consumer at its release pin from raw.githubusercontent.com, and asks
+      # git (full history above) whether a document exists at its SPECS_REF.
+      - name: Check that every consumer generates the documents it should
+        run: |
+          python scripts/test_codegen_inputs.py
+          python scripts/codegen-inputs.py
 
   lint-openapi:
     needs: plan

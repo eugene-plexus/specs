@@ -495,9 +495,13 @@ def exercise(root: Path) -> int:
 
             # ---- 5. a change reaches the standby -------------------------------
             changed = call(
-                "control", "PATCH", "/v1/config", session_root, json={"uiTheme": "dark"}
+                "control",
+                "PATCH",
+                "/v1/config",
+                session_root,
+                json={"joinTokenTtlSeconds": 600},
             )
-            assert changed.json().get("applied") == ["uiTheme"], changed.text
+            assert changed.json().get("applied") == ["joinTokenTtlSeconds"], changed.text
             root_index = call(
                 "control", "GET", "/v1/control/status", session_root
             ).json()["appliedIndex"]

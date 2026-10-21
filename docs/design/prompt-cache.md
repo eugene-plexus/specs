@@ -171,6 +171,15 @@ for caching. A client that marked nothing pays what it would pay upstream.
 Check: a two-turn Claude conversation through Eugene via OpenRouter reports
 `cached_tokens` on turn 2.
 
+**Built in roadmap row 1** (`GenerateRequest.cacheControl`, a `CacheControlHint`
+with the longest `ttl` the client sent). The gateway sets it from any
+`cache_control` on the request, a system block, a message, a tool or a tool
+result. The driver sends `cache_control: {type: ephemeral, ttl}` to an
+OpenRouter `anthropic/*` model and lists `cacheControl` in that model's
+`supportedSettings`; any other backend drops it with a warning once. The
+Anthropic door names `cache_control` on `x-eugene-plexus-ignored-settings` only
+when the answering backend did not carry it.
+
 ### PC7. The engine's cache settings on a profile
 
 `--cache-ram`, `--cache-reuse` and `--ctx-checkpoints` beside the existing

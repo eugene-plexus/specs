@@ -69,7 +69,7 @@ pending or managed, shown with its source; **—** already truthful, no change.
 | --- | ---- | ----------- | ------------- | ------- | --- |
 | `firstRunComplete` | bool | false | hidden | — | hidden everywhere (the wizard's flag) |
 | `securityMode` | enum | prompt | "restart required"; a mode that cannot work here as if it did | (c) | not `requiresRestart`; `status` warns (no passphrase file, keyring refuses) or informs (file written at next sign-in) |
-| `uiTheme`, `uiFontSize` | enum | nothing reads them | hidden | — | still hidden; deleting them is a follow-up |
+| `uiTheme`, `uiFontSize` | enum | nothing reads them | hidden | — | retired (roadmap row 1): deleted, and a PATCH of either is refused as retired; the console keeps them hidden for an older agent |
 | `engineBinaryRoots` | path_list | [] | "No directories yet. Point this at wherever you keep models" | (b) | generic "None." — the models sentence was wrong for engine directories |
 | `allowUnrestrictedEngineLaunch` | bool | false | — | — | — |
 | `vllmBinary`, `mlxBinary` | file_path | PATH lookup | empty box | (b) | "Not set: uses the `vllm` found on PATH (…)", or that none is |
@@ -124,7 +124,8 @@ A `null` in `agent.yaml` for a defaulted field is the default (decision 12).
 | `nodePollIntervalSeconds`, `joinTokenTtlSeconds` | — | — |
 | `nodeRequestTimeoutSeconds` | — | NaN refused |
 | `logLevel` | (c) | pending shown with the level the root logger runs at |
-| `firstRunComplete`, `uiTheme`, `uiFontSize` | — | hidden; nothing reads them |
+| `firstRunComplete` | — | hidden |
+| `uiTheme`, `uiFontSize` | — | retired (roadmap row 1), as the agent's |
 
 ### Inference driver (17 fields)
 
