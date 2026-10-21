@@ -101,10 +101,11 @@ try {
   report.linkShown = true;
   report.linkText = (await link.textContent())?.trim();
   report.linkHref = await link.getAttribute("href");
-  report.linkHrefOk = report.linkHref === `/logs?q=${encodeURIComponent(id)}`;
+  // The static export serves each page as a folder, so either form is Logs.
+  report.linkHrefOk = [`/logs?q=`, `/logs/?q=`].map((p) => p + encodeURIComponent(id)).includes(report.linkHref);
   await link.click();
   await page.waitForURL(/\/logs/);
-  const opened = { onLogs: new URL(page.url()).pathname === "/logs" };
+  const opened = { onLogs: ["/logs", "/logs/"].includes(new URL(page.url()).pathname) };
   const box = page.getByTestId("logs-filter");
   await expect(box).toBeVisible({ timeout: 60000 });
   opened.boxValue = await box.inputValue();

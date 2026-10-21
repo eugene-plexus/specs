@@ -22,8 +22,13 @@ import yaml
 def serve(root: Path, port: int) -> None:
     import uvicorn
     from eugene_plexus_agent.app import create_app
+    from eugene_plexus_agent.console_logging import install_console_capture
     from eugene_plexus_agent.settings import Settings
 
+    # As `build_server` does first: the console is mirrored to `logs/` beside
+    # agent.yaml, which is what `GET /v1/logs` reads. Without it the Logs page
+    # has nothing to show.
+    install_console_capture(log_dir=root / "logs")
     app = create_app(settings=Settings(config_file=root / "agent.yaml", bind_port=port,
                                       default_topology=False))
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, access_log=False))
