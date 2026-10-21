@@ -217,6 +217,9 @@ class Install:
                 "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(self.prefix / "engines"),
                 "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(self.prefix / "agent.yaml"),
                 "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
+                # The machine port is off until agent#27 is fixed: with it on, the wizard joins the root at
+                # control's moved URL, which is plain HTTP, and the join token expects TLS.
+                "EUGENE_PLEXUS_AGENT_MACHINE_PORT_ENABLED": "0",
                 "EUGENE_PLEXUS_AGENT_BIND_PORT": str(self.agent_port),
                 "CUDA_VISIBLE_DEVICES": "-1",
             }
