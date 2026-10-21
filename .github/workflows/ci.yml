@@ -386,6 +386,9 @@ jobs:
       - name: A stolen worker key tried against every other process, then revoked
         if: matrix.shard == 'L2' || matrix.shard == 'W2'
         run: python specs/scripts/row3-per-node-keys-acceptance.py --lan
+      - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
+        if: matrix.shard == 'L3' || matrix.shard == 'W2'
+        run: python specs/scripts/row70-group-policy-acceptance.py
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
