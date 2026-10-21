@@ -306,12 +306,16 @@ def identity_lines(node_yaml: str) -> list[str]:
     )
 
 
-def onboard(base: str, agent_yaml: str, *, keyring: bool) -> dict:
+def onboard(base: str, read_agent_yaml, *, keyring: bool) -> dict:
     """What the wizard does: the passphrase on both, the unlock mode, and the
-    machine enrolled with its own control root. Returns the session and URLs."""
-    control = component_url(agent_yaml, "control")
+    machine enrolled with its own control root. Returns the session and URLs.
+
+    `read_agent_yaml` reads the install's agent.yaml (as root for the
+    daemon's); the topology is waited for, since the agent declares it as
+    it starts."""
+    control = wait_for(lambda: component_url(read_agent_yaml(), "control"), 90)
     if not control:
-        raise Abort(f"no control root declared in agent.yaml: {agent_yaml[:400]}")
+        raise Abort(f"no control root declared in agent.yaml: {read_agent_yaml()[:400]}")
     wait_for(lambda: api("GET", f"{control}/healthz")[0] == 200, 120)
     status, _ = api("POST", f"{control}/v1/auth/initialize", body={"passphrase": PASSPHRASE})
     must("ob1", "control initializes", status == 204, status)
@@ -409,7 +413,7 @@ def phase_fresh(installer: Path) -> dict:
     check("6a", "a fresh install unlocks from a passphrase file (agent.yaml)",
           re.search(r"^securityMode: passphrase_file$", agent_yaml, re.M) is not None,
           re.findall(r"^securityMode:.*$", agent_yaml, re.M))
-    ctx = onboard(base, agent_yaml, keyring=False)
+    ctx = onboard(base, lambda: root_read(PREFIX / "agent.yaml"), keyring=False)
     ctx["base"] = base
     got = sudo("stat", "-f", "%Su %Lp", str(PREFIX / "passphrase"), timeout=20).stdout.strip()
     _, cconfig = api("GET", f"{ctx['control']}/v1/config", ctx["token"])
@@ -611,8 +615,7 @@ def phase_user_install(installer: Path) -> dict:
     _, status = api("GET", f"{base}/v1/auth/status")
     keyring = bool((status or {}).get("keyringAvailable"))
     fact("keyring available to the LaunchAgent", keyring)
-    agent_yaml = (USER_PREFIX / "agent.yaml").read_text(encoding="utf-8")
-    ctx = onboard(base, agent_yaml, keyring=keyring)
+    ctx = onboard(base, lambda: (USER_PREFIX / "agent.yaml").read_text(encoding="utf-8"), keyring=keyring)
     ctx.update(base=base, keyring=keyring)
     _, node = api("GET", f"{base}/v1/node", ctx["token"])
     ctx["name"] = (node or {}).get("name")
@@ -638,8 +641,8 @@ def phase_refused_move(installer: Path, ctx: dict, workdir: Path) -> None:
         encoding="utf-8",
     )
     stand_in.chmod(0o755)
-    before = {p.relative_to(USER_PREFIX).as_posix(): p.stat().st_size for p in USER_PREFIX.rglob("*")
-              if p.is_file() and "venv" not in p.parts and "logs" not in p.parts and "pythons" not in p.parts}
+    # The old folder's own files: the state the move copies and must not touch.
+    before = sorted(p.name for p in USER_PREFIX.iterdir() if p.is_file())
     # As `sudo sh install.sh` runs it, so root's launchctl is the stand-in.
     out = run(["sudo", "-n", "env", f"PATH={stubs}:{os.environ['PATH']}", f"SUDO_USER={ME}", f"HOME={HOME}",
                "/bin/sh", str(installer)], timeout=1500, env=clean_env())
@@ -648,8 +651,7 @@ def phase_refused_move(installer: Path, ctx: dict, workdir: Path) -> None:
     back = wait_for(lambda: api("GET", f"{ctx['base']}/healthz")[0] == 200, 60)
     pid = listener_pid(PORT)
     command = ps_field(pid, "command") if pid else ""
-    after = {p.relative_to(USER_PREFIX).as_posix(): p.stat().st_size for p in USER_PREFIX.rglob("*")
-             if p.is_file() and "venv" not in p.parts and "logs" not in p.parts and "pythons" not in p.parts}
+    after = sorted(p.name for p in USER_PREFIX.iterdir() if p.is_file()) if USER_PREFIX.is_dir() else []
     check("12", "launchctl's refusal is said, and the LaunchAgent serves again from the old prefix",
           out.returncode != 0 and "Bootstrap failed: 5: Input/output error" in text
           and AGENT_PLIST.is_file() and bool(back) and str(USER_PREFIX) in command

@@ -1782,7 +1782,9 @@ mac_migrate_copy() {
     _engines=$PERSON_HOME/.eugene-plexus/engines
     MIGRATING=1
     say "stopping Eugene in your account; it starts again from $PREFIX"
-    launchctl bootout "gui/$PERSON_UID/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+    # From a root shell, the person's own launchctl if root's is refused.
+    launchctl bootout "gui/$PERSON_UID/$LAUNCHD_LABEL" >/dev/null 2>&1 \
+        || as_person launchctl bootout "gui/$PERSON_UID/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
     _waited=0
     while :; do
         _left=$(ps -axo pid=,comm= | awk -v a="$_old/" -v b="$_engines/" \
@@ -1882,7 +1884,8 @@ mac_migrate_rollback() {
     fi
     as_root rm -f "$MAC_RECEIPTS/firewall.txt" "$MAC_RECEIPTS/remove.sh" "$MAC_RECEIPTS/mac-app.txt"
     if [ "$ACCOUNT_CREATED" = 1 ]; then mac_delete_account; fi
-    if launchctl bootstrap "gui/$PERSON_UID" "$PERSON_LAUNCH_AGENT" >/dev/null 2>&1; then
+    if launchctl bootstrap "gui/$PERSON_UID" "$PERSON_LAUNCH_AGENT" >/dev/null 2>&1 \
+            || as_person launchctl bootstrap "gui/$PERSON_UID" "$PERSON_LAUNCH_AGENT" >/dev/null 2>&1; then
         _back=$(plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) || _back=8079
         _i=0
         while [ "$_i" -lt 30 ]; do
