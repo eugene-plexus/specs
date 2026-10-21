@@ -69,7 +69,11 @@ backend failure or successful circuit recovery. Request accounting and capacity
 release follow the same finalization path as other interrupted generations.
 
 Chat and Completions use an SSE error with `code: repetition_detected` and
-`type: repetition_detected`, followed by `[DONE]`. They do not pretend that the
+`type: repetition_detected`, followed by `[DONE]`. Since row 19 the error envelope
+also carries `finish_reason: repetition_detected`. This is interruption metadata,
+not a successful `choices` terminal chunk. The message names the observed
+passage length and copy count, and gives the `X-Eugene-Repetition-Mode: off`
+header and **Repeated response protection → Off** setting. They do not pretend that the
 answer finished naturally or fabricate a token count. Responses uses a
 `response.failed` event with `invalid_prompt`, and Messages uses
 `invalid_request_error`, preserving the non-retryable client behavior already
@@ -137,3 +141,82 @@ and native controls where the backend supports them. Compare false stops,
 missed loops, detection delay, measured tokens/time saved, and concurrent
 serving overhead. Replay tail characters are not a GPU compute measurement.
 No state-of-the-art performance claim follows from these tests.
+
+## What building found (row 19, 2026-10-21)
+
+**Keep Observe as the default.** The row's condition for default stopping was
+zero legitimate false stops and a majority of loops caught. The labelled
+[56-case evaluation set](../acceptance/repetition-set/README.md) does not meet
+that condition at any of the 60 tested policies. It contains five complete
+real loops, 23 complete real progressing answers, two explicitly partial real
+pilot previews, seven constructed loops and 19 constructed legitimate answers.
+Every case has a label, explanation, origin and text hash; real cases identify
+their acceptance artifact and JSON pointer, model, engine, sampling and seed
+where available. The script imports the actual gateway `Guard`, including its
+channel rules, and replays the visible text. Rechunked non-streamed captures
+measure hypothetical streamed behavior, not historical cancellation.
+
+| Candidate Stop threshold | Precision | Recall | Legitimate false stops |
+| --- | ---: | ---: | ---: |
+| 100 characters × 4 | 54.5% (6/11) | 50.0% (6/12) | 5/41 eligible |
+| 100 characters × 8 | 66.7% (6/9) | 50.0% (6/12) | 3/41 eligible |
+| 160 characters × 4 | 83.3% (5/6) | 41.7% (5/12) | 1/41 eligible |
+| 384 characters × 4 | 100% (2/2) | 16.7% (2/12) | 0/41 eligible |
+
+The 100 × 4 false stops are a blank nine-column grid, identical long table rows,
+repeated code blocks, repeated JSON records, and ten requested long quotations.
+Requested copies count as legitimate: removing them would misleadingly report
+100% precision. The three other legitimate cases are observation-only reasoning,
+tool arguments and structured JSON. All 44 legitimate fixtures pass unchanged
+under the retained default. Real-loop recall at 100 × 4 is 2/5; three real emoji
+cycles are missed. Short primitive loops, approximate loops and oversized
+passages remain outside the detector's rule.
+
+The best zero-false-stop policy in the sweep, first reached at 384 × 3, catches
+only 2/12 loops. Compared with 100 × 4, eliminating false stops loses four
+caught loops and 33.3 percentage points of recall. Retain Observe at 100 × 4,
+with the existing console Stop/Observe/Off switch, model filter and request
+override. Saved modes are preserved. Invalid repetition values loaded from
+YAML fall back to the same values used for serving; bare YAML `off` is treated
+as Off, so the console reports the policy actually in effect. Observe itself
+makes zero stops: stop precision is undefined and stop recall is zero.
+
+The builder read vLLM's pinned
+[v0.18.1 scheduler source](https://github.com/vllm-project/vllm/blob/v0.18.1/vllm/v1/core/sched/utils.py)
+and [parameter source](https://github.com/vllm-project/vllm/blob/v0.18.1/vllm/sampling_params.py).
+Its optional rule compares exact token-ID suffix patterns after each generated
+token and reports `FINISHED_REPETITION` with `repetition_detected`. It defaults
+to disabled. Unlike Eugene, that rule does not normalize whitespace, reject
+short primitive units or distinguish reasoning/tools/structured output. It can
+catch shorter cycles, but requested token repetitions can also trigger it.
+Neither rule infers intent. Source access worked; model tokenizer installation
+did not, so there is **no numerical vLLM precision/recall claim** and no live
+vLLM measurement. The evaluation script retains a source-equivalent token rule,
+an exhaustively checked fast path, and optional text-hashed model token replay
+for a future measurement.
+
+The requested default-loop probe was run against HEAD's original configuration,
+detector and driver modules in a worktree-local import overlay. It failed with
+`KeyError: 'error'`: the stream completed instead of stopping. The provisional
+Stop default then failed the expanded legitimate-fixture tests, so it was
+rejected by the evidence gate. The retained regressions check the justified
+Observe default and explicit console Stop setting, every legitimate fixture,
+truthful loaded settings, and a stop's finish reason, observed cause and remedy.
+The wire reason assertion also failed before adding the error-envelope metadata.
+
+Machine-readable [candidate report](../acceptance/repetition-set/report.json)
+and [threshold sweep](../acceptance/repetition-set/sweep.json) include per-case
+outcomes and the corpus hash. Reproduction commands and source limitations are
+in the set's README. Replay tail fractions are not measured tokens, GPU time,
+or production false-positive rates. The original design's broader evidence
+requirements remain open before enabling enforcement for everyone.
+
+Local validation used the gateway worktree's `.venv/Scripts/python.exe`:
+126 targeted gateway tests passed; the whole gateway suite ran once and had
+**2,213 passed, 1 skipped** in 110.63 seconds. The skip is the existing POSIX
+file-mode test on Windows. The specs evaluation's **78 tests passed**. Ruff
+lint and format checks passed on all changed Python files; gateway vendored
+platform integrity and specs-ref stamp hooks passed. Pytest used worktree-local
+`--basetemp` directories because the existing cache directory denied writes.
+The evaluation script ran from specs for both reports. Changes remain
+uncommitted in the worktrees; remote CI has not run for this patch.
