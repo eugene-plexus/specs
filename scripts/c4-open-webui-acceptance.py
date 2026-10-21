@@ -333,18 +333,24 @@ def wait_running(token: str) -> dict | None:
 
 
 def catalogue_file() -> Path:
-    found = sorted((c1.PREFIX / "venv").glob("**/eugene_plexus_agent/apps_catalogue.yaml"))
+    if WINDOWS:
+        found = sorted((c1.PREFIX / "venv").glob("**/eugene_plexus_agent/apps_catalogue.yaml"))
+    else:
+        # The service's venv is closed to this account.
+        out = subprocess.run(
+            ["sudo", "find", str(c1.PREFIX / "venv"), "-path", "*/eugene_plexus_agent/apps_catalogue.yaml"],
+            capture_output=True, text=True, check=True)
+        found = [Path(p) for p in sorted(out.stdout.split())]
     assert found, "the installed agent's catalogue file"
     return found[0]
 
 
 def read_catalogue() -> str:
     path = catalogue_file()
-    try:
+    if WINDOWS:
         return path.read_text(encoding="utf-8")
-    except OSError:
-        return subprocess.run(["sudo", "cat", str(path)], capture_output=True, text=True,
-                              check=True).stdout
+    return subprocess.run(["sudo", "cat", str(path)], capture_output=True, text=True,
+                          check=True).stdout
 
 
 def put_catalogue(text: str) -> None:
