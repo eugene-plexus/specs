@@ -130,7 +130,10 @@ try {
     await noOverflow(`${path} 390 at extra-large font`);
   }
   await page.goto(`${url}/config/?sel=agent`);
-  const hint = page.getByText("securityMode", { exact: true });
+  // The key name sits in each setting's closed "Technical details" box.
+  const field = page.locator('[data-config-key="securityMode"]');
+  await field.getByText("Technical details", { exact: true }).click();
+  const hint = field.getByText("securityMode", { exact: true });
   await expect(hint).toBeVisible();
   assert.equal(await hint.evaluate(el => getComputedStyle(el).fontSize), "12.5px");
   await noOverflow("Config 390 at extra-large font");
