@@ -5725,7 +5725,13 @@ components:
           type: array
           minItems: 1
           maxItems: 500
-          items: {type: string, minLength: 1, maxLength: 200}
+          items: {$ref: '#/components/schemas/OidcSubject'}
+
+    OidcSubject:
+      type: string
+      description: A person's `sub`, as their ID token carries it.
+      minLength: 1
+      maxLength: 200
 
     OidcSubjectsResponse:
       type: object
