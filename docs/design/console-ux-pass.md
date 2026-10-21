@@ -691,6 +691,20 @@ and waits for the end of the pass. What building and the review found:
 - Ollama's `llamacpp:<sha>` duplicate (#18830) is a model named
   `llamacpp`; it is skipped. The migration family list is wider than the
   first read; it lives in one constant citing `compatmigrate`.
-- Open, not blocking: the served name is the sorted first tag, so pulling
-  a tag that sorts earlier renames the alias; a normal folder reached
-  through a symlink into a store is protected only textually.
+- Row 65 (2026-10-21) keeps the first served tag while it still exists and
+  checks resolved paths for every write, including Windows junctions.
+  Hiding a store from the catalogue does not make it writable.
+- Keep stages files, verifies their expected SHA-256 and size, and then
+  publishes the Library copy. Profiles move only after a `same` fingerprint
+  match. The runtime retains the Ollama served name.
+- Workers report their own stores by default. Their node token binds both
+  reports and uploads to that worker. Uploaders select a file role, never a
+  destination path or URL. Reports persist: unchanged listings are not sent
+  every minute, so a Library restart must retain them.
+- Windows LocalSystem detection includes the machine override and each real
+  user profile. An unreadable store stays listed with its observed cause.
+- `cx9-ollama-models-acceptance.py --row65 --copy-folder <folder>` adds a
+  portable protocol harness with isolated Library and worker processes.
+  The copy folder must be on a second filesystem. This harness is separate
+  from the existing Windows installer/browser run; neither acceptance run
+  was executed during the phase-2 build.
