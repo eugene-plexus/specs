@@ -189,6 +189,43 @@ host RAM**: today a runtime's 8 GiB of prompt cache is invisible to it, and
 two runtimes are 16 GiB nobody accounted for. MLX's two cache settings are
 already exposed.
 
+**Built in roadmap row 9** (agent `engines/prompt_cache.py`, `admission.py`;
+ui `lib/promptCache.ts`; contract `Runtime.promptCache`,
+`Admission.promptCacheBytes`). Troy's call LD-C5 (2026-10-21): the owner can
+resize the cache; the size is a setting on the runtime's profile with its
+default shown. What building found:
+
+- **The default is 8 GiB, and the machine-sized default is not built.** The
+  pause measurement the design asks for was not run: it replays captured
+  Claude Code and Codex sessions (`claude-N.jsonl`, `codex-N.jsonl`), and none
+  is on the build machine; its 8-replica shape and three sizes through the
+  whole stack is the half day the design names. The GPU and the memory had
+  room. Until the measurement runs, `cacheRam` shows 8 GiB, llama.cpp's own
+  value, and a larger size is the profile's choice.
+- **All three numbers are always passed**: 8192 MiB, 0 and 32, the defaults of
+  b10948's own `--help`. The profile editor words the three fields as acting
+  when unset, as it does for "Reuse repeated text".
+- **`extraArgs` and `env` win.** A repeated `--cache-ram` in `extraArgs` is the
+  one llama-server takes; `LLAMA_ARG_CACHE_RAM` in a runtime's `env` is not
+  overridden by a default. The running view says so (`source: extra_args`).
+- **Admission counts other runtimes' caches whole**, where the launch lives in
+  system memory (a processor, or a device that shares it) or spills into it. A
+  launch whole on a card is not measured against system memory. A runtime's own
+  cache is never counted against its restart. vLLM's offload buffer counts the
+  same way.
+- **llama-server turns `--cache-reuse` off for a hybrid model**: Qwen3.5-4B on
+  b10948 logs `cache_reuse is not supported by this context, it will be
+  disabled` when it loads. Neither `/props` nor `/slots` reports the value, and
+  the supervisor's 80-line output tail loses the line within seconds, so
+  `promptCache.note` does not carry it. Not built.
+- **vLLM 0.29.0 and 0.30.0 list `--kv-offloading-size`** (GiB, a float) and
+  `--kv-offloading-backend` (`native` or `lmcache`); the field is passed only to
+  a build whose `vllm serve --help=all` lists it, read once per binary. The
+  native buffer is a file in `/dev/shm`, made when the engine starts, and only a
+  CUDA-like or Intel XPU card takes it; its refusal is `Insufficient space in
+  /dev/shm: N MiB required, M MiB free`, which `explain_exit` names for the
+  setting. No vLLM has run for this row (the build machine is Windows).
+
 ## 4. Not scheduled
 
 - **Saving slots across an idle unload** (§2): helps full-attention models
