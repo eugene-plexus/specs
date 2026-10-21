@@ -595,6 +595,13 @@ paths:
         passphrase already exists, because an endpoint that both creates
         and replaces a credential, and is reachable without one, is a
         reset endpoint by accident.
+
+        **A machine that left an install with no passphrase of its own
+        (agent#22)** takes one only from the machine itself: the TCP peer,
+        or the HTTPS entry point's verified client address, must be
+        loopback, until a passphrase is set. It still listens where other
+        machines reached it, and the first caller on the network would own
+        it. Any other caller gets **403**.
       requestBody:
         required: true
         content:
@@ -608,6 +615,14 @@ paths:
             application/json:
               schema:
                 $ref: "components/common.yaml#/components/schemas/AuthLoginResponse"
+        "403":
+          description: |
+            This machine left an install with no passphrase of its own, and
+            the caller is not this machine.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
         "409":
           description: Already initialized — log in instead.
           content:
@@ -642,8 +657,9 @@ paths:
         install by itself (as it does at its next minute's trust pull)
         and the 409 says it is standalone now, so the next sign-in uses
         this machine's own passphrase. A machine with **no passphrase of
-        its own** does not leave by itself: standalone, the first caller
-        to set one would own it.
+        its own** leaves as well, and its first-run wizard then takes a
+        passphrase only from the machine itself (agent#22;
+        `POST /v1/auth/initialize`).
 
         **Standalone** (not enrolled), this agent verifies the Argon2id
         hash set during the first-run wizard and mints the session
@@ -2693,7 +2709,7 @@ paths:
           epoch): **409**, and the agent's log says why.
 
         The machine that runs the install's active control root never
-        leaves this way (409).
+        leaves this way, nor with a session (409).
 
         A machine with no passphrase of its own cannot leave this way
         (409); it still leaves by itself at its next trust pull once the
