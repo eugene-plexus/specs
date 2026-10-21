@@ -4128,13 +4128,32 @@ components:
             runs a version without one.
         tlsPins:
           type: array
+          maxItems: 2
           items:
             $ref: '#/components/schemas/TlsPin'
           description: |
             The keys this node's machine port may present, registered
             under its signature. Every other machine refuses a connection
             that presents any other. Empty on a node without a machine
-            port.
+            port. Two while its machine key changes (`tlsNextPin`, row 3):
+            the current key and the next, and both again after the switch
+            until the node announces the new key alone.
+        tlsNextPin:
+          oneOf:
+            - $ref: '#/components/schemas/TlsPin'
+            - type: 'null'
+          description: |
+            The one of `tlsPins` the node announced as its next key
+            (`NodeAddressAnnouncement.tlsNextPin`). `null` outside a
+            machine key change.
+        machineKeyChange:
+          oneOf:
+            - $ref: '#/components/schemas/NodeMachineKeyChange'
+            - type: 'null'
+          description: |
+            While the node announces a next key: which machines this root
+            sees holding a list that names it. An observation, never
+            replicated. `null` outside a change.
         machineTls:
           $ref: '#/components/schemas/MachineLink'
         certificateNames:
@@ -4298,6 +4317,43 @@ components:
         Base64url (no padding) of the SHA-256 of a machine key's
         SubjectPublicKeyInfo, the form Job Sites pin too.
 
+    NodeMachineKeyChange:
+      type: object
+      description: |
+        A machine key change seen from this root (row 3): the node
+        announced a next key, and it switches once every machine that can
+        reach it holds a machine list naming both keys. An observation of
+        this root's last poll: a standby has seen none of it.
+      required: [nextPin, waitingOn, unreachable]
+      properties:
+        nextPin:
+          $ref: '#/components/schemas/TlsPin'
+        listVersion:
+          type:
+            - integer
+            - "null"
+          format: int64
+          description: |
+            The first machine list `version` that names both keys (and,
+            for the machine that runs this root, both in `controlPins`).
+            `null` until this root has signed one.
+        waitingOn:
+          type: array
+          items:
+            type: string
+          description: |
+            Machines this root reached that hold an older list, or that
+            report no list version (a version before row 3), or that it
+            has not polled yet. The node waits for none of them after 3
+            minutes.
+        unreachable:
+          type: array
+          items:
+            type: string
+          description: |
+            Machines this root could not reach on its last poll. The node
+            does not wait for them: each fetches the list when it is back.
+
     MachineLink:
       type: object
       description: |
@@ -4381,6 +4437,12 @@ components:
             present, given to it by its own machine's agent. A node reaches
             the root at the address it joined with, over TLS to one of
             these.
+        keyChange:
+          type: boolean
+          description: |
+            This root takes `NodeAddressAnnouncement.tlsNextPin` (row 3):
+            a node may change its machine key. Absent from an older
+            root's list, and a node then offers no change.
         nodes:
           type: array
           items:
@@ -4730,7 +4792,8 @@ components:
             "tlsPin": …, "url": …}`, keys sorted, holding exactly the
             ones the body holds. An announcement without either signs
             the three fields above, so an older node's announcement
-            verifies as before.
+            verifies as before. `tlsNextPin` (row 3) joins the signed
+            object under its own name in the same way.
 
             **Verified against the raw request body, never against a
             parsed `url`.** An OpenAPI `format: uri` becomes a URL type
@@ -4746,6 +4809,16 @@ components:
           $ref: '#/components/schemas/MachineUrl'
         tlsPin:
           $ref: '#/components/schemas/TlsPin'
+        tlsNextPin:
+          $ref: '#/components/schemas/TlsPin'
+          description: |
+            The node's next machine key, while it changes keys (row 3).
+            Only with `tlsPin`, and not equal to it. The root records both
+            in `Node.tlsPins` and lists both, so every machine accepts
+            either key across the switch; the node then announces
+            `tlsPin` alone, and the old key leaves the list. A replay of
+            an announcement that carried the old key is refused by
+            `sequence`.
 
     NodeAddressAck:
       type: object
