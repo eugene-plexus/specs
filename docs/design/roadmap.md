@@ -135,7 +135,7 @@ between machines). The next release fits after row 6.
 ## Waiting on a call from Troy
 
 These are blocked until the call is taken:
-- **MV5b, Hindsight installed from the catalogue** (`workbench-memory-v2.md`): call MV5b-C1, where pg0 keeps its data on Windows. Its store migration must become 27 → 28.
+- **MV5b, Hindsight installed from the catalogue** (`workbench-memory-v2.md`): call MV5b-C1, where pg0 keeps its data on Windows. Its store migration must become 28 → 29 (row 7 took 28).
 - **Installing vLLM for the person**: the recommendation is to use their own install and defer.
 - **The installer's `--channel` flag** (`settings-accuracy.md`).
 - **Dependabot grouping in every repo.**
