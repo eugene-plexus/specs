@@ -2460,17 +2460,19 @@
    "lane": "ENG",
    "repos": [
     "agent",
-    "specs",
-    "ui"
+    "ui",
+    "specs"
    ],
    "contract": "agent.yaml",
    "hot_files": [],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     13,
     42
    ],
    "design_docs": [
+    "rows/row-73.md",
+    "rows/row-42.md",
     "m4-second-engine-vllm.md"
    ],
    "calls": [],

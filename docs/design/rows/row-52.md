@@ -1,6 +1,6 @@
 # Row 52: per-person isolation for local MCP programs
 
-Lane WB, after row 51 (it shares 51e's AppContainer code). **High risk**
+Lane AG2, after row 51 (it shares 51e's AppContainer code). **High risk**
 (running third-party code for people who are not the owner). Sources:
 `workbench-mcp.md` §C5b ("local servers are owner-only in C5b … all code in
 the app's account can read its files, including other people's chats …
