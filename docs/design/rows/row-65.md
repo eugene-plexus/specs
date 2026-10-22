@@ -200,3 +200,7 @@ The change crosses components. Extend `cx9-ollama-models-acceptance.py`, on Wind
 2. **Should workers report their Ollama stores by default?** Recommend on. Only names, sizes and digests move, inside the install.
 3. **Should Keep move the profiles by itself?** Recommend yes. The click is the intent, and the contents are proven the same.
 4. **Where should kept files go?** Recommend `<first writable folder>/ollama/<name>/`, with a folder picker for the person.
+
+## Calls answered by Troy (2026-10-21)
+
+- **OLLAMA-1 to OLLAMA-3: Choice 1 each.**

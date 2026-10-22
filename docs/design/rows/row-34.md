@@ -182,3 +182,10 @@ Ship 34a and 34b in the same Edge build, so that existing installs reset once.
 3. **The one reset at the update:** existing installs lose Open WebUI's admin settings once. Recommend accept it, with the Update button saying so.
 4. **Images from an external, paid model:** allow, with a local model first? Recommend allow.
 5. **Fetch result pages from Open WebUI's account?** Recommend no: use snippets only.
+
+## Calls answered by Troy (2026-10-21)
+
+- **OW-PLUGINS: Choice 1.** Plugins stay on.
+- **OW-GOOGLE: Choice 2.** Open WebUI may use Google search. A search provider's terms are the account holder's to keep.
+- **OW-RESET: Choice 1.** The Update button says the settings reset.
+- **OW-IMAGES: Choice 1, and "local only" keys rule.** Keys already carry `limits.localOnly`; the gateway refuses every cloud backend for such a key. Open WebUI's key honours it as any key does.

@@ -24,6 +24,8 @@ PINNED_STEPS = {
     "run-operations-checks.py": (FULL, "both"),
     "s10-starter-check.py": (FULL, "both"),
     "r7-signing-checks.py": (EVERY, "both"),
+    "test_s8_harness.py": (EVERY, "both"),
+    "harness-acceptance.py": (EVERY, "both"),
     "r7-rotation-acceptance.py": (FULL, "both"),
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),
@@ -72,7 +74,41 @@ def workflow(name: str) -> dict:
     )
 
 
+def can_run_on_windows(job: dict) -> bool:
+    """True when a job may run on a Windows runner (a matrix it cannot read counts)."""
+    runs_on = job.get("runs-on", "")
+    if isinstance(runs_on, str) and "matrix." not in runs_on:
+        return "windows" in runs_on
+    matrix = (job.get("strategy") or {}).get("matrix")
+    if not isinstance(matrix, dict):
+        return True
+    names = matrix.get("os") or []
+    if isinstance(names, str):
+        return "windows" in names
+    names = [*names, *(entry.get("os", "") for entry in matrix.get("include") or [])]
+    return any("windows" in name for name in names)
+
+
 class WiringTests(unittest.TestCase):
+    def test_no_step_on_windows_runs_under_the_default_shell(self) -> None:
+        """The runner's default pwsh fails a step only on the exit code of its last
+        native command: a failing command followed by a passing one is green, and
+        the agent's Windows pytest step once passed with 2 failed tests (W0.13).
+        Every run step of a job that can run on Windows names its shell, as a
+        step, job or workflow default."""
+        default = []
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            document = workflow(path.name)
+            workflow_shell = ((document.get("defaults") or {}).get("run") or {}).get("shell")
+            for job_id, job in (document.get("jobs") or {}).items():
+                if not can_run_on_windows(job):
+                    continue
+                job_shell = ((job.get("defaults") or {}).get("run") or {}).get("shell")
+                for number, step in enumerate(job.get("steps") or [], 1):
+                    if "run" in step and not (step.get("shell") or job_shell or workflow_shell):
+                        default.append(f"{path.name} {job_id} step {number}: {step.get('name', '')}")
+        self.assertEqual(default, [])
+
     def test_container_checks_install_yaml_in_the_selected_interpreter(self) -> None:
         steps = workflow("container.yml")["jobs"]["build-verify-publish"]["steps"]
         setup = next(
@@ -164,6 +200,15 @@ class WiringTests(unittest.TestCase):
                 component = repository.removeprefix("eugene-plexus/").replace("-", "_")
                 if component in REF_INPUTS:
                     self.assertIn(f"needs.plan.outputs.{component}_ref", step["with"]["ref"])
+
+    def test_durable_run_protocol_uses_the_planned_library_ref(self) -> None:
+        step = next(
+            step
+            for step in workflow("ci.yml")["jobs"]["r7-signing"]["steps"]
+            if step.get("name") == "Verify durable run protocol when both consumers provide it"
+        )
+        self.assertEqual(step["env"]["LIBRARY_REF"], "${{ needs.plan.outputs.library_ref }}")
+        self.assertIn('"specs/scripts/run-operations-checks.py"', step["run"])
 
     def test_every_pinned_integration_step_runs_once_per_system(self) -> None:
         job = workflow("ci.yml")["jobs"]["r7-signing"]

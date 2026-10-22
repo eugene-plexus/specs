@@ -23,12 +23,14 @@ New module `fair_queue.py` holds one `FairQueue` per routing table. An entry hol
 
 **Band.** The bands are interactive, background and sheddable. The band in effect is the lower of the key's band and the `X-Eugene-Band` header. A header asking for a higher band is ignored, and the row records the band used.
 
+**Band from a person's group (LD-C4, Troy 2026-10-21).** The operator gives a permission group a queue band (`PermissionGroup.queueBand`, new, default interactive). When the root verified a person, `check` returns the highest band among that person's groups, and that band replaces the key's band. The header can still only lower it. This is part 11e, after 11a-11d.
+
 **Fairness id (LD-C3).**
 - `person:<personId>` when the root verified a person. Workbench sends `X-Eugene-Person-Token` with its app key, and `check` returns `personId`.
 - Otherwise `key:<id>`, or `session:<sub>` for an operator session, or `anonymous`.
 - Open WebUI sends no person token, so its users share one id.
 
-**Order.** By band. Within a band, the id served least recently goes first. Within one id, by arrival.
+**Order (LD-C3, Troy 2026-10-21).** By band. Within a band, by arrival: first come, first served. A burst from one person cannot take every slot, because condition (a) below holds each key to its limit.
 
 **When an entry may leave.** Two conditions must both hold:
 - (a) its key holds fewer leases on this gateway than its limit;
@@ -205,3 +207,12 @@ After the last step, one acceptance run and one adversarial review come before t
 **Calls only Troy can make:**
 - **TIER-SPILL.** At the TTL, should a request move to its next tier, which may be a paid cloud account? Recommended: yes. The operator set that tier as the fallback, and the Metrics page counts each spill. Today such a request goes to the busy engine.
 - **Keys a person holds.** LD-C3 names them, but a key has no owner. Recommended: add an owner with row 37 or 40. Until then, a key with no verified person gets one share.
+
+## Calls answered by Troy (2026-10-21)
+
+- **WAKE: wait in the queue.** A request for a runtime that is starting waits in the one queue.
+- **LD-C3 and LD-C4: priority from groups, then first come, first served.** See "Order" and "Band from a person's group" in section 2.
+- **KEY-OWNER: Choice 1.** A key with no owner is its own fairness id until rows 37 or 40 add an owner.
+- **TIER-SPILL: Choice 1, built as rules.** Tier moves are a list of rules, each a condition and an action, stored as data. The first and only rule today is "waited more than 60 seconds: move to the next tier". Administrators get more conditions later. The Metrics page counts every move.
+- **CB-C2: Choice 3.** Each request holds back the length of its conversation's recent long answers (95 of 100 are shorter), or 4,096 tokens for a new conversation, but never less than a floor the owner sets (a gateway setting, default 1,024). The Metrics page counts each answer that ran out of room.
+- **GROUP-POLICY: Choice 2.** All group policies come first, in row 70. This row reads the queue band from row 70's policies; part 11e is dropped from this row, and row 11 needs row 70.
