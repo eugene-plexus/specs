@@ -341,6 +341,13 @@ class WiringTests(unittest.TestCase):
                 self.assertEqual(jobs[name]["needs"], "plan")
                 self.assertIn(f"needs.plan.outputs.{gate}", jobs[name]["if"])
 
+    def test_tool_picture_contract_runs_in_contract_validation(self) -> None:
+        steps = workflow("ci.yml")["jobs"]["validate-openapi"]["steps"]
+        self.assertIn(
+            "python scripts/test_tool_pictures_contract.py",
+            [step.get("run") for step in steps],
+        )
+
     def test_reusable_workflows_accept_declared_inputs(self) -> None:
         for path in WORKFLOWS.glob("*.yml"):
             for name, job in workflow(path.name).get("jobs", {}).items():

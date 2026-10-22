@@ -910,6 +910,9 @@ jobs:
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
 
+      - name: Check tool picture contracts (row 29)
+        run: python scripts/test_tool_pictures_contract.py
+
       - name: Validate every OpenAPI document
         shell: bash
         run: |

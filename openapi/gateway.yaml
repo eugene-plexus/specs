@@ -740,6 +740,21 @@ paths:
         request. Profile edits take effect on subsequent requests after
         cache expiry and do not restart engines.
 
+        **Pictures in tool results.** A `tool` message's `content` may be
+        a string or an array of text and `image_url` parts. The gateway moves
+        each tool picture to the next user message, after the turn's tool
+        messages and before the person's own words, labelled with
+        `The image returned by tool call <id>:`. The tool message keeps its
+        call id and a note: "[The tool returned an image; it is attached to
+        the next user message.]". This is the same path as an Anthropic
+        `tool_result` or a Responses `function_call_output`; the
+        inference-driver's tool messages carry text only. PNG and JPEG pass
+        through; GIF and WebP are re-encoded to PNG, and animated pictures
+        are refused. The limits and the rule that keeps the newest tool
+        pictures are in `MessageContent`. Pictures route only to a backend
+        that confirms image input; with none, the request is a 400 naming
+        the cause, as for a person's own picture.
+
         **Audio and files ride the image path (P2, 2026-09-28).** An
         `input_audio` part (WAV or MP3) and a `file` part (a PDF, inline
         as `file_data`) are carried to the backend as they are, within
@@ -1175,8 +1190,8 @@ paths:
         decided the shape (captured with `scripts/r4-capture.py --mode
         imageread`, Claude Code 2.1.207 / agent-sdk 0.3.280): its `Read`
         of an image file returns a result whose content is a lone
-        `image` block and no text. An OpenAI `tool` message carries text
-        only and image parts ride on user messages, so the picture
+        `image` block and no text. The inference-driver's `tool` messages
+        carry text only and image parts ride on user messages, so the picture
         **moves**: the tool message keeps its call id and says, in a
         bracketed line, that the tool returned an image attached to the
         next user message; and that user message -- directly after the
@@ -1208,8 +1223,10 @@ paths:
         2026-09-23, when a Claude Code session that had read five
         screenshots was refused on every turn after the fifth; it is the
         gateway's `maxImagesPerRequest` now, twelve by default and at most
-        64, and a refusal names both the setting and the block that tipped
-        it.
+        64. The shared `MessageContent` rule keeps the newest tool pictures
+        that fit and replaces the others with notes naming the limit. A
+        person's own pictures are never dropped; if they alone are over a
+        limit, the refusal names the setting and the block that tipped it.
 
         ### Documents are carried too (P2, 2026-09-28)
 
@@ -1640,8 +1657,11 @@ paths:
         `auto` is named on the ignored-settings header, because a local
         projector sizes the picture itself. An image inside a
         `function_call_output` moves to the next user message, labelled
-        with the call id, as on `/v1/messages`: a `tool` message carries
-        text only.
+        with the call id, as on `/v1/messages`: the inference-driver's
+        `tool` messages carry text only. The shared `MessageContent` rule
+        keeps the newest tool pictures that fit and replaces the others
+        with notes naming the limit; a person's own pictures are never
+        dropped.
 
         ### No cap from the install default
 
@@ -5720,6 +5740,11 @@ components:
             Refused with a 400 until 2026-09-23.
         content:
           $ref: './components/common.yaml#/components/schemas/MessageContent'
+          description: |
+            On a **tool** message: the result, as a string or an array of
+            text and image parts. The gateway moves each tool picture to the
+            next user message, labelled with the call id, and leaves a note
+            in the tool's text. Audio and files ride on user messages only.
         reasoning:
           type:
             - string
@@ -5769,8 +5794,8 @@ components:
           type: string
           description: |
             Required on a **tool** message: which call in the preceding
-            assistant turn this is the result of. `content` is the
-            result, as a string — the caller serializes it.
+            assistant turn this is the result of. `content` carries the
+            result as described above.
         audio:
           $ref: '#/components/schemas/ChatCompletionAudio'
           description: |

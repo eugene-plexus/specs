@@ -1536,6 +1536,8 @@ components:
             Full prompt as an ordered conversation. Whatever system
             message the caller wants is already in here; the driver does
             not modify, prepend to, or reorder it. Empty with `completion`.
+            Tool messages carry text; the gateway moves pictures to the
+            next user message, labelled with `Message.toolCallId`.
           items:
             $ref: 'components/common.yaml#/components/schemas/Message'
         maxTokens:
