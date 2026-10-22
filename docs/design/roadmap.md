@@ -90,7 +90,7 @@ between machines). The next release fits after row 6.
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
 | 36 | **Machines says why a machine's announcement was refused** | R2.4-a | M | cross | multi-machine | Today it shows a probe error. A contract field plus an issue kind |
-| 37 | **Routing profiles per person or group** (shared accounts, part two). Each group gets routing rules per model role (row 71) | SSO-ROLES (`shared-accounts-and-sso.md`) | L | high | businesses | Designed 2026-10-16. Fix its data format before more per-person settings arrive |
+| 37 | **Routing profiles per person or group** (shared accounts, part two). Each group gets routing rules per model role (row 71) | SSO-ROLES (`shared-accounts-and-sso.md`) | L | high | businesses | Designed (`rows/row-37.md`): per-group role routing and allowed models. After rows 11, 70 and 71. Call R37-FIRST |
 | 38 | **Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost** | ADM, HH-NEXT, MD-x | L | low | businesses | Needs row 12 |
 | 39 | **Operations rights for people who are not the owner** | CX-OPS | M | high | businesses | |
 | 40 | **Usage and money limits per person and key** | KEY$, Shop, AD-BILL | L | high | businesses | Builds on A5's attribution |
