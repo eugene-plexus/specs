@@ -1299,9 +1299,11 @@ def key_changes(
             if made and due
             else None
         )
+        # A year, plus this key's spread: up to a twelfth of it (Troy's call).
         record.add(
             "key-schedule: the worker says its key changes by itself a year after it was made",
-            year == datetime.timedelta(days=365),
+            year is not None
+            and datetime.timedelta(days=365) <= year < datetime.timedelta(days=365 + 365 / 12),
             keyMadeAt=made,
             keyChangeDueAt=due,
         )

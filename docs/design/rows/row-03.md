@@ -237,6 +237,10 @@ agent and ui.
   its certificate's start, which every machine certificate sets one day
   before the key is made, so keys made before this part count too. Nothing
   new is stored.
+- **The spread (Troy's call).** A key falls due its days after it was made
+  plus up to a twelfth of them (about a month a year), drawn from its pin:
+  the machines of one install that joined together fall due on different
+  days, and one key keeps its day across restarts.
 - **When it cannot start** (a root older than row 3, a machine port not
   listening yet): said once, tried again every hour. A scheduled change an
   operator stopped, or the root refused, starts again a day later while the
@@ -247,9 +251,14 @@ agent and ui.
   when its key was made and when it changes by itself, or a change under way
   (how many machines have the new key, which are offline and take it when
   they return, what it waits for in the machine's own words), and when a
-  change finished or why it failed. **Change this machine's key now** asks
-  first, then calls that machine's own agent; **Stop** is offered until the
-  switch.
+  change finished or why it failed. "Next key change: March 2027". On the
+  machine that runs the root, a change under way names each machine that
+  must be updated or removed first (`notReady`). **Change this machine's key
+  now** asks first, then calls that machine's own agent; **Stop** is offered
+  until the switch.
+- **Base.** The specs branch sits on `train-b-1022`, whose contracts the
+  agent and the console already pin (rows 7, 21, 65, 71): merge it after
+  train B.
 - **Acceptance:** label `key-schedule` in `lt1-machine-tls-acceptance.py`
   dates the worker's key 400 days back (the same key, so the same pin),
   restarts it, and checks that it changes by itself with prompts served
