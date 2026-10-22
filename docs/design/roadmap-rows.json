@@ -2046,29 +2046,33 @@
    "summary": "More server-run tools. Tavily, and remote MCP on Responses",
    "from": "P8-later",
    "size": "M",
-   "risk": "cross",
-   "risk_note": "cross",
+   "risk": "high",
+   "risk_note": "high (59b dials caller-supplied URLs)",
    "who": "developers",
    "notes": "",
    "lane": "GW",
    "lane_order": 11,
    "repos": [
     "tool-driver",
-    "gateway"
+    "gateway",
+    "ui"
    ],
    "contract": "tool-driver.yaml gateway.yaml",
    "hot_files": [
     "tool-driver/src/eugene_plexus_tool_driver/providers.py",
     "gateway/src/eugene_plexus_gateway/server_tools.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     57
    ],
    "design_docs": [
+    "rows/row-59.md",
     "server-run-tools.md"
    ],
-   "calls": [],
+   "calls": [
+    "R59-MCP"
+   ],
    "issue": 86
   },
   {

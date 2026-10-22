@@ -118,7 +118,7 @@ between machines). The next release fits after row 6.
 | 56 | **Files, vector stores and `file_search`** | MRC24 | L | cross | developers | Designed (`rows/row-56.md`): vector stores in the store app with Workbench's retrieval (copied), `file_search` run by the gateway with citations; after row 53. MRC24 answered |
 | 57 | **Responses: non-function tools and `compact`** | RSP-T | M | low | developers | Designed (`rows/row-57.md`): custom, local_shell, shell and apply_patch as functions and back; compact as an authenticated summary item |
 | 58 | **A Gemini API door**, and the small Gemini items (mp3/opus speech, countTokens, dimensions) | GEM-D (gateway#5), GEM-x (inference-driver#7) | L, S each | low | Gemini SDK users | |
-| 59 | **More server-run tools.** Tavily, and remote MCP on Responses | P8-later | M | cross | developers | |
+| 59 | **More server-run tools.** Tavily, and remote MCP on Responses | P8-later | M | high (59b) | developers | Designed (`rows/row-59.md`): 59a Tavily; 59b remote MCP run by the tool driver, internet only, the caller's token never kept. Call R59-MCP |
 | 60 | **Full interop conformance.** A separate-origin MCP proxy, network and device grants, sampling and elicitation, A2UI beyond forms | G-later | L | high (sandbox) | developers | |
 | 61 | **LoRA adapters as Library items**, routed to replicas holding them | M2-LORA | M | cross | developers | |
 | 62 | **A `runtime_name` dropdown** in place of free text | M4-DROP | S | low | developers | |
