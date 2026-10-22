@@ -82,10 +82,13 @@ pair of their own:
   and serves prompts again, with nobody doing anything (the orchestrator's
   required check, 2026-10-21).
 * `key-schedule` (part 3b, R3-SCHEDULE): the worker says when its key changes
-  by itself (a year after it was made). Its agent is stopped, its key's
-  certificate is dated 400 days back (the same key, so the same pin), and it
-  is started: it starts the change by itself (`reason: scheduled`), finishes
-  it with nothing refused, presents the new key, and is due again a year on.
+  by itself (a year after it was made, plus its spread). Its agent is
+  stopped, its key's certificate is dated so the key falls due four minutes
+  later (the same key, so the same pin), and it is started. With a prompt a
+  second through the root's gateway and a new pinned connection a second to
+  the worker running from before the change starts, the worker changes its
+  key by itself (`reason: scheduled`): none may fail, it presents the new
+  key, and it is due again a year on.
 
 Run on a Linux host with Docker (WSL2 with `docker.io` on Amish_Station, or a
 GitHub Linux runner):
@@ -1307,6 +1310,14 @@ def key_changes(
             keyMadeAt=made,
             keyChangeDueAt=due,
         )
+        if year is None:
+            return
+        # The yearly case: the machine is running when its key falls due, so it
+        # starts at the next check. Its key is dated to fall due a few minutes
+        # from now (a key already overdue when first seen would catch up
+        # within a week, which the agent's own tests cover).
+        lead = 240.0
+        age_days = (year - datetime.timedelta(seconds=lead)) / datetime.timedelta(days=1)
         docker("exec", pair.name("worker"), "pkill", "-f", "eugene_plexus_", check=False)
         wait_for(
             lambda: pair.call("worker", "GET", f"{agent}/healthz", timeout=3)["status"] != 200,
@@ -1315,53 +1326,63 @@ def key_changes(
         )
         time.sleep(3)
         aged = pair.exec(
-            "worker", "age-key", {"path": f"{up.worker_dir}/node.yaml", "days": 400}
+            "worker", "age-key", {"path": f"{up.worker_dir}/node.yaml", "days": age_days}
         )
         start_agent(pair, "worker", up.worker_dir)
         wait_for(
-            lambda: pair.call("worker", "GET", f"{agent}/healthz", timeout=3)["status"] == 200,
-            "the worker's agent to start again",
-            90,
+            lambda: chat("before the scheduled change")["status"] == 200,
+            "the worker to serve prompts again",
+            120,
         )
-        began = time.perf_counter()
-        state = finished("worker", 360)
-        took = round(time.perf_counter() - began)
+        # Traffic for the whole change: a prompt a second through the root's
+        # gateway, and a new pinned connection a second to the worker's agent.
+        loads = Loads(pair)
+        loads.start("root", "chat", chat_load)
+        loads.start(
+            "root",
+            "to-worker",
+            {
+                "kind": "get",
+                "urls": [f"http://{worker_ip}:{AGENT_PORT}/healthz"],
+                "pins": f"{up.root_dir}/machine_pins.json",
+            },
+        )
+        loads_from = datetime.datetime.now(datetime.UTC)
+        state = finished("worker", lead + 360)
+        time.sleep(3)  # and the seconds just after the drop
+        summary = loads.stop()
         after = machine("worker")
         change = after.get("keyChange") or {}
+        started = change.get("startedAt")
         new = after.get("pin")
         seen = presented("root", worker_ip)
-        try:
-            wait_for(
-                lambda: chat("after the scheduled change")["status"] == 200,
-                "a prompt to reach the worker",
-                120,
-            )
-            served = True
-        except AssertionError:
-            served = False
         due_after = after.get("keyChangeDueAt")
         ahead = (
             datetime.datetime.fromisoformat(due_after) - datetime.datetime.now(datetime.UTC)
             if due_after
             else None
         )
+        covered = bool(started) and datetime.datetime.fromisoformat(started) > loads_from
         record.add(
-            "key-schedule: a key a year old changes by itself, with nothing refused",
+            "key-schedule: a key that falls due changes by itself, under load, with nothing "
+            "refused",
             aged.get("pin") == old  # type: ignore[union-attr]
             and state == "done"
             and change.get("reason") == "scheduled"
+            and covered
+            and _loads_ok(summary, 10)
             and bool(new) and new != old and seen == new
-            and served
             and ahead is not None and ahead > datetime.timedelta(days=364),
             agedPin=aged.get("pin"),  # type: ignore[union-attr]
             agedMadeAt=aged.get("madeAt"),  # type: ignore[union-attr]
             state=state,
             reason=change.get("reason"),
-            seconds=took,
+            startedAt=started,
+            loadsFrom=loads_from.isoformat(),
+            loads=summary,
             old=old,
             new=new,
             presented=seen,
-            promptServed=served,
             keyChangeDueAt=due_after,
         )  # fmt: skip
         return

@@ -241,10 +241,20 @@ agent and ui.
   plus up to a twelfth of them (about a month a year), drawn from its pin:
   the machines of one install that joined together fall due on different
   days, and one key keeps its day across restarts.
+- **A key already overdue when first seen** (an install updated to this
+  version, a machine that was off) starts within 7 days of that first check,
+  at a time drawn from its pin, not at once: one install's machines do not
+  all change in one tick. When it was first seen is kept in `node.yaml`.
+  Seen within a day of falling due is the yearly case, and starts at once.
 - **When it cannot start** (a root older than row 3, a machine port not
-  listening yet): said once, tried again every hour. A scheduled change an
-  operator stopped, or the root refused, starts again a day later while the
-  key is still past its age; set the field to 0 to stop that.
+  listening yet, a key that cannot be written): said once, kept as its cause,
+  tried again every hour. A scheduled change an operator stopped, or the root
+  refused, starts again a day later while the key is still past its age; set
+  the field to 0 to stop that.
+- **What the console is told:** `keyChangeNextAttemptAt` is exactly when the
+  schedule next tries, and `keyChangeBlocked` why the last start could not
+  happen. Machines never says "within a minute" for a start a day or a week
+  away.
 - **Contract (agent.yaml):** `MachinePort.keyMadeAt`, `keyChangeDueAt`,
   `MachineKeyChange.reason`.
 - **Console (ui):** Machines has a **Machine keys** section: per machine,
@@ -260,8 +270,13 @@ agent and ui.
   agent and the console already pin (rows 7, 21, 65, 71): merge it after
   train B.
 - **Acceptance:** label `key-schedule` in `lt1-machine-tls-acceptance.py`
-  dates the worker's key 400 days back (the same key, so the same pin),
-  restarts it, and checks that it changes by itself with prompts served
-  after.
+  dates the worker's key to fall due four minutes after a restart (the same
+  key, so the same pin), runs a prompt a second and a new pinned connection a
+  second from before the change starts, and checks that the worker changes
+  its key by itself with none of them failing.
+- **The review (Codex, 2026-10-22), no blockers; fixed:** the catch-up
+  window, the next attempt and its cause in `GET /v1/node` and on Machines,
+  every failure of a scheduled start throttled and shown, traffic across the
+  scheduled acceptance, and deterministic spread tests.
 - **Not built:** an install-wide setting; each machine has its own
   `machineKeyChangeDays` (on its config page, reached from the console).
