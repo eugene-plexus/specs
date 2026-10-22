@@ -45,6 +45,13 @@ on:
 permissions:
   contents: read
 
+# bash for every step, Windows included (W0.13): the runner's default pwsh
+# fails a step only on the exit code of its last native command, and bash
+# -e -o pipefail stops at the first failing command. See ci.yml.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   service-install:
     name: C1 on ${{ matrix.os }}

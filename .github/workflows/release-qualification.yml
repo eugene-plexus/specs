@@ -88,6 +88,10 @@ jobs:
         runs-on: ${{ matrix.os }}
         # Workbench's full suite on Windows ran past 30 minutes (v0.3.0's first qualification).
         timeout-minutes: 60
+        # bash for every step, Windows included (W0.13; see ci.yml).
+        defaults:
+            run:
+                shell: bash
         strategy:
             fail-fast: false
             matrix: ${{ fromJSON(needs.candidate.outputs.matrix) }}
