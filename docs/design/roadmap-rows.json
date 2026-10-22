@@ -1494,20 +1494,21 @@
    "lane_order": 9,
    "repos": [
     "agent",
-    "library",
     "ui"
    ],
    "contract": "agent.yaml",
    "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/devices.py",
     "agent/src/eugene_plexus_agent/host_probes.py",
-    "agent/src/eugene_plexus_agent/engines/gpu_probe.py",
-    "library/src/eugene_plexus_library/fit.py"
+    "agent/src/eugene_plexus_agent/admission.py",
+    "agent/src/eugene_plexus_agent/runtimes.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     16
    ],
    "design_docs": [
+    "rows/row-43.md",
     "deepinfer-lessons.md"
    ],
    "calls": [],
