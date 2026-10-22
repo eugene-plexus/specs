@@ -224,3 +224,35 @@ each now a fault-injection test that failed first:
 ## Calls answered by Troy (2026-10-21)
 
 - **R3-SCHEDULE-2: Choice 1.** Machine keys do not expire by themselves, but Eugene changes each machine key once a year by itself, and also when an administrator asks. Built as part **3b**, a small follow-up after this row merges: a yearly timer per machine, spread by a random offset so the machines of one install do not change on the same day, and shown on Machines ("Next key change: March 2027"). **3b also adds the console's controls** (found while building: the row shipped the API only, `POST /v1/node/machine-key`): a "Change machine key" button per machine with Stop, the progress lines of section 2, and a root key change's wait list naming each machine that must be updated or removed first. GUI equality rule.
+
+## 9. Part 3b: once a year by itself, and on request (built 2026-10-22)
+
+Troy's calls R3-SCHEDULE and R3-SCHEDULE-2: machine keys change once a year
+by themselves, and when someone asks. Branch `r3b-key-schedule` in specs,
+agent and ui.
+
+- **The schedule (agent).** A key older than the agent config field
+  `machineKeyChangeDays` (365 by default; 0 for only on request) starts row
+  3's change by itself at the next step (`reason: scheduled`). A key's age is
+  its certificate's start, which every machine certificate sets one day
+  before the key is made, so keys made before this part count too. Nothing
+  new is stored.
+- **When it cannot start** (a root older than row 3, a machine port not
+  listening yet): said once, tried again every hour. A scheduled change an
+  operator stopped, or the root refused, starts again a day later while the
+  key is still past its age; set the field to 0 to stop that.
+- **Contract (agent.yaml):** `MachinePort.keyMadeAt`, `keyChangeDueAt`,
+  `MachineKeyChange.reason`.
+- **Console (ui):** Machines has a **Machine keys** section: per machine,
+  when its key was made and when it changes by itself, or a change under way
+  (how many machines have the new key, which are offline and take it when
+  they return, what it waits for in the machine's own words), and when a
+  change finished or why it failed. **Change this machine's key now** asks
+  first, then calls that machine's own agent; **Stop** is offered until the
+  switch.
+- **Acceptance:** label `key-schedule` in `lt1-machine-tls-acceptance.py`
+  dates the worker's key 400 days back (the same key, so the same pin),
+  restarts it, and checks that it changes by itself with prompts served
+  after.
+- **Not built:** an install-wide setting; each machine has its own
+  `machineKeyChangeDays` (on its config page, reached from the console).

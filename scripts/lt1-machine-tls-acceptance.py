@@ -81,6 +81,11 @@ pair of their own:
   and the worker is started: within 2 minutes it holds the root's new key
   and serves prompts again, with nobody doing anything (the orchestrator's
   required check, 2026-10-21).
+* `key-schedule` (part 3b, R3-SCHEDULE): the worker says when its key changes
+  by itself (a year after it was made). Its agent is stopped, its key's
+  certificate is dated 400 days back (the same key, so the same pin), and it
+  is started: it starts the change by itself (`reason: scheduled`), finishes
+  it with nothing refused, presents the new key, and is due again a year on.
 
 Run on a Linux host with Docker (WSL2 with `docker.io` on Amish_Station, or a
 GitHub Linux runner):
@@ -88,7 +93,7 @@ GitHub Linux runner):
     python3 scripts/lt1-machine-tls-acceptance.py \\
         --sources ../.worktrees/lt1 --output /tmp/lt1-run \\
         [--labels bad-signature,wrong-pin,root-stopped,removed-machine | automatic
-         | key-change,root-key-change]
+         | key-change,root-key-change,key-schedule]
 
 `--sources` holds the component checkouts side by side (agent, control,
 gateway, inference-driver, library). Their working trees are copied as git
@@ -259,6 +264,32 @@ def inside(command: str, argument: dict) -> object:
     if command == "load":
         load(argument)
         return {}
+
+    if command == "age-key":
+        # Part 3b: this machine's key as one made `days` ago. The same key,
+        # so the same pin; only its certificate's date moves, which is what
+        # the agent reads a key's age from. Run with the agent stopped.
+        import datetime
+
+        import yaml
+        from eugene_plexus_agent import node_identity
+
+        path = Path(argument["path"])
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        made = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
+            days=float(argument["days"])
+        )
+        raw["tlsCertificate"] = node_identity.machine_certificate(
+            raw["tlsPrivateKey"], made=made
+        )
+        path.write_text(
+            yaml.safe_dump(raw, sort_keys=True, default_flow_style=False), encoding="utf-8"
+        )
+        os.chmod(path, 0o600)
+        return {
+            "pin": node_identity.machine_pin(raw["tlsCertificate"]),
+            "madeAt": node_identity.machine_key_made_at(raw["tlsCertificate"]).isoformat(),
+        }
 
     if command == "forge":
         import base64
@@ -1256,6 +1287,83 @@ def key_changes(
         )  # fmt: skip
         return
 
+    if label == "key-schedule":
+        import datetime
+
+        before = machine("worker")
+        old = before.get("pin")
+        made = before.get("keyMadeAt")
+        due = before.get("keyChangeDueAt")
+        year = (
+            datetime.datetime.fromisoformat(due) - datetime.datetime.fromisoformat(made)
+            if made and due
+            else None
+        )
+        record.add(
+            "key-schedule: the worker says its key changes by itself a year after it was made",
+            year == datetime.timedelta(days=365),
+            keyMadeAt=made,
+            keyChangeDueAt=due,
+        )
+        docker("exec", pair.name("worker"), "pkill", "-f", "eugene_plexus_", check=False)
+        wait_for(
+            lambda: pair.call("worker", "GET", f"{agent}/healthz", timeout=3)["status"] != 200,
+            "the worker's agent to stop",
+            60,
+        )
+        time.sleep(3)
+        aged = pair.exec(
+            "worker", "age-key", {"path": f"{up.worker_dir}/node.yaml", "days": 400}
+        )
+        start_agent(pair, "worker", up.worker_dir)
+        wait_for(
+            lambda: pair.call("worker", "GET", f"{agent}/healthz", timeout=3)["status"] == 200,
+            "the worker's agent to start again",
+            90,
+        )
+        began = time.perf_counter()
+        state = finished("worker", 360)
+        took = round(time.perf_counter() - began)
+        after = machine("worker")
+        change = after.get("keyChange") or {}
+        new = after.get("pin")
+        seen = presented("root", worker_ip)
+        try:
+            wait_for(
+                lambda: chat("after the scheduled change")["status"] == 200,
+                "a prompt to reach the worker",
+                120,
+            )
+            served = True
+        except AssertionError:
+            served = False
+        due_after = after.get("keyChangeDueAt")
+        ahead = (
+            datetime.datetime.fromisoformat(due_after) - datetime.datetime.now(datetime.UTC)
+            if due_after
+            else None
+        )
+        record.add(
+            "key-schedule: a key a year old changes by itself, with nothing refused",
+            aged.get("pin") == old  # type: ignore[union-attr]
+            and state == "done"
+            and change.get("reason") == "scheduled"
+            and bool(new) and new != old and seen == new
+            and served
+            and ahead is not None and ahead > datetime.timedelta(days=364),
+            agedPin=aged.get("pin"),  # type: ignore[union-attr]
+            agedMadeAt=aged.get("madeAt"),  # type: ignore[union-attr]
+            state=state,
+            reason=change.get("reason"),
+            seconds=took,
+            old=old,
+            new=new,
+            presented=seen,
+            promptServed=served,
+            keyChangeDueAt=due_after,
+        )  # fmt: skip
+        return
+
     # ---- root-key-change ----------------------------------------------------
     old = machine("root").get("pin")
     loads = Loads(pair)
@@ -1474,7 +1582,7 @@ def exercise(pair: Pair, record: Record, labels: list[str], measure: int = 0) ->
                 check="wrong-pin: an impostor's key is refused and is sent nothing",
             )
 
-        elif label in ("key-change", "root-key-change"):
+        elif label in ("key-change", "root-key-change", "key-schedule"):
             # One label's failure is recorded and the next still runs.
             try:
                 key_changes(
