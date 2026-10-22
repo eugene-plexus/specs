@@ -1645,24 +1645,25 @@
    "lane": "WB",
    "lane_order": 7,
    "repos": [
-    "workbench",
-    "control"
+    "workbench"
    ],
    "contract": "control.yaml?",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/store.py",
     "workbench/src/eugene_plexus_workbench/projects.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
-    27
+    27,
+    70
    ],
    "design_docs": [
+    "rows/row-47.md",
     "workbench-memory-and-documents.md",
     "workbench-memory-v2.md"
    ],
    "calls": [
-    "MRC25"
+    "R47-LEAVE"
    ],
    "issue": 74
   },

@@ -101,7 +101,7 @@ between machines). The next release fits after row 6.
 | 44 | **Move a conversation's cache before planned maintenance** | DI2b | L | high | multi-machine | Needs rows 13 and 15 |
 | 45 | **TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079** | LT2-ACME, LT2-CA | L | high | businesses | Designed (`rows/row-45.md`): 45a header deadline, 45b tailnet certificates, 45c the owner's domain by DNS-01 (lego), 45d replace the CA. Calls R45-TAILNET, R45-WILDCARD |
 | 46 | **Node keys that cannot be exported, and freeze enforcement** | TOK-RES | L | high | multi-machine | Designed (`rows/row-46.md`): keys wrapped by DPAPI or a TPM-bound systemd credential; changes from other machines refused after 24 h without the root. Calls R46-SCOPE, R46-FREEZE |
-| 47 | **Shared team knowledge, and sharing a project** | MRC25, MV7 sharing | L | high | businesses, MSPs | Call MRC25 |
+| 47 | **Shared team knowledge, and sharing a project** | MRC25, MV7 sharing | L | high | businesses, MSPs | Designed (`rows/row-47.md`): owner-granted team collections (MRC25 taken), shared projects share knowledge, never chats; after rows 27 and 70. Call R47-LEAVE |
 | 48 | **The Library at scale.** Paginate `/v1/models`, then design an answer to "the Library is down" | M2-PAGE, LIB-RED | S, then L | cross | businesses | Redundancy is design first |
 | 49 | **Which machine hosts a model** | M6-PLACE | L | cross | multi-machine | Design first, after row 14 |
 | 50 | **One model across machines with llama.cpp's `rpc-server`** | RPC (setups pass) | L | high | multi-machine | Designed (`rows/row-50.md`): the RPC server on loopback, carried over the machine port; builds must match; after row 43. Call R50-DIRECT |
