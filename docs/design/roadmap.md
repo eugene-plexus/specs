@@ -30,10 +30,33 @@ the most people comes first.
 - **Risk** follows the testing policy: high means auth, privileges,
   destructive file operations, migrations, installers or release gates.
 
+## Releases
+
+Troy, 2026-10-22: release at every good pause point. A project that goes a
+long time without a release looks dead. A release point comes when a group
+of rows is complete and nothing half-built sits under it. When its rows are
+merged and Edge carries them, the orchestrator runs
+`python scripts/release.py vX.Y.Z` in the background (Edge ships stop while
+it qualifies).
+
+| Release | When these rows are merged | Why it is a pause point |
+|---|---|---|
+| v0.4.0 | 4 and 5 | The trust work that must reach installs before a stable release carries TLS between machines (rows 3-6) is complete. The first stable release with LT1 and LT2, and everything merged since v0.3.0 |
+| v0.5.0 | 8, 10, 24 and 70 | Everything row 11 needs is in, and the gateway's queue changes next. The Mac system service, the speed sweep, client key rotation and group policies reach stable before routing changes under them |
+| v0.6.0 | 11, 12 and 13 | Part 1 is complete: one fair queue, metric names that last, checked engine updates |
+| v0.7.0 | the rest of part 2 (14, 15, 18, 20) | Speed work complete |
+| next minor | the end of each later part (3, 4, 5, 6) | Each part is a set of features a person can name |
+
+- **At least one release a week.** If a week passes with no release point,
+  release at the next moment when `main` is green and Edge carries it.
+- **A fix for a stable release** goes out as a patch release from its tag
+  (row 6) when it is ready. It does not wait for a release point.
+- When rows are added or moved, look again for release points.
+
 ## 1. Foundations: cheaper now than later
 
 Rows 3-6 should reach installs before a stable release carries LT1 (TLS
-between machines). The next release fits after row 6.
+between machines). The next release, v0.4.0, comes after rows 4 and 5.
 
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
