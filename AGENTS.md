@@ -75,6 +75,11 @@ the release pins and the [roadmap](docs/design/roadmap.md).
   files. Otherwise CI runs again. A specs branch that other repos pin catches up by
   merging `main` in, so the pinned commits stay reachable. A merge that turns `main`
   red is fixed or reverted before anything else.
+- **The shared workflow file overlaps only line by line (MERGE-CIYML, Troy
+  2026-10-22).** When `.github/workflows/ci.yml` is the only file a catch-up shares
+  with `main`, the catch-up merges cleanly and `scripts/test_ci_workflows.py` passes
+  locally, the branch merges without a new run. Any other overlapping file still
+  runs CI again.
 
 ## Product rules (every change)
 
