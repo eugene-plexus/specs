@@ -189,6 +189,55 @@ class ShipTests(unittest.TestCase):
         self.assertEqual(self.pushes(), [self.initial])
         self.assertEqual(git(self.origins / "control.git", "rev-parse", "main"), self.pinned)
 
+    # What main() says when a step stops it: pushes already made are not "not shipped".
+
+    def main(self, *arguments: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with (
+            patch.object(sys, "argv", ["ship.py", "control", *arguments]),
+            patch.dict("os.environ", {"EP_SHIP_CO_AUTHOR": ""}),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            code = ship.main()
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_wait_that_fails_after_the_pushes_does_not_say_not_shipped(self) -> None:
+        cause = "specs: `gh run list` failed: HTTP 403: API rate limit exceeded"
+        with patch.object(ship, "wait_for_edge", side_effect=ship.Stop(cause)):
+            code, out, err = self.main("--wait")
+        shipped = git(self.specs, "rev-parse", "HEAD")
+        self.assertEqual(self.pushes(), [self.initial, self.merged, shipped])
+        self.assertNotEqual(code, 0)
+        self.assertNotIn("Not shipped", err + out)
+        self.assertIn(f"Pushed; could not watch CI: {cause}", err)
+        # Each push is listed: the component's main, the merged specs commit, the pin commit.
+        self.assertIn(f"control main {self.control[:7]}", err)
+        self.assertIn(f"specs main {self.merged[:7]}", err)
+        self.assertIn(f"specs main {shipped[:7]}", err)
+
+    def test_a_stop_after_a_push_says_what_was_pushed(self) -> None:
+        cause = "specs: `git commit` failed: boom"
+        with patch.object(ship, "commit_files", side_effect=ship.Stop(cause)):
+            code, out, err = self.main()
+        self.assertNotEqual(code, 0)
+        self.assertNotIn("Not shipped", err + out)
+        self.assertIn(cause, err)
+        self.assertIn(f"control main {self.control[:7]}", err)
+
+    def test_a_stop_before_any_push_still_says_not_shipped(self) -> None:
+        write(
+            self.root / "control/pyproject.toml",
+            '[project]\nname = "c"\ndependencies = ["httpx", "rich"]\n\n'
+            '[build-system]\nrequires = ["hatchling"]\n',
+        )
+        commit(self.root / "control", "A dependency change")
+        code, out, err = self.main("--wait")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Not shipped: control: its dependencies changed", err)
+        self.assertNotIn("Pushed", err)
+        self.assertEqual(self.pushes(), [self.initial])
+
 
 if __name__ == "__main__":
     unittest.main(argv=[sys.argv[0]])

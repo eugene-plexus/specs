@@ -255,7 +255,10 @@ def run(root: Path) -> None:
         env.update({"HOME": str(prefix), "USERPROFILE": str(prefix),
                     "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(prefix / "engines"),
                     "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(prefix / "agent.yaml"),
-                    "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1"})
+                    "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
+                    # The machine port is off until agent#27 is fixed: with it on, the wizard joins the root at
+                    # control's moved URL, which is plain HTTP, and the join token expects TLS.
+                    "EUGENE_PLEXUS_AGENT_MACHINE_PORT_ENABLED": "0"})
         log = (root / "agent.log").open("w", encoding="utf-8")
         logs.append(log)
         agent = subprocess.Popen([str(python), str(HERE / "s8-ui-acceptance.py"), "--serve", str(prefix),

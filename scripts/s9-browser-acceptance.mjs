@@ -87,15 +87,21 @@ try {
   // until its own buttons needed a sideways scroll to reach.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${url}/inference/`);
-  const remove = page.getByTestId("remove-row").first();
+  // The pinned UI stacks rows on phones inside models-panel; the old
+  // overflow-x-auto wrapper no longer exists. Select the seeded model's panel.
+  const panel = page.getByTestId("models-panel").filter({ has: page.getByTestId("backend-model").filter({ hasText: "s9-phone-model" }) });
+  await expect(panel).toHaveCount(1, { timeout: 30000 });
+  const table = panel.getByRole("table", { name: /^Models and backends on / });
+  const row = table.getByRole("row").filter({ has: page.getByTestId("backend-model").filter({ hasText: "s9-phone-model" }) });
+  await expect(row).toHaveCount(1);
+  const remove = row.getByTestId("remove-row");
   await expect(remove).toBeVisible({ timeout: 30000 });
-  const table = page.locator("main .overflow-x-auto").filter({ has: page.getByTestId("remove-row") });
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const before = await table.evaluate(el => el.scrollWidth);
     await remove.click();
-    const confirm = page.getByTestId("remove-row-confirm");
-    const cancel = page.getByTestId("remove-row-cancel");
+    const confirm = row.getByTestId("remove-row-confirm");
+    const cancel = row.getByTestId("remove-row-cancel");
     await expect(confirm).toBeVisible();
     const after = await table.evaluate(el => ({ scroll: el.scrollWidth, client: el.clientWidth }));
     if (width === 1440) {
@@ -124,7 +130,10 @@ try {
     await noOverflow(`${path} 390 at extra-large font`);
   }
   await page.goto(`${url}/config/?sel=agent`);
-  const hint = page.getByText("securityMode", { exact: true });
+  // The key name sits in each setting's closed "Technical details" box.
+  const field = page.locator('[data-config-key="securityMode"]');
+  await field.getByText("Technical details", { exact: true }).click();
+  const hint = field.getByText("securityMode", { exact: true });
   await expect(hint).toBeVisible();
   assert.equal(await hint.evaluate(el => getComputedStyle(el).fontSize), "12.5px");
   await noOverflow("Config 390 at extra-large font");

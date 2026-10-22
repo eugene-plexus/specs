@@ -120,7 +120,9 @@ try {
   await save();
 
   // 3. Text that matches nothing: the sentence and Clear.
-  const nothing = `cx8-matches-nothing-${Date.now()}`;
+  // With spaces: the agent logs every request, including this search's own, and its access
+  // lines hold the text percent-encoded, so only text with a space matches no line (agent#28).
+  const nothing = `cx8 matches nothing ${Date.now()}`;
   await page.goto(url + `/logs?q=${encodeURIComponent(nothing)}`);
   const empty = page.getByTestId("logs-empty");
   await expect(empty).toContainText("No line contains", { timeout: 60000 });
