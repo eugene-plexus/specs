@@ -2105,17 +2105,20 @@
    "lane": "AG2",
    "lane_order": 6,
    "repos": [
-    "workbench"
+    "workbench",
+    "agent"
    ],
    "contract": "workbench yamls?",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/mcp_apps.py",
     "workbench/src/eugene_plexus_workbench/mcp_sandbox.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-60.md",
     "workbench-ui-interoperability.md",
+    "workbench-ui-browser-v1.md",
     "workbench-mcp-apps-v1.md"
    ],
    "calls": [],
@@ -2297,15 +2300,17 @@
    "lane_order": 11,
    "repos": [
     "agent",
-    "library"
+    "library",
+    "ui"
    ],
    "contract": "agent.yaml?",
    "hot_files": [
     "agent/src/eugene_plexus_agent/engines/__init__.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-66.md",
     "experimental-engines.md"
    ],
    "calls": [],
@@ -2327,15 +2332,19 @@
    "repos": [
     "library",
     "agent",
-    "gateway",
     "inference-driver",
-    "workbench"
+    "gateway",
+    "ui"
    ],
    "contract": "several",
    "hot_files": [],
-   "design_state": "full",
-   "needs": [],
+   "design_state": "ready",
+   "needs": [
+    71
+   ],
    "design_docs": [
+    "rows/row-67.md",
+    "library-sources-and-engines.md",
     "workbench-media-screens.md"
    ],
    "calls": [],
@@ -2356,16 +2365,18 @@
    "lane_order": 13,
    "repos": [
     "library",
-    "agent"
+    "agent",
+    "gateway"
    ],
    "contract": "",
    "hot_files": [
     "library/src/eugene_plexus_library/formats/gguf.py",
     "library/src/eugene_plexus_library/preflight.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-68.md",
     "deepinfer-lessons.md"
    ],
    "calls": [],
@@ -2385,20 +2396,23 @@
    "lane": "OPS",
    "lane_order": 6,
    "repos": [
-    "specs",
-    "website",
+    "agent",
     "ui"
    ],
    "contract": "",
    "hot_files": [
     "website/src"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     10
    ],
-   "design_docs": [],
-   "calls": [],
+   "design_docs": [
+    "rows/row-69.md"
+   ],
+   "calls": [
+    "R69-DATASET"
+   ],
    "issue": 96
   },
   {
@@ -2544,14 +2558,14 @@
    "notes": "Last on purpose",
    "lane": "ENG",
    "repos": [
-    "agent",
-    "library"
+    "agent"
    ],
    "contract": "",
    "hot_files": [],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-74.md",
     "deepinfer-lessons.md",
     "experimental-engines.md"
    ],

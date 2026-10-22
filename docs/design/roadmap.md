@@ -119,7 +119,7 @@ between machines). The next release fits after row 6.
 | 57 | **Responses: non-function tools and `compact`** | RSP-T | M | low | developers | Designed (`rows/row-57.md`): custom, local_shell, shell and apply_patch as functions and back; compact as an authenticated summary item |
 | 58 | **A Gemini API door**, and the small Gemini items (mp3/opus speech, countTokens, dimensions) | GEM-D (gateway#5), GEM-x (inference-driver#7) | L, S each | low | Gemini SDK users | Designed (`rows/row-58.md`): 58a measure Gemini CLI and the SDKs first, 58b the door onto the shared path, 58c mp3/opus speech, countTokens, dimensions |
 | 59 | **More server-run tools.** Tavily, and remote MCP on Responses | P8-later | M | high (59b) | developers | Designed (`rows/row-59.md`): 59a Tavily; 59b remote MCP run by the tool driver, internet only, the caller's token never kept. Call R59-MCP |
-| 60 | **Full interop conformance.** A separate-origin MCP proxy, network and device grants, sampling and elicitation, A2UI beyond forms | G-later | L | high (sandbox) | developers | |
+| 60 | **Full interop conformance.** A separate-origin MCP proxy, network and device grants, sampling and elicitation, A2UI beyond forms | G-later | L | high (sandbox) | developers | Designed (`rows/row-60.md`): a second origin on the same port, per-app network and device grants, sampling and elicitation, more of A2UI |
 | 61 | **LoRA adapters as Library items**, routed to replicas holding them | M2-LORA | M | cross | developers | Designed (`rows/row-61.md`): adapters listed under their base, loaded by llama.cpp and vLLM, routed only to replicas holding them |
 | 62 | **A `runtime_name` dropdown** in place of free text | M4-DROP | S | low | developers | |
 
@@ -130,11 +130,11 @@ between machines). The next release fits after row 6.
 | 63 | **Strata: the speed projection, and several GPUs** | STR-14 (agent#14) | M | low | multi-GPU | Designed (`rows/row-63.md`): read upstream first; layer split across cards; the projection as an opt-in |
 | 64 | **Starter set: proof of CPU speed** | LIB-STARTER | M | low | CPU-only users | |
 | 65 | **Ollama: keep a model in the Library, and read a worker's own Ollama store** | CX9-KEEP | S-M | cross | Ollama users | |
-| 66 | **Experimental engines: TensorSharp, NInfer, imp** | ENG-X, A8-NEXT | M each | low | tinkerers | |
-| 67 | **Local image models and local media**, with their own admission design and more catalogue sources | IMG, MEDIA-LOCAL, MED-later, SRC | L | cross | image users | The audience research found no demand yet. Troy banked it for after v0.2 |
-| 68 | **DeepSeek V4.x Flash through Eugene** | DI8 | M | low | Mac, businesses | Needs borrowed hardware |
-| 69 | **Creators items 2, 4, 5 and 6.** A benchmark matrix, a shareable card, a presentation view, a public dataset (which needs a privacy design) | CR2, CR4-CR6 | M-L | low; dataset high | creators | Troy put these at the back (2026-10-18). Needs row 10 |
-| 74 | **DeepInfer as an experimental engine.** Wrap it as the other experimental engines are wrapped. First check that it has an online server and runs on a consumer card | DI-C5 (Troy, 2026-10-21: yes, at the end of the roadmap) | M | low | people trying new engines | Last on purpose |
+| 66 | **Experimental engines: TensorSharp, NInfer, imp** | ENG-X, A8-NEXT | M each | low | tinkerers | Designed (`rows/row-66.md`): NInfer and imp adapters; TensorSharp researched first |
+| 67 | **Local image models and local media**, with their own admission design and more catalogue sources | IMG, MEDIA-LOCAL, MED-later, SRC | L | cross | image users | Designed (`rows/row-67.md`): stable-diffusion.cpp, whisper.cpp and Kokoro wrapped; image fit; Civitai |
+| 68 | **DeepSeek V4.x Flash through Eugene** | DI8 | M | low | Mac, businesses | Designed (`rows/row-68.md`): architecture, supplied template, DSML tool calls, own-head drafting; needs borrowed hardware to run |
+| 69 | **Creators items 2, 4, 5 and 6.** A benchmark matrix, a shareable card, a presentation view, a public dataset (which needs a privacy design) | CR2, CR4-CR6 | M-L | low; dataset high | creators | Designed (`rows/row-69.md`): matrix, card, presentation view, opt-in dataset to the owner's own account. Call R69-DATASET |
+| 74 | **DeepInfer as an experimental engine.** Wrap it as the other experimental engines are wrapped. First check that it has an online server and runs on a consumer card | DI-C5 (Troy, 2026-10-21: yes, at the end of the roadmap) | M | low | people trying new engines | Designed (`rows/row-74.md`): a gate first (an online server and a consumer card), then row 66's wrapping |
 
 ## Waiting on a call from Troy
 
