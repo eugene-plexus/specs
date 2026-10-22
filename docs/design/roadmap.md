@@ -104,7 +104,7 @@ between machines). The next release fits after row 6.
 | 47 | **Shared team knowledge, and sharing a project** | MRC25, MV7 sharing | L | high | businesses, MSPs | Call MRC25 |
 | 48 | **The Library at scale.** Paginate `/v1/models`, then design an answer to "the Library is down" | M2-PAGE, LIB-RED | S, then L | cross | businesses | Redundancy is design first |
 | 49 | **Which machine hosts a model** | M6-PLACE | L | cross | multi-machine | Design first, after row 14 |
-| 50 | **One model across machines with llama.cpp's `rpc-server`** | RPC (setups pass) | L | cross | multi-machine | Design first |
+| 50 | **One model across machines with llama.cpp's `rpc-server`** | RPC (setups pass) | L | high | multi-machine | Designed (`rows/row-50.md`): the RPC server on loopback, carried over the machine port; builds must match; after row 43. Call R50-DIRECT |
 | 51 | **Job Sites, banked items.** QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin | J-BANKED | S-M each | some high | multi-machine | Designed (`rows/row-51.md`): 51a QR code, 51b re-pair warning, 51c auditors, 51d the worker checks signatures, 51e AppContainer confinement, 51f tailnet origin (after 45b). Call R51-SHARES |
 | 52 | **Per-person isolation for local MCP programs** | C5b-iso | L | high | multi-person installs | Designed (`rows/row-52.md`): Landlock on Linux, an AppContainer per person on Windows (after row 51e); the owner offers a program to everyone. Call R52-ENV |
 

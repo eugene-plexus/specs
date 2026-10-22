@@ -1735,23 +1735,31 @@
    "summary": "One model across machines with llama.cpp's `rpc-server`",
    "from": "RPC (setups pass)",
    "size": "L",
-   "risk": "cross",
-   "risk_note": "cross",
+   "risk": "high",
+   "risk_note": "high (a new path between machines)",
    "who": "multi-machine",
    "notes": "Design first",
    "lane": "ENG",
    "lane_order": 12,
    "repos": [
-    "agent"
+    "agent",
+    "ui",
+    "specs"
    ],
    "contract": "agent.yaml",
    "hot_files": [
     "agent/src/eugene_plexus_agent/engines/llama_cpp.py"
    ],
-   "design_state": "full",
-   "needs": [],
-   "design_docs": [],
-   "calls": [],
+   "design_state": "ready",
+   "needs": [
+    43
+   ],
+   "design_docs": [
+    "rows/row-50.md"
+   ],
+   "calls": [
+    "R50-DIRECT"
+   ],
    "issue": 77
   },
   {
