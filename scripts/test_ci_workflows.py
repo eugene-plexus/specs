@@ -20,6 +20,7 @@ WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
 SETUP_STEPS = 15
 FULL, EVERY = "full", "every"
 PINNED_STEPS = {
+    "row65-ollama-protocol.py": (EVERY, "both"),
     "run-operations-checks.py": (FULL, "both"),
     "s10-starter-check.py": (FULL, "both"),
     "r7-signing-checks.py": (EVERY, "both"),

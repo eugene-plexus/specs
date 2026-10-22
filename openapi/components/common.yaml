@@ -15,6 +15,31 @@ paths: {}
 components:
   schemas:
 
+    # -------- Model routing roles --------
+
+    ModelRole:
+      type: string
+      description: |
+        An install-wide job assigned to models through the gateway's
+        `modelSlots`. A client requests `role:<ModelRole>` rather than
+        a particular model. The list is closed: a new role is a contract
+        change, and an unknown `role:` name is refused when saved.
+
+        These are routing roles, separate from a conversation's `Role`.
+        Capability checks warn; they never block role assignment.
+      enum:
+        - chat
+        - agentic
+        - vision
+        - reads-pages
+        - image
+        - speech-to-text
+        - text-to-speech
+        - music
+        - embeddings
+        - rerank
+        - decision
+
     # -------- Conversation messages --------
 
     Role:

@@ -32,6 +32,11 @@ info:
     refusal to guess that a moved file is the same model — is that rule
     being kept.
 
+    **Keep in the Library (row 65)** is an explicit request to create a
+    Library-owned hard link or verified copy of an Ollama model. It
+    leaves Ollama's file alone. The Library is the home of every kept
+    model file; a node only holds a copy.
+
     ## What it holds
 
     * **Scanned models**, from both formats. GGUF (one quantized file,
@@ -43,10 +48,10 @@ info:
       different model": the settings that worked are saved against the
       model, not retyped into a runtime declaration.
 
-    Profiles are the *only* thing this component persists about a
-    model. Everything else is a projection of what is on disk, which
-    is why a model can be listed as `missing` — the file is gone but
-    the profile someone spent an afternoon tuning is not.
+    Profiles, stable Ollama served names and `keptFrom` provenance
+    persist across scans. The file facts are a projection of what is
+    on disk, which is why a model can be listed as `missing` — the file
+    is gone but the profile someone spent an afternoon tuning is not.
 
     ## What it is not
 
@@ -60,8 +65,8 @@ info:
       agent with the model's `path` and the profile's `flags`. The
       profile's field names are `RuntimeSpec`'s field names precisely
       so that composition is a copy rather than a translation. This
-      component holds no engine knowledge and never calls the
-      agent.
+      component holds no engine knowledge. Keep may ask a worker's
+      agent to send an Ollama file; that is a transfer, not a launch.
     * **Not a validator of engine flags.** It stores `flags` as given.
       Validation belongs where the curated flag surface lives — the
       agent's engine adapter, at runtime-creation time. Two
@@ -142,8 +147,8 @@ tags:
   - name: profiles
     description: |
       Named launch settings per model. The per-model config surface
-      the whole component exists for, and the only thing here that is
-      persisted rather than observed.
+      the whole component exists for, persisted alongside stable
+      Ollama served names and Keep provenance.
   - name: scan
     description: |
       Walking the configured roots. A singleton sub-resource with
@@ -170,6 +175,8 @@ tags:
       Fetching a model into a directory the operator chose. A
       collection, not a singleton — several can be queued — with
       per-file progress, mandatory digest verification, and resume.
+  - name: ollama
+    description: Keep Ollama models in the Library, and list other machines' stores.
   - name: guidance
     description: |
       Detected hardware, the fit computation, and what the quant tiers
@@ -649,6 +656,352 @@ paths:
               schema:
                 $ref: 'components/common.yaml#/components/schemas/Problem'
 
+  # -------- Ollama Keep and worker stores --------
+
+  /v1/models/{model_id}/keep:
+    parameters:
+      - name: model_id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [ollama]
+      operationId: keepOllamaModel
+      summary: Keep this Ollama model in the Library.
+      description: |
+        Operator-only. The source must be present and have `ollama`.
+        Link the weights and projector into the chosen writable folder;
+        on any link error, copy instead and state the cause in `note`.
+        Check free space before copying, write to `.partial`, and verify
+        SHA-256 against Ollama's digest before publishing the file.
+
+        The target is `<folder>/ollama/<name>/<name>.gguf`, with `:` and
+        `/` in the served name replaced by `-`; a projector goes beside
+        it as `mmproj-<name>.gguf`. Never overwrite an existing file.
+        Check both lexical and real paths, resolving symlinks and
+        junctions: a target inside any Ollama store is read-only.
+        Keep never deletes or writes the source. The kept file survives
+        Ollama removing its name, and is never opened for writing.
+
+        After rescanning, move profiles automatically only when the
+        fingerprint proves the kept file has the same contents, using
+        relocate's `same` match. This click is the consent. Preserve the
+        served name and record `keptFrom`. Poll the returned job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeepRequest'
+      responses:
+        '202':
+          description: Keeping the model; the job reports progress and the resulting model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepJob'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: |
+            Source is not a present Ollama model, the target exists, or
+            ReadOnlyFolder. No write may enter an Ollama store through
+            a symlink or junction; the detail names both paths and says
+            to choose another folder.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '507':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/keep-jobs/{id}:
+    parameters:
+      - $ref: '#/components/parameters/KeepJobId'
+    get:
+      tags: [ollama]
+      operationId: getKeepJob
+      summary: Read a Keep's progress or result.
+      description: |
+        An operator session or an authorized service may read it. The
+        source agent uses `node` and `digest` to check a send request
+        against the Library's job before reading any model bytes.
+      responses:
+        '200':
+          description: The job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepJob'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+    delete:
+      tags: [ollama]
+      operationId: cancelKeepJob
+      summary: Cancel a Keep that is still copying.
+      description: |
+        Operator-only. Cancels a running transfer and removes only this
+        job's partial files. Never deletes Ollama's files or a completed
+        kept model. A terminal job is returned unchanged.
+      responses:
+        '200':
+          description: The job after cancellation, or its existing terminal result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepJob'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/nodes/{node}/ollama:
+    parameters:
+      - $ref: '#/components/parameters/OllamaNode'
+    put:
+      tags: [ollama]
+      operationId: reportNodeOllama
+      summary: Replace this machine's Ollama report.
+      description: |
+        Requires a service token with `sub: agent` and issuer
+        `node:{node}`, addressed to the Library's machine. Another
+        machine or a session gets 403 with detail "A machine reports
+        only its own Ollama store."
+
+        At start and every 60 seconds when the listing changes, the
+        agent sends all its detected stores, including unreadable ones
+        with their observed cause. At most 1 MiB of JSON and 2,000 models
+        in total across all stores; count bytes as the body arrives and
+        reject an oversized report before replacing the previous one.
+        The Library's own machine is read locally and does not report.
+        This report moves metadata only; Keep is required before Run.
+      x-max-body-bytes: 1048576
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OllamaReport'
+      responses:
+        '204':
+          description: Report replaced.
+        '403':
+          description: A machine reports only its own Ollama store.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '413':
+          description: The report exceeds 1 MiB or 2,000 models across all stores.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/nodes/ollama:
+    get:
+      tags: [ollama]
+      operationId: listNodeOllama
+      summary: Ollama models reported by other machines.
+      description: |
+        Metadata rows, without a Library id, profiles, fit or Run.
+        Keep a model in the Library before running it. `readAt` is the
+        actual report time, including on a stale report; never refresh
+        it just because the listing was read. `libraryModel` identifies
+        a digest already held by the Library, for "Already in the Library".
+      responses:
+        '200':
+          description: The last report received from each machine.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NodeOllamaList'
+
+  /v1/nodes/{node}/ollama/keep:
+    parameters:
+      - $ref: '#/components/parameters/OllamaNode'
+    post:
+      tags: [ollama]
+      operationId: keepNodeOllamaModel
+      summary: Keep a model from this machine's Ollama store in the Library.
+      description: |
+        Operator-only. Find the digest in that machine's report and
+        reserve the same target layout as a local Keep. Ask its agent
+        to `POST /v1/ollama/send` on behalf of this operator, with this
+        job id and digest. The agent sends weights and any projector to
+        this job's file routes using the LS10 offset, chunk and complete
+        protocol in 16 MiB chunks. Completion checks each file against
+        its reported digest and size, then rescans and records `keptFrom`.
+        The method is `copy`. The Library is the model's home; the
+        worker only holds a copy, which can link its existing Ollama blob.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeOllamaKeepRequest'
+      responses:
+        '202':
+          description: The transfer to the Library is running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepJob'
+        '400':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          description: The machine or the digest is not in a report.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '409':
+          description: The destination exists or is a ReadOnlyFolder, including a link into a store.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '507':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/keep-jobs/{id}/files/state:
+    parameters:
+      - $ref: '#/components/parameters/KeepJobId'
+    post:
+      tags: [ollama]
+      operationId: getKeepFileState
+      summary: Read how much of a worker's file has reached the Library.
+      description: |
+        Only a service token with `sub: agent` and issuer matching the
+        job's `node` may use these file routes. A job selects the
+        destination, files, digests and sizes from its accepted report;
+        the sender selects only a role. No caller-supplied path or URL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeepFileRequest'
+      responses:
+        '200':
+          description: The complete file, or the offset to resume at.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepFileState'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: The job is not running or the role is not part of the job.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
+  /v1/keep-jobs/{id}/files:
+    parameters:
+      - $ref: '#/components/parameters/KeepJobId'
+    put:
+      tags: [ollama]
+      operationId: sendKeepFileChunk
+      summary: Send a chunk of a worker's model to its Keep job.
+      description: |
+        Only the job's source agent, as on files/state. At most 16 MiB,
+        counted while reading. `offset` must equal the received length;
+        0 restarts this partial file. Refuse bytes beyond the reported
+        file size. Check lexical and real destination paths before each
+        write; never enter an Ollama store or open a kept file for writing.
+      x-max-body-bytes: 16777216
+      parameters:
+        - name: role
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [weights, projector]
+        - name: offset
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: The offset for the next chunk.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepFileState'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Wrong offset, inactive job, unknown role, or ReadOnlyFolder.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+        '413':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '507':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+
+  /v1/keep-jobs/{id}/files/complete:
+    parameters:
+      - $ref: '#/components/parameters/KeepJobId'
+    post:
+      tags: [ollama]
+      operationId: completeKeepFile
+      summary: Check the received file against Ollama's digest.
+      description: |
+        Only the job's source agent, as on files/state. Check SHA-256
+        and size against the job's reported digest and size, never a
+        digest supplied by the sender at completion. A mismatch deletes
+        the partial file and fails the job with its observed cause.
+        Publish only complete, verified files without overwriting an
+        existing file. When every file is verified, rescan and finish
+        the job. Repeating completion for that verified file is harmless.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KeepFileRequest'
+      responses:
+        '200':
+          description: The verified file.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KeepFileState'
+        '403':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '409':
+          description: Wrong size or digest, inactive job, unknown role, or ReadOnlyFolder.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+
   # -------- Profiles --------
 
   /v1/models/{id}/profiles:
@@ -952,8 +1305,11 @@ paths:
       operationId: listFolders
       summary: The Library's folders, with where nodes reach them.
       description: |
-        `modelRoots` as a resource (2026-09-14): one `LibraryFolder` per
-        configured directory, mounts included. **Readable with a
+        `modelRoots` as a resource (2026-09-14): one `LibraryFolderStatus`
+        per configured or detected directory, mounts and effective
+        write protection included. A symlink or junction into an
+        Ollama store is read-only, with the observed cause. Unreadable
+        detected stores stay listed with `error`. **Readable with a
         service token**, unlike the config trio it mirrors, because the
         reader that matters is a node's agent inheriting its path rules
         — a worker with no library of its own reaches this through the
@@ -1984,9 +2340,25 @@ components:
       description: |
         Session token from the agent's `POST /v1/auth/login`, or a
         component service token threaded in at spawn time. Reads are
-        open to either; mutations are operator-only.
+        open to either; mutations are operator-only except the
+        agent-owned Ollama report and Keep file uploads, whose routes
+        check the issuer against the reporting or assigned machine.
 
   parameters:
+    KeepJobId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Opaque Keep job id returned by the Library.
+    OllamaNode:
+      name: node
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The enrolled machine's node name.
     CatalogueSourceParam:
       name: source
       in: query
@@ -2009,15 +2381,42 @@ components:
       type: object
       description: |
         The folders the library catalogues, as `GET /v1/folders` answers
-        them — the same objects `modelRoots` holds, one shape on the
-        wire whatever shape the config was given in.
+        them: `modelRoots` and detected stores, with effective read-only
+        status and any observed read error. Derived status is never saved
+        in config.
       required:
         - folders
       properties:
         folders:
           type: array
           items:
-            $ref: 'components/common.yaml#/components/schemas/LibraryFolder'
+            $ref: '#/components/schemas/LibraryFolderStatus'
+
+    LibraryFolderStatus:
+      allOf:
+        - $ref: 'components/common.yaml#/components/schemas/LibraryFolder'
+        - type: object
+          properties:
+            readOnly:
+              type: boolean
+              readOnly: true
+              description: |
+                Effective write protection. True for Ollama stores and
+                folders whose real path resolves inside a store,
+                including symlinks and Windows junctions. They are
+                excluded from the writable folder list.
+            readOnlyReason:
+              type: string
+              readOnly: true
+              description: |
+                The same sentence as ReadOnlyFolder's detail: names
+                the configured path, the Ollama store it resolves into,
+                and says to choose another folder. Ollama manages its
+                files and the Library never writes there.
+            error:
+              type: string
+              readOnly: true
+              description: Observed cause when a detected store cannot be read; it stays listed.
 
     LibraryModelList:
       type: object
@@ -2108,8 +2507,11 @@ components:
           description: |
             The filename with its extension stripped, the directory
             name for safetensors, or the provenance file's name without
-            `.eugene-prepared.json` for `prepared`, or the first Ollama tag
-            for a model in an Ollama store. **Not derived from metadata**: the
+            `.eugene-prepared.json` for `prepared`. An Ollama model keeps
+            the tag it was first listed under while that tag exists;
+            if it disappears, use the first remaining tag and log the
+            change. A kept copy retains `keptFrom.servedName`.
+            **Not derived from metadata**: the
             file's own name is what the operator downloaded, what they
             call it, and what `Runtime.modelAlias` defaults to — so
             plainly-named files mean the obvious name is already the
@@ -2196,6 +2598,8 @@ components:
           $ref: '#/components/schemas/PreparedDetail'
         ollama:
           $ref: '#/components/schemas/OllamaDetail'
+        keptFrom:
+          $ref: '#/components/schemas/OllamaKept'
         profileCount:
           type: integer
           minimum: 0
@@ -2261,9 +2665,11 @@ components:
       description: |
         A model read from an Ollama store (CX9): which of Ollama's names
         point at this file. Present only for a model in a folder of kind
-        `ollama`. Its `name` is the first of `tags`, and is what
-        `Runtime.modelAlias` is set to, since the file's own name is a
-        hash. Ollama manages the file: the library never writes or
+        `ollama`. Its `name` is the tag it was first listed under,
+        while that tag exists. If it disappears, take the first remaining
+        tag and log the change. Adding a tag never renames a model.
+        `Runtime.modelAlias` is set to `name`, since the file's own name
+        is a hash. Ollama manages the file: the library never writes or
         deletes it.
       required:
         - tags
@@ -2285,6 +2691,253 @@ components:
             (`compatmigrate`) and this file is the older layout, so
             upstream llama.cpp may not load it until Ollama has updated
             it. Run is not refused for it.
+
+    OllamaKept:
+      type: object
+      description: |
+        Provenance stored against the kept file's path and reapplied on
+        scans. The ordinary Library model keeps `servedName` as `name`
+        and `Runtime.modelAlias`, even if Ollama removes every tag.
+        The Library never opens a kept file for writing: a link shares
+        Ollama's bytes. A node only holds a copy of this Library file.
+      required: [servedName, tags, digest, store, keptAt, method]
+      properties:
+        servedName:
+          type: string
+        tags:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        digest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+          description: Ollama's weights digest, used to verify copies and match a node's blob.
+        store:
+          type: string
+          description: Absolute path of the source Ollama store on its machine.
+        node:
+          type: string
+          description: Source machine for a remote Keep; absent for the Library's own machine.
+        keptAt:
+          type: string
+          format: date-time
+        method:
+          type: string
+          enum: [link, copy]
+
+    KeepRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        folder:
+          type: string
+          description: |
+            A configured writable Library folder's path. Omit for the
+            first writable folder. Neither its lexical path nor its
+            real path, including the target's existing parents, may be
+            inside an Ollama store.
+
+    NodeOllamaKeepRequest:
+      type: object
+      additionalProperties: false
+      required: [digest]
+      properties:
+        digest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+          description: The weights digest from this machine's reported model.
+        folder:
+          type: string
+          description: Configured writable Library folder; omitted means the first writable folder.
+
+    KeepJob:
+      type: object
+      description: |
+        One Keep, with progress across the weights and any projector.
+        `done` means the files are verified, scanned and have `keptFrom`.
+        Local profiles move automatically only after a `same` fingerprint
+        match; Keep is the consent, and the served name stays unchanged.
+        Failure names its observed cause in `error`; a failed or cancelled
+        job never removes Ollama's file. Records contain no credentials.
+      required: [id, model, state, method, bytesDone, bytesTotal, target, error, digest]
+      properties:
+        id:
+          type: string
+        model:
+          anyOf:
+            - $ref: '#/components/schemas/LibraryModel'
+            - type: 'null'
+          description: The ordinary Library model when done; null before it has been listed.
+        state:
+          type: string
+          enum: [running, done, failed, cancelled]
+        method:
+          type: string
+          enum: [link, copy]
+          description: Actual method; copy if any file needs copying, including every remote Keep.
+        bytesDone:
+          type: integer
+          minimum: 0
+        bytesTotal:
+          type: integer
+          minimum: 0
+        target:
+          type: string
+          description: Absolute destination weights path on the Library's machine.
+        error:
+          type: [string, 'null']
+          description: Observed cause when failed; null otherwise.
+        note:
+          type: string
+          description: Why a copy was needed after a link failed; names the observed cause.
+        digest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        node:
+          type: string
+          description: Source agent assigned to a remote transfer; absent for a local Keep.
+
+    KeepFileRequest:
+      type: object
+      additionalProperties: false
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [weights, projector]
+          description: A file selected by the job's accepted report, never a supplied path.
+
+    KeepFileState:
+      type: object
+      required: [role, receivedBytes, sizeBytes, sha256]
+      properties:
+        role:
+          type: string
+          enum: [weights, projector]
+        receivedBytes:
+          type: integer
+          minimum: 0
+          description: Contiguous partial bytes received; 0 after completion.
+        sizeBytes:
+          type: [integer, 'null']
+          minimum: 0
+          description: Complete verified file's size; null while still arriving.
+        sha256:
+          type: [string, 'null']
+          pattern: '^[0-9a-f]{64}$'
+          description: Complete verified file's SHA-256, without the prefix; null while arriving.
+
+    OllamaReport:
+      type: object
+      additionalProperties: false
+      required: [stores, readAt]
+      properties:
+        stores:
+          type: array
+          items:
+            $ref: '#/components/schemas/OllamaReportedStore'
+          description: All detected stores; at most 2,000 models in total across this list.
+        readAt:
+          type: string
+          format: date-time
+          description: When the agent read this listing, never when the UI last fetched it.
+
+    OllamaReportedStore:
+      type: object
+      additionalProperties: false
+      required: [path, models, skipped]
+      properties:
+        path:
+          type: string
+        models:
+          type: array
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/OllamaReportedModel'
+        skipped:
+          type: array
+          items:
+            $ref: '#/components/schemas/OllamaSkippedModel'
+        error:
+          type: string
+          description: Why this store could not be read. Keep it listed with empty models and this cause.
+
+    OllamaReportedModel:
+      type: object
+      additionalProperties: false
+      description: |
+        Metadata from a worker's manifest. This is not a Library model
+        and cannot be run until Keep creates one. Size is the weights
+        blob alone; add projectorSizeBytes for the whole transfer.
+      required: [tags, digest, sizeBytes, runner]
+      properties:
+        tags:
+          type: array
+          minItems: 1
+          items:
+            type: string
+          description: Sorted Ollama tags for this blob, including namespace or registry when present.
+        digest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        sizeBytes:
+          type: integer
+          minimum: 0
+        runner:
+          type: string
+          description: The manifest reader's runner classification.
+        projectorDigest:
+          type: string
+          pattern: '^sha256:[0-9a-f]{64}$'
+        projectorSizeBytes:
+          type: integer
+          minimum: 0
+        architecture:
+          type: string
+          description: Architecture read from the GGUF header, when available.
+        needsMigration:
+          type: boolean
+        libraryModel:
+          type: string
+          readOnly: true
+          description: |
+            Added by the Library on reads when it already holds this
+            digest; the id of that Library model. Not trusted from a report.
+
+    OllamaSkippedModel:
+      type: object
+      additionalProperties: false
+      required: [name, detail]
+      properties:
+        name:
+          type: string
+        detail:
+          type: string
+          description: The observed cause for skipping this manifest or model.
+
+    NodeOllamaReport:
+      type: object
+      required: [node, readAt, stores]
+      properties:
+        node:
+          type: string
+        readAt:
+          type: string
+          format: date-time
+        stores:
+          type: array
+          items:
+            $ref: '#/components/schemas/OllamaReportedStore'
+
+    NodeOllamaList:
+      type: object
+      required: [nodes]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeOllamaReport'
 
     ModelStatus:
       type: string
@@ -2854,6 +3507,12 @@ components:
         configPath:
           type: string
           description: Absolute path to `config.json`, the file that made this a model.
+        recommendedSampling:
+          $ref: '#/components/schemas/RecommendedSampling'
+          description: |
+            Author sampling from `generation_config.json`, reported only
+            when `do_sample` is true. Greedy decoding contributes no
+            sampling defaults.
 
     MlxQuantization:
       type: object
@@ -3067,15 +3726,17 @@ components:
       type: object
       description: |
         Sampling parameters the model's author put in the file
-        (`general.sampling.*` in GGUF). **Reported, never applied.**
+        (`general.sampling.*` in GGUF or `generation_config.json` for
+        safetensors), applied by the gateway as defaults when neither
+        the request nor the default profile sets a value. Author values
+        also apply when the model has no profile. A default profile with
+        `authorSampling: false` turns them off.
 
-        The locked rule is that the gateway owns every
-        LLM-output-affecting parameter and no component substitutes a
-        local default; that rule is unchanged. But the file having an
-        opinion is real information, and dropping it means the operator
-        has to go read the model card to find out. Whether anything can
-        adopt these with one click is a gateway decision, not a library
-        one.
+        The Library only reports these values. The gateway owns and
+        sends every sampling value, falling back to its own defaults
+        when no request, profile or enabled author value exists. An
+        inference driver never substitutes its own defaults. The author's
+        repeat penalty is not applied.
       properties:
         temperature:
           type: number
@@ -3083,6 +3744,19 @@ components:
           type: integer
         topP:
           type: number
+        minP:
+          type: number
+          minimum: 0
+          maximum: 1
+        source:
+          $ref: '#/components/schemas/RecommendedSamplingSource'
+
+    RecommendedSamplingSource:
+      type: string
+      enum: [gguf, generation_config]
+      description: |
+        Where the author stated the sampling values: `general.sampling.*`
+        in a GGUF file, or a safetensors model's `generation_config.json`.
 
     # -------- Profiles --------
 
@@ -3149,12 +3823,23 @@ components:
           default: false
           description: |
             The profile offered first when launching this model.
-            Its maxTokens, temperature and topP also supply omitted
-            generation parameters at the gateway, without restarting
-            an existing runtime. Explicit request values always win.
+            Its maxTokens, temperature, topP, topK and minP also supply
+            omitted generation parameters at the gateway, without
+            restarting an existing runtime. Explicit request values
+            always win.
             Setting it clears the flag on whichever profile held it; the
             first profile saved for a model gets it whether it asks or
             not.
+        authorSampling:
+          type: boolean
+          default: true
+          description: |
+            Use the model author's sampling where this default profile
+            and the request set none. Absent means true, including for
+            stored profiles; no storage migration is needed. Author
+            values also apply when the model has no profile. False skips
+            author values, so the gateway uses its own defaults where
+            the request and profile set none.
         maxTokens:
           type: integer
           minimum: 1
@@ -3168,7 +3853,22 @@ components:
           type: number
           minimum: 0
           maximum: 1
-          description: Nucleus sampling cutoff when omitted by the caller. Absent leaves it unspecified.
+          description: Nucleus sampling cutoff when omitted by the caller. Absent uses enabled author values, then the gateway default.
+        topK:
+          type: integer
+          minimum: 0
+          description: |
+            Sample from only the K most likely tokens when omitted by
+            the caller; 0 disables the cut. Absent uses enabled author
+            values, then the gateway default.
+        minP:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: |
+            Discard tokens less likely than this fraction of the most
+            likely token when omitted by the caller. Absent uses enabled
+            author values, then the gateway default.
         engine:
           $ref: 'components/common.yaml#/components/schemas/EngineKind'
           description: |
@@ -3333,6 +4033,13 @@ components:
           type: string
         default:
           type: boolean
+        authorSampling:
+          type: boolean
+          default: true
+          description: |
+            Whether to use the model author's sampling for omitted
+            values, as saved (`ModelProfileSpec.authorSampling`). Absent
+            means true for stored profiles.
         maxTokens:
           type: integer
           minimum: 1
@@ -3341,6 +4048,13 @@ components:
           minimum: 0
           maximum: 2
         topP:
+          type: number
+          minimum: 0
+          maximum: 1
+        topK:
+          type: integer
+          minimum: 0
+        minP:
           type: number
           minimum: 0
           maximum: 1
