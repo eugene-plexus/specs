@@ -176,3 +176,12 @@ Risks:
 
 **Calls:** R39-LOGS (logs as a separate power, off by default) and
 R39-DELETE (Models includes deleting model files).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R39-LOGS: Choice 2.** Reading machines' logs comes with **Updates and
+  restarts** (`operateMachines`); there is no separate `readLogs` power.
+  The gate table gives `GET /v1/logs` to `operateMachines`, and the
+  delegation editor's line for that power says it includes logs.
+- **R39-DELETE: Choice 1.** The Models power includes deleting model files,
+  each delete in the machine's record.

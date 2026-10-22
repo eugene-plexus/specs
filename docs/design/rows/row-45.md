@@ -189,3 +189,10 @@ Risks:
 **Calls:** R45-TAILNET (tailnet certificates offered, off until turned on,
 because the name becomes public) and R45-WILDCARD (one wildcard for every
 machine rather than one certificate per machine).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R45-TAILNET: Choice 1.** Tailnet certificates are offered per machine,
+  off until the owner turns them on; the switch says the name becomes
+  public.
+- **R45-WILDCARD: Choice 1.** One wildcard certificate for every machine.

@@ -146,3 +146,11 @@ Risks:
 
 **Calls:** R46-SCOPE (wrap at rest now; TPM-resident keys later) and
 R46-FREEZE (24 hours, mutations from other machines only).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R46-FREEZE: Choice 1.** After 24 hours without the root, a machine
+  refuses changes from other machines' keys; answers keep working.
+- **R46-SCOPE: open.** Troy asked which modern machines lack a TPM and
+  leans to Choice 2 (TPM-resident keys); the answer is in calls.md. Until
+  it is decided, build 46b (the freeze limit) first; 46a waits.

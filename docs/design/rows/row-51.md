@@ -124,3 +124,12 @@ folder.
 L in total (51e alone is M-L). One adversarial review after 51d and one
 after 51e. Calls: R51-SHARES (no-account people cannot be given a network
 share, since Windows cannot confine one for them).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R51-SHARES: Choice 2.** A network share stays available to people with
+  no account on the machine, confined by Eugene's own path checks as today
+  (the AppContainer cannot be given a network share's permissions). 51e
+  confines every local-disk folder with the AppContainer and keeps the
+  path checks alone for network shares; the share dialog says which
+  applies.
