@@ -126,12 +126,24 @@ try {
   assert.equal(report.firstReply.pathsTyped, 0);
   await page.screenshot({ path: join(output, "first-reply.png") });
 
+  const reach = page.getByTestId("home-reach");
+  await expect(reach.getByTestId("reach-switch")).toHaveCount(1);
+  report.reach = { switches: 1, headline: await reach.getByTestId("reach-headline").textContent(), exercised: false };
+  // Do not pretend counting a switch proves phone connectivity. The existing
+  // reach acceptance and the moderated phone task provide that separate evidence.
+
+  // Home's summary now leads to Connect apps. Include that real navigation
+  // click in the same three-click budget for obtaining connection settings.
   const before = (await counts()).clicks;
-  const card = page.getByTestId("home-use-from-apps");
-  await card.getByTestId("make-key").click();
+  await page.getByTestId("home-connect-apps").getByRole("link", { name: "Connect apps →", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Connect apps", exact: true })).toBeVisible();
+  const card = page.getByTestId("connect-apps").getByTestId("home-use-from-apps");
+  await card.getByRole("button", { name: "Make a key", exact: true }).click();
   await expect(card.getByTestId("fresh-key")).toBeVisible();
+  await expect(card.getByTestId("base-url")).toHaveText(/^https?:\/\/.+\/v1$/);
   const address = (await card.getByTestId("base-url").textContent()).trim();
-  const modelElement = card.getByTestId("app-model").first();
+  const modelElement = card.getByTestId("app-model");
+  await expect(modelElement).not.toHaveText("nothing is running");
   const model = await modelElement.evaluate(el => el.tagName === "SELECT" ? el.value : el.textContent.trim());
   const key = (await card.getByTestId("fresh-key").textContent()).trim();
   const connectedClicks = (await counts()).clicks - before;
@@ -140,11 +152,6 @@ try {
   await writeFile(join(output, "connection.json"), JSON.stringify({ address, model, key }));
   report.connect = { clicks: connectedClicks, address, model, lifetime: /good for a year/i.test(await card.textContent()) ? "a year" : "" };
   assert.equal(report.connect.lifetime, "a year");
-  const reach = page.getByTestId("home-reach");
-  await expect(reach.getByTestId("reach-switch")).toHaveCount(1);
-  report.reach = { switches: 1, headline: await reach.getByTestId("reach-headline").textContent(), exercised: false };
-  // Do not pretend counting a switch proves phone connectivity. The existing
-  // reach acceptance and the moderated phone task provide that separate evidence.
   report.sessionToken = undefined;
   assert.deepEqual(report.errors, [], "no uncaught browser errors");
   await save();
