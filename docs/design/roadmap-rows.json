@@ -1469,18 +1469,22 @@
    "lane_order": 8,
    "repos": [
     "agent",
+    "ui",
     "specs"
    ],
-   "contract": "agent.yaml?",
+   "contract": "agent.yaml",
    "hot_files": [
     "agent/src/eugene_plexus_agent/engines/vllm.py",
     "agent/src/eugene_plexus_agent/engines/acquisition.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     41
    ],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-42.md",
+    "m4-second-engine-vllm.md"
+   ],
    "calls": [],
    "issue": 69
   },

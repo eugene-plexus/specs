@@ -95,7 +95,7 @@ between machines). The next release fits after row 6.
 | 39 | **Operations rights for people who are not the owner** | CX-OPS | L | high | businesses | Designed (`rows/row-39.md`): powers for models, updates and logs, per machine, with a record of who did what. Calls R39-LOGS, R39-DELETE |
 | 40 | **Usage and money limits per person and key** | KEY$, Shop, AD-BILL | L | high | businesses | Builds on A5's attribution |
 | 41 | **Speculative decoding on vLLM**, including the overdue live vLLM run on current Edge | SD2 | M | low | vLLM | |
-| 42 | **vLLM from its official container image** | VDK (business candidate) | M-L | cross | vLLM, businesses | |
+| 42 | **vLLM from its official container image** | VDK (business candidate) | M-L | cross | vLLM, businesses | Designed (`rows/row-42.md`): Docker or Podman with GPUs, the image pinned by digest, read-only model mounts, `docker stop` and an orphan sweep |
 | 73 | **Eugene installs and updates vLLM, as it does llama.cpp.** It picks the build for the machine's GPU and CUDA, keeps two builds, checks a new one before switching (row 13's check), and supervises it | Troy, 2026-10-21 ("supported like llama.cpp eventually") | L | high (installs software) | vLLM users, businesses | After row 42 (vLLM from its official container) and row 13 (checked engine updates). Needs a design |
 | 43 | **Hardware health readout, and restarting on the cards that are left** | HWR, DI6 | M | low | multi-GPU | Host history already has temperatures |
 | 44 | **Move a conversation's cache before planned maintenance** | DI2b | L | high | multi-machine | Needs rows 13 and 15 |
