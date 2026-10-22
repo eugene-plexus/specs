@@ -426,6 +426,9 @@ jobs:
       - name: The shared acceptance harness is the real server - console log copy, machine port, client doors, stop file (row 2)
         if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/harness-acceptance.py
+      - name: Measure people served through the shared harness and a two-slot fixture (row 10)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/serving-sweep-acceptance.py
       - name: Rotate the root's token key across two live agents
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py

@@ -375,6 +375,20 @@ replays real Claude Code and Codex sessions of 8 tool turns each.
 
 Low risk.
 
+### What building LD5 found (row 10, phase 2, 2026-10-22)
+
+- The published pause quantiles use inverse-CDF interpolation in log time;
+  seeded distribution checks cover pauses, burst sizes and prompt reuse.
+- The 5% burst frequency is an assumption, not a study result. The 5090 run
+  beside captured Claude Code/Codex replay must calibrate it and compare knees.
+- Both knee thresholds are editable in the console. Troy's absolute one-second
+  first-token ceiling overrides the original doubled-baseline proposal.
+- Drafting configuration and observed acceptance are retained for comparing
+  records. llama-server exposes speculative parameters, but Eugene's gateway
+  request schema has no per-request drafting override; automatic off stays row 13.
+- Agent and UI unit checks cover records and sentences. Process acceptance is
+  assigned to CI; no live hardware measurement is claimed by this build.
+
 ### LD6. Store responses, and use the chain as the conversation key
 
 **What llm-d does:** 1.0 keeps Responses state so a client sends

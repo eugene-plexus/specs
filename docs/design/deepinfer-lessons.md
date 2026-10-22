@@ -268,6 +268,20 @@ sequences per GPU and gains 4-7% at 48-72 (Q&A, "Speculative decoding").
 
 Low risk. DI5 needs this harness.
 
+### What building DI3 found (row 10, phase 2, 2026-10-22)
+
+- The agent owns the job, seeded workload and durable provenance record; the
+  console and terminal use the same job doors. The pinned contract is unchanged.
+- Warm starts precede each measured window. In-flight levels are checkpointed;
+  a restart fails the job and keeps those observations and its key id for cleanup.
+- A stopped replica must leave the gateway's ready view before load starts.
+  Keys are local-only, single-model, and revoked on completion, failure or cancel.
+- [llama-server's metrics](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md#available-metrics)
+  currently have no completed-request counter: foreign use stays unknown there.
+  CI's two-slot fixture has an explicit counter; engines that report none still run.
+- The Linux CI acceptance uses row 2's shared harness. The 5090 sweep and captured
+  Claude Code/Codex replay remain a live acceptance task for Amish_Station.
+
 ### DI4. Stop control tokens written in messages from acting as control tokens
 
 **What DeepSeek does:**
