@@ -432,6 +432,7 @@ def reapply(fd, record, records):
     """Restore remaining overlapping grants before completing this revoke."""
     active = []
     skipped = []
+    reapplied = set()
     for target, other in records.items():
         if (
             other.get("removed")
@@ -443,11 +444,13 @@ def reapply(fd, record, records):
             with opened(other["path"]) as held:
                 if same_identity(identity(held), other["identity"]):
                     active.append((target, other))
+        except (FileNotFoundError, NotADirectoryError):
+            continue  # A missing related folder covers no items.
         except (OSError, ValueError) as exc:
             skipped.append(other["path"] + ": " + str(exc))
     if not active:
         record["refusal"] = "; ".join(filter(None, [record.get("refusal"), *skipped]))
-        return not skipped
+        return not skipped, []
     plans = {
         target: {tuple(item["names"]): item for item in other["items"]}
         for target, other in active
@@ -505,6 +508,7 @@ def reapply(fd, record, records):
                 # Keep an existing item's original before/after values so an
                 # owner's later default-ACL edits remain detectable on revoke.
                 write_record(target, records[target])
+                reapplied.add(target.stem)
             except (OSError, ValueError) as exc:
                 skipped.extend(path + ": " + str(exc) for path, _, _ in additions)
                 continue
@@ -515,7 +519,7 @@ def reapply(fd, record, records):
                     skipped.append(path + ": " + str(exc))
     if skipped:
         record["refusal"] = "; ".join(filter(None, [record.get("refusal"), *skipped]))
-    return not skipped
+    return not skipped, sorted(reapplied)
 
 
 def dropin(app, group, records):
@@ -686,6 +690,7 @@ def main():
         if record.get("removed"):
             print(json.dumps(dict(removed=True)))
             return
+        reapplied = []
         with contextlib.ExitStack() as held:
             try:
                 fd = held.enter_context(opened(record["path"]))
@@ -702,7 +707,7 @@ def main():
                         for p in directory.glob("*.json")
                         if p != target
                     }
-                    restored = reapply(fd, record, records)
+                    restored, reapplied = reapply(fd, record, records)
                     removed = complete and restored
         if removed:
             record["removed"] = True
@@ -717,6 +722,7 @@ def main():
                 dict(
                     removed=removed,
                     message=record.get("refusal") or "",
+                    reapplied=reapplied,
                 )
             )
         )

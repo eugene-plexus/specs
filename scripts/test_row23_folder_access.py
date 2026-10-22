@@ -670,7 +670,7 @@ def test_reapply_skips_unsafe_items_and_restores_accepted_items(
 @pytest.mark.parametrize(
     "error",
     [
-        FileNotFoundError("The folder was deleted"),
+        PermissionError("The folder cannot be opened"),
         ValueError("A parent folder is writable by an account other than root"),
     ],
 )
@@ -702,6 +702,69 @@ def test_reapply_reports_unavailable_related_record_and_continues(
     assert unavailable["path"] in outcome["message"]
     assert str(error) in outcome["message"]
     assert f.acl[10].get("group:1001") == ("r-x" if healthy else None)
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError, NotADirectoryError])
+def test_revoke_parent_completes_after_a_granted_subfolder_is_deleted(
+    fake_tree, monkeypatch, tmp_path, capsys, error
+):
+    f = fake_tree
+    child = f.add("sub", stat.S_IFDIR | 0o700)
+    parent = {"path": "/x", "identity": [10, 1, 2], "write": False}
+    f.h.grant(10, "1001", False, parent, lambda _: None)
+    record = {"path": "/x/sub", "identity": [child, 1, 2], "write": True}
+    f.h.grant(child, "1001", True, record, lambda _: None)
+    target = configure_revoke_main(f, monkeypatch, tmp_path, parent)
+    (target.parent / ("b" * 32 + ".json")).write_text(json.dumps(record))
+    del f.nodes[child]
+    del f.acl[child]
+
+    @contextlib.contextmanager
+    def opened(path, **kwargs):
+        if path == "/x/sub":
+            raise error("The folder no longer exists")
+        yield 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    f.h.main()
+    outcome = json.loads(capsys.readouterr().out)
+    assert outcome["removed"]
+    assert outcome["message"] == ""
+    assert json.loads(target.read_text())["removed"]
+    assert "group:1001" not in f.acl[10]
+
+
+@pytest.mark.parametrize("unsafe", [False, True])
+def test_revoke_reports_reapplied_additions_to_a_preexisting_parent(
+    fake_tree, monkeypatch, tmp_path, capsys, unsafe
+):
+    f = fake_tree
+    f.acl[10] = f.h.plan(f.acl[10], "1001", False, True)
+    parent = {"path": "/x", "identity": [10, 1, 2], "write": False}
+    assert not f.h.grant(10, "1001", False, parent, lambda _: None)
+    assert parent["items"] == []
+    child = f.add("sub", stat.S_IFDIR | 0o700)
+    record = {"path": "/x/sub", "identity": [child, 1, 2], "write": True}
+    assert f.h.grant(child, "1001", True, record, lambda _: None)
+    if unsafe:
+        special = f.add("socket", stat.S_IFSOCK | 0o600)
+        f.nodes[special] = (("sub", "socket"), *f.nodes[special][1:])
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    parent_file = target.parent / ("b" * 32 + ".json")
+    parent_file.write_text(json.dumps(parent))
+
+    @contextlib.contextmanager
+    def opened(path, **kwargs):
+        yield child if path == "/x/sub" else 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    f.h.main()
+    outcome = json.loads(capsys.readouterr().out)
+    assert outcome["removed"] is (not unsafe)
+    saved = json.loads(parent_file.read_text())
+    assert saved["items"][0]["names"] == ["sub"]
+    assert f.acl[child]["group:1001"] == "r-x"
+    assert outcome["reapplied"] == [parent_file.stem]
 
 
 @pytest.mark.parametrize("existing_item", [False, True])
