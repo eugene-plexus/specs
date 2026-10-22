@@ -1920,19 +1920,23 @@
    "lane": "GW",
    "lane_order": 8,
    "repos": [
-    "gateway"
+    "platform-store",
+    "gateway",
+    "ui"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
     "gateway/src/eugene_plexus_gateway/routes/inference.py",
     "gateway/src/eugene_plexus_gateway/budget.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     11,
     53
    ],
    "design_docs": [
+    "rows/row-55.md",
+    "rows/row-53.md",
     "llm-d-lessons.md"
    ],
    "calls": [],

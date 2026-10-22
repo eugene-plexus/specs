@@ -114,7 +114,7 @@ between machines). The next release fits after row 6.
 |---|---|---|---|---|---|---|
 | 53 | **One store for the platform half.** Design how files, batches, vector stores and stored responses are kept, owned and expired | PLAT (memory `project_platform_half_on_roadmap`) | L | high (store, migrations) | developers | Designed (`rows/row-53.md`): an optional app the gateway routes to; owner per person or key; 30-day expiry, quotas, real deletion; Files and Uploads first. Call R53-REPO |
 | 54 | **Stored responses, with the chain as the conversation key** | LD6 | M | high (chats at rest) | agent clients | Designed (`rows/row-54.md`): kept in row 53's store when apps ask, chained by id, the chain as affinity key. Call R54-DEFAULT |
-| 55 | **Batch jobs in idle time**, run as background-band traffic | LD7 | M | cross | developers, home batch jobs | Needs rows 11 and 53 |
+| 55 | **Batch jobs in idle time**, run as background-band traffic | LD7 | M | cross | developers, home batch jobs | Designed (`rows/row-55.md`): OpenAI's Batch API in the store app, every line in row 11's background band, an estimate from row 10's measurement before it runs; after rows 11 and 53 |
 | 56 | **Files, vector stores and `file_search`** | MRC24 | L | cross | developers | Call MRC24 |
 | 57 | **Responses: non-function tools and `compact`** | RSP-T | M | low | developers | |
 | 58 | **A Gemini API door**, and the small Gemini items (mp3/opus speech, countTokens, dimensions) | GEM-D (gateway#5), GEM-x (inference-driver#7) | L, S each | low | Gemini SDK users | |
