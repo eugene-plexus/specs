@@ -237,3 +237,84 @@ and optional capabilities can follow without delaying basic support. Use
 disposable installations and isolated ports for acceptance; stopping the live
 Eugene install is not part of this investigation. No release is authorized by
 this design alone.
+
+## Row 68: DeepSeek V4.x Flash contract staging (2026-10-22)
+
+**Phase 1 only.** The Row 68 design was read from the separate
+`calls-1022c/specs/docs/design/rows/row-68.md` worktree. This row's specs
+worktree does not yet contain that document. No engine, model, or hardware
+run was performed for this work.
+
+The existing contracts can describe the GGUF architecture, expert bytes,
+embedded-template presence, engine eligibility, and an own-file `nextn`
+prediction head. They cannot distinguish an available Eugene template from
+the template actually in use. The `chatTemplate` boolean must continue to
+mean that the file embeds a template, even when Eugene supplies one. This
+requires an additive contract change before consumer code is regenerated:
+
+- Library `GgufDetail.chatTemplateFallback` and
+  `CataloguePreflight.chatTemplateFallback` reference `ChatTemplateFallback`.
+  The optional, read-only observation names the reviewed template, its
+  upstream source, and the engines whose adapters can apply it. Report it
+  only after a header confirms a recognized variant and no embedded
+  template. An unknown header or a filename is not enough evidence.
+- Agent `Runtime.chatTemplate` references `RuntimeChatTemplate`. Its
+  read-only observation gives the effective name, source, and SHA-256 of
+  the exact template text reported by the engine. An optional id links to
+  the Eugene fallback; an optional path names the launch-time file on
+  that node. Match against captured launch-time contents before claiming
+  an embedded, Eugene, or override source; otherwise report `engine`.
+  Omit the observation while unconfirmed or stopped, and clear it before
+  another start. Editing a saved setting or template file does not rewrite
+  what the existing process is using.
+- Neither field changes eligibility or blocks an untested engine. Fallback
+  availability does not assert that hardware can load the model. A missing
+  effective-template observation does not prevent inference.
+
+The default is an explicit operator override, then the embedded template,
+then a reviewed Eugene fallback for the recognized variant on an adapter
+that supplies it, then the engine's own behaviour. Phase 2 exposes the
+template-file override through the engine's existing GUI flag schema;
+`RuntimeSpec.flags` already supports this and needs no new declaration
+field. Existing SD1 drafting defaults remain unchanged: offer the own head
+only when the tensor table proves it; do not enable MTP based on a name or
+on `nextn_predict_layers` alone.
+
+`openapi/run-operations.json` embeds both `GgufDetail` and `Runtime`. It was
+not edited by hand. The owner must regenerate that embedded schema through
+the normal consumer/export workflow after committing, pushing and pinning
+these contracts. Pin and regenerate consumers before implementing Phase 2,
+including the model and runtime UI types that will display the observations.
+
+Source inspection found a usable starting point for the remaining fixtures:
+
+- llama.cpp **b11719** already contains a
+  [V4 Jinja template](https://github.com/ggml-org/llama.cpp/blob/b11719/models/templates/deepseek-ai-DeepSeek-V4.jinja)
+  and [V3.2/V4 DSML format detection](https://github.com/ggml-org/llama.cpp/blob/b11719/common/chat.cpp).
+- The agent's reviewed vLLM **v0.29.0** contains the
+  [V4 DSML parser](https://github.com/vllm-project/vllm/blob/v0.29.0/vllm/parser/deepseek_v4.py).
+  The old `tool_parsers/deepseekv4_tool_parser.py` path is absent at this
+  tag; it is not evidence of missing parser support.
+- DeepSeek publishes separate
+  [V4](https://github.com/deepseek-ai/deepseek-recipe/blob/main/deepseek-recipe-encoding/src/v4/dsv4.rs)
+  and [V4.1](https://github.com/deepseek-ai/deepseek-recipe/blob/main/deepseek-recipe-encoding/src/v4/dsv41.rs)
+  format implementations. Review and pin the matching source before
+  bundling a template or recording DSML samples. Do not assume one template
+  covers every V4.x variant.
+
+Phase 2 still owes failing-first GGUF architecture/cache/MoE fit tests,
+with-head and stripped-head tests, template selection/override argv tests,
+engine read-back and restart tests, model/runtime page coverage, and native
+DSML streaming/non-streaming fixture tests. Add a family-scoped gateway
+fallback only if those tests show a parser missing in a supported engine;
+the source findings above do not establish live behaviour. All of these
+checks must use fakes and recorded upstream examples here.
+
+The owner alone runs live acceptance on borrowed/rented hardware with about
+110 GB of model memory plus the context and engine overhead. Record the
+exact model/quant, engine build, template digest, context, cache/offload and
+draft settings. Verify gateway text, streaming/cancellation, tool arguments
+and tool-result round trips, effective template reporting, fit versus peak
+RAM/VRAM, and own-head drafting on/off with acceptance and timing results.
+No model or engine download, engine start, or new performance claim is part
+of this contract phase.
