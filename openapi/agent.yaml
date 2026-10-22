@@ -3192,6 +3192,59 @@ paths:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
 
+  /v1/node/machine-list:
+    post:
+      tags: [node]
+      operationId: pushMachineList
+      summary: Take a newer machine list from the control root, and follow a promoted root.
+      security: []
+      description: |
+        The mirror of `POST /v1/node/trust-bundle` for the signed machine
+        list (`control.yaml`, `MachineList`; row 4). A root pushes it after
+        a promotion, and to any node whose `epoch` or `controlUrlEpoch` it
+        sees lower than its own, at most once a minute. The agent also
+        pulls it every minute (`GET /v1/trust/machines`).
+
+        **The credential is the signature, not a bearer token**: a JWS
+        signed by the root identity this agent pinned at enrolment. A list
+        that does not verify, or reaches an agent that has not enrolled, is
+        refused with 401.
+
+        **Following a promoted root** (R4-MOVE, Troy 2026-10-21). The agent
+        writes the list's `control.url` as its `controlUrl` only when the
+        list is newer than the one it holds, its `control.epoch` is above
+        this node's `controlUrlEpoch`, and at least the epoch it holds. It
+        then holds that epoch, rebuilds its machine table, announces its
+        address to the new root, pulls the bundle there, and logs *the
+        install's root moved to <node> (epoch N)*. The same epoch never
+        moves a node.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignedMachineList"
+      responses:
+        "204":
+          description: Taken, or the same list again.
+        "401":
+          description: |
+            The signature does not verify against the pinned
+            `controlPublicKey`, or this agent has not enrolled.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
+          description: |
+            Refused: the list's `version` is lower than the one this agent
+            holds, or its `control.epoch` is lower than the epoch it holds
+            (a superseded root). `detail` names both numbers.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+
   /v1/directories:
     get:
       tags: [config]
@@ -4334,6 +4387,18 @@ components:
 
     # -------- This node --------
 
+    SignedMachineList:
+      type: object
+      required: [jws]
+      properties:
+        jws:
+          type: string
+          description: |
+            A JWS compact serialization with header
+            `{"alg": "EdDSA", "typ": "ep-machines+jwt"}` whose payload is a
+            `MachineList` (`control.yaml`), signed with the root identity
+            this node pinned at enrolment.
+
     LocalStandby:
       type: object
       description: |
@@ -4586,6 +4651,16 @@ components:
           type: string
           format: uri
           description: The control root this node answers to.
+        controlUrlEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            The epoch `controlUrl` came with (row 4): the epoch at
+            enrolment, or of the promoted root this node moved to. A node
+            moves only for a signed machine list at a higher epoch. Set to
+            the epoch held when a node updated to row 4 first starts, so an
+            update never moves a node. Absent until enrolled.
         standby:
           $ref: '#/components/schemas/LocalStandby'
         hostsControl:
