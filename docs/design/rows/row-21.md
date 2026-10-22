@@ -99,3 +99,7 @@ Also `test_author_sampling_off_keeps_gateway_default`, and in the library, `test
 
 1. Should the author's values apply when a model has no profile? **Recommend yes:** most people never save one.
 2. Should the author's repeat penalty apply too? **Recommend not now:** the gateway carries no repeat penalty, and row 19 owns repetition.
+
+## Calls answered by Troy (2026-10-21)
+
+- **R21-DEFAULT: Choice 1.** Use the author's sampling settings by default, with a switch on the profile page.

@@ -44,9 +44,10 @@ between machines). The next release fits after row 6.
 | 5 | **Rotate the sign-in key, and change Eugene's passphrase** (re-sealing, the standby's copy included) | SI-ROT, SI-PASS (`sign-in-with-eugene.md`) | S+M | high | everyone who signs in | Rotation is cheapest while few apps cache the key. A passphrase that can never change is a hole |
 | 6 | **Cut a patch release from a release tag while `main` has moved** | REL-PATCH (`release-script.md`; memory `project_issue_intake`) | S-M | high | everyone on stable | `release.py` qualifies `main`. A fix for stable has no path today |
 | 7 | **Remove a person's data when the person is removed.** This covers chats, notes, documents, the past-chat index, server banks and connections, plus the rule for a person re-created later | W4, MRC27 (`workbench-v1.md`, `workbench-memory-and-documents.md`) | M | high | multi-person installs | Each new store adds another place to purge. Call MRC27 |
-| 8 | **Installer pass.** Run the Mac service as a system daemon, which makes the macOS autostart claim true, and let both installers take `--label` | R2.6-mac, PLAT-START, NL-INST | M | high | Mac, multi-machine | Moving from a LaunchAgent is a migration, cheapest while Mac installs are near zero. Accept on GitHub's macOS runners |
+| 8 | **Installer pass.** Run the Mac service as a system daemon, which makes the macOS autostart claim true, and let both installers take `--label` | R2.6-mac, PLAT-START, NL-INST | L | high | Mac, multi-machine | Eugene runs in an account of its own, as on Linux (MAC-ACCT). Moving from a LaunchAgent is a migration, cheapest while Mac installs are near zero. Accept on GitHub's macOS runners |
 | 9 | **Engine cache settings on a profile, sized from the machine.** This means `--cache-ram`, `--cache-reuse` and `--ctx-checkpoints`, with a RAM cache computed from free RAM; vLLM's CPU KV offload; and admission counting both | PC7, LD2 | M | cross | everyone running local models | The home of CB4's setting, DI2 and LD2. Measure llama-server's cache-update pause first. Call LD-C5 |
 | 10 | **Measure people served at a speed.** A 1..N stream sweep through the gateway, adding agent-shaped load: hour-long sessions, the published pauses, and sub-agent bursts of 7-51. Report the knee, kept per runtime with its provenance | DI3, LD5 (replaces the 1-256 load test and creators items 1 and 3) | M | low | businesses; feeds rows 11, 13, 14 | Its result record is read by LD1's acceptance, DI5/LD3, the speed nudge and the creators' cards. Handoff `docs/private/handoff-di3.md` |
+| 70 | **Policies per permission group.** A group gets a Policies section that the owner edits in the console: queue priority (read by row 11), the percent of context where Workbench starts summarising (row 26), and shared memory servers that its members cannot turn off (row 27). The gateway and Workbench read a person's policies from the root. A person in two groups gets the most generous value of each | GROUP-POLICY (Troy chose one row first, 2026-10-21), LD-C3, LD-C4, CTX-C2, MEM-INSTALL | L | high (permissions) | businesses, families sharing machines | Built before rows 11, 26 and 27, which read it. Permission groups already exist in control; this adds the policies to them. Needs a design. One adversarial review |
 | 11 | **One fair queue in the gateway.** Waiting for a starting runtime, waiting for room in a pool, and a key over its concurrency limit become one queue, ordered by band, then person, then arrival. Refusals name their cause, and queue time is recorded | LD1, with WAKE and CB-C | M-L | high | every shared machine and agent user | One waiting mechanism before a second one appears. LD-C2 taken 2026-10-21: queue, reversing A5's no-queue rule. Calls LD-C3, LD-C4, WAKE and CB-C. One adversarial review |
 | 12 | **Metrics export with names that last.** Prometheus `/metrics` on the gateway's own port, an optional OTLP exporter set from the console, decisions written as request rows, and the stored rollups served | LD4, B2-MET, MET-RU, the setups pass's Prometheus item | M | cross | businesses | Metric names become a public contract. Settle them once, before alerts and dashboards (row 38) depend on them |
 | 13 | **Checked engine updates, and the drain they need.** Check a new build against the old one, roll the replicas, keep the old build on failure, and stop a gateway restart cutting streams | DI1, rolling upgrades (release §8, adoption, open threads) | L | cross | every install | Every install updates engines. The drain is reused by rows 15 and 44. Call DI-C3 |
@@ -71,13 +72,14 @@ between machines). The next release fits after row 6.
 | 22 | **Re-point a Library entry whose file moved** | M2-RELOC | S | low | everyone | Must never apply a profile to the wrong file |
 | 23 | **Folder access for Workbench without a terminal.** The agent sets and removes the folder permission from the UI | C6-ACL (`workbench-files.md`) | M | high (privileges) | every Workbench folder user | Today an administrator runs `icacls`, which breaks the no-terminal rule. One review |
 | 24 | **Client keys: rotate, and record last use** (`lastUsedAt` is never written) | CLIENT-KEYS (memory `project_agent_findings`) | M | cross | every app and tool user | Key hygiene for every connected client |
-| 25 | **Connect an app on this machine.** The person's Job Site writes Claude Code's and Codex's setup, and Open WebUI gets a ready setup | CONNECT (audience roadmap), MR9b Open WebUI | M | high (auth, home-folder writes) | agent-client users | Needs a design. One review and a real-machine run |
 | 26 | **Long chats that outgrow the context.** Workbench compacts or summarises a chat that grows past its model's context | rich-content roadmap, out-of-scope list | L | cross | every Workbench user | Design first |
 | 27 | **Memory extras.** Send my past chats to a memory server; model-proposed merges; provenance from web and tool results; more servers and install-wide servers; projects with their own folder, model and owner view | MV5-backfill, MV6-later, MV5a-later, MV7-later (not sharing) | S-M each | low-cross | every Workbench user | Call MV5-C4 for the backfill |
+| 72 | **Hindsight memory server from the catalogue (MV5b).** One Hindsight per machine with a bank per person, the model unset until the owner chooses, a narrow `provides: memory-server` app link, labelled experimental. On Linux and agent-account installs only (MV5b-C1); Windows person installs later | MV5b, calls MV5b-C1 to C5 (answered 2026-10-21) | M | cross | Workbench users who want a memory server | Its store migration number is assigned when it starts |
 | 28 | **Answer branches: delete, name, compare** | AV-later | S-M | delete is destructive | every Workbench user | |
 | 29 | **Pictures in tool results.** One shared contract for images sent to the model, with the Job Site and MCP caps | RC3-caps | M | cross | every Workbench user | The contract lands in specs before any consumer uses it |
+| 71 | **Model roles.** The owner tags each model with the jobs it does: chat, agentic, image, voice, music, reads pages, embeddings and others. Apps ask Eugene for the model of a role instead of a model name, and row 30's page reading is the first to. Per-group routing by role comes with row 37 | MODEL-JOBS (Troy, 2026-10-21) | M | cross | every install with more than one model | Today each feature has its own model setting in its own place (decision model, embedder, the model that keeps notes); they move onto roles. Needs a design |
 | 30 | **Documents and folders extras.** Map-reduce over whole documents, opt-in OCR, PDF click-through, collections, Job Site folders, a file watcher, per-folder intervals | MR-later, MR7-later, MRC26 | M each | cross | every Workbench user | |
-| 31 | **Reading and rich-content extras.** Display settings, speaker labels, CJK, a heading outline, artifacts from tool results, revision diffs, more chart types, a per-chat run switch, Firefox and Safari | RD-later, RC-later | S-M each | low | every Workbench user | Do them in batches |
+| 31 | **Reading and rich-content extras.** Display settings, speaker labels, CJK, a heading outline, artifacts from tool results, revision diffs, more chart types, a per-chat run switch, Firefox and Safari; a model's reasoning rendered as Markdown, collapsed (MD-24) | RD-later, RC-later | S-M each | low | every Workbench user | Do them in batches |
 | 32 | **Skills** (Anthropic-style) | memory research | M | cross | every Workbench user | Design first |
 | 33 | **Console: keyboard navigation in the resource tree, and settings search in the header** | UI-TREE-A11Y, SET-x | M | low | console users, accessibility | |
 | 34 | **Open WebUI: hub search, images, updates** | C4-NEXT | M | cross | Open WebUI users | Includes deciding on `ENABLE_PLUGINS` |
@@ -88,12 +90,13 @@ between machines). The next release fits after row 6.
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
 | 36 | **Machines says why a machine's announcement was refused** | R2.4-a | M | cross | multi-machine | Today it shows a probe error. A contract field plus an issue kind |
-| 37 | **Routing profiles per person or group** (shared accounts, part two) | SSO-ROLES (`shared-accounts-and-sso.md`) | L | high | businesses | Designed 2026-10-16. Fix its data format before more per-person settings arrive |
+| 37 | **Routing profiles per person or group** (shared accounts, part two). Each group gets routing rules per model role (row 71) | SSO-ROLES (`shared-accounts-and-sso.md`) | L | high | businesses | Designed 2026-10-16. Fix its data format before more per-person settings arrive |
 | 38 | **Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost** | ADM, HH-NEXT, MD-x | L | low | businesses | Needs row 12 |
 | 39 | **Operations rights for people who are not the owner** | CX-OPS | M | high | businesses | |
 | 40 | **Usage and money limits per person and key** | KEY$, Shop, AD-BILL | L | high | businesses | Builds on A5's attribution |
 | 41 | **Speculative decoding on vLLM**, including the overdue live vLLM run on current Edge | SD2 | M | low | vLLM | |
 | 42 | **vLLM from its official container image** | VDK (business candidate) | M-L | cross | vLLM, businesses | |
+| 73 | **Eugene installs and updates vLLM, as it does llama.cpp.** It picks the build for the machine's GPU and CUDA, keeps two builds, checks a new one before switching (row 13's check), and supervises it | Troy, 2026-10-21 ("supported like llama.cpp eventually") | L | high (installs software) | vLLM users, businesses | After row 42 (vLLM from its official container) and row 13 (checked engine updates). Needs a design |
 | 43 | **Hardware health readout, and restarting on the cards that are left** | HWR, DI6 | M | low | multi-GPU | Host history already has temperatures |
 | 44 | **Move a conversation's cache before planned maintenance** | DI2b | L | high | multi-machine | Needs rows 13 and 15 |
 | 45 | **TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079** | LT2-ACME, LT2-CA | M | high | businesses | |
@@ -131,14 +134,12 @@ between machines). The next release fits after row 6.
 | 67 | **Local image models and local media**, with their own admission design and more catalogue sources | IMG, MEDIA-LOCAL, MED-later, SRC | L | cross | image users | The audience research found no demand yet. Troy banked it for after v0.2 |
 | 68 | **DeepSeek V4.x Flash through Eugene** | DI8 | M | low | Mac, businesses | Needs borrowed hardware |
 | 69 | **Creators items 2, 4, 5 and 6.** A benchmark matrix, a shareable card, a presentation view, a public dataset (which needs a privacy design) | CR2, CR4-CR6 | M-L | low; dataset high | creators | Troy put these at the back (2026-10-18). Needs row 10 |
+| 74 | **DeepInfer as an experimental engine.** Wrap it as the other experimental engines are wrapped. First check that it has an online server and runs on a consumer card | DI-C5 (Troy, 2026-10-21: yes, at the end of the roadmap) | M | low | people trying new engines | Last on purpose |
 
 ## Waiting on a call from Troy
 
-These are blocked until the call is taken:
-- **MV5b, Hindsight installed from the catalogue** (`workbench-memory-v2.md`): call MV5b-C1, where pg0 keeps its data on Windows. Its store migration must become 27 → 28.
-- **Installing vLLM for the person**: the recommendation is to use their own install and defer.
-- **The installer's `--channel` flag** (`settings-accuracy.md`).
-- **Dependabot grouping in every repo.**
+Nothing is blocked on a call (2026-10-21). MV5b became row 72, installing
+vLLM became row 73, and Dependabot grouping is housekeeping.
 
 ## Not scheduled without Troy
 
@@ -157,6 +158,9 @@ These are blocked until the call is taken:
 - **PB2's remainder:** the model's row saying when fit placed a profile differently, and "make it faster" on Home.
 - **The Library deposit endpoint** (AS-8).
 - **Retiring the three-port Compose file.**
+- **The installer's `--channel` flag** (`settings-accuracy.md`): not now (Troy, 2026-10-21). The console sets the channel after install.
+- **More than one control-root standby:** not now (Troy, 2026-10-21).
+- **Connect an app on this machine** (old row 25, CONNECT): taken off 2026-10-21 (ROW25-SCOPE). Troy sees Workbench as an alternative to Claude Code and Codex, not a helper for them. The Connect apps page stays.
 
 ## Banked: built only when a trigger arrives
 
@@ -234,6 +238,13 @@ restart.
 - Local venvs on Python 3.12, so `test_job_sites` stops failing only here.
 - The memory note about the cross-component test repo not being in CI:
   confirm specs CI's pinned integration covers it, then retire the note.
+- Taken 2026-10-21, small: the console logo gets the website's steel rim;
+  the map panel shows a component's config once, in its settings section;
+  Dependabot groups only minor and patch updates in every repo, as `ui`
+  does; delete the merged `lt1` and `lt1-image` branches; the NAS entry
+  point keeps its original revert deadline across an agent restart (an
+  agent issue); the website leads with "A control plane for the machines
+  you own" (LD-C6, in the next website change).
 
 ## How the old roadmaps were retired (2026-10-21)
 

@@ -138,3 +138,9 @@ ui `servingSentence.test.ts`: the three sentences.
 - **MEASURE-KNEE.** TTFT p50 doubled and over 1 s, or tok/s each down by a third.
 - **MEASURE-DRAFT.** Record drafting and compare records now; an automatic off pass after row 13.
 - **MEASURE-REPLICAS.** One runtime now, stopping the alias's other replicas with consent; the replica set as one with row 14.
+
+## Calls answered by Troy (2026-10-21)
+
+- **MEASURE-KEY: Choice 1.** The run's key lives at most one day and is revoked when the run ends.
+- **MEASURE-KNEE-2: Choice 1.** The run measures the owner's own machine. The thresholds (first word after more than 1 second; speed below two thirds of one person's) are the defaults, and the owner can change both on the run page.
+- **MEASURE-REPLICAS: Choice 1.** Measure one copy; ask before stopping the others.
