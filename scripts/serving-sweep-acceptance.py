@@ -331,6 +331,8 @@ def exercise(directory):
                 "updateChecks": False,
                 "securityMode": "prompt_on_startup",
                 "advertiseUrl": url("agent"),
+                # The fixture llama-server lives outside the managed store.
+                "engineBinaryRoots": [str(directory)],
                 "components": [],
                 "runtimes": [],
             },
