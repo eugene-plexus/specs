@@ -32,7 +32,9 @@ Two phases.
     root comes back unlocked with nobody signing in
  9. Reach's own restart gives a new pid under launchd within 30 s
 10. in the daemon the agent reports Metal; a GGUF downloaded through the
-    Library lands in ~/Eugene Models and answers through the gateway
+    Library lands in ~/Eugene Models and answers through the gateway; 10e,
+    a runtime naming a program in a folder of the runner's fails naming the
+    path and its owner, and the program never runs, not even for its version
 13. --user beside the daemon is refused
 14. uninstall: plist gone, job unknown to launchd, no process left, account
     and group removed, config kept as root's
@@ -49,8 +51,7 @@ Keychain where this runner has one, enrolled):
     by itself; 11g, no copied llama.cpp build is kept (one changed after
     download among them) and the daemon fetches it again, byte for byte;
     11h, a copied setting naming a folder of the person's is kept and said
-    as "will not run until moved", and a runtime naming a program there
-    fails naming its owner without ever running it
+    as "will not run until moved"
 14b. uninstall again, by root's own removal run by root alone (no
     --person): the home's ACL entry and the kept old prefix go too
 
@@ -584,9 +585,16 @@ def phase_metal(ctx: dict) -> None:
         if not fallback:
             skip("10d", "a GGUF answers through the gateway", "GitHub refused the agent and no fallback build was given")
             return
-        api("PATCH", f"{base}/v1/config", ctx["token"], {"engineBinaryRoots": [fallback]})
-        spec["binary"] = str(Path(fallback) / "llama-server")
-        fact("llama.cpp", f"GitHub refused the release list; using {fallback}")
+        # Eugene's own account runs no program the runner can change (row 8,
+        # exec_trust): the fallback build goes into a folder of root's first.
+        roots_copy = Path("/usr/local/row8-llama-fallback")
+        sudo("rm", "-rf", str(roots_copy), timeout=60)
+        sudo("ditto", fallback, str(roots_copy), timeout=300)
+        sudo("chown", "-R", "root:wheel", str(roots_copy), timeout=60)
+        sudo("chmod", "-R", "go-w", str(roots_copy), timeout=60)
+        api("PATCH", f"{base}/v1/config", ctx["token"], {"engineBinaryRoots": [str(roots_copy)]})
+        spec["binary"] = str(roots_copy / "llama-server")
+        fact("llama.cpp", f"GitHub refused the release list; using {fallback}, copied to {roots_copy} as root's")
     else:
         api("POST", f"{base}/v1/engines/llama_cpp/install", ctx["token"], {}, timeout=900)
         wait_for(lambda: (lambda e: e if e.get("available") else None)(next(
@@ -608,6 +616,41 @@ def phase_metal(ctx: dict) -> None:
           ready.get("status") == "ready" and bool(reply),
           {"runtime": {k: ready.get(k) for k in ("status", "lastError")}, "declared": status})
     api("POST", f"{base}/v1/runtimes/row8-gguf/stop", ctx["token"], {}, timeout=120)
+    phase_untrusted_binary(ctx, path)
+
+
+def phase_untrusted_binary(ctx: dict, model: Path) -> None:
+    """10e: in its own account Eugene runs no program the person can change.
+    A runtime naming a stand-in `llama-server` in a folder of the runner's
+    (allowed by `engineBinaryRoots`, so only ownership decides) fails naming
+    the path and its owner, and the stand-in never runs -- not even for its
+    version."""
+    base, token = ctx["base"], ctx["token"]
+    STUB_DIR.mkdir(exist_ok=True)
+    stub = STUB_DIR / "llama-server"
+    stub.write_text(f"#!/bin/sh\ntouch {STUB_RAN}\necho 'version: 1 (row8 stand-in)'\n", encoding="utf-8")
+    stub.chmod(0o755)
+    STUB_RAN.unlink(missing_ok=True)
+    _, config = api("GET", f"{base}/v1/config", token)
+    before = config.get("engineBinaryRoots") if isinstance(config, dict) else None
+    roots = [*(before or []), str(STUB_DIR)]
+    api("PATCH", f"{base}/v1/config", token, {"engineBinaryRoots": roots})
+    spec = {"name": "row8-stub", "engine": "llama_cpp", "modelPath": str(model), "binary": str(stub),
+            "autoStart": True}
+    created, body = api("POST", f"{base}/v1/runtimes", token, spec, timeout=120)
+
+    def refused():
+        _, runtime = api("GET", f"{base}/v1/runtimes/row8-stub", token)
+        error = (runtime or {}).get("lastError") or ""
+        return error if "belongs to" in error else None
+
+    error = wait_for(refused, 90, 2) or ""
+    api("DELETE", f"{base}/v1/runtimes/row8-stub", token, timeout=60)
+    api("PATCH", f"{base}/v1/config", token, {"engineBinaryRoots": before or []})
+    check("10e", "a runtime naming a program in a folder of the runner's fails naming the path and its owner, "
+          "and the program never runs, not even for its version",
+          created in (200, 201) and str(stub) in error and f"belongs to {ME}" in error and not STUB_RAN.exists(),
+          {"runtime": (created, str(body)[:200]), "error": error[:300], "stand-in ran": STUB_RAN.exists()})
 
 
 def phase_user_beside(installer: Path) -> None:
@@ -756,29 +799,18 @@ def phase_setting_before_move(ctx: dict) -> None:
 
 
 def phase_setting_after_move(ctx: dict, said: str) -> None:
-    """11h: the move kept the setting and said Eugene's own account will not
-    run what it names; a runtime naming the stand-in fails naming its owner,
-    and the stand-in never ran -- not even for its version."""
-    base, token = ctx["base"], ctx.get("token")
+    """11h: the move kept the setting and said, in its words and in root's
+    receipt, that Eugene's own account will not run what it names. (A
+    runtime naming such a program fails naming its owner: 10e.)"""
     receipt = sudo("cat", str(RECEIPTS / "move-report.txt"), timeout=20).stdout
+    agent_yaml = root_read(PREFIX / "agent.yaml")
     line = f"engineBinaryRoots names {STUB_DIR}"
-    spec = {"name": "row8-stub", "engine": "llama_cpp", "modelPath": str(MODELS / "row8-none.gguf"),
-            "binary": str(STUB_DIR / "llama-server"), "autoStart": True}
-    created, body = api("POST", f"{base}/v1/runtimes", token, spec, timeout=120)
-
-    def refused():
-        _, runtime = api("GET", f"{base}/v1/runtimes/row8-stub", token)
-        error = (runtime or {}).get("lastError") or ""
-        return error if "belongs to" in error else None
-
-    error = wait_for(refused, 90, 2) or ""
-    api("DELETE", f"{base}/v1/runtimes/row8-stub", token, timeout=60)
-    check("11h", "a copied setting naming a folder of the person's is kept and said as 'will not run until "
-          "moved'; a runtime naming the program there fails naming its owner, and the program never ran",
+    check("11h", "a copied setting naming a folder of the person's is kept, and said as 'will not run until "
+          "moved' in the move's words and in root's receipt",
           line in said and "It will not run until moved" in said and line in receipt
-          and f"belongs to {ME}" in error and str(STUB_DIR) in error and not STUB_RAN.exists(),
+          and str(STUB_DIR) in agent_yaml,
           {"said": [s for s in said.splitlines() if "will not run" in s][:3], "receipt": receipt[:300],
-           "runtime": (created, str(body)[:200]), "error": error[:300], "stand-in ran": STUB_RAN.exists()})
+           "kept": str(STUB_DIR) in agent_yaml, "stand-in ran": STUB_RAN.exists()})
 
 
 def phase_engine_after_move(ctx: dict, said: str) -> None:
