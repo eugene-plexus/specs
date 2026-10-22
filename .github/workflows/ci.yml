@@ -913,6 +913,9 @@ jobs:
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
 
+      - name: Check gateway routing node contract
+        run: python scripts/test_gateway_routing_node_contract.py
+
       - name: Validate every OpenAPI document
         shell: bash
         run: |
