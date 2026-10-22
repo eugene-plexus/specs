@@ -256,7 +256,7 @@ paths:
     get:
       tags: [models]
       operationId: listModels
-      summary: Every model in the library.
+      summary: List models, with optional pagination.
       description: |
         The library browser's source of truth. One entry per
         *launchable* model: a projector, the second through Nth shard
@@ -271,9 +271,18 @@ paths:
         which are the one thing here that cannot be recovered by
         looking at the disk again.
 
-        Unpaginated. Dozens to low hundreds of entries is the expected
-        scale; pagination is a backwards-compatible addition if
-        somebody turns up with thousands.
+        Without `limit` or `cursor`, returns every model as before.
+        With `limit`, returns up to that many models in the same stable
+        order as the full list (by lower-case model name). A response
+        has `nextCursor` only when more models remain; pass it as
+        `cursor` to continue after the last model in this page. If
+        `limit` is omitted, returns all remaining models.
+
+        The cursor records the last model's sort key, not an offset.
+        It remains valid if a rescan adds or removes models, including
+        if that last model is removed. Continue strictly after that
+        key, without repeating or skipping models because list
+        positions changed.
       parameters:
         - in: query
           name: path
@@ -288,13 +297,66 @@ paths:
             path does not have to reproduce the `id` derivation to find
             the entry. The runtime dashboard uses it to link a running
             `Runtime.modelPath` back to its library entry.
+
+            A path lookup ignores `limit` and `cursor`, even if invalid,
+            and never returns `nextCursor`.
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+          description: |
+            Maximum number of models in this page. No default limit:
+            omitting it returns all models after `cursor`, or every
+            model if no cursor is supplied. Ignored when `path` is set.
+        - in: query
+          name: cursor
+          required: false
+          schema:
+            type: string
+            minLength: 1
+          description: |
+            Opaque continuation token from the previous page's
+            `nextCursor`. Resume strictly after its sort key, even if
+            that model is no longer in the Library. Clients pass this
+            token unchanged. Ignored when `path` is set.
       responses:
         '200':
-          description: Every known model.
+          description: Every known model, the requested page, or the path lookup result.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/LibraryModelList'
+        '400':
+          description: |
+            With no `path` lookup, `limit` is not an integer between 1
+            and 500, or `cursor` is unknown or malformed. The problem's
+            `detail` is a sentence that names the observed cause.
+          content:
+            application/problem+json:
+              schema:
+                $ref: 'components/common.yaml#/components/schemas/Problem'
+              examples:
+                invalidLimit:
+                  value:
+                    type: about:blank
+                    title: Invalid model page limit.
+                    status: 400
+                    detail: The model page limit must be an integer between 1 and 500.
+                malformedCursor:
+                  value:
+                    type: about:blank
+                    title: Invalid model cursor.
+                    status: 400
+                    detail: The model cursor is malformed because its encoding is invalid.
+                unknownCursor:
+                  value:
+                    type: about:blank
+                    title: Invalid model cursor.
+                    status: 400
+                    detail: The model cursor was not issued by this Library.
 
   /v1/eligibility:
     post:
@@ -2427,6 +2489,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LibraryModel'
+        nextCursor:
+          type: string
+          minLength: 1
+          description: |
+            Opaque continuation token to pass as `cursor` for the next
+            page. Present only when more models remain. Omitted on the
+            last page, on an unpaginated response, and for a `path`
+            lookup.
         lastScanAt:
           type: string
           format: date-time
