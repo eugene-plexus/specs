@@ -34,7 +34,8 @@ Checks, in order:
     root is stopped; the standby, signed in with the passphrase, promotes.
     It serves sign-in and the node list, names B the root, and B holds no
     standby grant. B's agent takes the new root's bundle and keeps the
-    promoted copy running.
+    promoted copy running, as this machine's root (row 4: it reports
+    `hostsControl` and no standby).
 8.  The old root, started again, is fenced: its bundle is refused by B.
 """
 
@@ -579,15 +580,29 @@ def exercise(root: Path) -> int:
                 "B to take the new root's bundle",
                 bundle_bound,
             )
+
+            # Row 4: the root's signed machine list names B at the new epoch,
+            # so B's agent takes its copy for the root: it says it runs the
+            # root, reports no standby, and the copy keeps running.
+            def b_runs_the_root() -> bool:
+                body = call("agent-b", "GET", "/v1/node", session_b).json()
+                return body.get("hostsControl") is True and not body.get("standby")
+
+            wait_for(b_runs_the_root, "B's agent to take its copy for the root", bundle_bound)
             time.sleep(3)
-            kept = standby_of(session_b) or {}
+            listed = call("agent-b", "GET", "/v1/components", session_b).json()
+            kept = next(
+                (c for c in listed.get("components") or [] if c.get("name") == "standby"),
+                {},
+            )
             assert kept.get("status") == "running", kept
             assert (copy / "log.jsonl").exists() or any(copy.iterdir()), (
                 "the copy was kept"
             )
             ok(
                 "the standby promoted with the passphrase: it signs people in, lists the "
-                "nodes, names B the root with no standby grant, and B's agent kept it running"
+                "nodes, names B the root with no standby grant, and B's agent kept it "
+                "running as this machine's root"
             )
 
             # ---- 8. the old root is fenced -------------------------------------

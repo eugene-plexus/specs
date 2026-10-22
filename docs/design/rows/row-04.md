@@ -133,3 +133,86 @@ About 10 minutes.
 ## Calls answered by Troy (2026-10-21)
 
 - **R4-MOVE: Choice 1.** Machines follow a new root address only with a promotion.
+
+## What building found (2026-10-22)
+
+Built on branch `r4-promoted-root` in specs, control and agent. UI not built
+(see the last item).
+
+**The contract as built**
+- `control.yaml`: `MachineList.control` (`MachineListControl`: `epoch`,
+  `node`, `url`, the last two nullable); `LogPage.appliedDigest`;
+  `StandbyStatus.version` and `StandbyStatus.matches`; the
+  `Eugene-Plexus-Version` header (the standby's on its pulls, the root's on a
+  log page) and `Eugene-Plexus-Copy-Digest` (the standby's digest at `after`).
+- `agent.yaml`: `POST /v1/node/machine-list` (204; 401 for a list not signed
+  by the pinned root; 409 for an older list or a lower epoch) and
+  `NodeIdentity.controlUrlEpoch`. The body schema is `SignedMachineList`, a
+  copy of control's, because agent.yaml does not reference control.yaml.
+- The specs branch merges `ac04e63` (row 17's contract): agent main pins it
+  and specs main does not have it yet, so a pin of this branch from main
+  alone would have taken row 17's fields out of the agent.
+
+**Decisions made while building**
+- **Two lists that name roots at different epochs are ordered by epoch, not
+  by version.** Each root numbers its own lists, and an old root that kept
+  writing could out-number the new one. A list with no `control` block (a
+  root older than row 4) is ordered by version as before.
+- **A list at an epoch above the one a node holds raises it**, even when the
+  node cannot move (the list names no address, or a loopback or link-local
+  one). The list is signed by the same identity as the bundle, so it fences
+  the old root the same way.
+- **A move drops the join token's root pin** (`controlPins` in `node.yaml`):
+  it was the old root's key; the new root's list names its own.
+- **The promoted mark is `standbyPromoted` in `agent.yaml`**, beside the
+  entry it is about, and it goes with the entry. It is set only when the copy
+  answers `role: control` at epoch N and the machine list held (signed)
+  names this machine the root at N. A copy that answers `control` without a
+  promotion (one started without its role) is not taken for the root.
+  `is_standby()` still names the copy, so the planner keeps its wiring (its
+  state directory and node name) and a restart starts it as the root on the
+  same copy; `standby.promoted()` and `is_root()` decide the routes.
+- **The promoted copy starts its node poller** (and the TLS-key watch when it
+  has a nodes name) at the promotion: nothing restarts it, and before this
+  row a promoted copy never polled.
+- **A root pushes to a node behind only on `controlUrlEpoch` when its list
+  names an address**; otherwise that node cannot move and the push would
+  repeat every minute for nothing. A node behind on `epoch` is always sent
+  the bundle again.
+- **The fallback remembers the last standby holder.** A promotion takes the
+  grant, so the new root's bundle names none. A node that restarts after
+  taking the new root's bundle but not its list has no holder to ask; the
+  new root's poll still reaches it.
+- **4b compares only on one version.** The root's version rides the log page
+  as a header; a standby on another version does not compare, and the root
+  does not judge its copy (`matches` absent). Otherwise a rolling update
+  replaces the copy every 10 minutes and reports it different. The root
+  computes `matches` itself, from the copy's digest at its own index; a pull
+  behind the root keeps the last answer.
+- **"Cannot reach the root at ..."** is in the node's log, said once per
+  silence. No field carries it to the console yet.
+
+**Acceptance.** `specs/scripts/root-moved-acceptance.py` runs in Pinned
+integration on Linux and Windows (L1 and W3, every profile), not on the LT1
+Docker harness: Windows runners cannot run Linux containers, and the shared
+harness's real start path gives each agent its machine port on a free port.
+The four agents advertise the runner's routable address, each on its own
+ports, so every call between them crosses a machine table to a machine port.
+The promotion is called at the copy's loopback port, not through the
+console. `standby-acceptance.py` step 7 now expects B's agent to report
+`hostsControl` and no standby after the promotion. Sabotage: ten new checks
+(the epoch rule, the fence, the loopback refusal, both conditions of the
+promoted mark, the 2-minute wait, both version gates, the 10-minute limit,
+the once-a-minute push), each caught by its unit test.
+
+**Not changed**
+- The bundle's own rule (`tokens.accepts_replacement`, row 35's file)
+  refuses a bundle at a higher epoch with a lower version. Bundle versions
+  are the log index, so a promoted copy's bundle is refused only where an
+  old root wrote past the index the copy was promoted at (a forced
+  promotion of a copy that was behind). Its list still moves the node, but
+  the node takes the new root's bundles only once its index passes.
+- **UI (Machines, `StandbyPanel.tsx`) is not built.** The contract carries
+  what it needs: `Node.lastSeenEpoch` for "still follows the old root",
+  `StandbyStatus.version` and `matches` for the standby's line. A follow-up
+  row in `ui`.
