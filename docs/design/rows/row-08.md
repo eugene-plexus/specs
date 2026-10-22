@@ -120,6 +120,7 @@ Linux and Windows run the `--label` stub checks. **Not in CI:** a reboot and sig
 - **MAC-ACCT: Choice 2.** Eugene runs on a Mac in an account of its own, as on Linux. This design is revised for it.
 - **MAC-KEY: Choice 1.** The passphrase is kept in a file that only Eugene's own account can read.
 - **R8-JOBSITE-MAC: Choice 1** (answered 2026-10-22, after the build). `--job-site` on a Mac with the daemon is refused and says why: a job site there would need root to run each person's worker, which is built for Linux only. A `--user` install keeps Job Sites, as before. This is what the branch builds (see "What building found").
+- 2026-10-22, R8-ENGINES-COPY: Choice 2. Every copied engine build is fetched again after the move.
 
 ## What building found (2026-10-21)
 
