@@ -140,3 +140,83 @@ Rows 36 (`machine_list.py`) and 45 (`client_tls.py`) are in this lane and come l
 - **Size:** M. About 350 lines in the agent, 120 in control and 120 in the UI. No split is needed.
 - **Risk:** a locked root does not probe the other machines. The 3-minute bound covers that.
 - **Risk:** the old key's client leaf is not revoked, because LT2 has no revocation. A stolen old key can impersonate the node to browsers for up to 90 days. Record this as a limit.
+
+## 8. What building found (2026-10-21)
+
+Branch `r3-machine-key` in specs, agent and control.
+
+**The offline machine (the orchestrator's check).**
+- It was stranded, and not only at the TLS check. The minute's pull asks
+  for the trust bundle first, over the pinned call the root's new key
+  refuses, and gave up there: the machine list, whose plain fallback already
+  existed, was never fetched. Now a pin refusal on the bundle fetches the
+  list first and asks again (`leaving.bundle_response`).
+- The list comes over TLS to the root's machine port with no key checked,
+  and in plain HTTP only when that port does not answer TLS. It is taken
+  only if it verifies against the root's identity key, which never changes.
+  So the capture holds no plain connection between machines.
+- Acceptance: `root-key-change` stops the worker (agent and driver) before a
+  second change of the root's key and starts it after the drop.
+
+**Order on the root.**
+- A list that names a key for the root's own node that its `controlPins` do
+  not is ignored by every other machine (`build_table`), and under required
+  that refuses their calls to the root's agent. So the door file names the
+  next key 1.5 s before the announcement (control reads it at most once a
+  second), and keeps the old key until the root has recorded the drop.
+- Control reads the door file whole each second: a modification time can
+  miss a rewrite of the same size.
+
+**Contract and record.**
+- `Node.tlsNextPin` is in applied state and in snapshots: `tlsPins` is
+  sorted, so the record could not say which key is next otherwise.
+- A third pin is refused by the schema (`tlsNextPin` is one string): 422,
+  not 400. The same key twice, or a next key with no current key, is 400.
+- A root that does not answer is waited for: the 3-minute bound applies only
+  to machines a root that answers still lists in `waitingOn`.
+- A node's announcements now go one at a time (a lock on its identity
+  store): the change announces beside the address loop.
+
+**Not built in this row.**
+- The console's **Change machine key** button and its progress lines: the
+  row's repositories were agent and control. Until a UI row lands, the
+  change starts from `POST /v1/node/machine-key` only, which the GUI
+  equality rule does not allow for long.
+
+**Limits.**
+- An open session made with the old key keeps running until it closes (the
+  gateway's pooled sessions); new handshakes get the new key.
+- The client doors' leaf for the old key is not revoked (LT2 has no
+  revocation), and its key stays in the client-TLS files until the new leaf
+  arrives, which is asked for at the switch.
+- An agent older than row 3 reports no list version, so a change of another
+  machine's key waits the full 3 minutes for it, and **a change of the
+  root's own key waits for every agent older than row 3, reachable or not**,
+  with no time bound (`notReady`).
+- **Machine lists carry no `exp`.** A replayed list newer than the one a
+  machine holds, but older than the current one, is accepted.
+- **A machine offline across a key change** done because the old key was
+  stolen still trusts the old key until it reaches the root again and takes
+  the new list.
+
+**The adversarial review (2026-10-21), and what changed.** Four blockers,
+each now a fault-injection test that failed first:
+1. **node.yaml written after memory took the switch.** A failed write left
+   memory switched, so a retry reported done and announced the old key; a
+   restart then presented a key the root refused. Now node.yaml is written
+   before the record is held, a switch it cannot keep puts the old key back
+   on the port, and the status keeps the observed cause.
+2. **An agent older than row 3, off for the whole change of the root's
+   key**, came back with only the old root key and never recovered (its pull
+   stops at the refused bundle). The root now remembers which machines have
+   reported a list version (`notReady` names the rest), and the root's own
+   change does not switch while any is named, with no time bound. Another
+   machine's change is not held up.
+3. **The list version was reported before the children could read the
+   table** (or when the file write failed, and taking the same list again
+   did not retry). Now only the version in the file, written, and past the
+   children's one-second cache is reported.
+4. **Done on the root's acknowledgement.** A root restarted sealed takes the
+   drop but signs nothing and keeps serving both keys. Now done needs a
+   verified signed list that names the new key alone; until then the status
+   says what it waits for, naming a sealed root.
