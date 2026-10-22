@@ -435,6 +435,9 @@ jobs:
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
+      - name: Rotate a client key under a running stream, and record last use across a root restart (row 24)
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
+        run: python specs/scripts/ck-rotate-acceptance.py
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
