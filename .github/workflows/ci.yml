@@ -658,7 +658,7 @@ jobs:
         if: always()
         run: >-
           python3 specs/scripts/lt1-machine-tls-acceptance.py --sources .
-          --output "$RUNNER_TEMP/lt1-key-change" --labels key-change,root-key-change
+          --output "$RUNNER_TEMP/lt1-key-change" --labels key-change,root-key-change,key-schedule
       - uses: actions/upload-artifact@v4
         if: always()
         with:
