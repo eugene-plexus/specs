@@ -378,8 +378,9 @@ def variant(original: str, *, version: str | None = None, old_env: bool = False,
     if old_env:
         block = re.sub(r"^    AUDIO_REALTIME_[A-Z_]+: .*\n", "", block, flags=re.M)
     if broken:
+        # Swapped for a variable, not added: the entry is at the contract's 64-variable limit.
         block = block.replace('    ENABLE_PLUGINS: "true"\n',
-                              '    ENABLE_PLUGINS: "true"\n    DATABASE_URL: "nosuchdialect://x"\n', 1)
+                              '    DATABASE_URL: "nosuchdialect://x"\n', 1)
         assert "nosuchdialect" in block
     return original[:start] + block + original[end:]
 
@@ -454,6 +455,7 @@ def update_run(token: str) -> None:
             text = json.dumps(state)
             check("97", "on a Linux system install the update is refused and names its cause",
                   state.get("state") == "failed" and "systemd account of its own" in text, text[:500])
+            wait_running(token)
             _, now = api("GET", f"{AGENT}/v1/apps/{APP}", token)
             check("98", "and nothing changed: the old version still runs",
                   (now or {}).get("version") == OLD_VERSION and (now or {}).get("status") == "running",
