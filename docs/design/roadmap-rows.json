@@ -1599,7 +1599,7 @@
    "title": "Node keys that cannot be exported, and freeze enforcement",
    "summary": "Node keys that cannot be exported, and freeze enforcement",
    "from": "TOK-RES",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high",
    "who": "multi-machine",
@@ -1608,22 +1608,27 @@
    "lane_order": 5,
    "repos": [
     "agent",
-    "control"
+    "ui",
+    "specs"
    ],
-   "contract": "?",
+   "contract": "agent.yaml",
    "hot_files": [
     "agent/src/eugene_plexus_agent/node_identity.py",
-    "agent/src/eugene_plexus_agent/keyring_store.py",
-    "control/src/eugene_plexus_control/tokens.py"
+    "agent/src/eugene_plexus_agent/trust.py",
+    "agent/src/eugene_plexus_agent/client_tls.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     3
    ],
    "design_docs": [
+    "rows/row-46.md",
     "per-node-token-keys.md"
    ],
-   "calls": [],
+   "calls": [
+    "R46-SCOPE",
+    "R46-FREEZE"
+   ],
    "issue": 73
   },
   {
