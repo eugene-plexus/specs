@@ -118,7 +118,7 @@ class FolderAccessContractTests(unittest.TestCase):
         )
 
     def test_requests_bound_paths_and_default_to_read(self) -> None:
-        for name in ("FolderAccessRequest", "FolderAccessReleaseRequest"):
+        for name in ("FolderAccessRequest",):
             with self.subTest(schema=name):
                 request = self.schemas[name]
                 self.assertEqual(request["type"], "object")
@@ -133,8 +133,12 @@ class FolderAccessContractTests(unittest.TestCase):
         self.assertEqual(mode["enum"], ["read", "write"])
         self.assertEqual(mode["default"], "read")
         self.assertEqual(
-            set(self.schemas["FolderAccessReleaseRequest"]["properties"]), {"path"}
+            set(self.schemas["FolderAccessReleaseRequest"]["properties"]),
+            {"path", "id"},
         )
+        release = self.schemas["FolderAccessReleaseRequest"]
+        self.assertIn("Exactly one", release["description"])
+        self.assertEqual((release["minProperties"], release["maxProperties"]), (1, 1))
 
     def test_records_require_effective_state_and_provenance(self) -> None:
         record = self.schemas["FolderAccess"]

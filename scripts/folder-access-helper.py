@@ -4,8 +4,6 @@ No imports from the agent or files it owns. All filesystem changes use held
 file descriptors. The command line accepts identifiers, never paths or ACLs.
 """
 
-from __future__ import annotations
-
 import contextlib
 import ctypes
 import hashlib
@@ -25,7 +23,16 @@ SYSTEM = tuple(
 
 
 def run(*args, **kwargs):
-    result = subprocess.run(args, capture_output=True, text=True, check=False, **kwargs)
+    try:
+        result = subprocess.run(
+            args, capture_output=True, text=True, check=False, **kwargs
+        )
+    except FileNotFoundError:
+        if args[0] in ("getfacl", "setfacl"):
+            raise ValueError(
+                "The acl package is missing. Folder access needs getfacl and setfacl."
+            ) from None
+        raise
     if result.returncode:
         raise ValueError(
             result.stderr.strip()
@@ -39,30 +46,50 @@ def identity(fd):
     data = ctypes.create_string_buffer(256)
     libc = ctypes.CDLL(None, use_errno=True)
     if (
-        libc.statx(fd, b"", 0x1000, 0x1800, data)
-        or struct.unpack_from("=I", data)[0] & 0x1800 != 0x1800
+        libc.statx(fd, b"", 0x1000, 0x800, data)
+        or struct.unpack_from("=I", data)[0] & 0x800 != 0x800
     ):
         raise ValueError(
-            "The filesystem does not expose folder creation time and mount identity."
+            "The kernel or filesystem does not expose folder creation time."
         )
     info = os.fstat(fd)
     seconds, nanos = struct.unpack_from("=qI", data, 80)
     return [
-        info.st_dev,
         info.st_ino,
         seconds,
         nanos,
-        struct.unpack_from("=Q", data, 144)[0],
     ]
 
 
+def same_identity(observed, expected):
+    return observed == (expected[1:4] if len(expected) == 5 else expected)
+
+
 def acl(fd):
-    text = run("getfacl", "-cpn", "--", f"/proc/self/fd/{fd}", pass_fds=(fd,))
+    text = run("getfacl", "-cpnE", "--", f"/proc/self/fd/{fd}", pass_fds=(fd,))
+    return parse_acl(text)
+
+
+def parse_acl(text):
     return dict(
         (line.rsplit(":", 1)[0], line.rsplit(":", 1)[1].split()[0])
         for line in text.splitlines()
         if line and not line.startswith("#")
     )
+
+
+def acls(fds):
+    text = run(
+        "getfacl",
+        "-cpnE",
+        "--",
+        *("/proc/self/fd/" + str(fd) for fd in fds),
+        pass_fds=tuple(fds),
+    )
+    blocks = text.strip().split("\n\n")
+    if len(blocks) != len(fds):
+        raise ValueError("getfacl returned an incomplete folder permission plan.")
+    return [parse_acl(block) for block in blocks]
 
 
 def bits(value):
@@ -225,7 +252,7 @@ def tree(fd, mount, names=()):
                 "link: A file inside this folder has more than one hard link."
             )
     ident = identity(fd)
-    if ident[-1] != mount:
+    if info.st_dev != mount:
         raise ValueError("drive_root: A mounted descendant is not supported.")
     yield names, fd, ident
     if stat.S_ISDIR(os.fstat(fd).st_mode):
@@ -244,69 +271,86 @@ def tree(fd, mount, names=()):
                 os.close(child)
 
 
+def batches(fd, size=128):
+    """Bound retained descriptors and subprocess argument size."""
+    pending = []
+    try:
+        for names, child, ident in tree(fd, os.fstat(fd).st_dev):
+            pending.append((names, os.dup(child), ident))
+            if len(pending) == size:
+                yield pending
+                for _, held, _ in pending:
+                    os.close(held)
+                pending = []
+        if pending:
+            yield pending
+    finally:
+        for _, held, _ in pending:
+            os.close(held)
+
+
 def grant(fd, group, write, ledger, save):
-    """Also called unprivileged on private temporary trees by acceptance tests."""
-    # Preflight the entire tree before the first change (including masked entries).
+    """Preflight and save a complete plan before the first ACL change."""
     ledger["group"] = group
-    ledger["seen"] = []
-    for names, child, ident in tree(fd, identity(fd)[-1]):
-        plan(acl(child), group, write, stat.S_ISDIR(os.fstat(child).st_mode))
-        ledger["seen"].append([names, ident])
     ledger["items"] = []
-    for names, child, ident in tree(fd, identity(fd)[-1]):
-        before = acl(child)
-        after = plan(before, group, write, stat.S_ISDIR(os.fstat(child).st_mode))
-        if before == after:
-            continue
-        ledger["items"].append(
-            dict(names=names, identity=ident, before=before, after=after)
-        )
-        save(ledger)  # write ahead: interrupted grants can still be released
-        set_acl(child, after)
-    return bool(ledger["items"])
+    for batch in batches(fd):
+        for (names, child, ident), before in zip(batch, acls([c for _, c, _ in batch])):
+            after = plan(before, group, write, stat.S_ISDIR(os.fstat(child).st_mode))
+            if before != after:
+                ledger["items"].append(
+                    dict(names=names, identity=ident, before=before, after=after)
+                )
+    save(ledger)
+    plans = {tuple(item["names"]): item for item in ledger["items"]}
+    for batch in batches(fd):
+        content, held = [], []
+        for names, child, ident in batch:
+            item = plans.get(names)
+            if item is None:
+                continue
+            if not same_identity(ident, item["identity"]):
+                raise ValueError(
+                    "A folder item was replaced before its permission change."
+                )
+            held.append(child)
+            content.append(
+                "# file: /proc/self/fd/"
+                + str(child)
+                + "\n"
+                + "\n".join(k + ":" + v for k, v in item["after"].items())
+                + "\n\n"
+            )
+        if held:
+            run("setfacl", "--restore=-", input="".join(content), pass_fds=tuple(held))
+    return bool(plans)
 
 
 def revoke(fd, ledger):
-    # POSIX ACLs do not mark an entry as inherited. A new child with this
-    # group's rights cannot be distinguished from a by-hand addition. Leave
-    # everything in place and report changed_outside rather than claim removal.
-    if ledger["items"]:
-        known = {
-            (tuple(names), tuple(ident)) for names, ident in ledger.get("seen", [])
-        }
-        for names, child, ident in tree(fd, identity(fd)[-1]):
-            if (
-                tuple(names),
-                tuple(ident),
-            ) not in known and f"group:{ledger['group']}" in acl(child):
-                ledger["refusal"] = (
-                    f"{'/'.join(names)} has group permissions whose origin is not recorded by Eugene."
+    # This group belongs solely to Eugene. Revoke its entry throughout the
+    # current tree, including children created since grant, preserving masks
+    # and every other principal's ACL (including subsequent chmod changes).
+    if not ledger["items"]:
+        return True
+    group = ledger["group"]
+    for batch in batches(fd):
+        entries = acls([c for _, c, _ in batch])
+        for default in (False, True):
+            key = ("default:" if default else "") + "group:" + group
+            held = [
+                child
+                for (_, child, _), current in zip(batch, entries)
+                if key in current
+            ]
+            if held:
+                run(
+                    "setfacl",
+                    "-n",
+                    "-x",
+                    ("d:" if default else "") + "g:" + group,
+                    "--",
+                    *("/proc/self/fd/" + str(child) for child in held),
+                    pass_fds=tuple(held),
                 )
-                return False
-    # Verify every recorded item before touching any of them.
-    with contextlib.ExitStack() as stack:
-        changes = []
-        for item in ledger["items"]:
-            parent = fd
-            for name in item["names"]:
-                child = os.open(
-                    name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent
-                )
-                stack.callback(os.close, child)
-                parent = child
-            if identity(parent) != item["identity"]:
-                ledger["refusal"] = (
-                    f"{'/'.join(item['names']) or 'The folder'} was replaced."
-                )
-                return False
-            if acl(parent) != item["after"]:
-                ledger["refusal"] = (
-                    f"{'/'.join(item['names']) or 'The folder'} has permissions changed outside Eugene."
-                )
-                return False
-            changes.append((parent, item["before"]))
-        for child, before in changes:
-            set_acl(child, before)
     return True
 
 
@@ -319,12 +363,13 @@ def dropin(app, group, records):
         if record.get("write") and not record.get("removed")
     ]
     # systemd's quoted string syntax, including literal percent specifiers.
-    quoted = [json.dumps(p.replace("%", "%%"), ensure_ascii=True) for p in paths]
+    quoted = ["-" + json.dumps(p.replace("%", "%%"), ensure_ascii=False) for p in paths]
     (directory / "20-folders.conf").write_text(
         "[Service]\nSupplementaryGroups="
         + group
         + "\n"
-        + ("ReadWritePaths=" + " ".join(quoted) + "\n" if paths else "")
+        + ("ReadWritePaths=" + " ".join(quoted) + "\n" if paths else ""),
+        encoding="utf-8",
     )
     run("systemctl", "daemon-reload")
 
@@ -379,6 +424,10 @@ def running_access(app, group, path, write):
 
 
 def main():
+    if sys.version_info < (3, 10):
+        raise ValueError(
+            "Folder access needs Python 3.10 or newer at /usr/bin/python3."
+        )
     import grp
 
     prefix, account, verb, app, mode, ident = sys.argv[1:]
@@ -428,15 +477,20 @@ def main():
                     str(Path(prefix) / "apps/ctl" / (ident + ".identity")),
                 )
             )
-            if identity(fd) != expected:
+            if not same_identity(identity(fd), expected):
                 raise ValueError(
                     "The folder was replaced before the permission change."
                 )
-            # Network filesystems and bind mounts have their own mount id.
-            mount = identity(fd)[-1]
-            mounts = Path("/proc/self/mountinfo").read_text().splitlines()
-            line = next(line for line in mounts if int(line.split()[0]) == mount)
-            fs = line.split(" - ")[1].split()[0]
+            # Mount IDs are transient; use the longest containing mount
+            # only to reject remote filesystems, never as persistent identity.
+            mounts = []
+            for line in Path("/proc/self/mountinfo").read_text().splitlines():
+                point = re.sub(
+                    r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), line.split()[4]
+                )
+                if path == point or path.startswith(point.rstrip("/") + "/"):
+                    mounts.append((len(point), line.split(" - ")[1].split()[0]))
+            fs = max(mounts)[1]
             if fs.startswith(("nfs", "cifs", "smb", "9p", "fuse.ssh")):
                 raise ValueError("network: Network folders are not supported.")
             record = dict(
@@ -468,8 +522,13 @@ def main():
         if record.get("removed"):
             print(json.dumps(dict(removed=True)))
             return
-        with opened(record["path"]) as fd:
-            removed = identity(fd) == record["identity"] and revoke(fd, record)
+        try:
+            with opened(record["path"]) as fd:
+                removed = same_identity(identity(fd), record["identity"]) and revoke(
+                    fd, record
+                )
+        except FileNotFoundError:
+            removed = True  # Also remove a deleted folder's namespace allowance.
         if removed:
             record["removed"] = True
             write_record(target, record)
