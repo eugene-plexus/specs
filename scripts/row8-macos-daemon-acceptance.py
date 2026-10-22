@@ -729,8 +729,18 @@ def phase_move(installer: Path, ctx: dict) -> None:
           bool(pid) and ps_field(pid, "user") == ACCOUNT and isinstance(status, dict)
           and status.get("initialized") is True and status.get("unlocked") is False,
           {"pid": pid, "user": ps_field(pid, "user") if pid else None, "status": status})
-    _, login = api("POST", f"{base}/v1/auth/login", body={"passphrase": PASSPHRASE})
-    token = (login or {}).get("sessionToken")
+    # The one sign-in the move asks for, once the root behind the machine
+    # port answers: a person whose first try meets a root still starting
+    # signs in again (seen on macos-15, where the first try came too soon).
+    wait_for(lambda: api("GET", f"{ctx['control']}/healthz")[0] == 200, 120)
+
+    def signed_in():
+        status, body = api("POST", f"{base}/v1/auth/login", body={"passphrase": PASSPHRASE})
+        if status != 200:
+            fact("sign-in after the move answered", (status, str(body)[:200]))
+        return (body or {}).get("sessionToken") if status == 200 else None
+
+    token = wait_for(signed_in, 120, 5)
     _, node = api("GET", f"{base}/v1/node", token)
     node_yaml = root_read(PREFIX / "node.yaml")
     state_files = sorted(Path(p).name for p in sudo("sh", "-c", f"ls {PREFIX}/library-state*.json", timeout=20).stdout.split())

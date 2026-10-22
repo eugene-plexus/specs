@@ -119,6 +119,7 @@ Linux and Windows run the `--label` stub checks. **Not in CI:** a reboot and sig
 
 - **MAC-ACCT: Choice 2.** Eugene runs on a Mac in an account of its own, as on Linux. This design is revised for it.
 - **MAC-KEY: Choice 1.** The passphrase is kept in a file that only Eugene's own account can read.
+- **R8-JOBSITE-MAC: Choice 1** (answered 2026-10-22, after the build). `--job-site` on a Mac with the daemon is refused and says why: a job site there would need root to run each person's worker, which is built for Linux only. A `--user` install keeps Job Sites, as before. This is what the branch builds (see "What building found").
 
 ## What building found (2026-10-21)
 
@@ -133,7 +134,7 @@ Branch `r8-installer-pass` in specs, agent and ui.
 - **The engine store is copied, and the old one deleted only after the daemon answers**, so a move that is put back finds it where it was. These are downloaded builds, not a person's data.
 - **A move needs the LaunchAgent and a start.** `--no-start` is refused before anything changes (without a start the move cannot be checked, and could end with two startup jobs). A per-user folder with no LaunchAgent is refused with the steps (re-run with `--user` once, then again without).
 - **What is installed decides `--update`, `--uninstall` and `--job-site` on a Mac**, as `--uninstall` already did on Linux: with the person's LaunchAgent and no daemon they act on the LaunchAgent install. `--update` never moves an install.
-- **A job site beside the daemon is refused**: "a job site ... is built for Linux system installs. On a Mac a job site joins beside a per-user install (--user)". Before row 8 a Mac job site joined beside the LaunchAgent as the person; that still works with `--user`. Building it for the daemon needs the Linux root-run site host on macOS (launchd units, `dscl`), which is a row of its own. **Call for Troy.**
+- **A job site beside the daemon is refused**: "a job site ... is built for Linux system installs. On a Mac a job site joins beside a per-user install (--user)". Before row 8 a Mac job site joined beside the LaunchAgent as the person; that still works with `--user`. Building it for the daemon needs the Linux root-run site host on macOS (launchd units, `dscl`), which is a row of its own. Troy confirmed this as R8-JOBSITE-MAC Choice 1 (2026-10-22).
 - **`install.ps1` also refuses a label ending in a backslash**, the second argument PowerShell 5.1 passes to a native program wrongly; the console's "Shown as" says both before the command is copied.
 - **Account numbers** are taken from 400 down to 200, free as both a user and a group id; the group gets the same number when it can.
 
