@@ -1999,9 +1999,10 @@
     "gateway/src/eugene_plexus_gateway/responses.py",
     "gateway/src/eugene_plexus_gateway/server_tools.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-57.md",
     "openai-inference-compatibility.md"
    ],
    "calls": [],
