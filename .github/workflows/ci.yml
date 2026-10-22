@@ -706,6 +706,52 @@ jobs:
     with:
       agent_ref: ${{ needs.plan.outputs.agent_ref }}
 
+  folder-access:
+    needs: plan
+    name: Row 23 folder access (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          path: specs
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/agent
+          ref: ${{ needs.plan.outputs.agent_ref }}
+          path: agent
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/workbench
+          ref: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          path: workbench
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install acceptance dependencies
+        run: python -m pip install -e 'agent[dev,service]' -e 'workbench[dev]'
+      - name: Check the Linux runner has ACL tools
+        if: runner.os == 'Linux'
+        run: command -v setfacl && command -v getfacl
+      - name: Real folder permissions, refusal causes and operator authentication
+        run: python specs/scripts/row23-folder-access-acceptance.py --report row23-report.json
+      - name: Keep folder access evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: row23-${{ matrix.os }}
+          path: row23-report.json
+          if-no-files-found: warn
+
   r7-launch-boundary:
     needs: plan
     if: needs.plan.outputs.launch == 'true'

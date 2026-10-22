@@ -10,8 +10,8 @@ local MCP programs remain owner-only. This slice does not sandbox them.
 In **Toolbox · Tools → Folders · File tools**, the install owner names an
 existing host folder, chooses a person who has signed into Workbench, and
 optionally enables text writes. The default is read-only. A grant does not
-change host permissions. The machine administrator provisions those for
-Workbench's existing C1 account first. This is the host's path, not a path
+change host permissions. The owner gives its C1 account access from Eugene's
+console first. This is the host's path, not a path
 on the browser's machine; network/device paths on Windows are unsupported.
 
 Grants are immutable. Remove one and create another to change its folder,
@@ -86,42 +86,48 @@ References for the OS primitives:
 The administrator chooses a dedicated project folder rather than granting
 a drive, home or install tree. Keep host ACLs narrow: this gives the entire
 Workbench app account access, while Workbench's grants decide which signed-in
-person can use its built-in tools. Revoking a grant does not remove OS ACLs.
+person can use its built-in tools. Removing the last Workbench grant for a
+folder releases only the OS permission Eugene added. Manual permissions stay.
 
+On Workbench's app page in Eugene, open **Folders Workbench can open**.
+Choose an existing shared project folder with Browse, or type its path.
+Read only is the default. Choose Read and write only when needed.
+Confirm the named account and "everything in it" before access is added.
+The page reports applying, ready, failed, or permissions changed outside
+Eugene. A failure names its cause. Items with their own protected Windows
+permissions are counted and left alone. Linux write access asks for a
+Workbench restart and says that running answers stop.
+
+Drive and mount roots, system folders, Eugene's own folders, every person's
+home, links and network paths are refused with a cause. Use a Job Site to
+work in your own folders: it runs as you and needs no app permission change.
+This section is unavailable where Workbench shares Eugene's own account;
+folder access needs a Windows service or Linux system install.
+
+### Expert override: manual host permissions
+
+The host's Security tab or ACL editor remains available. Permissions given
+by hand are not adopted by Eugene and stay when a managed grant is removed.
 On Windows, grant the service identity shown on Eugene's Workbench app page
-read/list permission, or modify permission when writes are intended, on
-that specific folder. The usual identity is
-`NT SERVICE\EugenePlexusApp-workbench`. Do not grant access to SYSTEM, all
-services or Everyone as a substitute. Existing children must have the
-intended inherited permissions. Workbench does not run `icacls` itself.
+read/list rights, or read and write rights when needed. The usual identity
+is `NT SERVICE\EugenePlexusApp-workbench`. Do not substitute SYSTEM,
+Everyone or all services. Do not grant delete rights for Workbench's text
+tools. Existing children must have the intended inherited permissions.
+Workbench never changes its own ACLs.
+Windows propagation checks each held file handle, including hard links,
+before changing permissions. Automatic child propagation is disabled.
 
-On Linux, use a dedicated folder under `/srv` and a stable group that only
-Workbench and the intended host users join. Do not assign persistent ACLs
-to the systemd dynamic UID: it can change after a restart. A machine
-administrator can add a drop-in for
-`eugene-plexus-app@workbench.service` containing:
-
-```ini
-[Service]
-SupplementaryGroups=workbench-project
-ReadWritePaths=/srv/workbench-project
-UMask=0007
-```
-
-Create the group first. Keep the project directory owned by root or a stable
-host user, so a recycled service UID cannot traverse it. Give it the group, group access,
-and its setgid bit so new files keep the stable group; provision existing
-files' group permissions too. Workbench creates files with mode 0660,
-subject to the service umask. Then reload systemd and restart Workbench.
-For read-only use, omit `ReadWritePaths` and give only read/list permissions.
-C1's home-directory protection and private install remain in force; do not
-turn those protections off to make a folder accessible. The acceptance run
-exercises this setup on a disposable runner, including a service restart.
-See systemd's [service execution documentation](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml)
-for `DynamicUser`, `SupplementaryGroups`, `ReadWritePaths` and `UMask`.
-Keep `DynamicUser` and its `RestrictSUIDSGID` protection enabled. The first
-service run exposed that this protection blocks `openat2`; the Linux adapter
-uses Landlock with ordinary no-link opens so neither protection is weakened.
+On Linux, use a shared project folder under `/srv`, and the stable
+`eapp-<hash>-files` group shown by Eugene. The system install makes this
+group at app start and puts it in `20-folders.conf`. Never give persistent
+ACLs to a dynamic UID. The root helper refuses writable parents and masked
+ACL entries before adding access. It records exact ACL deltas in its
+root-owned folder-access ledger. Write access also needs a `ReadWritePaths=`
+entry in the service drop-in, effective after restart. Do not weaken
+`DynamicUser`, `ProtectHome` or `RestrictSUIDSGID` to open a folder.
+If new POSIX group entries have no recorded origin, removal reports
+`changed_outside` and leaves the permissions in place. The host ACL editor
+is the override for those unrecorded permissions.
 
 ## Acceptance
 

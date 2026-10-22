@@ -92,6 +92,17 @@ def can_run_on_windows(job: dict) -> bool:
 
 
 class WiringTests(unittest.TestCase):
+    def test_row23_folder_access_uses_real_operating_systems(self) -> None:
+        job = workflow("ci.yml")["jobs"]["folder-access"]
+        self.assertEqual(
+            set(job["strategy"]["matrix"]["os"]), {"windows-latest", "ubuntu-24.04"}
+        )
+        self.assertEqual(job["defaults"]["run"]["shell"], "bash")
+        self.assertTrue(any(
+            "row23-folder-access-acceptance.py" in step.get("run", "")
+            for step in job["steps"]
+        ))
+
     def test_no_step_on_windows_runs_under_the_default_shell(self) -> None:
         """The runner's default pwsh fails a step only on the exit code of its last
         native command: a failing command followed by a passing one is green, and
