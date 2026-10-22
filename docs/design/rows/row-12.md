@@ -137,3 +137,10 @@ control `test_metrics_purpose_needs_read_metrics`; agent `test_engine_metrics_ar
 - **MET-PEOPLE.** Person labels in Prometheus, yes; in OTLP, off by default.
 - **MET-OTLP.** OTLP/HTTP JSON written by hand: no SDK, no gRPC, no new dependency. The OpenTelemetry Collector takes it.
 - **MET-ENGINE.** Engine metrics on each agent, not gathered through the gateway: Prometheus already reports a machine that is down, and gathering would slow every scrape on one slow machine.
+
+## Calls answered by Troy (2026-10-21)
+
+- **MET-AUTH: Choice 1.** A client key can get "May read metrics"; a second model reviews it.
+- **MET-PEOPLE: Choice 2.** No person names in any exported metric, the Prometheus page included. Series per key stay.
+- **MET-NAMES: Choice 2.** `eugene_*` names for every metric.
+- **MET-ENGINE: Choice 1.** Each agent serves its own engines' metrics.

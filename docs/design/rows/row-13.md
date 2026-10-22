@@ -190,3 +190,11 @@ Then one acceptance run, and one review of the token change.
 - **DI-C3:** ask before switching on a machine with one replica. Built as recommended.
 - **The check's thresholds.** Recommended: at most 5% slower, and at least 99.0% same top token. Kernels change between builds, so the answers are never bit-exact.
 - **Drain grace.** Recommended: cut after 120 s, editable per drain and in the gateway config, rather than wait without a limit. An update must end.
+
+## Calls answered by Troy (2026-10-21)
+
+- **DI-C3: one replica at a time, when the rest can carry the load.** With two or more replicas, Eugene updates one replica at a time, and only while the others can carry the current demand (measured from the queue and the slots in use). Otherwise it waits.
+- **DI-C3b: Choice 3.** A model with only one copy switches to the new build at once. Requests wait in the queue during the restart.
+- **R13-CHECK: the check is not a gate on numbers.** A new build may carry a security fix or a critical bug fix. Speed and agreement are measured and shown, and never block.
+- **R13-CHECK-2: Choice 1.** A build that cannot load a model, crashes, or returns an error instead of an answer is not used for that model, and the page says what failed ("b11800 cannot load qwen3-8b: unknown tensor type"). Other models move to it. Eugene tries the next build when it comes.
+- **R13-DRAIN: Choice 1, with a count.** Wait up to 120 seconds. The console shows how many answers the restart waits for.

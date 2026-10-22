@@ -539,3 +539,7 @@ Each of these is a check, not a finding.
 | DI-C3 | DI1: on a node with one replica, update at the next idle moment and revert by itself if the check fails, or ask first? | **Ask, showing the check's result:** "b11800: 3% faster, same answers. Switch now, or when idle?" The operator started the update, so one more click costs little. A silent revert would be a setting acting on its own. |
 | DI-C4 | DI2: is the disk prompt cache on by default, and with what limits? | **On for llama.cpp, 3 days, a 20 GiB cap.** It shows on the node's page with Clear. It is in the agent's private folder and is never readable as text through the UI. The privacy review decides whether chats under "the owner may not read people's chats" are cached at all. |
 | DI-C5 | Wrap DeepInfer as an experimental engine? | **No.** No server, no hardware our users own, one model. Revisit when it ships an online server and supports a consumer card. |
+
+## Calls answered by Troy (2026-10-21)
+
+- **DI-C4: yes, with a configurable cap.** The disk prompt cache is on for llama.cpp, kept 3 days, with a Clear button. The 20 GiB cap is a setting.

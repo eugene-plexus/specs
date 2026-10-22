@@ -151,3 +151,9 @@ Hot files of rows earlier in the LIB lane are free once those rows land.
 1. **The floor: 8 tok/s?** Recommend 8.
 2. **The size limit: 8 GiB, where the design said 6 GB?** Recommend 8 GiB. It adds the 14B class and still fits the free runner.
 3. **The 30B MoE is fast on a processor, but too big for the free runner.** Measure it on a larger, paid runner, or leave it unproven? Recommend unproven for now, because of the cost. Look again if CPU users ask for it.
+
+## Calls answered by Troy (2026-10-21)
+
+- **CPU-FLOOR: 4 tokens a second.**
+- **CPU-SIZE: Choice 1.** Up to 8 GiB.
+- **CPU-MOE: measured on Troy's workstation, 2026-10-21.** Qwen3.6-35B-A3B UD-Q4_K_M (22.1 GB), llama.cpp b10948 with CUDA hidden (`CUDA_VISIBLE_DEVICES=-1`, `-ngl 0`), `llama-bench -p 512 -n 128 -r 3 -t 16` on an AMD Ryzen 9 9950X (16 cores): **13.85 ± 0.27 tok/s decode, 175.4 ± 3.5 tok/s prompt.** Above the 4 tok/s floor. Other local test runs may have shared the processor, so the true figure can be a little higher. Record it as the class's `cpuProof` with `measuredOn` 2026-10-21 and the machine named; the monthly run on GitHub still skips it, and keeps this proof while the file and engine tag are unchanged.

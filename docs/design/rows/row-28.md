@@ -172,3 +172,10 @@ The Chrome check `test_versions_browser.py` adds a delete, then a compare.
 - **RB-C2: is a delete a true delete, like row 7's Delete now (MRC27)?** Recommended: yes. Checkpoint the WAL, and remove the rows from every `*.schema-N.bak` copy with row 7's routine. File an issue so that deleting a whole chat does the same.
 - **RB-C3: side by side now, a tree map later?** Recommended: yes. Side by side answers "which try was better?" with no new read API.
 - **RB-C4: Delete from here, on a message with one version?** Recommended: yes. Otherwise, removing a pasted secret from a chat without versions means deleting the whole chat.
+
+## Calls answered by Troy (2026-10-21)
+
+- **RB-C1: Choice 2.** A deleted branch is hidden for 30 days with an Undo.
+- **RB-C2: Choice 1.** After the 30 days, the delete is a true delete: the store, its backup copies and the past-chat index.
+- **RB-C3: Choice 1.** No tree map in this row.
+- **RB-C4: Choice 1.** "Delete from here" works on a message with one version.

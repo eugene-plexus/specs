@@ -222,3 +222,10 @@ After 26b comes the real-engine run.
 - **CTX-C2, when.** Recommended: 80% of the served window. For models outside the machines, also at 128,000 tokens, for cost and long-context accuracy. Both are settings.
 - **CTX-C3, folded or shown.** Recommended: folded, with Show them, so the person sees what the model no longer gets verbatim. The alternative leaves every message shown, with a band.
 - **CTX-C4, on by default** for existing chats, keeping summaries as new copies of chat text. Recommended: on, since it acts only where a chat would fail.
+
+## Calls answered by Troy (2026-10-21)
+
+- **CTX-C1: Choice 1.** The chat's own model writes the summary; an expert can choose another.
+- **CTX-C2: per group.** Each permission group sets its own percent, as a policy from row 70 (GROUP-POLICY Choice 2: group policies come first). This row reads it; the default is 80%, and cloud models with very large contexts also summarise at 128,000 tokens.
+- **CTX-C3: Choice 1.** Summarised messages fold away under "Earlier messages summarised. Show them".
+- **CTX-C4: Choice 1.** On by default, also for chats made before the update.
