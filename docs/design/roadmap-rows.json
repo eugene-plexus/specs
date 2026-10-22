@@ -1260,10 +1260,14 @@
     "control/src/eugene_plexus_control/machine_list.py",
     "agent/src/eugene_plexus_agent/enrollment.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
-   "calls": [],
+   "design_docs": [
+    "rows/row-36.md"
+   ],
+   "calls": [
+    "R36-ACCEPT"
+   ],
    "issue": 63
   },
   {
