@@ -1559,7 +1559,7 @@
    "title": "TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079",
    "summary": "TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079",
    "from": "LT2-ACME, LT2-CA",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high",
    "who": "businesses",
@@ -1568,7 +1568,8 @@
    "lane_order": 6,
    "repos": [
     "agent",
-    "control"
+    "control",
+    "ui"
    ],
    "contract": "control.yaml? agent.yaml?",
    "hot_files": [
@@ -1576,12 +1577,16 @@
     "agent/src/eugene_plexus_agent/entrypoint.py",
     "agent/src/eugene_plexus_agent/client_tls.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-45.md",
     "tls-for-clients.md"
    ],
-   "calls": [],
+   "calls": [
+    "R45-TAILNET",
+    "R45-WILDCARD"
+   ],
    "issue": 72
   },
   {

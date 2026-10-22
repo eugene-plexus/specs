@@ -99,7 +99,7 @@ between machines). The next release fits after row 6.
 | 73 | **Eugene installs and updates vLLM, as it does llama.cpp.** It picks the build for the machine's GPU and CUDA, keeps two builds, checks a new one before switching (row 13's check), and supervises it | Troy, 2026-10-21 ("supported like llama.cpp eventually") | L | high (installs software) | vLLM users, businesses | After row 42 (vLLM from its official container) and row 13 (checked engine updates). Needs a design |
 | 43 | **Hardware health readout, and restarting on the cards that are left** | HWR, DI6 | M | low | multi-GPU | Host history already has temperatures |
 | 44 | **Move a conversation's cache before planned maintenance** | DI2b | L | high | multi-machine | Needs rows 13 and 15 |
-| 45 | **TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079** | LT2-ACME, LT2-CA | M | high | businesses | |
+| 45 | **TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079** | LT2-ACME, LT2-CA | L | high | businesses | Designed (`rows/row-45.md`): 45a header deadline, 45b tailnet certificates, 45c the owner's domain by DNS-01 (lego), 45d replace the CA. Calls R45-TAILNET, R45-WILDCARD |
 | 46 | **Node keys that cannot be exported, and freeze enforcement** | TOK-RES | M | high | multi-machine | |
 | 47 | **Shared team knowledge, and sharing a project** | MRC25, MV7 sharing | L | high | businesses, MSPs | Call MRC25 |
 | 48 | **The Library at scale.** Paginate `/v1/models`, then design an answer to "the Library is down" | M2-PAGE, LIB-RED | S, then L | cross | businesses | Redundancy is design first |
