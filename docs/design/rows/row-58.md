@@ -6,25 +6,28 @@ inference-driver#7 (Gemini speech in mp3 and opus), `gemini-provider.md`
 (calls G1-G6; GEM-x), MRC23 (`dimensions`: "pass it where a driver can
 later"), the Anthropic door's R4 measurement as the model for 58a.
 
-## 58a. Measure what real clients send (S)
+## 58a. What clients send (measured; one more, S)
 
-Before code, as R4 did for the Anthropic door: point Gemini CLI and a
-script on Google's GenAI SDK (Python `google-genai`, and the JavaScript
-`@google/genai` Gemini CLI uses) at a throwaway listener on a port away
-from 8079-8083, and record:
-- whether and how each takes another base URL (an environment variable,
-  `http_options.base_url`, a settings file);
-- the paths (`v1beta/models/{model}:generateContent`,
-  `:streamGenerateContent?alt=sse`, `:countTokens`, `models`), and how the
-  key arrives (`x-goog-api-key` or `?key=`);
-- the body fields they actually send (`contents`/`parts`,
-  `systemInstruction`, `tools` with `functionDeclarations` and
-  `googleSearch`, `toolConfig`, `generationConfig` with `thinkingConfig`
-  and `responseSchema`, `safetySettings`) and the stream's framing.
+Gemini CLI 0.64.0 was measured on 2026-10-20 (`gemini-door.md`):
+`GOOGLE_GEMINI_BASE_URL` redirects it; the key arrives in
+`x-goog-api-key`; paths are under `/v1beta`; one prompt makes a
+structured-output routing call to `gemini-3.5-flash-lite`
+(`responseMimeType: application/json` with `responseJsonSchema`, retried
+five times if the answer does not parse) and a streamed turn to
+`gemini-3.1-pro-preview` with `functionDeclarations` using
+`parametersJsonSchema`, and `thinkingConfig {includeThoughts, thinkingLevel}`.
+This row adds the Python `google-genai` SDK's capture (its base URL
+option, `?key=` or header, `countTokens`, `models`) to that record.
 
-Written to `docs/acceptance/gemini-clients-measurement.md`. If Gemini CLI
-cannot take another base URL, the door still serves the SDKs, and the
-record says so.
+### Model names (call R58-NAMES)
+
+Gemini CLI asks for Google's model names. The door maps any model name it
+does not know to an install role: by default `role:chat` for both the
+turn and the routing call, so Gemini CLI works on day one; the response's
+`modelVersion` and the envelope headers name the model that answered. The
+owner can map names to other models or roles on the gateway's settings
+("Gemini model names"). A name that is an Eugene model id is used as it
+is (`gemini --model <id>`).
 
 ## 58b. The door (M)
 
@@ -44,11 +47,11 @@ record says so.
   | `contents[].parts` text, `inlineData` (images, audio, PDF) | messages and content parts, within today's attachment limits |
   | `functionCall`, `functionResponse` | tool calls and tool results |
   | `systemInstruction` | the system message |
-  | `tools.functionDeclarations`, `toolConfig.functionCallingConfig` (AUTO, ANY, NONE, `allowedFunctionNames`) | tools and `tool_choice` |
+  | `tools.functionDeclarations` (`parameters` or `parametersJsonSchema`), `toolConfig.functionCallingConfig` (AUTO, ANY, NONE, `allowedFunctionNames`) | tools and `tool_choice` |
   | `tools.googleSearch` | the hub's web search (as `web_search_options`) |
   | `generationConfig` temperature, topP, topK, maxOutputTokens, stopSequences, seed | the same settings |
-  | `responseMimeType: application/json` + `responseSchema` | structured output (JSON schema) |
-  | `thinkingConfig.thinkingBudget` / `includeThoughts` | reasoning effort and reasoning returned as `thought` parts |
+  | `responseMimeType: application/json` + `responseSchema` or `responseJsonSchema` | structured output (JSON schema) |
+  | `thinkingConfig.thinkingLevel` (LOW, MEDIUM, HIGH) or `thinkingBudget`, `includeThoughts` | reasoning effort, and reasoning returned as `thought` parts |
   | `candidateCount` > 1 | refused, naming it |
   | `safetySettings` | accepted, named in `x-eugene-plexus-ignored-settings` (no safety filter runs locally) |
 
@@ -95,14 +98,20 @@ acceptance).
 `specs/scripts/row58-gemini-door-acceptance.py` on row 2's harness with
 the fixture backend: the real `google-genai` Python SDK, pointed at the
 gateway, runs a chat, a streamed chat, a function-calling round trip,
-structured output and `count_tokens`; a request with `?key=` leaves no key
-in the gateway's log or metrics.
+structured output and `count_tokens`; Gemini CLI's two recorded requests
+(the routing call and the streamed turn, from `gemini-door.md`) are
+replayed and answered in Gemini's shape, the routing call's JSON parsing
+on the first try; a request with `?key=` leaves no key in the gateway's
+log or metrics.
 
 ## Size and risks
 
 M in total, about 3 days. Risks:
-- **Gemini CLI may not take another base URL** (58a finds out first).
+- **Gemini CLI's routing call** retries five times when structured output
+  fails to parse; the acceptance runs Gemini CLI's own request shapes from
+  the record, so that path is tested.
 - **Thinking and safety fields have no exact match locally;** each is
   mapped or named as ignored, never dropped silently.
 
-**Calls:** none.
+**Calls:** R58-NAMES (unknown Gemini model names go to the install's Chat
+role by default).
