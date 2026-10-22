@@ -1542,8 +1542,9 @@ paths:
         tools refusal, the refresh-and-wake, the settings profile, the
         image path, client-key admission, the truncation detector, the
         cascade and the recording. Every shape below was captured from a
-        real Codex CLI rather than read from the documentation
-        (`docs/acceptance/responses-measurement.md`).
+        real Codex CLI (`docs/acceptance/responses-measurement.md`), except
+        the row 57 client-run tools and compaction, whose wire shapes
+        follow OpenAI's documented API.
 
         ### Stateless: the conversation lives in the client
 
@@ -1586,10 +1587,50 @@ paths:
         header.
         `image_generation` runs
         through this install's image models (P8e, "Server-run tools"
-        above) or is refused with a 400 naming why. Every other
-        server-side tool (file search, code interpreter, computer use,
-        MCP, a custom or local-shell tool) is refused with a 400 naming
-        its type.
+        above) or is refused with a 400 naming why.
+
+        ### Client-run tools (row 57)
+
+        `custom`, `local_shell`, `shell` and `apply_patch` are offered to
+        the model as chat functions. The client executes the calls;
+        nothing executes inside the gateway. A `custom` tool becomes a
+        function with one string parameter `input`. Its call comes back
+        as `custom_tool_call` with `call_id`, `name` and the free-text
+        `input`. A grammar in `format` is included in the function
+        description, not enforced, and named as `tools[i].format` on
+        `x-eugene-plexus-ignored-settings`.
+
+        `local_shell` becomes a function with `command` (an array of
+        strings), `workdir`, `timeout_ms` and `env`. Its
+        `local_shell_call` carries an `action` of `type: exec`, with
+        `working_directory` for `workdir`. `shell` becomes a function
+        with `commands` (an array of strings), `timeout_ms` and
+        `max_output_length`; its `shell_call` carries those in `action`.
+        It uses the client's local environment; a hosted container is
+        refused because this gateway has no shell execution service.
+        `apply_patch` becomes a function with one string parameter
+        `input`, the patch, and returns an `apply_patch_call` with an
+        OpenAI `operation` (`type`, `path` and, for create or update,
+        `diff`).
+
+        These call items can be sent back as assistant history. Their
+        `custom_tool_call_output`, `local_shell_call_output`,
+        `shell_call_output` and `apply_patch_call_output` items become
+        tool results matched by `call_id`. The legacy local-shell
+        output's `id` is also accepted as its call id.
+        `tool_choice` can force any declared client-run tool, by name
+        for a function or custom tool, or by type for the other tools.
+
+        Tools still refused return a 400 naming their observed cause:
+        `computer_use_preview` (no local model is trained for it),
+        `code_interpreter` (Eugene has no sandbox; use a function tool and
+        run it yourself), `mcp` (remote MCP execution needs row 59), and
+        `file_search` (file search needs row 56).
+
+        A `compaction` input item from `/v1/responses/compact` is
+        decrypted and authenticated by this gateway and expanded into a
+        developer message containing the summary. An item that cannot
+        be authenticated is refused with a 400; see the compact endpoint.
 
         **A `namespace` tool is accepted** (2026-10-03): `{"type":
         "namespace", "name", "description", "tools": [...]}`, a group of
@@ -1732,8 +1773,8 @@ paths:
         run (P8). Refused with a 400 naming the
         field: every stateful field above, `top_logprobs` above 0 and the
         `message.output_text.logprobs` include, an `input_file` with a
-        `file_id` or a `file_url`, `tool_choice` forcing a tool that is
-        not a function, and any top-level field not listed in
+        `file_id` or a `file_url`, `tool_choice` forcing an undeclared or
+        refused tool, and any top-level field not listed in
         `ResponsesRequest`.
       requestBody:
         required: true
@@ -1798,6 +1839,90 @@ paths:
           description: |
             No backend answered within `requestTimeoutSeconds`. Not
             cascaded: the backend is almost certainly still computing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/responses/compact:
+    post:
+      tags: [inference]
+      operationId: compactResponse
+      summary: Compact a conversation into an opaque item the client can resend.
+      description: |
+        OpenAI's standalone compact shape. The gateway asks the requested
+        model for a summary using a fixed compaction prompt: what was
+        asked, decided and done, open threads, and files touched. The
+        summary has a budget of 4,000 output tokens. `instructions`, when
+        supplied, guides the summary alongside that fixed prompt.
+
+        The response's output ends with a `compaction` item. Its
+        `encrypted_content` is the summary, encrypted and authenticated
+        with the gateway's own key, made once in an owner-only
+        `compaction.key` file beside its config. The key survives a
+        restart. The item is opaque to the client and needs no response store.
+        The returned output is the next conversation window: send it
+        intact as `input` to `/v1/responses` or this endpoint. The gateway
+        decrypts a compaction item into a developer message for any model
+        serving that later request.
+
+        Admission, model routing, client-key scope, `localOnly`, the
+        16 MiB JSON body limit, timeouts and metrics use the same path as
+        `/v1/responses`. No client tool is executed while summarising.
+        This endpoint returns JSON only. It does not add chain loading:
+        `previous_response_id` remains refused until row 54 supplies it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResponsesCompactRequest'
+      responses:
+        '200':
+          description: A compacted conversation window ending with an opaque compaction item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResponsesCompactResponse'
+        '400':
+          description: |
+            An invalid request, a model nothing serves, a backend refusal,
+            or a compaction item's `encrypted_content` that could not be
+            authenticated (malformed, tampered with, or made by another
+            gateway or OpenAI). The error names the field and observed
+            cause and includes: "This compaction was made elsewhere; send
+            the conversation instead." The same error applies to a
+            compaction input on `/v1/responses`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '401':
+          description: Missing, malformed, expired or revoked credential.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '500':
+          description: The compaction key could not be read or created; the error names the observed cause.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '502':
+          description: Every eligible backend failed, or an upstream credential was refused.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '503':
+          description: A backend serves the model but is not ready, or the gateway is starting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIErrorResponse'
+        '504':
+          description: No backend answered within requestTimeoutSeconds.
           content:
             application/json:
               schema:
@@ -7931,8 +8056,10 @@ components:
             $ref: '#/components/schemas/ResponsesTool'
         tool_choice:
           description: |
-            `auto`, `none`, `required`, or `{"type": "function", "name": …}`.
-            Forcing any other tool type is refused.
+            `auto`, `none`, `required`, or an object forcing a declared
+            client-run tool: `function` or `custom` with `name`, or
+            `local_shell`, `shell` or `apply_patch` by `type`. An
+            undeclared or refused tool is a 400 naming the cause.
           oneOf:
             - type: string
               enum: [auto, none, required]
@@ -8066,6 +8193,70 @@ components:
         prompt:
           description: Refused when set. A stored prompt template exists only at OpenAI.
 
+    ResponsesCompactRequest:
+      type: object
+      description: |
+        Request for standalone compaction. The model and conversation are
+        required while no response store exists. Unknown top-level fields
+        are refused with a 400 naming the field.
+      additionalProperties: true
+      required:
+        - model
+        - input
+      properties:
+        model:
+          type: string
+          description: A model id from `GET /v1/models`, resolved against this install's slots.
+        input:
+          description: |
+            A string (one user message), or the conversation as a list of
+            items. Codex resends the whole conversation on every turn.
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                $ref: '#/components/schemas/ResponsesInputItem'
+        instructions:
+          type:
+            - string
+            - 'null'
+          description: Summary guidance carried alongside the fixed compaction prompt.
+        previous_response_id:
+          type:
+            - string
+            - 'null'
+          description: Refused when set until row 54 supplies chain loading; send input instead.
+
+    ResponsesCompactResponse:
+      type: object
+      description: |
+        OpenAI's compacted response, with output items ending with a
+        `compaction` item (`id`, `type: compaction`, `encrypted_content`).
+        Send the whole output array back as the next input window.
+      additionalProperties: true
+      required:
+        - id
+        - object
+        - created_at
+        - output
+        - usage
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: response.compaction
+        created_at:
+          type: integer
+          description: Unix timestamp in seconds.
+        output:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/ResponsesOutputItem'
+        usage:
+          $ref: '#/components/schemas/ResponsesUsage'
+
     ResponsesInputItem:
       type: object
       description: |
@@ -8079,7 +8270,17 @@ components:
         (`call_id`, `name`, `arguments` as a JSON string, and `namespace`
         when the call was to a member of a `namespace` tool),
         `function_call_output` (`call_id`, `output` as a string or a list
-        of `input_text` / `input_image` parts), and `reasoning`
+        of `input_text` / `input_image` parts), `custom_tool_call`
+        (`call_id`, `name`, `input`), `local_shell_call` and `shell_call`
+        (`call_id`, `action`), and `apply_patch_call` (`call_id`,
+        `operation`). Their `custom_tool_call_output`,
+        `local_shell_call_output`, `shell_call_output` and
+        `apply_patch_call_output` become tool results by `call_id`
+        (a legacy local-shell output may use `id` instead).
+        A `compaction` item's authenticated `encrypted_content` is
+        expanded into a developer message with the summary; an
+        unauthenticated item is a 400 (see `/v1/responses/compact`).
+        Also carried: `reasoning`
         (`content` of `reasoning_text` parts, `encrypted_content`), and a
         `web_search_call` handed back (P8), which becomes a line of the
         assistant's history naming the search and its sources, and an
@@ -8093,6 +8294,9 @@ components:
       properties:
         type:
           type: string
+        id:
+          type: string
+          description: Optional item id; also the legacy local-shell output's call id.
         role:
           type: string
         content:
@@ -8106,8 +8310,29 @@ components:
           description: The `namespace` tool a `function_call` was to (Codex 0.133 and later).
         arguments:
           type: string
+        input:
+          type: string
+          description: Free-text input of a custom tool call.
+        action:
+          $ref: '#/components/schemas/ResponsesToolAction'
+        operation:
+          $ref: '#/components/schemas/ResponsesPatchOperation'
+        status:
+          type: string
+          description: A call's status; an apply-patch output reports completed or failed.
+        max_output_length:
+          type:
+            - integer
+            - 'null'
+          description: Carried on shell output when present on its call.
         output:
-          description: A string, or a list of `input_text` / `input_image` parts.
+          description: |
+            A function or custom result is a string or a list of
+            `input_text` / `input_image` parts. A local-shell result is a
+            string. A shell result is a list of objects with `stdout`,
+            `stderr` and `outcome` (`type: exit` with `exit_code`, or
+            `type: timeout`). An apply-patch result is an optional string;
+            its status and observed failure text are carried to the model.
         summary:
           type: array
           items:
@@ -8117,6 +8342,67 @@ components:
           type:
             - string
             - 'null'
+          description: |
+            Reasoning's existing carrier, or a compaction item's encrypted
+            and authenticated summary. A compaction requires a nonempty
+            string that this gateway can authenticate before using it.
+
+    ResponsesToolAction:
+      type: object
+      description: |
+        A local-shell `exec` action has `type: exec`, `command`, `env`,
+        and optional `working_directory`, `timeout_ms` and `user`.
+        A shell action has `commands`, `timeout_ms` and
+        `max_output_length`. The gateway returns these for the client to
+        execute. Other action fields remain open for existing search items.
+      additionalProperties: true
+      properties:
+        type:
+          type: string
+        command:
+          type: array
+          items:
+            type: string
+        commands:
+          type: array
+          items:
+            type: string
+        working_directory:
+          type: string
+        env:
+          type: object
+          additionalProperties:
+            type: string
+        user:
+          type: string
+        timeout_ms:
+          type:
+            - integer
+            - 'null'
+        max_output_length:
+          type:
+            - integer
+            - 'null'
+
+    ResponsesPatchOperation:
+      type: object
+      description: |
+        OpenAI's file operation for a client-run apply-patch call.
+        `create_file` and `update_file` include a V4A `diff`;
+        `delete_file` needs only `path`. The client applies the operation
+        and reports completed or failed with its observed cause.
+      additionalProperties: true
+      required:
+        - type
+        - path
+      properties:
+        type:
+          type: string
+          enum: [create_file, delete_file, update_file]
+        path:
+          type: string
+        diff:
+          type: string
 
     ResponsesTool:
       type: object
@@ -8128,7 +8414,19 @@ components:
         endpoint). `web_search` runs on this install's search account, or
         is removed and named when it cannot (see the endpoint);
         `image_generation` runs on this install's image models, or is
-        refused naming why (P8e); any other `type` is refused.
+        refused naming why (P8e).
+
+        `custom` (`name`, `description`, `format`) maps to a function with
+        one string parameter `input`; `local_shell` maps to a function
+        with `command`, `workdir`, `timeout_ms` and `env`; `shell` maps
+        to a function with `commands`, `timeout_ms` and
+        `max_output_length`; `apply_patch` maps to a function with one
+        string parameter `input`, the patch. The client executes their
+        calls; the gateway translates them into their Responses item
+        types. A shell's `environment` may be absent or `type: local`;
+        hosted containers are refused because no shell execution service
+        exists here. Other tool types are refused with the causes and
+        alternatives on `/v1/responses`.
       additionalProperties: true
       required:
         - type
@@ -8152,13 +8450,43 @@ components:
           type:
             - boolean
             - 'null'
+        format:
+          type: object
+          description: |
+            A custom tool's free-text format, or grammar (Lark or regex).
+            Grammars are not enforced: they are included in the function
+            description and named as `tools[i].format` on
+            `x-eugene-plexus-ignored-settings`. No constrained output is claimed.
+          additionalProperties: true
+          required:
+            - type
+          properties:
+            type:
+              type: string
+              enum: [text, grammar]
+            syntax:
+              type: string
+              enum: [lark, regex]
+            definition:
+              type: string
+        environment:
+          type: object
+          description: |
+            A shell tool's execution environment. Only the client's local
+            environment is supported; hosted containers are refused.
+          additionalProperties: true
+          properties:
+            type:
+              type: string
 
     ResponsesResponse:
       type: object
       description: |
         A response object. `output` holds a `reasoning` item first when
         the model reasoned, then a `message` with one `output_text` part,
-        then one `function_call` item per tool call. The request's settings
+        then one call item per tool call, using the declared tool's type
+        (`function_call`, `custom_tool_call`, `local_shell_call`,
+        `shell_call` or `apply_patch_call`). The request's settings
         are echoed as OpenAI echoes them; `store` is always false.
       additionalProperties: true
       required:
@@ -8222,15 +8550,48 @@ components:
         "status", "result", "revised_prompt", "size", "quality",
         "background", "output_format", "action": "generate"}` -- `result`
         the base64 image, null and `status: failed` when none was made.
+
+        Client-run calls are `custom_tool_call` (`id`, `call_id`, `name`,
+        `input`), `local_shell_call` and `shell_call` (`id`, `call_id`,
+        `status`, `action`), and `apply_patch_call` (`id`, `call_id`,
+        `status`, `operation`). Standalone compact returns a `compaction`
+        item (`id`, `encrypted_content`, the encrypted and authenticated
+        summary); it can be passed back unchanged to any model here.
       additionalProperties: true
       required:
         - type
       properties:
         type:
           type: string
-          enum: [reasoning, message, function_call, web_search_call, image_generation_call]
+          enum:
+            - reasoning
+            - message
+            - function_call
+            - web_search_call
+            - image_generation_call
+            - custom_tool_call
+            - local_shell_call
+            - shell_call
+            - apply_patch_call
+            - compaction
         id:
           type: string
+        call_id:
+          type: string
+        name:
+          type: string
+        input:
+          type: string
+          description: Free-text input of a custom tool call.
+        status:
+          type: string
+        action:
+          $ref: '#/components/schemas/ResponsesToolAction'
+        operation:
+          $ref: '#/components/schemas/ResponsesPatchOperation'
+        encrypted_content:
+          type: string
+          description: An opaque compaction summary or the existing reasoning carrier.
 
     ResponsesUsage:
       type: object
@@ -8262,6 +8623,17 @@ components:
         One frame of the Responses event stream. The SSE `event:` name
         and `data.type` always agree, and every frame has a
         `sequence_number`.
+
+        Custom input uses `response.custom_tool_call_input.delta` (`delta`)
+        and `.done` (`input`), with `item_id` and `output_index`. Shell
+        commands use `response.shell_call_command.added`, `.delta` and
+        `.done`, with `command_index` and `output_index`; added and done
+        carry `command`, delta carries `delta`. All client call types,
+        including `local_shell_call` and `apply_patch_call`, also use
+        `response.output_item.added` and `response.output_item.done` with
+        their Responses `item`, including the complete action or operation
+        on done. Internal function-adapter arguments are not exposed as
+        function-call events for these client-run tools.
       additionalProperties: true
       required:
         - type
@@ -8282,6 +8654,11 @@ components:
             - response.reasoning_text.done
             - response.function_call_arguments.delta
             - response.function_call_arguments.done
+            - response.custom_tool_call_input.delta
+            - response.custom_tool_call_input.done
+            - response.shell_call_command.added
+            - response.shell_call_command.delta
+            - response.shell_call_command.done
             - response.completed
             - response.incomplete
             - response.failed
@@ -8289,6 +8666,22 @@ components:
           type: integer
         response:
           $ref: '#/components/schemas/ResponsesResponse'
+        item:
+          $ref: '#/components/schemas/ResponsesOutputItem'
+        item_id:
+          type: string
+        output_index:
+          type: integer
+          minimum: 0
+        command_index:
+          type: integer
+          minimum: 0
+        delta:
+          type: string
+        input:
+          type: string
+        command:
+          type: string
 
     SystemOneRequest:
       type: object
