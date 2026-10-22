@@ -910,6 +910,9 @@ jobs:
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
 
+      - name: Check folder access contract and credential boundaries (row 23)
+        run: python scripts/test_folder_access_contract.py
+
       - name: Validate every OpenAPI document
         shell: bash
         run: |
