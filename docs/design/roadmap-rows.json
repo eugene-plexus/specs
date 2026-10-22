@@ -1956,18 +1956,21 @@
    "lane": "GW",
    "lane_order": 13,
    "repos": [
-    "gateway",
-    "workbench"
+    "platform-store",
+    "gateway"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
     "gateway/src/eugene_plexus_gateway/server_tools.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
-    53
+    53,
+    71
    ],
    "design_docs": [
+    "rows/row-56.md",
+    "rows/row-53.md",
     "workbench-memory-and-documents.md"
    ],
    "calls": [
