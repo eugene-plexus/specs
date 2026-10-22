@@ -45,6 +45,17 @@ class ClientKeyRotateContractTests(unittest.TestCase):
         self.assertIs(entry["additionalProperties"], False)
         self.assertEqual(set(entry["properties"]), {"id", "expiresAt", "revokedAt"})
 
+    def test_log_page_names_the_new_ops(self) -> None:
+        schemas = self.control["components"]["schemas"]
+        ops = [
+            value
+            for schema in schemas.values()
+            if isinstance(schema, dict)
+            for value in (schema.get("properties", {}).get("op", {}).get("enum") or [])
+        ]
+        self.assertIn("rotateClientKey", ops)
+        self.assertIn("touchClientKey", ops)
+
     def test_rotate_paths(self) -> None:
         for doc in (self.control, self.agent):
             op = doc["paths"]["/v1/auth/client-keys/{keyId}/rotate"]["post"]

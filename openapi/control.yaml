@@ -5183,6 +5183,8 @@ components:
         - putClientKey
         - revokeClientKey
         - setClientKeyLimits
+        - rotateClientKey
+        - touchClientKey
         - putClientAdmission
         - rotateSigningKey
         - revokeSession
