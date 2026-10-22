@@ -38,6 +38,7 @@ PINNED_STEPS = {
     "ls5-preparation-checks.py": (FULL, "both"),
     "ls5-preparation-acceptance.py": (FULL, "both"),
     "runtime-stop-acceptance.py": (EVERY, "both"),
+    "row43-cards-left-acceptance.py": (EVERY, "linux"),
     "ls6-fit-acceptance.py": (FULL, "both"),
     "ls7-copy-acceptance.py": (FULL, "both"),
     "ls7b-facts-acceptance.py": (FULL, "both"),
