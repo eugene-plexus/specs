@@ -75,7 +75,8 @@ def lay_out(models: Path) -> Path:
     }
     (models / REPO).mkdir(parents=True, exist_ok=True)
     ls3.write_gguf(models / REPO / FIRST, kv)
-    _write(models / REPO / SECOND, b"second shard" * 100)
+    # A real second part: the Library reads every part since row 18 (specs#110).
+    ls3.write_gguf(models / REPO / SECOND, {**kv, "split.no": 1})
     data = models / "Strata-data"
     _write(data / ".eugene-engine-files", b"Strata's own files.\n")
     _write(data / "packs" / "iq2_xs" / "dense.bin", b"d" * 4096)
@@ -125,7 +126,7 @@ def lay_out(models: Path) -> Path:
     }
     (models / "small").mkdir(parents=True, exist_ok=True)
     ls3.write_gguf(models / "small" / LLAMA_FIRST, llama_kv)
-    _write(models / "small" / LLAMA_SECOND, b"llama second" * 100)
+    ls3.write_gguf(models / "small" / LLAMA_SECOND, {**llama_kv, "split.no": 1})
     return provenance
 
 
