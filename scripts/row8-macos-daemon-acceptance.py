@@ -666,8 +666,18 @@ def phase_refused_move(installer: Path, ctx: dict, workdir: Path) -> None:
         encoding="utf-8",
     )
     stand_in.chmod(0o755)
-    # The old folder's own files: the state the move copies and must not touch.
-    before = sorted(p.name for p in USER_PREFIX.iterdir() if p.is_file())
+    # The state the move copies and must not touch: the node's identity and
+    # the root's settings. (Not every byte: the agent that comes back
+    # rewrites its own run files and its announcement counter.)
+    def state() -> dict[str, str]:
+        found = {}
+        if (USER_PREFIX / "node.yaml").is_file():
+            found["node.yaml"] = sha("\n".join(identity_lines((USER_PREFIX / "node.yaml").read_text(encoding="utf-8"))))
+        if (USER_PREFIX / "control.yaml").is_file():
+            found["control.yaml"] = sha((USER_PREFIX / "control.yaml").read_text(encoding="utf-8"))
+        return found
+
+    before = state()
     # As `sudo sh install.sh` runs it, so root's launchctl is the stand-in.
     out = run(["sudo", "-n", "env", f"PATH={stubs}:{os.environ['PATH']}", f"SUDO_USER={ME}", f"HOME={HOME}",
                "/bin/sh", str(installer)], timeout=1500, env=clean_env())
@@ -676,14 +686,16 @@ def phase_refused_move(installer: Path, ctx: dict, workdir: Path) -> None:
     back = wait_for(lambda: api("GET", f"{ctx['base']}/healthz")[0] == 200, 60)
     pid = listener_pid(PORT)
     command = ps_field(pid, "command") if pid else ""
-    after = sorted(p.name for p in USER_PREFIX.iterdir() if p.is_file()) if USER_PREFIX.is_dir() else []
+    after = state() if USER_PREFIX.is_dir() else {}
+    user = ps_field(pid, "user") if pid else ""
+    said = "Bootstrap failed: 5: Input/output error" in text
     check("12", "launchctl's refusal is said, and the LaunchAgent serves again from the old prefix",
-          out.returncode != 0 and "Bootstrap failed: 5: Input/output error" in text
-          and AGENT_PLIST.is_file() and bool(back) and str(USER_PREFIX) in command
-          and ps_field(pid, "user") == ME and not DAEMON.exists() and not PREFIX.exists()
-          and account_uid() is None and set(after) >= set(before),
-          {"rc": out.returncode, "serving": bool(back), "command": command[:160],
-           "daemon": DAEMON.exists(), "prefix": PREFIX.exists(), "account": account_uid()})
+          out.returncode != 0 and said and AGENT_PLIST.is_file() and bool(back)
+          and str(USER_PREFIX) in command and user == ME and not DAEMON.exists()
+          and not PREFIX.exists() and account_uid() is None and "node.yaml" in before and after == before,
+          {"rc": out.returncode, "said": said, "agent plist": AGENT_PLIST.is_file(), "serving": bool(back),
+           "user": user, "me": ME, "command": command[:160], "daemon": DAEMON.exists(),
+           "prefix": PREFIX.exists(), "account": account_uid(), "state before": before, "after": after})
 
 
 def phase_move(installer: Path, ctx: dict) -> None:
