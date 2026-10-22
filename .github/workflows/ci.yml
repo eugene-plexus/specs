@@ -541,6 +541,12 @@ jobs:
         env:
           R7_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
         run: python specs/scripts/row7-person-removal-acceptance.py
+      # Row 70c: Workbench at the candidate, as row 7's.
+      - name: Verify Workbench reads people's groups and a group's memory server is every member's (row 70c)
+        if: matrix.shard == 'L2' || matrix.shard == 'W3'
+        env:
+          R70C_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row70c-workbench-groups-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
         if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py
