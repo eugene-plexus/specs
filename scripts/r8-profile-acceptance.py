@@ -302,8 +302,11 @@ def main() -> None:
                         assert (got["maxTokens"], got["temperature"], got["topP"]) == (extra.get("max_tokens", 111), 0, 0.2), got
                 print("PASS both protocols and streaming use persisted model defaults", flush=True)
                 count = len(reads)
-                got = generate(max_tokens=19, temperature=0, top_p=0, seed=0)
+                # Row 21: top-k and min-p are filled from the profile or the model's author
+                # too, so a request bypasses the Library only when it sets all five.
+                got = generate(max_tokens=19, temperature=0, top_p=0, top_k=0, min_p=0, seed=0)
                 assert (got["maxTokens"], got["temperature"], got["topP"], got["seed"]) == (19, 0, 0, 0)
+                assert (got.get("topK"), got.get("minP")) == (0, 0), got
                 assert len(reads) == count
                 print("PASS explicit values bypass Library and preserve zeroes", flush=True)
                 spec.update(maxTokens=222, temperature=0.5)
