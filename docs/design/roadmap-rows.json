@@ -1029,20 +1029,24 @@
    "repos": [
     "specs",
     "gateway",
-    "inference-driver",
     "workbench",
     "site-host",
     "control"
    ],
    "contract": "gateway.yaml inference-driver.yaml",
    "hot_files": [
+    "gateway/src/eugene_plexus_gateway/images.py",
     "gateway/src/eugene_plexus_gateway/chat_contract.py",
-    "gateway/src/eugene_plexus_gateway/responses.py",
-    "workbench/src/eugene_plexus_workbench/tools.py"
+    "workbench/src/eugene_plexus_workbench/tools.py",
+    "workbench/src/eugene_plexus_workbench/node_folders.py",
+    "site-host/src/eugene_plexus_site_host/host.py",
+    "control/src/eugene_plexus_control/routes/sites.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-29.md"
+   ],
    "calls": [],
    "issue": 56
   },
