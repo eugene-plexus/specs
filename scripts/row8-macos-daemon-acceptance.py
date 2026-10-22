@@ -16,11 +16,14 @@ Two phases.
  3. launchd runs it; the agent's uid is the account's (never 0, never the
     runner's); its parent is pid 1
  4. the runner cannot read node.yaml, agent.yaml or the passphrase file
- 5. health answers; nothing of the run listens on 8079-8082 (this harness
-    holds them, so the install must walk off them). 8083 is left to the
-    install's machine port, the one door other machines use: every node
-    opens it there and the installer has no setting for it, and the
-    enrolment below must reach it (the root's join token pins it)
+ 5. health answers on the run's own port; nothing of the run listens on
+    8079 or 8081, the agent's and the driver's defaults, which this harness
+    holds. 8080 and 8082 are left to the gateway and the library: holding
+    them makes the agent move control onto the gateway's new port
+    (agent#31). 8083 is left to the install's machine port, the one door
+    other machines use: every node opens it there, the installer has no
+    setting for it, and the enrolment below must reach it (the root's join
+    token pins it, agent#27)
  6. onboarding: agent and control use passphrase_file; the file is 0400 and
     the account's
  7. Reach says launchd, "starts at boot", can restart
@@ -81,7 +84,7 @@ AGENT_PLIST = HOME / "Library" / "LaunchAgents" / f"{LABEL}.plist"
 USER_PREFIX = HOME / ".local" / "share" / "eugene-plexus"
 MODELS = HOME / "Eugene Models"
 PORT = 18279
-HELD = range(8079, 8083)
+HELD = (8079, 8081)
 #: The machine port (LT1): the root's control root is reached through it, in
 #: plain HTTP from this machine as A4 does, and enrolment needs its TLS.
 MACHINE = "http://127.0.0.1:8083"
@@ -245,7 +248,7 @@ def job_pid(domain: str) -> int | None:
 
 
 def hold_default_ports() -> list[socket.socket]:
-    """Idle listeners on 8079-8082, so the install must keep off them."""
+    """Idle listeners on 8079 and 8081, so the install must keep off them."""
     held = []
     for port in HELD:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -416,7 +419,7 @@ def phase_fresh(installer: Path) -> dict:
     status, _ = api("GET", f"{base}/healthz")
     ours = os.getpid()
     others = {port: [p for p in listener_pids(port) if p != ours] for port in HELD}
-    check("5", "health answers, and nothing of the run listens on 8079-8082",
+    check("5", "health answers on the run's port, and nothing of the run listens on 8079 or 8081",
           status == 200 and not any(others.values()), {"health": status, "others": others})
 
     agent_yaml = root_read(PREFIX / "agent.yaml")
@@ -488,8 +491,20 @@ def phase_unattended(ctx: dict) -> None:
 
 
 def library_url(ctx: dict, name: str = "library") -> str:
-    url = component_url(root_read(PREFIX / "agent.yaml"), name)
-    return url or "http://127.0.0.1:8082"
+    """Where a component answers now, from the agent's own topology, once it
+    does: after Reach's restart the components are starting again."""
+
+    def answering():
+        status, body = api("GET", f"{ctx['base']}/v1/components", ctx["token"])
+        if status != 200:
+            return None
+        for component in (body or {}).get("components", []):
+            if component.get("name") == name and component.get("url"):
+                url = component["url"].rstrip("/")
+                return url if api("GET", f"{url}/healthz")[0] == 200 else None
+        return None
+
+    return wait_for(answering, 120, 2) or f"http://127.0.0.1:{8082 if name == 'library' else 8080}"
 
 
 def library_model(ctx: dict, library: str, repo: str, pick) -> dict:
@@ -560,7 +575,7 @@ def phase_metal(ctx: dict) -> None:
     status, body = api("POST", f"{base}/v1/runtimes", ctx["token"], spec, timeout=120)
     ready = wait_for(lambda: (lambda r: r if r.get("status") == "ready" else None)(
         api("GET", f"{base}/v1/runtimes/row8-gguf", ctx["token"])[1] or {}), 300, 2) or {}
-    gateway = component_url(root_read(PREFIX / "agent.yaml"), "gateway") or "http://127.0.0.1:8080"
+    gateway = library_url(ctx, "gateway")
 
     def answered():
         s, reply = api("POST", f"{gateway}/v1/chat/completions", ctx["token"], {
@@ -742,7 +757,7 @@ def main() -> int:
         run(["chmod", "g+x", str(HOME)])
         fact("home folder mode, as a Mac makes it", run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip())
     held = hold_default_ports()
-    fact("held by this harness", f"{HELD.start}-{HELD.stop - 1} (pid {os.getpid()})")
+    fact("held by this harness", f"{', '.join(map(str, HELD))} (pid {os.getpid()})")
     workdir = Path(tempfile.mkdtemp(prefix="row8-"))
     os.chmod(workdir, 0o755)
     installer = installer_copy(workdir)
