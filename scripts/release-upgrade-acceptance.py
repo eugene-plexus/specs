@@ -15,6 +15,7 @@ before and after. Windows only; nothing is elevated.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import html
 import json
@@ -65,6 +66,61 @@ OUT: Path
 LOG = None
 CHECKS: list[dict] = []
 RESULT: dict = {"checks": CHECKS}
+
+
+def source_schema_version(source: Path) -> int:
+    """Read the installed version's store constant without importing its dependencies."""
+    definitions = []
+    for node in ast.parse(
+        source.read_text(encoding="utf-8"), filename=str(source)
+    ).body:
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if any(isinstance(t, ast.Name) and t.id == "SCHEMA_VERSION" for t in targets):
+            definitions.append(node.value)
+    assert len(definitions) == 1, f"expected one SCHEMA_VERSION definition in {source}"
+    value = definitions[0]
+    assert (
+        isinstance(value, ast.Constant) and type(value.value) is int and value.value > 0
+    ), f"expected a positive integer SCHEMA_VERSION in {source}"
+    return value.value
+
+
+def people_from_response(payload: object) -> list[dict]:
+    """Control's PersonList is an object with a required people array."""
+    assert isinstance(payload, dict) and isinstance(payload.get("people"), list), (
+        "GET /v1/people: expected a PersonList object with a people array; "
+        f"got {payload!r}"
+    )
+    people = payload["people"]
+    assert all(
+        isinstance(person, dict)
+        and isinstance(person.get("id"), str)
+        and isinstance(person.get("name"), str)
+        for person in people
+    ), (
+        f"GET /v1/people: expected each person to have string id and name; got {people!r}"
+    )
+    return people
+
+
+# A conservative harness limit: reserve 179 of the 259 usable MAX_PATH characters
+# for app versions, native packages and their DLLs below the output directory.
+WINDOWS_OUTPUT_LIMIT = 80
+
+
+def validate_output_path(output: Path) -> None:
+    if sys.platform == "win32" and len(str(output)) > WINDOWS_OUTPUT_LIMIT:
+        raise ValueError(
+            f"--output is limited to {WINDOWS_OUTPUT_LIMIT} characters in its absolute "
+            f"path on Windows; got {len(str(output))} characters: {output}. "
+            "Workbench's nested venv and DLLs need room under MAX_PATH "
+            "(260 characters including NUL). Choose a shorter --output path."
+        )
 
 
 def say(message: str) -> None:
@@ -278,7 +334,7 @@ if host is not None:
                             "kind": name,
                             "url": self.urls[name],
                             "spawn": {"configFile": str(self.prefix / f"{name}.yaml")},
-                        }  # fmt: skip
+                        }
                         for name in ("control", "gateway", "library")
                     ]
                 }
@@ -319,6 +375,7 @@ if host is not None:
             subprocess.run(
                 ["taskkill", "/PID", str(process["ProcessId"]), "/T", "/F"],
                 capture_output=True,
+                check=False,
             )
         if left:
             time.sleep(2)
@@ -342,6 +399,16 @@ if host is not None:
     def workbench_db(self) -> Path | None:
         found = sorted(self.prefix.rglob("workbench.sqlite3"))
         return found[0] if found else None
+
+    def expected_workbench_schema(self, version: str) -> int:
+        # Each catalogue version has its own venv. Read that version's source,
+        # not the sibling main checkout or a venv left from the FROM install.
+        return source_schema_version(
+            self.prefix
+            / "apps/workbench/versions"
+            / version
+            / "venv/Lib/site-packages/eugene_plexus_workbench/store.py"
+        )
 
     def workbench_schema(self) -> int | None:
         db = self.workbench_db()
@@ -580,7 +647,11 @@ def collect_state(
 ) -> dict:
     detail = api.call(base, "GET", f"/api/chats/{chat_id}", headers=headers)
     memory = api.call(base, "GET", "/api/memory", headers=headers)
-    notes = [n for section in memory["sections"].values() for n in section]
+    # Both releases expose these note lists. Newer Workbench also includes
+    # otherTotal (an integer), so not every section value is iterable.
+    notes = [
+        n for name in ("always", "other", "past") for n in memory["sections"][name]
+    ]
     note = next((n for n in notes if n["id"] == note_id), None)
     documents = api.call(base, "GET", "/api/documents", headers=headers)["documents"]
     doc = next((d for d in documents if d["id"] == doc_id), None)
@@ -672,7 +743,12 @@ def seed(ctx: Install, api: Api, token: str, model: Path) -> dict:
     wait(lambda: next((d for d in api.call(base, "GET", "/api/documents", headers=headers)["documents"]
                        if d["id"] == doc_id and d["state"] in ("searchable", "ready")), None), "document read", 180, 2)  # fmt: skip
     schema = ctx.workbench_schema()
-    check("FROM: Workbench store is schema 17", schema == 17, schema)
+    expected_schema = ctx.expected_workbench_schema(app["version"])
+    check(
+        f"FROM: Workbench store is schema {expected_schema}",
+        schema == expected_schema,
+        schema,
+    )
     state = collect_state(api, base, headers, chat["id"], note["id"], doc_id)
     check("FROM: seeded chat, note and document read back", bool(state["note"] and state["document"]) and len(state["chat"]["messages"]) >= 2,
           {"messages": len(state["chat"]["messages"]), "title": state["chat"]["title"]})  # fmt: skip
@@ -703,26 +779,27 @@ def verify(
     )
     check("TO: Workbench is the catalogue's", version == named, f"{version} vs {named}")
     schema = ctx.workbench_schema()
-    check("TO: Workbench store is schema 21", schema == 21, schema)
+    expected_schema = ctx.expected_workbench_schema(version)
+    check(
+        f"TO: Workbench store is schema {expected_schema}",
+        schema == expected_schema,
+        schema,
+    )
     RESULT["schemaAfter"] = schema
     backup = sorted(
         p.name for p in ctx.workbench_db().parent.glob("workbench.sqlite3.schema-*.bak")
     )
     check(
-        "TO: migration kept a schema-17 backup",
-        "workbench.sqlite3.schema-17.bak" in backup,
+        f"TO: migration kept a schema-{seeded['schema']} backup",
+        f"workbench.sqlite3.schema-{seeded['schema']}.bak" in backup,
         backup,
     )
     control_token = api.call(
         control, "POST", "/v1/auth/login", body={"passphrase": PASSPHRASE}
     )["sessionToken"]
     check("TO: operator control login works without re-initialize", bool(control_token))
-    people = api.call(control, "GET", "/v1/people", control_token)
-    listed = [
-        p
-        for p in people.get("people", people if isinstance(people, list) else [])
-        if p["id"] == seeded["personId"]
-    ]
+    people = people_from_response(api.call(control, "GET", "/v1/people", control_token))
+    listed = [p for p in people if p["id"] == seeded["personId"]]
     check(
         "TO: second person still listed",
         len(listed) == 1 and listed[0]["name"] == SECOND["name"],
@@ -802,6 +879,7 @@ def unlock(ctx: Install, api: Api) -> str:
 def run(args: argparse.Namespace) -> None:
     global OUT, LOG
     OUT = args.output.resolve()
+    validate_output_path(OUT)
     OUT.mkdir(parents=True, exist_ok=True)
     assert not any(OUT.iterdir()), f"{OUT} is not empty"
     LOG = (OUT / "run.log").open("w", encoding="utf-8")
@@ -934,5 +1012,13 @@ if __name__ == "__main__":
     parser.add_argument("--from-installer", type=Path, required=True)
     parser.add_argument("--to-installer", type=Path, required=True)
     parser.add_argument("--model", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    run(parser.parse_args())
+    parser.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help=f"New output directory; absolute path limited to {WINDOWS_OUTPUT_LIMIT} characters on Windows",
+    )
+    try:
+        run(parser.parse_args())
+    except ValueError as exc:
+        parser.error(str(exc))
