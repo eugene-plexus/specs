@@ -14,3 +14,6 @@ anthropic==1.9.0
 authlib==1.8.0
 # C3: the agent installs Workbench from its catalogue with uv, as an install does.
 uv==0.12.18
+# Row 29: the acceptance imports site-host's policy, whose workspace tools
+# search with `regex` (site-host's own dependency, not in the release lock).
+regex==2026.9.29
