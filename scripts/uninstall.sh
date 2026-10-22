@@ -205,12 +205,25 @@ APPLE
         HOMES="$HOMES
 $(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p' | head -n 1)"
     fi
-    printf '%s\n' "$HOMES" | while IFS= read -r HOME_OF; do
+    # Read back by name (`ls -le`; with -n macOS prints the group's UUID):
+    # an entry that stays is said, and its receipt kept for the next try.
+    ACE_LEFT=0
+    OLD_IFS=$IFS
+    set -f
+    IFS='
+'
+    for HOME_OF in $HOMES; do
+        IFS=$OLD_IFS
         case "$HOME_OF" in /?*) ;; *) continue ;; esac
-        if [ -d "$HOME_OF" ]; then
-            chmod -h -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
+        [ -d "$HOME_OF" ] || continue
+        chmod -h -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
+        if ls -led "$HOME_OF" 2>/dev/null | grep -qF "group:$MODELS_GROUP allow search"; then
+            warn "Could not take Eugene's entry out of $HOME_OF's ACL: sudo chmod -a 'group:$MODELS_GROUP allow search' '$HOME_OF'"
+            ACE_LEFT=1
         fi
     done
+    IFS=$OLD_IFS
+    set +f
     if [ -f "$RECEIPTS/models-group.txt" ]; then
         read -r _kind MODELS_GID < "$RECEIPTS/models-group.txt" || true
         if [ -n "$MODELS_GID" ] && [ "$MODELS_GID" != 0 ] \
@@ -240,7 +253,8 @@ $(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHom
             warn "Could not delete $OLD_COPY: sudo rm -rf '$OLD_COPY'"
         fi
     done
-    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/models-ace.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
+    [ "$ACE_LEFT" = 1 ] || rm -f "$RECEIPTS/models-ace.txt"
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
     rmdir "$RECEIPTS" 2>/dev/null || true
     echo "Eugene's removal finished. It no longer starts at boot."
     if [ -d "$KEEP" ]; then

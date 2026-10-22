@@ -696,6 +696,81 @@ def phase_user_install(installer: Path) -> dict:
     return ctx
 
 
+def phase_engine_before_move(ctx: dict) -> None:
+    """R8-ENGINES-COPY: a llama.cpp build in the per-user install, its
+    llama-server changed after it was downloaded, as a program running as
+    the person could change it before the move."""
+    say("B1. a llama.cpp build in the per-user install, changed after download")
+    base, token = ctx["base"], ctx["token"]
+    status, body = api("POST", f"{base}/v1/engines/llama_cpp/install", token, {}, timeout=900)
+
+    def finished():
+        s, b = api("GET", f"{base}/v1/engines/llama_cpp/install", token, timeout=60)
+        return b if s == 200 and isinstance(b, dict) and b.get("state") in ("done", "failed", "cancelled") else None
+
+    done = wait_for(finished, 900, 5) or {}
+    store = HOME / ".eugene-plexus" / "engines" / "llama_cpp"
+    builds = []
+    for build in store.iterdir() if store.is_dir() else []:
+        record = build / "install.json"
+        if record.is_file():
+            meta = json.loads(record.read_text(encoding="utf-8"))
+            builds.append((str(meta.get("installedAt") or ""), build, meta))
+    if done.get("state") != "done" or not builds:
+        ctx["engine"] = {"skip": f"no llama.cpp build to change: {status} {done.get('state')} {done.get('error')} {str(body)[:200]}"}
+        fact("llama.cpp before the move", ctx["engine"])
+        return
+    _, build, meta = max(builds, key=lambda b: b[0])
+    binary = build / str(meta["binary"])
+    changed = binary.read_bytes() + b"\n# changed after it was downloaded\n"
+    binary.write_bytes(changed)
+    ctx["engine"] = {
+        "version": str(meta["version"]),
+        "binary": str(meta["binary"]),
+        "recorded": (meta.get("files") or {}).get(Path(str(meta["binary"])).as_posix()),
+        "changed": "sha256:" + hashlib.sha256(changed).hexdigest(),
+    }
+    fact("llama.cpp before the move", ctx["engine"])
+
+
+def phase_engine_after_move(ctx: dict, said: str) -> None:
+    """11g: the changed build was not kept; the daemon fetched that version
+    again from GitHub, and its llama-server is what was downloaded."""
+    engine = ctx.get("engine") or {}
+    if "skip" in engine or not engine:
+        skip("11g", "a changed copied llama.cpp build is not kept, and is fetched again", engine.get("skip", "no build"))
+        return
+    version = engine["version"]
+    build = PREFIX / "engines" / "llama_cpp" / version
+    marker = PREFIX / "engines" / "refetch.json"
+
+    def refetched():
+        if sudo("test", "-f", str(marker)).returncode == 0:
+            return None
+        return True if sudo("test", "-f", str(build / "install.json")).returncode == 0 else None
+
+    again = wait_for(refetched, 900, 5)
+    out = sudo("shasum", "-a", "256", str(build / engine["binary"]), timeout=60).stdout.split()
+    now = "sha256:" + out[0] if out else None
+    reason = ""
+    if not again:
+        _, engines = api("GET", f"{ctx['base']}/v1/engines", ctx.get("token"), timeout=120)
+        llama = next((e for e in (engines or {}).get("engines", []) if e.get("engine") == "llama_cpp"), {})
+        reason = (llama.get("acquisition") or {}).get("reason") or ""
+        if "limit of 60 requests an hour" in reason:
+            skip("11g", "a changed copied llama.cpp build is not kept, and is fetched again",
+                 f"GitHub refused the daemon's release list: {reason[:200]}")
+            return
+    check("11g", "a copied llama.cpp build changed after it was downloaded is not kept: the move says so, "
+          "and the daemon fetches that version again, whose llama-server is what was downloaded",
+          f"did not keep the llama_cpp build {version}" in said
+          and f"fetches llama_cpp {version} again" in said
+          and bool(again) and now is not None and now != engine["changed"]
+          and (engine["recorded"] is None or now == engine["recorded"]),
+          {"engine": engine, "fetched again": bool(again), "llama-server now": now, "reason": reason[:200],
+           "said": [line for line in said.splitlines() if "llama_cpp" in line][:4]})
+
+
 def phase_refused_move(installer: Path, ctx: dict, workdir: Path) -> None:
     say("12. launchd refuses the daemon: the LaunchAgent comes back")
     stubs = workdir / "launchctl-stand-in"
@@ -839,6 +914,8 @@ def phase_move(installer: Path, ctx: dict) -> None:
           ctx["keyring"] and cmode == "passphrase_file" and agent_ok is True and control_ok is True,
           {"keychain exercised": ctx["keyring"], "root's mode after sign-in": cmode,
            "agent": agent_ok, "control": control_ok})
+    ctx["token"] = token
+    phase_engine_after_move(ctx, text)
 
 
 def main() -> int:
@@ -870,6 +947,7 @@ def main() -> int:
         try:
             ctx = phase_user_install(installer)
             phase_refused_move(installer, ctx, workdir)
+            phase_engine_before_move(ctx)
             phase_move(installer, ctx)
         except Abort as e:
             print(f"\n  ABORT  {e}", flush=True)

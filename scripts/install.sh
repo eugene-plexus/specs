@@ -1460,6 +1460,23 @@ plist_get() {
     printf '%s' "$_pv"
 }
 
+# The same, out of a plist of the person's, read as the person.
+person_plist_get() {
+    if _pv=$(as_person plutil -extract "$2" raw -o - "$1" 2>/dev/null); then
+        printf '%s' "$_pv"
+        return 0
+    fi
+    _pv=$(as_person /usr/libexec/PlistBuddy -c "Print :$(printf '%s' "$2" | tr . :)" "$1" 2>/dev/null) || return 1
+    printf '%s' "$_pv"
+}
+
+# PATH, as the person sees it, is on the disk that holds the new prefix.
+mac_same_disk() {
+    _here=$(as_person df -P "$1" 2>/dev/null | awk 'NR == 2 {print $1}')
+    _there=$(df -P "${PREFIX%/*}" 2>/dev/null | awk 'NR == 2 {print $1}')
+    [ -n "$_here" ] && [ "$_here" = "$_there" ]
+}
+
 # Text for a plist's <string>: &, < and > escaped, so a path holding one
 # is still that path. The heredoc this replaced wrote invalid XML for it.
 xml_text() {
@@ -1673,18 +1690,27 @@ mac_models_group() {
 }
 
 # The person's home carries the models group's entry. macOS lists a
-# folder's ACL entries under it, one a line, with `ls -le`.
+# folder's ACL entries under it, one a line, with `ls -le` -- by name, and
+# only without `-n`, which prints each entry's group by its UUID instead
+# (re-review 5).
 mac_has_models_ace() {
-    as_root ls -lden "$1" 2>/dev/null | grep -qF -- "$MODELS_ACE"
+    as_root ls -led "$1" 2>/dev/null | grep -qF -- "$MODELS_ACE"
 }
 
 # **The home's entry goes on every way out of a run that added it**
 # (row 8 re-review): a refused run, a move put back, a fresh install that
 # stopped before its startup job was in place. Once the job is in place
 # the install exists, and its removal takes the entry out by the receipt.
+# An entry that will not come out is said, and its receipt stays, so the
+# removal can still find it.
 mac_remove_models_ace() {
     [ -n "$PERSON_HOME" ] || return 0
     as_root chmod -h -a "$MODELS_ACE" "$PERSON_HOME" >/dev/null 2>&1 || true
+    if mac_has_models_ace "$PERSON_HOME"; then
+        warn "could not take Eugene's entry out of $PERSON_HOME's ACL:
+    sudo chmod -a '$MODELS_ACE' '$PERSON_HOME'"
+        return 0
+    fi
     as_root rm -f "$MAC_RECEIPTS/models-ace.txt"
     MODELS_ACE_ADDED=0
 }
@@ -1843,24 +1869,37 @@ mac_migrate_check() {
          curl -fsSL $INSTALLER_URL | sh -s -- --user --uninstall
        then run this again."
     fi
-    _old_program=$(plist_get "$PERSON_LAUNCH_AGENT" ProgramArguments.0) || _old_program=
+    # The person's files are read as the person: root reads nothing through
+    # a path the person controls (row 8 re-review).
+    _old_program=$(person_plist_get "$PERSON_LAUNCH_AGENT" ProgramArguments.0) || _old_program=
     case "$_old_program" in
         "$_old"/*) ;;
         *) die "Eugene's startup job in your account ($PERSON_LAUNCH_AGENT) starts
        ${_old_program:-nothing this installer can read}, which is not the install at $_old.
        Remove that install with its own removal, then run this again. Nothing was changed." ;;
     esac
-    [ -f "$_old/agent.yaml" ] || die "Eugene's startup job in your account names $_old, which holds no install.
+    as_person test -f "$_old/agent.yaml" || die "Eugene's startup job in your account names $_old, which holds no install.
        Remove $PERSON_LAUNCH_AGENT, then run this again. Nothing was changed."
-    [ ! -L "$_old" ] || die "$_old is a link, so Eugene was not moved from it: root moves that
-       folder aside once the move is done, and never through a link. Nothing was changed."
-    if grep -q '^signingKey:' "$_old/node.yaml" 2>/dev/null; then
+    ! as_person test -L "$_old" || die "$_old is a link, so Eugene was not moved from it: its folder is
+       kept once the move is done, and never through a link. Nothing was changed."
+    # **One disk** (re-review): the old folder is kept, out of the person's
+    # reach, by one rename beside the new prefix. Across disks a rename is a
+    # copy, so it is refused before anything changes.
+    if ! mac_same_disk "$_old"; then
+        die "$_old is on another disk than ${PREFIX%/*}, so Eugene was not moved to start at boot.
+       Its folder holds this machine's keys, and is kept out of your account's reach by
+       renaming it beside $PREFIX, which works only on one disk. Nothing was changed.
+       To keep Eugene as it is, starting when you sign in, and update it:  re-run with --user
+       To start it at boot as a new machine: remove it (--user --uninstall keeps its files),
+       then run this again; machines joined to it join again."
+    fi
+    if as_person grep -q '^signingKey:' "$_old/node.yaml" 2>/dev/null; then
         die "the Eugene install at $_old is from alpha.2 or earlier and cannot move. Remove it
        (--user --uninstall keeps its files), then run this again."
     fi
     # Keep the port and the bind host the old job started the agent with.
-    MIGRATE_PORT=$(plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) || MIGRATE_PORT=
-    MIGRATE_HOST=$(plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_HOST) || MIGRATE_HOST=
+    MIGRATE_PORT=$(person_plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) || MIGRATE_PORT=
+    MIGRATE_HOST=$(person_plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_HOST) || MIGRATE_HOST=
     case "$MIGRATE_PORT" in ''|*[!0-9]*) MIGRATE_PORT= ;; esac
     # The move is checked by starting the daemon; without that it could end
     # with two startup jobs, or none that works.
@@ -1929,11 +1968,19 @@ mac_migrate_skips() {
     return 1
 }
 
+# PATH's size in KiB as the person reads it (links not followed), or a
+# failure: a size that cannot be read is never taken as nothing.
+mac_size_kb() {
+    _sz=$(as_person du -sk "$1" 2>/dev/null | awk 'NR == 1 && $1 ~ /^[0-9]+$/ {print $1}')
+    [ -n "$_sz" ] || return 1
+    printf '%s' "$_sz"
+}
+
 # **Room for the move, said in numbers before anything stops** (row 8
-# re-review). The copy needs what it copies (sized as the person reads it,
-# links not followed), on the disk that holds the new prefix -- and, when
-# the old folder is on another disk, root's keeping of it copies it once
-# more -- plus room for Eugene's own Python and packages.
+# re-review). The copy is staged in the new prefix and then unpacked
+# beside it, so it needs twice what it copies (sized as the person reads
+# it), plus room for Eugene's own Python and packages. A size or a free
+# space that cannot be read stops the move: it is never taken as enough.
 MIGRATE_HEADROOM_KB=524288
 mac_migrate_room() {
     _old=$PERSON_USER_PREFIX
@@ -1942,52 +1989,78 @@ mac_migrate_room() {
     for _item in "$_old"/* "$_old"/.[!.]*; do
         [ -e "$_item" ] || [ -L "$_item" ] || continue
         mac_migrate_skips "${_item##*/}" && continue
-        _k=$(as_person du -sk "$_item" 2>/dev/null | awk 'NR == 1 {print $1}')
-        _need=$((_need + ${_k:-0}))
+        _k=$(mac_size_kb "$_item") \
+            || die "could not tell how big $_item is, so Eugene was not moved. Nothing was changed."
+        _need=$((_need + _k))
     done
     _engines=$PERSON_HOME/.eugene-plexus/engines
     if [ -d "$_engines" ] && [ ! -L "$_engines" ]; then
-        _k=$(as_person du -sk "$_engines" 2>/dev/null | awk 'NR == 1 {print $1}')
-        _need=$((_need + ${_k:-0}))
-    fi
-    _here=$(df -P "$_old" 2>/dev/null | awk 'NR == 2 {print $1}')
-    _there=$(df -P "$_parent" 2>/dev/null | awk 'NR == 2 {print $1}')
-    if [ -n "$_here" ] && [ "$_here" != "$_there" ]; then
-        _k=$(as_person du -sk "$_old" 2>/dev/null | awk 'NR == 1 {print $1}')
-        _need=$((_need + ${_k:-0}))
+        _k=$(mac_size_kb "$_engines") \
+            || die "could not tell how big $_engines is, so Eugene was not moved. Nothing was changed."
+        _need=$((_need + _k))
     fi
     _free=$(df -Pk "$_parent" 2>/dev/null | awk 'NR == 2 {print $4}')
     case "$_free" in
-        ''|*[!0-9]*) warn "could not tell how much room the disk holding $_parent has; moving anyway"; return 0 ;;
+        ''|*[!0-9]*) die "could not tell how much room the disk holding $_parent has, so Eugene was
+       not moved. Nothing was changed." ;;
     esac
-    _room=$((_need + MIGRATE_HEADROOM_KB))
+    _room=$((2 * _need + MIGRATE_HEADROOM_KB))
     if [ "$_free" -lt "$_room" ]; then
         die "the move needs $(( (_room + 1023) / 1024 )) MiB on the disk that holds $_parent:
-       $(( (_need + 1023) / 1024 )) MiB to copy Eugene's settings, Library state and engine builds,
-       and $((MIGRATE_HEADROOM_KB / 1024)) MiB for its own Python and packages. That disk has $((_free / 1024)) MiB free.
-       Make room, then run this again. Nothing was changed."
+       twice $(( (_need + 1023) / 1024 )) MiB to copy Eugene's settings, Library state and engine builds
+       (staged, then unpacked), and $((MIGRATE_HEADROOM_KB / 1024)) MiB for its own Python and packages.
+       That disk has $((_free / 1024)) MiB free. Make room, then run this again. Nothing was changed."
     fi
 }
 
-# **The copy never uses root's access** (row 8 review), **and passes
-# through nothing the person could swap** (re-review). The person's tar
-# reads the old folder -- what the person can read, links kept as links,
-# never followed -- and streams it through a pipe to Eugene's account's
-# tar, which writes it into the new prefix. That tar restores nothing
-# from the stream but names, contents and links: no owner, no
-# permissions, no ACL, no extended attribute, no file flag, no Mac
-# metadata -- an entry the stream could carry that grants someone the
-# prefix opens nothing. The modes are then the account's own: nothing it
-# copied is open to its group or to others. The person's tar's own status
-# comes back on fd 3, which neither tar holds.
+# **The copy never uses root's access** (row 8 review), **passes through
+# nothing the person could swap, and is bounded** (re-reviews). The
+# person's tar reads the old folder -- what the person can read, links
+# kept as links, never followed -- and streams it to Eugene's account,
+# which keeps the stream in its own prefix (closed to the person) and
+# stops it at what was measured just before, plus a tenth and 64 MiB: a
+# folder that grows while it is copied is refused, not copied without end.
+# The account's tar then unpacks it, restoring nothing but names, contents
+# and links: no owner, no permissions, no ACL, no extended attribute, no
+# file flag, no Mac metadata -- an entry that grants someone the prefix
+# opens nothing. The modes are then the account's own: nothing it copied
+# is open to its group or to others. The person's tar's own status comes
+# back on fd 3, which neither side holds.
+COPY_SLACK_BYTES=67108864
 mac_copy_as_person() {
     _from=$1; shift
+    _bytes=0
+    for _item in "$@"; do
+        _k=$(mac_size_kb "$_from/${_item#./}") \
+            || die "could not tell how big $_from/${_item#./} is, so it was not copied"
+        _bytes=$((_bytes + _k * 1024))
+    done
+    _limit=$((_bytes + _bytes / 10 + COPY_SLACK_BYTES))
+    _staged=$PREFIX/.move.tar
+    in_prefix rm -f "$_staged"
     if ! _read=$( { { as_person env COPYFILE_DISABLE=1 tar -cf - -C "$_from" "$@" 3>&-; printf '%s' "$?" >&3; } \
-            | as_service tar -x --no-same-owner --no-same-permissions --no-acls --no-xattrs \
-                --no-fflags --no-mac-metadata -f - -C "$PREFIX" >&2 3>&-; } 3>&1 ); then
+            | as_service sh -c 'umask 077 && head -c "$1" > "$2"' sh "$((_limit + 1))" "$_staged" \
+                >&2 3>&-; } 3>&1 ); then
+        in_prefix rm -f "$_staged"
+        die "could not keep the copy of $_from in $PREFIX (see above)"
+    fi
+    _got=$(in_prefix wc -c "$_staged" 2>/dev/null | awk 'NR == 1 {print $1}')
+    case "$_got" in ''|*[!0-9]*) _got=$((_limit + 1)) ;; esac
+    if [ "$_got" -gt "$_limit" ]; then
+        in_prefix rm -f "$_staged"
+        die "$_from grew past $((_limit / 1048576)) MiB while it was being copied (it measured
+       $((_bytes / 1048576)) MiB just before), so it was not moved."
+    fi
+    if [ "$_read" != 0 ]; then
+        in_prefix rm -f "$_staged"
+        die "could not read $_from to move it (see above)"
+    fi
+    if ! as_service tar -x --no-same-owner --no-same-permissions --no-acls --no-xattrs \
+            --no-fflags --no-mac-metadata -f "$_staged" -C "$PREFIX"; then
+        in_prefix rm -f "$_staged"
         die "could not copy $_from into $PREFIX (see above)"
     fi
-    [ "$_read" = 0 ] || die "could not read $_from to move it (see above)"
+    in_prefix rm -f "$_staged"
     for _item in "$@"; do
         in_prefix find "$PREFIX/${_item#./}" ! -type l -exec chmod go-rwx {} + \
             || die "could not close what was copied into $PREFIX to everyone but Eugene's account"
@@ -2018,6 +2091,137 @@ for path in sorted(pathlib.Path(new).glob("*.yaml")) + sorted(pathlib.Path(new).
         temporary.write_text(moved, encoding="utf-8", newline="\n")
         temporary.replace(path)
 PYEOF
+    mac_migrate_check_engines
+}
+
+# **A copied engine build runs only when every file is what was
+# downloaded** (row 8, R8-ENGINES-COPY). The daemon runs the copied builds
+# as its own account, so a build a program running as the person changed
+# would run there. The agent records, in each build's install.json, every
+# file's SHA-256 and every link's target, when it unpacks the verified
+# download. A copied build is kept only when its files and links, and
+# nothing else, match that record. A changed build, one with no record (it
+# was installed before the agent kept one) and a link where a build or an
+# engine's folder belongs are removed; when the newest of an engine's
+# builds is among them, it is listed in engines/refetch.json, and the agent
+# fetches it again from upstream, verified as any install is, when it
+# starts. Checked as Eugene's account, on the copy: what is checked is what
+# runs.
+mac_migrate_check_engines() {
+    [ "$MIGRATED_ENGINES" = 1 ] || return 0
+    _said=$(in_prefix "$PYBIN" -I - "$PREFIX/engines" <<'PYEOF'
+import hashlib
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+RECORD = "install.json"
+
+
+def sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def read_record(build):
+    try:
+        meta = json.loads((build / RECORD).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return meta if isinstance(meta, dict) else None
+
+
+def problem(build, meta):
+    if meta is None:
+        return "its install record cannot be read"
+    files, links = meta.get("files"), meta.get("links", {})
+    if not isinstance(files, dict) or not files or not isinstance(links, dict):
+        return "it has no record of its files from when it was downloaded"
+    seen_files, seen_links = {}, {}
+    for current, dirnames, filenames in os.walk(build):
+        base = Path(current)
+        for name in list(dirnames):
+            if (base / name).is_symlink():
+                seen_links[(base / name).relative_to(build).as_posix()] = os.readlink(base / name)
+                dirnames.remove(name)
+        for name in filenames:
+            path = base / name
+            relative = path.relative_to(build).as_posix()
+            if relative == RECORD:
+                continue
+            if path.is_symlink():
+                seen_links[relative] = os.readlink(path)
+            elif path.is_file():
+                seen_files[relative] = path
+            else:
+                return f"{relative} is not a file"
+    differ = sorted((set(seen_files) ^ set(files)) | (set(seen_links) ^ set(links)))
+    if differ:
+        return "its files are not the ones downloaded (" + ", ".join(differ[:3]) + ")"
+    for relative, target in seen_links.items():
+        if links[relative] != Path(target).as_posix():
+            return f"{relative} points somewhere else than when it was downloaded"
+        if not (build / relative).resolve().is_relative_to(build.resolve()):
+            return f"{relative} points outside the build"
+    for relative, path in seen_files.items():
+        if sha256(path) != files[relative]:
+            return f"{relative} changed after it was downloaded"
+    return None
+
+
+refetch = []
+if root.is_dir() and not root.is_symlink():
+    for engine in sorted(root.iterdir()):
+        if engine.is_symlink():
+            engine.unlink()
+            print(f"did not keep {engine.name}: a link where an engine's builds belong")
+            continue
+        if not engine.is_dir():
+            continue
+        gone, kept_at = None, ""
+        for build in sorted(engine.iterdir()):
+            if build.is_symlink():
+                build.unlink()
+                print(f"did not keep the {engine.name} build {build.name}: a link where a build belongs")
+                continue
+            if build.is_dir() and build.name.startswith(".staging-"):
+                shutil.rmtree(build)
+                continue
+            if not build.is_dir() or (build / RECORD).is_symlink() or not (build / RECORD).is_file():
+                continue  # not a build: the agent runs only a folder with its install record
+            meta = read_record(build)
+            when = str((meta or {}).get("installedAt") or "")
+            why = problem(build, meta)
+            if why is None:
+                kept_at = max(kept_at, when)
+                print(f"kept the {engine.name} build {build.name}: every file is what was downloaded")
+                continue
+            shutil.rmtree(build)
+            print(f"did not keep the {engine.name} build {build.name}: {why}")
+            if gone is None or when > gone[0]:
+                entry = {"engine": engine.name, "version": str((meta or {}).get("version") or build.name)}
+                if (meta or {}).get("variant"):
+                    entry["variant"] = str(meta["variant"])
+                gone = (when, entry)
+        if gone is not None and gone[0] >= kept_at:
+            refetch.append(gone[1])
+            print(f"Eugene fetches {engine.name} {gone[1]['version']} again from GitHub when it starts")
+if refetch:
+    marker = root / "refetch.json"
+    staged = root / "refetch.json.new"
+    staged.write_text(json.dumps({"builds": refetch}, indent=2), encoding="utf-8", newline="\n")
+    staged.replace(marker)
+PYEOF
+) || die "could not check the engine builds copied into $PREFIX/engines (see above)"
+    printf '%s\n' "$_said" | while IFS= read -r _line; do
+        [ -z "$_line" ] || say "$_line"
+    done
 }
 
 # DIR is a real folder (no link), root's (0:0), mode 0700, with no ACL
@@ -2035,15 +2239,22 @@ mac_closed() {
     [ "$3" = 0 ] && [ "$4" = 0 ]
 }
 
-# PATH is a real folder (no link) of the person's.
-mac_persons_folder() {
-    as_root test -d "$1" && ! as_root test -L "$1" || return 1
-    _ls=$(as_root ls -lden "$1" 2>/dev/null | head -n 1) || return 1
+# The fields of `ls -ldn PATH`'s line, as LS_MODE, LS_UID; read as RUNNER
+# (as_root or as_person).
+mac_ls_fields() {
+    _ls=$("$1" ls -ldn "$2" 2>/dev/null | head -n 1) || return 1
     set -f
     # shellcheck disable=SC2086 # the fields of ls's line, on purpose
     set -- $_ls
     set +f
-    [ -n "$PERSON_UID" ] && [ "$3" = "$PERSON_UID" ]
+    LS_MODE=${1:-} LS_UID=${3:-}
+    [ -n "$LS_UID" ]
+}
+
+# PATH, as the person sees it, is a real folder (no link) of the person's.
+mac_persons_own_folder() {
+    as_person test -d "$1" && ! as_person test -L "$1" || return 1
+    mac_ls_fields as_person "$1" && [ -n "$PERSON_UID" ] && [ "$LS_UID" = "$PERSON_UID" ]
 }
 
 # **The old folder is kept as root's, beside the new prefix** (row 8
@@ -2051,29 +2262,39 @@ mac_persons_folder() {
 # program running as the person could otherwise read them and sign as the
 # machine.
 #
-# **Inside a folder root makes for it** (re-review A). Root makes
-# `<prefix>.moved-<time>` itself, closes it (root:wheel, 0700, any ACL
-# entry taken off, and all of that checked), and renames the old folder
-# into it. Every path to the keys then passes through root's closed folder,
-# so what the person left on the old folder -- an ACL entry that lets them
-# search it, which no numeric chmod removes, or the files' own modes --
-# opens nothing. Root does one thing to the old folder: that rename, which
-# follows no link. It changes no owner, mode or ACL in it, so nothing is
-# done through a link swapped in. The old folder must be the person's own
-# real folder before the rename, and is checked again after it, in root's
-# folder, where nobody else can change it; what is not is left there,
-# root's, and the move stops.
+# **Inside a folder root makes for it, put there by the person's own
+# rename** (re-reviews A and 1-3). Root makes `<prefix>.moved-<time>`
+# beside the prefix, in a folder only root can change, and closes it:
+# root:wheel, 0700, any ACL entry taken off, all of it checked. Root then
+# lets the person, and only the person, add one folder to it (an ACL
+# entry: search, add_subdirectory), and the PERSON renames the old folder
+# into it -- with the person's own rights, so a path the person changed
+# (a link put in for `~/.local/share`, say) can move only what the person
+# could move anyway, never a folder of root's. Root then takes the entry
+# off and checks, inside its own closed folder where nobody else can
+# change anything: the folder is closed again, holds that one folder,
+# which is a real folder of the person's (no link) with the node.yaml the
+# move started from. Every path to the keys then passes through root's
+# closed folder, so what the person left on the old folder (an ACL entry
+# no numeric chmod removes, the files' own modes) opens nothing. Root
+# changes no owner, mode or ACL in the old folder.
 #
-# This runs before the move is committed: anything here that fails stops
-# the run, and the move is put back.
+# Old folder and prefix are on one disk (mac_migrate_check), so the rename
+# is a rename, never a copy; it is checked once more just before. This
+# runs before the move is committed: a failure, or an interrupt, stops the
+# run, and the rollback first has the person rename the old folder back
+# (mac_migrate_unretain) before it removes anything.
 RETAINED=
+KEEP_ACE=
 mac_migrate_retain() {
     _old=$PERSON_USER_PREFIX
     _name=${_old##*/}
-    if ! mac_persons_folder "$_old"; then
+    if ! mac_persons_own_folder "$_old"; then
         die "$_old is no longer the folder Eugene was moved from (it is a link now, or not
        yours), so the move was not finished and nothing was done to it."
     fi
+    mac_same_disk "$_old" || die "$_old is no longer on the disk that holds $PREFIX, so the move
+       was not finished and nothing was done to it."
     _keep=$PREFIX.moved-$(date +%Y%m%d%H%M%S)
     as_root mkdir -m 0700 "$_keep" \
         || die "could not make $_keep to keep the old install in, so the move was not finished"
@@ -2088,16 +2309,64 @@ mac_migrate_retain() {
        So the old install, which holds this machine's keys, was not moved there, and the
        move was not finished."
     fi
-    if ! as_root mv "$_old" "$_keep/$_name"; then
+    KEEP_ACE="user:$PERSON allow search,add_subdirectory"
+    if ! as_root chmod -h +a "$KEEP_ACE" "$_keep"; then
         as_root rmdir "$_keep" 2>/dev/null || true
-        die "could not move $_old to $_keep, so the move was not finished"
+        die "could not let you put the old install into $_keep, so the move was not finished"
     fi
-    if ! mac_closed "$_keep" || ! mac_persons_folder "$_keep/$_name"; then
-        die "what was at $_old changed while Eugene moved it (a link, or a folder that is not
-       yours, took its place), so the move was not finished. What was there is kept at
-       $_keep/$_name, readable by administrators only."
-    fi
+    # From here a rollback puts the old folder back before anything else.
     RETAINED=$_keep
+    if ! as_person mv "$_old" "$_keep/$_name"; then
+        mac_close_keep "$_keep"
+        as_root rmdir "$_keep" 2>/dev/null || true
+        RETAINED=
+        die "could not move $_old into $_keep, so the move was not finished"
+    fi
+    mac_close_keep "$_keep"
+    if ! mac_closed "$_keep" || [ "$(as_root ls -A "$_keep" 2>/dev/null)" != "$_name" ] \
+            || ! as_root test -d "$_keep/$_name" || as_root test -L "$_keep/$_name" \
+            || ! mac_ls_fields as_root "$_keep/$_name" || [ "$LS_UID" != "$PERSON_UID" ] \
+            || ! as_root test -f "$_keep/$_name/node.yaml" || as_root test -L "$_keep/$_name/node.yaml"; then
+        die "what was moved into $_keep is not the folder Eugene was moved from (a link, or a
+       folder that is not yours or holds no node.yaml, took its place at $_old), so the
+       move was not finished."
+    fi
+}
+
+# Root's keeping folder closed again: the person's entry off, every entry
+# off, 0700.
+mac_close_keep() {
+    as_root chmod -h -N "$1" >/dev/null 2>&1 || true
+    as_root chmod -h 0700 "$1" || true
+}
+
+# **A move put back puts the old folder back first** (re-review 3): the
+# person renames it out of root's folder to where it was, with the
+# person's own rights again, and root's folder goes. What cannot be put
+# back is said, with the one command that does it.
+mac_migrate_unretain() {
+    [ -n "$RETAINED" ] || return 0
+    _keep=$RETAINED
+    _name=${PERSON_USER_PREFIX##*/}
+    RETAINED=
+    if as_root test -e "$_keep/$_name" || as_root test -L "$_keep/$_name"; then
+        if as_person test -e "$PERSON_USER_PREFIX" || as_person test -L "$PERSON_USER_PREFIX"; then
+            printf '       %s exists again, so the old install was left at %s/%s:\n' \
+                "$PERSON_USER_PREFIX" "$_keep" "$_name" >&2
+            printf '       sudo mv %s %s\n' "$(sh_quote "$_keep/$_name")" "$(sh_quote "$PERSON_USER_PREFIX")" >&2
+            return 0
+        fi
+        as_root chmod -h +a "user:$PERSON allow search,delete_child" "$_keep" >/dev/null 2>&1 || true
+        if ! as_person mv "$_keep/$_name" "$PERSON_USER_PREFIX"; then
+            mac_close_keep "$_keep"
+            printf '       The old install could not be put back; it is at %s/%s:\n' "$_keep" "$_name" >&2
+            printf '       sudo mv %s %s\n' "$(sh_quote "$_keep/$_name")" "$(sh_quote "$PERSON_USER_PREFIX")" >&2
+            return 0
+        fi
+        printf '       Put the old install back at %s.\n' "$PERSON_USER_PREFIX" >&2
+    fi
+    mac_close_keep "$_keep"
+    as_root rmdir "$_keep" 2>/dev/null || true
 }
 
 # The daemon answers and the old folder is kept: the move is committed.
@@ -2115,8 +2384,7 @@ mac_migrate_finish() {
         as_person rm -rf "$PERSON_HOME/.eugene-plexus/engines" || true
     fi
     _oldapp="$PERSON_HOME/Applications/Remove Eugene Plexus.app"
-    if [ -f "$_oldapp/Contents/Resources/prefix.txt" ] \
-            && [ "$(cat "$_oldapp/Contents/Resources/prefix.txt")" = "$_old" ]; then
+    if [ "$(as_person cat "$_oldapp/Contents/Resources/prefix.txt" 2>/dev/null)" = "$_old" ]; then
         as_person rm -rf "$_oldapp" || true
     fi
     mac_write_removal_app
@@ -2168,6 +2436,12 @@ mac_daemon_serving() {
         SERVING_SEEN="$SERVING_SEEN; after its health answer, launchd's job pid ${_again:-none}, listening: ${_on_port_again:-nothing}"
         return 1
     fi
+    # The same pid can run another program by then (an exec): its command
+    # line is checked again too (re-review 4).
+    if ! mac_runs_this_agent "$_job"; then
+        SERVING_SEEN="$SERVING_SEEN; after its health answer it runs: $(as_root ps -ww -o command= -p "$_job" 2>/dev/null | cut -c1-200)"
+        return 1
+    fi
 }
 
 # A failed move puts the Mac back: the daemon booted out, the copy and the
@@ -2186,6 +2460,8 @@ mac_migrate_rollback() {
             return 0
         fi
     fi
+    # The old folder back where it was, before anything is removed.
+    mac_migrate_unretain
     as_root rm -f "$LAUNCHD_DAEMON" "$LAUNCHD_DAEMON.new"
     # Only a folder this run made, and never a link.
     if [ "$MIGRATE_FRESH_PREFIX" = 1 ] && ! as_root test -L "$PREFIX"; then
@@ -2206,7 +2482,7 @@ mac_migrate_rollback() {
     if [ "$ACCOUNT_CREATED" = 1 ]; then mac_delete_account; fi
     if launchctl bootstrap "gui/$PERSON_UID" "$PERSON_LAUNCH_AGENT" >/dev/null 2>&1 \
             || as_person launchctl bootstrap "gui/$PERSON_UID" "$PERSON_LAUNCH_AGENT" >/dev/null 2>&1; then
-        _back=$(plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) || _back=8079
+        _back=$(person_plist_get "$PERSON_LAUNCH_AGENT" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) || _back=8079
         _i=0
         while [ "$_i" -lt 30 ]; do
             if curl -fsS -o /dev/null "http://127.0.0.1:${_back:-8079}/healthz" 2>/dev/null; then
@@ -2776,12 +3052,25 @@ APPLE
         HOMES="$HOMES
 $(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p' | head -n 1)"
     fi
-    printf '%s\n' "$HOMES" | while IFS= read -r HOME_OF; do
+    # Read back by name (`ls -le`; with -n macOS prints the group's UUID):
+    # an entry that stays is said, and its receipt kept for the next try.
+    ACE_LEFT=0
+    OLD_IFS=$IFS
+    set -f
+    IFS='
+'
+    for HOME_OF in $HOMES; do
+        IFS=$OLD_IFS
         case "$HOME_OF" in /?*) ;; *) continue ;; esac
-        if [ -d "$HOME_OF" ]; then
-            chmod -h -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
+        [ -d "$HOME_OF" ] || continue
+        chmod -h -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
+        if ls -led "$HOME_OF" 2>/dev/null | grep -qF "group:$MODELS_GROUP allow search"; then
+            warn "Could not take Eugene's entry out of $HOME_OF's ACL: sudo chmod -a 'group:$MODELS_GROUP allow search' '$HOME_OF'"
+            ACE_LEFT=1
         fi
     done
+    IFS=$OLD_IFS
+    set +f
     if [ -f "$RECEIPTS/models-group.txt" ]; then
         read -r _kind MODELS_GID < "$RECEIPTS/models-group.txt" || true
         if [ -n "$MODELS_GID" ] && [ "$MODELS_GID" != 0 ] \
@@ -2811,7 +3100,8 @@ $(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHom
             warn "Could not delete $OLD_COPY: sudo rm -rf '$OLD_COPY'"
         fi
     done
-    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/models-ace.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
+    [ "$ACE_LEFT" = 1 ] || rm -f "$RECEIPTS/models-ace.txt"
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
     rmdir "$RECEIPTS" 2>/dev/null || true
     echo "Eugene's removal finished. It no longer starts at boot."
     if [ -d "$KEEP" ]; then
