@@ -459,7 +459,11 @@ def update_run(token: str) -> None:
             _, now = api("GET", f"{AGENT}/v1/apps/{APP}", token)
             check("98", "and nothing changed: the old version still runs",
                   (now or {}).get("version") == OLD_VERSION and (now or {}).get("status") == "running",
-                  {k: (now or {}).get(k) for k in ("version", "status")})
+                  {k: (now or {}).get(k) for k in ("version", "status", "lastError", "detail", "pid",
+                                                    "port")})
+            unit = subprocess.run(["systemctl", "status", f"eugene-plexus-app@{APP}.service",
+                                   "--no-pager", "-n", "20"], capture_output=True, text=True)
+            fact("the app's unit after the refused update", (unit.stdout + unit.stderr)[-1500:])
             status, body = api("POST", f"{AGENT}/v1/apps/{APP}/rollback", token)
             check("99", "Go back is refused with the same cause",
                   status == 409 and "systemd account of its own" in json.dumps(body), body)
