@@ -23,6 +23,8 @@ PINNED_STEPS = {
     "run-operations-checks.py": (FULL, "both"),
     "s10-starter-check.py": (FULL, "both"),
     "r7-signing-checks.py": (EVERY, "both"),
+    "test_s8_harness.py": (EVERY, "both"),
+    "harness-acceptance.py": (EVERY, "both"),
     "r7-rotation-acceptance.py": (FULL, "both"),
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),

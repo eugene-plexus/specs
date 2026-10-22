@@ -50,6 +50,9 @@ def check(root: Path, engine: Path, model: Path, *, browser: Path | None = None,
     for name, config in configs.items():
         (root / f"{name}.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
+    # The machine port is off until agent#27 is fixed: with it on, the wizard joins the root at
+    # control's moved URL, which is plain HTTP, and the join token expects TLS.
+    env["EUGENE_PLEXUS_AGENT_MACHINE_PORT_ENABLED"] = "0"
     processes = []
     logs = []
     for sock in sockets:
