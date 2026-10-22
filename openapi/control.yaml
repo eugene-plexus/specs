@@ -864,7 +864,21 @@ paths:
     get:
       operationId: oidcUserinfo
       summary: Who the access token was issued for
-      description: A bearer access token from `/oidc/token`. The same claims as the ID token's, less the token ones.
+      description: |
+        A bearer access token from `/oidc/token`. The same claims as the ID
+        token's, less the token ones.
+
+        For a registered app, the ID token and this answer carry two claims
+        from the person's permission groups (row 70), worked out from the
+        root's current state at each sign-in, refresh and call here:
+        - `eugene_groups`: the groups the person is in, as `{id, name}`,
+          sorted by name, at most 64. Empty for individual access and for
+          Eugene's owner.
+        - `eugene_policies`: a `PoliciesInEffect` object, the most generous
+          value of each policy across those groups, and which groups set
+          each. Empty when no group sets a policy.
+        An app reads a change after its next token refresh (the ID token
+        lives 10 minutes).
       responses:
         '200':
           description: Claims.
@@ -1028,8 +1042,8 @@ paths:
       - {name: id, in: path, required: true, schema: {type: string}}
     put:
       operationId: replacePermissionGroup
-      summary: Replace a group's name and grants
-      description: Owner or manageGroups administrator. Existing member IDs stay assigned; new authorizations and refreshes use the new grants.
+      summary: Replace a group's name, grants and policies
+      description: Owner or manageGroups administrator. Existing member IDs stay assigned; new authorizations and refreshes use the new grants and policies. The next admission check uses the new queue band.
       requestBody:
         required: true
         content:
@@ -4083,6 +4097,9 @@ components:
     ClientAdmissionResult:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientAdmissionResult'
 
+    QueueBand:
+      $ref: 'components/client-keys.yaml#/components/schemas/QueueBand'
+
     ClientKey:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKey'
 
@@ -5549,6 +5566,9 @@ components:
           type: array
           items: {$ref: '#/components/schemas/PersonPermission'}
           description: Effective permissions from selected groups, or individual permissions/install defaults when groups is null.
+        policiesInEffect:
+          $ref: '#/components/schemas/PoliciesInEffect'
+          description: The group policies that apply to them now, and which groups set each. Absent from an older root.
         disabled: {type: boolean}
         createdAt: {type: string, format: date-time}
         passwordChangedAt: {type: string, format: date-time}
@@ -6117,6 +6137,14 @@ components:
           maxItems: 16
           uniqueItems: true
           items: {$ref: '#/components/schemas/PersonPermission'}
+        policies:
+          $ref: '#/components/schemas/GroupPolicies'
+          description: |
+            What the group sets for its members (row 70). A root that knows
+            policies always answers this object, with `null` for each policy
+            not set; an older root leaves it out, and a console hides its
+            Policies section then. In the replicated log and the snapshot it
+            is kept only when a policy is set, holding only the policies set.
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
 
@@ -6140,6 +6168,61 @@ components:
           uniqueItems: true
           default: []
           items: {$ref: '#/components/schemas/PersonPermission'}
+        policies:
+          $ref: '#/components/schemas/GroupPolicies'
+          description: |
+            The group's policies, replaced whole: a `null` or absent policy
+            inside is not set. Omitted from a replace, the group keeps its
+            current policies, so a console that predates policies never
+            clears them. Omitted from a create, the group sets none. An
+            older root refuses this field (`additionalProperties: false`).
+
+    GroupPolicies:
+      type: object
+      additionalProperties: false
+      description: |
+        Policies a permission group sets for its members (row 70). Not set
+        is no policy: a person whose groups set none gets the install's
+        default. A person in several groups gets the most generous value of
+        each: the highest queue band, the larger percent.
+      properties:
+        queueBand:
+          oneOf:
+            - $ref: '#/components/schemas/QueueBand'
+            - type: 'null'
+          description: Queue priority for the members' requests. The root returns it in the admission check of a verified person.
+        summaryContextPercent:
+          type: [integer, 'null']
+          minimum: 50
+          maximum: 95
+          description: The percent of a model's context at which Workbench starts summarising a long chat. With no policy, Workbench uses 80.
+
+    PoliciesInEffect:
+      type: object
+      additionalProperties: false
+      description: |
+        The policies that apply to a person now (row 70), from the groups
+        they are in: the most generous value of each. An absent value is no
+        policy. Individual access (`groups` null) sets none. The same object
+        is the `eugene_policies` sign-in claim.
+      properties:
+        queueBand: {$ref: '#/components/schemas/QueueBand'}
+        summaryContextPercent: {type: integer, minimum: 50, maximum: 95}
+        setBy: {$ref: '#/components/schemas/PoliciesSetBy'}
+
+    PoliciesSetBy:
+      type: object
+      additionalProperties: false
+      description: For each policy value in effect, the ids of the groups that set that value, sorted by group name.
+      properties:
+        queueBand:
+          type: array
+          maxItems: 64
+          items: {type: string}
+        summaryContextPercent:
+          type: array
+          maxItems: 64
+          items: {type: string}
 
     PermissionGroupList:
       type: object
