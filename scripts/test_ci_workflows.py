@@ -57,6 +57,7 @@ PINNED_STEPS = {
     "Keep UI inference prerequisite evidence": ("always-full", "both"),
     "c2-sign-in-acceptance.py": (EVERY, "both"),
     "c3-workbench-acceptance.py": (EVERY, "both"),
+    "row7-person-removal-acceptance.py": (EVERY, "both"),
     "update-all-acceptance.py": (FULL, "both"),
     "standby-acceptance.py": (FULL, "both"),
     "job-sites-acceptance.py": (FULL, "linux"),

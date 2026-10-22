@@ -129,8 +129,13 @@ holds both. W5 is what keeps one out.
   chats, and **every person sees a standing line** above their chats:
   *The owner of this Workbench can read your chats.* The setting says it
   applies to every chat, including those written before it was turned on.
-- **A person removed in Eugene** can no longer sign in, and their chats
-  stay stored. Deleting a former person's chats is a later slice.
+- **A person removed in Eugene** can no longer sign in. Since row 7
+  (`rows/row-07.md`), Workbench asks Eugene who it still has
+  (`POST /oidc/subjects`), hides a removed person's data at once from
+  every read, the owner's included, and deletes it after
+  `removedPeopleDays` (30) or at once (Delete now, or
+  `removedPeopleRetention` "Not at all"). The owner may download a removed
+  person's data at any time; every download is logged.
 
 ### W5. Model output is untrusted
 
@@ -278,7 +283,7 @@ and the WSL SearXNG.
 
 - Kept versions of an answer (W1; designed 2026-10-08 in
   [`workbench-answer-versions.md`](workbench-answer-versions.md)).
-- Deleting a former person's chats (W4).
+- Deleting a former person's chats (W4; built in row 7).
 - Per-person usage at the gateway (sign-in call 1).
 - Images, speech, transcription and video as their own screens. The
   doors exist; Workbench's screens for them come later.
