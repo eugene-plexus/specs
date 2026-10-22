@@ -1806,19 +1806,24 @@
    "lane_order": 5,
    "repos": [
     "workbench",
-    "site-host"
+    "agent"
    ],
    "contract": "",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/local_tools.py",
     "workbench/src/eugene_plexus_workbench/mcp_sandbox.py"
    ],
-   "design_state": "full",
-   "needs": [],
+   "design_state": "ready",
+   "needs": [
+    51
+   ],
    "design_docs": [
+    "rows/row-52.md",
     "workbench-mcp.md"
    ],
-   "calls": [],
+   "calls": [
+    "R52-ENV"
+   ],
    "issue": 79
   },
   {

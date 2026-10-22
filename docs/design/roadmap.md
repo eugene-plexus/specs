@@ -106,7 +106,7 @@ between machines). The next release fits after row 6.
 | 49 | **Which machine hosts a model** | M6-PLACE | L | cross | multi-machine | Design first, after row 14 |
 | 50 | **One model across machines with llama.cpp's `rpc-server`** | RPC (setups pass) | L | cross | multi-machine | Design first |
 | 51 | **Job Sites, banked items.** QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin | J-BANKED | S-M each | some high | multi-machine | Designed (`rows/row-51.md`): 51a QR code, 51b re-pair warning, 51c auditors, 51d the worker checks signatures, 51e AppContainer confinement, 51f tailnet origin (after 45b). Call R51-SHARES |
-| 52 | **Per-person isolation for local MCP programs** | C5b-iso | L | high | multi-person installs | |
+| 52 | **Per-person isolation for local MCP programs** | C5b-iso | L | high | multi-person installs | Designed (`rows/row-52.md`): Landlock on Linux, an AppContainer per person on Windows (after row 51e); the owner offers a program to everyone. Call R52-ENV |
 
 ## 5. Doors, developers and the platform half
 
