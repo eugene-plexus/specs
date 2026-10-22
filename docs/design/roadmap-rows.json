@@ -1123,27 +1123,30 @@
    "summary": "Skills (Anthropic-style)",
    "from": "memory research",
    "size": "M",
-   "risk": "cross",
-   "risk_note": "cross",
+   "risk": "high",
+   "risk_note": "high (store migration, archive reader)",
    "who": "every Workbench user",
    "notes": "Design first",
    "lane": "WB",
    "lane_order": 8,
    "repos": [
-    "workbench",
-    "gateway?"
+    "workbench"
    ],
    "contract": "",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/tools.py",
-    "workbench/src/eugene_plexus_workbench/context.py"
+    "workbench/src/eugene_plexus_workbench/store.py",
+    "workbench/web/src/App.tsx"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-32.md",
     "memory-research-2026-10.md"
    ],
-   "calls": [],
+   "calls": [
+    "R32-OWNER"
+   ],
    "issue": 59
   },
   {
