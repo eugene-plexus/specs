@@ -1552,12 +1552,13 @@
     "agent/src/eugene_plexus_agent/peer.py",
     "gateway/src/eugene_plexus_gateway/affinity.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     13,
     15
    ],
    "design_docs": [
+    "rows/row-44.md",
     "deepinfer-lessons.md"
    ],
    "calls": [],
@@ -1722,15 +1723,17 @@
    "repos": [
     "control",
     "agent",
-    "gateway"
+    "library",
+    "ui"
    ],
    "contract": "control.yaml",
    "hot_files": [],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     14
    ],
    "design_docs": [
+    "rows/row-49.md",
     "m6-lifecycle-policy.md"
    ],
    "calls": [],
