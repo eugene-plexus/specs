@@ -91,9 +91,9 @@ between machines). The next release fits after row 6.
 |---|---|---|---|---|---|---|
 | 36 | **Machines says why a machine's announcement was refused** | R2.4-a | M | cross | multi-machine | Today it shows a probe error. A contract field plus an issue kind |
 | 37 | **Routing profiles per person or group** (shared accounts, part two). Each group gets routing rules per model role (row 71) | SSO-ROLES (`shared-accounts-and-sso.md`) | L | high | businesses | Designed (`rows/row-37.md`): per-group role routing and allowed models. After rows 11, 70 and 71. Call R37-FIRST |
-| 38 | **Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost** | ADM, HH-NEXT, MD-x | L | low | businesses | Needs row 12 |
+| 38 | **Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost** | ADM, HH-NEXT, MD-x | L | low | businesses | Designed (`rows/row-38.md`): 90-day history, fleet view, wake cost, SLOs, alerts with a webhook; after row 12 |
 | 39 | **Operations rights for people who are not the owner** | CX-OPS | L | high | businesses | Designed (`rows/row-39.md`): powers for models, updates and logs, per machine, with a record of who did what. Calls R39-LOGS, R39-DELETE |
-| 40 | **Usage and money limits per person and key** | KEY$, Shop, AD-BILL | L | high | businesses | Builds on A5's attribution |
+| 40 | **Usage and money limits per person and key** | KEY$, Shop, AD-BILL | L | high | businesses | Designed (`rows/row-40.md`): install-wide counters at control, token and money allowances per key, person and group; after rows 11 and 24. Call R40-LOCAL |
 | 41 | **Speculative decoding on vLLM**, including the overdue live vLLM run on current Edge | SD2 | M | low | vLLM | |
 | 42 | **vLLM from its official container image** | VDK (business candidate) | M-L | cross | vLLM, businesses | Designed (`rows/row-42.md`): Docker or Podman with GPUs, the image pinned by digest, read-only model mounts, `docker stop` and an orphan sweep |
 | 73 | **Eugene installs and updates vLLM, as it does llama.cpp.** It picks the build for the machine's GPU and CUDA, keeps two builds, checks a new one before switching (row 13's check), and supervises it | Troy, 2026-10-21 ("supported like llama.cpp eventually") | L | high (installs software) | vLLM users, businesses | Designed (`rows/row-73.md`): uv-made environments with the pinned vLLM and PyTorch, two kept, updates through row 13's check; after rows 42 and 13 |
@@ -120,14 +120,14 @@ between machines). The next release fits after row 6.
 | 58 | **A Gemini API door**, and the small Gemini items (mp3/opus speech, countTokens, dimensions) | GEM-D (gateway#5), GEM-x (inference-driver#7) | L, S each | low | Gemini SDK users | Designed (`rows/row-58.md`): 58a measure Gemini CLI and the SDKs first, 58b the door onto the shared path, 58c mp3/opus speech, countTokens, dimensions |
 | 59 | **More server-run tools.** Tavily, and remote MCP on Responses | P8-later | M | high (59b) | developers | Designed (`rows/row-59.md`): 59a Tavily; 59b remote MCP run by the tool driver, internet only, the caller's token never kept. Call R59-MCP |
 | 60 | **Full interop conformance.** A separate-origin MCP proxy, network and device grants, sampling and elicitation, A2UI beyond forms | G-later | L | high (sandbox) | developers | |
-| 61 | **LoRA adapters as Library items**, routed to replicas holding them | M2-LORA | M | cross | developers | |
+| 61 | **LoRA adapters as Library items**, routed to replicas holding them | M2-LORA | M | cross | developers | Designed (`rows/row-61.md`): adapters listed under their base, loaded by llama.cpp and vLLM, routed only to replicas holding them |
 | 62 | **A `runtime_name` dropdown** in place of free text | M4-DROP | S | low | developers | |
 
 ## 6. Engines and the Library's reach
 
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
-| 63 | **Strata: the speed projection, and several GPUs** | STR-14 (agent#14) | M | low | multi-GPU | |
+| 63 | **Strata: the speed projection, and several GPUs** | STR-14 (agent#14) | M | low | multi-GPU | Designed (`rows/row-63.md`): read upstream first; layer split across cards; the projection as an opt-in |
 | 64 | **Starter set: proof of CPU speed** | LIB-STARTER | M | low | CPU-only users | |
 | 65 | **Ollama: keep a model in the Library, and read a worker's own Ollama store** | CX9-KEEP | S-M | cross | Ollama users | |
 | 66 | **Experimental engines: TensorSharp, NInfer, imp** | ENG-X, A8-NEXT | M each | low | tinkerers | |

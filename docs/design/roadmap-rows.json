@@ -1329,9 +1329,9 @@
    "lane": "WEB",
    "lane_order": 4,
    "repos": [
-    "ui",
-    "gateway",
-    "agent"
+    "agent",
+    "control",
+    "ui"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
@@ -1339,11 +1339,12 @@
     "ui/src/lib/gatewayDashboard.ts",
     "gateway/src/eugene_plexus_gateway/metrics.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     12
    ],
    "design_docs": [
+    "rows/row-38.md",
     "gateway-operations-dashboard.md",
     "host-history.md"
    ],
@@ -1403,9 +1404,11 @@
    "lane": "GW",
    "lane_order": 9,
    "repos": [
-    "gateway",
     "control",
-    "ui"
+    "gateway",
+    "inference-driver",
+    "ui",
+    "workbench"
    ],
    "contract": "components/client-keys.yaml gateway.yaml",
    "hot_files": [
@@ -1413,16 +1416,19 @@
     "gateway/src/eugene_plexus_gateway/client_keys.py",
     "control/src/eugene_plexus_control/client_admission.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     11,
     24
    ],
    "design_docs": [
+    "rows/row-40.md",
     "openai-inference-compatibility.md",
     "scoped-client-access.md"
    ],
-   "calls": [],
+   "calls": [
+    "R40-LOCAL"
+   ],
    "issue": 67
   },
   {
@@ -2118,7 +2124,7 @@
    "title": "LoRA adapters as Library items",
    "summary": "LoRA adapters as Library items, routed to replicas holding them",
    "from": "M2-LORA",
-   "size": "M",
+   "size": "L",
    "risk": "cross",
    "risk_note": "cross",
    "who": "developers",
@@ -2128,7 +2134,9 @@
    "repos": [
     "library",
     "agent",
-    "gateway"
+    "inference-driver",
+    "gateway",
+    "ui"
    ],
    "contract": "library.yaml",
    "hot_files": [
@@ -2136,11 +2144,12 @@
     "library/src/eugene_plexus_library/routes/models.py",
     "gateway/src/eugene_plexus_gateway/routing.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     14
    ],
    "design_docs": [
+    "rows/row-61.md",
     "m2-model-library.md",
     "llm-d-lessons.md"
    ],
@@ -2191,18 +2200,20 @@
    "lane_order": 10,
    "repos": [
     "agent",
-    "library"
+    "library",
+    "ui"
    ],
    "contract": "",
    "hot_files": [
     "agent/src/eugene_plexus_agent/engines/strata.py",
     "library/src/eugene_plexus_library/engine_fit.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
-    "library-sources-and-engines.md",
-    "strata-engine.md"
+    "rows/row-63.md",
+    "strata-engine.md",
+    "library-sources-and-engines.md"
    ],
    "calls": [],
    "issue": 90
