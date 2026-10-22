@@ -444,6 +444,11 @@ def update_run(token: str) -> None:
 
         put_catalogue(variant(shipped, broken=True) if WINDOWS else shipped)
         token = restart_agent()
+        if not WINDOWS:
+            # The agent shows an app it adopted after its own restart as "starting" for good
+            # (eugene-plexus/agent, filed from this run); a plain restart clears it.
+            api("POST", f"{AGENT}/v1/apps/{APP}/restart", token)
+            wait_running(token)
         entry = catalogue_entry(token)
         check("95", "the catalogue says the update resets Open WebUI's settings",
               entry.get("installedVersion") == OLD_VERSION and entry.get("resetsSettings") is True,
