@@ -79,6 +79,150 @@ including the rebuilt UI distribution. Native CPU/GPU image inference remains
 for live-server validation. See the
 [verification record](../acceptance/strata-engine-run.md).
 
+## Row 63 contract and pinned-source findings (2026-10-22)
+
+**Phase 1 only: the contracts are prepared; the consumers are not changed.**
+The row design was read in full from
+`D:/py/ep-wt/calls-1022c/specs/docs/design/rows/row-63.md`. It has no
+"Calls answered by Troy" section and no open calls. Findings belong in this
+worktree's investigation because that row design is on an unmerged branch.
+
+No upstream source checkout is vendored in these row worktrees. The adapter
+and preparation code record parts of setup at the pinned commit. The
+following upstream files were also read successfully through GitHub, all at
+`6f32ec070f23ced9f50e704d854d775da52591ab` (v0.1.39):
+
+- [setup.py](https://github.com/Niko1221/Strata/blob/6f32ec070f23ced9f50e704d854d775da52591ab/setup.py)
+- [serve/server.py](https://github.com/Niko1221/Strata/blob/6f32ec070f23ced9f50e704d854d775da52591ab/serve/server.py)
+- [docs/DETAILS.md](https://github.com/Niko1221/Strata/blob/6f32ec070f23ced9f50e704d854d775da52591ab/docs/DETAILS.md)
+- [docs/MULTI_GPU.md](https://github.com/Niko1221/Strata/blob/6f32ec070f23ced9f50e704d854d775da52591ab/docs/MULTI_GPU.md)
+- [the projection README](https://github.com/Niko1221/Strata/blob/6f32ec070f23ced9f50e704d854d775da52591ab/data/experimental-speed-projection/README.md)
+
+None of those reads was blocked. No model, vector asset or engine build was
+downloaded, and no engine or agent was started. These findings are upstream
+source and recorded measurements, not a new Eugene hardware measurement.
+
+**The projection changes answers.** The bundled vector removes a direction
+from the residual stream after layers 4 through 44. Its package describes
+that direction as one associated with refusals. Upstream reports fewer
+refusals and changes to ordinary predictions: a different most-likely token
+at 10% of measured positions, with perplexity increases of 15% on code,
+2.3% on a document and 0.4% on a chat. These are upstream's particular test
+results. They do not predict the effect on another person's prompts.
+
+This is not an engine speed optimization. On the same supplied text,
+upstream measures an extra 0.2-0.4% cost per token. Any change in a chat's
+tokens per second depends on the generated text and draft acceptance. The
+GUI's first description line must say it changes answers and is
+experimental, without promising a speed gain.
+
+Setup takes `--experimental-speed-projection on|off`. When enabled, it
+writes `--control-vector-scaled <vector-path>:1.0`,
+`--control-vector-layer-range 4 44`, `--cvec-mode project` and
+`--cvec-dir per-layer` into the native arguments. These are native launch
+flags; passing the setup flag to `serve/server.py` is not equivalent.
+Launch must resolve the vector from this node's installed source bundle,
+without copying an executable path from another node. Its sampling default
+also matters: `sampling.experimental_speed_projection: false` disables a
+loaded vector. A per-request change drops the conversation cache once.
+
+At this pin, setup enables the bundled vector for the original and Coder
+families. For Swift and other families it warns and leaves it off. Report
+that observed fallback and the actual mode. Missing tests alone are not a
+reason to block an expert's launch choice; do not turn the absence of an
+advertised preparation choice into a blanket model prohibition.
+
+**Several cards use contiguous layer ranges.** Setup accepts `--gpus 0,2`
+and `--layer-split auto` or an explicit boundary string. It writes
+`gpu: [0, 2]` and `layer_split` to the prepared JSON. The server turns that
+into `--layer-split`; it also sets process visibility from the ordered GPU
+selection. The first card is the main card; the last stage also holds the
+output head and MTP layer. For three cards, `16,32` means layers 0-15,
+16-31 and 32 onward. It is not a list of layer counts. The server accepts
+a boundary string or JSON list, checks one rising integer per later card,
+and requires the first boundary to be at least 2. The adapter must also
+check boundaries against the model's layer count before launch.
+
+Automatic placement uses free VRAM and the expert profile. For two or three
+cards it searches placements; for more it uses proportional placement.
+The mode `auto` does not reveal the selected numerical boundaries. Upstream
+records about 18-20% faster prompts for one 5080/3090 Coder test, with decode
+depending on the workload. A much slower extra card can reduce speed. Those
+numbers are not a Eugene performance claim or an admission gate.
+
+Fit must use the selected cards, not every installed card or only the main
+one. Sum their usable contributions after each card's dense-weight, KV and
+buffer allowance. In particular, setup's low-RAM estimate sums each card's
+expert capacity after roughly 5 GB of overhead per card at 32K context;
+passing total VRAM through the old single-card formula overestimates it.
+Count the shared host expert arena once. Unknown card memory remains an
+unknown estimate, with its observed cause, rather than an automatic refusal.
+
+Setup changes the low-RAM resident mode to memory mapping for a layer split,
+and warns that free RAM can fall to zero during long prompts. A RAM-budget
+model cannot use that budget with a split: setup instead requires the
+model's downloaded size plus 24 GiB of host RAM and removes the budget.
+Preserve and report setup's actual mode and warnings. Its automatic
+`--remote-expert-opt` addition also needs to survive validation. Known
+upstream incompatibilities are distinct from combinations not yet tested.
+
+**Contract choices and defaults built.** `components/common.yaml` now owns
+the preparation intent and the shared projection, ordered GPU selection
+and layer-boundary shapes. `ModelPreparation.speedProjectionModes` advertises
+choices for each model. Library exposes the intent for code generation;
+profiles continue to store engine-owned flags without validating them.
+The agent's adapter remains the validator, and its GUI schema must expose
+`speedProjection`, `gpus` and `layerSplit` in phase 2.
+
+New preparations default to projection `off`, the existing automatic
+single-card selection, and `auto` boundaries if several cards are explicitly
+selected. An omitted profile flag preserves the prepared value, including
+an adopted multi-card configuration or enabled vector. The GUI must show
+that value, not replace it with a form default. An expert may select the
+ordered cards and explicit boundaries in the GUI.
+
+This baseline's `ComputeDevice` has `kind` and `index`, with no UUID field:
+row 43's stable device identities are not present here. The contract uses
+node-local nonnegative ordinals, main first, with no duplicates. The
+implementation must validate the selected cards on that node, handle
+visibility remapping and name a missing or incompatible card instead of
+silently choosing another. Use row 43's UUID mapping when it is available;
+do not invent UUIDs or claim these ordinals are stable identities.
+
+`Runtime.effectiveLaunch` is an optional, read-only `StrataEffectiveLaunch`.
+It records the successfully spawned private launch configuration's
+projection mode, resolved cards and split mode or boundaries. Each value
+is required inside the record and has no default. A single card reports
+`layerSplit: null`; unknown launch settings leave the record absent.
+Stopped runtimes may retain a labelled last launch. This is not a claim
+that inference succeeded or that an automatic split used particular
+boundaries. Editing a profile or prepared file cannot rewrite the observed
+record until another successful launch.
+
+**Phase 2 handoff.** `PreparationIntent`, `ModelPreparation` and their
+referenced schemas are also embedded in `openapi/run-operations.json`.
+That generated snapshot is deliberately unchanged in phase 1. After the
+specs commit is pushed and consumers pin and regenerate it, Library must
+adopt the generated intent instead of its handwritten class, export the
+run protocol snapshot, and regenerate its consumers. The snapshot needs
+`speedProjection`, `gpus` and `layerSplit` on `PreparationIntent`, plus the
+updated preparation capability schema. Do not edit that JSON by hand.
+
+Local generation with the consumers' existing code generator succeeds for
+common, agent and Library. It preserves GPU list order, but does not enforce
+`uniqueItems` in the generated Pydantic validator. Enum defaults also arrive
+as strings until validated. Phase 2 must validate duplicates and normalize
+defaults at the adapter boundary instead of assuming code generation does
+those checks. The contract script runs in the OpenAPI validation CI job.
+
+Phase 2 still owes adapter and preparation changes, card-list fit,
+persistence and replay of these choices, the GUI controls and effective
+display. Use fakes and recorded upstream outputs. A live run remains for
+the owner of a machine with at least two suitable GPUs: preparation and
+launch, the actual split and projection state, peak RAM/VRAM, output changes
+and throughput. No live result or default-port service start is part of this
+builder's worktree validation.
+
 ## Recommendation
 
 Troy clarified the support bar on October 4: **Strata is experimental**, with

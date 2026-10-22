@@ -7215,6 +7215,13 @@ components:
           description: Version reported by the binary that is actually running.
         capabilities:
           $ref: "#/components/schemas/RuntimeCapabilities"
+        effectiveLaunch:
+          $ref: "#/components/schemas/StrataEffectiveLaunch"
+          readOnly: true
+          description: |
+            Strata settings applied by the last successful launch, read
+            from its private launch configuration. Absent before a
+            launch or when unknown; never copied from saved flags.
         lastRestart:
           type: string
           format: date-time
@@ -7230,6 +7237,37 @@ components:
           $ref: "#/components/schemas/RuntimeSpeculation"
         promptCache:
           $ref: "#/components/schemas/RuntimePromptCache"
+
+    StrataEffectiveLaunch:
+      type: object
+      readOnly: true
+      additionalProperties: false
+      required: [speedProjection, gpus, layerSplit]
+      description: |
+        Strata's applied launch settings, read from the launch configuration
+        that was successfully spawned, not the current profile or prepared
+        file, which may have changed since. Unknown values leave this record
+        absent; they never acquire an intent default. A stopped runtime may
+        retain the last successful launch, labelled as such. This records
+        launch settings, not a claim of successful inference or measured speed.
+      properties:
+        speedProjection:
+          $ref: 'components/common.yaml#/components/schemas/SpeedProjectionMode'
+          description: |
+            Changes answers when on; experimental. Applied mode from the
+            loaded control vector and launch sampling default together.
+            A vector absent or disabled in that configuration means off.
+        gpus:
+          $ref: 'components/common.yaml#/components/schemas/StrataGpuSelection'
+          description: Selected node inventory ordinals, main first, resolved from the applied launch and its visibility mapping.
+        layerSplit:
+          anyOf:
+            - $ref: 'components/common.yaml#/components/schemas/StrataLayerSplit'
+            - type: 'null'
+          description: |
+            null with one card. Otherwise the applied boundaries or auto
+            when upstream chooses them. auto reports the selected mode,
+            not measured boundaries or an assumed equal split.
 
     RuntimePromptCache:
       type: object
