@@ -1380,7 +1380,8 @@
    "design_docs": [
     "rows/row-39.md",
     "remote-nodes.md",
-    "shared-accounts-and-sso.md"
+    "shared-accounts-and-sso.md",
+    "console-ux-pass.md"
    ],
    "calls": [
     "R39-LOGS",
@@ -1662,6 +1663,7 @@
     "workbench-memory-v2.md"
    ],
    "calls": [
+    "MRC25",
     "R47-LEAVE"
    ],
    "issue": 74
@@ -1862,7 +1864,8 @@
    "design_docs": [
     "rows/row-53.md",
     "workbench-memory-and-documents.md",
-    "llm-d-lessons.md"
+    "llm-d-lessons.md",
+    "openai-inference-compatibility.md"
    ],
    "calls": [
     "R53-REPO"
@@ -1899,7 +1902,8 @@
    "design_docs": [
     "rows/row-54.md",
     "rows/row-53.md",
-    "llm-d-lessons.md"
+    "llm-d-lessons.md",
+    "responses-and-completions.md"
    ],
    "calls": [
     "R54-DEFAULT"
