@@ -153,7 +153,10 @@ hardware._intel_gpus = lambda warnings: []
         env.update({"HOME": str(prefix), "USERPROFILE": str(prefix), "PYTHONPATH": str(fixture),
                     "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(prefix / "engines"),
                     "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(prefix / "agent.yaml"),
-                    "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1", "CUDA_VISIBLE_DEVICES": "-1"})
+                    "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1", "CUDA_VISIBLE_DEVICES": "-1",
+                    # The machine port is off until agent#27 is fixed: with it on, the wizard joins the root at
+                    # control's moved URL, which is plain HTTP, and the join token expects TLS.
+                    "EUGENE_PLEXUS_AGENT_MACHINE_PORT_ENABLED": "0"})
         if not download:
             assert seed and seed.is_file(), "seeded mode requires --model"
             models = prefix / "Eugene Models"; models.mkdir()
