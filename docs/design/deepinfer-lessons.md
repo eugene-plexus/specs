@@ -438,6 +438,38 @@ answer.
 
 Low risk. Low priority.
 
+**Row 20 implementation (2026-10-22, awaiting CI and live measurements):**
+- Default built: off. Both adapters expose `sameAnswerEveryTime` as a
+  restart-required profile launch field, labelled "Same answer every time
+  (slower)". The existing `flagSchema` and free-form profile/runtime `flags`
+  carry it; no contract change or consumer regeneration is needed.
+- llama.cpp sets `--parallel 1`, overriding the profile's Parallel slots.
+  Its help says "one request at a time; others wait". Extra arguments still
+  win. vLLM sets `VLLM_BATCH_INVARIANT=1` (or `0` for explicit off).
+  A profile value beats an inherited environment value; an explicit runtime
+  environment override wins. Neither adapter gates untested hardware.
+- The vLLM recipes pin `RECIPE_VERSION = "0.30.0"`. The exact variable and
+  its integer boolean parser are in
+  [v0.30.0 `vllm/envs.py`, lines 590-592](https://github.com/vllm-project/vllm/blob/v0.30.0/vllm/envs.py#L590-L592),
+  and the server invocation is in the
+  [versioned batch invariance docs](https://docs.vllm.ai/en/v0.30.0/features/batch_invariance/#enabling-batch-invariance).
+  Support remains the engine's decision; its source comment and docs differ
+  about the NVIDIA capability floor, so Eugene adds no hardware refusal.
+- The runtime snapshots this setting from its final arguments/environment.
+  The console reads that effective value, including overrides and pending
+  profile edits, and shows the one-slot cost. A stopped runtime claims no
+  setting in effect. `Runtime.argv` contains the actual `--parallel 1` launch.
+- CI runs `scripts/di7-same-answer-acceptance.py` on Linux with the agent's
+  acquired CPU build and the shared acceptance model Stories15M. Before
+  each fixed-seed prompt, metrics must show three requests running or
+  queued. It checks ten byte-identical nonempty answers with the setting on
+  and records all ten answers with it off, even if they repeat too.
+  Artifact `di7-cpu-evidence` retains `result.json` and `server.log`, including
+  observed failures, build/model identity, effective launches and answers.
+- No inference measurement was run in the builder workspace. CPU results
+  await CI. GPU llama.cpp and vLLM repeatability and speed still need a live
+  run on suitable hardware; no on/off difference is claimed.
+
 ### DI8. DeepSeek V4.x Flash through Eugene
 
 DeepInfer exists for this model, and people will want to run it. What Eugene
