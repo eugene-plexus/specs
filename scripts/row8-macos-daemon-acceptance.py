@@ -42,9 +42,13 @@ Keychain where this runner has one, enrolled):
 12. a `launchctl` stand-in that fails `bootstrap system`: the LaunchAgent
     serves again from the old prefix, and the message holds launchctl's words
 11. the real move: words first; node name, key and port unchanged; Library
-    state kept; the old prefix moved aside; sealed until one sign-in; then a
-    kickstart unlocks by itself
-14b. uninstall again
+    state kept; the old prefix kept inside a folder root made and closed
+    (root:wheel 0700, no ACL entry), so an ACL entry the person put on the
+    old prefix beforehand opens nothing; the new prefix carries no ACL
+    entry from the copy; sealed until one sign-in; then a kickstart unlocks
+    by itself
+14b. uninstall again, by root's own removal run by root alone (no
+    --person): the home's ACL entry and the kept old prefix go too
 
 Not here (row-08.md section 5): a reboot and a sign-in on a real Mac,
 bare-metal Metal, and macOS privacy prompts, which runner images may
@@ -611,15 +615,34 @@ def phase_user_beside(installer: Path) -> None:
           and not AGENT_PLIST.exists(), text[-400:])
 
 
-def phase_uninstall(installer: Path, number: str) -> None:
-    say(f"{number}. uninstall")
+def acl_entries(path: Path) -> list[str]:
+    """The ACL entries `ls -le` lists under PATH's own line, read as root."""
+    return [line.strip() for line in sudo("ls", "-led", str(path), timeout=20).stdout.splitlines()[1:]
+            if line.strip()]
+
+
+def kept_moves() -> list[Path]:
+    return sorted(Path(p) for p in sudo("sh", "-c", f"ls -d {PREFIX}.moved-* 2>/dev/null", timeout=20).stdout.split())
+
+
+def phase_uninstall(installer: Path, number: str, *, root_alone: bool = False) -> None:
+    """Remove Eugene: by `install.sh --uninstall` as the runner, or with
+    ROOT_ALONE by root's own removal run as root with no --person, as an
+    administrator following the removal's own words would."""
+    say(f"{number}. uninstall" + (" (root's removal, run by root alone)" if root_alone else ""))
     engines = run(["pgrep", "-f", "llama-server"], timeout=20).stdout.split()
-    out = run(["/bin/sh", str(installer), "--uninstall"], timeout=600, env=clean_env())
+    moves_before = kept_moves()
+    if root_alone:
+        out = run(["sudo", "-n", "/bin/sh", str(RECEIPTS / "remove.sh"), "--prefix", str(PREFIX)],
+                  timeout=600, env=clean_env())
+    else:
+        out = run(["/bin/sh", str(installer), "--uninstall"], timeout=600, env=clean_env())
     text = out.stdout + out.stderr
     kept = re.search(r"(/usr/local/eugene-plexus\.removed-\d+)", text)
     kept_path = Path(kept.group(1)) if kept else None
     kept_ok = bool(kept_path) and sudo("test", "-f", str(kept_path / "agent.yaml")).returncode == 0
     kept_owner = sudo("stat", "-f", "%Su:%Sg %Lp", str(kept_path), timeout=20).stdout.strip() if kept_path else ""
+    kept_acl = acl_entries(kept_path) if kept_path else ["(nothing kept)"]
     time.sleep(3)
     left = [line for line in sudo("ps", "-axo", "pid=,comm=", timeout=20).stdout.splitlines()
             if str(PREFIX) + "/" in line]
@@ -628,16 +651,22 @@ def phase_uninstall(installer: Path, number: str) -> None:
     loaded = sudo("launchctl", "print", f"system/{LABEL}", timeout=30).returncode == 0
     models_group = dscl_read(f"/Groups/{MODELS_GROUP}", "PrimaryGroupID")
     home_acl = f"group:{MODELS_GROUP} allow" in run(["ls", "-led", str(HOME)], timeout=20).stdout
+    moves_after = kept_moves()
+    moves_said = all(f"Deleted the copy kept from before Eugene moved to its own account: {m}" in text
+                     for m in moves_before)
     check(number, "plist gone, job unknown, no process left, account, its group and the models group "
-          "removed, the home's ACL entry gone, config kept as root's",
+          "removed, the home's ACL entry gone, config kept as root's with no ACL entry, the old prefix "
+          "a move kept deleted and said",
           out.returncode == 0 and not DAEMON.exists() and not loaded and not left
           and account_uid() is None and dscl_read(f"/Groups/{ACCOUNT}", "PrimaryGroupID") is None
           and models_group is None and not home_acl
-          and kept_ok and kept_owner == "root:wheel 700" and not PREFIX.exists()
-          and not (RECEIPTS / "account.txt").exists(),
+          and kept_ok and kept_owner == "root:wheel 700" and not kept_acl and not PREFIX.exists()
+          and not (RECEIPTS / "account.txt").exists() and not moves_after and moves_said,
           {"rc": out.returncode, "plist": DAEMON.exists(), "loaded": loaded, "left": left,
            "account": account_uid(), "models group": models_group, "home acl entry": home_acl,
-           "kept": str(kept_path), "kept owner": kept_owner, "said": text[-500:]})
+           "kept": str(kept_path), "kept owner": kept_owner, "kept acl": kept_acl,
+           "moves before": [str(m) for m in moves_before], "moves after": [str(m) for m in moves_after],
+           "said": text[-500:]})
 
 
 # --------------------------------------------------------------------------- #
@@ -716,6 +745,17 @@ def phase_refused_move(installer: Path, ctx: dict, workdir: Path) -> None:
 
 def phase_move(installer: Path, ctx: dict) -> None:
     say("11. the move to the daemon")
+    # What a program running as the person could leave behind beforehand
+    # (row 8 re-review A and B): an ACL entry that lets the person search
+    # the old prefix -- no numeric chmod removes one -- and one that lets
+    # them read its node.yaml. Neither may open the keys after the move.
+    planted = {
+        str(USER_PREFIX): run(["chmod", "+a", f"user:{ME} allow list,search,readattr,readsecurity",
+                               str(USER_PREFIX)], timeout=20).returncode,
+        "node.yaml": run(["chmod", "+a", f"user:{ME} allow read,readattr,readsecurity",
+                          str(USER_PREFIX / "node.yaml")], timeout=20).returncode,
+    }
+    fact("ACL entries planted before the move (0 = planted)", planted)
     out = run(["/bin/sh", str(installer)], timeout=1500, env=clean_env())
     text = out.stdout + out.stderr
     words = text.find("Eugene will start when this Mac starts, before anyone signs in")
@@ -744,23 +784,41 @@ def phase_move(installer: Path, ctx: dict) -> None:
     _, node = api("GET", f"{base}/v1/node", token)
     node_yaml = root_read(PREFIX / "node.yaml")
     state_files = sorted(Path(p).name for p in sudo("sh", "-c", f"ls {PREFIX}/library-state*.json", timeout=20).stdout.split())
-    # The old folder holds the machine's keys in clear: kept as root's,
-    # closed, beside the new prefix, and nothing of it left in the home.
+    # The old folder holds the machine's keys in clear: kept inside a folder
+    # root made beside the new prefix -- root's, 0700, no ACL entry -- so
+    # the entries planted above open nothing, and nothing is left in the
+    # home. The person is told where it is and how to delete it.
     in_home = sorted(USER_PREFIX.parent.glob(USER_PREFIX.name + ".moved-*"))
-    moved = sorted(Path(p) for p in sudo("sh", "-c", f"ls -d {PREFIX}.moved-*", timeout=20).stdout.split())
-    moved_owner = sudo("stat", "-f", "%Su:%Sg %Lp", str(moved[-1]), timeout=20).stdout.strip() if moved else ""
-    moved_keys = bool(moved) and sudo("test", "-f", str(moved[-1] / "node.yaml")).returncode == 0
-    person_reads = bool(moved) and run(["cat", str(moved[-1] / "node.yaml")], timeout=20).returncode == 0
+    moved = kept_moves()
+    keep = moved[-1] if moved else None
+    kept_old = keep / USER_PREFIX.name if keep else None
+    moved_owner = sudo("stat", "-f", "%Su:%Sg %Lp", str(keep), timeout=20).stdout.strip() if keep else ""
+    moved_acl = acl_entries(keep) if keep else ["(nothing kept)"]
+    moved_keys = bool(keep) and sudo("test", "-f", str(kept_old / "node.yaml")).returncode == 0
+    person_reads = bool(keep) and run(["cat", str(kept_old / "node.yaml")], timeout=20).returncode == 0
+    person_lists = bool(keep) and run(["ls", str(kept_old)], timeout=20).returncode == 0
     same_node = bool(identity_lines(node_yaml)) and identity_lines(node_yaml) == identity_lines(ctx["node_yaml"])
-    check("11c", "node name and keys unchanged, Library state kept, the old folder kept as root's "
-          "and closed to the person, no LaunchAgent",
+    check("11c", "node name and keys unchanged, Library state kept, the old folder kept in root's closed "
+          "folder, which the person's own ACL entries do not open, its deletion said; no LaunchAgent",
           (node or {}).get("name") == ctx["name"] and same_node
           and set(ctx["state_files"]) <= set(state_files) and not USER_PREFIX.exists() and not in_home
-          and moved_owner == "root:wheel 700" and moved_keys and not person_reads
+          and moved_owner == "root:wheel 700" and not moved_acl and moved_keys
+          and not person_reads and not person_lists
+          and bool(keep) and f"sudo rm -rf '{keep}'" in text
           and not AGENT_PLIST.exists(),
           {"name": (node or {}).get("name"), "same keys": same_node, "state": state_files,
-           "moved": [str(m) for m in moved], "owner": moved_owner, "left in home": [str(m) for m in in_home],
-           "person reads its node.yaml": person_reads})
+           "kept in": str(keep), "owner": moved_owner, "acl": moved_acl,
+           "left in home": [str(m) for m in in_home],
+           "person reads its node.yaml": person_reads, "person lists it": person_lists})
+    # Re-review B: the copy restores no ACL entry, attribute or mode from
+    # what it read; the new prefix and its node.yaml carry no entry.
+    prefix_acl = acl_entries(PREFIX)
+    node_acl = acl_entries(PREFIX / "node.yaml")
+    fact("node.yaml after the move", sudo("stat", "-f", "%Su %Lp", str(PREFIX / "node.yaml"), timeout=20).stdout.strip())
+    check("11f", "the new prefix and its node.yaml carry no ACL entry from the copy, though the old "
+          "node.yaml had one",
+          planted["node.yaml"] == 0 and not prefix_acl and not node_acl,
+          {"planted": planted, "prefix acl": prefix_acl, "node.yaml acl": node_acl})
     agent_yaml = root_read(PREFIX / "agent.yaml")
     # The Keychain move must be exercised, not assumed: an old install that
     # was never on os_keyring proves nothing about it.
@@ -825,7 +883,7 @@ def main() -> int:
                 (workdir / "agent-log-tail-b.txt").write_text(log[-60000:], encoding="utf-8")
             if DAEMON.exists() or PREFIX.exists():
                 try:
-                    phase_uninstall(installer, "14b")
+                    phase_uninstall(installer, "14b", root_alone=True)
                 except Exception:  # noqa: BLE001
                     check("X14b", "uninstall ran", False, traceback.format_exc()[-800:])
             # What B left of the per-user layout, so A starts from nothing.

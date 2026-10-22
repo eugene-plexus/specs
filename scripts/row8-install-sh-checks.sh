@@ -12,10 +12,14 @@
 #
 # Stand-ins: `uv`, `curl`, `systemctl`, `loginctl` (as r22 has them), and for
 # the Mac `uname`, `sudo`, `dscl`, `dseditgroup`, `id` (for Eugene's account
-# only), `launchctl`, `plutil` (Python's plistlib, so the plist is really
-# parsed), `ditto`, `install` and `chown`. Every branch of install.sh is real.
-# What a stand-in cannot show -- launchd running the job as the account,
-# Metal, the firewall, removal -- is the macOS acceptance's
+# only, and root for U1), `launchctl`, `plutil` (Python's plistlib, so the
+# plist is really parsed), `ditto`, `install`, `chown` and `chmod` (owners
+# and ACL entries kept in files, as `ls -lden` then prints them), `ls`
+# (`-lden` only), `mv` (what was recorded follows a rename), `mkdir`,
+# `tar` (GNU tar, each call logged with what its input is), `lsof`, `ps`,
+# `df` and `sleep` (no waiting). Every branch of install.sh is real. What a
+# stand-in cannot show -- launchd running the job as the account, real ACLs,
+# Metal, the firewall -- is the macOS acceptance's
 # (row8-macos-daemon-acceptance.py, on GitHub's macOS runners).
 #
 #   L1. --label without --join is refused, before anything is made
@@ -37,12 +41,29 @@
 #   M6. a move refuses --no-start
 #   M7. a link Eugene's account left under its prefix is refused, and root
 #       never makes, chowns or chmods through it
-#   M8. a move commits only when launchd's daemon is what answers
+#   M8. a move commits only when launchd's daemon is what answers; not
+#       when (b) another process listens on the port too, (c) the job's
+#       program only starts with the agent's name, or (d) the process
+#       changes between the samples and the health answer
 #   M9. a rollback that cannot stop the daemon does not start the
 #       LaunchAgent beside it
+#   M10. the old folder is kept inside a folder root made and closed, so an
+#       ACL entry on the old folder, or one the new folder inherited, opens
+#       nothing; M11, an entry root cannot take off stops the move
+#   M12. a link swapped in for the old folder after the checks is never
+#       followed and stops the move; M13, one swapped in as root renames it
+#       stays in root's folder and stops the move
+#   M14. a refused move takes out the home's ACL entry it added, though the
+#       models group was there before; M15, so does a refused fresh
+#       install; M2, an entry an earlier install made stays
+#   M16. a staff membership an earlier build gave the account is taken back
+#   M17. a disk without room for the copy is refused, with the numbers
+#   U1. root's removal, run by root alone, takes the home's entry out,
+#       deletes the copy a move kept, and closes what it keeps
 #   M1 and M4 also hold the review's other fixes: the models group in place
-#   of staff, the copy read as the person (a planted link stays a link), and
-#   the old folder kept as root's.
+#   of staff, the copy read as the person (a planted link stays a link)
+#   and streamed with nothing but names and contents restored, and the
+#   old folder kept in root's closed folder.
 set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -97,10 +118,21 @@ STUB
 for a in "$@"; do printf '%s\n' "$a"; done > "${EP_STUB_ARGS:-/dev/null}"
 exit 0
 STUB
+  # EP_STUB_PID_FLIP: each health answer comes from another process than
+  # the one before it (the daemon's pid moves between 4242 and 4343).
   cat > "$bin/curl" <<'STUB'
 #!/bin/sh
 case "$*" in
-  *healthz*) [ "${EP_STUB_HEALTH_FAILS:-0}" = 1 ] && exit 7; exit 0 ;;
+  *healthz*)
+    [ "${EP_STUB_HEALTH_FAILS:-0}" = 1 ] && exit 7
+    if [ "${EP_STUB_PID_FLIP:-0}" = 1 ]; then
+      if [ "$(cat "$EP_STUB_STATE/daemon-pid" 2>/dev/null || echo 4242)" = 4242 ]; then
+        echo 4343 > "$EP_STUB_STATE/daemon-pid"
+      else
+        echo 4242 > "$EP_STUB_STATE/daemon-pid"
+      fi
+    fi
+    exit 0 ;;
 esac
 OUTFILE=
 prev=
@@ -192,19 +224,26 @@ for a in "$@"; do
     exit 0
   fi
 done
+# The removal runs as root: EP_STUB_ROOT makes `id -u` say so.
+if [ "${EP_STUB_ROOT:-0}" = 1 ] && [ "$*" = -u ]; then echo 0; exit 0; fi
 exec /usr/bin/id "$@"
 STUB
   # launchd: a bootstrapped system job runs as pid 4242 (unless it is told
-  # to stay silent), and lsof and ps say what that pid is.
+  # to stay silent; the pid is in state/daemon-pid when a check moves it),
+  # and lsof and ps say what that pid is. EP_STUB_SWAP_OLD: once the daemon
+  # starts -- after the move's checks and copy -- a program running as the
+  # person puts a link where the old folder was.
   cat > "$bin/launchctl" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >> "$EP_STUB_STATE/launchctl.log"
+pid=$(cat "$EP_STUB_STATE/daemon-pid" 2>/dev/null || echo 4242)
 case "$*" in
   "bootstrap system "*)
     if [ "${EP_STUB_LAUNCHCTL_FAIL:-}" = bootstrap ]; then
       echo "Bootstrap failed: 5: Input/output error" >&2; exit 5
     fi
-    [ "${EP_STUB_DAEMON_SILENT:-0}" = 1 ] || touch "$EP_STUB_STATE/daemon-running" ;;
+    [ "${EP_STUB_DAEMON_SILENT:-0}" = 1 ] || touch "$EP_STUB_STATE/daemon-running"
+    [ "${EP_STUB_SWAP_OLD:-0}" != 1 ] || "$EP_STUB_BIN/swap-old" ;;
   "bootout system/"*)
     if [ "${EP_STUB_BOOTOUT_FAILS:-0}" = 1 ]; then
       echo "Boot-out failed: 5: Input/output error" >&2; exit 5
@@ -212,36 +251,161 @@ case "$*" in
     rm -f "$EP_STUB_STATE/daemon-running" ;;
   "print system/"*)
     if [ -f "$EP_STUB_STATE/daemon-running" ] || [ "${EP_STUB_DAEMON_LOADED:-0}" = 1 ]; then
-      printf 'system/com.eugeneplexus.agent = {\n\tstate = running\n\tpid = 4242\n}\n'; exit 0
+      printf 'system/com.eugeneplexus.agent = {\n\tstate = running\n\tpid = %s\n}\n' "$pid"; exit 0
     fi
     exit 113 ;;
   print*) exit 113 ;;
 esac
 exit 0
 STUB
+  # The old folder swapped for a link to a folder of someone else's, as a
+  # program running as the person could do it while the move runs.
+  cat > "$bin/swap-old" <<'STUB'
+#!/bin/sh
+old=$HOME/.local/share/eugene-plexus
+[ -L "$old" ] && exit 0
+/bin/mv "$old" "$old.real" && ln -s "${EP_STUB_STATE%/state}/victim" "$old"
+STUB
+  # Every listener on the port: the daemon's pid, and EP_STUB_EXTRA_LISTENER
+  # (another process listening there as well) after it.
   cat > "$bin/lsof" <<'STUB'
 #!/bin/sh
-[ -f "$EP_STUB_STATE/daemon-running" ] && echo 4242
+pid=$(cat "$EP_STUB_STATE/daemon-pid" 2>/dev/null || echo 4242)
+[ -f "$EP_STUB_STATE/daemon-running" ] && echo "$pid"
+[ -z "${EP_STUB_EXTRA_LISTENER:-}" ] || echo "$EP_STUB_EXTRA_LISTENER"
 exit 0
 STUB
+  # The daemon's command line; EP_STUB_PS_PROGRAM_SUFFIX makes its program
+  # one whose name only starts with the agent's.
   cat > "$bin/ps" <<'STUB'
 #!/bin/sh
+pid=$(cat "$EP_STUB_STATE/daemon-pid" 2>/dev/null || echo 4242)
 case "$*" in
-  *"-p 4242"*) echo "$EP_STUB_VENV/bin/python $EP_STUB_VENV/bin/eugene-plexus-agent --unattended"; exit 0 ;;
+  *"-p $pid")
+    echo "$EP_STUB_VENV/bin/python $EP_STUB_VENV/bin/eugene-plexus-agent${EP_STUB_PS_PROGRAM_SUFFIX:-} --unattended"
+    exit 0 ;;
 esac
 exec /bin/ps "$@"
 STUB
-  # macOS's chmod: ACL entries (+a, -a) are recorded, and -h is on a folder
-  # the same as without it.
+  # macOS's chmod: ACL entries are kept in state/acl, one "path<TAB>entry"
+  # a line (+a adds, -a takes one out, -N takes all of a path's out unless
+  # EP_STUB_ACL_STICKS), and -h on a link changes nothing it points to.
   cat > "$bin/chmod" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >> "$EP_STUB_STATE/chmod.log"
-case "$1" in
-  +a|-a) exit 0 ;;
-  -h) shift ;;
-esac
+acl=$EP_STUB_STATE/acl
+touch "$acl"
+nofollow=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h) nofollow=1; shift ;;
+    -f|-v) shift ;;
+    +a)
+      for p in "$3"; do printf '%s\t%s\n' "$p" "$2" >> "$acl"; done
+      exit 0 ;;
+    -a)
+      awk -F '\t' -v p="$3" -v e="$2" '!($1 == p && $2 == e)' "$acl" > "$acl.new" && /bin/mv "$acl.new" "$acl"
+      exit 0 ;;
+    -N)
+      shift
+      [ "${EP_STUB_ACL_STICKS:-0}" = 1 ] && exit 0
+      for p in "$@"; do
+        awk -F '\t' -v p="$p" '$1 != p' "$acl" > "$acl.new" && /bin/mv "$acl.new" "$acl"
+      done
+      exit 0 ;;
+    *) break ;;
+  esac
+done
+if [ "$nofollow" = 1 ]; then
+  for last do :; done
+  [ -L "$last" ] && exit 0
+fi
 exec /bin/chmod "$@"
 STUB
+  # `ls -lden PATH`, as macOS prints it: the owner chown recorded (root:wheel
+  # is 0 0), a + after the mode and one line per entry when PATH has ACL
+  # entries. Every other ls is the real one.
+  cat > "$bin/ls" <<'STUB'
+#!/bin/sh
+if [ "$#" = 2 ] && [ "$1" = -lden ]; then
+  p=$2
+  line=$(/bin/ls -ldn "$p") || exit $?
+  set -f; set -- $line; set +f
+  mode=${1%.}; uid=$3; gid=$4
+  own=$(awk -F '\t' -v p="$p" '$1 == p {o = $2} END {print o}' "$EP_STUB_STATE/owners" 2>/dev/null)
+  [ "$own" != root:wheel ] || { uid=0; gid=0; }
+  entries=$(awk -F '\t' -v p="$p" '$1 == p {print $2}' "$EP_STUB_STATE/acl" 2>/dev/null)
+  [ -z "$entries" ] || mode="$mode+"
+  printf '%s 1 %s %s 0 Jan 1 00:00 %s\n' "$mode" "$uid" "$gid" "$p"
+  [ -z "$entries" ] || printf '%s\n' "$entries" | awk '{printf " %d: %s\n", NR - 1, $0}'
+  exit 0
+fi
+exec /bin/ls "$@"
+STUB
+  # mv, with what chmod and chown recorded following the rename. With
+  # EP_STUB_SWAP_AT_MV, the old folder is swapped for a link just before
+  # root renames it: the race a check made beforehand cannot see.
+  cat > "$bin/mv" <<'STUB'
+#!/bin/sh
+opts=
+while [ $# -gt 0 ]; do
+  case "$1" in -f|-n|-v|-i) opts="$opts $1"; shift ;; --) shift; break ;; *) break ;; esac
+done
+old=$HOME/.local/share/eugene-plexus
+if [ "${EP_STUB_SWAP_AT_MV:-0}" = 1 ] && [ "$1" = "$old" ] && [ ! -L "$old" ]; then "$EP_STUB_BIN/swap-old"; fi
+src=$1; into=${2:-}
+if [ "$#" = 2 ] && [ -d "$2" ] && [ ! -L "$2" ]; then into=$2/${1##*/}; fi
+/bin/mv $opts -- "$@" || exit $?
+if [ "$#" = 2 ] && [ -n "${EP_STUB_STATE:-}" ]; then
+  for f in "$EP_STUB_STATE/acl" "$EP_STUB_STATE/owners"; do
+    [ -f "$f" ] || continue
+    awk -F '\t' -v OFS='\t' -v s="$src" -v d="$into" \
+      '{ if ($1 == s) $1 = d; else if (index($1, s "/") == 1) $1 = d substr($1, length(s) + 1); print }' \
+      "$f" > "$f.new" && /bin/mv "$f.new" "$f"
+  done
+fi
+exit 0
+STUB
+  # A folder made beside the prefix takes an inheritable entry from its
+  # parent when EP_STUB_INHERIT_ACL is set, as /usr/local could hand one on.
+  cat > "$bin/mkdir" <<'STUB'
+#!/bin/sh
+/bin/mkdir "$@" || exit $?
+if [ "${EP_STUB_INHERIT_ACL:-0}" = 1 ] && [ -n "${EP_STUB_STATE:-}" ]; then
+  for last do :; done
+  case "$last" in
+    *.moved-*) printf '%s\tgroup:everyone allow list,search\n' "$last" >> "$EP_STUB_STATE/acl" ;;
+  esac
+fi
+exit 0
+STUB
+  # tar: each call logged with what its standard input is (a pipe, or a
+  # file somebody could have swapped); bsdtar's Mac-only flags dropped
+  # before GNU tar runs.
+  cat > "$bin/tar" <<'STUB'
+#!/bin/sh
+if [ -p /dev/stdin ]; then in=pipe; elif [ -f /dev/stdin ]; then in=file; else in=other; fi
+printf 'stdin=%s %s\n' "$in" "$*" >> "$EP_STUB_STATE/tar.log"
+real=/usr/bin/tar
+[ -x "$real" ] || real=/bin/tar
+for a do
+  shift
+  case "$a" in --no-fflags|--no-mac-metadata) continue ;; esac
+  set -- "$@" "$a"
+done
+exec "$real" "$@"
+STUB
+  # df: the real one, or a disk with EP_STUB_DF_FREE_KB free.
+  cat > "$bin/df" <<'STUB'
+#!/bin/sh
+if [ -n "${EP_STUB_DF_FREE_KB:-}" ]; then
+  printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\nstubfs 1000000000 1 %s 1%% /\n' "$EP_STUB_DF_FREE_KB"
+  exit 0
+fi
+exec /bin/df "$@"
+STUB
+  # No waiting: every wait in install.sh is a loop that asks again.
+  printf '#!/bin/sh\nexit 0\n' > "$bin/sleep"
   printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$EP_STUB_STATE/chgrp.log"\nexit 0\n' > "$bin/chgrp"
   # plutil: the plist really parsed, by Python's plistlib.
   cat > "$bin/plutil" <<'STUB'
@@ -284,7 +448,15 @@ if [ "$1" = -d ]; then
 fi
 exec /usr/bin/install "$@"
 STUB
-  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$EP_STUB_STATE/chown.log"\nexit 0\n' > "$bin/chown"
+  # chown: logged, and the owner kept in state/owners for `ls -lden`.
+  cat > "$bin/chown" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >> "$EP_STUB_STATE/chown.log"
+while [ $# -gt 0 ]; do case "$1" in -h|-R|-f) shift ;; *) break ;; esac; done
+owner=$1; shift
+for p in "$@"; do printf '%s\t%s\n' "$p" "$owner" >> "$EP_STUB_STATE/owners"; done
+exit 0
+STUB
   chmod +x "$bin"/*
 }
 
@@ -346,6 +518,15 @@ value = plistlib.load(open(sys.argv[1], "rb"))
 for part in sys.argv[2].split("."):
     value = value[int(part)] if isinstance(value, list) else value[part]
 print(value)' "$1" "$2" 2>/dev/null; }
+
+# What the stand-ins recorded: a path's ACL entries, its last owner, and
+# whether ROOT's home carries the models group's entry.
+acl_of() { awk -F '\t' -v p="$1" '$1 == p {print $2}' "$ROOT/state/acl" 2>/dev/null; }
+owner_of() { awk -F '\t' -v p="$1" '$1 == p {o = $2} END {print o}' "$ROOT/state/owners" 2>/dev/null; }
+has_home_ace() {
+  awk -F '\t' -v p="$1/home" '$1 == p && $2 == "group:_eugeneplexusmodels allow search" {f = 1} END {exit !f}' \
+    "$1/state/acl" 2>/dev/null
+}
 
 # --- L. --label ---------------------------------------------------------------
 say "L1. --label without --join is refused, before anything is made"
@@ -435,7 +616,8 @@ else
 fi
 models_mode=$(stat -c %a "$ROOT/home/Eugene Models" 2>/dev/null)
 if [ "$models_mode" = 2770 ] && grep -qx -- "-h _eugeneplexusmodels $ROOT/home/Eugene Models" "$STATE/chgrp.log" \
-    && grep -qx "+a group:_eugeneplexusmodels allow search $ROOT/home" "$STATE/chmod.log"; then
+    && grep -q -- "+a group:_eugeneplexusmodels allow search $ROOT/home\$" "$STATE/chmod.log" \
+    && has_home_ace "$ROOT"; then
   ok "~/Eugene Models is the models group's, 2770, and the home lets that group pass through only"
 else
   bad "models folder mode '$models_mode'; chgrp: $(tr '\n' '|' < "$STATE/chgrp.log" 2>/dev/null); acl: $(grep -- '+a' "$STATE/chmod.log" | tr '\n' '|')"
@@ -467,6 +649,13 @@ for case_ in "EP_STUB_PLIST_USER=root" "EP_STUB_PLIST_USER=" "EP_STUB_ACCOUNT_UI
   fi
 done
 EP_EXTRA_ENV=
+# The home's entry was there before these runs (M1's install made it), so
+# a refused run leaves it: only what a run added itself is taken out.
+if has_home_ace "$ROOT"; then
+  ok "the home's ACL entry from the install before was kept"
+else
+  bad "a refused run took out the home's ACL entry an earlier install made"
+fi
 
 say "M3. --user beside the daemon is refused"
 run_mac fresh --no-start
@@ -503,6 +692,9 @@ YAML
   # person may not read: the move must copy the link, never what it names.
   printf 'root only\n' > "$home/root-only.txt"
   ln -s "$home/root-only.txt" "$old/planted"
+  # A file the person left open to everyone: the copy sets its own modes.
+  printf 'loose\n' > "$old/loose.txt"
+  chmod 0666 "$old/loose.txt"
   cat > "$home/Library/LaunchAgents/com.eugeneplexus.agent.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -571,23 +763,45 @@ fi
 # access, and a link in it arrives as a link.
 if [ -L "$PREFIX/planted" ] && [ "$(readlink "$PREFIX/planted")" = "$WORK/move/home/root-only.txt" ] \
     && ! grep -qE '^(ditto|tar -c|cp )' "$STATE/sudo.log" \
-    && grep -q -- '-u _eugeneplexus -- env .* tar -xpf - -C '"$PREFIX" "$STATE/sudo.log"; then
+    && grep -q -- '-u _eugeneplexus -- env .* tar -x .*-f - -C '"$PREFIX" "$STATE/sudo.log"; then
   ok "the old folder was read as the person and written as the account; a planted link stayed a link"
 else
   bad "planted: $(ls -l "$PREFIX/planted" 2>&1); root ran: $(grep -E 'ditto|tar' "$STATE/sudo.log" | tr '\n' '|')"
 fi
-# Row 8 review, blocker 3: the old folder holds the machine's keys in
-# clear, so it is kept as root's, closed, beside the new prefix -- not in
-# the person's home.
+# Row 8 review, blocker 3 and re-review A: the old folder holds the
+# machine's keys in clear, so it is kept beside the new prefix INSIDE a
+# folder root made and closed (root:wheel, 0700, no ACL entry) -- whatever
+# the person left on the old folder itself then opens nothing -- and the
+# person is told where it is and how to delete it.
 moved=$(ls -d "$PREFIX".moved-* 2>/dev/null | head -n 1)
 if [ ! -e "$WORK/move/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] && [ ! -e "$OLD" ] \
-    && [ -z "$(ls -d "$OLD".moved-* 2>/dev/null)" ] && [ -n "$moved" ] && [ -f "$moved/node.yaml" ] \
-    && [ "$(stat -c %a "$moved")" = 700 ] && grep -qx -- "-h root:wheel $moved" "$STATE/chown.log" \
+    && [ -z "$(ls -d "$OLD".moved-* 2>/dev/null)" ] && [ -n "$moved" ] \
+    && [ -d "$moved/eugene-plexus" ] && [ ! -L "$moved/eugene-plexus" ] && [ -f "$moved/eugene-plexus/node.yaml" ] \
+    && [ "$(stat -c %a "$moved")" = 700 ] && [ "$(owner_of "$moved")" = root:wheel ] && [ -z "$(acl_of "$moved")" ] \
     && [ ! -e "$WORK/move/home/.eugene-plexus/engines" ] \
-    && printf '%s' "$OUT" | grep -q "readable by administrators only"; then
-  ok "the LaunchAgent is gone, the old folder kept as root's (0700) at ${moved##*/}, the engine store moved"
+    && printf '%s' "$OUT" | grep -q "readable by administrators only" \
+    && printf '%s' "$OUT" | grep -qF "sudo rm -rf '$moved'"; then
+  ok "the LaunchAgent is gone, the old folder kept in root's closed ${moved##*/}, the engine store moved, the way to delete it said"
 else
-  bad "after: agent plist $([ -e "$WORK/move/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] && echo kept || echo gone), old $([ -e "$OLD" ] && echo kept || echo gone), in home '$(ls -d "$OLD".moved-* 2>/dev/null)', moved '${moved}' mode $(stat -c %a "$moved" 2>/dev/null)"
+  bad "after: agent plist $([ -e "$WORK/move/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] && echo kept || echo gone), old $([ -e "$OLD" ] && echo kept || echo gone), in home '$(ls -d "$OLD".moved-* 2>/dev/null)', kept in '${moved}' ($(ls -A "$moved" 2>/dev/null | tr '\n' ' ')) mode $(stat -c %a "$moved" 2>/dev/null) owner '$(owner_of "$moved")' acl '$(acl_of "$moved")'"
+  show "$OUT" 6
+fi
+# Re-review B: the copy goes from the person's tar to the account's through
+# a pipe -- no file between them the person could swap -- and the account's
+# tar restores no owner, permissions, ACL or extended attribute from it;
+# the modes are the install's own.
+extract=$(grep -F -- "-C $PREFIX" "$STATE/tar.log" 2>/dev/null)
+loose_mode=$(stat -c %a "$PREFIX/loose.txt" 2>/dev/null)
+if [ -n "$extract" ] && ! printf '%s\n' "$extract" | grep -qv '^stdin=pipe ' \
+    && ! printf '%s\n' "$extract" | tr ' ' '\n' | grep -qE '^-[A-Za-z]*p[A-Za-z]*$' \
+    && ! printf '%s\n' "$extract" | grep -v -- '--no-same-owner' | grep -q . \
+    && ! printf '%s\n' "$extract" | grep -v -- '--no-same-permissions' | grep -q . \
+    && ! printf '%s\n' "$extract" | grep -v -- '--no-acls' | grep -q . \
+    && ! printf '%s\n' "$extract" | grep -v -- '--no-xattrs' | grep -q . \
+    && [ "$loose_mode" = 600 ]; then
+  ok "the copy streamed through a pipe, restored no owner, mode, ACL or attribute, and set its own modes"
+else
+  bad "extraction: $(printf '%s' "$extract" | tr '\n' '|'); loose.txt mode '$loose_mode'"
 fi
 if grep -q '^print system/com.eugeneplexus.agent$' "$STATE/launchctl.log"; then
   ok "the move was committed only once launchd's daemon held the port"
@@ -658,22 +872,56 @@ else
   bad "rc=$RC; root's install: $(tr '\n' '|' < "$ROOT/state/install.log")"; show "$OUT" 4
 fi
 
+# not_committed TAG ENV...: a move run with the stand-ins' ENV is never
+# committed -- the run fails, the LaunchAgent and its folder are as they
+# were and it is started again, and the copy is gone.
+not_committed() {
+  local tag=$1; shift
+  rm -rf "${WORK:?}/$tag"
+  mkdir -p "$WORK/$tag/home"
+  old_install "$WORK/$tag/home"
+  OLD=$WORK/$tag/home/.local/share/eugene-plexus
+  EP_EXTRA_ENV="$*" run_mac "$tag"
+  EP_EXTRA_ENV=
+  [ "$RC" != 0 ] && [ -f "$WORK/$tag/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] \
+    && [ -f "$OLD/node.yaml" ] && [ ! -L "$OLD" ] && [ ! -e "$PREFIX" ] \
+    && grep -q "^bootstrap gui/$(id -u) " "$ROOT/state/launchctl.log"
+}
+
 # Row 8 review, item 4: an answer on the port is not the daemon. Here the
 # job never starts, and something else answers.
 say "M8. a move commits only when launchd's daemon is what answers"
-rm -rf "$WORK/silent"
-mkdir -p "$WORK/silent/home"
-old_install "$WORK/silent/home"
-OLD=$WORK/silent/home/.local/share/eugene-plexus
-EP_EXTRA_ENV=EP_STUB_DAEMON_SILENT=1 run_mac silent
-if [ "$RC" != 0 ] && [ -f "$WORK/silent/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] \
-    && [ -f "$OLD/node.yaml" ] && [ ! -e "$PREFIX" ] \
-    && grep -q "^bootstrap gui/$(id -u) " "$ROOT/state/launchctl.log"; then
+if not_committed silent EP_STUB_DAEMON_SILENT=1; then
   ok "not committed: the LaunchAgent and its folder are back as they were"
 else
   bad "rc=$RC old=$([ -e "$OLD" ] && echo kept || echo gone) prefix=$([ -e "$PREFIX" ] && echo kept || echo gone)"; show "$OUT" 6
 fi
-EP_EXTRA_ENV=
+
+# Re-review C: every listener on the port is the daemon, its program is
+# exactly this install's agent, and the health answer is bound to it.
+say "M8b. another process listening on the port as well: not committed"
+if not_committed extra EP_STUB_EXTRA_LISTENER=777; then
+  ok "a second listener (777) beside launchd's daemon kept the move from being committed"
+else
+  bad "rc=$RC"; show "$OUT" 6
+fi
+say "M8c. a program whose name only starts with the agent's: not committed"
+if not_committed prog EP_STUB_PS_PROGRAM_SUFFIX=-old; then
+  ok "eugene-plexus-agent-old is not this install's agent"
+else
+  bad "rc=$RC"; show "$OUT" 6
+fi
+say "M8d. the process changes between the samples and the health answer: not committed"
+if not_committed flip EP_STUB_PID_FLIP=1; then
+  ok "a health answer from another process than the one sampled does not count"
+else
+  bad "rc=$RC"; show "$OUT" 6
+fi
+if printf '%s' "$OUT" | grep -q 'last seen:'; then
+  ok "the refusal says what it last saw on the port"
+else
+  bad "the refusal does not say what it saw"; show "$OUT" 4
+fi
 
 # Row 8 review, item 5: a daemon that will not stop is never left running
 # beside a restarted LaunchAgent.
@@ -689,6 +937,186 @@ else
   bad "rc=$RC; launchctl: $(tr '\n' '|' < "$ROOT/state/launchctl.log")"; show "$OUT" 6
 fi
 EP_EXTRA_ENV=
+
+# Re-review A(1): the person can leave an ACL entry on the old folder
+# (numeric modes do not touch one), and the new folder can inherit one
+# from its parent. Neither may open the kept keys.
+say "M10. an ACL entry on the old folder, or one inherited, opens nothing kept"
+rm -rf "$WORK/acl"
+mkdir -p "$WORK/acl/home" "$WORK/acl/state"
+old_install "$WORK/acl/home"
+OLD=$WORK/acl/home/.local/share/eugene-plexus
+printf '%s\t%s\n' "$OLD" "user:$(id -un) allow list,search" > "$WORK/acl/state/acl"
+EP_EXTRA_ENV=EP_STUB_INHERIT_ACL=1 run_mac acl
+EP_EXTRA_ENV=
+moved=$(ls -d "$PREFIX".moved-* 2>/dev/null | head -n 1)
+if [ "$RC" = 0 ] && [ -n "$moved" ] && [ -f "$moved/eugene-plexus/node.yaml" ] \
+    && [ -z "$(acl_of "$moved")" ] && [ "$(owner_of "$moved")" = root:wheel ] \
+    && [ "$(stat -c %a "$moved")" = 700 ] && grep -qx -- "-h -N $moved" "$ROOT/state/chmod.log"; then
+  ok "the keys sit inside root's ${moved##*/}: 0700, root's, its inherited entry taken off; the old folder's own entry opens nothing"
+else
+  bad "rc=$RC kept '${moved}' ($(ls -A "$moved" 2>/dev/null | tr '\n' ' ')) acl '$(acl_of "$moved" | tr '\n' '|')' owner '$(owner_of "$moved")'"
+  show "$OUT" 6
+fi
+
+say "M11. an ACL entry root cannot take off the keeping folder stops the move"
+rm -rf "$WORK/sticks"
+mkdir -p "$WORK/sticks/home"
+old_install "$WORK/sticks/home"
+OLD=$WORK/sticks/home/.local/share/eugene-plexus
+EP_EXTRA_ENV="EP_STUB_INHERIT_ACL=1 EP_STUB_ACL_STICKS=1" run_mac sticks
+EP_EXTRA_ENV=
+if [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -q 'ACL entry' \
+    && [ -f "$OLD/node.yaml" ] && [ ! -L "$OLD" ] && [ -z "$(ls -d "$PREFIX".moved-* 2>/dev/null)" ] \
+    && [ -f "$WORK/sticks/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] \
+    && grep -q "^bootstrap gui/$(id -u) " "$ROOT/state/launchctl.log"; then
+  ok "not committed: the old folder stayed, the empty keeping folder went, the LaunchAgent is back"
+else
+  bad "rc=$RC old=$([ -f "$OLD/node.yaml" ] && echo kept || echo gone) kept='$(ls -d "$PREFIX".moved-* 2>/dev/null)'"; show "$OUT" 6
+fi
+
+# Re-review A(2) and A(3): a link put where the old folder was, after the
+# move's checks, is never followed by root, and keeping the old folder
+# failing stops the move before it is committed.
+say "M12. a link swapped in after the checks: never followed, and the move stops"
+rm -rf "$WORK/swap"
+mkdir -p "$WORK/swap/home" "$WORK/swap/victim"
+printf 'theirs\n' > "$WORK/swap/victim/file"
+chmod 0755 "$WORK/swap/victim"
+old_install "$WORK/swap/home"
+OLD=$WORK/swap/home/.local/share/eugene-plexus
+EP_EXTRA_ENV=EP_STUB_SWAP_OLD=1 run_mac swap
+EP_EXTRA_ENV=
+if [ "$RC" != 0 ] && [ "$(stat -c %a "$WORK/swap/victim")" = 755 ] && [ -L "$OLD" ] \
+    && [ -z "$(ls -d "$PREFIX".moved-* 2>/dev/null)" ] \
+    && ! grep -q "$WORK/swap/victim" "$ROOT/state/chmod.log" "$ROOT/state/chown.log" 2>/dev/null \
+    && [ -f "$WORK/swap/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] \
+    && grep -q "^bootstrap gui/$(id -u) " "$ROOT/state/launchctl.log"; then
+  ok "the link was left where it was, its target untouched (0755), and the LaunchAgent started again"
+else
+  bad "rc=$RC victim mode $(stat -c %a "$WORK/swap/victim") old $([ -L "$OLD" ] && echo link || echo moved) kept '$(ls -d "$PREFIX".moved-* 2>/dev/null)'"
+  show "$OUT" 6
+fi
+
+say "M13. a link swapped in as root renames the old folder: kept as root's, and the move stops"
+rm -rf "$WORK/race"
+mkdir -p "$WORK/race/home" "$WORK/race/victim"
+printf 'theirs\n' > "$WORK/race/victim/file"
+chmod 0755 "$WORK/race/victim"
+old_install "$WORK/race/home"
+OLD=$WORK/race/home/.local/share/eugene-plexus
+EP_EXTRA_ENV=EP_STUB_SWAP_AT_MV=1 run_mac race
+EP_EXTRA_ENV=
+moved=$(ls -d "$PREFIX".moved-* 2>/dev/null | head -n 1)
+if [ "$RC" != 0 ] && [ "$(stat -c %a "$WORK/race/victim")" = 755 ] \
+    && [ -n "$moved" ] && [ -L "$moved/eugene-plexus" ] && [ "$(stat -c %a "$moved")" = 700 ] \
+    && printf '%s' "$OUT" | grep -q "changed while Eugene moved it" \
+    && [ -f "$WORK/race/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ]; then
+  ok "the link went into root's closed folder and no further; its target untouched; nothing committed"
+else
+  bad "rc=$RC victim mode $(stat -c %a "$WORK/race/victim") kept '${moved}' ($(ls -l "$moved" 2>/dev/null | tail -n +2 | tr '\n' ' '))"
+  show "$OUT" 6
+fi
+
+# Re-review D: the home's ACL entry goes on every way out of a run that
+# added it, whoever made the group; a removal run by root alone takes it
+# out too; and a membership an earlier build gave the account goes.
+say "M14. a refused move takes out the home's entry it added, though the group was there before"
+rm -rf "$WORK/group"
+mkdir -p "$WORK/group/home" "$WORK/group/state"
+old_install "$WORK/group/home"
+printf '/Groups/_eugeneplexusmodels PrimaryGroupID 397\n' > "$WORK/group/state/dscl"
+EP_EXTRA_ENV=EP_STUB_LAUNCHCTL_FAIL=bootstrap run_mac group
+EP_EXTRA_ENV=
+if [ "$RC" != 0 ] && grep -q -- "+a group:_eugeneplexusmodels allow search $ROOT/home\$" "$ROOT/state/chmod.log" \
+    && ! has_home_ace "$ROOT"; then
+  ok "the entry this run added is gone again"
+else
+  bad "rc=$RC entry $(has_home_ace "$ROOT" && echo kept || echo gone); chmod: $(grep -- 'a group' "$ROOT/state/chmod.log" | tr '\n' '|')"
+fi
+
+say "M15. a fresh install refused after the entry was added takes it out"
+EP_EXTRA_ENV=EP_STUB_PLIST_USER=root run_mac fresh2 --no-start
+EP_EXTRA_ENV=
+if [ "$RC" != 0 ] && grep -q -- "+a group:_eugeneplexusmodels allow search $ROOT/home\$" "$ROOT/state/chmod.log" \
+    && ! has_home_ace "$ROOT" && [ ! -f "$ROOT/receipts/models-ace.txt" ]; then
+  ok "refused, and the home's entry and its receipt are gone"
+else
+  bad "rc=$RC entry $(has_home_ace "$ROOT" && echo kept || echo gone) receipt $([ -f "$ROOT/receipts/models-ace.txt" ] && echo kept || echo gone)"
+  show "$OUT" 4
+fi
+
+say "M16. a staff membership an earlier build gave the account is taken back"
+mkdir -p "$WORK/staff/state"
+printf '/Groups/staff GroupMembership _eugeneplexus\n' > "$WORK/staff/state/dscl"
+run_mac staff --no-start
+if [ "$RC" = 0 ] && grep -qx -- "-o edit -d _eugeneplexus -t user staff" "$ROOT/state/dseditgroup.log"; then
+  ok "_eugeneplexus was taken out of staff"
+else
+  bad "rc=$RC dseditgroup: $(tr '\n' '|' < "$ROOT/state/dseditgroup.log")"; show "$OUT" 4
+fi
+
+# Re-review E: a disk without room for the copy is refused, with the
+# numbers, before anything is stopped.
+say "M17. no room for the copy: refused with the numbers, nothing changed"
+rm -rf "$WORK/full"
+mkdir -p "$WORK/full/home"
+old_install "$WORK/full/home"
+EP_EXTRA_ENV=EP_STUB_DF_FREE_KB=1000 run_mac full
+EP_EXTRA_ENV=
+if [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -q 'MiB free' && printf '%s' "$OUT" | grep -q 'Nothing was changed' \
+    && [ ! -e "$PREFIX" ] && ! grep -q '^bootout gui/' "$ROOT/state/launchctl.log" 2>/dev/null \
+    && [ -f "$WORK/full/home/.local/share/eugene-plexus/node.yaml" ]; then
+  ok "refused before Eugene was stopped: $(printf '%s' "$OUT" | grep -o 'the move needs [0-9]* MiB' | head -n 1)"
+else
+  bad "rc=$RC"; show "$OUT" 4
+fi
+
+# Re-review D and E, in the removal: root's own removal, run by root with
+# no --person, takes the home's entry out (the install recorded where it
+# put it), deletes the old folder the move kept, and closes what it keeps
+# to everyone but root, an ACL entry the account left included.
+say "U1. root's removal, run by root alone, after a move"
+ROOT=$WORK/acl
+PREFIX=$ROOT/eugene-plexus
+printf '%s\t%s\n' "$PREFIX" "user:$(id -un) allow list,search" >> "$ROOT/state/acl"
+python3 - "$ROOT/receipts/remove.sh" "$ROOT/remove-here.sh" "$ROOT/LaunchDaemons" "$ROOT/receipts" <<'PY'
+import sys
+source, target, daemons, receipts = sys.argv[1:]
+text = open(source, encoding="utf-8").read()
+# The two root paths, and the one tool the removal names by its full path
+# to read the daemon's program: here it is the plist stand-in.
+for old, new in (
+    ("DAEMON_PLIST=/Library/LaunchDaemons/$DAEMON_LABEL.plist\n", f"DAEMON_PLIST={daemons}/$DAEMON_LABEL.plist\n"),
+    ("RECEIPTS=/usr/local/lib/eugene-plexus\n", f"RECEIPTS={receipts}\n"),
+    ("PROGRAM=$(/usr/bin/plutil -extract", "PROGRAM=$(plutil -extract"),
+):
+    if text.count(old) != 1:
+        sys.exit(f"refusing to run: {old.strip()!r} appears {text.count(old)} times")
+    text = text.replace(old, new)
+open(target, "w", encoding="utf-8", newline="\n").write(text)
+PY
+OUT=$(cd "$ROOT" && env -i HOME="$ROOT/home" PATH="$ROOT/bin:/usr/bin:/bin" EP_STUB_BIN="$ROOT/bin" \
+  EP_STUB_STATE="$ROOT/state" EP_STUB_PERSON="$(id -un)" EP_STUB_VENV="$PREFIX/venv" EP_STUB_ROOT=1 \
+  sh "$ROOT/remove-here.sh" --prefix "$PREFIX" 2>&1)
+RC=$?
+kept=$(ls -d "$PREFIX".removed-* 2>/dev/null | head -n 1)
+if [ "$RC" = 0 ] && ! has_home_ace "$ROOT" && [ ! -f "$ROOT/receipts/models-ace.txt" ]; then
+  ok "the home's ACL entry is gone, with no --person given"
+else
+  bad "rc=$RC entry $(has_home_ace "$ROOT" && echo kept || echo gone)"; show "$OUT" 8
+fi
+if [ -z "$(ls -d "$PREFIX".moved-* 2>/dev/null)" ] && printf '%s' "$OUT" | grep -q "Deleted the copy kept"; then
+  ok "the old folder the move kept was deleted, and the removal says so"
+else
+  bad "kept from the move: '$(ls -d "$PREFIX".moved-* 2>/dev/null)'"; show "$OUT" 8
+fi
+if [ -n "$kept" ] && [ -z "$(acl_of "$kept")" ] && [ "$(owner_of "$kept")" = root:wheel ] \
+    && [ "$(stat -c %a "$kept")" = 700 ]; then
+  ok "what it keeps (${kept##*/}) is root's, 0700, the account's ACL entry taken off"
+else
+  bad "kept '$kept' acl '$(acl_of "$kept" | tr '\n' '|')' owner '$(owner_of "$kept")'"; show "$OUT" 8
+fi
 
 printf '\n'
 if [ "$FAILURES" = 0 ]; then

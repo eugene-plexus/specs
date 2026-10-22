@@ -76,7 +76,7 @@ APPLE
         fi
         if ! /usr/bin/osascript - "$PREFIX" <<'APPLE' >/dev/null 2>&1
 on run argv
-    display dialog ("Remove Eugene from this Mac?" & return & "It stops starting at boot, and its own account is removed. Its settings are kept, readable by administrators only, beside " & item 1 of argv & ".") with title "Remove Eugene Plexus" buttons {"Cancel", "Remove Eugene"} default button "Cancel" cancel button "Cancel" with icon caution
+    display dialog ("Remove Eugene from this Mac?" & return & "It stops starting at boot, and its own account is removed. Its settings are kept, readable by administrators only, beside " & item 1 of argv & ". A copy kept when Eugene moved to its own account is deleted.") with title "Remove Eugene Plexus" buttons {"Cancel", "Remove Eugene"} default button "Cancel" cancel button "Cancel" with icon caution
 end run
 APPLE
         then echo 'Removal cancelled.'; exit 0; fi
@@ -153,11 +153,20 @@ APPLE
     # top folder is root's and closed, so nothing inside is reachable; it
     # is not chowned through, where a hard link the account made could
     # hand another person's file to root.
+    # An ACL entry on it (the account owned it, and could add one that lets
+    # somebody search it) survives a numeric chmod: taken off, and checked.
     KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
     [ ! -e "$KEEP" ] || die_daemon "The retained folder already exists: $KEEP. Nothing more was removed."
     mv -- "$PREFIX" "$KEEP" || die_daemon "Could not move $PREFIX to $KEEP. Eugene no longer starts; run the removal again."
     chown -h root:wheel "$KEEP" || warn "Could not give $KEEP to root."
-    chmod 0700 "$KEEP"
+    chmod -h -N "$KEEP" >/dev/null 2>&1 || true
+    chmod -h 0700 "$KEEP"
+    CLOSED=$(ls -lden "$KEEP" 2>/dev/null || true)
+    case "$(printf '%s\n' "$CLOSED" | awk 'NR == 1 {print $1, $3, $4}')" in
+        "drwx------ 0 0"|"drwx------@ 0 0") [ "$(printf '%s\n' "$CLOSED" | wc -l | tr -d ' ')" = 1 ] \
+            || warn "$KEEP still carries an ACL entry: sudo chmod -N '$KEEP'" ;;
+        *) warn "$KEEP is not closed to everyone but root: $(printf '%s' "$CLOSED" | head -n 1)" ;;
+    esac
     # The engine builds and model copies this install downloaded, as the
     # Linux system removal names them: the account's home is the prefix.
     if [ "$PURGE_DOWNLOADS" = 1 ]; then rm -rf -- "$KEEP/engines" "$KEEP/.eugene-plexus" || warn "Could not remove the engine builds in $KEEP."; fi
@@ -186,14 +195,22 @@ APPLE
         fi
     fi
     # The models folder's group, and its entry in the person's home ACL:
-    # the entry always, the group only when the installer made it.
+    # the entry always -- in the home the installer recorded putting it in,
+    # so root running this alone finds it, and in the home of the person
+    # who asked -- and the group only when the installer made it.
     MODELS_GROUP=_eugeneplexusmodels
+    HOMES=
+    if [ -f "$RECEIPTS/models-ace.txt" ]; then HOMES=$(cat "$RECEIPTS/models-ace.txt"); fi
     if [ -n "$PERSON" ] && [ "$PERSON" != root ]; then
-        HOME_OF=$(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p' | head -n 1)
-        if [ -n "$HOME_OF" ] && [ -d "$HOME_OF" ]; then
-            chmod -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
-        fi
+        HOMES="$HOMES
+$(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p' | head -n 1)"
     fi
+    printf '%s\n' "$HOMES" | while IFS= read -r HOME_OF; do
+        case "$HOME_OF" in /?*) ;; *) continue ;; esac
+        if [ -d "$HOME_OF" ]; then
+            chmod -h -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
+        fi
+    done
     if [ -f "$RECEIPTS/models-group.txt" ]; then
         read -r _kind MODELS_GID < "$RECEIPTS/models-group.txt" || true
         if [ -n "$MODELS_GID" ] && [ "$MODELS_GID" != 0 ] \
@@ -208,7 +225,22 @@ APPLE
             if [ -f "$APP/Contents/Resources/prefix.txt" ] && [ "$(cat "$APP/Contents/Resources/prefix.txt")" = "$PREFIX" ]; then rm -rf -- "$APP"; fi ;;
         esac
     fi
-    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
+    # The old per-user install a move kept beside the prefix: a copy of
+    # this machine's keys from before the move, root's alone. Removing
+    # Eugene deletes it -- only a real folder of root's with that name.
+    for OLD_COPY in "$PREFIX".moved-[0-9]*; do
+        [ -d "$OLD_COPY" ] && [ ! -L "$OLD_COPY" ] || continue
+        if [ "$(ls -lden "$OLD_COPY" 2>/dev/null | awk 'NR == 1 {print $3, $4}')" != "0 0" ]; then
+            warn "Kept $OLD_COPY: it is not root's, so it was not deleted."
+            continue
+        fi
+        if rm -rf -- "$OLD_COPY"; then
+            echo "Deleted the copy kept from before Eugene moved to its own account: $OLD_COPY"
+        else
+            warn "Could not delete $OLD_COPY: sudo rm -rf '$OLD_COPY'"
+        fi
+    done
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/models-ace.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
     rmdir "$RECEIPTS" 2>/dev/null || true
     echo "Eugene's removal finished. It no longer starts at boot."
     if [ -d "$KEEP" ]; then
