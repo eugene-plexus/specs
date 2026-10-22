@@ -133,3 +133,8 @@ Risks:
 
 **Calls:** R50-DIRECT (an expert's direct, unencrypted connection on a
 trusted network; off by default).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R50-DIRECT: Choice 1.** The encrypted path is the default; the expert
+  switch "Direct connection (trusted network only)" stays, off by default.

@@ -129,3 +129,9 @@ Risks:
 
 **Calls:** R47-LEAVE (a removed person's contributions stay with the team,
 attributed).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R47-LEAVE: Choice 1.** What a removed person added to a team
+  collection stays with the team, marked "added by a former member"; the
+  owner can delete it.

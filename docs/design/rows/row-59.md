@@ -110,3 +110,9 @@ M in total, about 2 days; 59b gets one adversarial review. Risks:
   written anywhere.
 
 **Calls:** R59-MCP (remote MCP allowed to the internet only, by default).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R59-MCP: Choice 1.** Remote MCP servers named by API clients are
+  allowed to internet addresses only; the owner can turn it off, or (expert)
+  also allow this network.

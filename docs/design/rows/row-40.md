@@ -21,11 +21,13 @@ video's `cost_usd` is the only money), control `client_admission.py`
   month. A request over its allowance is refused, saying which allowance,
   how much was used and when it resets: "Your group Sales used 4.0 of its
   $4.00 for October. It resets on 1 November."
-- **Money where it is real:** cloud models cost what the provider charges;
-  the console shows each person's and key's spend. Local models show an
-  estimated electricity cost (the owner's price per kWh and the measured
-  watts), informational, never counted against a money allowance (call
-  R40-LOCAL).
+- **The owner sets the price of every served model** (call R40-LOCAL,
+  Troy's Choice 3): a rate per million tokens in and out. A cloud model
+  starts at its provider's published price, which the owner can change; a
+  local model has no price until the owner sets one. Eugene does not
+  estimate electricity, hardware or connection costs: the owner knows
+  them, Eugene does not. The console shows each person's and key's spend
+  at those rates, and money allowances count them.
 
 ## 2. Design
 
@@ -43,17 +45,20 @@ video's `cost_usd` is the only money), control `client_admission.py`
 
 ### Prices
 
-- **Cloud:** the driver reports a price per model where the provider
-  publishes one (OpenRouter's pricing per token, already read for video;
-  Anthropic, OpenAI and Gemini from a price table in specs,
-  `docs/data/model-prices.json`, updated by a script at release), and the
-  gateway computes the request's cost from usage. A model with no known
-  price: cost unknown, shown as unknown, and a money allowance refuses it
-  ("no known price for <model>, so a money limit cannot allow it") unless
-  the owner marks it free.
-- **Local:** electricity per request = the runtime's mean watts over the
-  request (host history) × duration × the owner's price per kWh (setting,
-  unset by default: then not shown).
+- **The owner's rate wins.** Each served model in the gateway's settings
+  gains `price` {`inputPerMillionMicros`, `outputPerMillionMicros`,
+  `source`: `owner` | `provider`}. The gateway computes each request's cost
+  from its usage and that rate.
+- **Cloud, until the owner sets a rate:** the driver reports the
+  provider's published price (OpenRouter's pricing per token, already read
+  for video; Anthropic, OpenAI and Gemini from a price table in specs,
+  `docs/data/model-prices.json`, updated by a script at release), shown as
+  "provider's price". A cloud model with neither: cost unknown, shown as
+  unknown, and a money allowance refuses it ("no price is set for <model>,
+  so a money limit cannot allow it. Set one in Models.").
+- **Local, until the owner sets a rate:** free (cost 0, shown as "no price
+  set"). Setting a rate makes it count from the next request; past
+  requests keep the cost they had.
 
 ### Limits (admission)
 
@@ -70,8 +75,9 @@ video's `cost_usd` is the only money), control `client_admission.py`
 ### Console
 
 Usage page: per person, key and group, day and month, tokens and cost by
-model; the allowances and how much is left; the electricity estimate when
-a price per kWh is set. People see their own usage in Workbench's Settings.
+model; the allowances and how much is left. Each served model's page
+holds its price, with the provider's price beside it for a cloud model.
+People see their own usage in Workbench's Settings.
 
 ## 3. Repositories
 
@@ -87,6 +93,8 @@ model), ui, workbench (the person's own usage line).
 - control `test_usage.py::test_a_group_allowance_pools_its_members`.
 - gateway `test_usage_release.py::test_release_carries_tokens_and_cost`.
 - gateway `test_prices.py::test_an_unknown_price_is_unknown_not_zero`.
+- gateway `test_prices.py::test_the_owners_rate_wins_over_the_providers_price`
+  and `test_a_local_model_counts_once_it_has_a_rate`.
 
 ## 5. Acceptance (CI, Linux, about 5 minutes)
 
@@ -94,8 +102,9 @@ model), ui, workbench (the person's own usage line).
 gateways and the fixture backend (a priced "cloud" model and a local one):
 a key with 1,000 tokens a day is refused on the request after it passes
 1,000, through either gateway; a person in a group with $0.01 a month is
-refused on the priced model and served on the local one; usage totals
-match the fixture's counts. **Sabotage:** count only the first gateway's
+refused on the priced model and served on the local one until the owner
+gives the local one a rate, then refused there too; usage totals match the
+fixture's counts. **Sabotage:** count only the first gateway's
 releases; the two-gateway step must fail.
 
 **The reviewer should attack:** a key escaping its allowance (lineage after
@@ -111,5 +120,10 @@ L, about 4 days. One adversarial review. Risks:
 - **Prices go stale:** each price records its source and date; the release
   script refreshes the table.
 
-**Calls:** R40-LOCAL (local models' electricity is shown, never counted
-against a money allowance).
+## Calls answered by Troy (2026-10-22)
+
+- **R40-LOCAL: Choice 3.** "Owner gets to set their own money rate, per
+  served model. We can not accurately estimate electricity, cost to
+  purchase hardware, Internet connection, etc." No electricity estimate;
+  every served model has an owner-set rate, cloud models starting at the
+  provider's price.

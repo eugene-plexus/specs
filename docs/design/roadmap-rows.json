@@ -1603,10 +1603,10 @@
   {
    "row": 46,
    "part": 4,
-   "title": "Node keys that cannot be exported, and freeze enforcement",
-   "summary": "Node keys that cannot be exported, and freeze enforcement",
+   "title": "Freeze enforcement",
+   "summary": "Freeze enforcement",
    "from": "TOK-RES",
-   "size": "L",
+   "size": "S-M",
    "risk": "high",
    "risk_note": "high",
    "who": "multi-machine",

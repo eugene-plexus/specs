@@ -62,3 +62,11 @@ M-L in total, after row 10. 69d gets one adversarial review (what leaks).
 
 **Calls:** R69-DATASET (records go to the owner's own Hugging Face
 dataset, never to a service of ours).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R69-DATASET: Choice 1 today, kept open for Choice 2.** Records go to
+  the owner's own Hugging Face dataset or a file they share. The publish
+  step takes a destination (a kind and its settings), so a shared Eugene
+  dataset can be added later as one more kind without changing the record
+  format.

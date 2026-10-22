@@ -115,3 +115,9 @@ M in total, about 3 days. Risks:
 
 **Calls:** R58-NAMES (unknown Gemini model names go to the install's Chat
 role by default).
+
+## Calls answered by Troy (2026-10-22)
+
+- **R58-NAMES: Choice 1.** A Gemini model name Eugene does not know goes
+  to the Chat role; the answer names the model that answered, and the owner
+  can map names to models.

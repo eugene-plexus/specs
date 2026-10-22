@@ -46,11 +46,15 @@ the four-process limit), site-host `folder_linux.py` (Landlock).
   Only me / Everyone / Chosen groups** (row 70's groups).
 - A person sees it in Tools and in chat settings like any server; tool
   calls keep C5a's approval rules.
-- **Environment values** (tokens the program needs): the owner's values
-  are shared with everyone's copies only if the owner ticks "Share my
-  values with everyone who uses it" beside each value, with "they act with
-  your token" in the line. Otherwise each person enters their own values,
-  kept in their own private storage. Call R52-ENV.
+- **Environment values** (tokens the program needs), the way Claude
+  Desktop does it (call R52-ENV, Troy 2026-10-22): the program's entry
+  declares its fields (name, title, required, secret, default), as a
+  Claude Desktop extension's `user_config` does. Each person fills them in
+  a form the first time they turn the program on, and can change them
+  later. Secret fields are stored encrypted in that person's own private
+  storage and never shown back. The owner chooses who may use the program,
+  never whose token it uses: owner values are not shared. The owner may
+  give a non-secret field a default.
 - The four-process limit becomes four per person and twelve per machine.
 
 ### Contract
@@ -75,7 +79,8 @@ installer's check).
   program that tries to read `workbench.sqlite3`, another person's folder,
   and its own folder.
 - workbench `test_tools.py::test_a_server_for_everyone_runs_a_copy_per_person`.
-- workbench `test_tools.py::test_owner_values_are_not_shared_unless_ticked`.
+- workbench `test_tools.py::test_each_person_fills_their_own_values`
+  (the owner's secret value never reaches another person's copy).
 - workbench `test_sandbox.py::test_a_broken_sandbox_stops_the_start`.
 
 ## 5. Acceptance (CI, Linux and Windows, about 4 minutes)
@@ -85,7 +90,7 @@ service, two people, a fixture MCP program offered to everyone:
 1. Person A's call reads A's own folder: allowed. It reads the store file,
    B's folder, Workbench's key file: each refused by the OS.
 2. B's call runs as B's copy, with B's own environment value.
-3. The owner's value ticked "share": both copies see it; unticked: neither.
+3. The owner's secret value is not in B's copy; a non-secret default is.
 4. **Sabotage:** skip the Landlock or AppContainer step; step 1's store
    read must succeed and the run must fail.
 
@@ -110,8 +115,11 @@ Risks:
   probe at start and the sabotage step are its tests.
 - **Program folders outside Program Files** on Windows need an
   administrator's grant for the AppContainer; the page says which folder.
-- **Shared tokens** let people act as the owner; off unless ticked, per
-  value.
+## Calls answered by Troy (2026-10-22)
 
-**Calls:** R52-ENV (the owner's environment values are per-person unless
-the owner ticks "share" on each).
+- **R52-ENV: "Do this however Claude Desktop does it."** Claude Desktop
+  asks each person for an extension's declared settings when they install
+  it and keeps secret ones in the OS's secure store; an organisation
+  decides which extensions are allowed, not whose keys they use. Built the
+  same way: each person enters their own values; no sharing of the
+  owner's.
