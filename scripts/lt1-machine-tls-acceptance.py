@@ -103,6 +103,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import struct
@@ -1583,11 +1584,17 @@ def judge(record: Record, wire: bytes, canary: bytes, pair: Pair) -> None:
     )
     found = canary in wire or canary in streams
     record.add("the canary is nowhere on the wire", not found, flows=where(canary))
-    for needle in (b"Bearer", b"eyJ"):
-        hit = needle in wire or needle in streams
-        record.add(
-            f"no {needle.decode()} on the wire", not hit, flows=where(needle)[:12]
-        )
+    hit = b"Bearer" in wire or b"Bearer" in streams
+    record.add("no Bearer on the wire", not hit, flows=where(b"Bearer")[:12])
+    # A token, not the three bytes "eyJ": those turn up by chance in megabytes of
+    # TLS ciphertext (about one run in seven once the key-change load ran). A JWT
+    # in clear text is header.payload. with both parts base64url.
+    jwt = re.compile(rb"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.")
+    hit = bool(jwt.search(wire) or jwt.search(streams))
+    tokens = sorted(
+        f"{s}:{sp}->{d}:{dp}" for (s, sp, d, dp), v in flows.items() if jwt.search(v)
+    )
+    record.add("no eyJ on the wire", not hit, flows=tokens[:12])
 
 
 def main() -> None:

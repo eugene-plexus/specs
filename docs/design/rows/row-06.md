@@ -106,3 +106,9 @@ No codegen.
 
 - **PATCH-OLD: Choice 2.** Patch the newest release line. Older lines also get a patch when the fix is a security fix.
 - **PATCH-NOTES: Choice 1.** The notes and the release record go on `main` as one documentation-only commit.
+
+## Calls answered by Troy (2026-10-22)
+
+- **R6-LATEST: Choice 1.** When a newer release becomes Latest while a patch
+  without `--security` waits for its notes, the patch still publishes, without
+  Latest, and the website stays as it is.
