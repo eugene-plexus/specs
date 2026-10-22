@@ -481,6 +481,14 @@ Each of these is a check, not a finding.
   agent's vLLM and MLX adapters already expose "Trust remote code" as a
   setting, and it must stay off by default.
 
+### What building row 18 found (2026-10-22)
+
+- Local GGUF scans accepted tensors past EOF. They now check known tensor ranges, including alignment and every split part, without reading weights. Unknown tensor types remain eligible; remote header probes do not require weights.
+- A changed later shard invalidates a cached model. Disk-cached GGUF entries get one header validation after each Library restart.
+- vLLM launch plans already preserve its [compile cache](https://docs.vllm.ai/en/stable/design/torch_compile/) environment across restarts, including runtime overrides. The test inspects plans only; real cache hits and startup timing still need a hardware run.
+- OpenAI Chat and Responses already name nested invalid fields. Anthropic Messages and count-tokens named a union branch instead; they now name the caller's field without returning message content.
+- Both adapters already leave model-repo code off unless requested. MLX now also declares `false` in the GUI's flag schema. No new setting, contract change or open-call default.
+
 ## Not taking, with the reason
 
 - **Prefill/decode disaggregation.**
