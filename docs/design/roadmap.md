@@ -113,7 +113,7 @@ between machines). The next release fits after row 6.
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
 | 53 | **One store for the platform half.** Design how files, batches, vector stores and stored responses are kept, owned and expired | PLAT (memory `project_platform_half_on_roadmap`) | L | high (store, migrations) | developers | Designed (`rows/row-53.md`): an optional app the gateway routes to; owner per person or key; 30-day expiry, quotas, real deletion; Files and Uploads first. Call R53-REPO |
-| 54 | **Stored responses, with the chain as the conversation key** | LD6 | M | high (chats at rest) | agent clients | Today `previous_response_id` gets a 400 |
+| 54 | **Stored responses, with the chain as the conversation key** | LD6 | M | high (chats at rest) | agent clients | Designed (`rows/row-54.md`): kept in row 53's store when apps ask, chained by id, the chain as affinity key. Call R54-DEFAULT |
 | 55 | **Batch jobs in idle time**, run as background-band traffic | LD7 | M | cross | developers, home batch jobs | Needs rows 11 and 53 |
 | 56 | **Files, vector stores and `file_search`** | MRC24 | L | cross | developers | Call MRC24 |
 | 57 | **Responses: non-function tools and `compact`** | RSP-T | M | low | developers | |

@@ -1883,23 +1883,27 @@
    "lane": "GW",
    "lane_order": 7,
    "repos": [
-    "gateway"
+    "gateway",
+    "platform-store"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
     "gateway/src/eugene_plexus_gateway/responses.py",
     "gateway/src/eugene_plexus_gateway/affinity.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     53,
     57
    ],
    "design_docs": [
-    "llm-d-lessons.md",
-    "responses-and-completions.md"
+    "rows/row-54.md",
+    "rows/row-53.md",
+    "llm-d-lessons.md"
    ],
-   "calls": [],
+   "calls": [
+    "R54-DEFAULT"
+   ],
    "issue": 81
   },
   {
