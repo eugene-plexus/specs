@@ -129,3 +129,7 @@ About 10 minutes.
 **Risks:**
 - A Windows standby gets one run by hand.
 - Digest cost is held down by caching per index.
+
+## Calls answered by Troy (2026-10-21)
+
+- **R4-MOVE: Choice 1.** Machines follow a new root address only with a promotion.

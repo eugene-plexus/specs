@@ -182,3 +182,8 @@ Then one acceptance run, and one adversarial review.
 **Calls only Troy can make:**
 - **FA-C1: should revoking a grant in Workbench remove the OS access?** Today it does not. Recommended: yes, when no other grant names the folder, and only what Eugene added. The removal goes through a route that only removes and takes the app's own key, so it cannot widen access.
 - **FA-C2: may a folder inside a person's home be given?** Recommended: refuse, and point to Job Sites. They work as the person and need no permission change (J20), and Linux's `ProtectHome` blocks homes anyway. The expert override is the OS's own Security tab.
+
+## Calls answered by Troy (2026-10-21)
+
+- **FA-C1: Choice 1.** Revoking a grant removes the permission Eugene added, and only that one.
+- **FA-C2: Choice 1.** Folders inside a home folder are refused, with a pointer to Job Sites.

@@ -220,3 +220,7 @@ each now a fault-injection test that failed first:
    drop but signs nothing and keeps serving both keys. Now done needs a
    verified signed list that names the new key alone; until then the status
    says what it waits for, naming a sealed root.
+
+## Calls answered by Troy (2026-10-21)
+
+- **R3-SCHEDULE-2: Choice 1.** Machine keys do not expire by themselves, but Eugene changes each machine key once a year by itself, and also when an administrator asks. Built as part **3b**, a small follow-up after this row merges: a yearly timer per machine, spread by a random offset so the machines of one install do not change on the same day, and shown on Machines ("Next key change: March 2027"). **3b also adds the console's controls** (found while building: the row shipped the API only, `POST /v1/node/machine-key`): a "Change machine key" button per machine with Stop, the progress lines of section 2, and a root key change's wait list naming each machine that must be updated or removed first. GUI equality rule.

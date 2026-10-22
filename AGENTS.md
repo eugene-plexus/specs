@@ -69,6 +69,17 @@ the release pins and the [roadmap](docs/design/roadmap.md).
   you built for open calls.
 - When CI is green in every repository, set the issue to `status:green`.
 - The orchestrator rebases if needed, merges, and ships at most once an hour.
+- **A clean catch-up needs no new CI run (MERGE-REBASE, Troy 2026-10-21).** A branch
+  whose CI was green on its head may merge after catching up with `main` without a
+  new run, when the catch-up is clean and no commit `main` gained touches the same
+  files. Otherwise CI runs again. A specs branch that other repos pin catches up by
+  merging `main` in, so the pinned commits stay reachable. A merge that turns `main`
+  red is fixed or reverted before anything else.
+- **The shared workflow file overlaps only line by line (MERGE-CIYML, Troy
+  2026-10-22).** When `.github/workflows/ci.yml` is the only file a catch-up shares
+  with `main`, the catch-up merges cleanly and `scripts/test_ci_workflows.py` passes
+  locally, the branch merges without a new run. Any other overlapping file still
+  runs CI again.
 
 ## Product rules (every change)
 

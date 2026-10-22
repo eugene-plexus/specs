@@ -220,6 +220,7 @@ it doubles as the overdue vLLM run on current Edge.
 | S3 | Offer "Reuse repeated text" (n-gram)? | **Taken:** yes, **on everywhere** by default, with no recommendation when it isn't helping. Slot count was rejected as a signal: llama-server's default is auto (several slots), and one person's several agents fill slots just as several people do |
 | S4 | Measure memory before shipping admission's estimate? | **Taken: yes.** One run on the 5090 with a model that has an MTP head, and one with a companion file |
 | S5 | Drafting with a small, separate Library model (e.g. 0.6B for a 27B)? | **Taken:** later, as SD3. It needs a vocabulary match check across models |
+| R41-NGRAM | "Reuse repeated text" on vLLM, unmeasured there: on by default too? | **Taken 2026-10-22: Choice 1, on**, as S3 says. The live vLLM run in WSL2 measures it; if it is slower or fails to start, the default changes for vLLM only |
 
 ## Acceptance
 

@@ -229,6 +229,15 @@ jobs:
     if: needs.plan.outputs.instruments == 'true'
     name: S10 acceptance instruments (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # bash for every step, Windows included (W0.13). The runner's default pwsh
+    # fails a step only on the exit code of its last native command, so a
+    # block with a failing command followed by a passing one is green, and the
+    # agent's Windows pytest step once reported success with 2 failed tests.
+    # bash -e -o pipefail stops at the first failing command. The same default
+    # is set on every job below that runs on Windows.
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -250,6 +259,12 @@ jobs:
         run: python scripts/platform-checks.py
       - name: Check release artifact bytes and component pin agreement
         run: python scripts/release-artifacts-checks.py
+      - name: Release script and release lines, offline (row 6)
+        run: |
+          python -m unittest discover -s scripts -p test_release.py -v
+          python -m unittest discover -s scripts -p test_release_line.py -v
+      - name: Cut a patch release from a release tag while main has moved, on bare file repositories (row 6)
+        run: python scripts/release-patch-acceptance.py
       - name: Verify retained A8 measurement integrity and declared targets
         run: python scripts/a8-summarize.py docs/acceptance/a8-data
 
@@ -270,6 +285,10 @@ jobs:
     # Job Sites waits up to 75 s for a site's own bundle pull (2026-10-05).
     # The tools-are-assumed pair acceptance runs about three minutes (2026-10-12).
     timeout-minutes: 25
+    # bash for every step, Windows included (see S10 acceptance instruments).
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -381,6 +400,8 @@ jobs:
                   ], check=True)
       - name: Verify durable run protocol when both consumers provide it
         if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
+        env:
+          LIBRARY_REF: ${{ needs.plan.outputs.library_ref }}
         shell: python {0}
         run: |
           import importlib.util, subprocess, sys
@@ -396,6 +417,15 @@ jobs:
       - name: One token module in five repos, and nothing of the shared-key model left
         if: matrix.shard == 'L1' || matrix.shard == 'W3'
         run: python specs/scripts/r7-signing-checks.py
+      # Ten acceptance scripts start their agent through the shared harness
+      # (s8-ui-acceptance.py --serve). Row 2: it runs the agent's own start path,
+      # so a check through it tests the agent an install runs.
+      - name: The shared acceptance harness starts the agent's own start path (row 2)
+        if: matrix.shard == 'L1' || matrix.shard == 'W1'
+        run: python -m pytest specs/scripts/test_s8_harness.py -q -p no:cacheprovider
+      - name: The shared acceptance harness is the real server - console log copy, machine port, client doors, stop file (row 2)
+        if: matrix.shard == 'L1' || matrix.shard == 'W1'
+        run: python specs/scripts/harness-acceptance.py
       - name: Rotate the root's token key across two live agents
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
@@ -682,6 +712,10 @@ jobs:
     name: R7 launch boundary (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
+    # bash for every step, Windows included (see S10 acceptance instruments).
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -816,6 +850,10 @@ jobs:
     if: needs.plan.outputs.uninstall == 'true'
     name: Offline removal (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # bash for every step, Windows included (see S10 acceptance instruments).
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:

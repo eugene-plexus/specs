@@ -101,3 +101,14 @@ No codegen.
 - **Risk:** the evidence runs use row 2's harness. Land row 2 first.
 - **Open (Troy):** patch older lines? Recommendation: no, until a supported older line exists. The updater, the website and `--latest` all assume the newest line.
 - **Open (Troy):** the notes and record go to `main` as a docs-only commit. Recommendation: yes. It changes nothing Edge ships, and `main` keeps every release's docs.
+
+## Calls answered by Troy (2026-10-21)
+
+- **PATCH-OLD: Choice 2.** Patch the newest release line. Older lines also get a patch when the fix is a security fix.
+- **PATCH-NOTES: Choice 1.** The notes and the release record go on `main` as one documentation-only commit.
+
+## Calls answered by Troy (2026-10-22)
+
+- **R6-LATEST: Choice 1.** When a newer release becomes Latest while a patch
+  without `--security` waits for its notes, the patch still publishes, without
+  Latest, and the website stays as it is.

@@ -74,3 +74,7 @@ Code:
 - **Risk:** Rule B reads over the network. An outage turns the step red, naming the URL.
 - **B2-REV (Troy):** add the field, or fix the sentence. Recommendation: add it (built). It is one optional field, and the only place a caller sees which Jev revision decided.
 - **Open:** the OpenAI chat door's `cache_control` on content parts. Recommendation: wait until a measured client sends it.
+
+## Calls answered by Troy (2026-10-21)
+
+- **B2-REV: add the field.** Every `/v1/systemone` answer names the model revision that made it, as the contract promises.

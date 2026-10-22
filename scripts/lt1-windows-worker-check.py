@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -548,8 +549,12 @@ def main() -> None:
             plain = sorted(f"{s}:{sp}->{d}:{dp}" for (s, sp, d, dp), v in flows.items()
                            if v[:1] != b"\x16")  # fmt: skip
             streams = b"".join(bytes(v) for v in flows.values())
-            hits = [n.decode() for n in (canary.encode(), b"Bearer", b"eyJ")
+            hits = [n.decode() for n in (canary.encode(), b"Bearer")
                     if n in wire or n in streams]  # fmt: skip
+            # A token, not the bytes "eyJ", which turn up by chance in TLS ciphertext.
+            jwt = re.compile(rb"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.")
+            if jwt.search(wire) or jwt.search(streams):
+                hits.append("eyJ")
             record.add(
                 "the wire between Windows and WSL: TLS only, no canary or token",
                 bool(flows) and not plain and not hits,

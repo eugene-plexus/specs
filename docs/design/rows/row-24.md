@@ -80,3 +80,8 @@ M, about 2 days. Build it on one branch as 24a (last use, S) then 24b (rotation,
 - Rotating Open WebUI's key resets its in-app settings.
 
 **Found:** app keys get the 365-day default and are replaced only when their file is missing, so every installed app stops working a year after install.
+
+## Calls answered by Troy (2026-10-21)
+
+- **KEY-OVERLAP: Choice 1.** The old token works for 1 day, with "Stop the old key now".
+- **OWUI-ROTATE: Choice 1.** Allowed; the dialog says Open WebUI's settings reset.

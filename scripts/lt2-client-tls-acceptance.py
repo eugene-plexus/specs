@@ -70,6 +70,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import secrets
 import shutil
 import sys
@@ -1045,10 +1046,16 @@ def judge(run: Run, wire: bytes) -> None:
         ("the canary", run.canary.encode()),
         ("the passphrase", run.passphrase.encode()),
         ("Bearer", b"Bearer"),
-        ("eyJ", b"eyJ"),
     ):
         hit = needle in wire or needle in streams
         record.add(f"{label} is nowhere on the wire", not hit, flows=where(needle)[:12])
+    # A token, not the bytes "eyJ", which turn up by chance in TLS ciphertext.
+    jwt = re.compile(rb"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.")
+    tokens = sorted(
+        f"{s}:{sp}->{d}:{dp}" for (s, sp, d, dp), v in flows.items() if jwt.search(v)
+    )
+    hit = bool(jwt.search(wire) or jwt.search(streams))
+    record.add("eyJ is nowhere on the wire", not hit, flows=tokens[:12])
 
 
 def main() -> None:

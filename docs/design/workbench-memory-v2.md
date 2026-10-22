@@ -1955,3 +1955,8 @@ off, a clean room for each project.
 - **A folder kept to a project** (section 76) is not built: folders stay general.
 - **The project page's document rows** carry Open and Read again as well as Remove: they are the
   Documents screen's rows.
+
+## Calls answered by Troy (2026-10-21)
+
+- **MV5b-C1:** ship MV5b on Linux and on agent-account installs only. Revisit Windows person installs later.
+- **MV5b-C2 to C5:** taken as written.

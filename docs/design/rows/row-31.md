@@ -199,3 +199,18 @@ Low risk. Changed-file tests, typecheck, lint and format; for each batch, one Pl
 - **31-C1: speaker labels.** Recommended: off by default, as a Display setting. This is taste call C14.
 - **31-C2: settled by Troy's standing rule (2026-10-14):** a tool result's artifact runs by itself, like an answer's. The isolated frame (RC5) is what keeps it safe, so the reviewer attacks the frame.
 - **31-C3: what the README claims for Safari.** Recommended: "checked with WebKit only", until a Mac run.
+
+## Added by Troy's answers (2026-10-21)
+
+- **31h, MD-24: a model's reasoning rendered as Markdown,** in the same style as answers, collapsed by default. TypeScript only; size S.
+
+## Calls answered by Troy (2026-10-22)
+
+- **R31A-LOOP: Choice 3.** In Firefox and Safari only, Workbench detects an
+  artifact that loops forever and runs only that one on a click; every other
+  artifact still runs by itself, and Chrome and Edge are unchanged. Built as
+  part **31i**. The detector cannot run while the page is frozen, so it works
+  from evidence: a preview that started and never reported finishing before the
+  page was closed or reloaded is marked, and its next showing waits for Run, with
+  the reason in one line. The real fix (previews on another origin, so the
+  engine gives them their own process, with no new port) stays in workbench#19.
