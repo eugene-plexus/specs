@@ -139,7 +139,7 @@ between machines). The next release fits after row 6.
 ## Waiting on a call from Troy
 
 Nothing is blocked on a call (2026-10-21). MV5b became row 72, installing
-vLLM became row 73, and Dependabot grouping is housekeeping. Row 72's Workbench store migration is 28 to 29 (row 7 took 28).
+vLLM became row 73, and Dependabot grouping is housekeeping. Row 72's Workbench store migration is 29 to 30 (row 7 took 28, row 28 takes 29).
 
 ## Not scheduled without Troy
 
