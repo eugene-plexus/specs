@@ -1605,9 +1605,7 @@ mac_delete_account() {
     [ -f "$MAC_RECEIPTS/account.txt" ] || return 0
     read -r _k _did _dgid _dgroup < "$MAC_RECEIPTS/account.txt" || true
     if [ -n "$_did" ] && [ "$_did" != 0 ] && [ "$(id -u "$SYSTEM_ACCOUNT" 2>/dev/null)" = "$_did" ]; then
-        if [ -n "$PERSON_GROUP" ]; then
-            as_root dseditgroup -o edit -d "$SYSTEM_ACCOUNT" -t user "$PERSON_GROUP" >/dev/null 2>&1 || true
-        fi
+        as_root dseditgroup -o edit -d "$SYSTEM_ACCOUNT" -t user "$MODELS_GROUP" >/dev/null 2>&1 || true
         as_root dscl . -delete "/Users/$SYSTEM_ACCOUNT" >/dev/null 2>&1 || true
     fi
     if [ "$_dgroup" = 1 ] && [ -n "$_dgid" ] && [ "$_dgid" != 0 ] \
@@ -1617,18 +1615,84 @@ mac_delete_account() {
     as_root rm -f "$MAC_RECEIPTS/account.txt"
 }
 
-# Every run: the account stays without a login shell and hidden, and in
-# the person's own group (`staff` on a Mac), which a 0750 home lets through
-# to the models folder. On a Mac `staff` is every person's primary group.
+# Every run: the account stays without a login shell and hidden.
 mac_account_settings() {
     as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" UserShell /usr/bin/false \
         || die "could not set $SYSTEM_ACCOUNT's shell"
     as_root dscl . -create "/Users/$SYSTEM_ACCOUNT" IsHidden 1 || true
-    if [ -n "$PERSON_GROUP" ]; then
-        as_root dseditgroup -o edit -a "$SYSTEM_ACCOUNT" -t user "$PERSON_GROUP" >/dev/null 2>&1 \
-            || warn "could not add $SYSTEM_ACCOUNT to the $PERSON_GROUP group, so Eugene may not reach the
-    models in your home: sudo dseditgroup -o edit -a $SYSTEM_ACCOUNT -t user $PERSON_GROUP"
+    mac_models_group
+}
+
+# **The models folder has a group of its own** (row 8 review, least
+# privilege). On a Mac the person's primary group is `staff`, which every
+# person on the Mac shares, so Eugene's account in `staff` could read every
+# person's group-readable files. Instead a group holds Eugene's account and
+# the person who installed it, owns `~/Eugene Models` (2770), and may only
+# pass through the person's home (an ACL entry, `search`: no listing). Made
+# once, recorded like the account, so removal deletes only what this
+# installer made.
+MODELS_GROUP=_eugeneplexusmodels
+MODELS_GROUP_CREATED=0
+MODELS_ACE="group:$MODELS_GROUP allow search"
+
+mac_models_group() {
+    if ! dscl . -read "/Groups/$MODELS_GROUP" PrimaryGroupID >/dev/null 2>&1; then
+        _mgid=$(mac_free_id) || die "no group number from 200 to 400 is free for $MODELS_GROUP"
+        { as_root dscl . -create "/Groups/$MODELS_GROUP" \
+            && as_root dscl . -create "/Groups/$MODELS_GROUP" PrimaryGroupID "$_mgid" \
+            && as_root dscl . -create "/Groups/$MODELS_GROUP" RealName "Eugene Plexus models" \
+            && as_root dscl . -create "/Groups/$MODELS_GROUP" Password '*'; } \
+            || die "could not create the $MODELS_GROUP group"
+        MODELS_GROUP_CREATED=1
+        printf 'group %s\n' "$_mgid" | as_root tee "$MAC_RECEIPTS/models-group.txt" >/dev/null
+        as_root chmod 0644 "$MAC_RECEIPTS/models-group.txt"
     fi
+    for _member in "$SYSTEM_ACCOUNT" ${PERSON:+"$PERSON"}; do
+        as_root dseditgroup -o edit -a "$_member" -t user "$MODELS_GROUP" >/dev/null 2>&1 \
+            || warn "could not add $_member to the $MODELS_GROUP group, so Eugene may not reach the
+    models in your home: sudo dseditgroup -o edit -a $_member -t user $MODELS_GROUP"
+    done
+}
+
+# Undo mac_models_group: the home's ACL entry, then the group, if this
+# installer made it and it still has the number it was given.
+mac_delete_models_group() {
+    if [ -n "$PERSON_HOME" ]; then as_root chmod -a "$MODELS_ACE" "$PERSON_HOME" >/dev/null 2>&1 || true; fi
+    [ -f "$MAC_RECEIPTS/models-group.txt" ] || return 0
+    read -r _k _mgid < "$MAC_RECEIPTS/models-group.txt" || true
+    if [ -n "$_mgid" ] && [ "$_mgid" != 0 ] \
+            && [ "$(dscl . -read "/Groups/$MODELS_GROUP" PrimaryGroupID 2>/dev/null | awk '{print $2}')" = "$_mgid" ]; then
+        as_root dscl . -delete "/Groups/$MODELS_GROUP" >/dev/null 2>&1 || true
+    fi
+    as_root rm -f "$MAC_RECEIPTS/models-group.txt"
+}
+
+# `~/Eugene Models`: the person's, group-owned by the models group, 2770;
+# and the person's home lets that group pass through and nothing more. Not
+# through a link: the folder is checked, and the group and mode are set on
+# what is there, never on what a link points to (`-h`).
+mac_prepare_models_dir() {
+    if [ -z "$PERSON_HOME" ]; then
+        MODELS_DIR=$PREFIX/models
+        as_service mkdir -p "$MODELS_DIR"
+        return 0
+    fi
+    MODELS_DIR="$PERSON_HOME/Eugene Models"
+    if [ -L "$MODELS_DIR" ]; then
+        die "$MODELS_DIR is a link. Eugene keeps its models in a real folder there; move the link
+       away, then run this again."
+    fi
+    if [ ! -d "$MODELS_DIR" ]; then
+        as_person mkdir -p "$MODELS_DIR"
+        say "made $MODELS_DIR for your models (Eugene reaches it through its own group, $MODELS_GROUP)"
+    fi
+    { as_root chgrp -h "$MODELS_GROUP" "$MODELS_DIR" && as_root chmod -h 2770 "$MODELS_DIR"; } \
+        || die "could not give $MODELS_DIR to the $MODELS_GROUP group"
+    # Once: an entry already there is taken out before it is put in.
+    as_root chmod -a "$MODELS_ACE" "$PERSON_HOME" >/dev/null 2>&1 || true
+    as_root chmod +a "$MODELS_ACE" "$PERSON_HOME" \
+        || warn "could not let Eugene's group pass through $PERSON_HOME, so it may not reach
+    $MODELS_DIR: sudo chmod +a '$MODELS_ACE' '$PERSON_HOME'"
 }
 
 # The daemon's plist: written under a temporary name, checked, renamed.
@@ -1744,6 +1808,8 @@ mac_migrate_check() {
     esac
     [ -f "$_old/agent.yaml" ] || die "Eugene's startup job in your account names $_old, which holds no install.
        Remove $PERSON_LAUNCH_AGENT, then run this again. Nothing was changed."
+    [ ! -L "$_old" ] || die "$_old is a link, so Eugene was not moved from it: root moves that
+       folder aside once the move is done, and never through a link. Nothing was changed."
     if grep -q '^signingKey:' "$_old/node.yaml" 2>/dev/null; then
         die "the Eugene install at $_old is from alpha.2 or earlier and cannot move. Remove it
        (--user --uninstall keeps its files), then run this again."
@@ -1796,21 +1862,41 @@ mac_migrate_copy() {
         _waited=$((_waited + 1))
     done
     say "copying its identity, settings and Library to $PREFIX"
+    set --
     for _item in "$_old"/* "$_old"/.[!.]*; do
         [ -e "$_item" ] || [ -L "$_item" ] || continue
         case "${_item##*/}" in
             venv|pythons|bin|.cache|uninstall|update|install-check.py|release-requirements.lock) continue ;;
         esac
-        as_root ditto "$_item" "$PREFIX/${_item##*/}" || die "could not copy $_item to $PREFIX"
+        set -- "$@" "./${_item##*/}"
     done
+    if [ "$#" -gt 0 ]; then mac_copy_as_person "$_old" "$@"; fi
     if [ -d "$_engines" ] && [ ! -L "$_engines" ]; then
-        as_root ditto "$_engines" "$PREFIX/engines" || die "could not copy the engine builds in $_engines"
+        mac_copy_as_person "$PERSON_HOME/.eugene-plexus" ./engines
         MIGRATED_ENGINES=1
     fi
-    # -P: a link inside is given to the account itself, never followed.
-    as_root chown -R -P "$SYSTEM_ACCOUNT:$SYSTEM_ACCOUNT" "$PREFIX" \
-        || die "could not give $PREFIX to $SYSTEM_ACCOUNT"
-    as_root chmod 0750 "$PREFIX"
+    in_prefix chmod 0750 "$PREFIX"
+}
+
+# **The copy never uses root's access** (row 8 review). The person's tar
+# reads the old folder -- what the person can read, links kept as links,
+# never followed -- and Eugene's account's tar writes it into the new
+# prefix, so everything lands as that account's and no root chown follows.
+# The archive passes through a file this shell made (0600), never a path
+# anyone else could swap.
+mac_copy_as_person() {
+    _from=$1; shift
+    _archive=$(mktemp "${TMPDIR:-/tmp}/eugene-plexus-move.XXXXXX") \
+        || die "could not make a temporary file for the move"
+    if ! as_person env COPYFILE_DISABLE=1 tar -cf - -C "$_from" "$@" > "$_archive"; then
+        rm -f "$_archive"
+        die "could not read $_from to move it (see above)"
+    fi
+    if ! as_service tar -xpf - -C "$PREFIX" < "$_archive"; then
+        rm -f "$_archive"
+        die "could not copy $_from into $PREFIX (see above)"
+    fi
+    rm -f "$_archive"
 }
 
 # The copy's settings named the old folder; they name the new one now. And
@@ -1842,15 +1928,24 @@ PYEOF
 # The daemon answers: the LaunchAgent goes, the old folder is moved aside
 # and kept, the old engine store (now copied) goes, and so does the old
 # removal app, which named the old folder.
+#
+# **The old folder is kept as root's, beside the new prefix** (row 8
+# review): its node.yaml holds this machine's private keys in clear, and a
+# program running as the person could otherwise read them and sign as the
+# machine. Root renames it there (one rename, nothing followed inside) and
+# closes its top folder (root:wheel 0700), so nothing in it is reachable.
 mac_migrate_finish() {
     _old=$PERSON_USER_PREFIX
     MIGRATE_DONE=1
     as_person rm -f "$PERSON_LAUNCH_AGENT" || warn "could not remove $PERSON_LAUNCH_AGENT"
-    _aside=$_old.moved-$(date +%Y%m%d%H%M%S)
-    if as_person mv "$_old" "$_aside"; then
-        say "the old install is kept at $_aside; nothing was deleted from it"
+    _aside=$PREFIX.moved-$(date +%Y%m%d%H%M%S)
+    if as_root mv "$_old" "$_aside" && as_root chown -h root:wheel "$_aside" \
+            && as_root chmod 0700 "$_aside"; then
+        say "the old install is kept at $_aside, readable by administrators only:"
+        say "  it holds this machine's keys. Nothing was deleted from it."
     else
-        warn "could not move $_old aside; it no longer starts, and can be deleted"
+        warn "could not move $_old out of your account. It holds this machine's keys: delete it,
+    or move it where only an administrator can read it."
     fi
     if [ "$MIGRATED_ENGINES" = 1 ]; then
         as_person rm -rf "$PERSON_HOME/.eugene-plexus/engines" || true
@@ -1863,12 +1958,38 @@ mac_migrate_finish() {
     mac_write_removal_app
 }
 
+# **What commits a move** (row 8 review): an answer on the port proves
+# only that something answers. It is the daemon when the process listening
+# there is the pid launchd gives for the system job, and that process runs
+# this install's own program.
+mac_daemon_serving() {
+    _job=$(as_root launchctl print "system/$LAUNCHD_LABEL" 2>/dev/null \
+        | sed -n 's/^[[:space:]]*pid = \([0-9][0-9]*\).*/\1/p' | head -n 1)
+    [ -n "$_job" ] || return 1
+    _listener=$(as_root lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t 2>/dev/null | head -n 1)
+    [ "$_job" = "$_listener" ] || return 1
+    case "$(as_root ps -o command= -p "$_job" 2>/dev/null)" in
+        *"$VENV/bin/eugene-plexus-agent"*) return 0 ;;
+    esac
+    return 1
+}
+
 # A failed move puts the Mac back: the daemon booted out, the copy and the
 # account this run made removed, the untouched LaunchAgent started again.
 mac_migrate_rollback() {
     [ "$MIGRATING" = 1 ] && [ "$MIGRATE_DONE" = 0 ] || return 0
     MIGRATING=0
-    as_root launchctl bootout "system/$LAUNCHD_LABEL" >/dev/null 2>&1 || true
+    # **Two installs must never run** (row 8 review): if the daemon is
+    # loaded and will not stop, nothing is taken apart and the LaunchAgent
+    # is not started, and the person is told what is running.
+    if as_root launchctl print "system/$LAUNCHD_LABEL" >/dev/null 2>&1; then
+        if ! _said=$(as_root launchctl bootout "system/$LAUNCHD_LABEL" 2>&1); then
+            printf '       macOS refused to stop the new startup job: %s\n' "${_said:-launchctl gave no reason}" >&2
+            printf '       So Eugene in your account was not started again, and %s was kept: two would run.\n' "$PREFIX" >&2
+            printf '       Stop it with  sudo launchctl bootout system/%s  then run this again.\n' "$LAUNCHD_LABEL" >&2
+            return 0
+        fi
+    fi
     as_root rm -f "$LAUNCHD_DAEMON" "$LAUNCHD_DAEMON.new"
     # Only a folder this run made, and never a link.
     if [ "$MIGRATE_FRESH_PREFIX" = 1 ] && ! as_root test -L "$PREFIX"; then
@@ -1883,6 +2004,7 @@ mac_migrate_rollback() {
         done
     fi
     as_root rm -f "$MAC_RECEIPTS/firewall.txt" "$MAC_RECEIPTS/remove.sh" "$MAC_RECEIPTS/mac-app.txt"
+    if [ "$MODELS_GROUP_CREATED" = 1 ]; then mac_delete_models_group; fi
     if [ "$ACCOUNT_CREATED" = 1 ]; then mac_delete_account; fi
     if launchctl bootstrap "gui/$PERSON_UID" "$PERSON_LAUNCH_AGENT" >/dev/null 2>&1 \
             || as_person launchctl bootstrap "gui/$PERSON_UID" "$PERSON_LAUNCH_AGENT" >/dev/null 2>&1; then
@@ -2384,7 +2506,11 @@ APPLE
     fi
     # Keychain entries the person's own install made before it moved to the
     # daemon (os_keyring); they are named by this install's master salt.
-    SALT=$(sed -n 's/^[[:space:]]*masterSalt:[[:space:]]*//p' "$PREFIX/agent.yaml" 2>/dev/null | head -n 1 | tr -d "'\"")
+    # Read as root, so never through a link the account left there.
+    SALT=
+    if [ -f "$PREFIX/agent.yaml" ] && [ ! -L "$PREFIX/agent.yaml" ]; then
+        SALT=$(sed -n 's/^[[:space:]]*masterSalt:[[:space:]]*//p' "$PREFIX/agent.yaml" 2>/dev/null | head -n 1 | tr -d "'\"")
+    fi
     if [ -n "$PERSON" ] && [ -n "$SALT" ] && id -u "$PERSON" >/dev/null 2>&1 && [ "$PERSON" != root ]; then
         FP=$(printf '%s' "$SALT" | base64 --decode 2>/dev/null | shasum -a 256 | cut -c1-12)
         for service in eugene-plexus-agent eugene-plexus-control; do
@@ -2396,11 +2522,14 @@ APPLE
         done
     fi
     # The files stay, as root's alone: the account goes next, and files
-    # left with its number would belong to whichever account gets it.
+    # left with its number would belong to whichever account gets it. The
+    # top folder is root's and closed, so nothing inside is reachable; it
+    # is not chowned through, where a hard link the account made could
+    # hand another person's file to root.
     KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
     [ ! -e "$KEEP" ] || die_daemon "The retained folder already exists: $KEEP. Nothing more was removed."
     mv -- "$PREFIX" "$KEEP" || die_daemon "Could not move $PREFIX to $KEEP. Eugene no longer starts; run the removal again."
-    chown -R -P root:wheel "$KEEP" || warn "Could not give $KEEP to root."
+    chown -h root:wheel "$KEEP" || warn "Could not give $KEEP to root."
     chmod 0700 "$KEEP"
     # The engine builds and model copies this install downloaded, as the
     # Linux system removal names them: the account's home is the prefix.
@@ -2429,6 +2558,22 @@ APPLE
             dscl . -delete "/Groups/$SERVICE_ACCOUNT" || warn "Could not remove the $SERVICE_ACCOUNT group: sudo dscl . -delete /Groups/$SERVICE_ACCOUNT"
         fi
     fi
+    # The models folder's group, and its entry in the person's home ACL:
+    # the entry always, the group only when the installer made it.
+    MODELS_GROUP=_eugeneplexusmodels
+    if [ -n "$PERSON" ] && [ "$PERSON" != root ]; then
+        HOME_OF=$(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p' | head -n 1)
+        if [ -n "$HOME_OF" ] && [ -d "$HOME_OF" ]; then
+            chmod -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
+        fi
+    fi
+    if [ -f "$RECEIPTS/models-group.txt" ]; then
+        read -r _kind MODELS_GID < "$RECEIPTS/models-group.txt" || true
+        if [ -n "$MODELS_GID" ] && [ "$MODELS_GID" != 0 ] \
+                && [ "$(dscl . -read "/Groups/$MODELS_GROUP" PrimaryGroupID 2>/dev/null | awk '{print $2}')" = "$MODELS_GID" ]; then
+            dscl . -delete "/Groups/$MODELS_GROUP" || warn "Could not remove the $MODELS_GROUP group: sudo dscl . -delete /Groups/$MODELS_GROUP"
+        fi
+    fi
     # The removal app, only ours (its recorded prefix is this one).
     if [ -f "$RECEIPTS/mac-app.txt" ]; then
         APP=$(cat "$RECEIPTS/mac-app.txt")
@@ -2436,7 +2581,7 @@ APPLE
             if [ -f "$APP/Contents/Resources/prefix.txt" ] && [ "$(cat "$APP/Contents/Resources/prefix.txt")" = "$PREFIX" ]; then rm -rf -- "$APP"; fi ;;
         esac
     fi
-    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
     rmdir "$RECEIPTS" 2>/dev/null || true
     echo "Eugene's removal finished. It no longer starts at boot."
     if [ -d "$KEEP" ]; then
@@ -3224,8 +3369,22 @@ if [ "$MODE" = system ]; then
     # 0750: Eugene's account, and nobody but root, can look inside -- which
     # is the whole point. Applied on every run, so a prefix somebody opened
     # up by hand is closed again.
-    as_root install -d -m 0750 -o "$SYSTEM_ACCOUNT" -g "$SYSTEM_ACCOUNT" \
-        "$PREFIX" "$PREFIX/bin" "$PREFIX/logs"
+    #
+    # **Root makes the prefix itself and nothing under it** (row 8 review).
+    # The prefix's parent is root's, so it cannot be swapped for a link; a
+    # folder inside it is the account's to replace, and `install -d`, chown
+    # and chmod follow a link -- a `logs` pointing at root's receipts would
+    # have handed them to the account. So the account makes its own
+    # folders, and a link where one belongs is refused.
+    as_root install -d -m 0750 -o "$SYSTEM_ACCOUNT" -g "$SYSTEM_ACCOUNT" "$PREFIX"
+    for _sub in bin logs; do
+        if as_root test -L "$PREFIX/$_sub"; then
+            die "$PREFIX/$_sub is a link, where Eugene's own folder belongs, so this run stopped
+       before anything followed it. Remove the link (sudo rm '$PREFIX/$_sub'), then run this again."
+        fi
+    done
+    in_prefix mkdir -p "$PREFIX/bin" "$PREFIX/logs"
+    in_prefix chmod 0750 "$PREFIX/bin" "$PREFIX/logs"
     # A Mac moving its LaunchAgent install across: stop it and copy its
     # state in now, before anything is downloaded into the new prefix.
     if [ "$MIGRATE" = 1 ]; then mac_migrate_copy; fi
@@ -4894,7 +5053,9 @@ if [ -n "$JOIN_CONTROL" ]; then
         # Save a download: the set-aside install's engine builds are exactly
         # what this machine runs.
         printf '%s' "$SET_ASIDE_LIST" | while IFS='|' read -r _kind _path _aside; do
-            if [ -n "$_aside" ] && as_root test -d "$_aside/engines" && ! as_root test -e "$PREFIX/engines"; then
+            # Never through a link the account left where engines would go.
+            if [ -n "$_aside" ] && as_root test -d "$_aside/engines" && ! as_root test -e "$PREFIX/engines" \
+                    && ! as_root test -L "$PREFIX/engines"; then
                 as_root cp -a "$_aside/engines" "$PREFIX/engines" \
                     && as_root chown -R "$SYSTEM_ACCOUNT:$SYSTEM_ACCOUNT" "$PREFIX/engines" \
                     && say "carried over the engine builds from $_aside"
@@ -5133,7 +5294,7 @@ if [ "$UPDATE" = 1 ]; then
         mac_write_removal
     fi
 elif [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
-    prepare_models_dir
+    mac_prepare_models_dir
     say "writing $LAUNCHD_DAEMON (Eugene starts at boot, as $SYSTEM_ACCOUNT)"
     write_launch_daemon
     if [ "$WIDE" = 1 ]; then mac_allow_firewall; fi
@@ -5223,7 +5384,8 @@ if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
 
     i=0
     while [ "$i" -lt 60 ]; do
-        if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/healthz" 2>/dev/null; then
+        if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/healthz" 2>/dev/null \
+                && { [ "$MIGRATE" != 1 ] || mac_daemon_serving; }; then
             printf '\n'
             if [ "$MIGRATE" = 1 ]; then
                 mac_migrate_finish
@@ -5241,7 +5403,9 @@ if [ "$DO_START" = 1 ] && [ "$DO_SERVICE" = 1 ]; then
     if [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
         # The agent's own last words, which this shell cannot read itself.
         _said=$(as_root tail -n 12 "$PREFIX/logs/launchd.err.log" 2>/dev/null | sed 's/^/    /' || true)
-        die "the agent did not answer on port $PORT within 60s.${_said:+ What it said:
+        _other=
+        [ "$MIGRATE" != 1 ] || _other=" (an answer from any other process there does not count)"
+        die "Eugene's startup job did not answer on port $PORT within 60s$_other.${_said:+ What it said:
 $_said}
     Check: sudo launchctl print system/$LAUNCHD_LABEL"
     fi

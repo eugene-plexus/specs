@@ -1092,13 +1092,10 @@ def main() -> int:
     fact("macOS", run(["sw_vers", "-productVersion"]).stdout.strip())
     fact("chip", run(["sysctl", "-n", "machdep.cpu.brand_string"]).stdout.strip())
     fact("virtual machine", run(["sysctl", "-n", "kern.hv_vmm_present"]).stdout.strip() == "1")
-    # Eugene's account reaches the models and the MLX environment in this
-    # home through `staff`, as a Mac's default 0750 home lets it (row 8).
-    mode = run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip()
-    fact("home folder mode", mode)
-    if len(mode) > 6 and mode[6] not in "xs":
-        run(["chmod", "g+x", str(HOME)])
-        fact("home folder mode, as a Mac makes it", run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip())
+    # Eugene's account reaches ~/Eugene Models through its models group and
+    # the ACL entry the install adds to this home (row 8); the home's own
+    # mode is the runner image's.
+    fact("home folder mode", run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip())
     workdir = Path(tempfile.mkdtemp(prefix="a4-"))
     installer = installer_copy(workdir)
     ctx: dict = {}

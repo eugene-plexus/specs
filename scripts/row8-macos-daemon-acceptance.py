@@ -10,7 +10,8 @@ Two phases.
 
 **A, a fresh install** (the default on a Mac since row 8):
  1. `_eugeneplexus` exists, is hidden, has no login shell and no password,
-    and is in `staff`
+    and shares a group of its own with the person (never `staff`), which
+    owns ~/Eugene Models (2770) and may pass through the home (ACL `search`)
  2. the daemon plist is root:wheel 0644, lints, and names `_eugeneplexus`;
     there is no LaunchAgent
  3. launchd runs it; the agent's uid is the account's (never 0, never the
@@ -77,6 +78,7 @@ UID = os.getuid()
 ME = os.environ.get("USER") or subprocess.run(["id", "-un"], capture_output=True, text=True).stdout.strip()
 LABEL = "com.eugeneplexus.agent"
 ACCOUNT = "_eugeneplexus"
+MODELS_GROUP = "_eugeneplexusmodels"
 PREFIX = Path("/usr/local/eugene-plexus")
 DAEMON = Path("/Library/LaunchDaemons") / f"{LABEL}.plist"
 RECEIPTS = Path("/usr/local/lib/eugene-plexus")
@@ -390,13 +392,23 @@ def phase_fresh(installer: Path) -> dict:
     shell = dscl_read(f"/Users/{ACCOUNT}", "UserShell")
     hidden = dscl_read(f"/Users/{ACCOUNT}", "IsHidden")
     auth = run(["dscl", ".", "-read", f"/Users/{ACCOUNT}", "AuthenticationAuthority"], timeout=20)
-    staff = run(["dseditgroup", "-o", "checkmember", "-m", ACCOUNT, "staff"], timeout=20).returncode == 0
-    admin = run(["dseditgroup", "-o", "checkmember", "-m", ACCOUNT, "admin"], timeout=20).returncode == 0
+    def member(user: str, group: str) -> bool:
+        return run(["dseditgroup", "-o", "checkmember", "-m", user, group], timeout=20).returncode == 0
+
+    staff, admin = member(ACCOUNT, "staff"), member(ACCOUNT, "admin")
+    models = member(ACCOUNT, MODELS_GROUP) and member(ME, MODELS_GROUP)
     fact("account", {"uid": uid, "shell": shell, "hidden": hidden, "auth": auth.stdout.strip()[:120]})
-    check("1", "_eugeneplexus exists below 500, hidden, no login shell, no password, in staff, not admin",
+    check("1", "_eugeneplexus exists below 500, hidden, no login shell, no password, not in staff or admin; "
+          "it and the person share the models group",
           uid is not None and 0 < uid < 500 and shell == "/usr/bin/false" and hidden == "1"
-          and "ShadowHash" not in auth.stdout and staff and not admin,
-          {"uid": uid, "shell": shell, "hidden": hidden, "staff": staff, "admin": admin})
+          and "ShadowHash" not in auth.stdout and not staff and not admin and models,
+          {"uid": uid, "shell": shell, "hidden": hidden, "staff": staff, "admin": admin, "models group": models})
+    folder = run(["stat", "-f", "%Su:%Sg %Sp", str(MODELS)], timeout=20).stdout.strip()
+    acl = run(["ls", "-led", str(HOME)], timeout=20).stdout
+    check("1b", "~/Eugene Models is the person's, the models group's, 2770; the home lets that group pass and no more",
+          folder == f"{ME}:{MODELS_GROUP} drwxrws---" and f"group:{MODELS_GROUP} allow search" in acl
+          and f"group:{MODELS_GROUP} allow list" not in acl,
+          {"folder": folder, "home acl": acl.strip()[-300:]})
 
     owner = run(["stat", "-f", "%Su:%Sg %Lp", str(DAEMON)], timeout=20).stdout.strip()
     lint = run(["plutil", "-lint", str(DAEMON)], timeout=20)
@@ -614,14 +626,18 @@ def phase_uninstall(installer: Path, number: str) -> None:
     left += [p for p in engines if run(["kill", "-0", p], timeout=10).returncode == 0
              or "Operation not permitted" in run(["kill", "-0", p], timeout=10).stderr]
     loaded = sudo("launchctl", "print", f"system/{LABEL}", timeout=30).returncode == 0
-    check(number, "plist gone, job unknown, no process left, account and group removed, config kept as root's",
+    models_group = dscl_read(f"/Groups/{MODELS_GROUP}", "PrimaryGroupID")
+    home_acl = f"group:{MODELS_GROUP} allow" in run(["ls", "-led", str(HOME)], timeout=20).stdout
+    check(number, "plist gone, job unknown, no process left, account, its group and the models group "
+          "removed, the home's ACL entry gone, config kept as root's",
           out.returncode == 0 and not DAEMON.exists() and not loaded and not left
           and account_uid() is None and dscl_read(f"/Groups/{ACCOUNT}", "PrimaryGroupID") is None
+          and models_group is None and not home_acl
           and kept_ok and kept_owner == "root:wheel 700" and not PREFIX.exists()
           and not (RECEIPTS / "account.txt").exists(),
           {"rc": out.returncode, "plist": DAEMON.exists(), "loaded": loaded, "left": left,
-           "account": account_uid(), "kept": str(kept_path), "kept owner": kept_owner,
-           "said": text[-500:]})
+           "account": account_uid(), "models group": models_group, "home acl entry": home_acl,
+           "kept": str(kept_path), "kept owner": kept_owner, "said": text[-500:]})
 
 
 # --------------------------------------------------------------------------- #
@@ -718,34 +734,43 @@ def phase_move(installer: Path, ctx: dict) -> None:
     _, node = api("GET", f"{base}/v1/node", token)
     node_yaml = root_read(PREFIX / "node.yaml")
     state_files = sorted(Path(p).name for p in sudo("sh", "-c", f"ls {PREFIX}/library-state*.json", timeout=20).stdout.split())
-    moved = sorted(USER_PREFIX.parent.glob(USER_PREFIX.name + ".moved-*"))
+    # The old folder holds the machine's keys in clear: kept as root's,
+    # closed, beside the new prefix, and nothing of it left in the home.
+    in_home = sorted(USER_PREFIX.parent.glob(USER_PREFIX.name + ".moved-*"))
+    moved = sorted(Path(p) for p in sudo("sh", "-c", f"ls -d {PREFIX}.moved-*", timeout=20).stdout.split())
+    moved_owner = sudo("stat", "-f", "%Su:%Sg %Lp", str(moved[-1]), timeout=20).stdout.strip() if moved else ""
+    moved_keys = bool(moved) and sudo("test", "-f", str(moved[-1] / "node.yaml")).returncode == 0
+    person_reads = bool(moved) and run(["cat", str(moved[-1] / "node.yaml")], timeout=20).returncode == 0
     same_node = bool(identity_lines(node_yaml)) and identity_lines(node_yaml) == identity_lines(ctx["node_yaml"])
-    check("11c", "node name and keys unchanged, Library state kept, the old prefix moved aside, no LaunchAgent",
+    check("11c", "node name and keys unchanged, Library state kept, the old folder kept as root's "
+          "and closed to the person, no LaunchAgent",
           (node or {}).get("name") == ctx["name"] and same_node
-          and set(ctx["state_files"]) <= set(state_files) and bool(moved) and not USER_PREFIX.exists()
-          and not AGENT_PLIST.exists() and bool(moved) and (moved[-1] / "node.yaml").is_file(),
+          and set(ctx["state_files"]) <= set(state_files) and not USER_PREFIX.exists() and not in_home
+          and moved_owner == "root:wheel 700" and moved_keys and not person_reads
+          and not AGENT_PLIST.exists(),
           {"name": (node or {}).get("name"), "same keys": same_node, "state": state_files,
-           "moved": [str(m) for m in moved]})
+           "moved": [str(m) for m in moved], "owner": moved_owner, "left in home": [str(m) for m in in_home],
+           "person reads its node.yaml": person_reads})
     agent_yaml = root_read(PREFIX / "agent.yaml")
-    check("11d", "the moved settings name the new prefix and unlock from the passphrase file",
-          str(USER_PREFIX) not in agent_yaml and str(PREFIX) in agent_yaml
-          and (not ctx["keyring"] or re.search(r"^securityMode: passphrase_file$", agent_yaml, re.M) is not None),
-          re.findall(r"^securityMode:.*$", agent_yaml, re.M))
+    # The Keychain move must be exercised, not assumed: an old install that
+    # was never on os_keyring proves nothing about it.
+    check("11d", "the moved settings name the new prefix, and the Keychain mode became the passphrase file",
+          ctx["keyring"] and str(USER_PREFIX) not in agent_yaml and str(PREFIX) in agent_yaml
+          and re.search(r"^securityMode: passphrase_file$", agent_yaml, re.M) is not None,
+          {"keychain exercised": ctx["keyring"], "securityMode": re.findall(r"^securityMode:.*$", agent_yaml, re.M)})
     control = ctx["control"]
-    if unlocked(control) is not True:
-        api("POST", f"{control}/v1/auth/login", body={"passphrase": PASSPHRASE})
+    _, croot = api("GET", f"{control}/v1/config", token)
+    cmode = (croot or {}).get("securityMode") if isinstance(croot, dict) else None
     before = listener_pid(PORT)
     sudo("launchctl", "kickstart", "-k", f"system/{LABEL}", timeout=60)
     wait_for(lambda: (lambda p: p if p and p != before else None)(listener_pid(PORT)), 90)
     wait_for(lambda: api("GET", f"{base}/healthz")[0] == 200, 120)
     agent_ok = wait_for(lambda: unlocked(base), 60)
     control_ok = wait_for(lambda: unlocked(control), 90)
-    if ctx["keyring"]:
-        check("11e", "after that one sign-in, a kickstart unlocks agent and root by itself",
-              agent_ok is True and control_ok is True, {"agent": agent_ok, "control": control_ok})
-    else:
-        skip("11e", "after one sign-in, a kickstart unlocks by itself",
-             "this runner's LaunchAgent had no Keychain, so the old install kept prompt_on_startup")
+    check("11e", "that one sign-in moved the root off the Keychain, and a kickstart unlocks agent and root by itself",
+          ctx["keyring"] and cmode == "passphrase_file" and agent_ok is True and control_ok is True,
+          {"keychain exercised": ctx["keyring"], "root's mode after sign-in": cmode,
+           "agent": agent_ok, "control": control_ok})
 
 
 def main() -> int:
@@ -760,14 +785,9 @@ def main() -> int:
         return 2
     fact("macOS", run(["sw_vers", "-productVersion"]).stdout.strip())
     fact("machine", platform.machine())
-    # A Mac's home is 0750 person:staff, which is how Eugene's account (in
-    # staff) reaches ~/Eugene Models. Said, and made so if a runner image
-    # differs, because the install only warns about it.
-    mode = run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip()
-    fact("home folder mode", mode)
-    if len(mode) > 6 and mode[6] not in "xs":
-        run(["chmod", "g+x", str(HOME)])
-        fact("home folder mode, as a Mac makes it", run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip())
+    # Eugene's account passes through the home by the ACL entry the install
+    # adds for its models group, whatever the home's own mode is.
+    fact("home folder mode", run(["stat", "-f", "%Sp", str(HOME)]).stdout.strip())
     held = hold_default_ports()
     fact("held by this harness", f"{', '.join(map(str, HELD))} (pid {os.getpid()})")
     workdir = Path(tempfile.mkdtemp(prefix="row8-"))

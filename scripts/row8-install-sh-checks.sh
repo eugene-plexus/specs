@@ -35,6 +35,14 @@
 #       launchctl's words, the old folder untouched and the copy and the
 #       account removed
 #   M6. a move refuses --no-start
+#   M7. a link Eugene's account left under its prefix is refused, and root
+#       never makes, chowns or chmods through it
+#   M8. a move commits only when launchd's daemon is what answers
+#   M9. a rollback that cannot stop the daemon does not start the
+#       LaunchAgent beside it
+#   M1 and M4 also hold the review's other fixes: the models group in place
+#   of staff, the copy read as the person (a planted link stays a link), and
+#   the old folder kept as root's.
 set -uo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -122,9 +130,11 @@ STUB
 write_mac_stubs() {
   local bin=$1
   printf '#!/bin/sh\ncase "${1:-}" in -m) echo arm64 ;; *) echo Darwin ;; esac\n' > "$bin/uname"
-  # Not root here: sudo runs the command as this account.
+  # Not root here: sudo runs the command as this account, and says so in a
+  # log, so a check can tell what ran with root's access.
   cat > "$bin/sudo" <<'STUB'
 #!/bin/sh
+printf '%s\n' "$*" >> "$EP_STUB_STATE/sudo.log"
 while [ $# -gt 0 ]; do
   case "$1" in -v|-n) shift ;; -u) shift 2 ;; --) shift; break ;; *) break ;; esac
 done
@@ -184,6 +194,8 @@ for a in "$@"; do
 done
 exec /usr/bin/id "$@"
 STUB
+  # launchd: a bootstrapped system job runs as pid 4242 (unless it is told
+  # to stay silent), and lsof and ps say what that pid is.
   cat > "$bin/launchctl" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >> "$EP_STUB_STATE/launchctl.log"
@@ -191,11 +203,46 @@ case "$*" in
   "bootstrap system "*)
     if [ "${EP_STUB_LAUNCHCTL_FAIL:-}" = bootstrap ]; then
       echo "Bootstrap failed: 5: Input/output error" >&2; exit 5
-    fi ;;
+    fi
+    [ "${EP_STUB_DAEMON_SILENT:-0}" = 1 ] || touch "$EP_STUB_STATE/daemon-running" ;;
+  "bootout system/"*)
+    if [ "${EP_STUB_BOOTOUT_FAILS:-0}" = 1 ]; then
+      echo "Boot-out failed: 5: Input/output error" >&2; exit 5
+    fi
+    rm -f "$EP_STUB_STATE/daemon-running" ;;
+  "print system/"*)
+    if [ -f "$EP_STUB_STATE/daemon-running" ] || [ "${EP_STUB_DAEMON_LOADED:-0}" = 1 ]; then
+      printf 'system/com.eugeneplexus.agent = {\n\tstate = running\n\tpid = 4242\n}\n'; exit 0
+    fi
+    exit 113 ;;
   print*) exit 113 ;;
 esac
 exit 0
 STUB
+  cat > "$bin/lsof" <<'STUB'
+#!/bin/sh
+[ -f "$EP_STUB_STATE/daemon-running" ] && echo 4242
+exit 0
+STUB
+  cat > "$bin/ps" <<'STUB'
+#!/bin/sh
+case "$*" in
+  *"-p 4242"*) echo "$EP_STUB_VENV/bin/python $EP_STUB_VENV/bin/eugene-plexus-agent --unattended"; exit 0 ;;
+esac
+exec /bin/ps "$@"
+STUB
+  # macOS's chmod: ACL entries (+a, -a) are recorded, and -h is on a folder
+  # the same as without it.
+  cat > "$bin/chmod" <<'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >> "$EP_STUB_STATE/chmod.log"
+case "$1" in
+  +a|-a) exit 0 ;;
+  -h) shift ;;
+esac
+exec /bin/chmod "$@"
+STUB
+  printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "$EP_STUB_STATE/chgrp.log"\nexit 0\n' > "$bin/chgrp"
   # plutil: the plist really parsed, by Python's plistlib.
   cat > "$bin/plutil" <<'STUB'
 #!/bin/sh
@@ -226,12 +273,13 @@ if [ -d "$1" ]; then mkdir -p "$2" && cp -R "$1/." "$2/"; else cp -p "$1" "$2"; 
 STUB
   cat > "$bin/install" <<'STUB'
 #!/bin/sh
+printf '%s\n' "$*" >> "$EP_STUB_STATE/install.log"
 if [ "$1" = -d ]; then
   shift; mode=
   while [ $# -gt 0 ]; do
     case "$1" in -m) mode=$2; shift 2 ;; -o|-g) shift 2 ;; *) break ;; esac
   done
-  for d in "$@"; do mkdir -p "$d"; [ -z "$mode" ] || chmod "$mode" "$d"; done
+  for d in "$@"; do mkdir -p "$d"; [ -z "$mode" ] || /bin/chmod "$mode" "$d"; done
   exit 0
 fi
 exec /usr/bin/install "$@"
@@ -287,7 +335,7 @@ run_mac() {
   DAEMON=$ROOT/LaunchDaemons/com.eugeneplexus.agent.plist
   OUT=$(cd "$ROOT" && env -i HOME="$ROOT/home" PATH="$ROOT/bin:/usr/bin:/bin" \
     EP_STUB_BIN="$ROOT/bin" EP_STUB_STATE="$ROOT/state" EP_STUB_PERSON="$(id -un)" \
-    EP_STUB_ARGS="$ROOT/args.txt" ${EP_EXTRA_ENV:-} \
+    EP_STUB_ARGS="$ROOT/args.txt" EP_STUB_VENV="$ROOT/eugene-plexus/venv" ${EP_EXTRA_ENV:-} \
     sh "$ROOT/install.sh" --prefix "$PREFIX" "$@" 2>&1)
   RC=$?
 }
@@ -373,10 +421,24 @@ if grep -qx '/Users/_eugeneplexus UniqueID 399' "$STATE/dscl" \
 else
   bad "the account: $(grep _eugeneplexus "$STATE/dscl" 2>/dev/null | tr '\n' '|')"
 fi
-if grep -qx -- "-o edit -a _eugeneplexus -t user $(id -gn)" "$STATE/dseditgroup.log" 2>/dev/null; then
-  ok "it joins the person's group, $(id -gn)"
+# Least privilege (row 8 review): a group of its own for the models
+# folder, holding Eugene's account and the person; never the person's own
+# group, which on a Mac is staff, every person's.
+if grep -qx -- "-o edit -a _eugeneplexus -t user _eugeneplexusmodels" "$STATE/dseditgroup.log" 2>/dev/null \
+    && grep -qx -- "-o edit -a $(id -un) -t user _eugeneplexusmodels" "$STATE/dseditgroup.log" \
+    && ! grep -q -- "-t user $(id -gn)\$" "$STATE/dseditgroup.log" \
+    && grep -qx '/Groups/_eugeneplexusmodels PrimaryGroupID 398' "$STATE/dscl" \
+    && [ "$(cat "$ROOT/receipts/models-group.txt" 2>/dev/null)" = "group 398" ]; then
+  ok "a models group of its own (398) holds the account and the person; the person's own group is not joined"
 else
-  bad "dseditgroup: $(cat "$STATE/dseditgroup.log" 2>/dev/null | tr '\n' '|')"
+  bad "groups: $(cat "$STATE/dseditgroup.log" 2>/dev/null | tr '\n' '|')"
+fi
+models_mode=$(stat -c %a "$ROOT/home/Eugene Models" 2>/dev/null)
+if [ "$models_mode" = 2770 ] && grep -qx -- "-h _eugeneplexusmodels $ROOT/home/Eugene Models" "$STATE/chgrp.log" \
+    && grep -qx "+a group:_eugeneplexusmodels allow search $ROOT/home" "$STATE/chmod.log"; then
+  ok "~/Eugene Models is the models group's, 2770, and the home lets that group pass through only"
+else
+  bad "models folder mode '$models_mode'; chgrp: $(tr '\n' '|' < "$STATE/chgrp.log" 2>/dev/null); acl: $(grep -- '+a' "$STATE/chmod.log" | tr '\n' '|')"
 fi
 if [ "$(cat "$ROOT/receipts/account.txt" 2>/dev/null)" = "account 399 399 1" ]; then
   ok "the receipt records the account and group this installer made"
@@ -437,6 +499,10 @@ YAML
   printf '{"profiles": {"p1": {"modelPath": "%s/Eugene Models/m.gguf"}}}\n' "$home" > "$old/library-state.json"
   printf 'snapshot\n' > "$old/control-state/snap.bin"
   printf 'build\n' > "$home/.eugene-plexus/engines/llama_cpp/b1/llama-server"
+  # A link a program running as the person could plant, to a file the
+  # person may not read: the move must copy the link, never what it names.
+  printf 'root only\n' > "$home/root-only.txt"
+  ln -s "$home/root-only.txt" "$old/planted"
   cat > "$home/Library/LaunchAgents/com.eugeneplexus.agent.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -501,12 +567,32 @@ if [ "$(plist "$DAEMON" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT)" = 1
 else
   bad "port/host: $(plist "$DAEMON" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) $(plist "$DAEMON" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_HOST)"
 fi
-moved=$(ls -d "$OLD".moved-* 2>/dev/null | head -n 1)
-if [ ! -e "$WORK/move/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] && [ ! -e "$OLD" ] \
-    && [ -n "$moved" ] && [ -f "$moved/node.yaml" ] && [ ! -e "$WORK/move/home/.eugene-plexus/engines" ]; then
-  ok "the LaunchAgent is gone, the old folder kept at ${moved##*/}, the engine store moved"
+# Row 8 review, blocker 2: nothing of the old folder is read with root's
+# access, and a link in it arrives as a link.
+if [ -L "$PREFIX/planted" ] && [ "$(readlink "$PREFIX/planted")" = "$WORK/move/home/root-only.txt" ] \
+    && ! grep -qE '^(ditto|tar -c|cp )' "$STATE/sudo.log" \
+    && grep -q -- '-u _eugeneplexus -- env .* tar -xpf - -C '"$PREFIX" "$STATE/sudo.log"; then
+  ok "the old folder was read as the person and written as the account; a planted link stayed a link"
 else
-  bad "after: agent plist $([ -e "$WORK/move/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] && echo kept || echo gone), old $([ -e "$OLD" ] && echo kept || echo gone), moved '${moved}'"
+  bad "planted: $(ls -l "$PREFIX/planted" 2>&1); root ran: $(grep -E 'ditto|tar' "$STATE/sudo.log" | tr '\n' '|')"
+fi
+# Row 8 review, blocker 3: the old folder holds the machine's keys in
+# clear, so it is kept as root's, closed, beside the new prefix -- not in
+# the person's home.
+moved=$(ls -d "$PREFIX".moved-* 2>/dev/null | head -n 1)
+if [ ! -e "$WORK/move/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] && [ ! -e "$OLD" ] \
+    && [ -z "$(ls -d "$OLD".moved-* 2>/dev/null)" ] && [ -n "$moved" ] && [ -f "$moved/node.yaml" ] \
+    && [ "$(stat -c %a "$moved")" = 700 ] && grep -qx -- "-h root:wheel $moved" "$STATE/chown.log" \
+    && [ ! -e "$WORK/move/home/.eugene-plexus/engines" ] \
+    && printf '%s' "$OUT" | grep -q "readable by administrators only"; then
+  ok "the LaunchAgent is gone, the old folder kept as root's (0700) at ${moved##*/}, the engine store moved"
+else
+  bad "after: agent plist $([ -e "$WORK/move/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] && echo kept || echo gone), old $([ -e "$OLD" ] && echo kept || echo gone), in home '$(ls -d "$OLD".moved-* 2>/dev/null)', moved '${moved}' mode $(stat -c %a "$moved" 2>/dev/null)"
+fi
+if grep -q '^print system/com.eugeneplexus.agent$' "$STATE/launchctl.log"; then
+  ok "the move was committed only once launchd's daemon held the port"
+else
+  bad "nothing asked launchd which process the daemon is: $(tr '\n' '|' < "$STATE/launchctl.log")"
 fi
 
 say "M5. launchctl refusing the daemon puts the LaunchAgent back"
@@ -553,6 +639,56 @@ if [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -q 'Re-run without --no-start' &&
 else
   bad "rc=$RC"; show "$OUT" 4
 fi
+
+# Row 8 review, blocker 1: Eugene's account owns its prefix and can put a
+# link where its logs folder belongs. Root must never make, chown or chmod
+# through it -- here it points at root's own receipts.
+say "M7. a link the account left under its prefix is refused, and root never follows it"
+run_mac linked --no-start
+rm -rf "$PREFIX/logs"
+ln -s "$ROOT/receipts" "$PREFIX/logs"
+chmod 0755 "$ROOT/receipts"
+: > "$ROOT/state/install.log"
+run_mac linked --no-start
+if [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -q "$PREFIX/logs is a link" \
+    && ! grep -q "$PREFIX/logs" "$ROOT/state/install.log" \
+    && [ "$(stat -c %a "$ROOT/receipts")" = 755 ]; then
+  ok "refused, and root's install touched nothing under the prefix"
+else
+  bad "rc=$RC; root's install: $(tr '\n' '|' < "$ROOT/state/install.log")"; show "$OUT" 4
+fi
+
+# Row 8 review, item 4: an answer on the port is not the daemon. Here the
+# job never starts, and something else answers.
+say "M8. a move commits only when launchd's daemon is what answers"
+rm -rf "$WORK/silent"
+mkdir -p "$WORK/silent/home"
+old_install "$WORK/silent/home"
+OLD=$WORK/silent/home/.local/share/eugene-plexus
+EP_EXTRA_ENV=EP_STUB_DAEMON_SILENT=1 run_mac silent
+if [ "$RC" != 0 ] && [ -f "$WORK/silent/home/Library/LaunchAgents/com.eugeneplexus.agent.plist" ] \
+    && [ -f "$OLD/node.yaml" ] && [ ! -e "$PREFIX" ] \
+    && grep -q "^bootstrap gui/$(id -u) " "$ROOT/state/launchctl.log"; then
+  ok "not committed: the LaunchAgent and its folder are back as they were"
+else
+  bad "rc=$RC old=$([ -e "$OLD" ] && echo kept || echo gone) prefix=$([ -e "$PREFIX" ] && echo kept || echo gone)"; show "$OUT" 6
+fi
+EP_EXTRA_ENV=
+
+# Row 8 review, item 5: a daemon that will not stop is never left running
+# beside a restarted LaunchAgent.
+say "M9. a rollback that cannot stop the daemon stops there"
+rm -rf "$WORK/stuck"
+mkdir -p "$WORK/stuck/home"
+old_install "$WORK/stuck/home"
+EP_EXTRA_ENV="EP_STUB_LAUNCHCTL_FAIL=bootstrap EP_STUB_DAEMON_LOADED=1 EP_STUB_BOOTOUT_FAILS=1" run_mac stuck
+if [ "$RC" != 0 ] && printf '%s' "$OUT" | grep -q 'macOS refused to stop the new startup job: Boot-out failed' \
+    && ! grep -q "^bootstrap gui/" "$ROOT/state/launchctl.log" && [ -e "$PREFIX" ]; then
+  ok "the LaunchAgent was not started beside it, nothing was taken apart, and the person is told"
+else
+  bad "rc=$RC; launchctl: $(tr '\n' '|' < "$ROOT/state/launchctl.log")"; show "$OUT" 6
+fi
+EP_EXTRA_ENV=
 
 printf '\n'
 if [ "$FAILURES" = 0 ]; then

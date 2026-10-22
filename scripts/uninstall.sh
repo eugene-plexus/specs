@@ -133,7 +133,11 @@ APPLE
     fi
     # Keychain entries the person's own install made before it moved to the
     # daemon (os_keyring); they are named by this install's master salt.
-    SALT=$(sed -n 's/^[[:space:]]*masterSalt:[[:space:]]*//p' "$PREFIX/agent.yaml" 2>/dev/null | head -n 1 | tr -d "'\"")
+    # Read as root, so never through a link the account left there.
+    SALT=
+    if [ -f "$PREFIX/agent.yaml" ] && [ ! -L "$PREFIX/agent.yaml" ]; then
+        SALT=$(sed -n 's/^[[:space:]]*masterSalt:[[:space:]]*//p' "$PREFIX/agent.yaml" 2>/dev/null | head -n 1 | tr -d "'\"")
+    fi
     if [ -n "$PERSON" ] && [ -n "$SALT" ] && id -u "$PERSON" >/dev/null 2>&1 && [ "$PERSON" != root ]; then
         FP=$(printf '%s' "$SALT" | base64 --decode 2>/dev/null | shasum -a 256 | cut -c1-12)
         for service in eugene-plexus-agent eugene-plexus-control; do
@@ -145,11 +149,14 @@ APPLE
         done
     fi
     # The files stay, as root's alone: the account goes next, and files
-    # left with its number would belong to whichever account gets it.
+    # left with its number would belong to whichever account gets it. The
+    # top folder is root's and closed, so nothing inside is reachable; it
+    # is not chowned through, where a hard link the account made could
+    # hand another person's file to root.
     KEEP=$PREFIX.removed-$(date +%Y%m%d%H%M%S)
     [ ! -e "$KEEP" ] || die_daemon "The retained folder already exists: $KEEP. Nothing more was removed."
     mv -- "$PREFIX" "$KEEP" || die_daemon "Could not move $PREFIX to $KEEP. Eugene no longer starts; run the removal again."
-    chown -R -P root:wheel "$KEEP" || warn "Could not give $KEEP to root."
+    chown -h root:wheel "$KEEP" || warn "Could not give $KEEP to root."
     chmod 0700 "$KEEP"
     # The engine builds and model copies this install downloaded, as the
     # Linux system removal names them: the account's home is the prefix.
@@ -178,6 +185,22 @@ APPLE
             dscl . -delete "/Groups/$SERVICE_ACCOUNT" || warn "Could not remove the $SERVICE_ACCOUNT group: sudo dscl . -delete /Groups/$SERVICE_ACCOUNT"
         fi
     fi
+    # The models folder's group, and its entry in the person's home ACL:
+    # the entry always, the group only when the installer made it.
+    MODELS_GROUP=_eugeneplexusmodels
+    if [ -n "$PERSON" ] && [ "$PERSON" != root ]; then
+        HOME_OF=$(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHomeDirectory: //p' | head -n 1)
+        if [ -n "$HOME_OF" ] && [ -d "$HOME_OF" ]; then
+            chmod -a "group:$MODELS_GROUP allow search" "$HOME_OF" >/dev/null 2>&1 || true
+        fi
+    fi
+    if [ -f "$RECEIPTS/models-group.txt" ]; then
+        read -r _kind MODELS_GID < "$RECEIPTS/models-group.txt" || true
+        if [ -n "$MODELS_GID" ] && [ "$MODELS_GID" != 0 ] \
+                && [ "$(dscl . -read "/Groups/$MODELS_GROUP" PrimaryGroupID 2>/dev/null | awk '{print $2}')" = "$MODELS_GID" ]; then
+            dscl . -delete "/Groups/$MODELS_GROUP" || warn "Could not remove the $MODELS_GROUP group: sudo dscl . -delete /Groups/$MODELS_GROUP"
+        fi
+    fi
     # The removal app, only ours (its recorded prefix is this one).
     if [ -f "$RECEIPTS/mac-app.txt" ]; then
         APP=$(cat "$RECEIPTS/mac-app.txt")
@@ -185,7 +208,7 @@ APPLE
             if [ -f "$APP/Contents/Resources/prefix.txt" ] && [ "$(cat "$APP/Contents/Resources/prefix.txt")" = "$PREFIX" ]; then rm -rf -- "$APP"; fi ;;
         esac
     fi
-    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
     rmdir "$RECEIPTS" 2>/dev/null || true
     echo "Eugene's removal finished. It no longer starts at boot."
     if [ -d "$KEEP" ]; then
