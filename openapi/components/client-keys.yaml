@@ -147,6 +147,23 @@ components:
         appClientId: {type: string}
         limits: {$ref: '#/components/schemas/ClientKeyLimits'}
         leaseSeconds: {type: number, exclusiveMinimum: 0, maximum: 30}
+        queueBand:
+          $ref: '#/components/schemas/QueueBand'
+          description: |
+            The verified person's queue band from their permission groups
+            (row 70): the highest band any of their groups sets. Present only
+            when the root verified a person (`personId`) and one of their
+            groups sets a band. Absent for a key with no person, a release, or
+            a person whose groups set none: the key's own band, or the
+            install's default, applies. Never taken from the caller.
+    QueueBand:
+      type: string
+      enum: [interactive, background, sheddable]
+      description: |
+        Which requests wait or are turned away first when the machines are
+        busy. From highest to lowest: `interactive` (a person waiting at a
+        chat), `background` (work nobody watches), `sheddable` (refused first
+        under load). With no policy the install's default is `interactive`.
     ClientKeyCreated:
       type: object
       required: [key, token]

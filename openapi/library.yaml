@@ -3523,7 +3523,7 @@ components:
 
     DraftKind:
       type: string
-      enum: [mtp, simple]
+      enum: [mtp, simple, dflash, dspark, eagle3]
       description: |
         How llama.cpp drafts with a companion file, read from the file
         itself:
@@ -3532,6 +3532,14 @@ components:
           block and no first block (`--spec-type draft-mtp`).
         * `simple` — a whole small model named as a draft (`draft-*.gguf`)
           (`--spec-type draft-simple`).
+        * `dflash` — a DFlash drafter (`--spec-type draft-dflash`).
+        * `dspark` — a DSpark drafter (`--spec-type draft-dspark`).
+        * `eagle3` — an EAGLE3 drafter (`--spec-type draft-eagle3`).
+
+        DFlash, DSpark and EAGLE3 are bound to a target model by their
+        header: `general.architecture`, `<arch>.target_layers` and
+        `<arch>.target_hidden_size`. DSpark uses the `dflash` architecture
+        with a `markov_w1.weight` tensor.
 
     SafetensorsDetail:
       type: object
@@ -4958,6 +4966,14 @@ components:
             something to check, so nothing is written unverified.
         role:
           $ref: '#/components/schemas/ModelFileRole'
+        draftKind:
+          oneOf:
+            - $ref: '#/components/schemas/DraftKind'
+            - type: 'null'
+          description: >
+            For a file in CatalogueModel.draftFiles, its kind by its name prefix
+            (mtp-, draft-, dflash-, dspark-, eagle3-). The scan reads the header
+            after the download, and the header decides.
         lfs:
           type: boolean
           description: |

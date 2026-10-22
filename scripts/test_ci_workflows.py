@@ -28,6 +28,8 @@ PINNED_STEPS = {
     "harness-acceptance.py": (EVERY, "both"),
     "r7-rotation-acceptance.py": (FULL, "both"),
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
+    # Row 70 (2026-10-21): group policies at the root and through an agent.
+    "row70-group-policy-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),
     "ls1-eligibility-acceptance.py": (EVERY, "both"),
     "ls2-discover-acceptance.py": (FULL, "both"),

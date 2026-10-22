@@ -136,9 +136,8 @@ Read off upstream source. llama.cpp at **b11719** (2026-10-18), vLLM at
   vision part, off by default with the smallest precision chosen. A version
   already on the disk names its `root` and `folder`, and the companion
   downloads alone into it. ggml-org also ships `dflash-*.gguf`, which
-  llama.cpp b11719 takes as `draft-dflash`; Discover listed them as versions
-  of the model, and now lists them under other files. Launching DFlash is not
-  built.
+  llama.cpp b11719 takes as `draft-dflash`; row 17 now offers these as
+  companions too (see its building notes below).
 
 ### Measured on the 5090 (S4, 2026-10-18)
 
@@ -204,10 +203,34 @@ it doubles as the overdue vLLM run on current Edge.
   acceptance and memory measurements remain for the acceptance owner;
   building this adapter did not start an engine or agent.
 
+### What building row 17 found
+
+- DFlash and EAGLE3 files are companions by `general.architecture`, even
+  when renamed. A DFlash file with `markov_w1.weight` is DSpark. The scan
+  pairs them by target hidden size, target layer ids and vocabulary size
+  when known; it also reclassifies old cached drafter entries. EAGLE3 needs
+  exactly three target layers and permits an id equal to the model's block
+  count, where DFlash and DSpark require ids below it.
+- Missing or invalid target metadata prevents pairing and names the key.
+  Target-layer arrays are limited to 512 ids in both readers, so a malformed
+  header cannot force a large retained array. A manually chosen companion
+  with a different target shape is refused before launch, naming both files
+  and shapes. A build without the chosen type says why it is off.
+- Discover has one box per kind, each off with its smallest precision
+  chosen. Each kind can download beside an owned version. The settings
+  builder already times every companion using its header's type, so MTP
+  and DFlash are both timed when present. The picker and run name the kind.
+- `--spec-default` and `--spec-draft-hf` count as speculation set by hand,
+  as does `LLAMA_ARG_SPEC_DEFAULT`. The vLLM adapter remains unchanged.
+- The 5090 measurement is still pending. No engine was started for this
+  implementation. Unset "Tokens drafted per step" still passes no count;
+  no DFlash default of 15 or extra admission allowance has been introduced.
+  Acceptance must compare Off, MTP and DFlash with the count unset and at
+  15, check GPU memory against admission, and verify the builder's trial.
+  EAGLE3 is covered by synthetic headers; a live EAGLE3 file remains untested.
+
 ### Not in scope
 
-- EAGLE3, DFlash and DSpark sidecars. Add them when a model the Library
-  downloads ships one.
 - Pairing a draft from a *different* Library model (S5).
 - MLX: `draftModel` already exists there.
 
