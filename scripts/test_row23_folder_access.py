@@ -602,6 +602,145 @@ def test_revoke_removes_only_defaults_it_created(fake_tree, existing_default):
         assert f.acl[10]["default:group:"] == before["default:group:"]
 
 
+@pytest.mark.parametrize("key", ["user:", "group:", "other:", "mask:"])
+def test_revoke_preserves_edited_default_values(fake_tree, key):
+    f = fake_tree
+    record = {}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    f.acl[10]["default:" + key] = "r--"
+    expected = {
+        k: v
+        for k, v in f.acl[10].items()
+        if k.startswith("default:") and k != "default:group:1001"
+    }
+    assert f.h.revoke(10, record)
+    assert {k: v for k, v in f.acl[10].items() if k.startswith("default:")} == expected
+
+
+@pytest.mark.parametrize("kind", ["hardlink", "fifo", "socket", "device"])
+def test_reapply_skips_unsafe_items_and_restores_accepted_items(
+    fake_tree, monkeypatch, tmp_path, capsys, kind
+):
+    f = fake_tree
+    child = f.add("child", stat.S_IFDIR | 0o700)
+    parent = {"path": "/srv/shared", "identity": [10, 1, 2], "write": False}
+    f.h.grant(10, "1001", False, parent, lambda _: None)
+    record = {"path": "/srv/shared/child", "identity": [child, 1, 2], "write": True}
+    f.h.grant(child, "1001", True, record, lambda _: None)
+    mode = {
+        "hardlink": stat.S_IFREG,
+        "fifo": stat.S_IFIFO,
+        "socket": stat.S_IFSOCK,
+        "device": stat.S_IFCHR,
+    }[kind]
+    unsafe = f.add(kind, mode | 0o600, links=2 if kind == "hardlink" else 1)
+    f.nodes[unsafe] = (("child", kind), *f.nodes[unsafe][1:])
+    untouched = f.acl[unsafe].copy()
+    last = f.add("last")
+    f.nodes[last] = (("child", "last"), *f.nodes[last][1:])
+    f.acl[last]["group:1001"] = "rw-"
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    (target.parent / ("b" * 32 + ".json")).write_text(json.dumps(parent))
+
+    @contextlib.contextmanager
+    def opened(path, **kwargs):
+        yield child if path.endswith("/child") else 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    original = f.h.acl
+
+    def readable(fd):
+        # Removal may inspect unusual objects, but reapply must skip them
+        # before asking for their ACL or adding rights to an outside inode.
+        if fd == unsafe and any("-x" in call for call in f.calls):
+            pytest.fail("Reapply read an ACL it must never restore")
+        return original(fd)
+
+    monkeypatch.setattr(f.h, "acl", readable)
+    f.h.main()
+    outcome = json.loads(capsys.readouterr().out)
+    assert not outcome["removed"]
+    assert f"/srv/shared/child/{kind}" in outcome["message"]
+    assert ("hard link" if kind == "hardlink" else "special file") in outcome["message"]
+    assert f.acl[unsafe] == untouched
+    assert f.acl[last]["group:1001"] == "r--"
+    assert f.acl[child]["group:1001"] == "r-x"
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        FileNotFoundError("The folder was deleted"),
+        ValueError("A parent folder is writable by an account other than root"),
+    ],
+)
+@pytest.mark.parametrize("healthy", [False, True])
+def test_reapply_reports_unavailable_related_record_and_continues(
+    fake_tree, monkeypatch, tmp_path, capsys, error, healthy
+):
+    f = fake_tree
+    record = {"path": "/srv/shared", "identity": [10, 1, 2], "write": True}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    unavailable = dict(record, path="/srv/shared/unavailable")
+    (target.parent / ("b" * 32 + ".json")).write_text(json.dumps(unavailable))
+    if healthy:
+        (target.parent / ("c" * 32 + ".json")).write_text(
+            json.dumps(dict(record, write=False))
+        )
+
+    @contextlib.contextmanager
+    def opened(path, **kwargs):
+        if path.endswith("/unavailable"):
+            raise error
+        yield 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    f.h.main()
+    outcome = json.loads(capsys.readouterr().out)
+    assert not outcome["removed"]
+    assert unavailable["path"] in outcome["message"]
+    assert str(error) in outcome["message"]
+    assert f.acl[10].get("group:1001") == ("r-x" if healthy else None)
+
+
+@pytest.mark.parametrize("existing_item", [False, True])
+def test_reapply_records_default_additions_before_changing_them(
+    fake_tree, monkeypatch, tmp_path, capsys, existing_item
+):
+    f = fake_tree
+    parent = {"path": "/srv/shared", "identity": [10, 1, 2], "write": False}
+    f.h.grant(10, "1001", False, parent, lambda _: None)
+    record = {"path": "/srv/shared", "identity": [10, 1, 2], "write": True}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    child = f.add("new", stat.S_IFDIR | 0o700)
+    if existing_item:
+        parent["items"].append(
+            dict(names=["new"], identity=[child, 0, 0], before={}, after={})
+        )
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    parent_file = target.parent / ("b" * 32 + ".json")
+    parent_file.write_text(json.dumps(parent))
+    original = f.h.set_acl
+
+    def recorded(fd, after):
+        if fd == child:
+            saved = json.loads(parent_file.read_text())
+            assert any(
+                item["names"] == ["new"] and item["identity"] == [child, 1, 2]
+                for item in saved["items"]
+            ), "Reapply must save ownership before adding defaults"
+        original(fd, after)
+
+    monkeypatch.setattr(f.h, "set_acl", recorded)
+    f.h.main()
+    assert json.loads(capsys.readouterr().out)["removed"]
+    assert f.acl[child]["default:group:1001"] == "r-x"
+    parent = json.loads(parent_file.read_text())
+    assert f.h.revoke(10, parent)
+    assert not any(k.startswith("default:") for k in f.acl[child])
+
+
 def test_revoking_child_write_reapplies_parent_read(fake_tree, monkeypatch, tmp_path):
     f = fake_tree
     child = f.add("child", stat.S_IFDIR | 0o700)

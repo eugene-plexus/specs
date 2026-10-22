@@ -415,6 +415,7 @@ def remove_entries(entries, group, plans):
             and same_identity(ident, item["identity"])
             and not any(k.startswith("default:") for k in item["before"])
             and defaults == base
+            and all(current[k] == item["after"].get(k) for k in base)
         ):
             clear.append(child)
     if clear:
@@ -430,41 +431,88 @@ def remove_entries(entries, group, plans):
 def reapply(fd, record, records):
     """Restore remaining overlapping grants before completing this revoke."""
     active = []
-    for other in records:
+    skipped = []
+    for target, other in records.items():
         if (
             other.get("removed")
             or other == record
             or not related(other["path"], record["path"])
         ):
             continue
-        with opened(other["path"]) as held:
-            if same_identity(identity(held), other["identity"]):
-                active.append(other)
+        try:
+            with opened(other["path"]) as held:
+                if same_identity(identity(held), other["identity"]):
+                    active.append((target, other))
+        except (OSError, ValueError) as exc:
+            skipped.append(other["path"] + ": " + str(exc))
     if not active:
-        return True
-    skipped = []
+        record["refusal"] = "; ".join(filter(None, [record.get("refusal"), *skipped]))
+        return not skipped
+    plans = {
+        target: {tuple(item["names"]): item for item in other["items"]}
+        for target, other in active
+    }
     for batch in batches(fd, revoke=True, skipped=skipped):
-        for names, child, _ in batch:
+        changes = {}
+        for names, child, ident in batch:
             path = record["path"].rstrip("/") + ("/" + "/".join(names) if names else "")
             covering = [
-                r
-                for r in active
+                (target, r)
+                for target, r in active
                 if path == r["path"] or path.startswith(r["path"].rstrip("/") + "/")
             ]
             if not covering:
                 continue
             try:
+                info = os.fstat(child)
+                directory = stat.S_ISDIR(info.st_mode)
+                if not directory:
+                    if not stat.S_ISREG(info.st_mode):
+                        raise ValueError("A special file is inside this folder.")
+                    if info.st_nlink != 1:
+                        raise ValueError("A file has more than one hard link.")
                 before = acl(child)
+                target, owner = max(
+                    covering, key=lambda pair: bool(pair[1].get("write"))
+                )
                 after = plan(
                     before,
                     record["group"],
-                    any(r.get("write") for r in covering),
-                    stat.S_ISDIR(os.fstat(child).st_mode),
+                    owner.get("write", False),
+                    directory,
                 )
                 if before != after:
-                    set_acl(child, after)
+                    relative = path[len(owner["path"]) :].strip("/")
+                    owned_names = tuple(relative.split("/")) if relative else ()
+                    item = plans[target].get(owned_names)
+                    if item is None or not same_identity(ident, item["identity"]):
+                        if item is not None:
+                            owner["items"].remove(item)
+                        item = dict(
+                            names=owned_names,
+                            identity=ident,
+                            before=before,
+                            after=after,
+                        )
+                        owner["items"].append(item)
+                        plans[target][owned_names] = item
+                    changes.setdefault(target, []).append((path, child, after))
             except (OSError, ValueError) as exc:
                 skipped.append(path + ": " + str(exc))
+        for target, additions in changes.items():
+            try:
+                # Save each covering grant once per batch, before its additions.
+                # Keep an existing item's original before/after values so an
+                # owner's later default-ACL edits remain detectable on revoke.
+                write_record(target, records[target])
+            except (OSError, ValueError) as exc:
+                skipped.extend(path + ": " + str(exc) for path, _, _ in additions)
+                continue
+            for path, child, after in additions:
+                try:
+                    set_acl(child, after)
+                except (OSError, ValueError) as exc:
+                    skipped.append(path + ": " + str(exc))
     if skipped:
         record["refusal"] = "; ".join(filter(None, [record.get("refusal"), *skipped]))
     return not skipped
@@ -649,11 +697,11 @@ def main():
                 removed = same_identity(identity(fd), record["identity"])
                 if removed:
                     complete = revoke(fd, record)
-                    records = [
-                        json.loads(p.read_text())
+                    records = {
+                        p: json.loads(p.read_text())
                         for p in directory.glob("*.json")
                         if p != target
-                    ]
+                    }
                     restored = reapply(fd, record, records)
                     removed = complete and restored
         if removed:
@@ -668,7 +716,7 @@ def main():
             json.dumps(
                 dict(
                     removed=removed,
-                    message=record.get("refusal") or "The folder identity changed.",
+                    message=record.get("refusal") or "",
                 )
             )
         )
