@@ -2030,10 +2030,10 @@
     "gateway/src/eugene_plexus_gateway/door_paths.py",
     "inference-driver/src/eugene_plexus_inference_driver/engines/gemini_api.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
-    "gemini-door.md",
+    "rows/row-58.md",
     "gemini-provider.md"
    ],
    "calls": [],
