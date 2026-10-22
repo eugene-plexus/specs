@@ -4844,9 +4844,12 @@ components:
           format: date-time
           description: |
             When this machine changes its key by itself next: `keyMadeAt`
-            plus the `machineKeyChangeDays` config field (365 by default).
-            A key past it is changed at the next check, within a minute.
-            `null` when the field is 0 (only on request).
+            plus the `machineKeyChangeDays` config field (365 by default),
+            plus a spread of up to a twelfth of it (about a month a year),
+            drawn from the key itself: the same for one key, different for
+            each, so the machines of one install do not change on the same
+            day. A key past it is changed at the next check, within a
+            minute. `null` when the field is 0 (only on request).
 
     MachineKeyChangeState:
       type: string
