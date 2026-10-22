@@ -2008,7 +2008,7 @@
           "name": {
             "type": "string",
             "title": "Name",
-            "description": "The filename with its extension stripped, the directory\nname for safetensors, or the provenance file's name without\n`.eugene-prepared.json` for `prepared`, or the first Ollama tag\nfor a model in an Ollama store. **Not derived from metadata**: the\nfile's own name is what the operator downloaded, what they\ncall it, and what `Runtime.modelAlias` defaults to — so\nplainly-named files mean the obvious name is already the\nright one.\n"
+            "description": "The filename with its extension stripped, the directory\nname for safetensors, or the provenance file's name without\n`.eugene-prepared.json` for `prepared`. An Ollama model keeps\nthe tag it was first listed under while that tag exists;\nif it disappears, use the first remaining tag and log the\nchange. A kept copy retains `keptFrom.servedName`.\n**Not derived from metadata**: the\nfile's own name is what the operator downloaded, what they\ncall it, and what `Runtime.modelAlias` defaults to — so\nplainly-named files mean the obvious name is already the\nright one.\n"
           },
           "displayName": {
             "anyOf": [
@@ -2176,6 +2176,16 @@
               }
             ]
           },
+          "keptFrom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OllamaKept"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "profileCount": {
             "anyOf": [
               {
@@ -2275,6 +2285,14 @@
         ],
         "title": "LibraryModel",
         "description": "One launchable model on this host.\n\nThe format-independent facts are here; exactly one of `gguf`,\n`safetensors`, `kev` or `prepared` carries the rest. That split is not tidiness — a\nquant tier is a GGUF concept and an exact parameter count is a\nsafetensors one, and flattening both into one object would\nproduce a schema half of whose fields are null for any given\nmodel."
+      },
+      "Method": {
+        "type": "string",
+        "enum": [
+          "link",
+          "copy"
+        ],
+        "title": "Method"
       },
       "MlxQuantization": {
         "properties": {
@@ -2460,6 +2478,19 @@
             "type": "boolean",
             "title": "Default"
           },
+          "authorSampling": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorsampling",
+            "description": "Whether to use the model author's sampling for omitted\nvalues, as saved (`ModelProfileSpec.authorSampling`). Absent\nmeans true for stored profiles.\n",
+            "default": true
+          },
           "maxTokens": {
             "anyOf": [
               {
@@ -2497,6 +2528,31 @@
               }
             ],
             "title": "Topp"
+          },
+          "topK": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topk"
+          },
+          "minP": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minp"
           },
           "engine": {
             "$ref": "#/components/schemas/EngineKind"
@@ -2648,7 +2704,65 @@
           "tags"
         ],
         "title": "OllamaDetail",
-        "description": "A model read from an Ollama store (CX9): which of Ollama's names\npoint at this file. Present only for a model in a folder of kind\n`ollama`. Its `name` is the first of `tags`, and is what\n`Runtime.modelAlias` is set to, since the file's own name is a\nhash. Ollama manages the file: the library never writes or\ndeletes it."
+        "description": "A model read from an Ollama store (CX9): which of Ollama's names\npoint at this file. Present only for a model in a folder of kind\n`ollama`. Its `name` is the tag it was first listed under,\nwhile that tag exists. If it disappears, take the first remaining\ntag and log the change. Adding a tag never renames a model.\n`Runtime.modelAlias` is set to `name`, since the file's own name\nis a hash. Ollama manages the file: the library never writes or\ndeletes it."
+      },
+      "OllamaKept": {
+        "properties": {
+          "servedName": {
+            "type": "string",
+            "title": "Servedname"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Tags"
+          },
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "title": "Digest",
+            "description": "Ollama's weights digest, used to verify copies and match a node's blob."
+          },
+          "store": {
+            "type": "string",
+            "title": "Store",
+            "description": "Absolute path of the source Ollama store on its machine."
+          },
+          "node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Node",
+            "description": "Source machine for a remote Keep; absent for the Library's own machine."
+          },
+          "keptAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Keptat"
+          },
+          "method": {
+            "$ref": "#/components/schemas/Method"
+          }
+        },
+        "type": "object",
+        "required": [
+          "servedName",
+          "tags",
+          "digest",
+          "store",
+          "keptAt",
+          "method"
+        ],
+        "title": "OllamaKept",
+        "description": "Provenance stored against the kept file's path and reapplied on\nscans. The ordinary Library model keeps `servedName` as `name`\nand `Runtime.modelAlias`, even if Ollama removes every tag.\nThe Library never opens a kept file for writing: a link shares\nOllama's bytes. A node only holds a copy of this Library file."
       },
       "Operation": {
         "properties": {
@@ -3824,11 +3938,43 @@
               }
             ],
             "title": "Topp"
+          },
+          "minP": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minp"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendedSamplingSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
         "title": "RecommendedSampling",
-        "description": "Sampling parameters the model's author put in the file\n(`general.sampling.*` in GGUF). **Reported, never applied.**\n\nThe locked rule is that the gateway owns every\nLLM-output-affecting parameter and no component substitutes a\nlocal default; that rule is unchanged. But the file having an\nopinion is real information, and dropping it means the operator\nhas to go read the model card to find out. Whether anything can\nadopt these with one click is a gateway decision, not a library\none."
+        "description": "Sampling parameters the model's author put in the file\n(`general.sampling.*` in GGUF or `generation_config.json` for\nsafetensors), applied by the gateway as defaults when neither\nthe request nor the default profile sets a value. Author values\nalso apply when the model has no profile. A default profile with\n`authorSampling: false` turns them off.\n\nThe Library only reports these values. The gateway owns and\nsends every sampling value, falling back to its own defaults\nwhen no request, profile or enabled author value exists. An\ninference driver never substitutes its own defaults. The author's\nrepeat penalty is not applied."
+      },
+      "RecommendedSamplingSource": {
+        "type": "string",
+        "enum": [
+          "gguf",
+          "generation_config"
+        ],
+        "title": "RecommendedSamplingSource",
+        "description": "Where the author stated the sampling values: `general.sampling.*`\nin a GGUF file, or a safetensors model's `generation_config.json`."
       },
       "SafetensorsDetail": {
         "properties": {
@@ -3902,6 +4048,17 @@
             ],
             "title": "Configpath",
             "description": "Absolute path to `config.json`, the file that made this a model."
+          },
+          "recommendedSampling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RecommendedSampling"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Author sampling from `generation_config.json`, reported only\nwhen `do_sample` is true. Greedy decoding contributes no\nsampling defaults.\n"
           }
         },
         "type": "object",

@@ -482,6 +482,86 @@ paths:
                 $ref: "components/common.yaml#/components/schemas/RestartResult"
         "409":
           description: Busy, incompatible, or unable to complete the switch; detail explains recovery.
+  /v1/roles:
+    get:
+      tags: [admin]
+      operationId: listRoles
+      summary: List every model role and its assigned models in order.
+      description: |
+        Every `ModelRole`, including roles with no models, with its label,
+        required capability and models in the effective `modelSlots`
+        configured order. Assignments come from slots named `role:<role>`;
+        other slots are not roles. This is one list per role for the whole
+        install. Edit assignments through `PATCH /v1/config`.
+
+        Each model reports whether it has the required capability: `yes`,
+        `no` or `unknown`, with the cause of a negative or unknown finding.
+        A configured model whose capability cannot be established stays in
+        the list as `unknown`. Capability findings warn; they never block
+        role assignment. An untested capability is not evidence of a lack.
+      responses:
+        '200':
+          description: Every role, including unassigned roles, with effective assignments.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelRoleList'
+              example:
+                roles:
+                  - role: chat
+                    label: Chat
+                    requiredCapability: chat
+                    models: []
+                  - role: agentic
+                    label: Agentic (tools and code)
+                    requiredCapability: toolCalling
+                    models: []
+                  - role: vision
+                    label: Sees images
+                    requiredCapability: imageInput
+                    models: []
+                  - role: reads-pages
+                    label: Reads pages (OCR)
+                    requiredCapability: imageInput
+                    models:
+                      - model: vision-unchecked
+                        capability: unknown
+                        reason: No reachable driver reports capabilities for vision-unchecked.
+                      - model: vision-local
+                        capability: 'yes'
+                        reason: null
+                      - model: text-only
+                        capability: 'no'
+                        reason: The provider lists text input only for text-only.
+                  - role: image
+                    label: Makes images
+                    requiredCapability: image
+                    models: []
+                  - role: speech-to-text
+                    label: Hears speech
+                    requiredCapability: transcription
+                    models: []
+                  - role: text-to-speech
+                    label: Speaks
+                    requiredCapability: speech
+                    models: []
+                  - role: music
+                    label: Makes music
+                    requiredCapability: audioOutput
+                    models: []
+                  - role: embeddings
+                    label: Embeddings
+                    requiredCapability: embeddings
+                    models: []
+                  - role: rerank
+                    label: Reranks
+                    requiredCapability: rerank
+                    models: []
+                  - role: decision
+                    label: Decisions (yes/no)
+                    requiredCapability: decision
+                    models: []
+
   # -------- The OpenAI-compatible front door --------
   #
   # These two operations are the only ones in Eugene Plexus that use
@@ -507,6 +587,11 @@ paths:
         reachable. Two drivers serving the same model produce one entry,
         not two — replicas are a routing detail, and a client should not
         have to know how many GPUs are behind a name.
+
+        Each role with assigned models also appears as `role:<name>`,
+        with `x_eugene_plexus.role` giving its role and label. A role with
+        no models is omitted. These names use the same slot routing and
+        fallback as other `modelSlots` entries.
       responses:
         '200':
           description: Available models.
@@ -3397,6 +3482,19 @@ paths:
           ordered list of `{model, targets}`; see
           `ConfigValueType.model_slots` for the shape and why targets
           are model ids rather than driver names.
+
+          Names `role:<ModelRole>` are reserved for model roles, using
+          `components/common.yaml#/components/schemas/ModelRole`. Their
+          `targets` are the role's assigned models in configured order.
+          They use the same slot resolution, fallback and refusals as
+          other slots. Capability checks warn; they never block assignment.
+          Other slot names retain their existing meaning. `GET /v1/roles`
+          shows every role's effective list, including an empty list.
+
+          A request for a role with no assigned model returns 404 with
+          `model_not_found` and a message naming the role and where to
+          assign one, for example: "No model has the role Reads pages.
+          Give one that role under Routing > Model roles."
         * **`conversationAffinity`** (`boolean`, default on; CB1, since
           2026-10-02) — a request that continues a conversation goes to
           the replica its earlier turns went to, because only that
@@ -3494,6 +3592,14 @@ paths:
         errors are reported per-key without aborting the whole
         request — valid changes are applied, invalid ones are
         rejected and surfaced in the response.
+
+        For `modelSlots`, a name starting with `role:` must be
+        `role:<ModelRole>` from
+        `components/common.yaml#/components/schemas/ModelRole`. Any other
+        `role:` name (including `role:` alone) rejects the `modelSlots`
+        field with the list of valid roles. Capability findings only warn
+        and never block an assignment. Edits to role slots keep every other
+        slot; clients save the complete list they read with their edits.
 
         Some fields require a process restart to take effect (see
         `ConfigField.requiresRestart`). The response indicates whether
@@ -3781,6 +3887,88 @@ components:
             says so, with the address and port), and when the driver
             answered but is degraded (its `/v1/info` `degraded`).
 
+    # -------- Model roles --------
+
+    ModelRoleList:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          description: Every ModelRole in enum order, including roles with no assigned models.
+          items:
+            $ref: '#/components/schemas/ModelRoleDefinition'
+
+    ModelRoleDefinition:
+      type: object
+      required: [role, label, requiredCapability, models]
+      properties:
+        role:
+          $ref: 'components/common.yaml#/components/schemas/ModelRole'
+        label:
+          type: string
+          description: The role's display label, as listed in the /v1/roles example.
+        requiredCapability:
+          $ref: '#/components/schemas/ModelRoleCapability'
+        models:
+          type: array
+          description: |
+            Models from the effective role slot's targets in configured
+            order, including models with negative or unknown capability
+            findings. An unassigned role has an empty list.
+          items:
+            $ref: '#/components/schemas/ModelRoleModel'
+
+    ModelRoleCapability:
+      type: string
+      enum: [chat, toolCalling, imageInput, image, transcription, speech, audioOutput, embeddings, rerank, decision]
+      description: |
+        The capability a role needs, using the driver's capability or
+        surface names. `chat` needs chat; `agentic` needs chat with
+        `toolCalling`; `vision` and `reads-pages` need chat with
+        `imageInput`; `image` needs image generation; `speech-to-text`
+        needs transcription; `text-to-speech` needs speech; `music`
+        needs audio generation (`audioOutput`); `embeddings` needs
+        embeddings; `rerank` needs rerank; `decision` needs a decision
+        backend. These findings advise the owner, never gate assignment.
+
+    ModelRoleModel:
+      type: object
+      required: [model, capability, reason]
+      properties:
+        model:
+          type: string
+          description: The assigned model id, as stored in the role slot's targets.
+        capability:
+          $ref: '#/components/schemas/ModelRoleCapabilityStatus'
+        reason:
+          type: [string, 'null']
+          description: |
+            Null for `yes`. For `no`, the observed cause: a backend's
+            refusal or an explicit capability listing, in words. For
+            `unknown`, why the capability could not be established,
+            such as an unreachable driver or a listing that does not say.
+            An untested capability alone is never reported as `no`.
+
+    ModelRoleCapabilityStatus:
+      type: string
+      enum: ['yes', 'no', unknown]
+      description: |
+        `yes` means the required capability is supported; `no` means
+        evidence says it is not; `unknown` means it has not been
+        established. All three allow the owner to assign the role.
+
+    ModelRoleInfo:
+      type: object
+      required: [role, label]
+      description: The role represented by a role:<name> model-list entry.
+      properties:
+        role:
+          $ref: 'components/common.yaml#/components/schemas/ModelRole'
+        label:
+          type: string
+          description: The same display label returned by /v1/roles.
+
     # -------- OpenAI-compatible wire schemas --------
     #
     # snake_case throughout, unlike the rest of Eugene Plexus. See the
@@ -3862,6 +4050,10 @@ components:
             so two accounts never collide and one model through two
             providers stays two ids.
 
+            An assigned model role is listed as `role:<ModelRole>`, with
+            its role and label in `x_eugene_plexus.role`. It resolves
+            through the role's model slot.
+
             Listed only when a door serves one of the model's surfaces
             (P1-4): an account's speech, image, video and transcription
             models appear as their doors are built, under the ids they
@@ -3890,6 +4082,9 @@ components:
         endpoint instead of needing a parallel admin call, and so an
         operator can see that a name is backed by two replicas.
       properties:
+        role:
+          $ref: '#/components/schemas/ModelRoleInfo'
+          description: Present on role:<name> entries only; absent on ordinary model entries.
         drivers:
           type: array
           items:

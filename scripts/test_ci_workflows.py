@@ -20,6 +20,7 @@ WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
 SETUP_STEPS = 15
 FULL, EVERY = "full", "every"
 PINNED_STEPS = {
+    "row65-ollama-protocol.py": (EVERY, "both"),
     "run-operations-checks.py": (FULL, "both"),
     "s10-starter-check.py": (FULL, "both"),
     "r7-signing-checks.py": (EVERY, "both"),
@@ -58,6 +59,7 @@ PINNED_STEPS = {
     "Keep UI inference prerequisite evidence": ("always-full", "both"),
     "c2-sign-in-acceptance.py": (EVERY, "both"),
     "c3-workbench-acceptance.py": (EVERY, "both"),
+    "row7-person-removal-acceptance.py": (EVERY, "both"),
     "update-all-acceptance.py": (FULL, "both"),
     "standby-acceptance.py": (FULL, "both"),
     "job-sites-acceptance.py": (FULL, "linux"),

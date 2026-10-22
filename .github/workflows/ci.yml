@@ -385,6 +385,19 @@ jobs:
         run: python -m pip install --no-deps --no-build-isolation -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver
       - name: Check installed dependency consistency
         run: python -m pip check
+      - name: Keep Ollama files through the real machine proxy
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
+        shell: python {0}
+        run: |
+          import os, subprocess, sys, tempfile
+          from pathlib import Path
+          second_disk = Path(os.environ["SystemRoot"]) / "Temp" if os.name == "nt" else Path("/dev/shm")
+          with tempfile.TemporaryDirectory(prefix="row65-", dir=Path.cwd()) as local:
+              with tempfile.TemporaryDirectory(prefix="row65-copy-", dir=second_disk) as other:
+                  subprocess.run([
+                      sys.executable, "specs/scripts/row65-ollama-protocol.py",
+                      "--output", str(Path(local) / "protocol"), "--copy-folder", other,
+                  ], check=True)
       - name: Verify durable run protocol when both consumers provide it
         if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         env:
@@ -516,6 +529,15 @@ jobs:
       - name: Verify C3 Workbench, installed from the agent's catalogue at its pinned archive
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/c3-workbench-acceptance.py
+      # Row 7: Workbench at the candidate (a dispatch's workbench_ref, or the
+      # same-named branch on a branch push), else its main: the agent's
+      # catalogue pin is the last Workbench shipped, older than main between
+      # a merge and the next ship.
+      - name: Verify a removed person's data is hidden, then deleted from the store and every copy (row 7)
+        if: matrix.shard == 'L3' || matrix.shard == 'W2'
+        env:
+          R7_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row7-person-removal-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
         if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py
@@ -885,6 +907,9 @@ jobs:
 
       - name: Check corrected contract semantics
         run: python scripts/r38-contract-checks.py --sabotage
+
+      - name: Check Ollama Keep and worker report contracts
+        run: python scripts/test_ollama_contract.py
 
       - name: Validate every OpenAPI document
         shell: bash
