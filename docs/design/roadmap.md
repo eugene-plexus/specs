@@ -103,7 +103,7 @@ between machines). The next release, v0.4.0, comes after rows 4 and 5.
 | 71 | **Model roles.** The owner tags each model with the jobs it does: chat, agentic, image, voice, music, reads pages, embeddings and others. Apps ask Eugene for the model of a role instead of a model name, and row 30's page reading is the first to. Per-group routing by role comes with row 37 | MODEL-JOBS (Troy, 2026-10-21) | M | cross | every install with more than one model | Today each feature has its own model setting in its own place (decision model, embedder, the model that keeps notes); they move onto roles. Needs a design |
 | 30 | **Documents and folders extras.** Map-reduce over whole documents, opt-in OCR, PDF click-through, collections, Job Site folders, a file watcher, per-folder intervals | MR-later, MR7-later, MRC26 | M each | cross | every Workbench user | |
 | 31 | **Reading and rich-content extras.** Display settings, speaker labels, CJK, a heading outline, artifacts from tool results, revision diffs, more chart types, a per-chat run switch, Firefox and Safari; a model's reasoning rendered as Markdown, collapsed (MD-24) | RD-later, RC-later | S-M each | low | every Workbench user | Do them in batches |
-| 32 | **Skills** (Anthropic-style) | memory research | M | cross | every Workbench user | Design first |
+| 32 | **Skills** (Anthropic-style) | memory research | M | high (store migration, archive reader) | every Workbench user | Designed (`rows/row-32.md`). Call R32-OWNER |
 | 33 | **Console: keyboard navigation in the resource tree, and settings search in the header** | UI-TREE-A11Y, SET-x | M | low | console users, accessibility | |
 | 34 | **Open WebUI: hub search, images, updates** | C4-NEXT | M | cross | Open WebUI users | Includes deciding on `ENABLE_PLUGINS` |
 | 35 | **Tray: unload models and keep serving** | R2.6-TRAY | M | high (a new credential) | Windows | Needs a narrow credential the tray can hold |
@@ -113,7 +113,7 @@ between machines). The next release, v0.4.0, comes after rows 4 and 5.
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
 | 36 | **Machines says why a machine's announcement was refused** | R2.4-a | M | cross | multi-machine | Today it shows a probe error. A contract field plus an issue kind |
-| 37 | **Routing profiles per person or group** (shared accounts, part two). Each group gets routing rules per model role (row 71) | SSO-ROLES (`shared-accounts-and-sso.md`) | L | high | businesses | Designed 2026-10-16. Fix its data format before more per-person settings arrive |
+| 37 | **Routing profiles per person or group** (shared accounts, part two). Each group gets routing rules per model role (row 71) | SSO-ROLES (`shared-accounts-and-sso.md`) | L | high | businesses | Designed (`rows/row-37.md`): per-group role routing and allowed models. After rows 11, 70 and 71. Call R37-FIRST |
 | 38 | **Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost** | ADM, HH-NEXT, MD-x | L | low | businesses | Needs row 12 |
 | 39 | **Operations rights for people who are not the owner** | CX-OPS | M | high | businesses | |
 | 40 | **Usage and money limits per person and key** | KEY$, Shop, AD-BILL | L | high | businesses | Builds on A5's attribution |
