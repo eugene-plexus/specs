@@ -1029,20 +1029,24 @@
    "repos": [
     "specs",
     "gateway",
-    "inference-driver",
     "workbench",
     "site-host",
     "control"
    ],
    "contract": "gateway.yaml inference-driver.yaml",
    "hot_files": [
+    "gateway/src/eugene_plexus_gateway/images.py",
     "gateway/src/eugene_plexus_gateway/chat_contract.py",
-    "gateway/src/eugene_plexus_gateway/responses.py",
-    "workbench/src/eugene_plexus_workbench/tools.py"
+    "workbench/src/eugene_plexus_workbench/tools.py",
+    "workbench/src/eugene_plexus_workbench/node_folders.py",
+    "site-host/src/eugene_plexus_site_host/host.py",
+    "control/src/eugene_plexus_control/routes/sites.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-29.md"
+   ],
    "calls": [],
    "issue": 56
   },
@@ -1119,27 +1123,30 @@
    "summary": "Skills (Anthropic-style)",
    "from": "memory research",
    "size": "M",
-   "risk": "cross",
-   "risk_note": "cross",
+   "risk": "high",
+   "risk_note": "high (store migration, archive reader)",
    "who": "every Workbench user",
    "notes": "Design first",
    "lane": "WB",
    "lane_order": 8,
    "repos": [
-    "workbench",
-    "gateway?"
+    "workbench"
    ],
    "contract": "",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/tools.py",
-    "workbench/src/eugene_plexus_workbench/context.py"
+    "workbench/src/eugene_plexus_workbench/store.py",
+    "workbench/web/src/App.tsx"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-32.md",
     "memory-research-2026-10.md"
    ],
-   "calls": [],
+   "calls": [
+    "R32-OWNER"
+   ],
    "issue": 59
   },
   {
@@ -1260,10 +1267,14 @@
     "control/src/eugene_plexus_control/machine_list.py",
     "agent/src/eugene_plexus_agent/enrollment.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
-   "design_docs": [],
-   "calls": [],
+   "design_docs": [
+    "rows/row-36.md"
+   ],
+   "calls": [
+    "R36-ACCEPT"
+   ],
    "issue": 63
   },
   {
@@ -1282,7 +1293,6 @@
    "repos": [
     "control",
     "gateway",
-    "workbench",
     "ui"
    ],
    "contract": "control.yaml gateway.yaml",
@@ -1291,15 +1301,19 @@
     "control/src/eugene_plexus_control/permissions.py",
     "gateway/src/eugene_plexus_gateway/routing.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
+    11,
     70,
     71
    ],
    "design_docs": [
+    "rows/row-37.md",
     "shared-accounts-and-sso.md"
    ],
-   "calls": [],
+   "calls": [
+    "R37-FIRST"
+   ],
    "issue": 64
   },
   {

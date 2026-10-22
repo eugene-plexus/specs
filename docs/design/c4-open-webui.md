@@ -1,5 +1,40 @@
 # C4: Open WebUI in the app registry
 
+## Row 34 implementation notes (2026-10-21, incomplete)
+
+Troy's final calls in [row 34](rows/row-34.md) supersede the old defaults
+below: plugins stay on in the app's own account; Google accounts may be
+used; image generation may use a paid external model after local models;
+Update must describe its one-time Admin Settings reset.
+
+The candidate entry is 0.12.3. The variable names were checked against
+the published [config.py](https://github.com/open-webui/open-webui/blob/v0.12.3/backend/open_webui/config.py)
+and [env.py](https://github.com/open-webui/open-webui/blob/v0.12.3/backend/open_webui/env.py).
+The catalogue comments record their lines. OFFLINE_MODE only disables
+model auto-updates, Hugging Face downloads and version checks in those
+sources; it does not gate ENABLE_WEB_SEARCH. Wheel installation and the
+drift run on the actual wheel remain unverified: shell network access
+was refused (WinError 10013). The drift inspector itself has offline tests.
+
+Two integration gaps must be resolved before this row can ship:
+
+- The pinned admission protocol only acquires a reservation for a named
+  inference model. A search has no model, and allowedTools must work
+  independently of allowedModels. A new tool reservation purpose needs
+  contract/authority support. The candidate search route refuses client
+  keys with 503 rather than execute searches outside shared limits. Its
+  positive client-key tests deliberately remain failing.
+- Linux systemd gives apps a private StateDirectory. The agent cannot
+  access it, and the installed root helper only starts, stops, restarts
+  and cleans a unit. The candidate refuses backup/reset/restore on that
+  mechanism; backing up the agent's credential directory would protect
+  none of Open WebUI's chats. The helper needs a reviewed way to snapshot,
+  restore, reset and read the non-secret given-settings record.
+
+The C4 process acceptance has not been extended or run. Its current C1
+installer helper uses default ports; row 34 requires isolated ports and
+must not be run against an existing install.
+
 **2026-10-01. Built and pinned 2026-10-02** ([record](../acceptance/c4-open-webui-run.md): 39 of 39 on GitHub's Windows and Ubuntu runners). Slice C4 of
 [`workbench.md`](workbench.md) §7: the first app in the registry that we did
 not write. Built on C1 (an account per app), C2 (sign-in with Eugene) and C3
