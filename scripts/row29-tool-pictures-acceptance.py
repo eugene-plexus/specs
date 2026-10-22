@@ -332,7 +332,7 @@ def exercise(work, workbench_ref):
         if not k.upper().startswith("EUGENE_PLEXUS_")
     }
     env.update(
-        OPENAI_API_KEY="row29-fixture",
+        OPENAI_API_KEY="row29-fixture",  # gitleaks:allow (a fake)
         PYTHON_KEYRING_BACKEND="keyring.backends.null.Keyring",
     )
     password = secrets.token_urlsafe(24)
