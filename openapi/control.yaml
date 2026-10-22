@@ -890,6 +890,43 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OAuthError'}
+  /oidc/subjects:
+    post:
+      operationId: oidcSubjects
+      summary: Which of these people Eugene still has (row 7)
+      description: |
+        `client_secret_basic`, as `/oidc/revoke`. An app sends the `sub`s it
+        has seen sign in; each comes back `known` (a person record exists,
+        turned on or off, or it is the owner) or `unknown` (the person was
+        deleted). It answers only for the ids sent, so it cannot list people.
+        An app hides a removed person's data, and deletes it later
+        (`docs/design/rows/row-07.md`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OidcSubjectsRequest'}
+      responses:
+        '200':
+          description: Every id sent, in `known` or in `unknown`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OidcSubjectsResponse'}
+        '400':
+          description: '`invalid_request`: not 1 to 500 ids, or an id that is not a string.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '401':
+          description: '`invalid_client`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '503':
+          description: '`temporarily_unavailable`: the root is locked, or is a standby. Nothing can be said of anyone.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
 
   /v1/auth/audit:
     get:
@@ -5763,6 +5800,37 @@ components:
       properties:
         error: {type: string}
         error_description: {type: string}
+
+    OidcSubjectsRequest:
+      type: object
+      additionalProperties: false
+      required: [subjects]
+      properties:
+        subjects:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: {$ref: '#/components/schemas/OidcSubject'}
+
+    OidcSubject:
+      type: string
+      description: A person's `sub`, as their ID token carries it.
+      minLength: 1
+      maxLength: 200
+
+    OidcSubjectsResponse:
+      type: object
+      additionalProperties: false
+      required: [known, unknown]
+      properties:
+        known:
+          type: array
+          description: Ids Eugene has a person record for (on or off), or the owner's.
+          items: {type: string}
+        unknown:
+          type: array
+          description: Ids Eugene has no person for. Each one was deleted, or never was Eugene's.
+          items: {type: string}
 
     PromoteRequest:
       type: object

@@ -849,8 +849,9 @@ cross-domain [R memory 3.3]). What did not fit is named ("5 notes did not fit th
   dialog (ChatGPT and Claude both leave derived memory behind and both are criticised for not saying so
   [R apps 4.1, 4.2]). Deleting a chat and cleaning its documents touch two stores, so a boot reconcile drops
   chat-scoped documents whose chat no longer exists and any original file with no document row.
-- **A person removed in Eugene** keeps stored data today (W4 leaves chat purging open); notes and documents
-  join that open item (MRC27). A person deleted and re-created gets a new `sub`, orphaning data [R internals 7].
+- **A person removed in Eugene** has their chats, notes, documents, past-chat index, files, downloads and
+  connections hidden at once and deleted after 30 days, or at once (MRC27, built in row 7). A person deleted
+  and re-created gets a new `sub` and sees none of the old data [R internals 7].
 - **Telemetry:** none. Logs carry counts and causes, never content.
 
 ---
@@ -1148,7 +1149,7 @@ said he would tweak (labels, the Documents-in-new-chats default, card wording). 
 | MRC24 | Hub store and OpenAI facade | None now: no Files or vector-store door, no `file_search` hub tool, no new `ComponentKind`; revisit when an SDK-built app asks or Workbench's store needs a second consumer; if built, app-shaped with per-person tokens | section 3.3 | **his** if he wants the platform half sooner |
 | MRC25 | Shared team knowledge (the MSP case) and projects | Not v1; owner-granted stores like folder grants; a "collection" per chat later | R8, R13 | his |
 | MRC26 | Folders on other machines | Not v1; the Job Site extracts and central Workbench indexes, or the agent's `grep` as today | LS10's rule that a node never writes the Library | his |
-| MRC27 | Removing a person | Their notes and documents are purged with their chats in one later slice | W4 leaves it open | his |
+| MRC27 | Removing a person | Decided (Troy, 2026-10-21): hidden 30 days, then deleted; Delete now deletes at once and for good, every copy Workbench keeps. Built in row 7 | W4 leaves it open | his |
 | MRC28 | Spending VRAM | Embedder on GPU only when admission has room with margin, else CPU, shown on the runtime card; no embedder on the live 5090 box without his say | 31.5 of 32.6 GB held | his |
 
 ---
