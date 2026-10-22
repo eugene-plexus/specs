@@ -1357,7 +1357,7 @@
    "title": "Operations rights for people who are not the owner",
    "summary": "Operations rights for people who are not the owner",
    "from": "CX-OPS",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high",
    "who": "businesses",
@@ -1367,6 +1367,8 @@
    "repos": [
     "control",
     "agent",
+    "library",
+    "gateway",
     "ui"
    ],
    "contract": "control.yaml",
@@ -1374,14 +1376,17 @@
     "control/src/eugene_plexus_control/permissions.py",
     "control/src/eugene_plexus_control/administration.py"
    ],
-   "design_state": "short",
-   "needs": [
-    37
-   ],
+   "design_state": "ready",
+   "needs": [],
    "design_docs": [
-    "console-ux-pass.md"
+    "rows/row-39.md",
+    "remote-nodes.md",
+    "shared-accounts-and-sso.md"
    ],
-   "calls": [],
+   "calls": [
+    "R39-LOGS",
+    "R39-DELETE"
+   ],
    "issue": 66
   },
   {
