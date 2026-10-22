@@ -1,7 +1,10 @@
 """The privilege acceptance must run on both real operating systems."""
 
 import importlib.util
+import contextlib
+import json
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -311,3 +314,443 @@ def test_overlapping_mounts_do_not_guess_that_write_is_effective():
     mounts = "1 0 8:1 / / ro - ext4 /dev/sda ro\n2 1 8:1 /srv/acme /srv/acme rw - ext4 /dev/sda rw\n3 2 8:1 /srv/acme /srv/acme ro - ext4 /dev/sda ro\n"
     with pytest.raises(ValueError, match="More than one mount"):
         helper().write_mount("/srv/acme", mounts)
+
+
+@pytest.fixture
+def fake_tree(monkeypatch):
+    """Exercise the real walk and ACL mutations without Linux ACLs on Windows."""
+    h = helper()
+    nodes = {10: ((), stat.S_IFDIR | 0o700, 1, 1)}
+    permissions = {10: {"user:": "rwx", "group:": "---", "other:": "---"}}
+    missing = {}
+    calls = []
+
+    def add(name, mode=stat.S_IFREG | 0o600, links=1, mount=1):
+        fd = max(nodes) + 1
+        nodes[fd] = ((name,), mode, links, mount)
+        permissions[fd] = {"user:": "rw-", "group:": "---", "other:": "---"}
+        return fd
+
+    def info(fd):
+        _, mode, links, _ = nodes[fd]
+        return SimpleNamespace(st_mode=mode, st_nlink=links, st_dev=7, st_ino=fd)
+
+    def lookup(name, parent, stage):
+        if missing.get(name) == stage:
+            raise FileNotFoundError(name)
+        return next(
+            fd for fd, item in nodes.items() if item[0] == (*nodes[parent][0], name)
+        )
+
+    def open_child(name, flags, *, dir_fd):
+        child = lookup(name, dir_fd, "open")
+        if stat.S_ISSOCK(nodes[child][1]) and not flags & 0x200000:
+            raise OSError("Cannot open socket for data")
+        return child
+
+    fake_os = SimpleNamespace(
+        fstat=info,
+        stat=lambda name, *, dir_fd, follow_symlinks: info(
+            lookup(name, dir_fd, "stat")
+        ),
+        listdir=lambda fd: [
+            item[0][-1]
+            for item in nodes.values()
+            if item[0][:-1] == nodes[fd][0] and item[0]
+        ],
+        open=open_child,
+        close=lambda fd: None,
+        dup=lambda fd: fd,
+        O_RDONLY=0,
+        O_NOFOLLOW=0x20000,
+        O_NONBLOCK=0x800,
+        O_PATH=0x200000,
+    )
+    monkeypatch.setattr(h, "os", fake_os)
+    monkeypatch.setattr(h, "identity", lambda fd: [fd, 1, 2])
+    monkeypatch.setattr(h, "mount_id", lambda fd: nodes[fd][3], raising=False)
+    monkeypatch.setattr(h, "acl", lambda fd: permissions[fd].copy())
+    monkeypatch.setattr(h, "acls", lambda fds: [h.acl(fd) for fd in fds])
+    monkeypatch.setattr(
+        h, "set_acl", lambda fd, entries: permissions.__setitem__(fd, entries.copy())
+    )
+
+    def run(*args, **kwargs):
+        calls.append(args)
+        fds = kwargs.get("pass_fds", ())
+        if "-x" in args:
+            key = (
+                args[args.index("-x") + 1]
+                .replace("d:g:", "default:group:")
+                .replace("g:", "group:")
+            )
+            for fd in fds:
+                permissions[fd].pop(key, None)
+        if "-k" in args or "--remove-default" in args:
+            for fd in fds:
+                permissions[fd] = {
+                    k: v
+                    for k, v in permissions[fd].items()
+                    if not k.startswith("default:")
+                }
+        if "--restore=-" in args:
+            for block in kwargs["input"].strip().split("\n\n"):
+                header, body = block.split("\n", 1)
+                permissions[int(header.rsplit("/", 1)[1])] = h.parse_acl(body)
+        return ""
+
+    monkeypatch.setattr(h, "run", run)
+    return SimpleNamespace(
+        h=h, nodes=nodes, acl=permissions, add=add, missing=missing, calls=calls
+    )
+
+
+@pytest.mark.parametrize("stage", ["stat", "open"])
+def test_revoke_continues_after_a_child_vanishes(fake_tree, stage):
+    f = fake_tree
+    f.add("vanishing")
+    last = f.add("last")
+    record = {}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    f.missing["vanishing"] = stage
+    assert f.h.revoke(10, record)
+    assert "group:1001" not in f.acl[last]
+
+
+def test_revoke_does_not_hide_an_unexpected_missing_file(
+    fake_tree, monkeypatch, tmp_path
+):
+    f = fake_tree
+    record = {"path": "/srv/shared", "identity": [10, 1, 2], "items": [{}]}
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+
+    def missing(*args):
+        raise FileNotFoundError("Unexpected ACL tool failure")
+
+    monkeypatch.setattr(f.h, "revoke", missing)
+    with pytest.raises(FileNotFoundError, match="Unexpected ACL"):
+        f.h.main()
+    assert not json.loads(target.read_text()).get("removed")
+
+
+def configure_revoke_main(f, monkeypatch, tmp_path, record):
+    import sys
+
+    directory = tmp_path / "workbench"
+    directory.mkdir(exist_ok=True)
+    ident = "a" * 32
+    target = directory / (ident + ".json")
+    target.write_text(json.dumps(record))
+    monkeypatch.setitem(
+        sys.modules,
+        "grp",
+        SimpleNamespace(getgrnam=lambda _: SimpleNamespace(gr_gid=1001)),
+    )
+    monkeypatch.setattr(
+        f.h,
+        "sys",
+        SimpleNamespace(
+            version_info=(3, 12),
+            argv=[
+                "helper",
+                "/srv/install",
+                "agent",
+                "folder-revoke",
+                "workbench",
+                "read",
+                ident,
+            ],
+        ),
+    )
+    monkeypatch.setattr(f.h, "Path", lambda _: tmp_path)
+    monkeypatch.setattr(
+        f.h, "write_record", lambda path, data: path.write_text(json.dumps(data))
+    )
+    monkeypatch.setattr(f.h, "dropin", lambda *args: None)
+
+    @contextlib.contextmanager
+    def opened(path, **kwargs):
+        yield 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    return target
+
+
+@pytest.mark.parametrize("kind", ["hardlink", "fifo", "socket"])
+def test_revoke_removes_group_from_new_unusual_items(fake_tree, kind):
+    f = fake_tree
+    record = {}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    mode = {"hardlink": stat.S_IFREG, "fifo": stat.S_IFIFO, "socket": stat.S_IFSOCK}[
+        kind
+    ]
+    child = f.add(kind, mode | 0o600, links=2 if kind == "hardlink" else 1)
+    f.acl[child]["group:1001"] = "rw-"
+    assert f.h.revoke(10, record)
+    assert "group:1001" not in f.acl[child]
+
+
+def test_revoke_reports_unsupported_special_acl_and_finishes_other_items(
+    fake_tree, monkeypatch
+):
+    f = fake_tree
+    record = {}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    special = f.add("socket", stat.S_IFSOCK | 0o600)
+    last = f.add("last")
+    f.acl[last]["group:1001"] = "r--"
+    original = f.h.acl
+
+    def unsupported(fd):
+        if fd == special:
+            raise ValueError("Operation not supported")
+        return original(fd)
+
+    monkeypatch.setattr(f.h, "acl", unsupported)
+    assert not f.h.revoke(10, record)
+    assert "group:1001" not in f.acl[last]
+    assert (
+        "socket" in record["refusal"] and "Operation not supported" in record["refusal"]
+    )
+
+
+def test_same_device_bind_mount_is_refused_on_grant_and_skipped_on_revoke(fake_tree):
+    f = fake_tree
+    mounted = f.add("bind", stat.S_IFDIR | 0o700, mount=2)
+    f.nodes[15] = (("bind", "private"), stat.S_IFREG | 0o600, 1, 2)
+    f.acl[15] = {"user:": "rw-", "group:": "---", "other:": "---", "group:1001": "rw-"}
+    private = f.acl[15].copy()
+    f.acl[mounted]["group:1001"] = "rwx"
+    with pytest.raises(ValueError, match="mounted descendant"):
+        f.h.grant(10, "1001", False, {}, lambda _: None)
+    last = f.add("last")
+    f.acl[last]["group:1001"] = "r--"
+    record = {"group": "1001", "items": [{}]}
+    assert not f.h.revoke(10, record)
+    assert f.acl[15] == private
+    assert "group:1001" not in f.acl[last]
+    assert "mounted descendant" in record["refusal"]
+
+
+@pytest.mark.parametrize("named", ["group:", "user:42"])
+def test_masked_execute_does_not_make_a_readable_file_executable(named):
+    before = {
+        "user:": "rw-",
+        "group:": "r-x",
+        "other:": "---",
+        "mask:": "r--",
+        named: "r-x",
+    }
+    after = helper().plan(before, "1001", False, False)
+    assert after["group:1001"] == "r--"
+    assert after["mask:"] == "r--"
+
+
+def test_bind_mounted_root_is_refused_by_the_held_mount_ids(monkeypatch):
+    from pathlib import PurePosixPath
+
+    h = helper()
+    fds = iter((1, 2, 3))
+    closed = []
+    monkeypatch.setattr(h, "Path", PurePosixPath)
+    monkeypatch.setattr(
+        h,
+        "os",
+        SimpleNamespace(
+            open=lambda *args, **kwargs: next(fds),
+            close=closed.append,
+            fstat=lambda fd: SimpleNamespace(st_uid=0),
+            O_RDONLY=0,
+            O_DIRECTORY=1,
+            O_NOFOLLOW=2,
+        ),
+    )
+    monkeypatch.setattr(
+        h, "acl", lambda fd: {"user:": "rwx", "group:": "r-x", "other:": "---"}
+    )
+    monkeypatch.setattr(h, "mount_id", lambda fd: 2 if fd == 3 else 1)
+    with pytest.raises(ValueError, match="mounted drive"):
+        with h.opened("/srv/bind"):
+            pytest.fail("A bind mount root must never be yielded")
+    assert closed == [3, 2, 1]
+
+
+def test_mount_id_is_read_from_the_held_descriptor(monkeypatch):
+    h = helper()
+    paths = []
+
+    def path(name):
+        paths.append(name)
+        return SimpleNamespace(read_text=lambda: "pos:\t0\nmnt_id:\t1234\nino:\t99\n")
+
+    monkeypatch.setattr(h, "Path", path)
+    assert h.mount_id(12) == 1234
+    assert paths == ["/proc/self/fdinfo/12"]
+
+
+@pytest.mark.parametrize("existing_default", [False, True])
+def test_revoke_removes_only_defaults_it_created(fake_tree, existing_default):
+    f = fake_tree
+    if existing_default:
+        f.acl[10].update({"default:" + k: v for k, v in list(f.acl[10].items())})
+    before = f.acl[10].copy()
+    record = {}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    assert f.h.revoke(10, record)
+    assert any(k.startswith("default:") for k in f.acl[10]) is existing_default
+    if existing_default:
+        assert f.acl[10]["default:group:"] == before["default:group:"]
+
+
+def test_revoking_child_write_reapplies_parent_read(fake_tree, monkeypatch, tmp_path):
+    f = fake_tree
+    child = f.add("child", stat.S_IFDIR | 0o700)
+    file = f.add("temporary")
+    f.nodes[file] = (("child", "file"), stat.S_IFREG | 0o600, 1, 1)
+    parent = {"path": "/srv/shared", "identity": [10, 1, 2], "write": False}
+    f.h.grant(10, "1001", False, parent, lambda _: None)
+    record = {"path": "/srv/shared/child", "identity": [child, 1, 2], "write": True}
+    f.h.grant(child, "1001", True, record, lambda _: None)
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    (target.parent / ("b" * 32 + ".json")).write_text(json.dumps(parent))
+
+    @contextlib.contextmanager
+    def opened(path, **kwargs):
+        yield child if path.endswith("/child") else 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    f.h.main()
+    assert json.loads(target.read_text())["removed"]
+    assert f.acl[file]["group:1001"] == "r--"
+    assert f.acl[child]["group:1001"] == "r-x"
+
+
+def test_overlap_restoration_continues_past_an_unsupported_special_acl(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    f = fake_tree
+    parent = {"path": "/srv/shared", "identity": [10, 1, 2], "write": False}
+    f.h.grant(10, "1001", False, parent, lambda _: None)
+    record = {"path": "/srv/shared", "identity": [10, 1, 2], "write": True}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    special = f.add("socket", stat.S_IFSOCK | 0o600)
+    last = f.add("last")
+    f.acl[last]["group:1001"] = "rw-"
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    (target.parent / ("b" * 32 + ".json")).write_text(json.dumps(parent))
+    original = f.h.acl
+
+    def unsupported(fd):
+        if fd == special:
+            raise ValueError("Operation not supported")
+        return original(fd)
+
+    monkeypatch.setattr(f.h, "acl", unsupported)
+    f.h.main()
+    assert not json.loads(capsys.readouterr().out)["removed"]
+    assert not json.loads(target.read_text()).get("removed")
+    assert f.acl[last]["group:1001"] == "r--"
+
+
+def acceptance():
+    spec = importlib.util.spec_from_file_location(
+        "acceptance", ROOT / "scripts/row23-folder-access-acceptance.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_acceptance_checks_apps_read_of_its_created_file(tmp_path, monkeypatch):
+    module = acceptance()
+    calls = []
+
+    def probe(io, folder, read_file="seed.txt"):
+        calls.append(read_file)
+        return {"read": read_file != "seed.txt", "write": False}
+
+    monkeypatch.setattr(module, "probe", probe)
+    with pytest.raises(AssertionError):
+        module.assert_app_revoked(tmp_path, tmp_path, tmp_path / "created.txt")
+    assert calls == ["seed.txt", "created.txt"]
+
+
+@pytest.mark.parametrize("bad_cause", [None, "home:"])
+def test_acceptance_sends_unsafe_paths_directly_to_root_broker(tmp_path, bad_cause):
+    module = acceptance()
+    seen = []
+    link = tmp_path / "link"
+
+    def broker(verb, *, expect_success=True):
+        assert not expect_success
+        ident = verb.split()[-1]
+        path = (tmp_path / (ident + ".path")).read_text()
+        seen.append(path)
+        return {
+            "code": 1,
+            "output": bad_cause or ("system:" if path == "/etc" else "link:"),
+        }
+
+    if bad_cause:
+        with pytest.raises(AssertionError):
+            module.root_refusals(tmp_path, broker, link, lambda _: None)
+    else:
+        module.root_refusals(tmp_path, broker, link, lambda _: None)
+        assert seen == ["/etc", str(link)]
+
+
+def test_acceptance_swap_proves_target_acl_and_content_unchanged(tmp_path):
+    module = acceptance()
+    folder, target = tmp_path / "folder", tmp_path / "target"
+    folder.mkdir()
+    target.mkdir()
+    (target / "seed.txt").write_text("private")
+    touched = []
+
+    def link(path, destination):
+        path.mkdir()  # Fake the link on hosts without symlink privileges.
+
+    def remove(ident):
+        touched.append(ident)
+        return {"state": "changed_outside" if len(touched) == 1 else "removed"}
+
+    module.swapped_folder(
+        lambda path: {"id": "grant", "state": "ready"},
+        remove,
+        folder,
+        target,
+        lambda path: b"private ACL",
+        link,
+    )
+    assert touched == ["grant", "grant"]
+    assert (target / "seed.txt").read_text() == "private"
+
+
+def test_acceptance_release_checks_lookup_one_id_and_foreign_id():
+    module = acceptance()
+    states = {"one": "ready", "two": "ready", "foreign": "ready"}
+    calls = []
+
+    def post(url, *, json, headers):
+        assert headers == {"Authorization": "Bearer app-key"}
+        assert url == "/v1/apps/workbench/folder-access/release"
+        calls.append(json)
+        if json.get("id") == "foreign":
+            return SimpleNamespace(status_code=404, text="not found")
+        if "id" in json:
+            states[json["id"]] = "removed"
+        return SimpleNamespace(
+            status_code=200,
+            text="ok",
+            json=lambda: {"grants": [{"id": "one", "state": states["one"]}]},
+        )
+
+    module.check_release(
+        SimpleNamespace(post=post),
+        "app-key",
+        "/srv/one",
+        "one",
+        "foreign",
+        lambda: states.copy(),
+    )
+    assert calls == [{"path": "/srv/one"}, {"id": "one"}, {"id": "foreign"}]

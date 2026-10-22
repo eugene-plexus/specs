@@ -65,7 +65,7 @@ def serve(directory):
             token.Close()
         else:
             answer['uid'], answer['groups'] = os.getuid(), os.getgroups()
-        for name, action in [('read', lambda: (Path(request['path']) / 'seed.txt').read_text()),
+        for name, action in [('read', lambda: (Path(request['path']) / request.get('readFile', 'seed.txt')).read_text()),
                              ('write', lambda: (Path(request['path']) / answer['writtenFile']).write_text('app data'))]:
             try:
                 action()
@@ -99,10 +99,13 @@ else:
 """
 
 
-def probe(directory: Path, path: Path) -> dict:
+def probe(directory: Path, path: Path, read_file: str = "seed.txt") -> dict:
     ident = uuid.uuid4().hex
     temp = directory / "command.new"
-    temp.write_text(json.dumps({"id": ident, "path": str(path)}), encoding="utf-8")
+    temp.write_text(
+        json.dumps({"id": ident, "path": str(path), "readFile": read_file}),
+        encoding="utf-8",
+    )
     os.replace(temp, directory / "command.json")
 
     def result():
@@ -113,6 +116,116 @@ def probe(directory: Path, path: Path) -> dict:
             return None
 
     return wait_for(result)
+
+
+def assert_app_revoked(io, folder, created):
+    for file in ("seed.txt", created.name):
+        observed = probe(io, folder, file)
+        assert not observed["read"] and not observed["write"], (file, observed)
+
+
+def root_refusals(ctl, broker, link, owner):
+    """Bypass the unprivileged agent: the installed root broker must refuse."""
+    for path, cause in (("/etc", "system:"), (str(link), "link:")):
+        ident = uuid.uuid4().hex
+        request = ctl / (ident + ".path")
+        request.write_text(path)
+        owner(request)
+        try:
+            answer = broker(
+                f"folder-grant workbench read {ident}", expect_success=False
+            )
+            assert answer["code"] != 0 and cause in answer["output"], answer
+        finally:
+            request.unlink(missing_ok=True)
+
+
+def swapped_folder(add, remove, folder, target, acl, link):
+    before = acl(target)
+    content = (target / "seed.txt").read_bytes()
+    grant = add(str(folder))
+    assert grant["state"] == "ready", grant
+    moved = folder.with_name(folder.name + "-original")
+    folder.rename(moved)
+    link(folder, target)
+    try:
+        outcome = remove(grant["id"])
+        assert outcome["state"] == "changed_outside", outcome
+        assert acl(target) == before
+        assert (target / "seed.txt").read_bytes() == content
+    finally:
+        if folder.is_symlink():
+            folder.unlink()
+        else:
+            folder.rmdir()  # A Windows junction is a directory entry.
+        moved.rename(folder)
+    assert remove(grant["id"])["state"] == "removed"
+
+
+def check_release(client, key, path, ident, foreign, listing):
+    headers = {"Authorization": "Bearer " + key}
+    route = "/v1/apps/workbench/folder-access/release"
+    before = listing()
+    lookup = client.post(route, json={"path": str(path)}, headers=headers)
+    assert lookup.status_code == 200, lookup.text
+    assert listing() == before, "A path lookup must not release any access"
+    released = client.post(route, json={"id": ident}, headers=headers)
+    assert released.status_code == 200, released.text
+    assert released.json()["grants"][0]["state"] == "removed", released.text
+    expected = {**before, ident: "removed"}
+    assert listing() == expected, "An id release must remove exactly one record"
+    denied = client.post(route, json={"id": foreign}, headers=headers)
+    assert denied.status_code == 404, denied.text
+    assert listing() == expected, "Another app's record must stay in place"
+
+
+def release_http(root, access, paths):
+    """Real HTTP routing, signature verification and key standing; real ACL backend."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from fastapi.testclient import TestClient
+    from eugene_plexus_agent import tokens
+    from eugene_plexus_agent.app import create_app
+    from eugene_plexus_agent.routes import directories
+    from eugene_plexus_agent.settings import Settings
+
+    app = create_app(Settings(config_file=root / "agent.yaml", default_topology=False))
+    with TestClient(app) as client:
+        initialized = client.post(
+            "/v1/auth/initialize", json={"passphrase": "disposable row 23 acceptance"}
+        )
+        assert initialized.status_code == 200, initialized.text
+        client.headers["Authorization"] = "Bearer " + initialized.json()["sessionToken"]
+        minted = client.post(
+            "/v1/auth/client-keys", json={"name": "app:workbench@this-node"}
+        )
+        assert minted.status_code == 201, minted.text
+        key = minted.json()["token"]
+        claims = app.state.auth_state.trust.verify(key, classes=(tokens.TYP_CLIENT,))
+        # Wire the app's installed key and this acceptance's durable access service.
+        app.state.apps = SimpleNamespace(
+            node_name=lambda: None,
+            store=SimpleNamespace(
+                get=lambda _: object(), key=lambda _: SimpleNamespace(key_id=claims.jti)
+            ),
+        )
+        grants = [
+            access.add(name, str(path), "read", "acceptance")
+            for name, path in zip(("workbench", "workbench", "other"), paths)
+        ]
+        assert all(g.state == "ready" for g in grants), grants
+        with patch.object(directories, "_access", lambda *_: access):
+            check_release(
+                client,
+                key,
+                paths[0],
+                grants[0].id,
+                grants[2].id,
+                lambda: {ident: row["state"] for ident, row in access._read().items()},
+            )
+        for grant in grants[1:]:
+            assert access.remove(grant.app, grant.id).state == "removed"
 
 
 def refusals(root: Path) -> None:
@@ -236,18 +349,25 @@ def linux(specs: Path) -> None:
         run("systemctl", "daemon-reload")
         ctl = prefix / "apps/ctl"
 
-        def broker(verb):
+        def broker(verb, *, expect_success=True):
             request = ctl / (uuid.uuid4().hex + ".req")
-            request.write_text(verb + " workbench\n")
+            request.write_text(verb + ("" if " " in verb else " workbench") + "\n")
             os.chown(request, runner.pw_uid, runner.pw_gid)
             result = request.with_suffix(".res")
             wait_for(result.exists)
             answer = json.loads(result.read_text())
             result.unlink()
-            assert answer["code"] == 0, answer
+            if expect_success:
+                assert answer["code"] == 0, answer
+            return answer
 
         broker("start")
         wait_for(io.is_dir)
+        link = root / "root-refusal-link"
+        link.symlink_to("/etc", target_is_directory=True)
+        root_refusals(
+            ctl, broker, link, lambda p: os.chown(p, runner.pw_uid, runner.pw_gid)
+        )
         group_name = (
             "eapp-"
             + __import__("hashlib").sha256(b"workbench").hexdigest()[:12]
@@ -261,7 +381,7 @@ def linux(specs: Path) -> None:
         run("setfacl", "-m", "u:65534:r-x", str(folder))
         cli = root / "agent_cli.py"
         cli.write_text(
-            "from pathlib import Path\nimport json,sys,subprocess\nfrom eugene_plexus_agent.folder_access import Access,LinuxPermissions\nprefix=Path(sys.argv[1])\na=Access(prefix/'folder-access.json',LinuxPermissions('workbench',prefix/'apps',eugene=(str(prefix),)),process=lambda: int(subprocess.check_output(['systemctl','show','eugene-plexus-app@workbench.service','--property=MainPID','--value'])))\nverb=sys.argv[2]\nif verb=='add': r=a.add('workbench',sys.argv[3],sys.argv[4],'acceptance')\nelif verb=='remove': r=a.remove('workbench',sys.argv[3])\nelse: r=next(x for x in a.listing('workbench') if x.state=='ready')\nprint(r.model_dump_json())\n"
+            "from pathlib import Path\nimport json,sys,subprocess,runpy\nfrom eugene_plexus_agent.folder_access import Access,LinuxPermissions\nprefix=Path(sys.argv[1])\na=Access(prefix/'folder-access.json',LinuxPermissions('workbench',prefix/'apps',eugene=(str(prefix),)),process=lambda: int(subprocess.check_output(['systemctl','show','eugene-plexus-app@workbench.service','--property=MainPID','--value'])))\nverb=sys.argv[2]\nif verb=='http':\n runpy.run_path(sys.argv[3])['release_http'](prefix/'http',a,[Path(p) for p in sys.argv[4:]])\n print(json.dumps({'ok':True}))\n sys.exit(0)\nif verb=='add': r=a.add('workbench',sys.argv[3],sys.argv[4],'acceptance')\nelif verb=='remove': r=a.remove('workbench',sys.argv[3])\nelse: r=next(x for x in a.listing('workbench') if x.state=='ready')\nprint(r.model_dump_json())\n"
         )
 
         def agent(*args):
@@ -303,10 +423,48 @@ def linux(specs: Path) -> None:
         assert agent("remove", write["id"])["state"] == "removed"
         revoked = probe(io, folder)
         assert not revoked["read"] and not revoked["write"], revoked
+        assert_app_revoked(io, folder, created)
         assert created.read_text() == "app data"
         acl = run("getfacl", "-cpnE", str(folder))
         assert "user:65534:r-x" in acl and "group:" + group + ":" not in acl
         assert "group:" + group + ":" not in run("getfacl", "-cpnE", str(created))
+        swap, target = root / "swap", root / "swap-target"
+        swap.mkdir(mode=0o700)
+        target.mkdir(mode=0o700)
+        (target / "seed.txt").write_text("private")
+        swapped_folder(
+            lambda p: agent("add", p, "read"),
+            lambda ident: agent("remove", ident),
+            swap,
+            target,
+            lambda p: run("getfacl", "-cpnE", str(p), str(p / "seed.txt")),
+            lambda p, destination: p.symlink_to(destination, target_is_directory=True),
+        )
+        http_paths = [root / ("http-" + name) for name in ("one", "two", "foreign")]
+        for path in http_paths:
+            path.mkdir(mode=0o700)
+        assert agent(
+            "http", str(Path(__file__).resolve()), *(str(p) for p in http_paths)
+        )["ok"]
+        parent = root / "overlap"
+        child = parent / "child"
+        parent.mkdir(mode=0o700)
+        child.mkdir(mode=0o700)
+        (child / "seed.txt").write_text("parent read must survive")
+        (child / "seed.txt").chmod(0o600)
+        parent_read = agent("add", str(parent), "read")
+        assert parent_read["state"] == "ready", parent_read
+        child_write = agent("add", str(child), "write")
+        assert child_write["state"] == "ready", child_write
+        broker("restart")
+        observed = probe(io, child)
+        assert observed["read"] and observed["write"], observed
+        assert agent("remove", child_write["id"])["state"] == "removed"
+        observed = probe(io, child)
+        assert observed["read"] and not observed["write"], observed
+        assert agent("list")["id"] == parent_read["id"]
+        assert agent("remove", parent_read["id"])["state"] == "removed"
+        assert not probe(io, child)["read"]
         # Real parser, masked named user AND owning group, unchanged on failure.
         for entry in ("u:65534:rwx", "g::rwx"):
             run("setfacl", "-n", "-m", entry + ",m::r--", str(folder))
@@ -434,6 +592,7 @@ def windows(root: Path) -> None:
         assert access.remove("workbench", write.id).state == "removed"
         revoked = probe(io, folder)
         assert not revoked["read"] and not revoked["write"], revoked
+        assert_app_revoked(io, folder, created)
         assert created.read_text() == "app data"
         manual, _, _ = backend.grant(str(folder), "read", lambda _: None)
         existing = access.add("workbench", str(folder), "read", "acceptance")
@@ -441,6 +600,37 @@ def windows(root: Path) -> None:
         assert access.remove("workbench", existing.id).state == "removed"
         assert probe(io, folder)["read"]
         assert backend.revoke(str(folder), manual)
+        swap, target = root / "swap", root / "swap-target"
+        swap.mkdir()
+        target.mkdir()
+        private(swap)
+        private(target)
+        (target / "seed.txt").write_text("private")
+
+        def junction(path, destination):
+            run("cmd.exe", "/d", "/c", "mklink", "/J", str(path), str(destination))
+
+        def acl(path):
+            return [
+                ws.ConvertSecurityDescriptorToStringSecurityDescriptor(
+                    ws.GetFileSecurity(str(p), 4), 1, 4
+                )
+                for p in (path, path / "seed.txt")
+            ]
+
+        swapped_folder(
+            lambda p: access.add("workbench", p, "read", "acceptance").model_dump(),
+            lambda ident: access.remove("workbench", ident).model_dump(),
+            swap,
+            target,
+            acl,
+            junction,
+        )
+        http_paths = [root / ("http-" + name) for name in ("one", "two", "foreign")]
+        for path in http_paths:
+            path.mkdir()
+            private(path)
+        release_http(root / "http-config", access, http_paths)
     finally:
         subprocess.run(["sc.exe", "stop", name], check=False, capture_output=True)
         wait_for(lambda: win32serviceutil.QueryServiceStatus(name)[1] == 1)
@@ -473,6 +663,10 @@ def main() -> None:
                         "root installer",
                         "shell broker",
                         "helper main and parent checks",
+                        "direct root broker system/link refusals",
+                        "symlink swap leaves target untouched",
+                        "HTTP app-key lookup, id release, foreign id refusal",
+                        "parent read survives child write revoke",
                         "systemd drop-in",
                         "app read/write and restart",
                         "masked ACL refusal",
@@ -516,6 +710,9 @@ def main() -> None:
                             "app read/write",
                             "persisted access",
                             "revocation",
+                            "revocation of app-created file",
+                            "junction swap leaves target untouched",
+                            "HTTP app-key lookup, id release, foreign id refusal",
                             "preexisting ACL preservation",
                             "refusals and authenticated routes",
                         ],

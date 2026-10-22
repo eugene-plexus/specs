@@ -65,6 +65,14 @@ def same_identity(observed, expected):
     return observed == (expected[1:4] if len(expected) == 5 else expected)
 
 
+def mount_id(fd):
+    # Mount IDs belong to this operation's namespace, never the saved identity.
+    for line in Path(f"/proc/self/fdinfo/{fd}").read_text().splitlines():
+        if line.startswith("mnt_id:"):
+            return int(line.split()[1])
+    raise ValueError("The kernel does not expose this item's mount id.")
+
+
 def acl(fd):
     text = run("getfacl", "-cpnE", "--", f"/proc/self/fd/{fd}", pass_fds=(fd,))
     return parse_acl(text)
@@ -107,6 +115,20 @@ def plan(before, group, write, directory):
     after = before.copy()
     for prefix in ("", "default:") if directory else ("",):
         mask = bits(before.get(prefix + "mask:", "rwx"))
+        desired = 6 if write else 4
+        if directory or any(
+            bits(rights)
+            & (mask if key.startswith(("group:", "user:")) and key != "user:" else 7)
+            & 1
+            for key, rights in before.items()
+            if not key.startswith("default:") and key != "mask:"
+        ):
+            desired |= 1
+        new_mask = (
+            mask | desired
+            if prefix + "mask:" in before
+            else desired | bits(before.get(prefix + "group:", before["group:"]))
+        )
         for key, rights in before.items():
             if (
                 key.startswith(prefix)
@@ -114,7 +136,7 @@ def plan(before, group, write, directory):
                     key.startswith(prefix + "group:")
                     or (key.startswith(prefix + "user:") and key != prefix + "user:")
                 )
-                and bits(rights) & ~mask
+                and bits(rights) & (new_mask & ~mask)
             ):
                 raise ValueError(
                     "A named or group ACL entry is masked out; changing the mask would widen its access."
@@ -122,23 +144,10 @@ def plan(before, group, write, directory):
         if prefix and not any(key.startswith(prefix) for key in before):
             for key in ("user:", "group:", "other:"):
                 after[prefix + key] = before[key]
-        desired = 6 if write else 4
-        if (
-            directory
-            or prefix
-            or any(
-                "x" in p for key, p in before.items() if not key.startswith("default:")
-            )
-        ):
-            desired |= 1
         key = prefix + f"group:{group}"
         after[key] = words(bits(before.get(key, "---")) | desired)
         # An explicit mask preserves the effective rights of every older entry.
-        after[prefix + "mask:"] = (
-            words(mask | desired)
-            if prefix + "mask:" in before
-            else words(desired | bits(after[prefix + "group:"]))
-        )
+        after[prefix + "mask:"] = words(new_mask)
     return after
 
 
@@ -213,7 +222,8 @@ def refuse(path, prefix):
 def opened(path, *, parents_safe=True):
     held = [os.open("/", os.O_RDONLY | os.O_DIRECTORY)]
     try:
-        for name in Path(path).parts[1:]:
+        parts = Path(path).parts[1:]
+        for index, name in enumerate(parts):
             parent = held[-1]
             info = os.fstat(parent)
             if parents_safe:
@@ -236,46 +246,76 @@ def opened(path, *, parents_safe=True):
                     name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
                 )
             )
+            if index == len(parts) - 1 and mount_id(held[-1]) != mount_id(parent):
+                raise ValueError(
+                    "drive_root: Choose a folder inside the mounted drive."
+                )
         yield held[-1]
     finally:
         for fd in reversed(held):
             os.close(fd)
 
 
-def tree(fd, mount, names=()):
+def tree(fd, mount, names=(), *, revoke=False, skipped=None):
     info = os.fstat(fd)
-    if not stat.S_ISDIR(info.st_mode):
+    if stat.S_ISLNK(info.st_mode):
+        return
+    if mount_id(fd) != mount:
+        cause = "drive_root: A mounted descendant is not supported."
+        if not revoke:
+            raise ValueError(cause)
+        skipped.append("/".join(names) + ": " + cause)
+        return
+    if not revoke and not stat.S_ISDIR(info.st_mode):
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("A special file is inside this folder.")
         if info.st_nlink != 1:
             raise ValueError(
                 "link: A file inside this folder has more than one hard link."
             )
-    ident = identity(fd)
-    if info.st_dev != mount:
-        raise ValueError("drive_root: A mounted descendant is not supported.")
+    ident = (
+        identity(fd) if stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) else []
+    )
     yield names, fd, ident
     if stat.S_ISDIR(os.fstat(fd).st_mode):
         for name in os.listdir(fd):
-            info = os.stat(name, dir_fd=fd, follow_symlinks=False)
-            if stat.S_ISLNK(info.st_mode):
-                continue
-            if not stat.S_ISDIR(info.st_mode) and not stat.S_ISREG(info.st_mode):
-                raise ValueError("A special file is inside this folder.")
-            child = os.open(
-                name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd
-            )
             try:
-                yield from tree(child, mount, (*names, name))
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode):
+                    continue
+                special = not stat.S_ISDIR(info.st_mode) and not stat.S_ISREG(
+                    info.st_mode
+                )
+                if special and not revoke:
+                    raise ValueError("A special file is inside this folder.")
+                # O_PATH avoids opening devices, blocking FIFOs, or connecting
+                # sockets. ACL tools reach the held object through procfs.
+                flags = os.O_PATH if special else os.O_RDONLY | os.O_NONBLOCK
+                child = os.open(name, flags | os.O_NOFOLLOW, dir_fd=fd)
+            except FileNotFoundError:
+                if not revoke:
+                    raise
+                continue
+            except OSError as exc:
+                if not revoke:
+                    raise
+                skipped.append("/".join((*names, name)) + ": " + str(exc))
+                continue
+            try:
+                yield from tree(
+                    child, mount, (*names, name), revoke=revoke, skipped=skipped
+                )
             finally:
                 os.close(child)
 
 
-def batches(fd, size=128):
+def batches(fd, size=128, *, revoke=False, skipped=None):
     """Bound retained descriptors and subprocess argument size."""
     pending = []
     try:
-        for names, child, ident in tree(fd, os.fstat(fd).st_dev):
+        for names, child, ident in tree(
+            fd, mount_id(fd), revoke=revoke, skipped=skipped
+        ):
             pending.append((names, os.dup(child), ident))
             if len(pending) == size:
                 yield pending
@@ -332,26 +372,102 @@ def revoke(fd, ledger):
     if not ledger["items"]:
         return True
     group = ledger["group"]
-    for batch in batches(fd):
-        entries = acls([c for _, c, _ in batch])
-        for default in (False, True):
-            key = ("default:" if default else "") + "group:" + group
-            held = [
-                child
-                for (_, child, _), current in zip(batch, entries)
-                if key in current
+    skipped = []
+    plans = {tuple(item["names"]): item for item in ledger["items"] if "names" in item}
+    for batch in batches(fd, revoke=True, skipped=skipped):
+        normal = [item for item in batch if item[2]]
+        entries = list(zip(normal, acls([c for _, c, _ in normal]))) if normal else []
+        for item in batch:
+            if item[2]:
+                continue
+            try:
+                current = acl(item[1])
+                remove_entries([(item, current)], group, plans)
+            except (OSError, ValueError) as exc:
+                skipped.append("/".join(item[0]) + ": " + str(exc))
+        remove_entries(entries, group, plans)
+    ledger["refusal"] = "; ".join(skipped)
+    return not skipped
+
+
+def remove_entries(entries, group, plans):
+    for default in (False, True):
+        key = ("default:" if default else "") + "group:" + group
+        held = [child for (_, child, _), current in entries if key in current]
+        if held:
+            run(
+                "setfacl",
+                "-n",
+                "-x",
+                ("d:" if default else "") + "g:" + group,
+                "--",
+                *("/proc/self/fd/" + str(child) for child in held),
+                pass_fds=tuple(held),
+            )
+    clear = []
+    base = {"default:user:", "default:group:", "default:other:", "default:mask:"}
+    for (names, child, ident), current in entries:
+        item = plans.get(names)
+        defaults = {k for k in current if k.startswith("default:")}
+        defaults.discard("default:group:" + group)
+        if (
+            item is not None
+            and same_identity(ident, item["identity"])
+            and not any(k.startswith("default:") for k in item["before"])
+            and defaults == base
+        ):
+            clear.append(child)
+    if clear:
+        run(
+            "setfacl",
+            "-k",
+            "--",
+            *(f"/proc/self/fd/{c}" for c in clear),
+            pass_fds=tuple(clear),
+        )
+
+
+def reapply(fd, record, records):
+    """Restore remaining overlapping grants before completing this revoke."""
+    active = []
+    for other in records:
+        if (
+            other.get("removed")
+            or other == record
+            or not related(other["path"], record["path"])
+        ):
+            continue
+        with opened(other["path"]) as held:
+            if same_identity(identity(held), other["identity"]):
+                active.append(other)
+    if not active:
+        return True
+    skipped = []
+    for batch in batches(fd, revoke=True, skipped=skipped):
+        for names, child, _ in batch:
+            path = record["path"].rstrip("/") + ("/" + "/".join(names) if names else "")
+            covering = [
+                r
+                for r in active
+                if path == r["path"] or path.startswith(r["path"].rstrip("/") + "/")
             ]
-            if held:
-                run(
-                    "setfacl",
-                    "-n",
-                    "-x",
-                    ("d:" if default else "") + "g:" + group,
-                    "--",
-                    *("/proc/self/fd/" + str(child) for child in held),
-                    pass_fds=tuple(held),
+            if not covering:
+                continue
+            try:
+                before = acl(child)
+                after = plan(
+                    before,
+                    record["group"],
+                    any(r.get("write") for r in covering),
+                    stat.S_ISDIR(os.fstat(child).st_mode),
                 )
-    return True
+                if before != after:
+                    set_acl(child, after)
+            except (OSError, ValueError) as exc:
+                skipped.append(path + ": " + str(exc))
+    if skipped:
+        record["refusal"] = "; ".join(filter(None, [record.get("refusal"), *skipped]))
+    return not skipped
 
 
 def dropin(app, group, records):
@@ -522,13 +638,24 @@ def main():
         if record.get("removed"):
             print(json.dumps(dict(removed=True)))
             return
-        try:
-            with opened(record["path"]) as fd:
-                removed = same_identity(identity(fd), record["identity"]) and revoke(
-                    fd, record
-                )
-        except FileNotFoundError:
-            removed = True  # Also remove a deleted folder's namespace allowance.
+        with contextlib.ExitStack() as held:
+            try:
+                fd = held.enter_context(opened(record["path"]))
+            except FileNotFoundError:
+                removed = True  # Also remove a deleted folder's namespace allowance.
+            except NotADirectoryError:
+                removed = False  # A replacement link must never reach its target.
+            else:
+                removed = same_identity(identity(fd), record["identity"])
+                if removed:
+                    complete = revoke(fd, record)
+                    records = [
+                        json.loads(p.read_text())
+                        for p in directory.glob("*.json")
+                        if p != target
+                    ]
+                    restored = reapply(fd, record, records)
+                    removed = complete and restored
         if removed:
             record["removed"] = True
             write_record(target, record)
@@ -541,7 +668,7 @@ def main():
             json.dumps(
                 dict(
                     removed=removed,
-                    message=record.get("refusal", "The folder identity changed."),
+                    message=record.get("refusal") or "The folder identity changed.",
                 )
             )
         )
