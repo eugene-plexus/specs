@@ -85,7 +85,9 @@ TENSOR = "application/vnd.ollama.image.tensor"
 LIST = "application/vnd.ollama.manifest.list.v2+json"
 MANIFEST = "application/vnd.docker.distribution.manifest.v2+json"
 
-_spec = importlib.util.spec_from_file_location("cx2", HERE / "cx2-setup-resume-acceptance.py")
+_spec = importlib.util.spec_from_file_location(
+    "cx2", HERE / "cx2-setup-resume-acceptance.py"
+)
 assert _spec and _spec.loader
 cx2 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cx2)
@@ -144,12 +146,14 @@ def snapshot_tree(root: Path) -> dict[str, list]:
 
 def download_gguf(target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    with httpx.Client(follow_redirects=True, timeout=120) as client:
-        with client.stream("GET", GGUF_URL) as response:
-            response.raise_for_status()
-            with target.open("wb") as out:
-                for chunk in response.iter_bytes(1 << 20):
-                    out.write(chunk)
+    with (
+        httpx.Client(follow_redirects=True, timeout=120) as client,
+        client.stream("GET", GGUF_URL) as response,
+    ):
+        response.raise_for_status()
+        with target.open("wb") as out:
+            for chunk in response.iter_bytes(1 << 20):
+                out.write(chunk)
     assert target.stat().st_size > 1_000_000, "the GGUF download is too small"
     assert target.read_bytes()[:4] == b"GGUF", "the download is not a GGUF"
 
@@ -160,7 +164,12 @@ def layer(media: str, digest: str, size: int) -> dict:
 
 def manifest(*layers: dict) -> dict:
     config = layer("application/vnd.docker.container.image.v1+json", "0" * 64, 2)
-    return {"schemaVersion": 2, "mediaType": MANIFEST, "config": config, "layers": list(layers)}
+    return {
+        "schemaVersion": 2,
+        "mediaType": MANIFEST,
+        "config": config,
+        "layers": list(layers),
+    }
 
 
 def write_json(path: Path, body: dict) -> None:
@@ -180,11 +189,17 @@ def build_store(store: Path, gguf: Path) -> str:
     size = blob.stat().st_size
     model = manifest(layer(MODEL, digest, size))
     write_json(store / "manifests-v2" / "ollama.com" / "library" / "tiny" / "q4", model)
-    write_json(store / "manifests" / "registry.ollama.ai" / "library" / "tiny" / "q5", model)
+    write_json(
+        store / "manifests" / "registry.ollama.ai" / "library" / "tiny" / "q5", model
+    )
     # A model llama.cpp cannot load: a list whose only child is mlx / safetensors.
     tensor = "1" * 64
     (store / "blobs" / f"sha256-{tensor}").write_bytes(b"safetensors stand-in")
-    child = {"runner": "mlx", "format": "safetensors", **manifest(layer(TENSOR, tensor, 20))}
+    child = {
+        "runner": "mlx",
+        "format": "safetensors",
+        **manifest(layer(TENSOR, tensor, 20)),
+    }
     write_json(
         store / "manifests-v2" / "ollama.com" / "library" / "mlxthing" / "latest",
         {"schemaVersion": 2, "mediaType": LIST, "manifests": [child]},
@@ -193,7 +208,9 @@ def build_store(store: Path, gguf: Path) -> str:
 
 
 def same_path(a: str, b: Path) -> bool:
-    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(str(b)))
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(
+        os.path.normpath(str(b))
+    )
 
 
 def poll(check, seconds: float, what: str, every: float = 0.5):
@@ -206,7 +223,9 @@ def poll(check, seconds: float, what: str, every: float = 0.5):
     raise AssertionError(f"timed out after {seconds:.0f}s: {what}")
 
 
-def wait_for(client: httpx.Client, url: str, agent: subprocess.Popen | None = None) -> None:
+def wait_for(
+    client: httpx.Client, url: str, agent: subprocess.Popen | None = None
+) -> None:
     for _ in range(300):
         try:
             if client.get(url + "/healthz").status_code == 200:
@@ -218,7 +237,9 @@ def wait_for(client: httpx.Client, url: str, agent: subprocess.Popen | None = No
     raise AssertionError(f"{url} did not answer")
 
 
-def http_half(client: httpx.Client, url: str, store: Path, digest: str, seen: dict, checks: dict) -> None:
+def http_half(
+    client: httpx.Client, url: str, store: Path, digest: str, seen: dict, checks: dict
+) -> None:
     """Steps 1-4 over HTTP through the agent's proxy, filling `checks` as each is observed."""
     login = client.post(url + "/v1/auth/login", json={"passphrase": PASSPHRASE})
     assert login.status_code == 200, login.text[:300]
@@ -232,7 +253,14 @@ def http_half(client: httpx.Client, url: str, store: Path, digest: str, seen: di
         return answer.json().get("folders", [])
 
     def store_folder() -> dict | None:
-        return next((f for f in folders() if f.get("kind") == "ollama" and same_path(f["path"], store)), None)
+        return next(
+            (
+                f
+                for f in folders()
+                if f.get("kind") == "ollama" and same_path(f["path"], store)
+            ),
+            None,
+        )
 
     def rescan() -> dict:
         started = client.post(library + "/v1/scan", headers=auth, json={})
@@ -248,61 +276,94 @@ def http_half(client: httpx.Client, url: str, store: Path, digest: str, seen: di
     def listed() -> list[dict]:
         answer = client.get(library + "/v1/models", headers=auth)
         assert answer.status_code == 200, answer.text[:300]
-        return [m for m in answer.json().get("models", []) if m.get("ollama") is not None]
+        return [
+            m for m in answer.json().get("models", []) if m.get("ollama") is not None
+        ]
 
     def toggle(value: bool) -> None:
-        patched = client.patch(library + "/v1/config", headers=auth, json={"findOllama": value})
-        assert patched.status_code == 200 and not patched.json().get("rejected"), patched.text[:300]
+        patched = client.patch(
+            library + "/v1/config", headers=auth, json={"findOllama": value}
+        )
+        assert patched.status_code == 200 and not patched.json().get("rejected"), (
+            patched.text[:300]
+        )
 
     # 1. The store as a folder, and the setting that removes and restores it.
     rescan()
     folder = store_folder()
     seen["folder"] = folder
-    checks["storeListedAsOllamaFolder"] = folder is not None and folder.get("found") is True
+    checks["storeListedAsOllamaFolder"] = (
+        folder is not None and folder.get("found") is True
+    )
     toggle(False)
     checks["findOllamaOffRemovesFolder"] = store_folder() is None
     rescan()
-    checks["findOllamaOffHidesModel"] = not any(m.get("status") == "present" for m in listed())
+    checks["findOllamaOffHidesModel"] = not any(
+        m.get("status") == "present" for m in listed()
+    )
     toggle(True)
     restored_folder = store_folder() is not None
     scan = rescan()
     models = listed()
-    checks["findOllamaOnRestoresBoth"] = restored_folder and any(m.get("status") == "present" for m in models)
+    checks["findOllamaOnRestoresBoth"] = restored_folder and any(
+        m.get("status") == "present" for m in models
+    )
 
     # 2. One model for the blob, named by the first tag; the mlx model is not offered.
-    seen["models"] = [{k: m.get(k) for k in ("id", "name", "path", "status", "ollama")} for m in models]
-    checks["oneModelForTheBlob"] = len(models) == 1 and digest in models[0].get("path", "").lower()
+    seen["models"] = [
+        {k: m.get(k) for k in ("id", "name", "path", "status", "ollama")}
+        for m in models
+    ]
+    checks["oneModelForTheBlob"] = (
+        len(models) == 1 and digest in models[0].get("path", "").lower()
+    )
     model = models[0]
     checks["nameIsFirstTag"] = model.get("name") == NAME
     checks["bothTagsListed"] = (model.get("ollama") or {}).get("tags") == TAGS
-    all_models = client.get(library + "/v1/models", headers=auth).json().get("models", [])
-    checks["safetensorsNotOffered"] = not any("mlxthing" in json.dumps(m) for m in all_models)
+    all_models = (
+        client.get(library + "/v1/models", headers=auth).json().get("models", [])
+    )
+    checks["safetensorsNotOffered"] = not any(
+        "mlxthing" in json.dumps(m) for m in all_models
+    )
     skipped = scan.get("skipped") or []
     seen["skipped"] = skipped
     checks["safetensorsSkippedWithReason"] = any(
-        "mlxthing" in json.dumps(s) and "not for llama.cpp" in json.dumps(s) for s in skipped
+        "mlxthing" in json.dumps(s) and "not for llama.cpp" in json.dumps(s)
+        for s in skipped
     )
 
     # 3. Read-only: Delete is refused, a download cannot name the store.
-    refused = client.request("DELETE", library + f"/v1/models/{model['id']}", headers=auth, json={})
+    refused = client.request(
+        "DELETE", library + f"/v1/models/{model['id']}", headers=auth, json={}
+    )
     seen["delete"] = {"status": refused.status_code, "body": refused.text[:400]}
     checks["deleteRefused409"] = refused.status_code == 409
     checks["deleteNamesOllama"] = "Ollama manages this model" in refused.text
-    download = client.post(library + "/v1/downloads", headers=auth, json={**TINY, "root": str(store)})
-    seen["downloadIntoStore"] = {"status": download.status_code, "body": download.text[:400]}
+    download = client.post(
+        library + "/v1/downloads", headers=auth, json={**TINY, "root": str(store)}
+    )
+    seen["downloadIntoStore"] = {
+        "status": download.status_code,
+        "body": download.text[:400],
+    }
     checks["downloadIntoStoreRefused"] = 400 <= download.status_code < 500
 
     # 4. Run it as the console does: the run operation, with the engine agreed up front.
     node = client.get(url + "/v1/node", headers=auth).json().get("name")
     run_id = f"run_cx9-{uuid.uuid4().hex[:8]}"
     intent = {"node": node, "modelId": model["id"], "installEngine": "llama_cpp"}
-    submitted = client.put(library + f"/v1/run-operations/{run_id}", headers=auth, json=intent)
+    submitted = client.put(
+        library + f"/v1/run-operations/{run_id}", headers=auth, json=intent
+    )
     assert submitted.status_code == 202, submitted.text[:300]
     steps: list[str] = []
     record: dict = {}
     deadline = time.perf_counter() + 1800
     while time.perf_counter() < deadline:
-        record = client.get(library + f"/v1/run-operations/{run_id}", headers=auth).json()
+        record = client.get(
+            library + f"/v1/run-operations/{run_id}", headers=auth
+        ).json()
         if not steps or steps[-1] != record.get("step"):
             steps.append(record.get("step"))
         if record.get("step") in {"ready", "failed", "cancelled", "skipped"}:
@@ -315,7 +376,11 @@ def http_half(client: httpx.Client, url: str, store: Path, digest: str, seen: di
 
     def gateway_ids() -> list[str]:
         answer = client.get(gateway + "/v1/models", headers=auth)
-        return [m.get("id") for m in answer.json().get("data", [])] if answer.status_code == 200 else []
+        return (
+            [m.get("id") for m in answer.json().get("data", [])]
+            if answer.status_code == 200
+            else []
+        )
 
     poll(lambda: NAME in gateway_ids(), 300, f"the gateway to list {NAME}", every=2)
     seen["gatewayIds"] = gateway_ids()
@@ -324,10 +389,16 @@ def http_half(client: httpx.Client, url: str, store: Path, digest: str, seen: di
         gateway + "/v1/chat/completions",
         headers=auth,
         timeout=120,
-        json={"model": NAME, "max_tokens": 8, "messages": [{"role": "user", "content": "Once upon a time"}]},
+        json={
+            "model": NAME,
+            "max_tokens": 8,
+            "messages": [{"role": "user", "content": "Once upon a time"}],
+        },
     )
     seen["chat"] = {"status": chat.status_code, "body": chat.text[:300]}
-    checks["chatAnswered"] = chat.status_code == 200 and bool(chat.json().get("choices"))
+    checks["chatAnswered"] = chat.status_code == 200 and bool(
+        chat.json().get("choices")
+    )
 
 
 def run(root: Path) -> None:
@@ -338,7 +409,11 @@ def run(root: Path) -> None:
     before = cx2.snapshot_windows()
     base = cx2.claim_ports()
     agent_port = base + 1
-    env = {k: v for k, v in os.environ.items() if not k.upper().startswith("EUGENE_PLEXUS_")}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.upper().startswith("EUGENE_PLEXUS_")
+    }
     env.update(
         {
             "NO_PROXY": "localhost,127.0.0.1,::1",
@@ -348,7 +423,12 @@ def run(root: Path) -> None:
     )
     # The agent's own environment never carries it; only the Library's `spawn.env` does.
     env.pop("OLLAMA_MODELS", None)
-    result: dict = {"ports": {"agent": agent_port}, "checks": {}, "notChecked": NOT_CHECKED, "store": str(store)}
+    result: dict = {
+        "ports": {"agent": agent_port},
+        "checks": {},
+        "notChecked": NOT_CHECKED,
+        "store": str(store),
+    }
     checks = result["checks"]
     agent = None
     logs = []
@@ -372,7 +452,14 @@ def run(root: Path) -> None:
         )
         with (root / "installer.log").open("w", encoding="utf-8") as log:
             subprocess.run(
-                ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(wrapper)],
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(wrapper),
+                ],
                 env=env,
                 cwd=root,
                 stdout=log,
@@ -386,8 +473,17 @@ def run(root: Path) -> None:
             spawn: dict = {"configFile": str(prefix / f"{name}.yaml")}
             if name == "library":
                 spawn["env"] = {"OLLAMA_MODELS": str(store)}
-            components.append({"name": name, "kind": name, "url": f"http://127.0.0.1:{base + offset}", "spawn": spawn})
-        (prefix / "agent.yaml").write_text(yaml.safe_dump({"components": components}), encoding="utf-8")
+            components.append(
+                {
+                    "name": name,
+                    "kind": name,
+                    "url": f"http://127.0.0.1:{base + offset}",
+                    "spawn": spawn,
+                }
+            )
+        (prefix / "agent.yaml").write_text(
+            yaml.safe_dump({"components": components}), encoding="utf-8"
+        )
         env.update(
             {
                 "HOME": str(prefix),
@@ -400,7 +496,14 @@ def run(root: Path) -> None:
         log = (root / "agent.log").open("w", encoding="utf-8")
         logs.append(log)
         agent = subprocess.Popen(
-            [str(python), str(HERE / "s8-ui-acceptance.py"), "--serve", str(prefix), "--port", str(agent_port)],
+            [
+                str(python),
+                str(HERE / "s8-ui-acceptance.py"),
+                "--serve",
+                str(prefix),
+                "--port",
+                str(agent_port),
+            ],
             cwd=prefix,
             env=env,
             stdin=subprocess.DEVNULL,
@@ -413,26 +516,45 @@ def run(root: Path) -> None:
             wait_for(client, url, agent)
             settings = root / "browser-settings.json"
             settings.write_text(
-                json.dumps({"url": url, "output": str(root), "passphrase": PASSPHRASE, "modelName": NAME}),
+                json.dumps(
+                    {
+                        "url": url,
+                        "output": str(root),
+                        "passphrase": PASSPHRASE,
+                        "modelName": NAME,
+                    }
+                ),
                 encoding="utf-8",
             )
             with (root / "browser.log").open("w", encoding="utf-8") as blog:
                 browser = subprocess.Popen(
-                    ["node", str(HERE / "cx9-ollama-models-browser.mjs"), str(settings)], stdout=blog, stderr=blog
+                    [
+                        "node",
+                        str(HERE / "cx9-ollama-models-browser.mjs"),
+                        str(settings),
+                    ],
+                    stdout=blog,
+                    stderr=blog,
                 )
                 try:
                     # The browser sets the install up, then waits for the HTTP half.
                     until = time.perf_counter() + 900
                     while not (root / "ready.flag").exists():
-                        assert browser.poll() is None, "browser exited before the install was ready"
-                        assert time.perf_counter() < until, "the install was not ready in 15 minutes"
+                        assert browser.poll() is None, (
+                            "browser exited before the install was ready"
+                        )
+                        assert time.perf_counter() < until, (
+                            "the install was not ready in 15 minutes"
+                        )
                         time.sleep(0.5)
                     try:
                         http_half(client, url, store, digest, result, checks)
-                    except Exception as error:  # the browser must be told, or it waits for the full timeout
+                    except Exception as error:  # noqa: BLE001 -- the browser must be told even on an unexpected failure
                         handoff = {"error": repr(error)}
                         result["httpError"] = repr(error)
-                    (root / "http.json").write_text(json.dumps(handoff), encoding="utf-8")
+                    (root / "http.json").write_text(
+                        json.dumps(handoff), encoding="utf-8"
+                    )
                     browser.wait(timeout=1800)
                 finally:
                     if browser.poll() is None:
@@ -441,14 +563,20 @@ def run(root: Path) -> None:
             if report.exists():
                 result["browser"] = json.loads(report.read_text(encoding="utf-8"))
             assert "error" not in handoff, f"the HTTP half failed: {handoff['error']}"
-            assert browser.returncode == 0, "browser failed; see browser.log and failure.png"
+            assert browser.returncode == 0, (
+                "browser failed; see browser.log and failure.png"
+            )
             seen = result["browser"]
-            checks["libraryShowsOllamaBadge"] = "Ollama" in str(seen.get("badgeText", ""))
+            checks["libraryShowsOllamaBadge"] = "Ollama" in str(
+                seen.get("badgeText", "")
+            )
             checks["libraryManagesNoteInPlaceOfDelete"] = (
-                seen.get("managesText") == "Ollama manages this model." and seen.get("deleteButtons") == 0
+                seen.get("managesText") == "Ollama manages this model."
+                and seen.get("deleteButtons") == 0
             )
             checks["foldersLineReadOnlyFound"] = (
-                seen.get("folderLine") == "Ollama's models (read-only) · found on this machine"
+                seen.get("folderLine")
+                == "Ollama's models (read-only) · found on this machine"
             )
     finally:
         try:
@@ -460,10 +588,15 @@ def run(root: Path) -> None:
                     # A stop takes at most 5 s plus the children's own stops since
                     # agent#20 (a connection Windows reset kept uvicorn waiting for
                     # ever). Past 45 s that fix has failed: say so, and the tree goes.
-                    print("the agent did not stop in 45 s (agent#20 again?); killing its process tree",
-                          flush=True)
-                    subprocess.run(["taskkill", "/PID", str(agent.pid), "/T", "/F"],
-                                   capture_output=True, check=False)
+                    print(
+                        "the agent did not stop in 45 s (agent#20 again?); killing its process tree",
+                        flush=True,
+                    )
+                    subprocess.run(
+                        ["taskkill", "/PID", str(agent.pid), "/T", "/F"],
+                        capture_output=True,
+                        check=False,
+                    )
         finally:
             for log in logs:
                 log.close()
@@ -471,13 +604,26 @@ def run(root: Path) -> None:
             if tree_before is not None:
                 tree_after = snapshot_tree(store)
                 names = set(tree_before) | set(tree_after)
-                changed = sorted(k for k in names if tree_before.get(k) != tree_after.get(k))
+                changed = sorted(
+                    k for k in names if tree_before.get(k) != tree_after.get(k)
+                )
                 result["storeChanges"] = changed
                 checks["storeTreeUnchanged"] = not changed
-            result["passed"] = all(checks.get(name) is True for name in CHECKS) and set(checks) <= set(CHECKS)
+            result["passed"] = all(checks.get(name) is True for name in CHECKS) and set(
+                checks
+            ) <= set(CHECKS)
             result["liveInstallUnchanged"] = cx2.snapshot_windows() == before
-            (root / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-            lines = ["# CX9 acceptance", "", f"Passed: {result['passed']}", "", "## Checks", ""]
+            (root / "result.json").write_text(
+                json.dumps(result, indent=2), encoding="utf-8"
+            )
+            lines = [
+                "# CX9 acceptance",
+                "",
+                f"Passed: {result['passed']}",
+                "",
+                "## Checks",
+                "",
+            ]
             lines += [f"- {name}: {checks.get(name, 'not run')}" for name in CHECKS]
             lines += ["", "## Not checked", ""] + [f"- {item}" for item in NOT_CHECKED]
             (root / "result.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -488,5 +634,31 @@ def run(root: Path) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", type=Path, required=True, help="A new disposable directory")
-    run(parser.parse_args().output.resolve())
+    parser.add_argument(
+        "--output", type=Path, required=True, help="A new disposable directory"
+    )
+    parser.add_argument(
+        "--row65",
+        action="store_true",
+        help="Portable Keep and worker protocol acceptance",
+    )
+    parser.add_argument(
+        "--copy-folder", type=Path, help="Existing directory on another filesystem"
+    )
+    args = parser.parse_args()
+    if args.row65:
+        assert args.copy_folder, "--row65 needs --copy-folder on another filesystem"
+        script = HERE / "row65-ollama-protocol.py"
+        subprocess.run(
+            [
+                sys.executable,
+                str(script),
+                "--output",
+                str(args.output.resolve()),
+                "--copy-folder",
+                str(args.copy_folder.resolve()),
+            ],
+            check=True,
+        )
+    else:
+        run(args.output.resolve())
