@@ -510,6 +510,9 @@ jobs:
       - name: Verify a Gemini account (native API, thought signatures, every surface) through signed processes and the unchanged OpenAI SDK
         if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/gemini-acceptance.py
+      - name: Verify row 58 Gemini door through the Python SDK and recorded Gemini CLI requests
+        if: matrix.shard == 'L3' && needs.plan.outputs.full == 'true'
+        run: python specs/scripts/row58-gemini-door-acceptance.py
       - name: Verify the gateway and driver pair on stand-in providers (tools are assumed - header agreement, slots, counts, stream heads)
         if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/tools-assumed-acceptance.py

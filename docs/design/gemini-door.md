@@ -1,7 +1,7 @@
 # A Gemini API door: the first measurement
 
 **Status:** CLI measured 2026-10-20; Python SDK measured 2026-10-22.
-Row 58's contract is prepared; the gateway implementation follows its specs pin.
+Row 58 phase 2 is implemented and locally checked; process acceptance awaits CI.
 **Issue:** gateway#5.
 
 gateway#5 asked for a measurement before any code: does a client built on Google's SDK accept
@@ -192,8 +192,40 @@ does not require complete-response fields on every frame.
   naming the field; a supported setting must not disappear silently.
 
 These captures establish the client's wire behavior and response parsing.
-Phase 2 still needs gateway/driver behavior tests and the row's fixture
-acceptance, including query-key redaction. A live run with an actual
+At the contract commit, phase 2 still needed gateway/driver behavior tests
+and the row's fixture acceptance, including query-key redaction. A live run with an actual
 provider key and real speech encoders on the target platforms remains
 Troy's measurement; these captures do not establish Google's acceptance,
 model availability, audio fidelity or hardware performance.
+
+## 6. Phase 2 implementation evidence (2026-10-22)
+
+The gateway translates both captured spellings onto the shared inference path,
+including native token counts, model discovery, roles and client-key policy.
+Unknown names default to `role:chat`; the live **Gemini model names** setting
+uses the existing GUI model-slot editor. Stream headers are resolved at the
+first output, after failover commits, and the terminal frame identifies the
+model that answered. Safety settings and reduced thinking budgets are named
+in ignored settings. Query credentials are removed before access logging.
+
+The real `google-genai` 2.31.0 client was also checked in process against this
+gateway for both API versions: chat, streaming, JSON output, counting, paged
+listing and lookup. This used a fake driver and an HTTP transport into the
+app, with no listener, agent, engine or live provider.
+
+`scripts/row58-gemini-door-acceptance.py` is the Linux CI acceptance. It uses
+the signed provider fixture install with row 2's agent entry-point harness,
+then the unchanged SDK for a tool round trip and the other operations. The
+CLI replay fixture retains the request fields documented in section 2;
+private system context and the full eight-function catalogue were not
+retained by that measurement and are abbreviated explicitly. It checks that
+the routing JSON parses on the first request. It also checks native counts,
+dimensions, decodable mp3/opus and query-key absence in logs and metrics.
+This process acceptance has not been run in this builder workspace because
+starting agents and engines here is prohibited. CI must run it.
+
+Row 58's speech default is now mp3, with opus, aac, flac, wav and pcm also
+available. PyAV encoding/decoding tests use fixture PCM; live Google audio,
+listings, quota, hardware timing and codec fidelity on each target platform
+remain the owner's live measurement. The new PyAV runtime dependency also
+needs the orchestrator's normal release-lock resolution before shipping.
