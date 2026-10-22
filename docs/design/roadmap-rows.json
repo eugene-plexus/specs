@@ -1841,26 +1841,33 @@
    "title": "One store for the platform half",
    "summary": "One store for the platform half. Design how files, batches, vector stores and stored responses are kept, owned and expired",
    "from": "PLAT (memory `project_platform_half_on_roadmap`)",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high (store, migrations)",
    "who": "developers",
    "notes": "Rows 54-56 share it, so design it once",
-   "lane": "DESIGN",
-   "lane_order": 1,
+   "lane": "GW",
+   "lane_order": 15,
    "repos": [
-    "specs"
+    "platform-store",
+    "gateway",
+    "agent",
+    "ui"
    ],
    "contract": "design only",
    "hot_files": [
     "specs/docs/design/"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
-    "openai-inference-compatibility.md"
+    "rows/row-53.md",
+    "workbench-memory-and-documents.md",
+    "llm-d-lessons.md"
    ],
-   "calls": [],
+   "calls": [
+    "R53-REPO"
+   ],
    "issue": 80
   },
   {
