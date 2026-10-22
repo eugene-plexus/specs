@@ -105,7 +105,7 @@ between machines). The next release fits after row 6.
 | 48 | **The Library at scale.** Paginate `/v1/models`, then design an answer to "the Library is down" | M2-PAGE, LIB-RED | S, then L | cross | businesses | Redundancy is design first |
 | 49 | **Which machine hosts a model** | M6-PLACE | L | cross | multi-machine | Design first, after row 14 |
 | 50 | **One model across machines with llama.cpp's `rpc-server`** | RPC (setups pass) | L | cross | multi-machine | Design first |
-| 51 | **Job Sites, banked items.** QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin | J-BANKED | S-M each | some high | multi-machine | |
+| 51 | **Job Sites, banked items.** QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin | J-BANKED | S-M each | some high | multi-machine | Designed (`rows/row-51.md`): 51a QR code, 51b re-pair warning, 51c auditors, 51d the worker checks signatures, 51e AppContainer confinement, 51f tailnet origin (after 45b). Call R51-SHARES |
 | 52 | **Per-person isolation for local MCP programs** | C5b-iso | L | high | multi-person installs | |
 
 ## 5. Doors, developers and the platform half

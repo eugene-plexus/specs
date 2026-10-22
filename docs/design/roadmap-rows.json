@@ -1760,7 +1760,7 @@
    "title": "Job Sites, banked items",
    "summary": "Job Sites, banked items. QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin",
    "from": "J-BANKED",
-   "size": "S-M each",
+   "size": "L",
    "risk": "high",
    "risk_note": "some high",
    "who": "multi-machine",
@@ -1768,9 +1768,10 @@
    "lane": "AG2",
    "lane_order": 4,
    "repos": [
+    "agent",
     "site-host",
-    "control",
-    "workbench"
+    "workbench",
+    "control"
    ],
    "contract": "site-host.yaml components/job-sites.yaml",
    "hot_files": [
@@ -1778,13 +1779,16 @@
     "site-host/src/eugene_plexus_site_host/worker.py",
     "site-host/src/eugene_plexus_site_host/signing.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-51.md",
     "person-held-keys.md",
     "job-sites-own-enrollment.md"
    ],
-   "calls": [],
+   "calls": [
+    "R51-SHARES"
+   ],
    "issue": 78
   },
   {
