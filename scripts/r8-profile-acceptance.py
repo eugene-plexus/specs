@@ -152,7 +152,7 @@ def main() -> None:
                     self.reply({"backend": "openai_compat_http", "runtime": "fixture-runtime",
                                 "models": [{"id": "fallback-alias" if self.path.startswith("/fallback/") else "friendly-alias",
                                             "surfaces": ["chat"],
-                                            "capabilities": {"supportedSettings": ["maxTokens", "temperature", "topP", "seed", "stop", "tools", "toolChoice", "responseFormat"]}}]})
+                                            "capabilities": {"supportedSettings": ["maxTokens", "temperature", "topP", "topK", "minP", "seed", "stop", "tools", "toolChoice", "responseFormat"]}}]})
                 elif self.path == "/v1/node":
                     self.reply({"enrolled": False})
                 else:
