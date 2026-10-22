@@ -788,6 +788,11 @@ old_install() {
   ln -s "$home/elsewhere/b9" "$store/b9"
   printf '{}\n' > "$store/architectures/b1.json"
   printf 'name: studio\nnodeKey: abc\n' > "$old/node.yaml"
+  # Settings naming programs in the person's home: kept by the move, and
+  # said, because Eugene's own account will not run them there.
+  mkdir -p "$home/vllm-env/bin" "$home/llama"
+  printf '#!/bin/sh\n' > "$home/vllm-env/bin/vllm"
+  printf '#!/bin/sh\n' > "$home/llama/llama-server"
   cat > "$old/agent.yaml" <<YAML
 securityMode: os_keyring
 firstRunComplete: true
@@ -796,6 +801,11 @@ components:
   spawn:
     configFile: $old/control.yaml
 modelCopyDir: $old
+vllmBinary: $home/vllm-env/bin/vllm
+runtimes:
+- name: mine
+  engine: llama_cpp
+  binary: $home/llama/llama-server
 YAML
   printf 'securityMode: os_keyring\nstateDir: %s/control-state\n' "$old" > "$old/control.yaml"
   printf '{"profiles": {"p1": {"modelPath": "%s/Eugene Models/m.gguf"}}}\n' "$home" > "$old/library-state.json"
@@ -849,8 +859,8 @@ else
 fi
 if [ "$(cat "$PREFIX/node.yaml" 2>/dev/null)" = "$(printf 'name: studio\nnodeKey: abc')" ] \
     && [ -f "$PREFIX/control-state/snap.bin" ] && [ -f "$PREFIX/library-state.json" ] \
-    && [ -f "$PREFIX/engines/llama_cpp/b1/llama-server" ] && [ ! -e "$PREFIX/uninstall" ]; then
-  ok "identity, control state, Library state and engine builds came along; the old removal did not"
+    && [ -f "$PREFIX/engines/llama_cpp/architectures/b1.json" ] && [ ! -e "$PREFIX/uninstall" ]; then
+  ok "identity, control state, Library state and the engine store's lists came along; the old removal did not"
 else
   bad "copied: $(ls -A "$PREFIX" 2>/dev/null | tr '\n' ' ')"
 fi
@@ -929,24 +939,38 @@ fi
 # changed one, one from before the record and a link where a build
 # belongs are not kept, and the newest that went is listed for the agent
 # to fetch again from upstream when it starts.
-say "M4b. a copied engine build stays only when every file matches its record; the rest are fetched again"
+say "M4b. no copied engine build is kept; the newest is listed to be fetched again"
 E=$PREFIX/engines/llama_cpp
 listed=$(python3 -c '
 import json, sys
 print(" ".join(":".join((b["engine"], b["version"], b["variant"])) for b in json.load(open(sys.argv[1]))["builds"]))
 ' "$PREFIX/engines/refetch.json" 2>/dev/null)
-if [ "$(cat "$E/b1/llama-server" 2>/dev/null)" = build ] && [ ! -e "$E/b2" ] && [ ! -e "$E/b0" ] \
+if [ ! -e "$E/b1" ] && [ ! -e "$E/b2" ] && [ ! -e "$E/b0" ] \
     && [ ! -e "$E/b9" ] && [ ! -L "$E/b9" ] && [ -f "$E/architectures/b1.json" ]; then
-  ok "b1 (as downloaded) kept; b2 (changed), b0 (no record) and the link b9 not kept; the architecture lists kept"
+  ok "b1 (as downloaded), b2 (changed), b0 (no record) and the link b9 not kept; the architecture lists kept"
 else
   bad "engine store after the move: $(ls -A "$E" 2>/dev/null | tr '\n' ' ')"
 fi
 if [ "$listed" = "llama_cpp:b2:macos-arm64" ] \
-    && printf '%s' "$OUT" | grep -q "did not keep the llama_cpp build b2: llama-server changed after it was downloaded" \
+    && printf '%s' "$OUT" | grep -q "did not keep the llama_cpp build b1: it was copied from your account" \
     && printf '%s' "$OUT" | grep -q "fetches llama_cpp b2 again from GitHub when it starts"; then
-  ok "b2, the newest, is listed to be fetched again, and the move says why"
+  ok "b2, the newest, is listed to be fetched again, and the move says why each went"
 else
   bad "listed: '$listed'"; show "$OUT" 12
+fi
+
+# A copied setting naming a program in the person's home is kept, and said:
+# Eugene's own account will not run it there (the agent refuses it).
+say "M4c. settings naming programs Eugene's account will not run are kept, and said"
+H=$WORK/move/home
+if grep -qx "vllmBinary: $H/vllm-env/bin/vllm" "$PREFIX/agent.yaml" \
+    && grep -q "binary: $H/llama/llama-server" "$PREFIX/agent.yaml" \
+    && printf '%s' "$OUT" | grep -q "vllmBinary names $H/vllm-env/bin/vllm: .*It will not run until moved" \
+    && printf '%s' "$OUT" | grep -q "a runtime's binary names $H/llama/llama-server: .*It will not run until moved" \
+    && grep -q "vllmBinary names $H/vllm-env/bin/vllm" "$ROOT/receipts/move-report.txt" 2>/dev/null; then
+  ok "both kept in agent.yaml, said in the move's words and in root's move-report.txt"
+else
+  bad "report: $(cat "$ROOT/receipts/move-report.txt" 2>/dev/null | tr '\n' '|')"; show "$OUT" 10
 fi
 
 say "M5. launchctl refusing the daemon puts the LaunchAgent back"

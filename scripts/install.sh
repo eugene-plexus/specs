@@ -2092,89 +2092,30 @@ for path in sorted(pathlib.Path(new).glob("*.yaml")) + sorted(pathlib.Path(new).
         temporary.replace(path)
 PYEOF
     mac_migrate_check_engines
+    mac_migrate_report_settings
 }
 
-# **A copied engine build runs only when every file is what was
-# downloaded** (row 8, R8-ENGINES-COPY). The daemon runs the copied builds
-# as its own account, so a build a program running as the person changed
-# would run there. The agent records, in each build's install.json, every
-# file's SHA-256 and every link's target, when it unpacks the verified
-# download. A copied build is kept only when its files and links, and
-# nothing else, match that record. A changed build, one with no record (it
-# was installed before the agent kept one) and a link where a build or an
-# engine's folder belongs are removed; when the newest of an engine's
-# builds is among them, it is listed in engines/refetch.json, and the agent
+# **No engine build copied from the person's account is kept** (row 8,
+# R8-ENGINES-COPY, the stronger choice). The daemon runs engine builds as
+# its own account, and a build in the person's store is one a program
+# running as the person could have changed -- its install record with it,
+# so no record kept there can vouch for it. Every copied build, and a link
+# where a build or an engine's folder belongs, is removed; the newest of
+# each engine's builds is listed in engines/refetch.json, and the agent
 # fetches it again from upstream, verified as any install is, when it
-# starts. Checked as Eugene's account, on the copy: what is checked is what
-# runs.
+# starts. What is not a build (an engine's architecture lists) stays. The
+# record a build carries (each file's SHA-256) is still written for the
+# builds the daemon fetches itself. Done as Eugene's account, on the copy.
 mac_migrate_check_engines() {
     [ "$MIGRATED_ENGINES" = 1 ] || return 0
     _said=$(in_prefix "$PYBIN" -I - "$PREFIX/engines" <<'PYEOF'
-import hashlib
 import json
-import os
 import shutil
 import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
 RECORD = "install.json"
-
-
-def sha256(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return "sha256:" + digest.hexdigest()
-
-
-def read_record(build):
-    try:
-        meta = json.loads((build / RECORD).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return meta if isinstance(meta, dict) else None
-
-
-def problem(build, meta):
-    if meta is None:
-        return "its install record cannot be read"
-    files, links = meta.get("files"), meta.get("links", {})
-    if not isinstance(files, dict) or not files or not isinstance(links, dict):
-        return "it has no record of its files from when it was downloaded"
-    seen_files, seen_links = {}, {}
-    for current, dirnames, filenames in os.walk(build):
-        base = Path(current)
-        for name in list(dirnames):
-            if (base / name).is_symlink():
-                seen_links[(base / name).relative_to(build).as_posix()] = os.readlink(base / name)
-                dirnames.remove(name)
-        for name in filenames:
-            path = base / name
-            relative = path.relative_to(build).as_posix()
-            if relative == RECORD:
-                continue
-            if path.is_symlink():
-                seen_links[relative] = os.readlink(path)
-            elif path.is_file():
-                seen_files[relative] = path
-            else:
-                return f"{relative} is not a file"
-    differ = sorted((set(seen_files) ^ set(files)) | (set(seen_links) ^ set(links)))
-    if differ:
-        return "its files are not the ones downloaded (" + ", ".join(differ[:3]) + ")"
-    for relative, target in seen_links.items():
-        if links[relative] != Path(target).as_posix():
-            return f"{relative} points somewhere else than when it was downloaded"
-        if not (build / relative).resolve().is_relative_to(build.resolve()):
-            return f"{relative} points outside the build"
-    for relative, path in seen_files.items():
-        if sha256(path) != files[relative]:
-            return f"{relative} changed after it was downloaded"
-    return None
-
-
 refetch = []
 if root.is_dir() and not root.is_symlink():
     for engine in sorted(root.iterdir()):
@@ -2184,7 +2125,7 @@ if root.is_dir() and not root.is_symlink():
             continue
         if not engine.is_dir():
             continue
-        gone, kept_at = None, ""
+        newest = None
         for build in sorted(engine.iterdir()):
             if build.is_symlink():
                 build.unlink()
@@ -2195,23 +2136,23 @@ if root.is_dir() and not root.is_symlink():
                 continue
             if not build.is_dir() or (build / RECORD).is_symlink() or not (build / RECORD).is_file():
                 continue  # not a build: the agent runs only a folder with its install record
-            meta = read_record(build)
-            when = str((meta or {}).get("installedAt") or "")
-            why = problem(build, meta)
-            if why is None:
-                kept_at = max(kept_at, when)
-                print(f"kept the {engine.name} build {build.name}: every file is what was downloaded")
-                continue
+            try:
+                meta = json.loads((build / RECORD).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                meta = None
+            meta = meta if isinstance(meta, dict) else {}
             shutil.rmtree(build)
-            print(f"did not keep the {engine.name} build {build.name}: {why}")
-            if gone is None or when > gone[0]:
-                entry = {"engine": engine.name, "version": str((meta or {}).get("version") or build.name)}
-                if (meta or {}).get("variant"):
+            print(f"did not keep the {engine.name} build {build.name}: it was copied from your account, "
+                  "and Eugene's own account runs only builds it fetched itself")
+            when = str(meta.get("installedAt") or "")
+            if newest is None or when > newest[0]:
+                entry = {"engine": engine.name, "version": str(meta.get("version") or build.name)}
+                if meta.get("variant"):
                     entry["variant"] = str(meta["variant"])
-                gone = (when, entry)
-        if gone is not None and gone[0] >= kept_at:
-            refetch.append(gone[1])
-            print(f"Eugene fetches {engine.name} {gone[1]['version']} again from GitHub when it starts")
+                newest = (when, entry)
+        if newest is not None:
+            refetch.append(newest[1])
+            print(f"Eugene fetches {engine.name} {newest[1]['version']} again from GitHub when it starts")
 if refetch:
     marker = root / "refetch.json"
     staged = root / "refetch.json.new"
@@ -2222,6 +2163,107 @@ PYEOF
     printf '%s\n' "$_said" | while IFS= read -r _line; do
         [ -z "$_line" ] || say "$_line"
     done
+}
+
+# **A copied setting that names a program Eugene's own account will not
+# run is kept, and said** (row 8). The daemon's agent runs an engine binary,
+# and the uv it installs apps with, only when the file and every folder
+# above it belong to root or to Eugene's account and none can be written by
+# its group or others: a program in the person's home would otherwise run
+# as Eugene's account. The move keeps those settings as they were, and
+# lists each one that names such a program -- here, and in root's receipt
+# (move-report.txt) -- as "will not run until moved". Read as Eugene's
+# account, which is how the daemon will see them.
+mac_migrate_report_settings() {
+    _said=$(in_prefix "$PYBIN" -I - "$PREFIX/agent.yaml" <<'PYEOF'
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+KEYS = ("vllmBinary", "mlxBinary", "strataServer", "kevPython", "uvBinary")
+me = os.geteuid()
+
+
+def clean(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    return "" if value in ("", "null", "~", "[]") else value
+
+
+def untrusted(path):
+    given = Path(os.path.abspath(os.path.expanduser(path)))
+    real = Path(os.path.realpath(given))
+    parts = [real, *real.parents]
+    parts += [p for p in given.parents if p not in parts]
+    for part in parts:
+        try:
+            info = os.lstat(part)
+        except OSError as e:
+            return f"it cannot be checked ({e.strerror})"
+        if stat.S_ISLNK(info.st_mode):
+            continue
+        if info.st_uid not in (0, me):
+            try:
+                import pwd
+
+                owner = pwd.getpwuid(info.st_uid).pw_name
+            except (ImportError, KeyError):
+                owner = f"user {info.st_uid}"
+            return f"{part} belongs to {owner}"
+        if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            return f"{part} can be changed by others"
+    return None
+
+
+found = []
+try:
+    text = Path(sys.argv[1]).read_text(encoding="utf-8")
+except OSError:
+    text = ""
+roots = False
+for line in text.splitlines():
+    keyed = re.match(r"^(%s):\s*(.*)$" % "|".join(KEYS), line)
+    if keyed:
+        roots = False
+        if clean(keyed.group(2)):
+            found.append((keyed.group(1), clean(keyed.group(2))))
+        continue
+    if re.match(r"^engineBinaryRoots:\s*(.*)$", line):
+        roots = True
+        inline = line.split(":", 1)[1].strip()
+        if inline.startswith("[") and inline.endswith("]"):
+            roots = False
+            for item in inline[1:-1].split(","):
+                if clean(item):
+                    found.append(("engineBinaryRoots", clean(item)))
+        continue
+    if roots:
+        item = re.match(r"^\s*-\s*(.+)$", line)
+        if item:
+            if clean(item.group(1)):
+                found.append(("engineBinaryRoots", clean(item.group(1))))
+            continue
+        roots = False
+    runtime = re.match(r"^\s+(?:-\s+)?binary:\s*(.*)$", line)
+    if runtime and clean(runtime.group(1)):
+        found.append(("a runtime's binary", clean(runtime.group(1))))
+for label, path in found:
+    why = untrusted(path)
+    if why is not None:
+        print(f"{label} names {path}: {why}. It will not run until moved.")
+PYEOF
+) || die "could not read the settings copied into $PREFIX (see above)"
+    [ -n "$_said" ] || return 0
+    say "these settings name programs Eugene's own account will not run until they are moved"
+    say "  (into a folder only root or Eugene's account can change, or let Eugene fetch its own):"
+    printf '%s\n' "$_said" | while IFS= read -r _line; do
+        [ -z "$_line" ] || say "  $_line"
+    done
+    printf '%s\n' "$_said" | as_root tee "$MAC_RECEIPTS/move-report.txt" >/dev/null
+    as_root chmod 0644 "$MAC_RECEIPTS/move-report.txt"
 }
 
 # DIR is a real folder (no link), root's (0:0), mode 0700, with no ACL
@@ -2475,7 +2517,7 @@ mac_migrate_rollback() {
             esac
         done
     fi
-    as_root rm -f "$MAC_RECEIPTS/firewall.txt" "$MAC_RECEIPTS/remove.sh" "$MAC_RECEIPTS/mac-app.txt"
+    as_root rm -f "$MAC_RECEIPTS/firewall.txt" "$MAC_RECEIPTS/remove.sh" "$MAC_RECEIPTS/mac-app.txt" "$MAC_RECEIPTS/move-report.txt"
     # The home's entry this run added goes in on_exit, whoever made the
     # group, now that the daemon's plist is gone.
     if [ "$MODELS_GROUP_CREATED" = 1 ]; then mac_delete_models_group; fi
@@ -3101,7 +3143,7 @@ $(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHom
         fi
     done
     [ "$ACE_LEFT" = 1 ] || rm -f "$RECEIPTS/models-ace.txt"
-    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/move-report.txt" "$RECEIPTS/remove.sh"
     rmdir "$RECEIPTS" 2>/dev/null || true
     echo "Eugene's removal finished. It no longer starts at boot."
     if [ -d "$KEEP" ]; then

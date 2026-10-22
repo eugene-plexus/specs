@@ -254,7 +254,7 @@ $(dscl . -read "/Users/$PERSON" NFSHomeDirectory 2>/dev/null | sed -n 's/^NFSHom
         fi
     done
     [ "$ACE_LEFT" = 1 ] || rm -f "$RECEIPTS/models-ace.txt"
-    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/remove.sh"
+    rm -f "$RECEIPTS/account.txt" "$RECEIPTS/models-group.txt" "$RECEIPTS/firewall.txt" "$RECEIPTS/mac-app.txt" "$RECEIPTS/move-report.txt" "$RECEIPTS/remove.sh"
     rmdir "$RECEIPTS" 2>/dev/null || true
     echo "Eugene's removal finished. It no longer starts at boot."
     if [ -d "$KEEP" ]; then

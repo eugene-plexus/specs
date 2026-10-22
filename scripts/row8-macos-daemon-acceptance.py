@@ -46,7 +46,11 @@ Keychain where this runner has one, enrolled):
     (root:wheel 0700, no ACL entry), so an ACL entry the person put on the
     old prefix beforehand opens nothing; the new prefix carries no ACL
     entry from the copy; sealed until one sign-in; then a kickstart unlocks
-    by itself
+    by itself; 11g, no copied llama.cpp build is kept (one changed after
+    download among them) and the daemon fetches it again, byte for byte;
+    11h, a copied setting naming a folder of the person's is kept and said
+    as "will not run until moved", and a runtime naming a program there
+    fails naming its owner without ever running it
 14b. uninstall again, by root's own removal run by root alone (no
     --person): the home's ACL entry and the kept old prefix go too
 
@@ -733,6 +737,50 @@ def phase_engine_before_move(ctx: dict) -> None:
     fact("llama.cpp before the move", ctx["engine"])
 
 
+STUB_DIR = HOME / "row8-bin"
+STUB_RAN = Path("/tmp/row8-stub-ran")
+
+
+def phase_setting_before_move(ctx: dict) -> None:
+    """A setting the person's install holds that names a folder of the
+    person's for engine binaries, with a stand-in `llama-server` in it that
+    leaves a mark whenever it runs."""
+    say("B2. a setting naming a folder of the person's for engine binaries")
+    STUB_DIR.mkdir(exist_ok=True)
+    stub = STUB_DIR / "llama-server"
+    stub.write_text(f"#!/bin/sh\ntouch {STUB_RAN}\necho 'version: 1 (row8 stand-in)'\n", encoding="utf-8")
+    stub.chmod(0o755)
+    STUB_RAN.unlink(missing_ok=True)
+    status, body = api("PATCH", f"{ctx['base']}/v1/config", ctx["token"], {"engineBinaryRoots": [str(STUB_DIR)]})
+    fact("engineBinaryRoots set before the move", (status, str(body)[:200]))
+
+
+def phase_setting_after_move(ctx: dict, said: str) -> None:
+    """11h: the move kept the setting and said Eugene's own account will not
+    run what it names; a runtime naming the stand-in fails naming its owner,
+    and the stand-in never ran -- not even for its version."""
+    base, token = ctx["base"], ctx.get("token")
+    receipt = sudo("cat", str(RECEIPTS / "move-report.txt"), timeout=20).stdout
+    line = f"engineBinaryRoots names {STUB_DIR}"
+    spec = {"name": "row8-stub", "engine": "llama_cpp", "modelPath": str(MODELS / "row8-none.gguf"),
+            "binary": str(STUB_DIR / "llama-server"), "autoStart": True}
+    created, body = api("POST", f"{base}/v1/runtimes", token, spec, timeout=120)
+
+    def refused():
+        _, runtime = api("GET", f"{base}/v1/runtimes/row8-stub", token)
+        error = (runtime or {}).get("lastError") or ""
+        return error if "belongs to" in error else None
+
+    error = wait_for(refused, 90, 2) or ""
+    api("DELETE", f"{base}/v1/runtimes/row8-stub", token, timeout=60)
+    check("11h", "a copied setting naming a folder of the person's is kept and said as 'will not run until "
+          "moved'; a runtime naming the program there fails naming its owner, and the program never ran",
+          line in said and "It will not run until moved" in said and line in receipt
+          and f"belongs to {ME}" in error and str(STUB_DIR) in error and not STUB_RAN.exists(),
+          {"said": [s for s in said.splitlines() if "will not run" in s][:3], "receipt": receipt[:300],
+           "runtime": (created, str(body)[:200]), "error": error[:300], "stand-in ran": STUB_RAN.exists()})
+
+
 def phase_engine_after_move(ctx: dict, said: str) -> None:
     """11g: the changed build was not kept; the daemon fetched that version
     again from GitHub, and its llama-server is what was downloaded."""
@@ -761,7 +809,7 @@ def phase_engine_after_move(ctx: dict, said: str) -> None:
             skip("11g", "a changed copied llama.cpp build is not kept, and is fetched again",
                  f"GitHub refused the daemon's release list: {reason[:200]}")
             return
-    check("11g", "a copied llama.cpp build changed after it was downloaded is not kept: the move says so, "
+    check("11g", "no copied llama.cpp build is kept (this one was changed after download): the move says so, "
           "and the daemon fetches that version again, whose llama-server is what was downloaded",
           f"did not keep the llama_cpp build {version}" in said
           and f"fetches llama_cpp {version} again" in said
@@ -916,6 +964,7 @@ def phase_move(installer: Path, ctx: dict) -> None:
            "agent": agent_ok, "control": control_ok})
     ctx["token"] = token
     phase_engine_after_move(ctx, text)
+    phase_setting_after_move(ctx, text)
 
 
 def main() -> int:
@@ -948,6 +997,7 @@ def main() -> int:
             ctx = phase_user_install(installer)
             phase_refused_move(installer, ctx, workdir)
             phase_engine_before_move(ctx)
+            phase_setting_before_move(ctx)
             phase_move(installer, ctx)
         except Abort as e:
             print(f"\n  ABORT  {e}", flush=True)
