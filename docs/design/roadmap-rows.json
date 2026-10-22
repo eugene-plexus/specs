@@ -1293,7 +1293,6 @@
    "repos": [
     "control",
     "gateway",
-    "workbench",
     "ui"
    ],
    "contract": "control.yaml gateway.yaml",
@@ -1302,15 +1301,19 @@
     "control/src/eugene_plexus_control/permissions.py",
     "gateway/src/eugene_plexus_gateway/routing.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
+    11,
     70,
     71
    ],
    "design_docs": [
+    "rows/row-37.md",
     "shared-accounts-and-sso.md"
    ],
-   "calls": [],
+   "calls": [
+    "R37-FIRST"
+   ],
    "issue": 64
   },
   {
