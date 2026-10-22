@@ -1348,7 +1348,24 @@ def key_changes(
             },
         )
         loads_from = datetime.datetime.now(datetime.UTC)
-        state = finished("worker", lead + 360)
+
+        def scheduled_finished() -> bool:
+            # This change, not the one an earlier label left `done`: started by
+            # the schedule, after the restart, and over.
+            kc = machine("worker").get("keyChange") or {}
+            started_at = kc.get("startedAt")
+            return (
+                kc.get("reason") == "scheduled"
+                and bool(started_at)
+                and datetime.datetime.fromisoformat(started_at) > loads_from
+                and kc.get("state") in ("done", "failed", "stopped")
+            )
+
+        try:
+            wait_for(scheduled_finished, "the worker's scheduled key change to finish", lead + 360)
+        except AssertionError:
+            pass
+        state = change_state("worker")
         time.sleep(3)  # and the seconds just after the drop
         summary = loads.stop()
         after = machine("worker")
