@@ -435,6 +435,11 @@ jobs:
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
+      - name: Tool pictures through MCP and Job Sites, vision replay and newest-picture limits (row 29)
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
+        env:
+          R29_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row29-tool-pictures-acceptance.py
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
