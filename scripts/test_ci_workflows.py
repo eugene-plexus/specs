@@ -59,6 +59,7 @@ PINNED_STEPS = {
     "p8-search-acceptance.py": (FULL, "both"),
     "google-search-acceptance.py": (FULL, "both"),
     "gemini-acceptance.py": (FULL, "both"),
+    "row58-gemini-door-acceptance.py": (FULL, "linux"),
     "tools-assumed-acceptance.py": (FULL, "both"),
     "genui-inference-acceptance.py": (FULL, "both"),
     "genui-inference-sabotage.py": (FULL, "both"),
