@@ -81,7 +81,7 @@ for live-server validation. See the
 
 ## Row 63 contract and pinned-source findings (2026-10-22)
 
-**Phase 1 only: the contracts are prepared; the consumers are not changed.**
+**Phase 1 contract committed at `c0ff043`; phase 2 consumers built in this worktree.**
 The row design was read in full from
 `D:/py/ep-wt/calls-1022c/specs/docs/design/rows/row-63.md`. It has no
 "Calls answered by Troy" section and no open calls. Findings belong in this
@@ -199,29 +199,81 @@ that inference succeeded or that an automatic split used particular
 boundaries. Editing a profile or prepared file cannot rewrite the observed
 record until another successful launch.
 
-**Phase 2 handoff.** `PreparationIntent`, `ModelPreparation` and their
-referenced schemas are also embedded in `openapi/run-operations.json`.
-That generated snapshot is deliberately unchanged in phase 1. After the
-specs commit is pushed and consumers pin and regenerate it, Library must
-adopt the generated intent instead of its handwritten class, export the
-run protocol snapshot, and regenerate its consumers. The snapshot needs
-`speedProjection`, `gpus` and `layerSplit` on `PreparationIntent`, plus the
-updated preparation capability schema. Do not edit that JSON by hand.
+**Phase 2 protocol export.** Library now derives its run-operation intent
+from the pinned generated `PreparationIntent`. Its boundary additionally
+checks strict integer ordinals and duplicates, and validates enum defaults.
+The router's actual FastAPI OpenAPI export supplies
+`openapi/run-operations.json`, using the same router and app construction as
+`scripts/run-operations-checks.py`; `scripts/run_protocol.py` defines the
+consumer comparison. `scripts/vendor-platform.py --repo agent` and
+`--repo library` regenerate the vendored copies and their integrity manifests.
+No shared YAML contract, generated Python model or specs pin changed.
 
 Local generation with the consumers' existing code generator succeeds for
 common, agent and Library. It preserves GPU list order, but does not enforce
 `uniqueItems` in the generated Pydantic validator. Enum defaults also arrive
-as strings until validated. Phase 2 must validate duplicates and normalize
-defaults at the adapter boundary instead of assuming code generation does
+as strings until validated. The adapter now validates duplicates and
+normalizes defaults at its boundary instead of assuming code generation does
 those checks. The contract script runs in the OpenAPI validation CI job.
 
-Phase 2 still owes adapter and preparation changes, card-list fit,
-persistence and replay of these choices, the GUI controls and effective
-display. Use fakes and recorded upstream outputs. A live run remains for
-the owner of a machine with at least two suitable GPUs: preparation and
+Phase 2 now passes the projection, ordered cards and layer boundaries to
+preparation and launch. Preparation checks the inventory while planning
+and again before setup runs; launch checks it each time. Explicit boundaries
+are checked against the model header, with this pin's 48-layer family as
+the fallback. Setup's actual split and memory modes survive adoption;
+an observed card or boundary fallback fails with the requested and produced
+values. A projection fallback retains the actual mode and setup's warning.
+The vector remains an installed engine asset and resolves on the launching
+node, rather than travelling as another node's engine path.
+
+Admission sums only the selected cards, subtracting each card's allowance
+before combining expert capacity, and counts the host arena once. Unknown
+card memory remains unknown and admits on faith. Several-card RAM-budget
+models use upstream's downloaded-size-plus-24-GB rule. Known resident and
+RAM-budget incompatibilities name the required new preparation.
+
+The adapter's GUI schema exposes all three settings without replacing an
+inherited prepared value with a form default. Its card editor uses the
+shared ordered text-list control; digit rows resolve to integer ordinals.
+The projection description begins with its answer changes and experimental
+status and links the pinned upstream explanation. New preparations keep
+projection off, automatic single-card selection and auto boundaries for an
+explicit multi-card choice. Launch preserves omitted settings. The server's
+`child_env` replaces native visibility with the ordered `gpu` selection;
+effective reporting retains node inventory ordinals, not the remapped
+native device numbers.
+
+`Runtime.effectiveLaunch` snapshots the private configuration named by the
+spawned argv, including the vector and sampling default together. The
+supervisor records it only after process creation succeeds. Profile edits,
+prepared-file edits, planning failures and failed process creation cannot
+rewrite that snapshot. Tests use fake processes and a small stand-in setup
+that replays the pinned output shapes; no engine or model was downloaded.
+A live run remains for the owner of a machine with at least two suitable
+GPUs: preparation and
 launch, the actual split and projection state, peak RAM/VRAM, output changes
 and throughput. No live result or default-port service start is part of this
 builder's worktree validation.
+
+Phase 2 validation (2026-10-22): the four changed agent test files pass
+(187 passed, one platform skip), and Library's intent and exported-protocol
+checks pass (26 passed). The whole Library suite passes (1,113 passed,
+30 skipped). The whole agent suite has 2,943 passes, 19 skips and one
+out-of-row failure: `test_apps.py`'s real-install test asks uv for a separate
+managed Python, whose GitHub download is denied by this sandbox's network
+policy. It cannot use the installed system interpreter because the install
+explicitly requests `only-managed`. No product code or skip was changed for
+that failure. A final regression also verifies upstream's null sampling
+default: null is skipped, so it leaves a loaded projection on.
+
+Both packages pass Ruff lint and formatting, Linux and native mypy, vendored
+integrity and specs-ref checks. The real Library router's export matches
+specs and both vendored snapshots through `run_protocol.verify_run_protocol`.
+The focused specs contract/protocol checks pass (30 passed). An extra broad
+`python -m pytest -q scripts` attempt cannot collect the repetition evaluator
+because this three-repository workspace has no installed gateway package;
+no specs script was changed. GitHub issue access is also denied by the
+sandbox, so no issue assignment, label or completion comment was sent.
 
 ## Recommendation
 
