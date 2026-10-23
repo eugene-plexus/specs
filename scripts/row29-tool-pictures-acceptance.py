@@ -33,7 +33,7 @@ import httpx
 import yaml
 
 HERE = Path(__file__).resolve().parent
-APP = "workbench-row29"
+APP = "workbench"
 
 
 def load(name, filename):
@@ -231,6 +231,115 @@ def fixture_app():
     return app
 
 
+def workbench_catalogue(directory, commit):
+    """Give the isolated agent the candidate under Workbench's real app id.
+
+    Control authenticates Job Site calls as `app:workbench@<node>`. A custom
+    alias can sign people in and use HTTP MCP, but cannot use those calls.
+    """
+    from eugene_plexus_agent import apps
+
+    catalogue = [
+        m.model_dump(mode="json", exclude_none=True) for m in apps.load_catalogue()
+    ]
+    entry = next(m for m in catalogue if m["id"] == APP)
+    entry.update(
+        localActions=False,
+        version=commit,
+        source=f"https://github.com/eugene-plexus/workbench/archive/{commit}.tar.gz",
+    )
+    (directory / "catalogue.yaml").write_text(
+        yaml.safe_dump(catalogue), encoding="utf-8"
+    )
+
+
+def configure_site(directory, me, enrolled):
+    """The starter's person link and key, and the fixture's read-only policy."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from eugene_plexus_site_host import local_channel, signing
+    from eugene_plexus_site_host.policy import Policy
+
+    key = Ed25519PrivateKey.generate()
+    public = key.public_key().public_bytes_raw()
+    (directory / "links.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "links": [
+                    {
+                        "subject": me["sub"],
+                        "name": me["name"],
+                        "account": local_channel.own_account(),
+                        "accountName": "row29",
+                        "linkedAt": enrolled.enrolledAt,
+                        "keys": [
+                            {
+                                "id": signing.key_id(public),
+                                "alg": "Ed25519",
+                                "publicKey": base64.b64encode(public).decode(),
+                                "label": "Row 29 fixture",
+                                "addedAt": enrolled.enrolledAt,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    Policy(
+        directory / "policy.json",
+        owner=me["sub"],
+        enabled={"pictures": True},
+        access=[
+            {
+                "subject": me["sub"],
+                "server": "pictures",
+                "tools": [{"name": "screenshot", "decision": "allow"}],
+            }
+        ],
+    ).save()
+    return key
+
+
+def approve_site(client, url, directory, subject, key):
+    """Sign held rules and read windows through the starter's local API."""
+    from eugene_plexus_site_host.signing import key_id
+
+    ident = key_id(key.public_key().public_bytes_raw())
+    headers = {
+        "Authorization": "Bearer " + (directory / "local_token").read_text().strip()
+    }
+    actions = []
+    for _ in range(16):
+        response = client.get(
+            url + "/v1/held", params={"subject": subject, "key": ident}, headers=headers
+        )
+        response.raise_for_status()
+        items = response.json()["items"]
+        if not items:
+            return actions
+        item = items[0]
+        # This fixture only approves its own read-only rules and read windows.
+        assert item["action"] in {"rules.confirm", "window.open"}, item
+        response = client.post(
+            url + f"/v1/held/{item['id']}/approve",
+            headers=headers,
+            json={
+                "subject": subject,
+                "key": ident,
+                "envelope": item["envelope"],
+                "signature": base64.b64encode(
+                    key.sign(item["envelope"].encode())
+                ).decode(),
+            },
+        )
+        response.raise_for_status()
+        assert response.json()["status"] == "done", response.text
+        actions.append(item["action"])
+    raise AssertionError("The site's approvals did not settle")
+
+
 def serve_site(directory, port):
     import uvicorn
 
@@ -293,6 +402,12 @@ def serve(kind, directory, port):
     import uvicorn
 
     if kind == "agent":
+        from eugene_plexus_agent import apps
+
+        catalogue = apps.load_catalogue(
+            (directory / "catalogue.yaml").read_text(encoding="utf-8")
+        )
+        apps.load_catalogue = lambda: catalogue
         load("row29_harness", "s8-ui-acceptance.py").serve(directory, port)
         return
     if kind == "site":
@@ -325,7 +440,7 @@ def exercise(work, workbench_ref):
     for name in ("control", "agent", "gateway", "model", "fixture", "site", "mcp"):
         ports[name] = harness.free_port(*ports.values())
     urls = {name: f"http://127.0.0.1:{port}" for name, port in ports.items()}
-    processes, logs = [], []
+    processes, logs = {}, []
     env = {
         k: v
         for k, v in os.environ.items()
@@ -341,6 +456,10 @@ def exercise(work, workbench_ref):
     def wait(check, label, seconds=90):
         deadline, last = time.perf_counter() + seconds, None
         while time.perf_counter() < deadline:
+            for name, process in processes.items():
+                assert process.poll() is None, (
+                    f"{name} exited with code {process.returncode}"
+                )
             try:
                 value = check()
                 if value:
@@ -367,25 +486,23 @@ def exercise(work, workbench_ref):
         directory.mkdir(exist_ok=True)
         log = (directory / "process.log").open("ab")
         logs.append(log)
-        processes.append(
-            subprocess.Popen(
-                [
-                    sys.executable,
-                    str(Path(__file__).resolve()),
-                    "--serve",
-                    name,
-                    "--directory",
-                    str(directory),
-                    "--port",
-                    str(ports[name]),
-                ],
-                cwd=directory,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
+        processes[name] = subprocess.Popen(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--serve",
+                name,
+                "--directory",
+                str(directory),
+                "--port",
+                str(ports[name]),
+            ],
+            cwd=directory,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
         if name != "mcp":
             wait(lambda: client.get(urls[name] + "/healthz").status_code == 200, name)
@@ -428,7 +545,6 @@ def exercise(work, workbench_ref):
                 {
                     "firstRunComplete": True,
                     "updateChecks": False,
-                    "allowCustomApps": True,
                     "securityMode": "prompt_on_startup",
                     "uvBinary": c3.uv_binary(),
                     "components": components,
@@ -436,6 +552,7 @@ def exercise(work, workbench_ref):
             ),
             encoding="utf-8",
         )
+        workbench_catalogue(directory, commit)
         start("agent")
         token = call(
             "agent", "POST", "/v1/auth/initialize", json={"passphrase": password}
@@ -466,14 +583,7 @@ def exercise(work, workbench_ref):
             for e in call("agent", "GET", "/v1/app-catalogue", token)["apps"]
             if e["manifest"]["id"] == "workbench"
         )
-        manifest = {
-            **entry,
-            "id": APP,
-            "localActions": False,
-            "version": commit,
-            "source": f"https://github.com/eugene-plexus/workbench/archive/{commit}.tar.gz",
-        }
-        call("agent", "POST", "/v1/app-catalogue/custom", token, json=manifest)
+        assert entry["id"] == APP and entry["version"] == commit, entry
         call("agent", "POST", f"/v1/apps/{APP}/install", token)
 
         def installed():
@@ -516,12 +626,10 @@ def exercise(work, workbench_ref):
         browser = c3.Browser(app["uiUrl"])
         assert browser.sign_in(person_password, person["name"]).startswith("/#signin=")
 
-        # Enroll a real site, with a disposable unsigned fixture policy and own-account worker.
+        # Enroll a real site with a person-held fixture key and own-account worker.
         sys.path.insert(0, str(HERE.parent.parent / "site-host" / "src"))
-        from eugene_plexus_site_host import local_channel
         from eugene_plexus_site_host.identity import Identity
         from eugene_plexus_site_host.join import join as site_join
-        from eugene_plexus_site_host.policy import Policy
 
         site_dir = work / "site"
         site_dir.mkdir()
@@ -547,53 +655,56 @@ def exercise(work, workbench_ref):
                 host_version=None,
             )
         )
-        (site_dir / "links.json").write_text(
-            json.dumps(
-                {
-                    "version": 1,
-                    "links": [
-                        {
-                            "subject": me["sub"],
-                            "name": me["name"],
-                            "account": local_channel.own_account(),
-                            "accountName": "row29",
-                            "linkedAt": enrolled.enrolledAt,
-                        }
-                    ],
-                }
-            ),
-            encoding="utf-8",
-        )
-        Policy(
-            site_dir / "policy.json",
-            owner=me["sub"],
-            enabled={"pictures": True},
-            access=[
-                {
-                    "subject": me["sub"],
-                    "server": "pictures",
-                    "tools": [{"name": "screenshot", "decision": "allow"}],
-                }
-            ],
-        ).save()
+        site_key = configure_site(site_dir, me, enrolled)
         start("site")
         site_id = f"site:{enrolled.site}:pictures"
         seen = {}
 
         def site_listed():
-            seen["servers"] = browser.get("/api/tools/servers").json()["servers"]
-            return any(s["id"] == site_id and s["available"] for s in seen["servers"])
+            response = browser.get("/api/tools/servers")
+            response.raise_for_status()
+            seen["listing"] = response.json()
+            assert not seen["listing"].get("sitesReason"), seen["listing"]
+            return any(
+                s["id"] == site_id and s["available"]
+                for s in seen["listing"]["servers"]
+            )
+
+        def site_contacted():
+            response = client.get(urls["site"] + "/healthz")
+            seen["health"] = response.json()
+            assert seen["health"]["site"] == enrolled.site, seen["health"]
+            return response.status_code == 200 and seen["health"].get("lastContactAt")
 
         try:
+            wait(site_contacted, "site contact with control")
+            assert approve_site(
+                client, urls["site"], site_dir, me["sub"], site_key
+            ) == ["rules.confirm"]
             wait(site_listed, "site tool listing")
         except AssertionError:
             # Say what Workbench listed and what the site and control logged.
-            print(f"wanted {site_id}; Workbench listed: {json.dumps(seen.get('servers'))[:4000]}")
+            print(
+                f"wanted {site_id}; site diagnostics: {json.dumps(seen)[:6000]}",
+                flush=True,
+            )
+            print(
+                "process exit codes:",
+                {name: process.poll() for name, process in processes.items()},
+                flush=True,
+            )
             for name in ("site", "control", "agent"):
                 log = work / name / "process.log"
                 if log.exists():
-                    tail = log.read_text(encoding="utf-8", errors="replace").splitlines()[-80:]
-                    print(f"---- {name} log (last 80 lines) ----", *tail, sep="\n", flush=True)
+                    tail = log.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()[-80:]
+                    print(
+                        f"---- {name} log (last 80 lines) ----",
+                        *tail,
+                        sep="\n",
+                        flush=True,
+                    )
             raise
 
         def run(server, vision, *, count=1, large=True, gateway_limit=12):
@@ -618,6 +729,7 @@ def exercise(work, workbench_ref):
             approved = set()
 
             def finished():
+                approve_site(client, urls["site"], site_dir, me["sub"], site_key)
                 answer = browser.get(f"/api/chats/{chat}").json()["messages"][-1]
                 for turn in answer.get("toolRounds", []):
                     for item in turn["calls"]:
@@ -669,7 +781,7 @@ def exercise(work, workbench_ref):
         (work / "agent" / "stop").touch()
         import psutil
 
-        for process in reversed(processes):
+        for process in reversed(list(processes.values())):
             with contextlib.suppress(psutil.NoSuchProcess):
                 top = psutil.Process(process.pid)
                 for child in top.children(recursive=True):
