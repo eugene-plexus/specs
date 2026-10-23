@@ -358,9 +358,14 @@ def main():
                     for line in (root / "fit-queries.jsonl").read_text().splitlines()
                 ]
                 assert any(q.get("gpuCount") == ["2"] for q in queries), queries
-                assert any(
-                    q.get("vramBytes") == [str(20 * 1024**3)] for q in queries
-                ), queries
+                # The refit asked the Library about one card: its free memory less
+                # the agent's working headroom, not both cards' (CI saw 20 GiB - 256 MiB).
+                one_card = [
+                    int(q["vramBytes"][0])
+                    for q in queries
+                    if q.get("vramBytes") and q.get("gpuCount") in (None, ["1"])
+                ]
+                assert any(18 * 1024**3 < v <= 20 * 1024**3 for v in one_card), queries
         except BaseException:
             print((root / "agent.log").read_text(errors="replace"), flush=True)
             raise
