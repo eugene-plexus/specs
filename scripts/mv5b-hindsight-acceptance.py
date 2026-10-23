@@ -14,6 +14,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import shutil
 import stat
 import subprocess
@@ -24,6 +25,77 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+
+STATE = Path("/var/lib/eugene-plexus-mv5b/.codex-tmp/hindsight")
+PRIVATE_STATE = Path("/var/lib/private/eugene-plexus-mv5b/.codex-tmp/hindsight")
+REPORT_SECRETS: list[str] = []
+
+
+def safe_report(text: str) -> str:
+    text = re.sub(r"(?i)\b((?:pg0|postgres(?:ql)?)://)[^\s\"'<>]*@", r"\1[redacted]@", text)
+    for secret in REPORT_SECRETS:
+        text = text.replace(secret, "[redacted]")
+    return text
+
+
+def systemd_setup_script(output: Path, account: str) -> str:
+    """Use the installer's template and root broker, with isolated CI state."""
+    installer = Path(__file__).with_name("install.sh").read_text(encoding="utf-8")
+    body = installer.split("write_app_units() {", 1)[1].split("\n}\n", 1)[0]
+    body = body.replace("StateDirectory=eugene-plexus-apps/%i",
+                        "StateDirectory=eugene-plexus-mv5b/.codex-tmp/%i")
+    values = {
+        "PREFIX": str(output), "SYSTEM_ACCOUNT": account, "SERVICE_LABEL": "mv5b-fixture",
+        "APPS_HELPER": str(output / "apps-ctl"),
+        "APPS_TEMPLATE": "/etc/systemd/system/eugene-plexus-app@.service",
+        "APPS_CTL_SERVICE": "/etc/systemd/system/eugene-plexus-apps-ctl.service",
+        "APPS_CTL_PATH": "/etc/systemd/system/eugene-plexus-apps-ctl.path",
+    }
+    return "set -eu\n" + "\n".join(f"{k}={shlex.quote(v)}" for k, v in values.items()) + "\n" + (
+        'as_root() { sudo "$@"; }\nin_prefix() { "$@"; }\nwarn() { echo "$*" >&2; exit 1; }\n'
+        + "write_app_units() {" + body + "\n}\nwrite_app_units\n")
+
+
+def prepare_systemd(output: Path) -> str:
+    assert os.environ.get("GITHUB_ACTIONS") == "true", "Systemd acceptance is CI-only"
+    assert not Path("/etc/systemd/system/eugene-plexus-app@.service").exists(), "An install already exists"
+    assert str(output).startswith("/var/lib/") and ".codex-tmp" in output.parts
+    account = subprocess.check_output(["id", "-un"], text=True).strip()
+    script = output / "systemd-setup.sh"
+    script.write_text(systemd_setup_script(output, account), encoding="utf-8")
+    subprocess.run(["bash", str(script)], check=True)
+    return account
+
+
+def state_read(path: Path) -> str:
+    return subprocess.check_output(["sudo", "cat", str(path)], text=True)
+
+
+def check_database_logins(port: int, pid: int, password: str, account: str) -> list[str]:
+    checks = []
+    for transport in ("tcp", "socket"):
+        for label, credential in (("default", "hindsight"), ("no-password", None), ("generated", password)):
+            prefix = [] if transport == "tcp" else [
+                "sudo", "--preserve-env=PGPASSWORD,PGPASSFILE,PGCONNECT_TIMEOUT,LC_ALL",
+                "nsenter", "-t", str(pid), "-m", "--", "runuser", "-u", account, "--"]
+            env = {k: v for k, v in os.environ.items() if not k.startswith("PG")}
+            env.update(LC_ALL="C", PGPASSFILE="/nonexistent", PGCONNECT_TIMEOUT="5")
+            if credential is not None:
+                env["PGPASSWORD"] = credential
+            # sudo resets its environment. Explicitly preserve only these test
+            # inputs; the password remains in the environment, never in argv.
+            result = subprocess.run([*prefix, "psql", "-X", "-w", "-h",
+                "127.0.0.1" if transport == "tcp" else "/tmp", "-p", str(port),
+                "-U", "hindsight", "-d", "hindsight", "-Atc", "select 1"],
+                env=env, text=True, capture_output=True, timeout=15, check=False)
+            if credential == password:
+                assert result.returncode == 0 and result.stdout.strip() == "1", f"{transport}: generated login failed"
+            else:
+                assert result.returncode != 0, f"{transport}: {label} login succeeded"
+                assert any(reason in result.stderr.lower() for reason in (
+                    "password authentication failed", "no password supplied")), f"{transport}: no authentication refusal"
+            checks.append(f"database-{transport}-{label}")
+    return checks
 
 
 def check_network(trace: str) -> int:
@@ -124,6 +196,7 @@ async def acceptance(output: Path) -> dict[str, Any]:
     from eugene_plexus_workbench.settings import Settings
     from eugene_plexus_workbench.store import Store
 
+    account = prepare_systemd(output)
     gateway = ThreadingHTTPServer(("127.0.0.1", 0), Gateway)
     thread = threading.Thread(target=gateway.serve_forever, daemon=True)
     thread.start()
@@ -134,27 +207,30 @@ async def acceptance(output: Path) -> dict[str, Any]:
     store = apps.AppStore(output / "apps.yaml")
     manager = apps.AppManager(store=store, catalogue=catalogue, get_config=lambda _: None,
         bind_host=lambda: "0.0.0.0", advertise_host=lambda: None, node_name=lambda: "ci",
-        resolve_gateway=resolve, accounts=app_accounts.AccountSupport(None, "CI agent account"))
+        resolve_gateway=resolve, accounts=app_accounts.AccountSupport("systemd"))
+    assert isinstance(manager.supervisor, app_accounts.OwnAccountSupervisor)
     hs = next(m for m in catalogue if m.id == "hindsight")
     wb = Store(output / "workbench.sqlite3")
     await wb.open()
     await wb.put_setting("memoryEnabled", True)
-    trace_dir = output / "network"
-    trace_dir.mkdir()
+    trace_dir = STATE / "network"
     original_argv = apps.entry_argv
     def traced(python: Path, manifest: Any) -> list[str]:
         command = original_argv(python, manifest)
         if manifest.id != "hindsight":
             return command
-        return ["strace", "-ff", "-e", "trace=connect,bind", "-o", str(trace_dir / "trace"), *command]
+        return [str(python), "-c", "import os,sys;from pathlib import Path;"
+            "p=Path(os.environ['HOME'])/'network';p.mkdir(exist_ok=True);"
+            "os.execvp('strace',['strace','-ff','-e','trace=connect,bind','-o',str(p/'trace'),*sys.argv[1:]])",
+            *command]
     # Trace every connect/bind from Hindsight and its detached postgres too. Never payloads.
     apps.entry_argv = traced
-    cleanup = app_launcher.pg0_cleanup
+    cleanup = manager.pg0
     actions: list[str] = []
-    def recorded(python: str, action: str, env: dict[str, str]) -> None:
+    async def recorded(record: Any, action: str) -> None:
         actions.append(action)
-        cleanup(python, action, env)
-    app_launcher.pg0_cleanup = recorded
+        await cleanup(record, action)
+    manager.pg0 = recorded
     try:
         write_private(store.key_file(hs.id), Gateway.key)
         manager.installer.start(hs, store=store, uv=manager.uv(),
@@ -170,12 +246,23 @@ async def acceptance(output: Path) -> dict[str, Any]:
             "import importlib.metadata as m,json;print(json.dumps({d.metadata['Name']:d.version for d in m.distributions()}))"], text=True)
         installed = json.loads(packages)
         assert installed["hindsight-api-slim"] == "1.0.0" and "torch" not in installed
+        assert installed["pg0-embedded"] == "0.15.2"
         await manager.update_settings(record, AppSettingsUpdate(memoryModel="owner-choice"))
         await wait_ready(manager, record)
         base = f"http://127.0.0.1:{record.port}"
-        rest = (store.data_dir(hs.id) / app_launcher.APP_SECRET_FILE).read_text().strip()
+        rest = state_read(STATE / app_launcher.APP_SECRET_FILE).strip()
+        password = state_read(STATE / app_launcher.DATABASE_SECRET_FILE).strip()
+        REPORT_SECRETS.extend((rest, password))
         token = store.link_secret_file(hs.id).read_text().strip()
-        assert rest != token
+        REPORT_SECRETS.append(token)
+        assert len({rest, password, token}) == 3
+        launch = (store.app_dir(hs.id) / "launch.json").read_text()
+        assert password not in launch
+        instance = STATE / ".pg0/instances/eugene-plexus-hindsight/instance.json"
+        info = json.loads(state_read(instance))
+        pid = manager.supervisor.runner.state(hs.id).pid
+        assert pid is not None and psutil.Process(pid).uids().real != os.getuid(), "App runs as agent"
+        database_checks = check_database_logins(record.aux_port, pid, password, account)
         # REST and MCP have independent credentials: neither substitutes for the other.
         async with httpx.AsyncClient(trust_env=False) as client:
             for key in (None, "wrong", token):
@@ -223,9 +310,8 @@ async def acceptance(output: Path) -> dict[str, Any]:
         assert cleared and cleared["cleared"] and cleared["left"] == 0, cleared
         assert not await servers.call(rows[0], "outside", "list", {"limit": 100})
         assert await servers.call(rows[1], "outside", "list", {"limit": 100})
-        instance = store.data_dir(hs.id) / ".pg0/instances/hindsight/instance.json"
-        info = json.loads(instance.read_text())
-        assert Path(info["data_dir"]).resolve().is_relative_to(store.data_dir(hs.id).resolve())
+        info = json.loads(state_read(instance))
+        assert Path(info["data_dir"]).is_relative_to(STATE)
         assert info["port"] == record.aux_port != record.port
         postgres_pid = info["pid"]
         await manager.stop(hs.id)
@@ -233,29 +319,36 @@ async def acceptance(output: Path) -> dict[str, Any]:
         await manager.start(record)
         await wait_ready(manager, record)
         # Kill Hindsight alone; pg_ctl's postgres can outlive it. Restart must clean it first.
-        pid = manager.supervisor.status(hs.id)[3]
+        pid = manager.supervisor.runner.state(hs.id).pid
         assert pid is not None
         children = psutil.Process(pid).children(recursive=True)
-        child = next(p for p in children if p.name().startswith("python"))
-        child.kill()
+        child = next(p for p in children if "hindsight_api" in " ".join(p.cmdline()))
+        subprocess.run(["sudo", "kill", "-KILL", str(child.pid)], check=True)
         await manager.restart(record)
         await wait_ready(manager, record)
         assert await servers.call(rows[1], "outside", "list", {"limit": 100}), "Hard kill lost Bob's bank"
+        # Agent shutdown must leave independently managed apps and postgres alive.
         await manager.aclose()
-        info = json.loads(instance.read_text())
-        assert not psutil.pid_exists(info["pid"]), "Postgres survived agent shutdown"
+        info = json.loads(state_read(instance))
+        assert psutil.pid_exists(info["pid"]), "Agent shutdown stopped own-account postgres"
+        async with httpx.AsyncClient(trust_env=False) as client:
+            assert (await client.get(base + "/health")).is_success
+        trace = subprocess.check_output(["sudo", "bash", "-c", f"cat {shlex.quote(str(trace_dir))}/trace*"], text=True)
         await manager.uninstall(hs.id, purge=True)
         assert actions[-2:] == ["stop", "drop"]
         assert not store.app_dir(hs.id).exists(), "Purge left app data or credentials"
-        trace = "\n".join(p.read_text(errors="replace") for p in trace_dir.glob("trace*"))
         sockets = check_network(trace)
+        journal = subprocess.check_output(["sudo", "journalctl", "--no-pager", "-u",
+            "eugene-plexus-app@hindsight.service"], text=True)
+        assert all(secret not in journal for secret in REPORT_SECRETS), "Journal exposed a credential"
         assert any(p.endswith("/chat/completions") for p in Gateway.calls)
         assert any(p.endswith("/embeddings") for p in Gateway.calls)
         assert any(p.endswith("/rerank") for p in Gateway.calls)
         return {"passed": True, "package": "hindsight-api-slim[embedded-db]==1.0.0",
             "checks": ["explicit-model", "REST-auth", "MCP-auth", "bank-isolation", "bank-purge",
                        "private-link", "contained-pg0-data", "named-stop", "named-drop", "hard-kill-recovery",
-                       "agent-shutdown", "complete-purge", "loopback-only"],
+                       "systemd-own-account", "agent-shutdown-keeps-app", "journal-redaction",
+                       "complete-purge", "loopback-only", *database_checks],
             "network_syscalls": sockets, "cleanup": actions}
     finally:
         try:
@@ -265,7 +358,7 @@ async def acceptance(output: Path) -> dict[str, Any]:
             await manager.aclose()
             await wb.close()
             apps.entry_argv = original_argv
-            app_launcher.pg0_cleanup = cleanup
+            manager.pg0 = cleanup
             gateway.shutdown()
             gateway.server_close()
             thread.join(5)
@@ -289,8 +382,8 @@ def main() -> None:
     try:
         receipt = asyncio.run(acceptance(output))
     except BaseException as exc:
-        receipt["error"] = f"{type(exc).__name__}: {exc}"
-        raise
+        receipt["error"] = safe_report(f"{type(exc).__name__}: {exc}")
+        raise RuntimeError(receipt["error"]) from None
     finally:
         (output / "result.json").write_text(json.dumps(receipt, indent=2) + "\n")
 
