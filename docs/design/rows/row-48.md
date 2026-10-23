@@ -263,3 +263,16 @@ without the grant must be refused.
   gateway's defaults.
 
 Both defaults are built until Troy answers.
+
+## What building found
+
+- **48b, phase 1:** `Runtime.localPathNote` already carries copy notes.
+  Its contract now also covers a start from an unchecked local copy;
+  no second runtime note field is needed.
+- The gateway has no `GET /v1/info` today. 48b adds the endpoint rather
+  than extending one. Its `library.reachable` is null until the first
+  check, including after a restart; loading saved settings alone does
+  not show whether the Library can answer.
+- The acceptance in §2.6 uses short real times with
+  `profileCacheSeconds: 1`. Gateway unit tests use an injected clock to
+  cover an outage past 300 s; the process acceptance does not inject time.
