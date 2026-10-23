@@ -1447,6 +1447,7 @@ SYSTEM_SERVICE_FILE=$SYSTEM_UNIT
 NL='
 '
 MIGRATE=0 MIGRATING=0 MIGRATE_DONE=0 MIGRATE_FRESH_PREFIX=0 MIGRATED_ENGINES=0
+MAC_COPY_EXCLUDE= MOVE_REPORT=
 MIGRATE_PORT= MIGRATE_HOST= GROUP_CREATED=0 DAEMON_STARTED=0
 
 # plist_get FILE KEY.PATH: one value out of a plist, or a failure. plutil
@@ -1945,27 +1946,89 @@ mac_migrate_copy() {
         sleep 1
         _waited=$((_waited + 1))
     done
-    say "copying its identity, settings and Library to $PREFIX"
+    say "copying its identity, settings and Library state to $PREFIX (nothing that runs crosses)"
     set --
+    MAC_COPY_EXCLUDE=
     for _item in "$_old"/* "$_old"/.[!.]*; do
-        [ -e "$_item" ] || [ -L "$_item" ] || continue
-        mac_migrate_skips "${_item##*/}" && continue
+        as_person test -e "$_item" || as_person test -L "$_item" || continue
+        mac_migrate_carries "$_item" || continue
         set -- "$@" "./${_item##*/}"
     done
-    if [ "$#" -gt 0 ]; then mac_copy_as_person "$_old" "$@"; fi
-    if [ -d "$_engines" ] && [ ! -L "$_engines" ]; then
-        mac_copy_as_person "$PERSON_HOME/.eugene-plexus" ./engines
-        MIGRATED_ENGINES=1
-    fi
+    # An app's data and keys cross; its environment, the shared app
+    # interpreters and caches do not: the agent builds them again.
+    for _app in "$_old"/apps/*; do
+        as_person test -d "$_app" && ! as_person test -L "$_app" || continue
+        _id=${_app##*/}
+        case "$_id" in
+            *[!A-Za-z0-9._-]*) die "an app folder in $_old/apps has a name Eugene does not make ($_id), so
+       Eugene was not moved. Nothing was changed." ;;
+            launcher|pythons|.cache|ctl) MAC_COPY_EXCLUDE="$MAC_COPY_EXCLUDE --exclude=./apps/$_id" ;;
+            *) MAC_COPY_EXCLUDE="$MAC_COPY_EXCLUDE --exclude=./apps/$_id/versions" ;;
+        esac
+    done
+    if [ "$#" -gt 0 ]; then mac_copy_as_person "$_old" . "$@"; fi
+    MAC_COPY_EXCLUDE=
+    mac_migrate_engine_records
     in_prefix chmod 0750 "$PREFIX"
 }
 
-# What the move leaves behind: what this install makes again.
+# What the move leaves behind: what this install makes again, and what
+# runs -- the engine store and an MLX environment among it.
 mac_migrate_skips() {
     case "$1" in
-        venv|pythons|bin|.cache|uninstall|update|install-check.py|release-requirements.lock) return 0 ;;
+        venv|pythons|bin|.cache|uninstall|update|engines|eugene-mlx|install-check.py|release-requirements.lock) return 0 ;;
     esac
     return 1
+}
+
+# **Only state crosses, never anything that runs** (row 8 review). An item
+# at the top of the old folder crosses when it is a plain file or folder
+# (no link), is not code (a Python module, a `.pth` or a compiled
+# library: a component starts with the prefix as its folder) and is not a
+# Python environment or package; and the copy then holds no link and no
+# file that can be executed (mac_copy_as_person). Read as the person.
+mac_migrate_carries() {
+    _name=${1##*/}
+    mac_migrate_skips "$_name" && return 1
+    if as_person test -L "$1"; then
+        say "did not carry $_name: a link"
+        return 1
+    fi
+    if as_person test -d "$1"; then
+        if as_person test -e "$1/pyvenv.cfg" || as_person test -e "$1/__init__.py"; then
+            say "did not carry $_name: Python code"
+            return 1
+        fi
+        return 0
+    fi
+    if ! as_person test -f "$1"; then
+        say "did not carry $_name: not a file or a folder"
+        return 1
+    fi
+    case "$_name" in
+        *.py|*.pyc|*.pyo|*.pth|*.so|*.dylib|*.pyd)
+            say "did not carry $_name: code"
+            return 1 ;;
+    esac
+    return 0
+}
+
+# The person's engine builds are not carried (R8-ENGINES-COPY): only their
+# install records cross, as data, so the agent knows which builds to fetch
+# again. Links among them are dropped with the rest.
+mac_migrate_engine_records() {
+    _store=$PERSON_HOME/.eugene-plexus/engines
+    as_person test -d "$_store" && ! as_person test -L "$_store" || return 0
+    MIGRATED_ENGINES=1
+    set --
+    for _record in "$_store"/*/*/install.json; do
+        _build=${_record%/install.json}
+        as_person test -f "$_record" && ! as_person test -L "$_record" || continue
+        ! as_person test -L "$_build" && ! as_person test -L "${_build%/*}" || continue
+        set -- "$@" "./${_record#"$_store"/}"
+    done
+    [ "$#" -gt 0 ] || return 0
+    mac_copy_as_person "$_store" .engine-records "$@"
 }
 
 # PATH's size in KiB as the person reads it (links not followed), or a
@@ -1993,12 +2056,6 @@ mac_migrate_room() {
             || die "could not tell how big $_item is, so Eugene was not moved. Nothing was changed."
         _need=$((_need + _k))
     done
-    _engines=$PERSON_HOME/.eugene-plexus/engines
-    if [ -d "$_engines" ] && [ ! -L "$_engines" ]; then
-        _k=$(mac_size_kb "$_engines") \
-            || die "could not tell how big $_engines is, so Eugene was not moved. Nothing was changed."
-        _need=$((_need + _k))
-    fi
     _free=$(df -Pk "$_parent" 2>/dev/null | awk 'NR == 2 {print $4}')
     case "$_free" in
         ''|*[!0-9]*) die "could not tell how much room the disk holding $_parent has, so Eugene was
@@ -2007,16 +2064,18 @@ mac_migrate_room() {
     _room=$((2 * _need + MIGRATE_HEADROOM_KB))
     if [ "$_free" -lt "$_room" ]; then
         die "the move needs $(( (_room + 1023) / 1024 )) MiB on the disk that holds $_parent:
-       twice $(( (_need + 1023) / 1024 )) MiB to copy Eugene's settings, Library state and engine builds
+       twice $(( (_need + 1023) / 1024 )) MiB to copy Eugene's settings and Library state
        (staged, then unpacked), and $((MIGRATE_HEADROOM_KB / 1024)) MiB for its own Python and packages.
        That disk has $((_free / 1024)) MiB free. Make room, then run this again. Nothing was changed."
     fi
 }
 
 # **The copy never uses root's access** (row 8 review), **passes through
-# nothing the person could swap, and is bounded** (re-reviews). The
-# person's tar reads the old folder -- what the person can read, links
-# kept as links, never followed -- and streams it to Eugene's account,
+# nothing the person could swap, and is bounded, and is data only**
+# (re-reviews). MAC_COPY_EXCLUDE holds `--exclude` options for what stays
+# behind inside the items (an app's environment). The person's tar reads
+# the old folder -- what the person can read, links kept as links, never
+# followed -- and streams it to Eugene's account,
 # which keeps the stream in its own prefix (closed to the person) and
 # stops it at what was measured just before, plus a tenth and 64 MiB: a
 # folder that grows while it is copied is refused, not copied without end.
@@ -2028,7 +2087,7 @@ mac_migrate_room() {
 # back on fd 3, which neither side holds.
 COPY_SLACK_BYTES=67108864
 mac_copy_as_person() {
-    _from=$1; shift
+    _from=$1 _dest=$2; shift 2
     _bytes=0
     for _item in "$@"; do
         _k=$(mac_size_kb "$_from/${_item#./}") \
@@ -2038,7 +2097,8 @@ mac_copy_as_person() {
     _limit=$((_bytes + _bytes / 10 + COPY_SLACK_BYTES))
     _staged=$PREFIX/.move.tar
     in_prefix rm -f "$_staged"
-    if ! _read=$( { { as_person env COPYFILE_DISABLE=1 tar -cf - -C "$_from" "$@" 3>&-; printf '%s' "$?" >&3; } \
+    # shellcheck disable=SC2086 # MAC_COPY_EXCLUDE: --exclude options, app ids checked by the caller
+    if ! _read=$( { { as_person env COPYFILE_DISABLE=1 tar -cf - -C "$_from" $MAC_COPY_EXCLUDE "$@" 3>&-; printf '%s' "$?" >&3; } \
             | as_service sh -c 'umask 077 && head -c "$1" > "$2"' sh "$((_limit + 1))" "$_staged" \
                 >&2 3>&-; } 3>&1 ); then
         in_prefix rm -f "$_staged"
@@ -2055,15 +2115,22 @@ mac_copy_as_person() {
         in_prefix rm -f "$_staged"
         die "could not read $_from to move it (see above)"
     fi
+    in_prefix mkdir -p "$PREFIX/$_dest"
     if ! as_service tar -x --no-same-owner --no-same-permissions --no-acls --no-xattrs \
-            --no-fflags --no-mac-metadata -f "$_staged" -C "$PREFIX"; then
+            --no-fflags --no-mac-metadata -f "$_staged" -C "$PREFIX/$_dest"; then
         in_prefix rm -f "$_staged"
         die "could not copy $_from into $PREFIX (see above)"
     fi
     in_prefix rm -f "$_staged"
+    # Nothing copied can be run: no link stays (one could name a program
+    # of the person's), no file keeps an execute bit, and nothing is open
+    # to the account's group or to others.
     for _item in "$@"; do
-        in_prefix find "$PREFIX/${_item#./}" ! -type l -exec chmod go-rwx {} + \
-            || die "could not close what was copied into $PREFIX to everyone but Eugene's account"
+        _here=$PREFIX/$_dest/${_item#./}
+        { in_prefix find "$_here" -type l -exec rm -f {} + \
+            && in_prefix find "$_here" -type f -exec chmod u-x,go-rwx {} + \
+            && in_prefix find "$_here" -type d -exec chmod go-rwx {} +; } \
+            || die "could not make what was copied into $PREFIX data only, closed to everyone but Eugene's account"
     done
 }
 
@@ -2071,13 +2138,90 @@ mac_copy_as_person() {
 # an install that unlocked from the Keychain unlocks from the passphrase
 # file: the daemon has no Keychain (MAC-KEY). Its first sign-in writes it.
 mac_migrate_rewrite() {
-    in_prefix "$PYBIN" -I - "$PERSON_USER_PREFIX" "$PREFIX" <<'PYEOF' \
-        || die "could not point the moved settings at $PREFIX"
+    MOVE_REPORT=
+    # **A setting that named a program in the old install is turned off**
+    # (row 8 review): nothing that runs crosses the move, so what it named
+    # is not there, and the same path in the new prefix must never come to
+    # name something. Each one is said, and kept in root's receipt.
+    _said=$(in_prefix "$PYBIN" -I - "$PERSON_USER_PREFIX" "$PREFIX" "$PERSON_HOME/.eugene-plexus/engines" <<'PYEOF'
 import pathlib
 import re
 import sys
 
-old, new = sys.argv[1], sys.argv[2]
+old, new, old_store = sys.argv[1], sys.argv[2], sys.argv[3]
+KEYS = ("vllmBinary", "mlxBinary", "strataServer", "kevPython", "uvBinary")
+
+
+def clean(value):
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    return value
+
+
+def in_old(value):
+    value = clean(value)
+    return any(value == root or value.startswith(root.rstrip("/") + "/") for root in (old, old_store))
+
+
+said = []
+
+
+def turn_off(name, value):
+    said.append(
+        f"turned off {name}: it named {clean(value)}, in the old install, and nothing that runs "
+        "crosses the move. Install it again, or let Eugene fetch its own build."
+    )
+
+
+agent = pathlib.Path(new) / "agent.yaml"
+if agent.is_file() and not agent.is_symlink():
+    lines = agent.read_text(encoding="utf-8").splitlines(keepends=True)
+    out = []
+    roots = False
+    for line in lines:
+        keyed = re.match(r"^(%s):\s*(.*?)\s*$" % "|".join(KEYS), line)
+        if keyed and in_old(keyed.group(2)):
+            turn_off(keyed.group(1), keyed.group(2))
+            out.append(f"{keyed.group(1)}: null\n")
+            roots = False
+            continue
+        if re.match(r"^engineBinaryRoots:", line):
+            roots = True
+            inline = line.split(":", 1)[1].strip()
+            if inline.startswith("[") and inline.endswith("]"):
+                roots = False
+                kept = []
+                for item in inline[1:-1].split(","):
+                    if item.strip() and in_old(item):
+                        turn_off("an engineBinaryRoots folder", item)
+                    elif item.strip():
+                        kept.append(item.strip())
+                out.append("engineBinaryRoots: [" + ", ".join(kept) + "]\n")
+                continue
+            out.append(line)
+            continue
+        if roots:
+            item = re.match(r"^(\s*)-\s*(.+?)\s*$", line)
+            if item:
+                if in_old(item.group(2)):
+                    turn_off("an engineBinaryRoots folder", item.group(2))
+                    continue
+                out.append(line)
+                continue
+            roots = False
+        runtime = re.match(r"^(\s+(?:-\s+)?)binary:\s*(.*?)\s*$", line)
+        if runtime and runtime.group(2) and in_old(runtime.group(2)):
+            turn_off("a runtime's binary", runtime.group(2))
+            out.append(f"{runtime.group(1)}binary: null\n")
+            continue
+        out.append(line)
+    moved = "".join(out)
+    if moved != "".join(lines):
+        staged = agent.with_name("agent.yaml.moving")
+        staged.write_text(moved, encoding="utf-8", newline="\n")
+        staged.replace(agent)
+
 inside = re.compile(re.escape(old) + r"(?=[/\"'\s,\]}]|$)", re.M)
 for path in sorted(pathlib.Path(new).glob("*.yaml")) + sorted(pathlib.Path(new).glob("*.json")):
     if path.is_symlink() or not path.is_file():
@@ -2090,60 +2234,52 @@ for path in sorted(pathlib.Path(new).glob("*.yaml")) + sorted(pathlib.Path(new).
         temporary = path.with_name(path.name + ".moving")
         temporary.write_text(moved, encoding="utf-8", newline="\n")
         temporary.replace(path)
+for line in said:
+    print(line)
 PYEOF
-    mac_migrate_check_engines
+) || die "could not point the moved settings at $PREFIX"
+    if [ -n "$_said" ]; then
+        printf '%s\n' "$_said" | while IFS= read -r _line; do
+            [ -z "$_line" ] || say "$_line"
+        done
+        MOVE_REPORT=$_said
+    fi
+    mac_migrate_relist
     mac_migrate_report_settings
 }
 
-# **No engine build copied from the person's account is kept** (row 8,
-# R8-ENGINES-COPY, the stronger choice). The daemon runs engine builds as
-# its own account, and a build in the person's store is one a program
-# running as the person could have changed -- its install record with it,
-# so no record kept there can vouch for it. Every copied build, and a link
-# where a build or an engine's folder belongs, is removed; the newest of
-# each engine's builds is listed in engines/refetch.json, and the agent
-# fetches it again from upstream, verified as any install is, when it
-# starts. What is not a build (an engine's architecture lists) stays. The
-# record a build carries (each file's SHA-256) is still written for the
-# builds the daemon fetches itself. Done as Eugene's account, on the copy.
-mac_migrate_check_engines() {
-    [ "$MIGRATED_ENGINES" = 1 ] || return 0
-    _said=$(in_prefix "$PYBIN" -I - "$PREFIX/engines" <<'PYEOF'
+# **What the move left behind is listed for the agent to build again**
+# (row 8, R8-ENGINES-COPY Choice 2): no engine build crosses, so the newest
+# of each engine's builds the person had -- read from the install records
+# the copy carried as data -- goes in engines/refetch.json, which the agent
+# fetches again from upstream when it starts; and every app whose data
+# crossed goes in apps/rebuild.json, which the agent installs again from
+# its own catalogue (an app the person added waits to be installed again
+# by hand). Done as Eugene's account.
+mac_migrate_relist() {
+    _said=$(in_prefix "$PYBIN" -I - "$PREFIX" <<'PYEOF'
 import json
 import shutil
 import sys
 from pathlib import Path
 
-root = Path(sys.argv[1])
-RECORD = "install.json"
+prefix = Path(sys.argv[1])
+records = prefix / ".engine-records"
 refetch = []
-if root.is_dir() and not root.is_symlink():
-    for engine in sorted(root.iterdir()):
-        if engine.is_symlink():
-            engine.unlink()
-            print(f"did not keep {engine.name}: a link where an engine's builds belong")
-            continue
-        if not engine.is_dir():
+if records.is_dir() and not records.is_symlink():
+    for engine in sorted(records.iterdir()):
+        if engine.is_symlink() or not engine.is_dir():
             continue
         newest = None
         for build in sorted(engine.iterdir()):
-            if build.is_symlink():
-                build.unlink()
-                print(f"did not keep the {engine.name} build {build.name}: a link where a build belongs")
+            record = build / "install.json"
+            if build.is_symlink() or record.is_symlink() or not record.is_file():
                 continue
-            if build.is_dir() and build.name.startswith(".staging-"):
-                shutil.rmtree(build)
-                continue
-            if not build.is_dir() or (build / RECORD).is_symlink() or not (build / RECORD).is_file():
-                continue  # not a build: the agent runs only a folder with its install record
             try:
-                meta = json.loads((build / RECORD).read_text(encoding="utf-8"))
+                meta = json.loads(record.read_text(encoding="utf-8"))
             except (OSError, ValueError):
-                meta = None
+                continue
             meta = meta if isinstance(meta, dict) else {}
-            shutil.rmtree(build)
-            print(f"did not keep the {engine.name} build {build.name}: it was copied from your account, "
-                  "and Eugene's own account runs only builds it fetched itself")
             when = str(meta.get("installedAt") or "")
             if newest is None or when > newest[0]:
                 entry = {"engine": engine.name, "version": str(meta.get("version") or build.name)}
@@ -2152,14 +2288,29 @@ if root.is_dir() and not root.is_symlink():
                 newest = (when, entry)
         if newest is not None:
             refetch.append(newest[1])
-            print(f"Eugene fetches {engine.name} {newest[1]['version']} again from GitHub when it starts")
+            print(f"Eugene fetches {engine.name} {newest[1]['version']} again from GitHub when it starts "
+                  "(no engine build crosses the move)")
+    shutil.rmtree(records)
 if refetch:
-    marker = root / "refetch.json"
-    staged = root / "refetch.json.new"
+    store = prefix / "engines"
+    store.mkdir(exist_ok=True)
+    staged = store / "refetch.json.new"
     staged.write_text(json.dumps({"builds": refetch}, indent=2), encoding="utf-8", newline="\n")
-    staged.replace(marker)
+    staged.replace(store / "refetch.json")
+apps = prefix / "apps"
+rebuild = []
+if apps.is_dir() and not apps.is_symlink():
+    for app in sorted(apps.iterdir()):
+        if app.is_dir() and not app.is_symlink() and app.name not in ("launcher", "pythons", ".cache", "ctl"):
+            rebuild.append(app.name)
+if rebuild:
+    staged = apps / "rebuild.json.new"
+    staged.write_text(json.dumps({"apps": rebuild}, indent=2), encoding="utf-8", newline="\n")
+    staged.replace(apps / "rebuild.json")
+    print(f"Eugene installs {', '.join(rebuild)} again when it starts (an app's data and keys cross "
+          "the move, its environment does not; an app you added yourself waits to be installed again)")
 PYEOF
-) || die "could not check the engine builds copied into $PREFIX/engines (see above)"
+) || die "could not list what Eugene builds again after the move (see above)"
     printf '%s\n' "$_said" | while IFS= read -r _line; do
         [ -z "$_line" ] || say "$_line"
     done
@@ -2256,13 +2407,17 @@ for label, path in found:
         print(f"{label} names {path}: {why}. It will not run until moved.")
 PYEOF
 ) || die "could not read the settings copied into $PREFIX (see above)"
-    [ -n "$_said" ] || return 0
-    say "these settings name programs Eugene's own account will not run until they are moved"
-    say "  (into a folder only root or Eugene's account can change, or let Eugene fetch its own):"
-    printf '%s\n' "$_said" | while IFS= read -r _line; do
-        [ -z "$_line" ] || say "  $_line"
-    done
-    printf '%s\n' "$_said" | as_root tee "$MAC_RECEIPTS/move-report.txt" >/dev/null
+    if [ -n "$_said" ]; then
+        say "these settings name programs Eugene's own account will not run until they are moved"
+        say "  (into a folder only root or Eugene's account can change, or let Eugene fetch its own):"
+        printf '%s\n' "$_said" | while IFS= read -r _line; do
+            [ -z "$_line" ] || say "  $_line"
+        done
+        MOVE_REPORT="${MOVE_REPORT:+$MOVE_REPORT
+}$_said"
+    fi
+    [ -n "$MOVE_REPORT" ] || return 0
+    printf '%s\n' "$MOVE_REPORT" | as_root tee "$MAC_RECEIPTS/move-report.txt" >/dev/null
     as_root chmod 0644 "$MAC_RECEIPTS/move-report.txt"
 }
 

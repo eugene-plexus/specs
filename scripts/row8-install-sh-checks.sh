@@ -786,6 +786,13 @@ old_install() {
   engine_build "$store/b0" 2026-09-01T00:00:00+00:00 old
   engine_build "$home/elsewhere/b9" 2026-10-20T00:00:00+00:00 planted planted
   ln -s "$home/elsewhere/b9" "$store/b9"
+  # b3: a build whose install record is a link to valid metadata, the
+  # newest of them all -- a reader that skips linked records keeps it.
+  mkdir -p "$store/b3"
+  printf 'linked' > "$store/b3/llama-server"
+  printf '{"version": "b3", "variant": "macos-arm64", "binary": "llama-server", "installedAt": "2026-10-21T00:00:00+00:00"}\n' \
+    > "$store/architectures/receipt.json"
+  ln -s ../architectures/receipt.json "$store/b3/install.json"
   printf '{}\n' > "$store/architectures/b1.json"
   printf 'name: studio\nnodeKey: abc\n' > "$old/node.yaml"
   # Settings naming programs in the person's home: kept by the move, and
@@ -793,6 +800,12 @@ old_install() {
   mkdir -p "$home/vllm-env/bin" "$home/llama"
   printf '#!/bin/sh\n' > "$home/vllm-env/bin/vllm"
   printf '#!/bin/sh\n' > "$home/llama/llama-server"
+  # A program planted in the old install, named by settings: the rewrite
+  # would point them at its copy in the new prefix. Nothing that runs may
+  # cross, and the settings are turned off.
+  mkdir -p "$old/custom"
+  printf '#!/bin/sh\necho planted\n' > "$old/custom/llama-server"
+  chmod 0755 "$old/custom/llama-server"
   cat > "$old/agent.yaml" <<YAML
 securityMode: os_keyring
 firstRunComplete: true
@@ -802,11 +815,37 @@ components:
     configFile: $old/control.yaml
 modelCopyDir: $old
 vllmBinary: $home/vllm-env/bin/vllm
+mlxBinary: $old/custom/llama-server
+engineBinaryRoots:
+- $old/custom
+- $home/llama
 runtimes:
 - name: mine
   engine: llama_cpp
   binary: $home/llama/llama-server
+- name: planted
+  engine: llama_cpp
+  binary: $old/custom/llama-server
 YAML
+  # An app: its data and keys cross; its environment, the shared app
+  # interpreters and the launcher do not.
+  mkdir -p "$old/apps/tiny/versions/v1/venv/bin" "$old/apps/tiny/data" "$old/apps/launcher" \
+    "$old/apps/pythons/cpython/bin"
+  printf '#!/bin/sh\necho planted\n' > "$old/apps/tiny/versions/v1/venv/bin/python"
+  chmod 0755 "$old/apps/tiny/versions/v1/venv/bin/python"
+  printf 'chats\n' > "$old/apps/tiny/data/chat.db"
+  printf 'key\n' > "$old/apps/tiny/data/client_key"
+  printf 'print(1)\n' > "$old/apps/launcher/app_launcher.py"
+  printf 'x' > "$old/apps/pythons/cpython/bin/python"
+  printf 'installed:\n- id: tiny\n' > "$old/apps.yaml"
+  # Code a component started in the prefix would import: never carried.
+  printf 'raise SystemExit("planted")\n' > "$old/yaml.py"
+  printf 'import os\n' > "$old/evil.pth"
+  mkdir -p "$old/httpx" "$old/tools/bin"
+  printf '' > "$old/httpx/__init__.py"
+  printf 'home = /usr/bin\n' > "$old/tools/pyvenv.cfg"
+  # A link inside a folder that crosses: dropped, so nothing reads through it.
+  ln -s "$home/root-only.txt" "$old/control-state/elsewhere"
   printf 'securityMode: os_keyring\nstateDir: %s/control-state\n' "$old" > "$old/control.yaml"
   printf '{"profiles": {"p1": {"modelPath": "%s/Eugene Models/m.gguf"}}}\n' "$home" > "$old/library-state.json"
   printf 'snapshot\n' > "$old/control-state/snap.bin"
@@ -859,8 +898,8 @@ else
 fi
 if [ "$(cat "$PREFIX/node.yaml" 2>/dev/null)" = "$(printf 'name: studio\nnodeKey: abc')" ] \
     && [ -f "$PREFIX/control-state/snap.bin" ] && [ -f "$PREFIX/library-state.json" ] \
-    && [ -f "$PREFIX/engines/llama_cpp/architectures/b1.json" ] && [ ! -e "$PREFIX/uninstall" ]; then
-  ok "identity, control state, Library state and the engine store's lists came along; the old removal did not"
+    && [ ! -e "$PREFIX/engines/llama_cpp" ] && [ ! -e "$PREFIX/uninstall" ]; then
+  ok "identity, control state and Library state came along; no engine folder and not the old removal"
 else
   bad "copied: $(ls -A "$PREFIX" 2>/dev/null | tr '\n' ' ')"
 fi
@@ -881,14 +920,17 @@ if [ "$(plist "$DAEMON" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT)" = 1
 else
   bad "port/host: $(plist "$DAEMON" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_PORT) $(plist "$DAEMON" EnvironmentVariables.EUGENE_PLEXUS_AGENT_BIND_HOST)"
 fi
-# Row 8 review, blocker 2: nothing of the old folder is read with root's
-# access, and a link in it arrives as a link.
-if [ -L "$PREFIX/planted" ] && [ "$(readlink "$PREFIX/planted")" = "$WORK/move/home/root-only.txt" ] \
+# Row 8 review, blocker 2, and the final review: nothing of the old folder
+# is read with root's access, and no link crosses, at the top or inside a
+# folder that does (one could name a program of the person's).
+if [ ! -e "$PREFIX/planted" ] && [ ! -L "$PREFIX/planted" ] \
+    && [ ! -e "$PREFIX/control-state/elsewhere" ] && [ ! -L "$PREFIX/control-state/elsewhere" ] \
     && ! grep -qE '^(ditto|tar -c|cp )' "$STATE/sudo.log" \
-    && grep -q -- '-u _eugeneplexus -- env .* tar -x .*-f '"$PREFIX/.move.tar -C $PREFIX" "$STATE/sudo.log"; then
-  ok "the old folder was read as the person and written as the account; a planted link stayed a link"
+    && grep -q -- '-u _eugeneplexus -- env .* tar -x .*-f '"$PREFIX/.move.tar -C $PREFIX" "$STATE/sudo.log" \
+    && printf '%s' "$OUT" | grep -q "did not carry planted: a link"; then
+  ok "the old folder was read as the person and written as the account; no link crossed, and the move says so"
 else
-  bad "planted: $(ls -l "$PREFIX/planted" 2>&1); root ran: $(grep -E 'ditto|tar' "$STATE/sudo.log" | tr '\n' '|')"
+  bad "planted: $(ls -l "$PREFIX/planted" "$PREFIX/control-state/elsewhere" 2>&1 | tr '\n' '|'); root ran: $(grep -E 'ditto|tar' "$STATE/sudo.log" | tr '\n' '|')"
 fi
 # Row 8 review, blocker 3 and re-review A: the old folder holds the
 # machine's keys in clear, so it is kept beside the new prefix INSIDE a
@@ -939,38 +981,70 @@ fi
 # changed one, one from before the record and a link where a build
 # belongs are not kept, and the newest that went is listed for the agent
 # to fetch again from upstream when it starts.
-say "M4b. no copied engine build is kept; the newest is listed to be fetched again"
-E=$PREFIX/engines/llama_cpp
+say "M4b. no engine build crosses; the newest the person had is listed to be fetched again"
 listed=$(python3 -c '
 import json, sys
 print(" ".join(":".join((b["engine"], b["version"], b["variant"])) for b in json.load(open(sys.argv[1]))["builds"]))
 ' "$PREFIX/engines/refetch.json" 2>/dev/null)
-if [ ! -e "$E/b1" ] && [ ! -e "$E/b2" ] && [ ! -e "$E/b0" ] \
-    && [ ! -e "$E/b9" ] && [ ! -L "$E/b9" ] && [ -f "$E/architectures/b1.json" ]; then
-  ok "b1 (as downloaded), b2 (changed), b0 (no record) and the link b9 not kept; the architecture lists kept"
+if [ "$(ls -A "$PREFIX/engines" 2>/dev/null)" = refetch.json ] && [ ! -e "$PREFIX/.engine-records" ]; then
+  ok "nothing of the engine store crossed -- b1 as downloaded, b2 changed, b0 with no record, b3 with a linked record, the link b9 -- only the list"
 else
-  bad "engine store after the move: $(ls -A "$E" 2>/dev/null | tr '\n' ' ')"
+  bad "engine store after the move: $(ls -AR "$PREFIX/engines" "$PREFIX/.engine-records" 2>/dev/null | tr '\n' ' ')"
 fi
 if [ "$listed" = "llama_cpp:b2:macos-arm64" ] \
-    && printf '%s' "$OUT" | grep -q "did not keep the llama_cpp build b1: it was copied from your account" \
     && printf '%s' "$OUT" | grep -q "fetches llama_cpp b2 again from GitHub when it starts"; then
-  ok "b2, the newest, is listed to be fetched again, and the move says why each went"
+  ok "b2, the newest build with its own record, is listed to be fetched again (not b3's linked record, not the link b9)"
 else
   bad "listed: '$listed'"; show "$OUT" 12
 fi
 
 # A copied setting naming a program in the person's home is kept, and said:
-# Eugene's own account will not run it there (the agent refuses it).
-say "M4c. settings naming programs Eugene's account will not run are kept, and said"
+# Eugene's own account will not run it there (the agent refuses it). One
+# that named a program in the old install is turned off: nothing that runs
+# crosses, and its path in the new prefix must not come to name one.
+say "M4c. settings naming programs are kept and said, or turned off when they named the old install"
 H=$WORK/move/home
 if grep -qx "vllmBinary: $H/vllm-env/bin/vllm" "$PREFIX/agent.yaml" \
     && grep -q "binary: $H/llama/llama-server" "$PREFIX/agent.yaml" \
     && printf '%s' "$OUT" | grep -q "vllmBinary names $H/vllm-env/bin/vllm: .*It will not run until moved" \
     && printf '%s' "$OUT" | grep -q "a runtime's binary names $H/llama/llama-server: .*It will not run until moved" \
     && grep -q "vllmBinary names $H/vllm-env/bin/vllm" "$ROOT/receipts/move-report.txt" 2>/dev/null; then
-  ok "both kept in agent.yaml, said in the move's words and in root's move-report.txt"
+  ok "settings naming the person's own programs: kept, said in the move's words and in root's move-report.txt"
 else
   bad "report: $(cat "$ROOT/receipts/move-report.txt" 2>/dev/null | tr '\n' '|')"; show "$OUT" 10
+fi
+if grep -qx "mlxBinary: null" "$PREFIX/agent.yaml" && grep -q "binary: null" "$PREFIX/agent.yaml" \
+    && ! grep -q "$PREFIX/custom" "$PREFIX/agent.yaml" && grep -q -- "- $H/llama" "$PREFIX/agent.yaml" \
+    && printf '%s' "$OUT" | grep -q "turned off mlxBinary: it named $OLD/custom/llama-server, in the old install" \
+    && grep -q "turned off a runtime's binary" "$ROOT/receipts/move-report.txt" 2>/dev/null \
+    && grep -q "turned off an engineBinaryRoots folder" "$ROOT/receipts/move-report.txt" 2>/dev/null \
+    && [ -f "$PREFIX/custom/llama-server" ] && [ ! -x "$PREFIX/custom/llama-server" ]; then
+  ok "settings naming the old install's programs: turned off and said; the planted program crossed as data, not executable"
+else
+  bad "agent.yaml: $(grep -E 'Binary|binary|custom' "$PREFIX/agent.yaml" | tr '\n' '|')"; show "$OUT" 10
+fi
+
+# What crosses is data: an app's data and keys, never its environment, the
+# shared app interpreters or the launcher; no Python module, `.pth`,
+# package or environment at the top; and no copied file can be executed.
+say "M4d. only state crosses: apps are rebuilt, code is left behind, nothing copied runs"
+if [ -f "$PREFIX/apps/tiny/data/chat.db" ] && [ -f "$PREFIX/apps/tiny/data/client_key" ] \
+    && [ ! -e "$PREFIX/apps/tiny/versions" ] && [ ! -e "$PREFIX/apps/launcher" ] && [ ! -e "$PREFIX/apps/pythons" ] \
+    && python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["apps"] == ["tiny"] else 1)' \
+         "$PREFIX/apps/rebuild.json" 2>/dev/null \
+    && printf '%s' "$OUT" | grep -q "Eugene installs tiny again when it starts"; then
+  ok "the app's data and key crossed, its environment did not, and it is listed to be installed again"
+else
+  bad "apps: $(ls -AR "$PREFIX/apps" 2>/dev/null | tr '\n' ' ')"; show "$OUT" 8
+fi
+executable=$(find "$PREFIX/custom" "$PREFIX/apps" "$PREFIX/control-state" "$PREFIX/logs" -type f -perm /111 2>/dev/null)
+if [ ! -e "$PREFIX/yaml.py" ] && [ ! -e "$PREFIX/evil.pth" ] && [ ! -e "$PREFIX/httpx" ] && [ ! -e "$PREFIX/tools" ] \
+    && [ -z "$executable" ] \
+    && printf '%s' "$OUT" | grep -q "did not carry yaml.py: code" \
+    && printf '%s' "$OUT" | grep -q "did not carry httpx: Python code"; then
+  ok "no module, .pth, package or environment crossed, and no copied file can be executed"
+else
+  bad "left: $(ls -A "$PREFIX" | tr '\n' ' '); executable: $(printf '%s' "$executable" | tr '\n' ' ')"
 fi
 
 say "M5. launchctl refusing the daemon puts the LaunchAgent back"
