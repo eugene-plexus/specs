@@ -114,50 +114,50 @@ between machines). The next release, v0.4.0, comes after rows 4 and 5.
 |---|---|---|---|---|---|---|
 | 36 | **Machines says why a machine's announcement was refused** | R2.4-a | M | cross | multi-machine | Today it shows a probe error. A contract field plus an issue kind |
 | 37 | **Routing profiles per person or group** (shared accounts, part two). Each group gets routing rules per model role (row 71) | SSO-ROLES (`shared-accounts-and-sso.md`) | L | high | businesses | Designed (`rows/row-37.md`): per-group role routing and allowed models. After rows 11, 70 and 71. Call R37-FIRST |
-| 38 | **Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost** | ADM, HH-NEXT, MD-x | L | low | businesses | Needs row 12 |
-| 39 | **Operations rights for people who are not the owner** | CX-OPS | M | high | businesses | |
-| 40 | **Usage and money limits per person and key** | KEY$, Shop, AD-BILL | L | high | businesses | Builds on A5's attribution |
+| 38 | **Dashboards for administrators: alerts, SLOs, longer retention, fleet views, wake cost** | ADM, HH-NEXT, MD-x | L | low | businesses | Designed (`rows/row-38.md`): 90-day history, fleet view, wake cost, SLOs, alerts with a webhook; after row 12 |
+| 39 | **Operations rights for people who are not the owner** | CX-OPS | L | high | businesses | Designed (`rows/row-39.md`): powers for models, updates and logs, per machine, with a record of who did what. Calls R39-LOGS, R39-DELETE |
+| 40 | **Usage and money limits per person and key** | KEY$, Shop, AD-BILL | L | high | businesses | Designed (`rows/row-40.md`): install-wide counters at control, token and money allowances per key, person and group, at the owner's price per served model (R40-LOCAL); after rows 11 and 24 |
 | 41 | **Speculative decoding on vLLM**, including the overdue live vLLM run on current Edge | SD2 | M | low | vLLM | |
-| 42 | **vLLM from its official container image** | VDK (business candidate) | M-L | cross | vLLM, businesses | |
-| 73 | **Eugene installs and updates vLLM, as it does llama.cpp.** It picks the build for the machine's GPU and CUDA, keeps two builds, checks a new one before switching (row 13's check), and supervises it | Troy, 2026-10-21 ("supported like llama.cpp eventually") | L | high (installs software) | vLLM users, businesses | After row 42 (vLLM from its official container) and row 13 (checked engine updates). Needs a design |
+| 42 | **vLLM from its official container image** | VDK (business candidate) | M-L | cross | vLLM, businesses | Designed (`rows/row-42.md`): Docker or Podman with GPUs, the image pinned by digest, read-only model mounts, `docker stop` and an orphan sweep |
+| 73 | **Eugene installs and updates vLLM, as it does llama.cpp.** It picks the build for the machine's GPU and CUDA, keeps two builds, checks a new one before switching (row 13's check), and supervises it | Troy, 2026-10-21 ("supported like llama.cpp eventually") | L | high (installs software) | vLLM users, businesses | Designed (`rows/row-73.md`): uv-made environments with the pinned vLLM and PyTorch, two kept, updates through row 13's check; after rows 42 and 13 |
 | 43 | **Hardware health readout, and restarting on the cards that are left** | HWR, DI6 | M | low | multi-GPU | Host history already has temperatures |
-| 44 | **Move a conversation's cache before planned maintenance** | DI2b | L | high | multi-machine | Needs rows 13 and 15 |
-| 45 | **TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079** | LT2-ACME, LT2-CA | M | high | businesses | |
-| 46 | **Node keys that cannot be exported, and freeze enforcement** | TOK-RES | M | high | multi-machine | |
-| 47 | **Shared team knowledge, and sharing a project** | MRC25, MV7 sharing | L | high | businesses, MSPs | Call MRC25 |
+| 44 | **Move a conversation's cache before planned maintenance** | DI2b | L | high | multi-machine | Designed (`rows/row-44.md`): DI2b as written, over the machine port's TLS; after rows 13 and 15 |
+| 45 | **TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079** | LT2-ACME, LT2-CA | L | high | businesses | Designed (`rows/row-45.md`): 45a header deadline, 45b tailnet certificates, 45c the owner's domain by DNS-01 (lego), 45d replace the CA. Calls R45-TAILNET, R45-WILDCARD |
+| 46 | **Freeze enforcement** | TOK-RES | S-M | high | multi-machine | Designed (`rows/row-46.md`): changes from other machines refused after 24 h without the root. Keys stay restorable from a backup: no machine-bound wrapping (R46-SCOPE, Troy 2026-10-22) |
+| 47 | **Shared team knowledge, and sharing a project** | MRC25, MV7 sharing | L | high | businesses, MSPs | Designed (`rows/row-47.md`): owner-granted team collections (MRC25 taken), shared projects share knowledge, never chats; after rows 27 and 70. Call R47-LEAVE |
 | 48 | **The Library at scale.** Paginate `/v1/models`, then design an answer to "the Library is down" | M2-PAGE, LIB-RED | S, then L | cross | businesses | Redundancy is design first |
-| 49 | **Which machine hosts a model** | M6-PLACE | L | cross | multi-machine | Design first, after row 14 |
-| 50 | **One model across machines with llama.cpp's `rpc-server`** | RPC (setups pass) | L | cross | multi-machine | Design first |
-| 51 | **Job Sites, banked items.** QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin | J-BANKED | S-M each | some high | multi-machine | |
-| 52 | **Per-person isolation for local MCP programs** | C5b-iso | L | high | multi-person installs | |
+| 49 | **Which machine hosts a model** | M6-PLACE | L | cross | multi-machine | Designed (`rows/row-49.md`): a ranked recommendation per machine with its reasons, and an opt-in automatic placement; after row 14 |
+| 50 | **One model across machines with llama.cpp's `rpc-server`** | RPC (setups pass) | L | high | multi-machine | Designed (`rows/row-50.md`): the RPC server on loopback, carried over the machine port; builds must match; after row 43. Call R50-DIRECT |
+| 51 | **Job Sites, banked items.** QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin | J-BANKED | S-M each | some high | multi-machine | Designed (`rows/row-51.md`): 51a QR code, 51b re-pair warning, 51c auditors, 51d the worker checks signatures, 51e AppContainer confinement, 51f tailnet origin (after 45b). Call R51-SHARES |
+| 52 | **Per-person isolation for local MCP programs** | C5b-iso | L | high | multi-person installs | Designed (`rows/row-52.md`): Landlock on Linux, an AppContainer per person on Windows (after row 51e); the owner offers a program to everyone. Call R52-ENV |
 
 ## 5. Doors, developers and the platform half
 
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
-| 53 | **One store for the platform half.** Design how files, batches, vector stores and stored responses are kept, owned and expired | PLAT (memory `project_platform_half_on_roadmap`) | M | high (store, migrations) | developers | Rows 54-56 share it, so design it once |
-| 54 | **Stored responses, with the chain as the conversation key** | LD6 | M | high (chats at rest) | agent clients | Today `previous_response_id` gets a 400 |
-| 55 | **Batch jobs in idle time**, run as background-band traffic | LD7 | M | cross | developers, home batch jobs | Needs rows 11 and 53 |
-| 56 | **Files, vector stores and `file_search`** | MRC24 | L | cross | developers | Call MRC24 |
-| 57 | **Responses: non-function tools and `compact`** | RSP-T | M | low | developers | |
-| 58 | **A Gemini API door**, and the small Gemini items (mp3/opus speech, countTokens, dimensions) | GEM-D (gateway#5), GEM-x (inference-driver#7) | L, S each | low | Gemini SDK users | |
-| 59 | **More server-run tools.** Tavily, and remote MCP on Responses | P8-later | M | cross | developers | |
-| 60 | **Full interop conformance.** A separate-origin MCP proxy, network and device grants, sampling and elicitation, A2UI beyond forms | G-later | L | high (sandbox) | developers | |
-| 61 | **LoRA adapters as Library items**, routed to replicas holding them | M2-LORA | M | cross | developers | |
+| 53 | **One store for the platform half.** Design how files, batches, vector stores and stored responses are kept, owned and expired | PLAT (memory `project_platform_half_on_roadmap`) | L | high (store, migrations) | developers | Designed (`rows/row-53.md`): an optional app the gateway routes to; owner per person or key; 30-day expiry, quotas, real deletion; Files and Uploads first. Call R53-REPO |
+| 54 | **Stored responses, with the chain as the conversation key** | LD6 | M | high (chats at rest) | agent clients | Designed (`rows/row-54.md`): kept in row 53's store when apps ask, chained by id, the chain as affinity key. Call R54-DEFAULT |
+| 55 | **Batch jobs in idle time**, run as background-band traffic | LD7 | M | cross | developers, home batch jobs | Designed (`rows/row-55.md`): OpenAI's Batch API in the store app, every line in row 11's background band, an estimate from row 10's measurement before it runs; after rows 11 and 53 |
+| 56 | **Files, vector stores and `file_search`** | MRC24 | L | cross | developers | Designed (`rows/row-56.md`): vector stores in the store app with Workbench's retrieval (copied), `file_search` run by the gateway with citations; after row 53. MRC24 answered |
+| 57 | **Responses: non-function tools and `compact`** | RSP-T | M | low | developers | Designed (`rows/row-57.md`): custom, local_shell, shell and apply_patch as functions and back; compact as an authenticated summary item |
+| 58 | **A Gemini API door**, and the small Gemini items (mp3/opus speech, countTokens, dimensions) | GEM-D (gateway#5), GEM-x (inference-driver#7) | L, S each | low | Gemini SDK users | Designed (`rows/row-58.md`): 58a measure Gemini CLI and the SDKs first, 58b the door onto the shared path, 58c mp3/opus speech, countTokens, dimensions |
+| 59 | **More server-run tools.** Tavily, and remote MCP on Responses | P8-later | M | high (59b) | developers | Designed (`rows/row-59.md`): 59a Tavily; 59b remote MCP run by the tool driver, internet only, the caller's token never kept. Call R59-MCP |
+| 60 | **Full interop conformance.** A separate-origin MCP proxy, network and device grants, sampling and elicitation, A2UI beyond forms | G-later | L | high (sandbox) | developers | Designed (`rows/row-60.md`): a second origin on the same port, per-app network and device grants, sampling and elicitation, more of A2UI |
+| 61 | **LoRA adapters as Library items**, routed to replicas holding them | M2-LORA | M | cross | developers | Designed (`rows/row-61.md`): adapters listed under their base, loaded by llama.cpp and vLLM, routed only to replicas holding them |
 | 62 | **A `runtime_name` dropdown** in place of free text | M4-DROP | S | low | developers | |
 
 ## 6. Engines and the Library's reach
 
 | # | Slice | From | Size | Risk | Who | Why here, and what it needs |
 |---|---|---|---|---|---|---|
-| 63 | **Strata: the speed projection, and several GPUs** | STR-14 (agent#14) | M | low | multi-GPU | |
+| 63 | **Strata: the speed projection, and several GPUs** | STR-14 (agent#14) | M | low | multi-GPU | Designed (`rows/row-63.md`): read upstream first; layer split across cards; the projection as an opt-in |
 | 64 | **Starter set: proof of CPU speed** | LIB-STARTER | M | low | CPU-only users | |
 | 65 | **Ollama: keep a model in the Library, and read a worker's own Ollama store** | CX9-KEEP | S-M | cross | Ollama users | |
-| 66 | **Experimental engines: TensorSharp, NInfer, imp** | ENG-X, A8-NEXT | M each | low | tinkerers | |
-| 67 | **Local image models and local media**, with their own admission design and more catalogue sources | IMG, MEDIA-LOCAL, MED-later, SRC | L | cross | image users | The audience research found no demand yet. Troy banked it for after v0.2 |
-| 68 | **DeepSeek V4.x Flash through Eugene** | DI8 | M | low | Mac, businesses | Needs borrowed hardware |
-| 69 | **Creators items 2, 4, 5 and 6.** A benchmark matrix, a shareable card, a presentation view, a public dataset (which needs a privacy design) | CR2, CR4-CR6 | M-L | low; dataset high | creators | Troy put these at the back (2026-10-18). Needs row 10 |
-| 74 | **DeepInfer as an experimental engine.** Wrap it as the other experimental engines are wrapped. First check that it has an online server and runs on a consumer card | DI-C5 (Troy, 2026-10-21: yes, at the end of the roadmap) | M | low | people trying new engines | Last on purpose |
+| 66 | **Experimental engines: TensorSharp, NInfer, imp** | ENG-X, A8-NEXT | M each | low | tinkerers | Designed (`rows/row-66.md`): NInfer and imp adapters; TensorSharp researched first |
+| 67 | **Local image models and local media**, with their own admission design and more catalogue sources | IMG, MEDIA-LOCAL, MED-later, SRC | L | cross | image users | Designed (`rows/row-67.md`): stable-diffusion.cpp, whisper.cpp and Kokoro wrapped; image fit; Civitai |
+| 68 | **DeepSeek V4.x Flash through Eugene** | DI8 | M | low | Mac, businesses | Designed (`rows/row-68.md`): architecture, supplied template, DSML tool calls, own-head drafting; needs borrowed hardware to run |
+| 69 | **Creators items 2, 4, 5 and 6.** A benchmark matrix, a shareable card, a presentation view, a public dataset (which needs a privacy design) | CR2, CR4-CR6 | M-L | low; dataset high | creators | Designed (`rows/row-69.md`): matrix, card, presentation view, opt-in dataset to the owner's own account. Call R69-DATASET |
+| 74 | **DeepInfer as an experimental engine.** Wrap it as the other experimental engines are wrapped. First check that it has an online server and runs on a consumer card | DI-C5 (Troy, 2026-10-21: yes, at the end of the roadmap) | M | low | people trying new engines | Designed (`rows/row-74.md`): a gate first (an online server and a consumer card), then row 66's wrapping |
 
 ## Waiting on a call from Troy
 
