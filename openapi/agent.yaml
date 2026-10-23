@@ -578,7 +578,7 @@ paths:
         '401':
           $ref: 'components/common.yaml#/components/responses/Problem'
         '404': {description: No such key.}
-        '409': {description: The key is turned off, expired or already replaced; the message names which.}
+        '409': {description: "The key is turned off or expired, or already replaced. The message says which."}
         '503': {description: Registry unavailable or the root is locked.}
 
   # -------- v0.2: auth --------

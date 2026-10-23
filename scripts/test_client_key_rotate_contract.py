@@ -57,6 +57,8 @@ class ClientKeyRotateContractTests(unittest.TestCase):
             self.assertIn("201", op["responses"])
             for code in ("404", "409", "503"):
                 self.assertIn(code, op["responses"])
+            # A comma in an unquoted flow-mapping value makes a second, empty key.
+            self.assertEqual(set(op["responses"]["409"]), {"description"})
             body = op["requestBody"]["content"]["application/json"]["schema"]
             self.assertTrue(body["$ref"].endswith("ClientKeyRotateRequest"))
             ok = op["responses"]["201"]["content"]["application/json"]["schema"]
