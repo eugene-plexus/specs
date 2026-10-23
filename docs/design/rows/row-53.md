@@ -209,8 +209,7 @@ Risks:
   the library as the model).
 - **Body limits:** 16 MiB per request; large files go through uploads.
 
-**Calls:** R53-REPO and R54-DEFAULT answered (Troy, 2026-10-23): a core
-component, on by default, aiming at full OpenAI API compatibility. The
-name `store` and port 8084 are defaults built (call R53-NAME). The
-defaults above (30 days, 10 GiB) follow OpenAI's and DI2's and are
-settings.
+**Calls:** R53-REPO, R54-DEFAULT and R53-NAME answered (Troy,
+2026-10-23): a core component named `store`, on by default, aiming at full
+OpenAI API compatibility. The defaults above (30 days, 10 GiB) follow
+OpenAI's and DI2's and are settings.

@@ -1877,9 +1877,7 @@
     "llm-d-lessons.md",
     "openai-inference-compatibility.md"
    ],
-   "calls": [
-    "R53-NAME"
-   ],
+   "calls": [],
    "issue": 80
   },
   {
