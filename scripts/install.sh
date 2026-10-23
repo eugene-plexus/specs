@@ -749,8 +749,14 @@ def refuse(path, prefix):
         raise ValueError("eugene: This is Eugene's own folder.")
 
 
+class UnsafeParent(ValueError):
+    def __init__(self, path):
+        self.path = path
+        super().__init__(path + " can be changed by other accounts.")
+
+
 @contextlib.contextmanager
-def opened(path, *, parents_safe=True):
+def opened(path, *, parents_safe=True, allow_mount_root=False):
     held = [os.open("/", os.O_RDONLY | os.O_DIRECTORY)]
     try:
         parts = Path(path).parts[1:]
@@ -769,15 +775,17 @@ def opened(path, *, parents_safe=True):
                     and not key.startswith("default:")
                 )
                 if info.st_uid != 0 or foreign_write:
-                    raise ValueError(
-                        "A parent folder is writable by an account other than root."
-                    )
+                    raise UnsafeParent(str(Path(path).parents[len(parts) - index - 1]))
             held.append(
                 os.open(
                     name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
                 )
             )
-            if index == len(parts) - 1 and mount_id(held[-1]) != mount_id(parent):
+            if (
+                not allow_mount_root
+                and index == len(parts) - 1
+                and mount_id(held[-1]) != mount_id(parent)
+            ):
                 raise ValueError(
                     "drive_root: Choose a folder inside the mounted drive."
                 )
@@ -808,12 +816,14 @@ def inspect_folder(path, prefix):
         if cause not in refused:
             raise
         facts.update(refused[cause])
-    else:
+    if not (facts.get("link") or facts.get("network") or facts.get("is_dir") is False):
         try:
-            # Inspection changes no permissions. Grant still enforces safe parents
-            # and compares this identity again before touching any ACL.
-            with opened(path, parents_safe=False) as fd:
+            # Grant policy is separate from identity. Only inspect through safe
+            # parents; revoke uses its private ledger if a parent is now unsafe.
+            with opened(path, allow_mount_root=True) as fd:
                 return dict(facts=facts, identity=identity(fd))
+        except UnsafeParent as exc:
+            facts["unsafe_parent"] = exc.path
         except FileNotFoundError:
             facts["is_dir"] = False
         except NotADirectoryError:
@@ -1006,7 +1016,11 @@ def reapply(fd, record, records):
         ):
             continue
         try:
-            with opened(other["path"]) as held:
+            # These are existing root-owned grants too. Validate identity
+            # without applying policy for a new grant during removal.
+            with opened(
+                other["path"], parents_safe=False, allow_mount_root=True
+            ) as held:
                 if same_identity(identity(held), other["identity"]):
                     active.append((target, other))
         except (FileNotFoundError, NotADirectoryError):
@@ -1262,7 +1276,13 @@ def main():
         reapplied = []
         with contextlib.ExitStack() as held:
             try:
-                fd = held.enter_context(opened(record["path"]))
+                # This path and identity come only from the root-owned ledger.
+                # Hold every component without following links, then compare the
+                # saved identity before changing ACLs. New-grant policy cannot
+                # prevent releasing an unchanged grant.
+                fd = held.enter_context(
+                    opened(record["path"], parents_safe=False, allow_mount_root=True)
+                )
             except FileNotFoundError:
                 removed = True  # Also remove a deleted folder's namespace allowance.
             except NotADirectoryError:

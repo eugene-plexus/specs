@@ -126,12 +126,12 @@ def test_identity_does_not_require_mount_id_or_device_number(tmp_path, monkeypat
 
 
 def test_installed_helper_is_exactly_the_reviewed_source():
-    source = (ROOT / "scripts/folder-access-helper.py").read_text("utf-8").rstrip()
+    source = (ROOT / "scripts/folder-access-helper.py").read_bytes()
     installed = (
         (ROOT / "scripts/install.sh")
-        .read_text("utf-8")
-        .split("<<'FOLDER_HELPER'\n", 1)[1]
-        .split("\nFOLDER_HELPER", 1)[0]
+        .read_bytes()
+        .split(b"<<'FOLDER_HELPER'\n", 1)[1]
+        .split(b"FOLDER_HELPER\n", 1)[0]
     )
     assert installed == source
 
@@ -142,9 +142,10 @@ def test_root_inspection_checks_path_and_returns_held_identity(monkeypatch):
     monkeypatch.setattr(h, "refuse", lambda *args: calls.append(args))
 
     @contextlib.contextmanager
-    def opened(path, *, parents_safe):
+    def opened(path, *, parents_safe=True, allow_mount_root=False):
         assert calls == [(path, "/srv/install")]
-        assert not parents_safe  # Grant enforces parent ACLs before any mutation.
+        assert parents_safe
+        assert allow_mount_root
         yield 10
 
     monkeypatch.setattr(h, "opened", opened)
@@ -163,10 +164,6 @@ def test_root_inspection_checks_path_and_returns_held_identity(monkeypatch):
         (ValueError("link: A path component is a link."), {"link": True}),
         (ValueError("not_a_folder: Choose a folder."), {"is_dir": False}),
         (ValueError("network: No network folders."), {"network": True}),
-        (ValueError("drive_root: No mount roots."), {"mount_root": True}),
-        (ValueError("system: No system folders."), {"system": ["/srv/refused"]}),
-        (ValueError("eugene: No install folders."), {"eugene": ["/srv/refused"]}),
-        (ValueError("home: Use a Job Site."), {"homes": ["/srv/refused"]}),
     ],
 )
 def test_root_inspection_reports_refusals_without_opening(monkeypatch, error, facts):
@@ -183,6 +180,86 @@ def test_root_inspection_reports_refusals_without_opening(monkeypatch, error, fa
         "facts": {"path": "/srv/refused", **facts},
         "identity": [],
     }
+
+
+@pytest.mark.parametrize(
+    ("cause", "facts"),
+    [
+        ("drive_root", {"mount_root": True}),
+        ("system", {"system": ["/srv/shared"]}),
+        ("eugene", {"eugene": ["/srv/shared"]}),
+        ("home", {"homes": ["/srv/shared"]}),
+    ],
+)
+def test_root_inspection_keeps_identity_for_new_grant_policy_refusals(
+    monkeypatch, cause, facts
+):
+    h = helper()
+
+    def refuse(*_):
+        raise ValueError(cause + ": New grants are refused.")
+
+    @contextlib.contextmanager
+    def opened(path, *, parents_safe=True, allow_mount_root=False):
+        assert parents_safe and allow_mount_root
+        yield 10
+
+    monkeypatch.setattr(h, "refuse", refuse)
+    monkeypatch.setattr(h, "opened", opened)
+    monkeypatch.setattr(h, "identity", lambda fd: [fd, 1, 2])
+    assert h.inspect_folder("/srv/shared", "/srv/install") == {
+        "facts": {"path": "/srv/shared", **facts},
+        "identity": [10, 1, 2],
+    }
+
+
+@pytest.mark.parametrize("foreign_owner", [False, True])
+def test_root_inspection_stops_before_opening_below_an_unsafe_parent(
+    monkeypatch, foreign_owner
+):
+    from pathlib import PurePosixPath
+
+    h = helper()
+    paths, closed, identified = [], [], []
+
+    def open_folder(path, flags, **kwargs):
+        paths.append(path)
+        assert path != "secret", "Inspection traversed the unsafe parent"
+        return len(paths)
+
+    monkeypatch.setattr(h, "Path", PurePosixPath)
+    monkeypatch.setattr(h, "refuse", lambda *args: None)
+    monkeypatch.setattr(
+        h,
+        "os",
+        SimpleNamespace(
+            open=open_folder,
+            close=closed.append,
+            fstat=lambda fd: SimpleNamespace(
+                st_uid=1000 if fd == 2 and foreign_owner else 0
+            ),
+            O_RDONLY=0,
+            O_DIRECTORY=1,
+            O_NOFOLLOW=2,
+        ),
+    )
+    monkeypatch.setattr(
+        h,
+        "acl",
+        lambda fd: {
+            "user:": "rwx",
+            "group:": "---",
+            "other:": "rwx" if fd == 2 and not foreign_owner else "---",
+        },
+    )
+    monkeypatch.setattr(h, "identity", lambda fd: identified.append(fd))
+    assert h.inspect_folder("/srv/secret/shared", "/srv/install") == {
+        "facts": {"path": "/srv/secret/shared", "unsafe_parent": "/srv"},
+        "identity": [],
+    }
+    assert paths == ["/", "srv"]
+    assert closed == [2, 1]
+    assert not identified
 
 
 def test_inspect_verb_reads_request_as_agent_without_creating_a_ledger(
@@ -616,6 +693,77 @@ def configure_revoke_main(f, monkeypatch, tmp_path, record):
     return target
 
 
+def test_grant_then_home_policy_still_inspects_and_revokes(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    import sys
+    from pathlib import PurePosixPath
+
+    f = fake_tree
+    homes = []
+    monkeypatch.setitem(
+        sys.modules,
+        "pwd",
+        SimpleNamespace(getpwall=lambda: [SimpleNamespace(pw_dir=p) for p in homes]),
+    )
+    monkeypatch.setattr(f.h, "Path", PurePosixPath)
+    f.h.os.path = SimpleNamespace(
+        realpath=lambda path, **kw: path,
+        isdir=lambda path: True,
+        ismount=lambda path: False,
+    )
+
+    @contextlib.contextmanager
+    def opened(path, **kwargs):
+        yield 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    before = f.h.inspect_folder("/srv/shared", "/srv/install")
+    record = {"path": "/srv/shared", "identity": before["identity"]}
+    assert f.h.grant(10, "1001", False, record, lambda _: None)
+    homes.append("/srv/shared/person")
+    after = f.h.inspect_folder("/srv/shared", "/srv/install")
+    assert after["facts"]["homes"] == ["/srv/shared"]
+    assert after["identity"] == before["identity"] == [10, 1, 2]
+    with pytest.raises(ValueError, match="^home:"):
+        f.h.refuse("/srv/shared", "/srv/install")
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    f.h.main()
+    assert json.loads(capsys.readouterr().out)["removed"]
+    assert json.loads(target.read_text())["removed"]
+    assert any("-x" in call for call in f.calls)
+    assert "group:1001" not in f.acl[10]
+
+
+@pytest.mark.parametrize("replaced", [False, True])
+def test_revoke_under_now_unsafe_parent_uses_only_ledger_identity(
+    fake_tree, monkeypatch, tmp_path, capsys, replaced
+):
+    f = fake_tree
+    record = {"path": "/srv/shared", "identity": [10, 1, 2]}
+    assert f.h.grant(10, "1001", True, record, lambda _: None)
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+
+    @contextlib.contextmanager
+    def opened(path, *, parents_safe=True, allow_mount_root=False):
+        assert path == record["path"]
+        if parents_safe:
+            raise ValueError("/srv can be changed by other accounts.")
+        assert allow_mount_root  # A later drive-root policy must not block revoke.
+        yield 10
+
+    monkeypatch.setattr(f.h, "opened", opened)
+    monkeypatch.setattr(
+        f.h, "refuse", lambda *args: pytest.fail("Revoke checked new-grant policy")
+    )
+    if replaced:
+        monkeypatch.setattr(f.h, "identity", lambda fd: [fd, 9, 9])
+    f.h.main()
+    assert json.loads(capsys.readouterr().out)["removed"] is (not replaced)
+    assert bool(json.loads(target.read_text()).get("removed")) is (not replaced)
+    assert ("group:1001" in f.acl[10]) is replaced
+
+
 @pytest.mark.parametrize("kind", ["hardlink", "fifo", "socket"])
 def test_revoke_removes_group_from_new_unusual_items(fake_tree, kind):
     f = fake_tree
@@ -944,7 +1092,10 @@ def test_reapply_records_default_additions_before_changing_them(
     assert not any(k.startswith("default:") for k in f.acl[child])
 
 
-def test_revoking_child_write_reapplies_parent_read(fake_tree, monkeypatch, tmp_path):
+@pytest.mark.parametrize("unsafe_parent", [False, True])
+def test_revoking_child_write_reapplies_parent_read(
+    fake_tree, monkeypatch, tmp_path, unsafe_parent
+):
     f = fake_tree
     child = f.add("child", stat.S_IFDIR | 0o700)
     file = f.add("temporary")
@@ -957,7 +1108,9 @@ def test_revoking_child_write_reapplies_parent_read(fake_tree, monkeypatch, tmp_
     (target.parent / ("b" * 32 + ".json")).write_text(json.dumps(parent))
 
     @contextlib.contextmanager
-    def opened(path, **kwargs):
+    def opened(path, *, parents_safe=True, allow_mount_root=False):
+        if unsafe_parent and parents_safe:
+            raise ValueError("/srv can be changed by other accounts.")
         yield child if path.endswith("/child") else 10
 
     monkeypatch.setattr(f.h, "opened", opened)
