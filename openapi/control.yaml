@@ -640,6 +640,36 @@ paths:
         '404': {description: No such key.}
         '503': {description: Registry unavailable.}
 
+  /v1/auth/client-keys/{keyId}/rotate:
+    post:
+      tags: [auth]
+      operationId: rotateClientKey
+      summary: Make a new token with the same name and limits; the old one stops after an overlap (operator only).
+      description: |
+        The new key copies the old key's name and limits exactly. The old
+        token keeps working until `retiresAt` (default one day, or stop it
+        now with `overlapSeconds` 0), then new requests on it are refused as
+        replaced; running ones finish. During the overlap both tokens share
+        one concurrency and rate allowance. The token is shown once.
+      parameters:
+        - {name: keyId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientKeyRotateRequest'}
+      responses:
+        '201':
+          description: The new key and its one-time token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientKeyCreated'}
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404': {description: No such key.}
+        '409': {description: "The key is turned off or expired, or already replaced. The message says which."}
+        '503': {description: Registry unavailable or the root is locked.}
+
   /v1/auth/client-keys:
     get:
       operationId: listClientKeys
@@ -4109,6 +4139,9 @@ components:
     ClientKeyCreateRequest:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyCreateRequest'
 
+    ClientKeyRotateRequest:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyRotateRequest'
+
     ClientKeyCreated:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyCreated'
 
@@ -5150,6 +5183,8 @@ components:
         - putClientKey
         - revokeClientKey
         - setClientKeyLimits
+        - rotateClientKey
+        - touchClientKey
         - putClientAdmission
         - rotateSigningKey
         - revokeSession
