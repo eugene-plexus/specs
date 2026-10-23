@@ -34,7 +34,8 @@
    59,
    58,
    56,
-   49
+   49,
+   53
   ],
   "ENG": [
    9,
@@ -89,9 +90,7 @@
    52,
    60
   ],
-  "DESIGN": [
-   53
-  ]
+  "DESIGN": []
  },
  "rows": [
   {
@@ -1330,9 +1329,9 @@
    "lane": "WEB",
    "lane_order": 4,
    "repos": [
-    "ui",
-    "gateway",
-    "agent"
+    "agent",
+    "control",
+    "ui"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
@@ -1340,11 +1339,12 @@
     "ui/src/lib/gatewayDashboard.ts",
     "gateway/src/eugene_plexus_gateway/metrics.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     12
    ],
    "design_docs": [
+    "rows/row-38.md",
     "gateway-operations-dashboard.md",
     "host-history.md"
    ],
@@ -1357,7 +1357,7 @@
    "title": "Operations rights for people who are not the owner",
    "summary": "Operations rights for people who are not the owner",
    "from": "CX-OPS",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high",
    "who": "businesses",
@@ -1367,6 +1367,8 @@
    "repos": [
     "control",
     "agent",
+    "library",
+    "gateway",
     "ui"
    ],
    "contract": "control.yaml",
@@ -1374,14 +1376,18 @@
     "control/src/eugene_plexus_control/permissions.py",
     "control/src/eugene_plexus_control/administration.py"
    ],
-   "design_state": "short",
-   "needs": [
-    37
-   ],
+   "design_state": "ready",
+   "needs": [],
    "design_docs": [
+    "rows/row-39.md",
+    "remote-nodes.md",
+    "shared-accounts-and-sso.md",
     "console-ux-pass.md"
    ],
-   "calls": [],
+   "calls": [
+    "R39-LOGS",
+    "R39-DELETE"
+   ],
    "issue": 66
   },
   {
@@ -1398,9 +1404,11 @@
    "lane": "GW",
    "lane_order": 9,
    "repos": [
-    "gateway",
     "control",
-    "ui"
+    "gateway",
+    "inference-driver",
+    "ui",
+    "workbench"
    ],
    "contract": "components/client-keys.yaml gateway.yaml",
    "hot_files": [
@@ -1408,16 +1416,19 @@
     "gateway/src/eugene_plexus_gateway/client_keys.py",
     "control/src/eugene_plexus_control/client_admission.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     11,
     24
    ],
    "design_docs": [
+    "rows/row-40.md",
     "openai-inference-compatibility.md",
     "scoped-client-access.md"
    ],
-   "calls": [],
+   "calls": [
+    "R40-LOCAL"
+   ],
    "issue": 67
   },
   {
@@ -1464,18 +1475,22 @@
    "lane_order": 8,
    "repos": [
     "agent",
+    "ui",
     "specs"
    ],
-   "contract": "agent.yaml?",
+   "contract": "agent.yaml",
    "hot_files": [
     "agent/src/eugene_plexus_agent/engines/vllm.py",
     "agent/src/eugene_plexus_agent/engines/acquisition.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     41
    ],
-   "design_docs": [],
+   "design_docs": [
+    "rows/row-42.md",
+    "m4-second-engine-vllm.md"
+   ],
    "calls": [],
    "issue": 69
   },
@@ -1494,20 +1509,21 @@
    "lane_order": 9,
    "repos": [
     "agent",
-    "library",
     "ui"
    ],
    "contract": "agent.yaml",
    "hot_files": [
+    "agent/src/eugene_plexus_agent/engines/devices.py",
     "agent/src/eugene_plexus_agent/host_probes.py",
-    "agent/src/eugene_plexus_agent/engines/gpu_probe.py",
-    "library/src/eugene_plexus_library/fit.py"
+    "agent/src/eugene_plexus_agent/admission.py",
+    "agent/src/eugene_plexus_agent/runtimes.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     16
    ],
    "design_docs": [
+    "rows/row-43.md",
     "deepinfer-lessons.md"
    ],
    "calls": [],
@@ -1536,12 +1552,13 @@
     "agent/src/eugene_plexus_agent/peer.py",
     "gateway/src/eugene_plexus_gateway/affinity.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     13,
     15
    ],
    "design_docs": [
+    "rows/row-44.md",
     "deepinfer-lessons.md"
    ],
    "calls": [],
@@ -1553,7 +1570,7 @@
    "title": "TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079",
    "summary": "TLS for clients, next: DNS-01 ACME and tailnet certificates; narrow or rotate the CA; a header deadline on 8079",
    "from": "LT2-ACME, LT2-CA",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high",
    "who": "businesses",
@@ -1562,7 +1579,8 @@
    "lane_order": 6,
    "repos": [
     "agent",
-    "control"
+    "control",
+    "ui"
    ],
    "contract": "control.yaml? agent.yaml?",
    "hot_files": [
@@ -1570,21 +1588,25 @@
     "agent/src/eugene_plexus_agent/entrypoint.py",
     "agent/src/eugene_plexus_agent/client_tls.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-45.md",
     "tls-for-clients.md"
    ],
-   "calls": [],
+   "calls": [
+    "R45-TAILNET",
+    "R45-WILDCARD"
+   ],
    "issue": 72
   },
   {
    "row": 46,
    "part": 4,
-   "title": "Node keys that cannot be exported, and freeze enforcement",
-   "summary": "Node keys that cannot be exported, and freeze enforcement",
+   "title": "Freeze enforcement",
+   "summary": "Freeze enforcement",
    "from": "TOK-RES",
-   "size": "M",
+   "size": "S-M",
    "risk": "high",
    "risk_note": "high",
    "who": "multi-machine",
@@ -1593,22 +1615,27 @@
    "lane_order": 5,
    "repos": [
     "agent",
-    "control"
+    "ui",
+    "specs"
    ],
-   "contract": "?",
+   "contract": "agent.yaml",
    "hot_files": [
     "agent/src/eugene_plexus_agent/node_identity.py",
-    "agent/src/eugene_plexus_agent/keyring_store.py",
-    "control/src/eugene_plexus_control/tokens.py"
+    "agent/src/eugene_plexus_agent/trust.py",
+    "agent/src/eugene_plexus_agent/client_tls.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     3
    ],
    "design_docs": [
+    "rows/row-46.md",
     "per-node-token-keys.md"
    ],
-   "calls": [],
+   "calls": [
+    "R46-SCOPE",
+    "R46-FREEZE"
+   ],
    "issue": 73
   },
   {
@@ -1625,24 +1652,26 @@
    "lane": "WB",
    "lane_order": 7,
    "repos": [
-    "workbench",
-    "control"
+    "workbench"
    ],
    "contract": "control.yaml?",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/store.py",
     "workbench/src/eugene_plexus_workbench/projects.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
-    27
+    27,
+    70
    ],
    "design_docs": [
+    "rows/row-47.md",
     "workbench-memory-and-documents.md",
     "workbench-memory-v2.md"
    ],
    "calls": [
-    "MRC25"
+    "MRC25",
+    "R47-LEAVE"
    ],
    "issue": 74
   },
@@ -1694,15 +1723,17 @@
    "repos": [
     "control",
     "agent",
-    "gateway"
+    "library",
+    "ui"
    ],
    "contract": "control.yaml",
    "hot_files": [],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     14
    ],
    "design_docs": [
+    "rows/row-49.md",
     "m6-lifecycle-policy.md"
    ],
    "calls": [],
@@ -1715,23 +1746,31 @@
    "summary": "One model across machines with llama.cpp's `rpc-server`",
    "from": "RPC (setups pass)",
    "size": "L",
-   "risk": "cross",
-   "risk_note": "cross",
+   "risk": "high",
+   "risk_note": "high (a new path between machines)",
    "who": "multi-machine",
    "notes": "Design first",
    "lane": "ENG",
    "lane_order": 12,
    "repos": [
-    "agent"
+    "agent",
+    "ui",
+    "specs"
    ],
    "contract": "agent.yaml",
    "hot_files": [
     "agent/src/eugene_plexus_agent/engines/llama_cpp.py"
    ],
-   "design_state": "full",
-   "needs": [],
-   "design_docs": [],
-   "calls": [],
+   "design_state": "ready",
+   "needs": [
+    43
+   ],
+   "design_docs": [
+    "rows/row-50.md"
+   ],
+   "calls": [
+    "R50-DIRECT"
+   ],
    "issue": 77
   },
   {
@@ -1740,7 +1779,7 @@
    "title": "Job Sites, banked items",
    "summary": "Job Sites, banked items. QR pairing, a re-pair warning, an auditor role, the worker checking signatures, Windows confinement, a tailnet origin",
    "from": "J-BANKED",
-   "size": "S-M each",
+   "size": "L",
    "risk": "high",
    "risk_note": "some high",
    "who": "multi-machine",
@@ -1748,9 +1787,10 @@
    "lane": "AG2",
    "lane_order": 4,
    "repos": [
+    "agent",
     "site-host",
-    "control",
-    "workbench"
+    "workbench",
+    "control"
    ],
    "contract": "site-host.yaml components/job-sites.yaml",
    "hot_files": [
@@ -1758,13 +1798,16 @@
     "site-host/src/eugene_plexus_site_host/worker.py",
     "site-host/src/eugene_plexus_site_host/signing.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-51.md",
     "person-held-keys.md",
     "job-sites-own-enrollment.md"
    ],
-   "calls": [],
+   "calls": [
+    "R51-SHARES"
+   ],
    "issue": 78
   },
   {
@@ -1782,19 +1825,24 @@
    "lane_order": 5,
    "repos": [
     "workbench",
-    "site-host"
+    "agent"
    ],
    "contract": "",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/local_tools.py",
     "workbench/src/eugene_plexus_workbench/mcp_sandbox.py"
    ],
-   "design_state": "full",
-   "needs": [],
+   "design_state": "ready",
+   "needs": [
+    51
+   ],
    "design_docs": [
+    "rows/row-52.md",
     "workbench-mcp.md"
    ],
-   "calls": [],
+   "calls": [
+    "R52-ENV"
+   ],
    "issue": 79
   },
   {
@@ -1803,26 +1851,34 @@
    "title": "One store for the platform half",
    "summary": "One store for the platform half. Design how files, batches, vector stores and stored responses are kept, owned and expired",
    "from": "PLAT (memory `project_platform_half_on_roadmap`)",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high (store, migrations)",
    "who": "developers",
    "notes": "Rows 54-56 share it, so design it once",
-   "lane": "DESIGN",
-   "lane_order": 1,
+   "lane": "GW",
+   "lane_order": 15,
    "repos": [
-    "specs"
+    "platform-store",
+    "gateway",
+    "agent",
+    "ui"
    ],
    "contract": "design only",
    "hot_files": [
     "specs/docs/design/"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-53.md",
+    "workbench-memory-and-documents.md",
+    "llm-d-lessons.md",
     "openai-inference-compatibility.md"
    ],
-   "calls": [],
+   "calls": [
+    "R53-REPO"
+   ],
    "issue": 80
   },
   {
@@ -1839,23 +1895,28 @@
    "lane": "GW",
    "lane_order": 7,
    "repos": [
-    "gateway"
+    "gateway",
+    "platform-store"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
     "gateway/src/eugene_plexus_gateway/responses.py",
     "gateway/src/eugene_plexus_gateway/affinity.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     53,
     57
    ],
    "design_docs": [
+    "rows/row-54.md",
+    "rows/row-53.md",
     "llm-d-lessons.md",
     "responses-and-completions.md"
    ],
-   "calls": [],
+   "calls": [
+    "R54-DEFAULT"
+   ],
    "issue": 81
   },
   {
@@ -1872,19 +1933,23 @@
    "lane": "GW",
    "lane_order": 8,
    "repos": [
-    "gateway"
+    "platform-store",
+    "gateway",
+    "ui"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
     "gateway/src/eugene_plexus_gateway/routes/inference.py",
     "gateway/src/eugene_plexus_gateway/budget.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     11,
     53
    ],
    "design_docs": [
+    "rows/row-55.md",
+    "rows/row-53.md",
     "llm-d-lessons.md"
    ],
    "calls": [],
@@ -1904,18 +1969,21 @@
    "lane": "GW",
    "lane_order": 13,
    "repos": [
-    "gateway",
-    "workbench"
+    "platform-store",
+    "gateway"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
     "gateway/src/eugene_plexus_gateway/server_tools.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
-    53
+    53,
+    71
    ],
    "design_docs": [
+    "rows/row-56.md",
+    "rows/row-53.md",
     "workbench-memory-and-documents.md"
    ],
    "calls": [
@@ -1944,9 +2012,10 @@
     "gateway/src/eugene_plexus_gateway/responses.py",
     "gateway/src/eugene_plexus_gateway/server_tools.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-57.md",
     "openai-inference-compatibility.md"
    ],
    "calls": [],
@@ -1974,13 +2043,16 @@
     "gateway/src/eugene_plexus_gateway/door_paths.py",
     "inference-driver/src/eugene_plexus_inference_driver/engines/gemini_api.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-58.md",
     "gemini-door.md",
     "gemini-provider.md"
    ],
-   "calls": [],
+   "calls": [
+    "R58-NAMES"
+   ],
    "issue": 85
   },
   {
@@ -1990,29 +2062,33 @@
    "summary": "More server-run tools. Tavily, and remote MCP on Responses",
    "from": "P8-later",
    "size": "M",
-   "risk": "cross",
-   "risk_note": "cross",
+   "risk": "high",
+   "risk_note": "high (59b dials caller-supplied URLs)",
    "who": "developers",
    "notes": "",
    "lane": "GW",
    "lane_order": 11,
    "repos": [
     "tool-driver",
-    "gateway"
+    "gateway",
+    "ui"
    ],
    "contract": "tool-driver.yaml gateway.yaml",
    "hot_files": [
     "tool-driver/src/eugene_plexus_tool_driver/providers.py",
     "gateway/src/eugene_plexus_gateway/server_tools.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     57
    ],
    "design_docs": [
+    "rows/row-59.md",
     "server-run-tools.md"
    ],
-   "calls": [],
+   "calls": [
+    "R59-MCP"
+   ],
    "issue": 86
   },
   {
@@ -2029,17 +2105,20 @@
    "lane": "AG2",
    "lane_order": 6,
    "repos": [
-    "workbench"
+    "workbench",
+    "agent"
    ],
    "contract": "workbench yamls?",
    "hot_files": [
     "workbench/src/eugene_plexus_workbench/mcp_apps.py",
     "workbench/src/eugene_plexus_workbench/mcp_sandbox.py"
    ],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-60.md",
     "workbench-ui-interoperability.md",
+    "workbench-ui-browser-v1.md",
     "workbench-mcp-apps-v1.md"
    ],
    "calls": [],
@@ -2051,7 +2130,7 @@
    "title": "LoRA adapters as Library items",
    "summary": "LoRA adapters as Library items, routed to replicas holding them",
    "from": "M2-LORA",
-   "size": "M",
+   "size": "L",
    "risk": "cross",
    "risk_note": "cross",
    "who": "developers",
@@ -2061,7 +2140,9 @@
    "repos": [
     "library",
     "agent",
-    "gateway"
+    "inference-driver",
+    "gateway",
+    "ui"
    ],
    "contract": "library.yaml",
    "hot_files": [
@@ -2069,11 +2150,12 @@
     "library/src/eugene_plexus_library/routes/models.py",
     "gateway/src/eugene_plexus_gateway/routing.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     14
    ],
    "design_docs": [
+    "rows/row-61.md",
     "m2-model-library.md",
     "llm-d-lessons.md"
    ],
@@ -2124,18 +2206,20 @@
    "lane_order": 10,
    "repos": [
     "agent",
-    "library"
+    "library",
+    "ui"
    ],
    "contract": "",
    "hot_files": [
     "agent/src/eugene_plexus_agent/engines/strata.py",
     "library/src/eugene_plexus_library/engine_fit.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
-    "library-sources-and-engines.md",
-    "strata-engine.md"
+    "rows/row-63.md",
+    "strata-engine.md",
+    "library-sources-and-engines.md"
    ],
    "calls": [],
    "issue": 90
@@ -2216,15 +2300,17 @@
    "lane_order": 11,
    "repos": [
     "agent",
-    "library"
+    "library",
+    "ui"
    ],
    "contract": "agent.yaml?",
    "hot_files": [
     "agent/src/eugene_plexus_agent/engines/__init__.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-66.md",
     "experimental-engines.md"
    ],
    "calls": [],
@@ -2246,15 +2332,19 @@
    "repos": [
     "library",
     "agent",
-    "gateway",
     "inference-driver",
-    "workbench"
+    "gateway",
+    "ui"
    ],
    "contract": "several",
    "hot_files": [],
-   "design_state": "full",
-   "needs": [],
+   "design_state": "ready",
+   "needs": [
+    71
+   ],
    "design_docs": [
+    "rows/row-67.md",
+    "library-sources-and-engines.md",
     "workbench-media-screens.md"
    ],
    "calls": [],
@@ -2275,16 +2365,18 @@
    "lane_order": 13,
    "repos": [
     "library",
-    "agent"
+    "agent",
+    "gateway"
    ],
    "contract": "",
    "hot_files": [
     "library/src/eugene_plexus_library/formats/gguf.py",
     "library/src/eugene_plexus_library/preflight.py"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-68.md",
     "deepinfer-lessons.md"
    ],
    "calls": [],
@@ -2304,20 +2396,23 @@
    "lane": "OPS",
    "lane_order": 6,
    "repos": [
-    "specs",
-    "website",
+    "agent",
     "ui"
    ],
    "contract": "",
    "hot_files": [
     "website/src"
    ],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [
     10
    ],
-   "design_docs": [],
-   "calls": [],
+   "design_docs": [
+    "rows/row-69.md"
+   ],
+   "calls": [
+    "R69-DATASET"
+   ],
    "issue": 96
   },
   {
@@ -2431,17 +2526,19 @@
    "lane": "ENG",
    "repos": [
     "agent",
-    "specs",
-    "ui"
+    "ui",
+    "specs"
    ],
    "contract": "agent.yaml",
    "hot_files": [],
-   "design_state": "full",
+   "design_state": "ready",
    "needs": [
     13,
     42
    ],
    "design_docs": [
+    "rows/row-73.md",
+    "rows/row-42.md",
     "m4-second-engine-vllm.md"
    ],
    "calls": [],
@@ -2461,14 +2558,14 @@
    "notes": "Last on purpose",
    "lane": "ENG",
    "repos": [
-    "agent",
-    "library"
+    "agent"
    ],
    "contract": "",
    "hot_files": [],
-   "design_state": "short",
+   "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-74.md",
     "deepinfer-lessons.md",
     "experimental-engines.md"
    ],

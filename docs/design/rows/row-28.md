@@ -179,3 +179,23 @@ The Chrome check `test_versions_browser.py` adds a delete, then a compare.
 - **RB-C2: Choice 1.** After the 30 days, the delete is a true delete: the store, its backup copies and the past-chat index.
 - **RB-C3: Choice 1.** No tree map in this row.
 - **RB-C4: Choice 1.** "Delete from here" works on a message with one version.
+
+## Calls answered by Troy (2026-10-22)
+
+- **R28-OLD-EXCERPTS: Choice 2,** "in case that memory includes a secret".
+  The true delete no longer pauses for an older memory recall (one saved
+  before this row, with no source recorded): it removes it. Built as part
+  28c on branch `r28c-old-recalls`:
+  - **Which old recalls go:** every source-less recall of that person,
+    in any of their chats and in the store's backup copies, saved after
+    the deleted answer was first written. A secret can be one word, so a
+    rule that needs shared words (the old 8-word run) cannot find it; a
+    recall saved earlier cannot quote the answer. Recalls that record
+    their source are untouched, as before.
+  - The chat shows one line: "Also removed 3 older memory recalls that
+    could quote this answer." Deleting a whole chat does the same.
+  - The hold, its 503 and "Remove that recall to finish" are removed.
+  - Test that fails before: workbench
+    `test_branch_delete.py::test_an_old_recall_is_removed_not_held`
+    (a one-word secret in an old recall saved after the branch: removed;
+    one saved before it: kept).
