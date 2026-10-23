@@ -1853,18 +1853,19 @@
    "from": "PLAT (memory `project_platform_half_on_roadmap`)",
    "size": "L",
    "risk": "high",
-   "risk_note": "high (store, migrations)",
+   "risk_note": "high (store, migrations, a new component)",
    "who": "developers",
-   "notes": "Rows 54-56 share it, so design it once",
+   "notes": "Rows 54-56 share it, so design it once. A core component (R53-REPO, 2026-10-23)",
    "lane": "GW",
    "lane_order": 15,
    "repos": [
-    "platform-store",
+    "store",
     "gateway",
     "agent",
-    "ui"
+    "ui",
+    "specs"
    ],
-   "contract": "design only",
+   "contract": "store.yaml (new), common.yaml (ComponentKind), gateway.yaml, agent.yaml",
    "hot_files": [
     "specs/docs/design/"
    ],
@@ -1877,17 +1878,17 @@
     "openai-inference-compatibility.md"
    ],
    "calls": [
-    "R53-REPO"
+    "R53-NAME"
    ],
    "issue": 80
   },
   {
    "row": 54,
    "part": 5,
-   "title": "Stored responses, with the chain as the conversation key",
-   "summary": "Stored responses, with the chain as the conversation key",
+   "title": "Stored responses and conversations, with the chain as the conversation key",
+   "summary": "Stored responses and conversations, with the chain as the conversation key",
    "from": "LD6",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high (chats at rest)",
    "who": "agent clients",
@@ -1896,7 +1897,7 @@
    "lane_order": 7,
    "repos": [
     "gateway",
-    "platform-store"
+    "store"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
@@ -1914,9 +1915,7 @@
     "llm-d-lessons.md",
     "responses-and-completions.md"
    ],
-   "calls": [
-    "R54-DEFAULT"
-   ],
+   "calls": [],
    "issue": 81
   },
   {
@@ -1933,7 +1932,7 @@
    "lane": "GW",
    "lane_order": 8,
    "repos": [
-    "platform-store",
+    "store",
     "gateway",
     "ui"
    ],
@@ -1969,7 +1968,7 @@
    "lane": "GW",
    "lane_order": 13,
    "repos": [
-    "platform-store",
+    "store",
     "gateway"
    ],
    "contract": "gateway.yaml",
@@ -1986,9 +1985,7 @@
     "rows/row-53.md",
     "workbench-memory-and-documents.md"
    ],
-   "calls": [
-    "MRC24"
-   ],
+   "calls": [],
    "issue": 83
   },
   {

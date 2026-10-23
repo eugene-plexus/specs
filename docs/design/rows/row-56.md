@@ -1,6 +1,6 @@
 # Row 56: files, vector stores and `file_search`
 
-Lane GW, after row 53 (the platform store and Files). Cross risk. Sources:
+Lane GW, after row 53 (the `store` component and Files). Cross risk. Sources:
 MRC24 (`workbench-memory-and-documents.md` §3.3: option B1's vector-store
 operations; OpenAI chunks in 800-token windows with 400 overlap and
 returns file-level results), `server-run-tools.md` (`file_search` as a
@@ -23,7 +23,7 @@ this gateway cannot run").
 
 ## 2. Design
 
-### Indexing (platform-store)
+### Indexing (store)
 
 - **Code copied from Workbench, not imported** (components share schemas,
   never code): the chunker, the FTS5 index, the vector scan, the fusion.
@@ -32,7 +32,7 @@ this gateway cannot run").
 - **Text extraction** in a child process with a timeout (Workbench's
   MRC19), for PDF, DOCX, text, Markdown, HTML, code: the same parsers.
 - **Embeddings** through the gateway's `/v1/embeddings` with
-  `model: role:embeddings` (row 71), as the store app's own key; a store
+  `model: role:embeddings` (row 71), with the store's own per-node key; a store
   remembers the embedding model it was built with and refuses to mix
   (Workbench's identity check). No embedding model: word search only, and
   the store's `status` says so ("searching by words; give a model the
@@ -46,7 +46,7 @@ this gateway cannot run").
 
 - The Responses door runs `file_search` as a server-run tool: when the
   model calls it, the gateway searches the named stores (owner checked by
-  the store app), returns the top passages (`max_num_results`, default 10)
+  the store), returns the top passages (`max_num_results`, default 10)
   to the model, and the final message carries `file_citation`
   annotations (file id, filename, index in the text).
 - `include: ["file_search_call.results"]` returns the search results, as
@@ -56,20 +56,20 @@ this gateway cannot run").
 
 ### Console
 
-The store app's page lists each owner's stores (counts and sizes only for
+Settings → Store lists each owner's stores (counts and sizes only for
 the owner of the install; contents only to their owner).
 
 ## 3. Repositories
 
-platform-store (stores, indexing, search), gateway (`file_search` in
+store (stores, indexing, search), gateway (`file_search` in
 `responses.py` and `server_tools.py`, routing), specs (contracts:
-`gateway.yaml` vector-store paths and the tool; `platform-store.yaml`).
+`gateway.yaml` vector-store paths and the tool; `store.yaml`).
 
 ## 4. Tests that fail before
 
-- platform-store `test_vector_stores.py::test_a_file_is_chunked_800_400_and_searchable`.
-- platform-store `test_vector_stores.py::test_mixed_embedding_models_are_refused`.
-- platform-store `test_vector_stores.py::test_words_only_without_an_embeddings_model`.
+- store `test_vector_stores.py::test_a_file_is_chunked_800_400_and_searchable`.
+- store `test_vector_stores.py::test_mixed_embedding_models_are_refused`.
+- store `test_vector_stores.py::test_words_only_without_an_embeddings_model`.
 - gateway `test_file_search.py::test_the_tool_runs_and_cites_the_file`
   (today: "a tool this gateway cannot run").
 - gateway `test_file_search.py::test_another_owners_store_is_not_found`.
@@ -77,7 +77,7 @@ platform-store (stores, indexing, search), gateway (`file_search` in
 ## 5. Acceptance (CI, Linux, about 5 minutes)
 
 `specs/scripts/row56-file-search-acceptance.py` on row 2's harness with
-the store app, the fixture backend (it calls `file_search` when asked, and
+the store, the fixture backend (it calls `file_search` when asked, and
 serves embeddings): upload three files, make a store, wait for
 `completed`, search it, then a Responses request whose answer cites the
 right file; another person's request naming the store gets the not-found
