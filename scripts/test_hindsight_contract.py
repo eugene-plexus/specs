@@ -248,7 +248,7 @@ class HindsightContractTests(unittest.TestCase):
             "{appSecret}",
             "HINDSIGHT_API_MCP_AUTH_TOKEN",
             "{linkSecret}",
-            "pg0://hindsight:{auxPort}",
+            "pg0://hindsight:{databaseSecret}@eugene-plexus-hindsight:{auxPort}",
             "HOME",
             "app's data folder",
             "OTEL",
@@ -256,6 +256,59 @@ class HindsightContractTests(unittest.TestCase):
             "Experimental",
         ):
             self.assertIn(text, description)
+
+    def test_database_secret_is_private_persistent_and_required_at_launch(self) -> None:
+        environment = prose(self.schemas["AppManifest"]["properties"]["environment"])
+        for text in (
+            "{databaseSecret}",
+            "URL-safe random",
+            "owner-only file",
+            "app's data directory",
+            "launch account",
+            "reused",
+            "separate from `{appSecret}` and `{linkSecret}`",
+            "missing, unreadable or empty",
+            "refused",
+            "launch.json",
+            "API responses",
+        ):
+            with self.subTest(requirement=text):
+                self.assertIn(text, environment)
+        self.assertIn("except `{memoryModel}`, `{linkSecret}` and `{databaseSecret}`", environment)
+
+    def test_database_authentication_covers_tcp_and_unix_socket(self) -> None:
+        description = prose(self.schemas["AppManifest"])
+        for text in (
+            "pg_hba.conf",
+            "TCP",
+            "Unix socket",
+            "password authentication",
+            "never `trust`",
+            "Acceptance",
+            "`hindsight`/`hindsight`",
+            "no password",
+            "refused",
+            "generated password succeeds",
+            "redact",
+            "logs",
+        ):
+            with self.subTest(requirement=text):
+                self.assertIn(text, description)
+        self.assertNotIn("pg0://hindsight:{auxPort}", description)
+
+    def test_pg0_is_pinned_and_uses_only_eugenes_instance_and_port(self) -> None:
+        description = prose(self.schemas["AppManifest"])
+        for text in (
+            "pg0-embedded==0.15.2",
+            "`start`, `stop` and `drop`",
+            "`eugene-plexus-hindsight`",
+            "never the default `hindsight` instance",
+            "reserved `{auxPort}`",
+            "port is in use",
+            "refused",
+        ):
+            with self.subTest(requirement=text):
+                self.assertIn(text, description)
 
     def test_stop_and_purge_cover_orphan_postgres_and_external_pg0_data(self) -> None:
         for suffix in ("stop", "restart"):

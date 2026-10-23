@@ -8560,7 +8560,8 @@ components:
         people using the same app. It is not a user-configurable setting.
 
         **MV5b's Hindsight entry is Experimental.** Install exactly
-        `hindsight-api-slim[embedded-db]` at `1.0.0`, with Python 3.12,
+        `hindsight-api-slim[embedded-db]` at `1.0.0`, with the explicit
+        dependency pin `pg0-embedded==0.15.2` and Python 3.12,
         entry `hindsight_api.main:main`, `ui: false`, `configTrio: false`,
         `localActions: false`, `healthPath: /health` and `uses: [inference]`.
         It provides `memory-server` at `/mcp/`. Its LLM, embeddings and
@@ -8573,10 +8574,24 @@ components:
         and `HINDSIGHT_API_TENANT_API_KEY` to `{appSecret}`: REST is open
         otherwise. Enable MCP with `HINDSIGHT_API_MCP_AUTH_TOKEN` set to
         the separate `{linkSecret}`. A REST key is not an MCP token.
-        Set the database URL to `pg0://hindsight:{auxPort}`. On Linux,
+        Set the database URL to
+        `pg0://hindsight:{databaseSecret}@eugene-plexus-hindsight:{auxPort}`.
+        pg0 `start`, `stop` and `drop` must all use
+        `eugene-plexus-hindsight`, never the default `hindsight` instance.
+        The database must listen on the reserved `{auxPort}`; if that
+        port is in use or pg0 selects another port, the start is refused
+        and names the observed cause. Never report a moved port as ready.
+        On Linux,
         HOME must be the app's data folder, so pg0 data is contained there.
         Where pg0 uses the account profile instead, a purge must run
         `pg0 drop` by instance name before deleting the app's files.
+        Require password authentication in `pg_hba.conf` for TCP and the
+        Unix socket, never `trust`. Acceptance must check that both the
+        default `hindsight`/`hindsight` login and a login with no password
+        are refused over TCP and the Unix socket, while the generated
+        password succeeds. The launcher must redact database credentials
+        from pg0 and Hindsight output, logs and errors, including their
+        connection URIs.
         Availability follows MV5b-C1: Linux and agent-account installs
         only; Windows own-account installs wait for data-folder support.
       required: [id, name, source, version, package, entry]
@@ -8819,13 +8834,23 @@ components:
               `provides: memory-server` entry, read in its launch account.
               A missing credential refuses the provider's start with the
               observed cause; never start an unprotected memory server;
+            * `{databaseSecret}` — a URL-safe random database password,
+              generated in the launch account at the app's first start,
+              kept in an owner-only file in the app's data directory and
+              reused on subsequent starts. It is separate from
+              `{appSecret}` and `{linkSecret}`. If the launcher cannot
+              obtain it because its file is missing, unreadable or empty,
+              the start is refused with the observed cause; never use a
+              default password or leave the database variable unset.
+              Filled values never appear in `launch.json`, logs, service
+              definitions or API responses;
             * `{clientKey}`, `{oidcClientSecret}`, `{appSecret}` — secrets.
               `{appSecret}` is a random value made at its first start and
               kept in its data directory.
 
             **A manifest that names `{gatewayUrl}` is not started while
             the gateway's address is unknown** (MR6, 2026-10-12). Every
-            other placeholder except `{memoryModel}` and `{linkSecret}`
+            other placeholder except `{memoryModel}`, `{linkSecret}` and `{databaseSecret}`
             with no value leaves its variable unset, but
             an app without the gateway's address uses its own default, and
             Open WebUI's is `https://api.openai.com/v1`: documents and
