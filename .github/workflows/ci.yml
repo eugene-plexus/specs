@@ -453,6 +453,9 @@ jobs:
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
+      - name: Keep working when the Library and its share stop answering (row 48b)
+        if: matrix.shard == 'L2' || matrix.shard == 'W1'
+        run: python specs/scripts/row48b-library-down-acceptance.py
       - name: Verify engines declare what they accept and the Library judges (LS1)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/ls1-eligibility-acceptance.py
