@@ -442,6 +442,10 @@ tags:
       The OpenAI-compatible front door. snake_case field names and
       OpenAI's error envelope, unlike everything else here — see the
       note above `/v1/models` in `paths`.
+  - name: files
+    description: |
+      Files and uploads kept for their owner by the install's store (row
+      53), in OpenAI's shapes, and in Anthropic's for its Files API.
   - name: admin
     description: Inspect and manage the running gateway.
   - name: config
@@ -1699,7 +1703,11 @@ paths:
         fallback included. A model that cannot hear or read the
         attachment is never asked: with no such backend the request is a
         400 saying so, before anything is forwarded or woken. A `file_id`
-        is refused; it names a store this install does not have.
+        (row 53) is read from the caller's own files in the install's
+        store and carried inline: a PDF as `file_data`, an image as an
+        image part, text as text; another owner's id is refused as a
+        missing one, and a store that is not answering is a 503 naming
+        the cause.
 
         **Audio out (P2b, 2026-09-28).** `modalities: ["text", "audio"]`
         with `audio: {voice, format}` asks for a spoken answer, and routes
@@ -2145,8 +2153,10 @@ paths:
 
         A `url` source is refused and never fetched -- the gateway
         dialling an address a caller names is the request forgery this
-        project closed for node addresses -- and so is a Files API
-        `file` source, which names a store that exists only at Anthropic.
+        project closed for node addresses. A Files API `file` source
+        (row 53) is read from the caller's own files in the install's
+        store and carried as a `base64` source; a text file in a
+        `document` block becomes a `text` source.
         An image on an `assistant` or `system` turn is refused: there is
         nowhere on a backend's wire for it. Every image refusal names the
         block in the caller's own coordinates
@@ -2615,8 +2625,10 @@ paths:
         the chat door's `file` part, and an `input_audio` part as its
         `input_audio`, with the same limits and the same routing: only to
         a model that confirms that input. `filename` is the name the
-        model is shown. A `file_id` or a `file_url` is refused and never
-        fetched. `detail` is accepted and, other than `auto`, named on
+        model is shown. A `file_id` (row 53) is read from the caller's
+        own files in the install's store and carried inline (a PDF as
+        `file_data`, an image as an `input_image`, text as text). A
+        `file_url` is refused and never fetched. `detail` is accepted and, other than `auto`, named on
         the ignored-settings header, as for images.
 
         ### Images
@@ -2625,7 +2637,8 @@ paths:
         carried on the image path every door shares: the limits in
         `MessageContent`, a check that the bytes are the picture they
         claim to be, and routing only to a backend that confirms image
-        input. A URL is refused and never fetched, and so is a `file_id`.
+        input. A URL is refused and never fetched. A `file_id` (row 53)
+        is read from the caller's own files in the install's store.
         **`detail` is accepted whatever it says** -- Codex sends
         `"high"` on every image (measured), both on a `-i` attachment and
         in its `view_image` tool's result -- and a value other than
@@ -2718,7 +2731,7 @@ paths:
         run (P8). Refused with a 400 naming the
         field: every stateful field above, `top_logprobs` above 0 and the
         `message.output_text.logprobs` include, an `input_file` with a
-        `file_id` or a `file_url`, `tool_choice` forcing an undeclared or
+        `file_url`, `tool_choice` forcing an undeclared or
         refused tool, and any top-level field not listed in
         `ResponsesRequest`.
       requestBody:
@@ -3885,6 +3898,382 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/OpenAIErrorResponse'
+
+  /v1/files:
+    post:
+      tags: [files]
+      operationId: createFile
+      summary: Keep a file in this install's store (OpenAI's Files API; Anthropic's too).
+      security:
+        - bearerAuth: []
+      description: |
+        Row 53. The file is kept by the install's **store**, one per
+        install on the root by default, and belongs to the caller: the
+        person the root verified (an app's `X-Eugene-Person-Token`), else
+        the client key, else the owner's console. Nobody else sees it, the
+        install owner included. It ends 30 days after upload by default,
+        or at `expires_after` (OpenAI's field; any number of seconds up to
+        the install's maximum, 30 days by default), and is then deleted
+        for good.
+
+        **At most 16 MiB here**, the gateway's body limit; a larger file
+        comes through `/v1/uploads` in parts. Over the owner's quota (10
+        GiB and 10,000 files by default) is a 413 that says the numbers.
+
+        **Anthropic's Files API is this door too**: a request with
+        `anthropic-version` (every Anthropic SDK sends it) is answered in
+        Anthropic's shapes (`AnthropicFileMetadata`) and its error
+        envelope, and the file is kept as `user_data`.
+
+        **When the store is not answering**, every files and uploads
+        request is a 503 that names the cause ("Eugene's store is not
+        answering: ... Chat keeps working; files wait for it."). Chat,
+        completions and Messages without a `file_id` never ask the store.
+        When the owner turned files off in Settings, a 403 says so.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/FileUploadForm'
+      responses:
+        '200':
+          description: The file, kept.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAIFile'
+                  - $ref: '#/components/schemas/AnthropicFileMetadata'
+        '400':
+          description: A missing file, an unknown `purpose`, an `expires_after` past the maximum.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '401':
+          description: No usable credential.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '403':
+          description: The owner turned files off in Settings.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '413':
+          description: Over 16 MiB, or over the owner's quota (the numbers are in the message).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+    get:
+      tags: [files]
+      operationId: listFiles
+      summary: The caller's own files.
+      security:
+        - bearerAuth: []
+      description: |
+        OpenAI's `purpose`, `limit` (1 to 10,000), `order` and `after`;
+        with `anthropic-version`, Anthropic's `limit` (1 to 1,000, default
+        20), `after_id` and `before_id`. Another owner's files are never
+        listed.
+      parameters:
+        - name: purpose
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/OpenAIFilePurpose'}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 10000}
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: after
+          in: query
+          required: false
+          schema: {type: string}
+        - name: after_id
+          in: query
+          required: false
+          schema: {type: string}
+        - name: before_id
+          in: query
+          required: false
+          schema: {type: string}
+      responses:
+        '200':
+          description: One page of the caller's files.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAIFileList'
+                  - $ref: '#/components/schemas/AnthropicFileList'
+        '401':
+          description: No usable credential.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/files/{file_id}:
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    get:
+      tags: [files]
+      operationId: retrieveFile
+      summary: One of the caller's files.
+      security:
+        - bearerAuth: []
+      description: |
+        **Another owner's file reads as one that does not exist**: the
+        same 404 and the same message, so a caller learns nothing of what
+        others keep.
+      responses:
+        '200':
+          description: The file.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAIFile'
+                  - $ref: '#/components/schemas/AnthropicFileMetadata'
+        '404':
+          description: No such file for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+    delete:
+      tags: [files]
+      operationId: deleteFile
+      summary: Delete one of the caller's files, for good.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OpenAIFileDeleted'
+                  - $ref: '#/components/schemas/AnthropicFileDeleted'
+        '404':
+          description: No such file for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/files/{file_id}/content:
+    parameters:
+      - name: file_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    get:
+      tags: [files]
+      operationId: downloadFileContent
+      summary: The bytes of one of the caller's files.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The bytes as kept, with the file's media type.
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '404':
+          description: No such file for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/uploads:
+    post:
+      tags: [files]
+      operationId: createUpload
+      summary: Start an upload of a file larger than one request (OpenAI's Uploads API).
+      security:
+        - bearerAuth: []
+      description: |
+        Declare the file (`bytes`, `filename`, `mime_type`, `purpose`),
+        add its parts (each at most 16 MiB), then complete it with the
+        parts in order and, optionally, its MD5 (OpenAI's field) or
+        SHA-256. The parts are joined into a temporary file, the size and
+        digest are checked, and only then is it a file. An upload not
+        completed within an hour is deleted with its parts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenAIUploadRequest'}
+      responses:
+        '200':
+          description: The upload, `pending`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIUpload'}
+        '400':
+          description: A missing or wrong field.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '413':
+          description: Over the owner's quota (the numbers are in the message).
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/uploads/{upload_id}/parts:
+    parameters:
+      - name: upload_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    post:
+      tags: [files]
+      operationId: addUploadPart
+      summary: Add one part to the caller's upload.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [data]
+              properties:
+                data:
+                  type: string
+                  format: binary
+                  description: At most 16 MiB.
+      responses:
+        '200':
+          description: The part.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIUploadPart'}
+        '404':
+          description: No such upload for this caller, or it has ended.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '413':
+          description: A part over 16 MiB.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/uploads/{upload_id}/complete:
+    parameters:
+      - name: upload_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    post:
+      tags: [files]
+      operationId: completeUpload
+      summary: Join the parts, in order, into one of the caller's files.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OpenAIUploadComplete'}
+      responses:
+        '200':
+          description: The upload, `completed`, with its `file`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIUpload'}
+        '400':
+          description: |
+            The parts do not add up to the declared `bytes`, or the MD5 or
+            SHA-256 does not match; the upload stays `pending`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '404':
+          description: No such upload or part for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+
+  /v1/uploads/{upload_id}/cancel:
+    parameters:
+      - name: upload_id
+        in: path
+        required: true
+        schema: {type: string, maxLength: 64}
+    post:
+      tags: [files]
+      operationId: cancelUpload
+      summary: Stop one of the caller's uploads; its parts are deleted.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The upload, `cancelled`.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIUpload'}
+        '404':
+          description: No such upload for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '503':
+          description: The store is not answering; the message names the cause.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
 
   /v1/embeddings:
     post:
@@ -11034,3 +11423,224 @@ components:
         clients:
           type: array
           items: {$ref: '#/components/schemas/ClientUsageGroup'}
+
+    # -------- Files and uploads (row 53) --------
+
+    OpenAIFilePurpose:
+      type: string
+      enum: [assistants, batch, fine-tune, vision, user_data, evals]
+      description: OpenAI's upload purposes. Kept as given; nothing here processes a file by its purpose.
+
+    OpenAIExpiresAfter:
+      type: object
+      additionalProperties: false
+      required: [anchor, seconds]
+      properties:
+        anchor:
+          type: string
+          const: created_at
+        seconds:
+          type: integer
+          minimum: 1
+          description: |
+            Seconds after upload. OpenAI takes 3,600 to 2,592,000; this
+            install takes any number up to its maximum (30 days by
+            default, `fileMaxDays` in Settings -> Store).
+
+    FileUploadForm:
+      type: object
+      required: [file]
+      description: |
+        `POST /v1/files`, as the OpenAI SDK sends it. `purpose` is
+        required on the OpenAI door and absent on Anthropic's.
+        `expires_after` arrives as the two form fields the SDK writes.
+      properties:
+        file:
+          type: string
+          format: binary
+        purpose:
+          $ref: '#/components/schemas/OpenAIFilePurpose'
+        expires_after[anchor]:
+          type: string
+          const: created_at
+        expires_after[seconds]:
+          type: integer
+          minimum: 1
+
+    OpenAIFile:
+      type: object
+      required: [id, object, bytes, created_at, filename, purpose, status]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: file
+        bytes:
+          type: integer
+        created_at:
+          type: integer
+        expires_at:
+          type: integer
+          description: Every file kept here has an end.
+        filename:
+          type: string
+        purpose:
+          $ref: '#/components/schemas/OpenAIFilePurpose'
+        status:
+          type: string
+          enum: [processed]
+        status_details:
+          type: ['string', 'null']
+
+    OpenAIFileList:
+      type: object
+      required: [object, data, has_more]
+      properties:
+        object:
+          type: string
+          const: list
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/OpenAIFile'}
+        first_id:
+          type: ['string', 'null']
+        last_id:
+          type: ['string', 'null']
+        has_more:
+          type: boolean
+
+    OpenAIFileDeleted:
+      type: object
+      required: [id, object, deleted]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: file
+        deleted:
+          type: boolean
+
+    OpenAIUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [bytes, filename, mime_type, purpose]
+      properties:
+        bytes:
+          type: integer
+          minimum: 1
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        mime_type:
+          type: string
+          maxLength: 255
+        purpose:
+          $ref: '#/components/schemas/OpenAIFilePurpose'
+        expires_after:
+          $ref: '#/components/schemas/OpenAIExpiresAfter'
+
+    OpenAIUpload:
+      type: object
+      required: [id, object, bytes, created_at, filename, purpose, status, expires_at]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: upload
+        bytes:
+          type: integer
+        created_at:
+          type: integer
+        filename:
+          type: string
+        purpose:
+          $ref: '#/components/schemas/OpenAIFilePurpose'
+        status:
+          type: string
+          enum: [pending, completed, cancelled, expired]
+        expires_at:
+          type: integer
+        file:
+          oneOf:
+            - $ref: '#/components/schemas/OpenAIFile'
+            - type: 'null'
+
+    OpenAIUploadPart:
+      type: object
+      required: [id, object, created_at, upload_id]
+      properties:
+        id:
+          type: string
+        object:
+          type: string
+          const: upload.part
+        created_at:
+          type: integer
+        upload_id:
+          type: string
+
+    OpenAIUploadComplete:
+      type: object
+      additionalProperties: false
+      required: [part_ids]
+      properties:
+        part_ids:
+          type: array
+          minItems: 1
+          items: {type: string}
+        md5:
+          type: string
+          description: The joined file's MD5, checked before it becomes a file.
+        sha256:
+          type: string
+          description: Eugene's own check, the joined file's SHA-256.
+
+    AnthropicFileMetadata:
+      type: object
+      required: [id, type, filename, mime_type, size_bytes, created_at]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: file
+        filename:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        downloadable:
+          type: boolean
+          description: Always true here; the owner may read back what it kept.
+
+    AnthropicFileList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: {$ref: '#/components/schemas/AnthropicFileMetadata'}
+        first_id:
+          type: ['string', 'null']
+        last_id:
+          type: ['string', 'null']
+        has_more:
+          type: boolean
+
+    AnthropicFileDeleted:
+      type: object
+      required: [id, type]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          const: file_deleted
