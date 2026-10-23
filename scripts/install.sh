@@ -787,6 +787,40 @@ def opened(path, *, parents_safe=True):
             os.close(fd)
 
 
+def inspect_folder(path, prefix):
+    """Inspect as root; the agent may not traverse any part of this path."""
+    facts = dict(path=path)
+    try:
+        refuse(path, prefix)
+    except (FileNotFoundError, NotADirectoryError):
+        facts["is_dir"] = False
+    except ValueError as exc:
+        cause = str(exc).split(":", 1)[0]
+        refused = {
+            "not_a_folder": dict(is_dir=False),
+            "link": dict(link=True),
+            "network": dict(network=True),
+            "drive_root": dict(mount_root=True),
+            "system": dict(system=[path]),
+            "eugene": dict(eugene=[path]),
+            "home": dict(homes=[path]),
+        }
+        if cause not in refused:
+            raise
+        facts.update(refused[cause])
+    else:
+        try:
+            # Inspection changes no permissions. Grant still enforces safe parents
+            # and compares this identity again before touching any ACL.
+            with opened(path, parents_safe=False) as fd:
+                return dict(facts=facts, identity=identity(fd))
+        except FileNotFoundError:
+            facts["is_dir"] = False
+        except NotADirectoryError:
+            facts["link"] = True
+    return dict(facts=facts, identity=[])
+
+
 def tree(fd, mount, names=(), *, revoke=False, skipped=None):
     info = os.fstat(fd)
     if stat.S_ISLNK(info.st_mode):
@@ -1134,19 +1168,10 @@ def main():
         not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", app)
         or not re.fullmatch(r"[0-9a-f]{32}", ident)
         or mode not in ("read", "write")
-        or verb not in ("folder-grant", "folder-revoke")
+        or verb not in ("folder-inspect", "folder-grant", "folder-revoke")
     ):
         raise ValueError("Invalid folder permission request identifiers.")
-    root = Path("/etc/eugene-plexus/folder-access")
-    root.mkdir(parents=True, mode=0o700, exist_ok=True)
-    directory = root / app
-    directory.mkdir(mode=0o700, exist_ok=True)
-    target = directory / (ident + ".json")
-    group_name = "eapp-" + hashlib.sha256(app.encode()).hexdigest()[:12] + "-files"
-    group = str(grp.getgrnam(group_name).gr_gid)
-    if verb == "folder-grant":
-        if target.exists():
-            raise ValueError("This access record already exists.")
+    if verb in ("folder-inspect", "folder-grant"):
         path = run(
             "runuser",
             "-u",
@@ -1160,6 +1185,19 @@ def main():
         )
         if not 0 < len(path) <= 4096:
             raise ValueError("Invalid folder path length.")
+        if verb == "folder-inspect":
+            print(json.dumps(inspect_folder(path, prefix)))
+            return
+    root = Path("/etc/eugene-plexus/folder-access")
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    directory = root / app
+    directory.mkdir(mode=0o700, exist_ok=True)
+    target = directory / (ident + ".json")
+    group_name = "eapp-" + hashlib.sha256(app.encode()).hexdigest()[:12] + "-files"
+    group = str(grp.getgrnam(group_name).gr_gid)
+    if verb == "folder-grant":
+        if target.exists():
+            raise ValueError("This access record already exists.")
         refuse(path, prefix)
         process, restart_needed = running_access(app, group, path, mode == "write")
         with opened(path) as fd:
@@ -1295,7 +1333,7 @@ for NAME in $NAMES; do
     MODE=read
     GRANT=
     case "$VERB" in
-        folder-grant|folder-revoke)
+        folder-inspect|folder-grant|folder-revoke)
             set -- $APP
             if [ "$#" = 3 ]; then APP=$1; MODE=$2; GRANT=$3; else VERB=; fi
             case "$MODE" in read|write) ;; *) VERB= ;; esac
@@ -1308,7 +1346,7 @@ for NAME in $NAMES; do
     if [ -z "$VERB" ]; then
         CODE=2
         OUT="refused: this helper starts, stops, restarts or cleans one eugene-plexus-app@ unit"
-    elif [ "$VERB" = folder-grant ] || [ "$VERB" = folder-revoke ]; then
+    elif [ "$VERB" = folder-inspect ] || [ "$VERB" = folder-grant ] || [ "$VERB" = folder-revoke ]; then
         OUT=$(/usr/bin/python3 -I /usr/local/lib/eugene-plexus/folder-access.py "${DIR%/apps/ctl}" "$ACCOUNT" "$VERB" "$APP" "$MODE" "$GRANT" 2>&1)
         CODE=$?
     elif [ "$VERB" = clean ]; then

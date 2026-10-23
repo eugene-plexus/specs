@@ -136,6 +136,112 @@ def test_installed_helper_is_exactly_the_reviewed_source():
     assert installed == source
 
 
+def test_root_inspection_checks_path_and_returns_held_identity(monkeypatch):
+    h = helper()
+    calls = []
+    monkeypatch.setattr(h, "refuse", lambda *args: calls.append(args))
+
+    @contextlib.contextmanager
+    def opened(path, *, parents_safe):
+        assert calls == [(path, "/srv/install")]
+        assert not parents_safe  # Grant enforces parent ACLs before any mutation.
+        yield 10
+
+    monkeypatch.setattr(h, "opened", opened)
+    monkeypatch.setattr(h, "identity", lambda fd: [fd, 123, 456])
+    assert h.inspect_folder("/srv/closed/child", "/srv/install") == {
+        "facts": {"path": "/srv/closed/child"},
+        "identity": [10, 123, 456],
+    }
+
+
+@pytest.mark.parametrize(
+    ("error", "facts"),
+    [
+        (FileNotFoundError(), {"is_dir": False}),
+        (NotADirectoryError(), {"is_dir": False}),
+        (ValueError("link: A path component is a link."), {"link": True}),
+        (ValueError("not_a_folder: Choose a folder."), {"is_dir": False}),
+        (ValueError("network: No network folders."), {"network": True}),
+        (ValueError("drive_root: No mount roots."), {"mount_root": True}),
+        (ValueError("system: No system folders."), {"system": ["/srv/refused"]}),
+        (ValueError("eugene: No install folders."), {"eugene": ["/srv/refused"]}),
+        (ValueError("home: Use a Job Site."), {"homes": ["/srv/refused"]}),
+    ],
+)
+def test_root_inspection_reports_refusals_without_opening(monkeypatch, error, facts):
+    h = helper()
+
+    def refuse(*_):
+        raise error
+
+    monkeypatch.setattr(h, "refuse", refuse)
+    monkeypatch.setattr(
+        h, "opened", lambda *a, **kw: pytest.fail("Refused path opened")
+    )
+    assert h.inspect_folder("/srv/refused", "/srv/install") == {
+        "facts": {"path": "/srv/refused", **facts},
+        "identity": [],
+    }
+
+
+def test_inspect_verb_reads_request_as_agent_without_creating_a_ledger(
+    monkeypatch, capsys
+):
+    import sys
+    from pathlib import PurePosixPath
+
+    h = helper()
+    ident = "a" * 32
+    monkeypatch.setattr(
+        h,
+        "sys",
+        SimpleNamespace(
+            version_info=(3, 12),
+            argv=[
+                "helper",
+                "/srv/install",
+                "agent",
+                "folder-inspect",
+                "workbench",
+                "read",
+                ident,
+            ],
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "grp", SimpleNamespace())
+    calls = []
+
+    def run(*args):
+        calls.append(args)
+        return "/srv/closed/child"
+
+    monkeypatch.setattr(h, "run", run)
+    monkeypatch.setattr(h, "Path", PurePosixPath)
+    result = {"facts": {"path": "/srv/closed/child"}, "identity": [1, 2, 3]}
+
+    def inspect(path, prefix):
+        assert path == "/srv/closed/child" and prefix == "/srv/install"
+        return result
+
+    monkeypatch.setattr(h, "inspect_folder", inspect)
+    h.main()
+    assert json.loads(capsys.readouterr().out) == result
+    assert calls == [
+        (
+            "runuser",
+            "-u",
+            "agent",
+            "--",
+            "head",
+            "-c",
+            "4097",
+            "--",
+            f"/srv/install/apps/ctl/{ident}.path",
+        )
+    ]
+
+
 @pytest.mark.parametrize("entry", ["user:1000", "group:"])
 def test_masked_acl_entry_is_refused_without_widening(monkeypatch, entry):
     h = helper()
