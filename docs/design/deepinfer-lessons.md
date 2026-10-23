@@ -492,6 +492,11 @@ must handle:
 This needs hardware this machine does not have. Measure on a rented or
 borrowed box, or wait for a user's report.
 
+The row 68 contract staging and implementation findings are in
+[row-68.md](rows/row-68.md). They were moved out of the Strata design:
+template availability, engine-confirmed provenance, DSML variants and
+own-head drafting concern DeepSeek and its serving engines, not Strata.
+
 ## Smaller things to check
 
 Each of these is a check, not a finding.
