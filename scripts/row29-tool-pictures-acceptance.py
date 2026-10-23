@@ -578,13 +578,23 @@ def exercise(work, workbench_ref):
         ).save()
         start("site")
         site_id = f"site:{enrolled.site}:pictures"
-        wait(
-            lambda: any(
-                s["id"] == site_id and s["available"]
-                for s in browser.get("/api/tools/servers").json()["servers"]
-            ),
-            "site tool listing",
-        )
+        seen = {}
+
+        def site_listed():
+            seen["servers"] = browser.get("/api/tools/servers").json()["servers"]
+            return any(s["id"] == site_id and s["available"] for s in seen["servers"])
+
+        try:
+            wait(site_listed, "site tool listing")
+        except AssertionError:
+            # Say what Workbench listed and what the site and control logged.
+            print(f"wanted {site_id}; Workbench listed: {json.dumps(seen.get('servers'))[:4000]}")
+            for name in ("site", "control", "agent"):
+                log = work / name / "process.log"
+                if log.exists():
+                    tail = log.read_text(encoding="utf-8", errors="replace").splitlines()[-80:]
+                    print(f"---- {name} log (last 80 lines) ----", *tail, sep="\n", flush=True)
+            raise
 
         def run(server, vision, *, count=1, large=True, gateway_limit=12):
             configured = call(
