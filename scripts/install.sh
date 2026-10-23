@@ -717,6 +717,7 @@ def related(path, root):
 
 
 def refuse(path, prefix):
+    """Match the agent: own prefix, system, home, then other install ancestors."""
     if any(ord(c) < 32 or ord(c) == 127 for c in path) or not path.startswith("/"):
         raise ValueError(
             "not_a_folder: Use an absolute path without control characters."
@@ -729,8 +730,12 @@ def refuse(path, prefix):
         raise ValueError("not_a_folder: Choose an existing folder.")
     if os.path.ismount(path):
         raise ValueError("drive_root: Choose a folder inside the drive.")
-    if related(path, prefix):
+    if path == prefix or path.startswith(prefix.rstrip("/") + "/"):
         raise ValueError("eugene: This is Eugene's own folder.")
+    if any(related(path, system) for system in SYSTEM) or Path(path).parts[
+        1
+    ].startswith("lib"):
+        raise ValueError("system: Eugene does not give apps system folders.")
     import pwd
 
     homes = ["/home"] + [
@@ -740,10 +745,8 @@ def refuse(path, prefix):
     ]
     if any(related(path, home) for home in homes):
         raise ValueError("home: Use a Job Site to work in your own folders.")
-    if any(related(path, system) for system in SYSTEM) or Path(path).parts[
-        1
-    ].startswith("lib"):
-        raise ValueError("system: Eugene does not give apps system folders.")
+    if related(path, prefix):
+        raise ValueError("eugene: This is Eugene's own folder.")
 
 
 @contextlib.contextmanager

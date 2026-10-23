@@ -104,6 +104,17 @@ work in your own folders: it runs as you and needs no app permission change.
 This section is unavailable where Workbench shares Eugene's own account;
 folder access needs a Windows service or Linux system install.
 
+Refusal causes use the same precedence in the agent and the root helper.
+After path, link, network and drive-root checks, a path at or inside Eugene's
+recorded install prefix or data folders is `eugene`. For other paths, a system
+folder or its ancestor is `system`, even if it contains a service profile.
+A person's home, its ancestors and its contents are `home`, even if Eugene
+is installed below that path. Other ancestors of Eugene's prefix or data
+folders are `eugene` too, so no parent grant can expose them. Thus
+`/home/runner` is `home` when the prefix is `/home/runner/ep`, while that
+prefix and its contents stay `eugene`; `C:\Windows` stays `system` when a
+service profile is below it.
+
 ### Expert override: manual host permissions
 
 The host's Security tab or ACL editor remains available. Permissions given

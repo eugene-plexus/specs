@@ -171,6 +171,40 @@ def test_helper_refuses_control_characters_before_reading_a_path():
         helper().refuse("/srv/project\n[Service]", "/var/lib/eugene-plexus")
 
 
+@pytest.mark.parametrize(
+    ("path", "prefix", "home", "cause"),
+    [
+        ("/home/runner", "/home/runner/ep", "/home/runner", "home"),
+        ("/home", "/home/runner/ep", "/home/runner", "home"),
+        ("/home/runner/shared", "/home/runner/ep", "/home/runner", "home"),
+        ("/home/runner/ep", "/home/runner/ep", "/home/runner", "eugene"),
+        ("/home/runner/ep/apps", "/home/runner/ep", "/home/runner", "eugene"),
+        ("/opt", "/opt/ep", "/opt/service", "system"),
+        ("/opt/ep", "/opt/ep", "/opt/service", "eugene"),
+        ("/var", "/var/lib/ep", "/var/lib/service", "system"),
+        ("/var/lib/ep/apps", "/var/lib/ep", "/var/lib/service", "eugene"),
+        ("/srv/people", "/srv/people/person/ep", "/srv/people/person", "home"),
+        ("/srv/install", "/srv/install/ep", "/home/runner", "eugene"),
+    ],
+)
+def test_helper_refusal_precedence(monkeypatch, path, prefix, home, cause):
+    import sys
+    from pathlib import PurePosixPath
+
+    h = helper()
+    monkeypatch.setitem(
+        sys.modules,
+        "pwd",
+        SimpleNamespace(getpwall=lambda: [SimpleNamespace(pw_dir=home)]),
+    )
+    monkeypatch.setattr(h, "Path", PurePosixPath)
+    monkeypatch.setattr(h.os.path, "realpath", lambda path, **kw: path)
+    monkeypatch.setattr(h.os.path, "isdir", lambda path: True)
+    monkeypatch.setattr(h.os.path, "ismount", lambda path: False)
+    with pytest.raises(ValueError, match=f"^{cause}:"):
+        h.refuse(path, prefix)
+
+
 @pytest.mark.skipif(__import__("sys").platform != "linux", reason="Linux ACL tools")
 def test_revoke_removes_owned_group_after_growth_and_chmod(tmp_path):
     h = helper()
