@@ -72,8 +72,13 @@ Four things are wrong:
 - **The check has a time limit.** `_stat` of a source runs in a thread
   with a 5 s limit. A timeout counts as "cannot be checked", not as
   "different".
-- **When the source cannot be checked** (an `OSError` or the time limit),
-  the copy is used when its own size equals the recorded size. The
+- **"Cannot be checked" means the folder cannot be read:** the source's
+  Library folder root (its mount on this machine) raises an `OSError`
+  or passes the time limit. A folder that reads but no longer holds the
+  file means the model was removed or moved: the copy is not used, as
+  today.
+- **When the source cannot be checked**, the copy is used when its own
+  size equals the recorded size. The
   runtime gets a note, shown on its card: "Started from this machine's
   copy. \\\\nas\\models could not be checked: the network path was not
   found." The note clears at the next start that checks the source.
