@@ -121,6 +121,7 @@ Linux and Windows run the `--label` stub checks. **Not in CI:** a reboot and sig
 - **MAC-KEY: Choice 1.** The passphrase is kept in a file that only Eugene's own account can read.
 - **R8-JOBSITE-MAC: Choice 1** (answered 2026-10-22, after the build). `--job-site` on a Mac with the daemon is refused and says why: a job site there would need root to run each person's worker, which is built for Linux only. A `--user` install keeps Job Sites, as before. This is what the branch builds (see "What building found").
 - 2026-10-22, R8-ENGINES-COPY: Choice 2. Every copied engine build is fetched again after the move.
+- 2026-10-23, R8-EXEC-TRUST: Choice 3. A program that one other account can change runs once an owner approves it, and the approval lapses when the program changes. Built in row 8 as part 8c (below), so row 8 never ships a refusal without the way to approve.
 
 ## What building found (2026-10-21)
 
@@ -206,3 +207,95 @@ Branch `r8-installer-pass` in specs, agent and ui.
   - *Not reachable by sampling:* a second listener that lives only between the two samples.
 - **With 8080 taken at first boot, control lands on the gateway's port** (agent#31): the gateway walks to 8084, then `move_control_behind` moves control to 8084 too, because `first_free` never skips its preferred port. Any Mac or Linux box with JupyterLab on 8080 meets it. `machine_port.py` is another lane's, so it is filed, not fixed. The acceptance therefore holds only 8079 and 8081 (the design said 8079-8083), and leaves 8083 to the install's machine port: every node opens it there, the installer has no setting for it, and the root's own join token pins it (agent#27).
 - A4 moves to the daemon: it reads the account's files with sudo, kickstarts `system/...`, sets the control root to `passphrase_file` as the wizard does, and expects the account gone after removal.
+
+## 8c: approving a program one other account can change (R8-EXEC-TRUST, Choice 3)
+
+Troy pushed back on the refusal above ("too restrictive") and chose Choice 3 (2026-10-23). It applies only where Eugene runs in an account of its own: the Mac's daemon and a Linux system install. A person's own install is not changed.
+
+### The design (the orchestrator's, 2026-10-23)
+
+1. **Three kinds.** `exec_trust` walks the chain as before: the file, every folder, every link and where it points, a script's interpreter, and the Python environment the program belongs to. Then it decides:
+   - `ok`: root and Eugene's account own every item, and no group or others can write any of them. It runs.
+   - `needs_approval`: every item is owned by root, by Eugene's account or by one other account, and no group or others can write any of them. It runs only with an owner's approval.
+   - `refused`: a group or others can write an item, or two or more other accounts own items. It never runs. The error names the path and who can write it.
+
+   The verdict carries the kind, the other account (uid and name) and the path to execute, so callers never work them out again.
+2. **An approval binds** the path to execute, the other account's uid, the file's SHA-256, and the chain's (path, uid, mode) list. It lapses when any of them differ at the next check, and the runtime asks again. The agent keeps approvals in a file in its own state folder that only Eugene's account can write.
+
+   **An approval trusts that account.** The hash catches a change. It is not a boundary against the account that owns the file, and nothing is done about a time-of-check race beyond what the walk already does.
+3. **The contract** (`agent.yaml`): a runtime's failure carries `execTrust {kind, path, account, sha256}`. `GET/POST /v1/exec-approvals` and `DELETE /v1/exec-approvals/{id}`, for the owner only. POST takes `{path, sha256}`. The agent checks again at that moment and answers 409, naming the cause, when the kind is not `needs_approval` or the hash differs from the one shown.
+4. **The console** asks on that runtime's failure: "Run llama-server from /home/ada/bin as Eugene's account? Anyone who can change this file (ada) can then act as Eugene." The buttons are "Run it" and "Not now", with "Use Eugene's own build" beside them. Settings lists the approvals, each with Remove.
+5. **The move report and its receipt** say "Eugene will ask before running it" for a setting whose program one other account can change. Only `refused` settings say "It will not run until moved".
+
+### What building found (2026-10-23)
+
+Built on the same branch (agent `exec_trust.py`, `exec_approvals.py`, `routes/exec_approvals.py`; ui `lib/execTrust.ts`, `components/ExecApprovals.tsx`, the inference page; specs `agent.yaml`, `install.sh`).
+
+**Defaults built for questions the design left open** (none of them deletes data or keeps chats somewhere new):
+
+- **One decision function.** `exec_trust.assess(path)` returns a `Verdict`. One rule, `runs(verdict)`, decides what runs: `ok` runs, `needs_approval` runs while an approval holds, `refused` never runs. `trusted_program` and `untrusted` call it.
+  - The walk now goes on past an item another account owns, so the verdict knows whether anything else could change the program too.
+  - Before reading the first bytes of a file, the walk checks that it is a plain file, and it opens the file without blocking. A pipe a person puts where a program belongs cannot hold the agent.
+- **What counts as `refused`, beyond the design's two cases:**
+  - A macOS ACL entry that lets anyone but root, Eugene's account or the item's own owner write.
+  - A volume that ignores ownership.
+  - A `#!/usr/bin/env` script.
+  - Anything that cannot be checked: a missing item, too many links or interpreters, an unreadable ACL or volume, or a file larger than 1 GiB to hash.
+
+  An ACL entry that lets the single other account write is refused too, not offered for approval. That is stricter than needed, and simpler.
+- **Which bytes are hashed.** The SHA-256 is of the file that runs. A script's interpreter and environment are bound through the chain (path, owner, mode), not through their bytes. The approval trusts that account in any case.
+  - Hashes are cached by device, inode, size, mtime and ctime. Every write changes ctime, and an owner cannot set ctime back.
+- **The approvals file** is `exec-approvals.json`, beside the agent's `agent.yaml`, written owner-only (0600) and atomically.
+  - The agent reads approvals only while the file and every folder above it pass the same walk as an `ok` program. Otherwise it reads none and logs why, and an approval is refused (409) with the cause.
+  - A lapsed approval is removed from the file at the check that finds it, and the agent logs which binding changed: the account, the file, or the chain.
+  - Approving a program again replaces its earlier approval.
+- **Who may approve:** the owner's session (`require_operator_session`, as every other write on the agent). A component's, the gateway's or another machine's service token gets 401 on all three routes.
+  - POST answers 409 for a `refused` program (the refusal's words), for one Eugene runs already ("there is nothing to approve"), and for a hash that differs ("changed since it was shown").
+  - DELETE answers 404 for an unknown id.
+  - `approvedBy` is the session's `sub`.
+- **Where `execTrust` appears:** on `Runtime` (cleared on a successful start) and on `GET /v1/engines`' entries. A program found through `vllmBinary` or on PATH can therefore be approved too, and the acceptance reads it there.
+  - `Runtime.refusedBinary` stays: it names the runtime's own `binary`, which "Use Eugene's own build" clears.
+- **The console.**
+  - "Not now" hides the question for that file's hash. A changed file asks again.
+  - "Run it" posts the path and hash the node showed, then starts the runtime. A failure is shown on the row with the agent's words.
+  - A `refused` program is never offered for approval, whatever else a node sends.
+  - Settings shows an "Approved programs" card, only when some machine has an approval. Each row shows the path, the machine, and "<account> can change it, and so act as Eugene", with Remove.
+  - An agent from before 8c (404) lists nothing.
+- **Messages name the path, who can change it, and what to do.** The way out is "copy its folder into <Eugene's folder> as an administrator, or let Eugene install the engine itself". Eugene's folder is the account's home, which the installers make the prefix.
+  - An app's interpreter offers "install the app again".
+  - The uv the agent installs apps with offers "install Eugene again, which puts its own uv back".
+
+  For example: "Eugene's own account runs /Users/troy/llama/llama-server only once an owner approves it: it is reached through /Users/troy, which belongs to troy. Approve it, copy its folder into /usr/local/eugene-plexus as an administrator, or let Eugene install the engine itself."
+- **The move's report** reads the settings as Eugene's account. It says "<account> can change it. Eugene will ask before running it." when one other account owns parts of the path and nothing on it is group- or other-writable. Otherwise it says "It will not run until moved." The agent's own walk (links, interpreters, ACLs) decides in the end. The report is the installer's forecast.
+
+**Tests that failed first, and the sabotages:**
+- agent `test_exec_trust.py`:
+  - The three kinds on the stand-in disk: `ok` is not hashed; `needs_approval` carries the account, the uid, the SHA-256 and the chain.
+  - A group-writable folder is refused, naming its owner and group. A person's group-writable folder is refused, not offered. Two accounts are refused.
+  - A pipe is not read.
+  - `Runtime.execTrust` and the engine list's `execTrust` are set.
+- agent `test_exec_approvals.py`:
+  - An approved program runs. Its approval lapses when the bytes change, when a folder on the way changes, and when another account holds it.
+  - Each binding is compared on its own.
+  - A refused, changed or trusted program is not approved.
+  - Approvals are not read from a file others could change, and the file is checked like a program.
+  - Through the API: approve, list, take back, 409s and 404, and only an owner's session (a gateway or library token gets 401).
+- ui `execTrust.test.ts`, `ExecApprovals.test.tsx`, and three inference-page cases: the question and "Run it", "Not now", and a refused program not offered.
+- specs `row8-install-sh-checks.sh` M4c: a setting naming a program only this shell's account can change, read as another account by the stand-in Python (`EP_STUB_EUID`), says "Eugene will ask before running it". Settings under `/tmp` (world-writable) still say "It will not run until moved".
+- Sabotages, each restored from a copy and each caught: 14 in the agent, 7 in the ui, 2 in the installer.
+
+**Acceptance (macOS runners, `row8-macos-daemon-acceptance.py`):**
+- A2a has the daemon list a stand-in `vllm` in the runner's folder. Its interpreter, also the runner's, leaves a mark when run.
+  - First the stand-in waits for approval (`needs_approval`, naming the runner) and is not run, not even to read its environment (A2a1).
+  - Approved through the API, it runs: it is listed at its path, and its interpreter ran (A2a2).
+  - With one byte changed, it asks again: the approval is gone, and it is not run (A2a3).
+- A2c (a chain of links through the runner's home) and A2d (a script whose interpreter the runner owns) now expect `needs_approval`.
+- A2b (ACL), A2e (`env`) and A2f (ownership ignored) expect `refused`.
+- A new A2k puts root's program in a folder its group (staff) can write. The program is refused, naming the owner and the group, and `POST /v1/exec-approvals` answers 409 (A2k2).
+- 11h now expects the move to say "Eugene will ask before running it" for `engineBinaryRoots` naming the runner's folder.
+
+**Not covered, and why:**
+- Windows, as before.
+- What an app or a tool server starts, as before.
+- An approval is not a boundary against the account it trusts, by design.
+- The stub suite has no case with two other accounts. It runs as one account without root. The agent's test covers that case.

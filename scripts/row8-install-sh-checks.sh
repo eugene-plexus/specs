@@ -121,7 +121,17 @@ case "$*" in
   *platform.machine*) echo arm64; exit 0 ;;
   *os.path.realpath*) echo "$(dirname "$(dirname "$0")")/../pythons/cpython-3.12/bin/python3.12"; exit 0 ;;
 esac
-if [ "${1:-}" = -I ] && [ "${2:-}" = - ]; then shift 2; exec python3 -I - "$@"; fi
+if [ "${1:-}" = -I ] && [ "${2:-}" = - ]; then
+  shift 2
+  # EP_STUB_EUID: the account the script reads ownership as (the move's
+  # report reads it as Eugene's account, which this shell cannot be).
+  if [ -n "${EP_STUB_EUID:-}" ]; then
+    exec python3 -I -c 'import os, sys
+os.geteuid = lambda: int(os.environ["EP_STUB_EUID"])
+exec(compile(sys.stdin.read(), "-", "exec"))' "$@"
+  fi
+  exec python3 -I - "$@"
+fi
 cat >/dev/null 2>&1 || true
 exit 0
 STUB
@@ -815,6 +825,7 @@ components:
     configFile: $old/control.yaml
 modelCopyDir: $old
 vllmBinary: $home/vllm-env/bin/vllm
+kevPython: $ASK/kev/python
 mlxBinary: $old/custom/llama-server
 engineBinaryRoots:
 - $old/custom
@@ -877,9 +888,19 @@ PLIST
 
 say "M4. a LaunchAgent install moves to the daemon"
 mkdir -p "$WORK/move/home"
+# Part 8c: a program only one other account can change, and nobody else
+# (no folder above it that its group or others can write, as /tmp is): the
+# move says Eugene will ask before running it. In this shell's own home,
+# read as an account that is not this one (the stand-in Python's
+# EP_STUB_EUID), so this shell's account is that one other account.
+ASK=$(mktemp -d "${HOME:?}/.ep-row8-ask.XXXXXX")
+trap 'rm -rf "$ASK"' EXIT
+mkdir -p "$ASK/kev"
+printf '#!/bin/sh\n' > "$ASK/kev/python"
+chmod 0700 "$ASK/kev"
 old_install "$WORK/move/home"
 OLD=$WORK/move/home/.local/share/eugene-plexus
-run_mac move
+EP_EXTRA_ENV="EP_STUB_EUID=4242" run_mac move
 STATE=$ROOT/state
 if [ "$RC" = 0 ]; then ok "the move finished"; else bad "rc=$RC"; show "$OUT" 15; fi
 words=$(printf '%s' "$OUT" | grep -n 'Eugene will start when this Mac starts, before anyone signs in' | cut -d: -f1 | head -n 1)
@@ -999,17 +1020,26 @@ else
 fi
 
 # A copied setting naming a program in the person's home is kept, and said:
-# Eugene's own account will not run it there (the agent refuses it). One
-# that named a program in the old install is turned off: nothing that runs
-# crosses, and its path in the new prefix must not come to name one.
+# Eugene's own account will not run it there unless an owner approves it
+# (one other account can change it) or at all (others can). One that named
+# a program in the old install is turned off: nothing that runs crosses,
+# and its path in the new prefix must not come to name one.
 say "M4c. settings naming programs are kept and said, or turned off when they named the old install"
 H=$WORK/move/home
 if grep -qx "vllmBinary: $H/vllm-env/bin/vllm" "$PREFIX/agent.yaml" \
     && grep -q "binary: $H/llama/llama-server" "$PREFIX/agent.yaml" \
-    && printf '%s' "$OUT" | grep -q "vllmBinary names $H/vllm-env/bin/vllm: .*It will not run until moved" \
+    && printf '%s' "$OUT" | grep -q "vllmBinary names $H/vllm-env/bin/vllm: .*can be changed by others. It will not run until moved" \
     && printf '%s' "$OUT" | grep -q "a runtime's binary names $H/llama/llama-server: .*It will not run until moved" \
     && grep -q "vllmBinary names $H/vllm-env/bin/vllm" "$ROOT/receipts/move-report.txt" 2>/dev/null; then
-  ok "settings naming the person's own programs: kept, said in the move's words and in root's move-report.txt"
+  ok "settings naming programs others can change: kept, said as not running, in the move's words and in root's move-report.txt"
+else
+  bad "report: $(cat "$ROOT/receipts/move-report.txt" 2>/dev/null | tr '\n' '|')"; show "$OUT" 10
+fi
+if grep -qx "kevPython: $ASK/kev/python" "$PREFIX/agent.yaml" \
+    && printf '%s' "$OUT" | grep -q "kevPython names $ASK/kev/python: $(id -un) can change it. Eugene will ask before running it." \
+    && ! printf '%s' "$OUT" | grep -q "kevPython names .*It will not run until moved" \
+    && grep -q "kevPython names $ASK/kev/python: $(id -un) can change it. Eugene will ask before running it." "$ROOT/receipts/move-report.txt" 2>/dev/null; then
+  ok "a setting naming a program only one other account can change: kept, said as asking first"
 else
   bad "report: $(cat "$ROOT/receipts/move-report.txt" 2>/dev/null | tr '\n' '|')"; show "$OUT" 10
 fi

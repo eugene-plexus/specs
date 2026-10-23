@@ -34,12 +34,16 @@ Two phases.
 10. in the daemon the agent reports Metal; a GGUF downloaded through the
     Library lands in ~/Eugene Models and answers through the gateway
 A2. what Eugene's own account runs, on fixtures made here, offline, each
-    checked whatever happened before it: a program in the runner's folder,
-    root's program with an ACL entry that lets the runner write, a chain of
-    links through the runner's home, a script whose interpreter the runner
-    owns, a `#!/usr/bin/env` script, a volume that ignores ownership -- all
-    refused, naming the cause; /usr/bin/true and Eugene's own store run, a
-    relative path as the absolute path that was checked; nothing refused ran
+    checked whatever happened before it (part 8c): a program in the
+    runner's folder waits for an owner's approval and does not run;
+    approved through the API it runs; one byte changed, it asks again. A
+    chain of links through the runner's home and a script whose
+    interpreter the runner owns wait for approval too. Root's program with
+    an ACL entry that lets the runner write, a `#!/usr/bin/env` script, a
+    volume that ignores ownership and a folder its group can write are
+    refused, naming the cause, and the API will not approve the last;
+    /usr/bin/true and Eugene's own store run, a relative path as the
+    absolute path that was checked; nothing refused or waiting ran
 13. --user beside the daemon is refused
 14. uninstall: plist gone, job unknown to launchd, no process left, account
     and group removed, config kept as root's
@@ -56,7 +60,7 @@ Keychain where this runner has one, enrolled):
     by itself; 11g, no copied llama.cpp build is kept (one changed after
     download among them) and the daemon fetches it again, byte for byte;
     11h, a copied setting naming a folder of the person's is kept and said
-    as "will not run until moved"
+    as "Eugene will ask before running it"
 14b. uninstall again, by root's own removal run by root alone (no
     --person): the home's ACL entry and the kept old prefix go too
 
@@ -495,37 +499,87 @@ def _engine_said(ctx: dict, path: str) -> dict:
 
 def phase_trust(ctx: dict) -> None:
     """A2: what Eugene's own account runs, on fixtures made here, offline,
-    every one checked whatever happened before it (row 8 final review).
+    every one checked whatever happened before it (row 8 final review, part
+    8c).
 
     Each fixture is named as `vllmBinary`, and the daemon's agent says, in
-    `GET /v1/engines`, whether it would run it: a refusal names the cause; a
-    program it runs is reported by the checked absolute path."""
+    `GET /v1/engines`, whether it would run it: `execTrust` says
+    `needs_approval` (only the runner's account can change it) or `refused`
+    (anyone else can), the error naming the cause; a program it runs is
+    reported by the checked absolute path. A2a approves one through the
+    API, and a changed byte makes it ask again."""
     say("A2. what Eugene's own account runs")
     STUB_DIR.mkdir(exist_ok=True)
     sudo("rm", "-rf", str(TRUST_ROOT), timeout=60)
     sudo("mkdir", "-p", str(TRUST_ROOT), timeout=60)
 
-    def fixture(number: str, claim: str, path: str, *, refused: str | None, setup) -> None:
+    def fixture(number: str, claim: str, path: str, *, expect: str, cause: str | None, setup) -> dict:
         try:
             setup()
             entry = _engine_said(ctx, path)
         except Exception:  # noqa: BLE001 - a fixture that cannot be made is a failure, never a skip
             check(number, claim, False, traceback.format_exc()[-600:])
-            return
+            return {}
         error = entry.get("error") or ""
-        if refused is None:
-            check(number, claim, "Eugene's own account" not in error,
+        trust = entry.get("execTrust") or {}
+        if expect == "ok":
+            check(number, claim, "Eugene's own account" not in error and not trust,
                   {"error": error[:300], "binaryPath": entry.get("binaryPath")})
+        elif expect == "needs_approval":
+            check(number, claim,
+                  trust.get("kind") == "needs_approval" and trust.get("account") == ME
+                  and bool(trust.get("sha256")) and "only once an owner approves it" in error
+                  and (cause is None or cause in error),
+                  {"error": error[:300], "execTrust": trust})
         else:
-            check(number, claim, refused in error and "Eugene" in error, {"error": error[:300]})
+            check(number, claim,
+                  trust.get("kind") == "refused" and "will not run" in error
+                  and (cause is None or cause in error),
+                  {"error": error[:300], "execTrust": trust})
+        return entry
+
+    # A2a: a program only the runner's account can change, whose interpreter
+    # (the runner's too) leaves a mark when the daemon runs it to read the
+    # program's environment: asked about and not run; approved through the
+    # API, run; one byte changed, asked about again and not run.
+    approved = STUB_DIR / "approve"
+    approved_ran = Path("/tmp/row8-approved-ran")
 
     def runner_owned():
-        stub = STUB_DIR / "vllm"
-        stub.write_text("#!/bin/sh\ntouch /tmp/row8-stub-ran\n", encoding="utf-8")
-        stub.chmod(0o755)
+        approved.mkdir(exist_ok=True)
+        python = approved / "python"
+        python.write_text(f"#!/bin/sh\ntouch {approved_ran}\n", encoding="utf-8")
+        python.chmod(0o755)
+        (approved / "vllm").write_text(f"#!{python}\nimport vllm\n", encoding="utf-8")
+        (approved / "vllm").chmod(0o755)
+        sudo("rm", "-f", str(approved_ran), timeout=20)
 
-    fixture("A2a", "a program in a folder of the runner's is refused, naming its owner",
-            str(STUB_DIR / "vllm"), refused=f"belongs to {ME}", setup=runner_owned)
+    entry = fixture("A2a", "a program in a folder of the runner's waits for an owner's approval, naming that "
+                    "account", str(approved / "vllm"), expect="needs_approval", cause=f"belongs to {ME}",
+                    setup=runner_owned)
+    trust = entry.get("execTrust") or {}
+    check("A2a1", "...and it is not run, not even to read its environment", not approved_ran.exists(),
+          "the stand-in's interpreter left its mark")
+    try:
+        status, body = api("POST", f"{ctx['base']}/v1/exec-approvals", ctx["token"],
+                           {"path": trust.get("path"), "sha256": trust.get("sha256")})
+        after = _engine_said(ctx, str(approved / "vllm"))
+        check("A2a2", "approved through the API, it runs: listed as the engine at its path, its interpreter run",
+              status == 201 and (body or {}).get("account") == ME and not (after.get("error") or "")
+              and after.get("binaryPath") == str(approved / "vllm") and approved_ran.exists(),
+              {"approve": [status, str(body)[:300]], "error": (after.get("error") or "")[:300],
+               "binaryPath": after.get("binaryPath"), "ran": approved_ran.exists()})
+        sudo("rm", "-f", str(approved_ran), timeout=20)
+        (approved / "vllm").write_text(f"#!{approved / 'python'}\nimport vllx\n", encoding="utf-8")
+        changed = _engine_said(ctx, str(approved / "vllm"))
+        _, listed = api("GET", f"{ctx['base']}/v1/exec-approvals", ctx["token"])
+        again = changed.get("execTrust") or {}
+        check("A2a3", "one byte changed, it asks again: the approval is gone and the program is not run",
+              again.get("kind") == "needs_approval" and again.get("sha256") not in (None, trust.get("sha256"))
+              and not (listed or {}).get("approvals") and not approved_ran.exists(),
+              {"execTrust": again, "approvals": listed, "ran": approved_ran.exists()})
+    except Exception:  # noqa: BLE001
+        check("A2a2", "approved through the API, it runs", False, traceback.format_exc()[-600:])
 
     def acl_write():
         sudo("cp", "/usr/bin/true", str(TRUST_ROOT / "acl-vllm"), timeout=30)
@@ -533,7 +587,8 @@ def phase_trust(ctx: dict) -> None:
         sudo("chmod", "+a", f"user:{ME} allow write", str(TRUST_ROOT / "acl-vllm"), timeout=30)
 
     fixture("A2b", "root's 0755 program with an ACL entry that lets the runner write is refused",
-            str(TRUST_ROOT / "acl-vllm"), refused=f"ACL entry that lets user {ME} write", setup=acl_write)
+            str(TRUST_ROOT / "acl-vllm"), expect="refused", cause=f"ACL entry that lets user {ME} write",
+            setup=acl_write)
 
     def chain():
         hop = HOME / "row8-hop"
@@ -542,25 +597,48 @@ def phase_trust(ctx: dict) -> None:
         hop.symlink_to("/usr/bin/true")
         sudo("ln", "-sf", str(hop), str(TRUST_ROOT / "chain-vllm"), timeout=30)
 
-    fixture("A2c", "a link of root's to a link in the runner's home (then to /usr/bin/true) is refused",
-            str(TRUST_ROOT / "chain-vllm"), refused=f"which belongs to {ME}", setup=chain)
+    fixture("A2c", "a link of root's to a link in the runner's home (then to /usr/bin/true) waits for an "
+            "approval, naming the runner", str(TRUST_ROOT / "chain-vllm"), expect="needs_approval",
+            cause=f"which belongs to {ME}", setup=chain)
 
     def interpreter():
         python = STUB_DIR / "python"
-        python.write_text("#!/bin/sh\ntouch /tmp/row8-stub-ran\n", encoding="utf-8")
+        python.write_text(f"#!/bin/sh\ntouch {STUB_RAN}\n", encoding="utf-8")
         python.chmod(0o755)
         sudo("sh", "-c", f"printf '#!{python}\\nimport vllm\\n' > {TRUST_ROOT}/interp-vllm && chmod 0755 "
              f"{TRUST_ROOT}/interp-vllm", timeout=30)
 
-    fixture("A2d", "root's script whose interpreter is in the runner's home is refused",
-            str(TRUST_ROOT / "interp-vllm"), refused=f"belongs to {ME}", setup=interpreter)
+    fixture("A2d", "root's script whose interpreter is in the runner's home waits for an approval",
+            str(TRUST_ROOT / "interp-vllm"), expect="needs_approval", cause=f"belongs to {ME}",
+            setup=interpreter)
 
     def env_shebang():
         sudo("sh", "-c", f"printf '#!/usr/bin/env python3\\nimport vllm\\n' > {TRUST_ROOT}/env-vllm && "
              f"chmod 0755 {TRUST_ROOT}/env-vllm", timeout=30)
 
     fixture("A2e", "a script that finds its interpreter on PATH (#!/usr/bin/env) is refused",
-            str(TRUST_ROOT / "env-vllm"), refused="names its interpreter through PATH", setup=env_shebang)
+            str(TRUST_ROOT / "env-vllm"), expect="refused", cause="names its interpreter through PATH",
+            setup=env_shebang)
+
+    # A2k: root's program in a folder its group can change (part 8c): refused,
+    # and the API will not approve it either.
+    shared = TRUST_ROOT / "shared"
+
+    def group_writable():
+        sudo("mkdir", "-p", str(shared), timeout=30)
+        sudo("chown", "root:staff", str(shared), timeout=30)
+        sudo("chmod", "0775", str(shared), timeout=30)
+        sudo("cp", "/usr/bin/true", str(shared / "vllm"), timeout=30)
+        sudo("chmod", "0755", str(shared / "vllm"), timeout=30)
+
+    fixture("A2k", "root's program in a folder its group (staff) can change is refused, naming who can",
+            str(shared / "vllm"), expect="refused", cause="can be changed by others (mode 0775: its owner root "
+            "and group staff)", setup=group_writable)
+    status, body = api("POST", f"{ctx['base']}/v1/exec-approvals", ctx["token"],
+                       {"path": str(shared / "vllm"),
+                        "sha256": hashlib.sha256(Path("/usr/bin/true").read_bytes()).hexdigest()})
+    check("A2k2", "...and the API refuses to approve it (409), naming the cause",
+          status == 409 and "can be changed by others" in json.dumps(body), [status, str(body)[:300]])
 
     def noowners():
         sudo("hdiutil", "detach", str(NOOWNERS_MOUNT), "-force", timeout=60)
@@ -576,18 +654,18 @@ def phase_trust(ctx: dict) -> None:
         sudo("cp", "/usr/bin/true", str(NOOWNERS_MOUNT / "vllm"), timeout=30)
 
     fixture("A2f", "a program on a volume that ignores ownership is refused",
-            str(NOOWNERS_MOUNT / "vllm"), refused="ignores ownership", setup=noowners)
+            str(NOOWNERS_MOUNT / "vllm"), expect="refused", cause="ignores ownership", setup=noowners)
     sudo("hdiutil", "detach", str(NOOWNERS_MOUNT), "-force", timeout=60)
 
     fixture("A2g", "a system program (/usr/bin/true, root's) is run",
-            "/usr/bin/true", refused=None, setup=lambda: None)
+            "/usr/bin/true", expect="ok", cause=None, setup=lambda: None)
 
     def own_store():
         sudo("-u", ACCOUNT, "sh", "-c", f"mkdir -p {PREFIX}/engines/row8-trust && "
              f"cp /usr/bin/true {PREFIX}/engines/row8-trust/vllm", timeout=30)
 
     fixture("A2h", "a program in Eugene's own store is run",
-            str(PREFIX / "engines" / "row8-trust" / "vllm"), refused=None, setup=own_store)
+            str(PREFIX / "engines" / "row8-trust" / "vllm"), expect="ok", cause=None, setup=own_store)
 
     # A relative path names, at the time it runs, whatever is there from the
     # folder the program starts in: the agent runs the absolute path it
@@ -601,10 +679,14 @@ def phase_trust(ctx: dict) -> None:
     except Exception:  # noqa: BLE001
         check("A2i", "a relative path is run as the absolute path that was checked", False,
               traceback.format_exc()[-600:])
-    check("A2j", "none of the refused programs ran, not even for its version",
-          not Path("/tmp/row8-stub-ran").exists(), "a stand-in left /tmp/row8-stub-ran")
+    check("A2j", "none of the programs refused or waiting for approval ran, not even for its version",
+          not STUB_RAN.exists(), f"a stand-in left {STUB_RAN}")
     api("PATCH", f"{ctx['base']}/v1/config", ctx["token"], {"vllmBinary": None})
-    sudo("rm", "-rf", str(TRUST_ROOT), str(PREFIX / "engines" / "row8-trust"), timeout=60)
+    _, listed = api("GET", f"{ctx['base']}/v1/exec-approvals", ctx["token"])
+    for approval in (listed or {}).get("approvals") or []:
+        api("DELETE", f"{ctx['base']}/v1/exec-approvals/{approval.get('id')}", ctx["token"])
+    sudo("rm", "-rf", str(TRUST_ROOT), str(PREFIX / "engines" / "row8-trust"), str(approved_ran),
+         timeout=60)
 
 
 def phase_unattended(ctx: dict) -> None:
@@ -983,16 +1065,17 @@ def phase_planted_after_move(ctx: dict, said: str) -> None:
 
 def phase_setting_after_move(ctx: dict, said: str) -> None:
     """11h: the move kept the setting and said, in its words and in root's
-    receipt, that Eugene's own account will not run what it names. (A
-    program there is refused: A2.)"""
+    receipt, that Eugene's own account asks before running what it names:
+    only the person's account can change that folder (part 8c; a program
+    there waits for an approval: A2)."""
     receipt = sudo("cat", str(RECEIPTS / "move-report.txt"), timeout=20).stdout
     agent_yaml = root_read(PREFIX / "agent.yaml")
-    line = f"engineBinaryRoots names {STUB_DIR}"
-    check("11h", "a copied setting naming a folder of the person's is kept, and said as 'will not run until "
-          "moved' in the move's words and in root's receipt",
-          line in said and "It will not run until moved" in said and line in receipt
-          and str(STUB_DIR) in agent_yaml,
-          {"said": [s for s in said.splitlines() if "will not run" in s][:3], "receipt": receipt[:300],
+    line = f"engineBinaryRoots names {STUB_DIR}: {ME} can change it. Eugene will ask before running it."
+    check("11h", "a copied setting naming a folder of the person's is kept, and said as 'Eugene will ask "
+          "before running it' in the move's words and in root's receipt",
+          line in said and line in receipt and str(STUB_DIR) in agent_yaml
+          and f"engineBinaryRoots names {STUB_DIR}: {ME} can change it. It will not run" not in said,
+          {"said": [s for s in said.splitlines() if "names" in s][:4], "receipt": receipt[:300],
            "kept": str(STUB_DIR) in agent_yaml, "stand-in ran": STUB_RAN.exists()})
 
 

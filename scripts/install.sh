@@ -2316,15 +2316,18 @@ PYEOF
     done
 }
 
-# **A copied setting that names a program Eugene's own account will not
-# run is kept, and said** (row 8). The daemon's agent runs an engine binary,
-# and the uv it installs apps with, only when the file and every folder
-# above it belong to root or to Eugene's account and none can be written by
-# its group or others: a program in the person's home would otherwise run
-# as Eugene's account. The move keeps those settings as they were, and
-# lists each one that names such a program -- here, and in root's receipt
-# (move-report.txt) -- as "will not run until moved". Read as Eugene's
-# account, which is how the daemon will see them.
+# **A copied setting that names a program Eugene's own account does not
+# run as it is is kept, and said** (row 8, part 8c). The daemon's agent runs
+# an engine binary, and the uv it installs apps with, when the file and
+# every folder above it belong to root or to Eugene's account and none can
+# be written by its group or others. One that a single other account can
+# change (a program in the person's home) runs once an owner approves it in
+# the console; one that a group, others or two accounts can change never
+# runs. The move keeps those settings as they were, and lists each one --
+# here, and in root's receipt (move-report.txt) -- as "Eugene will ask
+# before running it" or "It will not run until moved". Read as Eugene's
+# account, which is how the daemon will see them; the agent's own check
+# (`exec_trust`) walks every link and interpreter too, and decides.
 mac_migrate_report_settings() {
     _said=$(in_prefix "$PYBIN" -I - "$PREFIX/agent.yaml" <<'PYEOF'
 import os
@@ -2344,28 +2347,39 @@ def clean(value):
     return "" if value in ("", "null", "~", "[]") else value
 
 
-def untrusted(path):
+def name_of(uid):
+    try:
+        import pwd
+
+        return pwd.getpwuid(uid).pw_name
+    except (ImportError, KeyError):
+        return f"user {uid}"
+
+
+def judged(path):
+    """None when Eugene's account runs PATH; ("ask", why) when one other
+    account can change it and nobody else can; ("refuse", why) otherwise."""
     given = Path(os.path.abspath(os.path.expanduser(path)))
     real = Path(os.path.realpath(given))
     parts = [real, *real.parents]
     parts += [p for p in given.parents if p not in parts]
+    owners = set()
     for part in parts:
         try:
             info = os.lstat(part)
         except OSError as e:
-            return f"it cannot be checked ({e.strerror})"
+            return ("refuse", f"it cannot be checked ({e.strerror})")
         if stat.S_ISLNK(info.st_mode):
             continue
-        if info.st_uid not in (0, me):
-            try:
-                import pwd
-
-                owner = pwd.getpwuid(info.st_uid).pw_name
-            except (ImportError, KeyError):
-                owner = f"user {info.st_uid}"
-            return f"{part} belongs to {owner}"
         if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
-            return f"{part} can be changed by others"
+            return ("refuse", f"{part} can be changed by others")
+        if info.st_uid not in (0, me):
+            owners.add(info.st_uid)
+    if len(owners) > 1:
+        names = ", ".join(sorted(name_of(uid) for uid in owners))
+        return ("refuse", f"more than one account can change it ({names})")
+    if owners:
+        return ("ask", f"{name_of(owners.pop())} can change it")
     return None
 
 
@@ -2402,14 +2416,20 @@ for line in text.splitlines():
     if runtime and clean(runtime.group(1)):
         found.append(("a runtime's binary", clean(runtime.group(1))))
 for label, path in found:
-    why = untrusted(path)
-    if why is not None:
+    verdict = judged(path)
+    if verdict is None:
+        continue
+    kind, why = verdict
+    if kind == "ask":
+        print(f"{label} names {path}: {why}. Eugene will ask before running it.")
+    else:
         print(f"{label} names {path}: {why}. It will not run until moved.")
 PYEOF
 ) || die "could not read the settings copied into $PREFIX (see above)"
     if [ -n "$_said" ]; then
-        say "these settings name programs Eugene's own account will not run until they are moved"
-        say "  (into a folder only root or Eugene's account can change, or let Eugene fetch its own):"
+        say "these settings name programs someone besides root or Eugene's account can change"
+        say "  (approve one in the console when Eugene asks, move it into a folder only root or"
+        say "  Eugene's account can change, or let Eugene fetch its own build):"
         printf '%s\n' "$_said" | while IFS= read -r _line; do
             [ -z "$_line" ] || say "  $_line"
         done
