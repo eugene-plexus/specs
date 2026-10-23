@@ -216,3 +216,53 @@ the once-a-minute push), each caught by its unit test.
   what it needs: `Node.lastSeenEpoch` for "still follows the old root",
   `StandbyStatus.version` and `matches` for the standby's line. A follow-up
   row in `ui`.
+
+## The adversarial review (2026-10-22), and what changed
+
+Codex reviewed the branch with in-memory probes: four blockers and four
+should-fix items. Each fix has a test that failed before it; 19 new checks
+were broken once each and caught.
+
+- **A superseded root could still command machines** (a promotion keeps the
+  root's token key). Every token the root signs but a client key carries
+  `ep`, the epoch it was signed at. Every verifier (the vendored token
+  module, in agent, control, gateway, inference-driver, library and
+  tool-driver) refuses a root token whose `ep` is below its bundle's epoch,
+  and the agent also refuses one below the epoch it holds from a list:
+  *"This command came from a root this machine no longer follows (epoch 2;
+  it follows epoch 3)."* A root token with no `ep` (a root older than row
+  4) is refused once the bundle's `tokenEpochs` (written once, as a hidden
+  `patchConfig`, by the first bundle an unlocked active root signs) says
+  roots mark theirs, if it is newer than that or a promotion followed. Chosen
+  over rotating the token key at promotion: a rotation needs the old key
+  revoked everywhere it is cached, and leaves client keys broken. Client keys
+  are not fenced by epoch: they outlive any root and are revoked one by one.
+  A session signed before a promotion is refused after it: sign in again.
+- **Lists.** Once a node holds a list that names its root, a list that
+  names none is refused (409), as is a malformed `control`. Another list
+  under the same version is refused. Nothing is written unless it is taken.
+  A kept list below the epoch held is not loaded.
+- **Bundles are ordered by epoch first**, in the vendored token module
+  (`accepts_replacement`, and so every component's `BundleFile`): a root
+  promoted from a copy that was behind is taken. **A crash before the
+  promotion's bundle arrives** no longer restarts the copy as a standby:
+  the agent passes the epoch it holds (`FOLLOW_EPOCH`), and a copy whose
+  own log names its node the root at a higher epoch starts as the root; a
+  copy a held list names the root is not started to follow.
+- **Snapshots are checked before they replace a copy**: complete (every
+  `Snapshot` field), the same install (`controlPublicKey`, `salt`) and no
+  lower epoch. A snapshot that failed, gave no identity, or recovered from
+  an entry that would not apply holds the next one off for 30 s. A standby
+  newer than its root may now refuse the root's snapshot as incomplete
+  until the root is updated.
+- **Should-fix, done:** a list moves a node only to a root it lists, at that
+  machine's registered port and keys; `standbyPromoted` is dropped when no
+  signed list names this machine the root; a root that answers only for an
+  older epoch counts as silent for the fallback, and the standby's machine
+  with a changed key is asked through its root's signed list, fetched
+  without the key and verified; a promotion and the poll send each machine
+  its bundle and list on their own (16 at once, 30 s each).
+- **Acceptance**: a machine's state is read with a token it mints for
+  itself; D comes back on new ports so only the fallback can move it; A,
+  unlocked, signs a list numbered above C's at its lower epoch (refused for
+  the epoch) and relays a command C refuses.

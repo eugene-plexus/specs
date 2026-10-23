@@ -21,19 +21,28 @@ Checks, in order:
 
 1.  B is made the standby and follows. The root reports it on the root's own
     version, caught up, its copy matching the root's (row 4b).
-2.  B's copy is made to differ as a pre-LT1 standby's did: the same index,
-    and no machine key on any node (LT-OLDSB). B's agent is stopped for it
-    and started again. With no new entry at the root, the copy holds every
-    node's keys again: it took a fresh snapshot by itself. The root reports
-    it matching.
+2.  B's copy is made to differ as a pre-LT1 standby's did: no machine key on
+    any node (LT-OLDSB). B's agent is stopped for it and started again. The
+    copy says it differs and takes a fresh snapshot by itself: it holds
+    every node's keys again, and the root reports it matching.
 3.  With D and A stopped, B is promoted with the passphrase. Within 60 s C
-    names B as its root, at the new epoch. A sign-in through C works. C's
+    names B as its root, at the new epoch. The session C was given by the
+    old root is refused there now; a new sign-in through C works. C's
     gateway reads its routing from B, and a prompt through C is answered by
     the stub. B's signed machine list names B at the new epoch and carries
     C's key. B's agent says it runs the root, and its copy kept running.
-4.  D, started again, names B as its root within 2 minutes.
+4.  D is started again on new ports, so B holds an address where D does not
+    answer: B's pushes are blocked, and D's pulls go to A, which is stopped.
+    D asks B by itself (the 2-minute fallback) and names B as its root.
 5.  A, started again, is refused: the bundle and the machine list it last
     signed are answered 409 by C, D and A's own agent, which moves to B too.
+6.  A, unlocked, writes past B's index and signs a list numbered above C's:
+    C refuses it for its epoch (409). A relays a command to C, and C refuses
+    it as from a root it no longer follows.
+
+A machine's own state is read with a token it mints for itself, from its
+own files, so no check of where a machine's root is depends on a session
+from either root.
 
 Needs the agent, control, gateway and inference-driver installed in this
 interpreter (the Pinned integration job has them). Run:
@@ -46,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import os
 import secrets
 import socket
@@ -67,10 +77,14 @@ AGENTS = ("a", "b", "c", "d")
 NODES = {name: f"agent-{name}" for name in AGENTS}
 #: Ports this run never takes: the defaults and the live install's (+200).
 NEVER = set(range(8079, 8084)) | set(range(8279, 8284))
+#: The checks a full run passes.
+CHECKS = 6
 #: How long a node waits for its own pull or a push, and then some.
 PULL_BOUND = 90.0
 #: What a standby whose copy differs from the root's logs (control, row 4b).
 DIFFERS = "this copy differs from the root at index"
+#: What a node that followed the root its standby's machine named logs (agent).
+FALLBACK = "asked agent-b, which held the standby grant, and follows the root it named"
 
 # Drop the calling shell's install settings before anything reads them: this
 # machine's live agent sets EUGENE_PLEXUS_AGENT_CONFIG_FILE at user scope, and
@@ -274,6 +288,13 @@ class Run:
                 encoding="utf-8",
             )
 
+    def rewrite_advertised(self, a: str) -> None:
+        """Point agent `a`'s advertised address at its current port."""
+        path = self.dirs[a] / "agent.yaml"
+        values = yaml.safe_load(path.read_text(encoding="utf-8"))
+        values["advertiseUrl"] = self.advertised(a)
+        path.write_text(yaml.safe_dump(values), encoding="utf-8")
+
     def start(self, a: str) -> None:
         directory = self.dirs[a]
         (directory / "stop").unlink(missing_ok=True)
@@ -393,8 +414,24 @@ class Run:
         self.wait(ok, f"sign-in at {base}", 60)
         return str(token)
 
-    def node(self, a: str, session: str) -> dict[str, Any]:
-        got = self.get(self.agent(a), "/v1/node", session)
+    def own_token(self, a: str) -> str:
+        """A token agent `a` would give its own child: minted with its own key
+        from its own files, addressed to it alone. It reads `GET /v1/node`
+        whatever root the machine follows, so a check of where a machine's
+        root is never depends on a session from the root being checked."""
+        from eugene_plexus_agent.node_identity import NODE_FILE, NodeIdentityStore
+        from eugene_plexus_agent.trust import BUNDLE_FILE, NodeTrust
+
+        store = NodeIdentityStore(self.dirs[a] / NODE_FILE)
+        store.load()
+        trust = NodeTrust(store, self.dirs[a] / BUNDLE_FILE)
+        token, _ = trust.mint_service(
+            sub="agent", audience=trust.recipient, ttl_seconds=600
+        )
+        return str(token)
+
+    def node(self, a: str) -> dict[str, Any]:
+        got = self.get(self.agent(a), "/v1/node", self.own_token(a))
         if got.status_code != 200:
             raise Failed(
                 f"agent {a} GET /v1/node answered {got.status_code}: {got.text[:300]}"
@@ -564,7 +601,7 @@ def exercise(run: Run) -> None:
     run.start("b")
 
     def standby_url() -> str:
-        local = run.node("b", sessions["b"]).get("standby") or {}
+        local = run.node("b").get("standby") or {}
         return str(local.get("url") or "").rstrip("/")
 
     run.wait(lambda: standby_url(), "B's agent to start its standby again", PULL_BOUND)
@@ -596,7 +633,7 @@ def exercise(run: Run) -> None:
 
     # ---- 3. A and D stop; B is promoted; C follows within 60 s ---------------
     epoch = run.get(control, "/v1/control/status", session_root).json()["epoch"]
-    machine_c = run.node("c", sessions["c"])["machine"]
+    machine_c = run.node("c")["machine"]
     run.stop("d")
     run.stop("a")
     session_copy = run.login(copy)
@@ -612,7 +649,7 @@ def exercise(run: Run) -> None:
     at_b = run.door("b")
 
     def follows_b(a: str) -> bool:
-        body = run.node(a, sessions[a])
+        body = run.node(a)
         return bool(
             str(body.get("controlUrl") or "").rstrip("/") == at_b
             and body.get("controlUrlEpoch") == epoch + 1
@@ -628,6 +665,11 @@ def exercise(run: Run) -> None:
             f"sign-in through C after the move: {signed_in.status_code} {signed_in.text}"
         )
     operator = str(signed_in.json()["sessionToken"])
+    stale = run.get(run.agent("c"), "/v1/node", sessions["c"])
+    if stale.status_code != 401 or "no longer follows" not in stale.text:
+        raise Failed(
+            f"C's session from the old root answered {stale.status_code}: {stale.text[:300]}"
+        )
     gateway = run.local("gateway")
 
     def routes_from_b() -> bool:
@@ -661,7 +703,7 @@ def exercise(run: Run) -> None:
         raise Failed(f"B's list does not carry C's key {machine_c['pin']}: {c_entry}")
 
     def b_runs_the_root() -> bool:
-        body = run.node("b", sessions["b"])
+        body = run.node("b")
         return body.get("hostsControl") is True and not body.get("standby")
 
     run.wait(b_runs_the_root, "B's agent to take its copy for the root", 60)
@@ -673,12 +715,25 @@ def exercise(run: Run) -> None:
         "list names B and carries C's key; B's agent runs its copy as the root"
     )
 
-    # ---- 4. D, started again, follows within 2 minutes -----------------------
-    # The session D was given at the start: a sign-in through D would go to
-    # the root D still names, which is stopped.
+    # ---- 4. D comes back where B cannot reach it, and asks B itself ---------
+    # New ports for D's agent and machine port: B holds D's old address, so
+    # its pushes and polls reach nothing (they are blocked), and D's own
+    # pulls go to A, which is stopped. Only the fallback can move D: after
+    # 2 minutes without its root it asks the machine that held the standby
+    # grant, through that machine's port and pinned to its key.
+    run.ports.update(free_ports(["agent-d", "machine-d"]))
+    run.rewrite_advertised("d")
+    log_d = run.root / "agent-d.log"
+    asked_before = log_d.read_text(encoding="utf-8", errors="replace").count(FALLBACK)
     run.start("d")
-    moved = run.wait(lambda: follows_b("d"), "D to name B as its root", 120)
-    run.ok(f"D, started again, named B as its root in {moved:.0f} s")
+    moved = run.wait(lambda: follows_b("d"), "D to name B as its root", 240)
+    asked = log_d.read_text(encoding="utf-8", errors="replace").count(FALLBACK)
+    if asked <= asked_before:
+        raise Failed("D named B as its root, but not by asking B: B should not reach D")
+    run.ok(
+        f"D, started again where B cannot reach it, asked B (which held the standby grant) "
+        f"and named B as its root in {moved:.0f} s"
+    )
 
     # ---- 5. A, started again, is refused --------------------------------------
     run.start("a")
@@ -708,6 +763,74 @@ def exercise(run: Run) -> None:
     run.ok(
         f"the old root, started again at epoch {epoch}, is refused: C, D and A's own agent "
         "answer 409 to its bundle and its list, and all three follow B"
+    )
+
+    # Unlocked, the old root writes and signs again. Its index is taken past
+    # B's, so its new list numbers above every list B signed: only the epoch
+    # can refuse it. And it commands C: C refuses the command it relays.
+    session_a = run.login(control)
+    index_b = int(run.get(copy, "/healthz").json()["details"]["appliedIndex"])
+
+    def index_a() -> int:
+        return int(run.get(control, "/healthz").json()["details"]["appliedIndex"])
+
+    ttl = 600
+    while index_a() <= index_b + 3:
+        ttl += 1
+        patched = run.call(
+            "PATCH", control, "/v1/config", session_a, json={"joinTokenTtlSeconds": ttl}
+        )
+        if patched.status_code != 200:
+            raise Failed(f"the old root's config: {patched.status_code} {patched.text}")
+    patched = run.call(
+        "PATCH", control, "/v1/config", session_a, json={"clientPlainHttp": "off"}
+    )
+    if patched.status_code != 200:
+        raise Failed(f"the old root's config: {patched.status_code} {patched.text}")
+    newer = run.get(control, "/v1/trust/machines").json()["jws"]
+    held_c = claims_of(
+        json.loads((run.dirs["c"] / "machine_list.json").read_text(encoding="utf-8"))[
+            "jws"
+        ]
+    )
+    if claims_of(newer)["version"] <= held_c["version"]:
+        raise Failed(
+            f"the old root's list {claims_of(newer)['version']} does not number above C's "
+            f"{held_c['version']}"
+        )
+    pushed = run.call(
+        "POST", run.agent("c"), "/v1/node/machine-list", json={"jws": newer}
+    )
+    if (
+        pushed.status_code != 409
+        or f"epoch {epoch} is below the {epoch + 1}" not in pushed.text
+    ):
+        raise Failed(
+            f"C answered {pushed.status_code} to the old root's newer list: {pushed.text}"
+        )
+    command = run.call(
+        "POST",
+        control,
+        "/v1/runtimes",
+        session_a,
+        json={
+            "node": NODES["c"],
+            "spec": {
+                "name": "r4-refused",
+                "engine": "llama_cpp",
+                "modelPath": "/models/none.gguf",
+                "autoStart": False,
+            },
+        },
+    )
+    if command.status_code < 400 or "no longer follows" not in command.text:
+        raise Failed(
+            f"the old root's command to C: {command.status_code} {command.text[:400]}"
+        )
+    run.ok(
+        f"the old root, unlocked, signs a list numbered {claims_of(newer)['version']} (above "
+        f"C's {held_c['version']}) at epoch {epoch}: C refuses it for the epoch; and C "
+        "refuses the command the old root relays, as from a root it no longer follows"
     )
 
 
@@ -742,8 +865,8 @@ def main() -> int:
             raise
         finally:
             run.close()
-    print(f"{len(run.passed)}/5 checks passed", flush=True)
-    return 0 if len(run.passed) == 5 else 1
+    print(f"{len(run.passed)}/{CHECKS} checks passed", flush=True)
+    return 0 if len(run.passed) == CHECKS else 1
 
 
 if __name__ == "__main__":
