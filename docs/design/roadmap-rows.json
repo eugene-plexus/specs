@@ -1685,26 +1685,36 @@
    "risk": "cross",
    "risk_note": "cross",
    "who": "businesses",
-   "notes": "Redundancy is design first",
+   "notes": "Part 1 shipped. Part 2: 48b keeps working without the Library (M, cross); 48c a standby Library (L, high risk, after row 4)",
    "lane": "LIB",
    "lane_order": 7,
    "repos": [
     "library",
     "gateway",
+    "agent",
+    "control",
     "ui"
    ],
    "contract": "library.yaml",
    "hot_files": [
-    "library/src/eugene_plexus_library/routes/models.py",
-    "gateway/src/eugene_plexus_gateway/profiles.py"
+    "agent/src/eugene_plexus_agent/model_copies.py",
+    "agent/src/eugene_plexus_agent/library_folders.py",
+    "gateway/src/eugene_plexus_gateway/profiles.py",
+    "library/src/eugene_plexus_library/routes/models.py"
    ],
    "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-48.md",
     "m2-model-library.md",
-    "library-folders-and-reach.md"
+    "library-folders-and-reach.md",
+    "node-local-model-copy.md",
+    "warm-standby.md"
    ],
-   "calls": [],
+   "calls": [
+    "R48-STANDBY",
+    "R48-STALE"
+   ],
    "issue": 75
   },
   {
