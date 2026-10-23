@@ -962,13 +962,21 @@ def phase_llama_cpp(ctx: dict) -> None:
             skip("65", "the agent installs it", "no fallback build was provided (EP_LLAMA_FALLBACK_DIR)")
             return
         # A build nobody installed is trusted by its directory and named on
-        # the runtime, as the profile builder's acceptance does it.
+        # the runtime, as the profile builder's acceptance does it. Eugene's
+        # own account runs no program the runner can change (row 8,
+        # exec_trust), so the build goes into a folder of root's first.
+        roots_copy = Path("/usr/local/a4-llama-fallback")
+        sudo("rm", "-rf", str(roots_copy), timeout=60)
+        sudo("ditto", fallback, str(roots_copy), timeout=300)
+        sudo("chown", "-R", "root:wheel", str(roots_copy), timeout=60)
+        sudo("chmod", "-R", "go-w", str(roots_copy), timeout=60)
         status, body = api("PATCH", f"{ctx['base']}/v1/config", ctx["token"],
-                           {"engineBinaryRoots": [fallback]})
+                           {"engineBinaryRoots": [str(roots_copy)]})
         skip("65", "the agent installs it",
-             "GitHub refused the release list; the runtime names a build the workflow fetched")
+             "GitHub refused the release list; the runtime names a build the workflow fetched, copied to "
+             f"{roots_copy} as root's")
         must("65b", "the build's directory is trusted", status == 200, body)
-        binary = Path(fallback) / "llama-server"
+        binary = roots_copy / "llama-server"
     else:
         check("64", "llama.cpp is installable here, as the macOS arm64 build",
               acquisition.get("installable") is True and "macos-arm64" in (acquisition.get("variant") or ""),
