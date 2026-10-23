@@ -302,3 +302,7 @@ before it.
   writes are required; later ones are optional and read as empty.
 - **A failed fresh snapshot** is retried after 30 s: the 10 minutes start
   once one was taken.
+- **Sabotage.** Each of the 14 new checks was broken once and its test
+  failed (restored from a copy). Two first missed: a node that kept no
+  joining epoch (a direct test now), and the required snapshot fields (the
+  test now keeps only what a v0.2.0 root writes, control 3c378a1).
