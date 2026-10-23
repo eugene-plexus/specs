@@ -32,6 +32,7 @@ PINNED_STEPS = {
     "row70-group-policy-acceptance.py": (EVERY, "both"),
     # Row 4 (2026-10-22): a promoted root's address reaches every machine.
     "root-moved-acceptance.py": (EVERY, "both"),
+    "row70c-workbench-groups-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),
     "ls1-eligibility-acceptance.py": (EVERY, "both"),
     "ls2-discover-acceptance.py": (FULL, "both"),
