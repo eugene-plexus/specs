@@ -32,9 +32,14 @@ Two phases.
     root comes back unlocked with nobody signing in
  9. Reach's own restart gives a new pid under launchd within 30 s
 10. in the daemon the agent reports Metal; a GGUF downloaded through the
-    Library lands in ~/Eugene Models and answers through the gateway; 10e,
-    a runtime naming a program in a folder of the runner's fails naming the
-    path and its owner, and the program never runs, not even for its version
+    Library lands in ~/Eugene Models and answers through the gateway
+A2. what Eugene's own account runs, on fixtures made here, offline, each
+    checked whatever happened before it: a program in the runner's folder,
+    root's program with an ACL entry that lets the runner write, a chain of
+    links through the runner's home, a script whose interpreter the runner
+    owns, a `#!/usr/bin/env` script, a volume that ignores ownership -- all
+    refused, naming the cause; /usr/bin/true and Eugene's own store run, a
+    relative path as the absolute path that was checked; nothing refused ran
 13. --user beside the daemon is refused
 14. uninstall: plist gone, job unknown to launchd, no process left, account
     and group removed, config kept as root's
@@ -476,6 +481,132 @@ def phase_fresh(installer: Path) -> dict:
     return ctx
 
 
+TRUST_ROOT = Path("/usr/local/row8-trust")
+NOOWNERS_IMAGE = Path("/tmp/row8-noowners.dmg")
+NOOWNERS_MOUNT = Path("/Volumes/row8noowners")
+
+
+def _engine_said(ctx: dict, path: str) -> dict:
+    """The daemon's word on `vllmBinary` = PATH: its vllm engine entry."""
+    api("PATCH", f"{ctx['base']}/v1/config", ctx["token"], {"vllmBinary": path})
+    _, engines = api("GET", f"{ctx['base']}/v1/engines", ctx["token"], timeout=120)
+    return next((e for e in (engines or {}).get("engines", []) if e.get("engine") == "vllm"), {})
+
+
+def phase_trust(ctx: dict) -> None:
+    """A2: what Eugene's own account runs, on fixtures made here, offline,
+    every one checked whatever happened before it (row 8 final review).
+
+    Each fixture is named as `vllmBinary`, and the daemon's agent says, in
+    `GET /v1/engines`, whether it would run it: a refusal names the cause; a
+    program it runs is reported by the checked absolute path."""
+    say("A2. what Eugene's own account runs")
+    STUB_DIR.mkdir(exist_ok=True)
+    sudo("rm", "-rf", str(TRUST_ROOT), timeout=60)
+    sudo("mkdir", "-p", str(TRUST_ROOT), timeout=60)
+
+    def fixture(number: str, claim: str, path: str, *, refused: str | None, setup) -> None:
+        try:
+            setup()
+            entry = _engine_said(ctx, path)
+        except Exception:  # noqa: BLE001 - a fixture that cannot be made is a failure, never a skip
+            check(number, claim, False, traceback.format_exc()[-600:])
+            return
+        error = entry.get("error") or ""
+        if refused is None:
+            check(number, claim, "Eugene's own account" not in error,
+                  {"error": error[:300], "binaryPath": entry.get("binaryPath")})
+        else:
+            check(number, claim, refused in error and "Eugene" in error, {"error": error[:300]})
+
+    def runner_owned():
+        stub = STUB_DIR / "vllm"
+        stub.write_text("#!/bin/sh\ntouch /tmp/row8-stub-ran\n", encoding="utf-8")
+        stub.chmod(0o755)
+
+    fixture("A2a", "a program in a folder of the runner's is refused, naming its owner",
+            str(STUB_DIR / "vllm"), refused=f"belongs to {ME}", setup=runner_owned)
+
+    def acl_write():
+        sudo("cp", "/usr/bin/true", str(TRUST_ROOT / "acl-vllm"), timeout=30)
+        sudo("chmod", "0755", str(TRUST_ROOT / "acl-vllm"), timeout=30)
+        sudo("chmod", "+a", f"user:{ME} allow write", str(TRUST_ROOT / "acl-vllm"), timeout=30)
+
+    fixture("A2b", "root's 0755 program with an ACL entry that lets the runner write is refused",
+            str(TRUST_ROOT / "acl-vllm"), refused=f"ACL entry that lets user {ME} write", setup=acl_write)
+
+    def chain():
+        hop = HOME / "row8-hop"
+        if hop.is_symlink() or hop.exists():
+            hop.unlink()
+        hop.symlink_to("/usr/bin/true")
+        sudo("ln", "-sf", str(hop), str(TRUST_ROOT / "chain-vllm"), timeout=30)
+
+    fixture("A2c", "a link of root's to a link in the runner's home (then to /usr/bin/true) is refused",
+            str(TRUST_ROOT / "chain-vllm"), refused=f"which belongs to {ME}", setup=chain)
+
+    def interpreter():
+        python = STUB_DIR / "python"
+        python.write_text("#!/bin/sh\ntouch /tmp/row8-stub-ran\n", encoding="utf-8")
+        python.chmod(0o755)
+        sudo("sh", "-c", f"printf '#!{python}\\nimport vllm\\n' > {TRUST_ROOT}/interp-vllm && chmod 0755 "
+             f"{TRUST_ROOT}/interp-vllm", timeout=30)
+
+    fixture("A2d", "root's script whose interpreter is in the runner's home is refused",
+            str(TRUST_ROOT / "interp-vllm"), refused=f"belongs to {ME}", setup=interpreter)
+
+    def env_shebang():
+        sudo("sh", "-c", f"printf '#!/usr/bin/env python3\\nimport vllm\\n' > {TRUST_ROOT}/env-vllm && "
+             f"chmod 0755 {TRUST_ROOT}/env-vllm", timeout=30)
+
+    fixture("A2e", "a script that finds its interpreter on PATH (#!/usr/bin/env) is refused",
+            str(TRUST_ROOT / "env-vllm"), refused="names its interpreter through PATH", setup=env_shebang)
+
+    def noowners():
+        sudo("hdiutil", "detach", str(NOOWNERS_MOUNT), "-force", timeout=60)
+        NOOWNERS_IMAGE.unlink(missing_ok=True)
+        made = run(["hdiutil", "create", "-size", "8m", "-fs", "HFS+", "-volname", "row8noowners",
+                    str(NOOWNERS_IMAGE)], timeout=120)
+        assert made.returncode == 0, made.stderr
+        attached = sudo("hdiutil", "attach", "-owners", "off", "-nobrowse", "-mountpoint",
+                        str(NOOWNERS_MOUNT), str(NOOWNERS_IMAGE), timeout=120)
+        assert attached.returncode == 0, attached.stderr
+        fact("the volume with ownership ignored", [line for line in run(["/sbin/mount"]).stdout.splitlines()
+                                                   if str(NOOWNERS_MOUNT) in line])
+        sudo("cp", "/usr/bin/true", str(NOOWNERS_MOUNT / "vllm"), timeout=30)
+
+    fixture("A2f", "a program on a volume that ignores ownership is refused",
+            str(NOOWNERS_MOUNT / "vllm"), refused="ignores ownership", setup=noowners)
+    sudo("hdiutil", "detach", str(NOOWNERS_MOUNT), "-force", timeout=60)
+
+    fixture("A2g", "a system program (/usr/bin/true, root's) is run",
+            "/usr/bin/true", refused=None, setup=lambda: None)
+
+    def own_store():
+        sudo("-u", ACCOUNT, "sh", "-c", f"mkdir -p {PREFIX}/engines/row8-trust && "
+             f"cp /usr/bin/true {PREFIX}/engines/row8-trust/vllm", timeout=30)
+
+    fixture("A2h", "a program in Eugene's own store is run",
+            str(PREFIX / "engines" / "row8-trust" / "vllm"), refused=None, setup=own_store)
+
+    # A relative path names, at the time it runs, whatever is there from the
+    # folder the program starts in: the agent runs the absolute path it
+    # checked, from its own folder (the prefix).
+    try:
+        entry = _engine_said(ctx, "engines/row8-trust/vllm")
+        check("A2i", "a relative path is run as the absolute path that was checked",
+              entry.get("binaryPath") == str(PREFIX / "engines" / "row8-trust" / "vllm")
+              and not (entry.get("error") or ""),
+              {"binaryPath": entry.get("binaryPath"), "error": (entry.get("error") or "")[:300]})
+    except Exception:  # noqa: BLE001
+        check("A2i", "a relative path is run as the absolute path that was checked", False,
+              traceback.format_exc()[-600:])
+    check("A2j", "none of the refused programs ran, not even for its version",
+          not Path("/tmp/row8-stub-ran").exists(), "a stand-in left /tmp/row8-stub-ran")
+    api("PATCH", f"{ctx['base']}/v1/config", ctx["token"], {"vllmBinary": None})
+    sudo("rm", "-rf", str(TRUST_ROOT), str(PREFIX / "engines" / "row8-trust"), timeout=60)
+
+
 def phase_unattended(ctx: dict) -> None:
     say("8-9. restarts nobody is watching")
     base = ctx["base"]
@@ -616,41 +747,6 @@ def phase_metal(ctx: dict) -> None:
           ready.get("status") == "ready" and bool(reply),
           {"runtime": {k: ready.get(k) for k in ("status", "lastError")}, "declared": status})
     api("POST", f"{base}/v1/runtimes/row8-gguf/stop", ctx["token"], {}, timeout=120)
-    phase_untrusted_binary(ctx, path)
-
-
-def phase_untrusted_binary(ctx: dict, model: Path) -> None:
-    """10e: in its own account Eugene runs no program the person can change.
-    A runtime naming a stand-in `llama-server` in a folder of the runner's
-    (allowed by `engineBinaryRoots`, so only ownership decides) fails naming
-    the path and its owner, and the stand-in never runs -- not even for its
-    version."""
-    base, token = ctx["base"], ctx["token"]
-    STUB_DIR.mkdir(exist_ok=True)
-    stub = STUB_DIR / "llama-server"
-    stub.write_text(f"#!/bin/sh\ntouch {STUB_RAN}\necho 'version: 1 (row8 stand-in)'\n", encoding="utf-8")
-    stub.chmod(0o755)
-    STUB_RAN.unlink(missing_ok=True)
-    _, config = api("GET", f"{base}/v1/config", token)
-    before = config.get("engineBinaryRoots") if isinstance(config, dict) else None
-    roots = [*(before or []), str(STUB_DIR)]
-    api("PATCH", f"{base}/v1/config", token, {"engineBinaryRoots": roots})
-    spec = {"name": "row8-stub", "engine": "llama_cpp", "modelPath": str(model), "binary": str(stub),
-            "autoStart": True}
-    created, body = api("POST", f"{base}/v1/runtimes", token, spec, timeout=120)
-
-    def refused():
-        _, runtime = api("GET", f"{base}/v1/runtimes/row8-stub", token)
-        error = (runtime or {}).get("lastError") or ""
-        return error if "belongs to" in error else None
-
-    error = wait_for(refused, 90, 2) or ""
-    api("DELETE", f"{base}/v1/runtimes/row8-stub", token, timeout=60)
-    api("PATCH", f"{base}/v1/config", token, {"engineBinaryRoots": before or []})
-    check("10e", "a runtime naming a program in a folder of the runner's fails naming the path and its owner, "
-          "and the program never runs, not even for its version",
-          created in (200, 201) and str(stub) in error and f"belongs to {ME}" in error and not STUB_RAN.exists(),
-          {"runtime": (created, str(body)[:200]), "error": error[:300], "stand-in ran": STUB_RAN.exists()})
 
 
 def phase_user_beside(installer: Path) -> None:
@@ -798,10 +894,97 @@ def phase_setting_before_move(ctx: dict) -> None:
     fact("engineBinaryRoots set before the move", (status, str(body)[:200]))
 
 
+def phase_plant_before_move(ctx: dict) -> None:
+    """B3: what the review planted, in the per-user install, before the
+    move -- offline, and checked whatever else happened (11i)."""
+    say("B3. code planted in the per-user install before the move")
+    store = HOME / ".eugene-plexus" / "engines" / "llama_cpp"
+    try:
+        # A build as downloaded, with its own record; and one whose record
+        # is a link to valid metadata.
+        pristine = store / "row8-pristine"
+        pristine.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile("/usr/bin/true", pristine / "llama-server")
+        (pristine / "llama-server").chmod(0o755)
+        digest = hashlib.sha256((pristine / "llama-server").read_bytes()).hexdigest()
+        record = {"version": "row8-pristine", "variant": "macos-arm64", "binary": "llama-server",
+                  "installedAt": "2020-01-01T00:00:00+00:00", "files": {"llama-server": f"sha256:{digest}"},
+                  "links": {}}
+        (pristine / "install.json").write_text(json.dumps(record), encoding="utf-8")
+        linked = store / "row8-linked"
+        linked.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile("/usr/bin/true", linked / "llama-server")
+        (linked / "llama-server").chmod(0o755)
+        (store / "architectures").mkdir(parents=True, exist_ok=True)
+        (store / "architectures" / "row8-receipt.json").write_text(
+            json.dumps({**record, "version": "row8-linked"}), encoding="utf-8")
+        receipt = linked / "install.json"
+        if receipt.is_symlink() or receipt.exists():
+            receipt.unlink()
+        receipt.symlink_to("../architectures/row8-receipt.json")
+        # A program in the old install, named by a setting.
+        custom = USER_PREFIX / "custom"
+        custom.mkdir(exist_ok=True)
+        shutil.copyfile("/usr/bin/true", custom / "llama-server")
+        (custom / "llama-server").chmod(0o755)
+        status, body = api("PATCH", f"{ctx['base']}/v1/config", ctx["token"],
+                           {"mlxBinary": str(custom / "llama-server")})
+        fact("mlxBinary set before the move", (status, str(body)[:200]))
+        # An app's environment beside its data; a module a component started
+        # in the prefix would import; a link inside a folder that crosses.
+        venv = USER_PREFIX / "apps" / "row8app" / "versions" / "v1" / "venv" / "bin"
+        venv.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile("/usr/bin/true", venv / "python")
+        (venv / "python").chmod(0o755)
+        (USER_PREFIX / "apps" / "row8app" / "data").mkdir(parents=True, exist_ok=True)
+        (USER_PREFIX / "apps" / "row8app" / "data" / "notes.txt").write_text("kept\n", encoding="utf-8")
+        (USER_PREFIX / "yaml.py").write_text("raise SystemExit('planted')\n", encoding="utf-8")
+        link = USER_PREFIX / "logs" / "row8-link"
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(STUB_DIR)
+        ctx["planted"] = True
+    except Exception:  # noqa: BLE001 - checked as a failure in 11i, never skipped
+        ctx["planted"] = traceback.format_exc()[-600:]
+
+
+def phase_planted_after_move(ctx: dict, said: str) -> None:
+    """11i: nothing that runs crossed the move."""
+    agent_yaml = root_read(PREFIX / "agent.yaml")
+
+    def there(flag: str, path: Path) -> bool:
+        return sudo("test", flag, str(path), timeout=20).returncode == 0
+
+    found = {
+        "planted": ctx.get("planted"),
+        "pristine build": there("-e", PREFIX / "engines" / "llama_cpp" / "row8-pristine"),
+        "linked-receipt build": there("-e", PREFIX / "engines" / "llama_cpp" / "row8-linked"),
+        "mlxBinary turned off": re.search(r"(?m)^mlxBinary: null$", agent_yaml) is not None
+        and "turned off mlxBinary" in said,
+        "custom program, executable": there("-x", PREFIX / "custom" / "llama-server"),
+        "custom program, as data": there("-f", PREFIX / "custom" / "llama-server"),
+        "app environment": there("-e", PREFIX / "apps" / "row8app" / "versions"),
+        "app data": there("-f", PREFIX / "apps" / "row8app" / "data" / "notes.txt"),
+        "app listed to be rebuilt": "row8app" in said,
+        "module": there("-e", PREFIX / "yaml.py"),
+        "module said": "did not carry yaml.py: code" in said,
+        "link in a data folder": there("-L", PREFIX / "logs" / "row8-link"),
+    }
+    check("11i", "nothing that runs crossed the move: no engine build (one as downloaded, one behind a linked "
+          "record), a setting naming a program in the old install turned off and the program carried as data "
+          "only, an app's data without its environment, no module, no link",
+          found["planted"] is True and not found["pristine build"] and not found["linked-receipt build"]
+          and found["mlxBinary turned off"] and found["custom program, as data"]
+          and not found["custom program, executable"] and not found["app environment"] and found["app data"]
+          and found["app listed to be rebuilt"] and not found["module"] and found["module said"]
+          and not found["link in a data folder"],
+          found)
+
+
 def phase_setting_after_move(ctx: dict, said: str) -> None:
     """11h: the move kept the setting and said, in its words and in root's
     receipt, that Eugene's own account will not run what it names. (A
-    runtime naming such a program fails naming its owner: 10e.)"""
+    program there is refused: A2.)"""
     receipt = sudo("cat", str(RECEIPTS / "move-report.txt"), timeout=20).stdout
     agent_yaml = root_read(PREFIX / "agent.yaml")
     line = f"engineBinaryRoots names {STUB_DIR}"
@@ -997,6 +1180,7 @@ def phase_move(installer: Path, ctx: dict) -> None:
     ctx["token"] = token
     phase_engine_after_move(ctx, text)
     phase_setting_after_move(ctx, text)
+    phase_planted_after_move(ctx, text)
 
 
 def main() -> int:
@@ -1030,6 +1214,7 @@ def main() -> int:
             phase_refused_move(installer, ctx, workdir)
             phase_engine_before_move(ctx)
             phase_setting_before_move(ctx)
+            phase_plant_before_move(ctx)
             phase_move(installer, ctx)
         except Abort as e:
             print(f"\n  ABORT  {e}", flush=True)
@@ -1054,6 +1239,7 @@ def main() -> int:
                 USER_PREFIX.rename(USER_PREFIX.with_name(USER_PREFIX.name + ".row8-b"))
         try:
             ctx = phase_fresh(installer)
+            phase_trust(ctx)
             phase_unattended(ctx)
             phase_metal(ctx)
             phase_user_beside(installer)
