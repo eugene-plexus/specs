@@ -659,7 +659,10 @@ def exercise(directory: Path, *, live: bool, live_video: bool, door_check=None) 
         assert models[f"gem/{CHAT}"]["context_length"] == 1048576, models[f"gem/{CHAT}"]
         assert "chat" in models[f"gem/{CHAT}"]["surfaces"], models[f"gem/{CHAT}"]
         assert models[f"gem/{TTS}"]["surfaces"] == ["speech"], models[f"gem/{TTS}"]
-        assert models[f"gem/{TTS}"]["speech_formats"] == ["wav", "pcm"], models[f"gem/{TTS}"]
+        # Row 58: PyAV encodes Gemini's PCM, so every OpenAI speech format is offered.
+        assert models[f"gem/{TTS}"]["speech_formats"] == ["mp3", "opus", "aac", "flac", "wav", "pcm"], (
+            models[f"gem/{TTS}"]
+        )
         assert "Kore" in models[f"gem/{TTS}"]["voices"], models[f"gem/{TTS}"]
         assert models[f"gem/{EMBED}"]["surfaces"] == ["embeddings"], models[f"gem/{EMBED}"]
         assert models[f"gem/{VEO}"]["surfaces"] == ["video"], models[f"gem/{VEO}"]
