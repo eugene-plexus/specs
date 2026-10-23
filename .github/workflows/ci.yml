@@ -910,6 +910,9 @@ jobs:
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
 
+      - name: Check Hindsight catalogue and memory server link contract
+        run: python scripts/test_hindsight_contract.py
+
       - name: Validate every OpenAPI document
         shell: bash
         run: |
