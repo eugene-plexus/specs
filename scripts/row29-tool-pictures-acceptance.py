@@ -503,6 +503,19 @@ def exercise(work, workbench_ref):
         )
         direct.raise_for_status()
 
+        # Shared servers need the install owner; a Job Site belongs to a person.
+        person_password = secrets.token_urlsafe(24)
+        person = call(
+            "control",
+            "POST",
+            "/v1/people",
+            root,
+            json={"name": "ada", "password": person_password},
+        )
+        browser.http.close()
+        browser = c3.Browser(app["uiUrl"])
+        assert browser.sign_in(person_password, person["name"]).startswith("/#signin=")
+
         # Enroll a real site, with a disposable unsigned fixture policy and own-account worker.
         sys.path.insert(0, str(HERE.parent.parent / "site-host" / "src"))
         from eugene_plexus_site_host import local_channel
@@ -513,20 +526,22 @@ def exercise(work, workbench_ref):
         site_dir = work / "site"
         site_dir.mkdir()
         me = browser.get("/api/me").json()
+        assert me["sub"] == person["id"]
+        assert me["username"] == person["name"]
         invitation = call(
             "control",
             "POST",
             "/v1/sites/invitations",
             root,
-            json={"owner": me["sub"], "label": "Pictures"},
+            json={"owner": person["id"], "label": "Pictures"},
         )
         enrolled = asyncio.run(
             site_join(
                 Identity(site_dir),
                 url=urls["control"],
                 token=invitation["token"],
-                owner=me["username"],
-                password=password,
+                owner=person["name"],
+                password=person_password,
                 label="Pictures",
                 root_key=None,
                 host_version=None,
