@@ -435,6 +435,9 @@ jobs:
       - name: The shared acceptance harness is the real server - console log copy, machine port, client doors, stop file (row 2)
         if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/harness-acceptance.py
+      - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/row57-responses-tools-acceptance.py
       - name: Rotate the root's token key across two live agents
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
