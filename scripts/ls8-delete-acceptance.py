@@ -87,7 +87,8 @@ def lay_out(models: Path) -> dict[str, Path]:
         "split.count": 2,
     }
     _gguf(models / REPO / FIRST, kv)
-    _write(models / REPO / SECOND, b"second shard" * 100)
+    # A real second part: the Library reads every part since row 18 (specs#110).
+    _gguf(models / REPO / SECOND, {**kv, "split.no": 1})
     data = models / "Strata-data"
     _write(data / ".eugene-engine-files", b"Strata's own files.\n")
     _write(data / "mtp" / "rt" / "experts.bin", b"m" * 2048)
