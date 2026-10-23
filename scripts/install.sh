@@ -2245,7 +2245,6 @@ PYEOF
         MOVE_REPORT=$_said
     fi
     mac_migrate_relist
-    mac_migrate_report_settings
 }
 
 # **What the move left behind is listed for the agent to build again**
@@ -6039,6 +6038,10 @@ if [ "$UPDATE" = 1 ]; then
     fi
 elif [ "$MODE" = system ] && [ "$PLATFORM" = macos ]; then
     mac_prepare_models_dir
+    # What the moved settings name, read as Eugene's account once the
+    # home's entry lets it pass, as the daemon will (row 8c: before it, a
+    # folder in the home read "cannot be checked").
+    if [ "$MIGRATE" = 1 ]; then mac_migrate_report_settings; fi
     say "writing $LAUNCHD_DAEMON (Eugene starts at boot, as $SYSTEM_ACCOUNT)"
     write_launch_daemon
     if [ "$WIDE" = 1 ]; then mac_allow_firewall; fi

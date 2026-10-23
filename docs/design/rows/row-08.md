@@ -294,6 +294,12 @@ Built on the same branch (agent `exec_trust.py`, `exec_approvals.py`, `routes/ex
 - A new A2k puts root's program in a folder its group (staff) can write. The program is refused, naming the owner and the group, and `POST /v1/exec-approvals` answers 409 (A2k2).
 - 11h now expects the move to say "Eugene will ask before running it" for `engineBinaryRoots` naming the runner's folder.
 
+**What the first CI run of 8c found on the macOS runners** (A2 passed in full on macOS 14):
+- **11h had been green for the wrong reason.** The move read the copied settings as Eugene's account before the home's ACL entry let that account pass. A folder in the home therefore read "it cannot be checked (Permission denied). It will not run until moved". The old 11h asked only for "It will not run until moved", so it passed without the ownership ever being read. Now the move reads the settings right after the home's entry is in place, as the daemon will read them. 11h expects "runner can change it. Eugene will ask before running it." The stub check M4c checks the order, in the stand-in `sudo`'s log (sabotaged once and caught).
+- **11g's words were stale.** Since the final review the move copies no engine build, so the per-build line "did not keep the llama_cpp build" is gone. 11g now asks for the line the move does say: "fetches llama_cpp <version> again ... (no engine build crosses the move)". The refetch itself had passed, byte for byte.
+- **MLX's environment was built on a Python Eugene's account will not trust** (A4 30, 44). Run as the account, the recipe's `uv venv --python cpython-3.12-macos-aarch64-none` picked the python.org framework on the runner. Its `/Library/Frameworks/Python.framework/Versions` is group-writable (0775, `root:wheel` there; `root:admin` from python.org's installer). The environment check refused `mlx_lm.server`, correctly by the rule. The recipe now adds `--python-preference only-managed`, so uv puts its own Python under the account's home, the install's folder (agent `engines/mlx.py`; `test_the_recipe_builds_on_uv_s_own_python_never_one_installed_on_the_mac` failed first).
+  - *Not built:* a group whose only member is root (`wheel` on a Mac) can write nothing that root cannot. Treating it as root's would need the group's members read on every check. With uv's own Python no engine path met it, so it stays refused.
+
 **Not covered, and why:**
 - Windows, as before.
 - What an app or a tool server starts, as before.

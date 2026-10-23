@@ -1107,10 +1107,12 @@ def phase_engine_after_move(ctx: dict, said: str) -> None:
             skip("11g", "a changed copied llama.cpp build is not kept, and is fetched again",
                  f"GitHub refused the daemon's release list: {reason[:200]}")
             return
+    # The move copies no engine build at all (the final review), and says
+    # so on the line that lists the version to fetch again.
     check("11g", "no copied llama.cpp build is kept (this one was changed after download): the move says so, "
           "and the daemon fetches that version again, whose llama-server is what was downloaded",
-          f"did not keep the llama_cpp build {version}" in said
-          and f"fetches llama_cpp {version} again" in said
+          f"fetches llama_cpp {version} again" in said
+          and "no engine build crosses the move" in said
           and bool(again) and now is not None and now != engine["changed"]
           and (engine["recorded"] is None or now == engine["recorded"]),
           {"engine": engine, "fetched again": bool(again), "llama-server now": now, "reason": reason[:200],

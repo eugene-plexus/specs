@@ -1043,6 +1043,15 @@ if grep -qx "kevPython: $ASK/kev/python" "$PREFIX/agent.yaml" \
 else
   bad "report: $(cat "$ROOT/receipts/move-report.txt" 2>/dev/null | tr '\n' '|')"; show "$OUT" 10
 fi
+# Read as the daemon will: once the home's entry lets Eugene's account pass
+# (before it, on a real Mac, a folder in the home read "cannot be checked").
+ace_at=$(grep -n "^chmod -h +a group:_eugeneplexusmodels allow search $H\$" "$STATE/sudo.log" | head -n 1 | cut -d: -f1)
+report_at=$(grep -n -- "^-u _eugeneplexus -- env .* -I - $PREFIX/agent.yaml\$" "$STATE/sudo.log" | tail -n 1 | cut -d: -f1)
+if [ -n "$ace_at" ] && [ -n "$report_at" ] && [ "$ace_at" -lt "$report_at" ]; then
+  ok "the settings were read as Eugene's account after the home's entry let it pass"
+else
+  bad "the home's entry at line '${ace_at:-none}', the report's read at '${report_at:-none}' of sudo.log"
+fi
 if grep -qx "mlxBinary: null" "$PREFIX/agent.yaml" && grep -q "binary: null" "$PREFIX/agent.yaml" \
     && ! grep -q "$PREFIX/custom" "$PREFIX/agent.yaml" && grep -q -- "- $H/llama" "$PREFIX/agent.yaml" \
     && printf '%s' "$OUT" | grep -q "turned off mlxBinary: it named $OLD/custom/llama-server, in the old install" \
