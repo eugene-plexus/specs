@@ -148,6 +148,21 @@ def node_signer(node_dir: Path):
     return trust.signer()
 
 
+def own_token(node_dir: Path) -> str:
+    """A token the node mints for its own children, from its own files: it
+    reads the node's `GET /v1/node` whichever root the node follows. A
+    session from the root it followed before a promotion carries that
+    root's epoch, and is refused after (row 4)."""
+    from eugene_plexus_agent.node_identity import NodeIdentityStore
+    from eugene_plexus_agent.trust import BUNDLE_FILE, NodeTrust
+
+    store = NodeIdentityStore(node_dir / "node.yaml")
+    store.load()
+    trust = NodeTrust(store, node_dir / BUNDLE_FILE)
+    token, _ = trust.mint_service(sub="agent", audience=trust.recipient, ttl_seconds=600)
+    return str(token)
+
+
 def held_epoch(node_dir: Path) -> int:
     import json
 
@@ -585,12 +600,12 @@ def exercise(root: Path) -> int:
             # so B's agent takes its copy for the root: it says it runs the
             # root, reports no standby, and the copy keeps running.
             def b_runs_the_root() -> bool:
-                body = call("agent-b", "GET", "/v1/node", session_b).json()
+                body = call("agent-b", "GET", "/v1/node", own_token(dir_b)).json()
                 return body.get("hostsControl") is True and not body.get("standby")
 
             wait_for(b_runs_the_root, "B's agent to take its copy for the root", bundle_bound)
             time.sleep(3)
-            listed = call("agent-b", "GET", "/v1/components", session_b).json()
+            listed = call("agent-b", "GET", "/v1/components", own_token(dir_b)).json()
             kept = next(
                 (c for c in listed.get("components") or [] if c.get("name") == "standby"),
                 {},
