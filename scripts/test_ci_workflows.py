@@ -90,6 +90,28 @@ def can_run_on_windows(job: dict) -> bool:
 
 
 class WiringTests(unittest.TestCase):
+    def test_app_units_load_private_memory_link_credentials(self) -> None:
+        installer = (WORKFLOWS.parents[1] / "scripts/install.sh").read_text(encoding="utf-8")
+        for credential in ("memory_server_token",):
+            self.assertIn(f"LoadCredential={credential}:$PREFIX/apps/%i/{credential}", installer)
+        self.assertNotIn("LoadCredential=memory_server_model.json:", installer)
+
+    def test_hindsight_acceptance_runs_on_linux_with_candidate_repositories(self) -> None:
+        job = workflow("ci.yml")["jobs"]["mv5b-hindsight"]
+        self.assertEqual(job["runs-on"], "ubuntu-latest")
+        self.assertEqual(job["needs"], "plan")
+        steps = job["steps"]
+        repos = {s.get("with", {}).get("repository"): s["with"] for s in steps
+                 if s.get("uses", "").startswith("actions/checkout@")}
+        for repo in ("specs", "agent", "workbench"):
+            self.assertIn("eugene-plexus/" + repo, repos)
+        self.assertIn("needs.plan.outputs.agent_ref", repos["eugene-plexus/agent"]["ref"])
+        self.assertIn("inputs.workbench_ref", repos["eugene-plexus/workbench"]["ref"])
+        commands = "\n".join(s.get("run", "") for s in steps)
+        self.assertIn("mv5b-hindsight-acceptance.py", commands)
+        self.assertIn(".codex-tmp", commands)
+        self.assertTrue(any(s.get("if") == "always()" and s.get("uses", "").startswith("actions/upload-artifact@") for s in steps))
+
     def test_hindsight_contract_runs_in_the_contract_validation_job(self) -> None:
         job = workflow("ci.yml")["jobs"]["validate-openapi"]
         self.assertEqual(job["if"], "needs.plan.outputs.contracts == 'true'")

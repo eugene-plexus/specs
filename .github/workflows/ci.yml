@@ -1030,6 +1030,45 @@ jobs:
       - run: npm run typecheck
       - run: npm test -- --run
 
+  mv5b-hindsight:
+    needs: plan
+    if: needs.plan.outputs.runtime == 'true'
+    name: Hindsight slim memory server (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          path: specs
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/agent
+          ref: ${{ needs.plan.outputs.agent_ref || 'main' }}
+          path: agent
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/workbench
+          ref: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          path: workbench
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: 0.12.18
+      - name: Prepare the candidate packages and syscall tracing
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y strace
+          uv venv .codex-tmp/acceptance-venv --python 3.12
+          uv pip install --python .codex-tmp/acceptance-venv/bin/python './agent[dev]' ./workbench
+      - name: Verify Hindsight with local stub models and private banks
+        run: .codex-tmp/acceptance-venv/bin/python specs/scripts/mv5b-hindsight-acceptance.py --output .codex-tmp/mv5b-hindsight
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mv5b-hindsight-linux
+          path: .codex-tmp/mv5b-hindsight/result.json
+
   candidate-workbench:
     if: inputs.workbench_ref != ''
     runs-on: ubuntu-latest

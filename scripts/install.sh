@@ -595,6 +595,7 @@ LoadCredential=client_key:$PREFIX/apps/%i/data/client_key
 LoadCredential=admin_token:$PREFIX/apps/%i/admin_token
 # Its sign-in secret (C2); empty for an app that signs nobody in.
 LoadCredential=oidc_secret:$PREFIX/apps/%i/data/oidc_secret
+LoadCredential=memory_server_token:$PREFIX/apps/%i/memory_server_token
 ExecStart=$PREFIX/apps/%i/python -I -u $PREFIX/apps/launcher/app_launcher.py $PREFIX/apps/%i/launch.json
 Restart=on-failure
 RestartSec=5
