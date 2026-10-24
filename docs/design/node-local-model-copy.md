@@ -62,7 +62,7 @@ taken as recommended so a build can proceed; each is his to overturn.
 | 3 | The unit of a copy | **The model file**, and the set is the distinct files of that node's declared runtimes (§2) | Troy proposed one per active inference engine; that double-counts M6 replicas, which are N runtimes over one file (§2.1) | taken, from Troy's call |
 | 4 | The disk knob | **Minimum free space to leave**, not a maximum to use (§3) | A cap is easier to reason about in isolation — but headroom is the quantity the operator actually cares about and stays meaningful as the disk fills for unrelated reasons | Troy's call |
 | 5 | Copy first, then launch — or launch from the share and copy behind it | **Copy first** (§4.1) | Copying behind the launch never makes a first run slower — except the arithmetic says copy-first is already *faster* on the first run and costs half the wire traffic | taken |
-| 6 | Staleness detection | **Size + mtime** against the library's listing (§4.3) | A content hash is honest — and costs a full read of both copies on every start, which is the cost being removed | taken |
+| 6 | Staleness detection | **Size + mtime** against the source file (§4.3) | A content hash is honest — and costs a full read of both copies on every start, which is the cost being removed | taken |
 | 7 | A **Clear local copies** button | **Yes**, and it says out loud that copies return while the toggle is on (§5.2) | Troy's call | Troy's call |
 | 8 | Whether the adapter forces `--load-mode none` for network paths | **No.** Guidance on the field, not automation (§6.2) | It would make every network launch faster with no thought — and `easy-default-expert-override` says default only when the thing *cannot work* otherwise, never when it merely performs better | taken |
 | 9 | Progress bar driven by a flag, or self-detecting | **Self-detecting** from the byte counter (§7.2) | A flag is simpler — and would be wrong for vLLM, for whatever upstream changes next, and for the mmap path where there are genuinely no bytes | taken |
@@ -300,8 +300,11 @@ unwind.
 
 ### 4.3 Staleness
 
-Size + mtime against the library's own listing for that model. Mismatch
+Size + mtime against the source file for that model. Mismatch
 → re-copy before launch.
+
+When the source folder cannot be checked, a recorded copy can still start;
+see [row 48b](rows/row-48.md#21-a-worker-starts-from-its-own-copy-when-the-source-cannot-be-checked).
 
 **The tradeoff, stated rather than hidden:** a GGUF edited in place with
 its mtime preserved would serve stale. A content hash would catch it and

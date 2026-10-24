@@ -948,6 +948,84 @@ components:
       enum: ['off', cpu, gpu]
       description: Where to encode images during inference; off prepares text only.
 
+    SpeedProjectionMode:
+      type: string
+      enum: ['off', 'on']
+      description: |
+        Changes the model's answers when on; experimental and off by default.
+        Strata's bundled refusal-direction projection reduces refusals and
+        also changes ordinary predictions. Upstream measures a 0.2-0.4%
+        cost per token on identical text, not a guaranteed speed-up.
+        Preparation uses --experimental-speed-projection on|off. Launch
+        applies the prepared control vector and reports the applied mode;
+        a requested mode alone is not evidence that it took effect.
+
+    StrataGpuSelection:
+      type: array
+      minItems: 1
+      uniqueItems: true
+      items:
+        type: integer
+        minimum: 0
+      description: |
+        Ordered card ordinals from this node's ComputeDevice inventory;
+        the main card is first. The node validates each selected card
+        against its current inventory and resolves process visibility at
+        every preparation and launch. Two or more cards share the model.
+        Omission in a preparation keeps the existing automatic single-card
+        selection. Omission in a profile preserves the prepared selection.
+        An empty list is not automatic selection.
+        This inventory has kind and index, not row 43's stable UUIDs;
+        ordinals are local to the selected node and must not be treated
+        as stable identities or silently replaced by another card.
+
+    StrataLayerSplit:
+      type: string
+      minLength: 1
+      description: |
+        auto places layers using the selected cards' free memory and
+        expert profile. An expert can give the first layer of each later
+        card, as comma-separated rising integers: 16,32 for three cards.
+        These are boundaries, not a count of layers per card. The node
+        checks one boundary per card after the first, each at least 2,
+        strictly rising and below the model's layer count. An explicit
+        boundary requires several selected cards. With one card there
+        is no layer split.
+
+    PreparationIntent:
+      type: object
+      additionalProperties: false
+      required: [engine]
+      description: |
+        Prepare the model for an engine before running it. Asked for,
+        never implied: Run without it picks an engine that runs the model
+        as it is. This is the source schema for the durable run protocol's
+        PreparationIntent; regenerate openapi/run-operations.json from the
+        Library after adopting this schema, rather than editing its copy.
+        The Strata choices use the same keys as that engine's profile
+        flags. Unsupported or ignored choices must name the observed
+        cause; no requested value may be reported as applied by default.
+      properties:
+        engine:
+          $ref: '#/components/schemas/EngineKind'
+        contextSize:
+          type: [integer, 'null']
+          minimum: 1
+          description: The context to prepare for. Absent uses the engine's recommendation for the node.
+        vision:
+          $ref: '#/components/schemas/PreparationVisionMode'
+          default: 'off'
+          description: Image encoder placement. Off preserves text-only preparation.
+        speedProjection:
+          $ref: '#/components/schemas/SpeedProjectionMode'
+          default: 'off'
+          description: Changes answers when on; experimental. Off preserves stock model behavior.
+        gpus:
+          $ref: '#/components/schemas/StrataGpuSelection'
+        layerSplit:
+          $ref: '#/components/schemas/StrataLayerSplit'
+          default: auto
+
     ModelPreparation:
       type: object
       description: |
@@ -994,6 +1072,18 @@ components:
             no image preparation is offered. Omitting the choice in a run intent
             preserves text-only preparation. Enabling images downloads an extra
             encoder and uses additional memory while serving.
+        speedProjectionModes:
+          type: array
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/SpeedProjectionMode'
+          description: |
+            Changes answers when on; experimental. Choices this model's
+            preparation offers for the bundled projection. Absent means
+            no projection choice is advertised, not a claim that an
+            untested model cannot run. Omitting the choice in a run
+            intent selects off. An upstream fallback must be reported
+            as the mode that actually took effect, with its cause.
         minEngineVersion:
           type: string
           description: |
@@ -2557,7 +2647,20 @@ components:
            the issuer's own, 14 days for a session, 10 minutes for an
            exchanged token, and 400 days for a client key;
         5. refuses a session that is listed in `revokedSessions`, or
-           whose `aud` names a node no longer in the bundle.
+           whose `aud` names a node no longer in the bundle;
+        6. refuses a token the control root signed, other than a client
+           key, whose `ep` claim (the epoch of the root that minted it,
+           row 4) is below this bundle's `epoch`: "This command came from a
+           root this machine no longer follows (epoch 2; it follows epoch
+           3)." A promotion keeps the root's token key, so this is what
+           stops the root it replaced. A root token without `ep` (from a
+           root older than row 4) is refused once `tokenEpochs` says roots
+           mark theirs, if it was minted after `tokenEpochs.since` or the
+           epoch has risen past `tokenEpochs.epoch`.
+
+        **Bundles are ordered by epoch first** (row 4): a higher `epoch`
+        replaces whatever its `version`, a lower one never does, and at
+        one epoch the version decides.
 
         No hard expiry, deliberately. A bundle that stopped verifying
         when the root was dead would end the data path's guarantee to
@@ -2577,14 +2680,31 @@ components:
           minimum: 0
           description: |
             The control root's replicated log index when this bundle was
-            built, so it only grows, including across a promotion. A
-            verifier refuses a lower version than it holds (rollback)
-            and replaces its bundle with an equal or higher one.
+            built. At one epoch a verifier refuses a lower version than it
+            holds (rollback) and replaces its bundle with an equal or
+            higher one. A root promoted from a copy that was behind may
+            number below the root it replaced, so a higher `epoch` wins
+            whatever the version.
         epoch:
           type: integer
           format: int64
           minimum: 0
           description: The control root's epoch; an agent refuses a lower one.
+        tokenEpochs:
+          type: object
+          description: |
+            Since when every token the control root signs carries `ep`
+            (row 4): the time in unix seconds, and the epoch it was then.
+            Absent from a root older than row 4, and every root token
+            without `ep` is then accepted as before.
+          required: [since, epoch]
+          properties:
+            since:
+              type: integer
+              format: int64
+            epoch:
+              type: integer
+              format: int64
         iat:
           type: integer
           format: int64

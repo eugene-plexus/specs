@@ -46,7 +46,7 @@ def main():
     spec.loader.exec_module(fixture)
     directory = Path(tempfile.mkdtemp(prefix="ep-runtime-stop-"))
     print(f"isolated tree: {directory}", flush=True)
-    agent_port, runtime_port = fixture.free_ports(2)
+    agent_port, runtime_port, machine_port = fixture.free_ports(3)
     root = directory / "strata"
     server = fixture.fake_strata(root)
     # A direct interpreter lets the simulated native child outlive its launcher.
@@ -131,6 +131,7 @@ ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
         EUGENE_PLEXUS_AGENT_CONFIG_FILE=str(config),
         EUGENE_PLEXUS_AGENT_BIND_HOST="127.0.0.1",
         EUGENE_PLEXUS_AGENT_BIND_PORT=str(agent_port),
+        EUGENE_PLEXUS_AGENT_MACHINE_PORT=str(machine_port),
         EUGENE_PLEXUS_AGENT_ENGINE_ROOT=str(directory / "engines"),
         PYTHON_KEYRING_BACKEND="keyring.backends.null.Keyring",
         PYTHONUNBUFFERED="1",
@@ -171,7 +172,8 @@ ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
             with socket.socket() as previous:
                 previous.bind(("127.0.0.1", runtime_port))
                 previous.listen()
-                client.post(route + "/start").raise_for_status()
+                started = client.post(route + "/start")
+                assert started.is_success, f"start refused ({started.status_code}): {started.text}"
                 refused = wait(
                     lambda: (
                         r
@@ -186,7 +188,8 @@ ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
                 "PASS stale listener refuses before launch and names its port",
                 flush=True,
             )
-            client.post(route + "/start").raise_for_status()
+            started = client.post(route + "/start")
+            assert started.is_success, f"start refused ({started.status_code}): {started.text}"
             wait(lambda: client.get(route).json()["status"] == "ready", "runtime ready")
             leaf_process = psutil.Process(int((root / "leaf.pid").read_text()))
             parent = psutil.Process(client.get(route).json()["pid"])

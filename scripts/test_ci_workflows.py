@@ -20,6 +20,7 @@ WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
 SETUP_STEPS = 16
 FULL, EVERY = "full", "every"
 PINNED_STEPS = {
+    "serving-sweep-acceptance.py": (EVERY, "linux"),
     "di7-same-answer-acceptance.py": (EVERY, "linux"),
     "Keep row 20 CPU evidence": ("always", "linux"),
     "row65-ollama-protocol.py": (EVERY, "both"),
@@ -32,6 +33,8 @@ PINNED_STEPS = {
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     # Row 70 (2026-10-21): group policies at the root and through an agent.
     "row70-group-policy-acceptance.py": (EVERY, "both"),
+    # Row 4 (2026-10-22): a promoted root's address reaches every machine.
+    "root-moved-acceptance.py": (EVERY, "both"),
     "row57-responses-tools-acceptance.py": (EVERY, "linux"),
     # Row 53 (2026-10-23): files kept for one owner each, through the store.
     "row53-store-acceptance.py": (EVERY, "both"),
@@ -39,6 +42,7 @@ PINNED_STEPS = {
     "ck-rotate-acceptance.py": (EVERY, "both"),
     "row70c-workbench-groups-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),
+    "row48b-library-down-acceptance.py": (EVERY, "both"),
     "ls1-eligibility-acceptance.py": (EVERY, "both"),
     "ls2-discover-acceptance.py": (FULL, "both"),
     "ls3-prepared-acceptance.py": (FULL, "both"),
