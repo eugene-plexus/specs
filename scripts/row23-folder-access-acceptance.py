@@ -1,9 +1,15 @@
 """Row 23 privilege acceptance. Disposable GitHub runners only.
 
 Linux installs the reviewed installer function, shell broker and root helper.
-Windows creates a LocalService process with an unrestricted service SID.
-An app process proves effective read/write before grant, after grant/restart,
-and after removal. No success report is written until every assertion passes.
+Windows registers a service the way the agent registers an app
+(`app_accounts.WindowsServiceRunner`): a virtual account of its own
+(`NT SERVICE\\<name>`), the base interpreter with `-I -u`, a ctypes service
+host, and access to its own folders only. An app process proves effective
+read/write before grant, after grant/restart, and after removal. No success
+report is written until every assertion passes.
+
+Each step is printed when it starts, unbuffered, and every wait is bounded,
+so a run that stalls names the step it stalled in.
 """
 
 from __future__ import annotations
@@ -20,8 +26,20 @@ import uuid
 from pathlib import Path
 
 
-def run(*args: str, **kwargs) -> str:
-    result = subprocess.run(args, check=False, capture_output=True, text=True, **kwargs)
+def step(message: str) -> None:
+    print(f"row23 {time.strftime('%H:%M:%S')} {message}", flush=True)
+
+
+def run(*args: str, timeout: float = 300, **kwargs) -> str:
+    try:
+        result = subprocess.run(
+            args, check=False, capture_output=True, text=True, timeout=timeout, **kwargs
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"{args[0]} did not finish in {timeout:g} seconds: {' '.join(map(str, args))}\n"
+            f"{exc.stdout or ''}{exc.stderr or ''}"
+        ) from None
     if result.returncode:
         raise RuntimeError(
             f"{args[0]} failed ({result.returncode}): {result.stderr or result.stdout}"
@@ -29,74 +47,186 @@ def run(*args: str, **kwargs) -> str:
     return result.stdout
 
 
-def wait_for(check, seconds=30):
+def stream(*args: str, timeout: float, **kwargs) -> None:
+    """Run with output straight to the job log, so its progress shows as it happens."""
+    print(end="", flush=True)
+    try:
+        result = subprocess.run(args, check=False, timeout=timeout, **kwargs)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            f"{args[0]} did not finish in {timeout:g} seconds: {' '.join(map(str, args))}"
+        ) from None
+    if result.returncode:
+        raise RuntimeError(f"{' '.join(map(str, args[:3]))} ... failed ({result.returncode})")
+
+
+def wait_for(check, seconds=30, what="the app or the installed broker", detail=None):
     deadline = time.perf_counter() + seconds
     while time.perf_counter() < deadline:
         value = check()
         if value:
             return value
         time.sleep(0.1)
-    raise AssertionError("The app or installed broker did not answer within 30 seconds")
+    extra = ""
+    if detail is not None:
+        try:
+            extra = "\n" + str(detail())
+        except Exception as exc:  # diagnostics never hide the timeout itself
+            extra = f"\n(no diagnostics: {exc})"
+    raise AssertionError(f"{what} did not answer within {seconds} seconds{extra}")
+
+
+def replace(source: Path, target: Path) -> None:
+    """os.replace, retried while the other side holds the file open (Windows)."""
+    for attempt in range(100):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == 99:
+                raise
+            time.sleep(0.05)
 
 
 PROBE = r"""
-import json, os, time
+import json, os, sys, time, traceback
 from pathlib import Path
 
-def serve(directory):
-    directory = Path(directory)
-    last = None
-    while True:
-        try:
-            request = json.loads((directory / 'command.json').read_text('utf-8'))
-        except (FileNotFoundError, ValueError):
-            time.sleep(0.1)
-            continue
-        if request['id'] == last:
-            time.sleep(0.1)
-            continue
-        last = request['id']
-        answer = {'id': last, 'pid': os.getpid()}
-        answer['writtenFile'] = 'app-created-' + last + '.txt'
-        if os.name == 'nt':
-            import win32api, win32security as ws
-            token = ws.OpenProcessToken(win32api.GetCurrentProcess(), ws.TOKEN_QUERY)
-            answer['sids'] = [ws.ConvertSidToStringSid(sid) for sid, flags in ws.GetTokenInformation(token, ws.TokenGroups)]
-            token.Close()
-        else:
-            answer['uid'], answer['groups'] = os.getuid(), os.getgroups()
-        for name, action in [('read', lambda: (Path(request['path']) / request.get('readFile', 'seed.txt')).read_text()),
-                             ('write', lambda: (Path(request['path']) / answer['writtenFile']).write_text('app data'))]:
-            try:
-                action()
-                answer[name] = True
-            except OSError as exc:
-                answer[name] = False
-                answer[name + 'Error'] = str(exc)
-        temp = directory / 'result.new'
-        temp.write_text(json.dumps(answer), encoding='utf-8')
-        os.replace(temp, directory / 'result.json')
+IO = Path(sys.argv[1])
 
-if os.name == 'nt':
-    import win32serviceutil, win32service
-    class ServiceProbe(win32serviceutil.ServiceFramework):
-        _svc_name_ = 'EpR23Probe'
-        _svc_display_name_ = 'Eugene row 23 disposable acceptance'
-        def SvcStop(self):
-            self.ReportServiceStatus(win32service.SERVICE_STOP_PENDING)
-            os._exit(0)
-        def SvcDoRun(self):
-            serve(Path(__file__).parent / 'probe-io')
-    if __name__ == '__main__':
-        import servicemanager
-        servicemanager.Initialize()
-        servicemanager.PrepareToHostSingle(ServiceProbe)
-        servicemanager.StartServiceCtrlDispatcher()
-else:
-    if __name__ == '__main__':
-        import sys
-        serve(sys.argv[1])
+def log(text):
+    try:
+        with open(IO / 'probe.log', 'a', encoding='utf-8') as stream:
+            stream.write(time.strftime('%H:%M:%S ') + text + '\n')
+    except OSError:
+        pass
+
+def replace(source, target):
+    for attempt in range(100):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == 99:
+                raise
+            time.sleep(0.05)
+
+def identity():
+    if os.name != 'nt':
+        return {'uid': os.getuid(), 'groups': os.getgroups()}
+    import win32api, win32security as ws
+    token = ws.OpenProcessToken(win32api.GetCurrentProcess(), ws.TOKEN_QUERY)
+    try:
+        # A virtual account's own SID is the token's user, not one of its groups.
+        user = ws.GetTokenInformation(token, ws.TokenUser)[0]
+        groups = [sid for sid, _ in ws.GetTokenInformation(token, ws.TokenGroups)]
+        return {'sids': [ws.ConvertSidToStringSid(sid) for sid in (user, *groups)]}
+    finally:
+        token.Close()
+
+def answer(request):
+    reply = {'id': request['id'], 'pid': os.getpid()}
+    reply.update(identity())
+    reply['writtenFile'] = 'app-created-' + request['id'] + '.txt'
+    folder = Path(request['path'])
+    for name, action in [('read', lambda: (folder / request.get('readFile', 'seed.txt')).read_text()),
+                         ('write', lambda: (folder / reply['writtenFile']).write_text('app data'))]:
+        try:
+            action()
+            reply[name] = True
+        except OSError as exc:
+            reply[name] = False
+            reply[name + 'Error'] = str(exc)
+    return reply
+
+def serve(stopping):
+    log('serving as pid %d' % os.getpid())
+    last = None
+    while not stopping():
+        try:
+            request = json.loads((IO / 'command.json').read_text('utf-8'))
+        except (OSError, ValueError):
+            time.sleep(0.1)
+            continue
+        if request.get('id') == last:
+            time.sleep(0.1)
+            continue
+        last = request.get('id')
+        try:
+            reply = answer(request)
+        except Exception:
+            reply = {'id': last, 'error': traceback.format_exc()}
+            log(reply['error'])
+        temp = IO / 'result.new'
+        temp.write_text(json.dumps(reply), encoding='utf-8')
+        replace(temp, IO / 'result.json')
+
+def windows_service(name):
+    # The agent's app launcher hosts its service with ctypes alone
+    # (app_launcher._windows_service); so does this probe.
+    import ctypes, threading
+    from ctypes import wintypes
+    advapi = ctypes.WinDLL('advapi32', use_last_error=True)
+
+    class Status(ctypes.Structure):
+        _fields_ = [(field, wintypes.DWORD) for field in
+                    ('type', 'state', 'accepted', 'win32', 'specific', 'checkpoint', 'hint')]
+
+    main_type = ctypes.WINFUNCTYPE(None, wintypes.DWORD, ctypes.POINTER(wintypes.LPWSTR))
+    handler_type = ctypes.WINFUNCTYPE(wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+                                      wintypes.LPVOID, wintypes.LPVOID)
+
+    class Entry(ctypes.Structure):
+        _fields_ = [('name', wintypes.LPWSTR), ('main', main_type)]
+
+    advapi.RegisterServiceCtrlHandlerExW.restype = wintypes.HANDLE
+    advapi.RegisterServiceCtrlHandlerExW.argtypes = [wintypes.LPCWSTR, handler_type, wintypes.LPVOID]
+    advapi.SetServiceStatus.argtypes = [wintypes.HANDLE, ctypes.POINTER(Status)]
+    stopping = threading.Event()
+    handle = {}
+
+    def report(state):
+        status = Status(0x10, state, 1 if state == 4 else 0, 0, 0, 0, 0)
+        advapi.SetServiceStatus(handle['value'], ctypes.byref(status))
+
+    def handler(control, _event, _data, _context):
+        if control in (1, 5):  # stop, shutdown
+            report(3)
+            stopping.set()
+        return 0
+
+    handler_ref = handler_type(handler)
+
+    def service_main(_argc, _argv):
+        handle['value'] = advapi.RegisterServiceCtrlHandlerExW(name, handler_ref, None)
+        report(4)
+        try:
+            serve(stopping.is_set)
+        except Exception:
+            log(traceback.format_exc())
+        report(1)
+
+    main_ref = main_type(service_main)
+    table = (Entry * 2)(Entry(name, main_ref), Entry(None, main_type()))
+    if not advapi.StartServiceCtrlDispatcherW(table):
+        log('StartServiceCtrlDispatcherW failed: %d' % ctypes.get_last_error())
+        sys.exit(1)
+
+if __name__ == '__main__':
+    log('started: %s' % sys.executable)
+    if os.name == 'nt':
+        windows_service(sys.argv[2])
+    else:
+        serve(lambda: False)
 """
+
+
+def probe_log(directory: Path) -> str:
+    log = directory / "probe.log"
+    try:
+        return "probe.log:\n" + log.read_text("utf-8")[-4000:]
+    except FileNotFoundError:
+        return "The probe wrote no log, so its interpreter never ran its first line."
 
 
 def probe(directory: Path, path: Path, read_file: str = "seed.txt") -> dict:
@@ -106,16 +236,20 @@ def probe(directory: Path, path: Path, read_file: str = "seed.txt") -> dict:
         json.dumps({"id": ident, "path": str(path), "readFile": read_file}),
         encoding="utf-8",
     )
-    os.replace(temp, directory / "command.json")
+    replace(temp, directory / "command.json")
 
     def result():
         try:
             value = json.loads((directory / "result.json").read_text("utf-8"))
-            return value if value["id"] == ident else None
-        except (FileNotFoundError, ValueError):
+        except (OSError, ValueError):
             return None
+        return value if value.get("id") == ident else None
 
-    return wait_for(result)
+    answer = wait_for(
+        result, what=f"The app probe (asked about {path})", detail=lambda: probe_log(directory)
+    )
+    assert "error" not in answer, answer["error"]
+    return answer
 
 
 def assert_app_revoked(io, folder, created):
@@ -138,6 +272,22 @@ def root_refusals(ctl, broker, link, owner):
             assert answer["code"] != 0 and cause in answer["output"], answer
         finally:
             request.unlink(missing_ok=True)
+
+
+def check_refusals(access, cases) -> None:
+    """Each path is refused with its cause, and no refusal writes a record."""
+    from eugene_plexus_agent.folder_access import Refused
+
+    before = access._read()
+    for path, cause in cases:
+        try:
+            access.add("workbench", path, "read", "acceptance")
+        except Refused as exc:
+            assert exc.cause == cause, (path, exc.cause, cause, str(exc))
+            assert str(exc)
+        else:
+            raise AssertionError(f"{cause} was not refused for {path}")
+    assert access._read() == before, "A refusal must not create an access record"
 
 
 def swapped_folder(add, remove, folder, target, acl, link):
@@ -229,60 +379,74 @@ def release_http(root, access, paths):
 
 
 def refusals(root: Path) -> None:
-    from eugene_plexus_agent.folder_access import (
-        Access,
-        LinuxPermissions,
-        Refused,
-        WindowsPermissions,
-    )
+    """Windows: the agent's own checks. Linux's go through the root broker in linux()."""
+    from eugene_plexus_agent.folder_access import Access, WindowsPermissions
 
     own = root / "eugene"
     own.mkdir()
     target = root / "target"
     target.mkdir()
     link = root / "link"
-    if os.name == "nt":
-        subprocess.run(
-            ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(target)],
-            check=True,
-            capture_output=True,
-        )
-        backend = WindowsPermissions("S-1-5-11", eugene=(str(own),))
-        drive = root.anchor
-        system = os.environ["SystemRoot"]
-        home = str(Path.home())
-        network = r"\\unreachable.invalid\share"
-    else:
-        link.symlink_to(target, target_is_directory=True)
-        backend = LinuxPermissions("workbench", root / "apps", eugene=(str(own),))
-        drive, system, home, network = (
-            "/",
-            "/etc",
-            str(Path.home()),
-            "//unreachable.invalid/share",
-        )
+    subprocess.run(
+        ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(target)],
+        check=True,
+        capture_output=True,
+        timeout=60,
+    )
+    backend = WindowsPermissions("S-1-5-11", eugene=(str(own),))
     access = Access(root / "refusals.json", backend)
-    for path, cause in [
-        (drive, "drive_root"),
-        (system, "system"),
-        (str(own), "eugene"),
-        (home, "home"),
-        (str(link), "link"),
-        (network, "network"),
-        (str(root / "missing"), "not_a_folder"),
-    ]:
-        try:
-            access.add("workbench", path, "read", "acceptance")
-        except Refused as exc:
-            assert exc.cause == cause, (path, exc.cause, cause)
-            assert str(exc)
-        else:
-            raise AssertionError(f"{cause} was not refused for {path}")
+    check_refusals(
+        access,
+        [
+            (root.anchor, "drive_root"),
+            (os.environ["SystemRoot"], "system"),
+            (str(own), "eugene"),
+            (str(Path.home()), "home"),
+            (str(link), "link"),
+            (r"\\unreachable.invalid\share", "network"),
+            (str(root / "missing"), "not_a_folder"),
+        ],
+    )
     assert not access.file.exists(), "A refusal must not create an access record"
+
+
+AGENT_CLI = """\
+from pathlib import Path
+import json, runpy, subprocess, sys
+from eugene_plexus_agent.folder_access import Access, LinuxPermissions, Refused
+prefix = Path(sys.argv[1])
+a = Access(
+    prefix / 'folder-access.json',
+    LinuxPermissions('workbench', prefix / 'apps', eugene=(str(prefix),)),
+    process=lambda: int(subprocess.check_output(
+        ['systemctl', 'show', 'eugene-plexus-app@workbench.service', '--property=MainPID', '--value'])),
+)
+verb = sys.argv[2]
+if verb in ('http', 'refusals'):
+    module = runpy.run_path(sys.argv[3])
+    if verb == 'http':
+        module['release_http'](prefix / 'http', a, [Path(p) for p in sys.argv[4:]])
+    else:
+        module['check_refusals'](a, json.loads(sys.argv[4]))
+    print(json.dumps({'ok': True}))
+    sys.exit(0)
+try:
+    if verb == 'add':
+        r = a.add('workbench', sys.argv[3], sys.argv[4], 'acceptance')
+    elif verb == 'remove':
+        r = a.remove('workbench', sys.argv[3])
+    else:
+        r = next(x for x in a.listing('workbench') if x.state == 'ready')
+except Refused as exc:
+    print(json.dumps({'refused': exc.cause, 'message': str(exc)}))
+    sys.exit(0)
+print(r.model_dump_json())
+"""
 
 
 def linux(specs: Path) -> None:
     import grp
+    import hashlib
     import pwd
 
     assert os.geteuid() == 0, (
@@ -320,7 +484,9 @@ def linux(specs: Path) -> None:
     )
     unit = "eugene-plexus-app@workbench.service"
     drop = Path("/etc/systemd/system/" + unit + ".d")
+    io = Path("/var/lib/eugene-plexus-apps/workbench")
     try:
+        step("Linux: install the units, the shell broker and the root helper")
         run("bash", str(setup))
         installed = Path("/usr/local/lib/eugene-plexus/folder-access.py")
         assert (
@@ -338,7 +504,6 @@ def linux(specs: Path) -> None:
             (prefix / file).write_text("disposable")
         (root / "service_probe.py").write_text(PROBE, encoding="utf-8")
         drop.mkdir(exist_ok=True)
-        io = Path("/var/lib/eugene-plexus-apps/workbench")
         (drop / "05-acceptance.conf").write_text(
             "[Service]\nExecStart=\nExecStart=/usr/bin/python3 -u "
             + str(root / "service_probe.py")
@@ -354,35 +519,36 @@ def linux(specs: Path) -> None:
             request.write_text(verb + ("" if " " in verb else " workbench") + "\n")
             os.chown(request, runner.pw_uid, runner.pw_gid)
             result = request.with_suffix(".res")
-            wait_for(result.exists)
+            wait_for(
+                result.exists,
+                seconds=90,
+                what=f"The installed broker (asked to {verb})",
+                detail=lambda: run(
+                    "journalctl", "-n", "40", "--no-pager", "-u",
+                    "eugene-plexus-apps-ctl.service", "-u", "eugene-plexus-apps-ctl.path",
+                ),
+            )
             answer = json.loads(result.read_text())
             result.unlink()
             if expect_success:
                 assert answer["code"] == 0, answer
             return answer
 
+        step("Linux: start Workbench's unit through the broker")
         broker("start")
-        wait_for(io.is_dir)
+        wait_for(io.is_dir, what="Workbench's state directory")
         link = root / "root-refusal-link"
         link.symlink_to("/etc", target_is_directory=True)
+        step("Linux: the root broker itself refuses /etc and a link to it")
         root_refusals(
             ctl, broker, link, lambda p: os.chown(p, runner.pw_uid, runner.pw_gid)
         )
         group_name = (
-            "eapp-"
-            + __import__("hashlib").sha256(b"workbench").hexdigest()[:12]
-            + "-files"
+            "eapp-" + hashlib.sha256(b"workbench").hexdigest()[:12] + "-files"
         )
         group = str(grp.getgrnam(group_name).gr_gid)
-        folder = root / "f\u00fc project %data"
-        folder.mkdir(mode=0o700)
-        (folder / "seed.txt").write_text("project data")
-        (folder / "seed.txt").chmod(0o600)
-        run("setfacl", "-m", "u:65534:r-x", str(folder))
         cli = root / "agent_cli.py"
-        cli.write_text(
-            "from pathlib import Path\nimport json,sys,subprocess,runpy\nfrom eugene_plexus_agent.folder_access import Access,LinuxPermissions\nprefix=Path(sys.argv[1])\na=Access(prefix/'folder-access.json',LinuxPermissions('workbench',prefix/'apps',eugene=(str(prefix),)),process=lambda: int(subprocess.check_output(['systemctl','show','eugene-plexus-app@workbench.service','--property=MainPID','--value'])))\nverb=sys.argv[2]\nif verb=='http':\n runpy.run_path(sys.argv[3])['release_http'](prefix/'http',a,[Path(p) for p in sys.argv[4:]])\n print(json.dumps({'ok':True}))\n sys.exit(0)\nif verb=='add': r=a.add('workbench',sys.argv[3],sys.argv[4],'acceptance')\nelif verb=='remove': r=a.remove('workbench',sys.argv[3])\nelse: r=next(x for x in a.listing('workbench') if x.state=='ready')\nprint(r.model_dump_json())\n"
-        )
+        cli.write_text(AGENT_CLI, encoding="utf-8")
 
         def agent(*args):
             return json.loads(
@@ -395,18 +561,49 @@ def linux(specs: Path) -> None:
                     str(cli),
                     str(prefix),
                     *args,
+                    timeout=180,
                 )
             )
 
+        step("Linux: the agent refuses each kind of folder through the root helper")
+        refusal_target = root / "refusal-target"
+        refusal_target.mkdir(mode=0o700)
+        refusal_link = root / "refusal-link"
+        refusal_link.symlink_to(refusal_target, target_is_directory=True)
+        assert agent(
+            "refusals",
+            str(Path(__file__).resolve()),
+            json.dumps(
+                [
+                    ("/", "drive_root"),
+                    ("/etc", "system"),
+                    (str(prefix), "eugene"),
+                    (runner.pw_dir, "home"),
+                    (str(refusal_link), "link"),
+                    (str(link), "link"),
+                    ("//unreachable.invalid/share", "network"),
+                    (str(root / "missing"), "not_a_folder"),
+                ]
+            ),
+        )["ok"]
+        folder = root / "f\u00fc project %data"
+        folder.mkdir(mode=0o700)
+        (folder / "seed.txt").write_text("project data")
+        (folder / "seed.txt").chmod(0o600)
+        run("setfacl", "-m", "u:65534:r-x", str(folder))
+        step("Linux: Workbench cannot read the folder before a grant")
         before = probe(io, folder)
         assert not before["read"] and not before["write"]
+        step("Linux: a read grant lets Workbench read, not write")
         read = agent("add", str(folder), "read")
         assert read["state"] == "ready", read
         observed = probe(io, folder)
         assert observed["read"] and not observed["write"], observed
         assert int(group) in observed["groups"] and observed["uid"] != runner.pw_uid
+        step("Linux: removing the read grant closes the folder")
         assert agent("remove", read["id"])["state"] == "removed"
         assert not probe(io, folder)["read"]
+        step("Linux: a write grant needs a restart, then Workbench writes")
         write = agent("add", str(folder), "write")
         assert write["state"] == "ready" and write["restartNeeded"], write
         assert not probe(io, folder)["write"]
@@ -419,6 +616,7 @@ def linux(specs: Path) -> None:
         assert not agent("list")["restartNeeded"]
         # Reopen the agent's durable record; chmod and new inherited files
         # must not prevent revocation, or undo another principal's entry.
+        step("Linux: removing the write grant closes the folder and the app's file")
         folder.chmod(0o750)
         assert agent("remove", write["id"])["state"] == "removed"
         revoked = probe(io, folder)
@@ -428,6 +626,7 @@ def linux(specs: Path) -> None:
         acl = run("getfacl", "-cpnE", str(folder))
         assert "user:65534:r-x" in acl and "group:" + group + ":" not in acl
         assert "group:" + group + ":" not in run("getfacl", "-cpnE", str(created))
+        step("Linux: a folder swapped for a link is left alone, and so is the target")
         swap, target = root / "swap", root / "swap-target"
         swap.mkdir(mode=0o700)
         target.mkdir(mode=0o700)
@@ -440,12 +639,14 @@ def linux(specs: Path) -> None:
             lambda p: run("getfacl", "-cpnE", str(p), str(p / "seed.txt")),
             lambda p, destination: p.symlink_to(destination, target_is_directory=True),
         )
+        step("Linux: the app's own key releases one grant over HTTP, never another app's")
         http_paths = [root / ("http-" + name) for name in ("one", "two", "foreign")]
         for path in http_paths:
             path.mkdir(mode=0o700)
         assert agent(
             "http", str(Path(__file__).resolve()), *(str(p) for p in http_paths)
         )["ok"]
+        step("Linux: removing a child's write grant keeps the parent's read grant")
         parent = root / "overlap"
         child = parent / "child"
         parent.mkdir(mode=0o700)
@@ -466,6 +667,7 @@ def linux(specs: Path) -> None:
         assert agent("remove", parent_read["id"])["state"] == "removed"
         assert not probe(io, child)["read"]
         # Real parser, masked named user AND owning group, unchanged on failure.
+        step("Linux: a masked ACL entry is refused and left unchanged")
         for entry in ("u:65534:rwx", "g::rwx"):
             run("setfacl", "-n", "-m", entry + ",m::r--", str(folder))
             before_acl = run("getfacl", "-cpnE", str(folder))
@@ -475,6 +677,7 @@ def linux(specs: Path) -> None:
             ), refused
             assert run("getfacl", "-cpnE", str(folder)) == before_acl
             assert agent("remove", refused["id"])["state"] == "removed"
+        step("Linux: a granted folder deleted later never stops Workbench starting")
         deleted = root / "deleted"
         deleted.mkdir(mode=0o700)
         gone = agent("add", str(deleted), "write")
@@ -485,16 +688,17 @@ def linux(specs: Path) -> None:
         assert agent("remove", gone["id"])["state"] == "removed"
         assert str(deleted) not in (drop / "20-folders.conf").read_text("utf-8")
         # The installed main() and opened() must refuse an unsafe parent.
+        step("Linux: a folder under a parent other accounts can change is refused")
         unsafe = root / "unsafe"
         unsafe.mkdir(mode=0o777)
         unsafe.chmod(0o777)
         child = unsafe / "child"
         child.mkdir()
         denied = agent("add", str(child), "read")
-        assert denied["state"] == "failed" and "parent folder" in denied["message"], (
-            denied
-        )
+        assert denied.get("refused") == "unsafe_parent", denied
+        assert str(unsafe) + " can be changed by other accounts" in denied["message"], denied
     finally:
+        step("Linux: clean up")
         subprocess.run(
             [
                 "systemctl",
@@ -504,12 +708,85 @@ def linux(specs: Path) -> None:
                 "eugene-plexus-apps-ctl.service",
             ],
             check=False,
+            timeout=120,
         )
         # Dedicated paths created above on an explicitly disposable runner.
         for target in (drop, Path("/etc/eugene-plexus/folder-access/workbench"), root):
             if target.exists():
                 shutil.rmtree(target)
         run("systemctl", "daemon-reload")
+
+
+def create_service(name: str, account: str, command: str) -> None:
+    """The agent's `WindowsServiceRunner.prepare`, for a probe instead of an app."""
+    import win32service
+
+    manager = win32service.OpenSCManager(None, None, win32service.SC_MANAGER_ALL_ACCESS)
+    try:
+        handle = win32service.CreateService(
+            manager,
+            name,
+            "Eugene row 23 disposable acceptance",
+            win32service.SERVICE_ALL_ACCESS,
+            win32service.SERVICE_WIN32_OWN_PROCESS,
+            win32service.SERVICE_DEMAND_START,
+            win32service.SERVICE_ERROR_NORMAL,
+            command,
+            None,
+            0,
+            None,
+            account,
+            None,
+        )
+        win32service.CloseServiceHandle(handle)
+    finally:
+        win32service.CloseServiceHandle(manager)
+
+
+def service_diagnostics(name: str, io: Path) -> str:
+    parts = []
+    for args in (
+        ("sc.exe", "qc", name),
+        ("sc.exe", "queryex", name),
+        (
+            "wevtutil",
+            "qe",
+            "System",
+            "/q:*[System[Provider[@Name='Service Control Manager']]]",
+            "/c:6",
+            "/rd:true",
+            "/f:text",
+        ),
+    ):
+        try:
+            parts.append(run(*args, timeout=60))
+        except RuntimeError as exc:
+            parts.append(str(exc))
+    parts.append(probe_log(io))
+    return "\n".join(parts)
+
+
+def remove_service(name: str) -> None:
+    """Best effort: a cleanup failure must never hide the check that failed."""
+    import win32service
+    import win32serviceutil
+
+    try:
+        win32serviceutil.ControlService(name, win32service.SERVICE_CONTROL_STOP)
+    except Exception as exc:
+        step(f"Windows: stop {name}: {exc}")
+    deadline = time.perf_counter() + 60
+    while time.perf_counter() < deadline:
+        try:
+            if win32serviceutil.QueryServiceStatus(name)[1] == win32service.SERVICE_STOPPED:
+                break
+        except Exception:
+            break
+        time.sleep(0.5)
+    try:
+        win32serviceutil.RemoveService(name)
+    except Exception as exc:
+        step(f"Windows: remove {name}: {exc}")
 
 
 def windows(root: Path) -> None:
@@ -523,7 +800,15 @@ def windows(root: Path) -> None:
         "The runner must already be admin; never request elevation"
     )
     name = "EpR23Probe"
-    (root / "service_probe.py").write_text(PROBE, encoding="utf-8")
+    account = "NT SERVICE\\" + name
+    # The probe's own folder, like an app's: only the probe's account is
+    # given it. `root` came from mkdtemp, which on Python 3.12.4 and later
+    # gives SYSTEM, Administrators and the owner alone; nothing inherited
+    # from it lets a service account read its script.
+    home = root / "probe"
+    home.mkdir()
+    script = home / "service_probe.py"
+    script.write_text(PROBE, encoding="utf-8")
     io = root / "probe-io"
     io.mkdir()
     folder = root / "shared"
@@ -550,29 +835,29 @@ def windows(root: Path) -> None:
     closed.mkdir()
     (closed / "seed.txt").write_text("keep closed")
     private(closed)
-    win32serviceutil.InstallService(
-        None,
-        name,
-        "Eugene row 23 disposable acceptance",
-        startType=3,
-        exeName=sys.executable,
-        exeArgs='"' + str(root / "service_probe.py") + '"',
-        userName="NT AUTHORITY\\LocalService",
-    )
+    # The base interpreter, as `app_accounts.base_interpreter` picks it:
+    # a service must be the process the service manager started.
+    python = getattr(sys, "_base_executable", None) or sys.executable
+    step(f"Windows: register {account} the way the agent registers an app")
+    create_service(name, account, f'"{python}" -I -u "{script}" "{io}" {name}')
     try:
-        run("sc.exe", "sidtype", name, "unrestricted")
-        sid = ws.LookupAccountName(None, "NT SERVICE\\" + name)[0]
-        sid_text = ws.ConvertSidToStringSid(sid)
-        # Let only this service write its command/result directory.
-        acl = ws.GetFileSecurity(str(io), 4).GetSecurityDescriptorDacl()
-        acl.AddAccessAllowedAceEx(2, 3, 0x1F01FF, sid)
-        ws.SetNamedSecurityInfo(str(io), 1, 4, None, None, acl, None)
-        win32serviceutil.StartService(name)
+        run("icacls", str(home), "/grant:r", account + ":(OI)(CI)(RX)")
+        run("icacls", str(io), "/grant:r", account + ":(OI)(CI)(M)")
+        sid_text = ws.ConvertSidToStringSid(ws.LookupAccountName(None, account)[0])
+        step("Windows: start the probe service")
+        try:
+            win32serviceutil.StartService(name)
+        except Exception as exc:
+            raise AssertionError(
+                f"The probe service did not start: {exc}\n{service_diagnostics(name, io)}"
+            ) from exc
+        step("Windows: the service's account cannot open the folder before a grant")
         before = probe(io, folder)
         assert sid_text in before["sids"], before
         assert not before["read"] and not before["write"], before
-        backend = WindowsPermissions("NT SERVICE\\" + name, eugene=(), homes=())
+        backend = WindowsPermissions(account, eugene=(), homes=())
         access = Access(root / "folder-access.json", backend)
+        step("Windows: a read grant lets the service read, not write")
         read = access.add("workbench", str(folder), "read", "acceptance")
         assert read.state == "ready", read.message
         assert read.notInheriting == 1
@@ -580,26 +865,31 @@ def windows(root: Path) -> None:
         assert not denied["read"] and not denied["write"], denied
         observed = probe(io, folder)
         assert observed["read"] and not observed["write"], observed
+        step("Windows: the record survives a reopen, and its release closes the folder")
         reopened = Access(access.file, backend)
         assert reopened.listing("workbench")[0].id == read.id
         assert reopened.release("workbench", read.id)[0].state == "removed"
         assert not probe(io, folder)["read"]
+        step("Windows: a write grant lets the service write")
         write = access.add("workbench", str(folder), "write", "acceptance")
         assert write.state == "ready", write.message
         observed = probe(io, folder)
         assert observed["read"] and observed["write"], observed
         created = folder / observed["writtenFile"]
+        step("Windows: removing the write grant closes the folder and the app's file")
         assert access.remove("workbench", write.id).state == "removed"
         revoked = probe(io, folder)
         assert not revoked["read"] and not revoked["write"], revoked
         assert_app_revoked(io, folder, created)
         assert created.read_text() == "app data"
+        step("Windows: an entry made outside Eugene stays after a removal")
         manual, _, _ = backend.grant(str(folder), "read", lambda _: None)
         existing = access.add("workbench", str(folder), "read", "acceptance")
         assert existing.preexisting
         assert access.remove("workbench", existing.id).state == "removed"
         assert probe(io, folder)["read"]
         assert backend.revoke(str(folder), manual)
+        step("Windows: a folder swapped for a junction is left alone, and so is the target")
         swap, target = root / "swap", root / "swap-target"
         swap.mkdir()
         target.mkdir()
@@ -626,15 +916,15 @@ def windows(root: Path) -> None:
             acl,
             junction,
         )
+        step("Windows: the app's own key releases one grant over HTTP, never another app's")
         http_paths = [root / ("http-" + name) for name in ("one", "two", "foreign")]
         for path in http_paths:
             path.mkdir()
             private(path)
         release_http(root / "http-config", access, http_paths)
     finally:
-        subprocess.run(["sc.exe", "stop", name], check=False, capture_output=True)
-        wait_for(lambda: win32serviceutil.QueryServiceStatus(name)[1] == 1)
-        win32serviceutil.RemoveService(name)
+        step("Windows: clean up")
+        remove_service(name)
 
 
 def main() -> None:
@@ -650,8 +940,6 @@ def main() -> None:
     parser.add_argument("--linux-root", action="store_true")
     args = parser.parse_args()
     specs = Path(__file__).resolve().parent.parent
-    scratch = specs.parent / ".codex-tmp"
-    scratch.mkdir(exist_ok=True)
     if args.linux_root:
         linux(specs)
         args.report.write_text(
@@ -664,6 +952,7 @@ def main() -> None:
                         "shell broker",
                         "helper main and parent checks",
                         "direct root broker system/link refusals",
+                        "agent refusals through the root helper",
                         "symlink swap leaves target untouched",
                         "HTTP app-key lookup, id release, foreign id refusal",
                         "parent read survives child write revoke",
@@ -672,12 +961,16 @@ def main() -> None:
                         "masked ACL refusal",
                         "growth/chmod revoke",
                         "deleted folder restart",
+                        "unsafe parent refusal",
                     ],
                 }
             ),
             encoding="utf-8",
         )
+        step("Linux: every check passed")
         return
+    scratch = specs.parent / ".codex-tmp"
+    scratch.mkdir(exist_ok=True)
     for component, tests in [
         (
             "agent",
@@ -685,7 +978,8 @@ def main() -> None:
         ),
         ("workbench", ["tests/test_folder_access.py"]),
     ]:
-        run(
+        step(f"Run {component}'s folder access tests")
+        stream(
             sys.executable,
             "-m",
             "pytest",
@@ -694,11 +988,13 @@ def main() -> None:
             "--basetemp",
             str(scratch / ("row23-" + component)),
             cwd=specs.parent / component,
+            timeout=600,
         )
-    with tempfile.TemporaryDirectory(prefix="row23-", dir=scratch) as directory:
-        root = Path(directory)
-        refusals(root)
-        if os.name == "nt":
+    if os.name == "nt":
+        with tempfile.TemporaryDirectory(prefix="row23-", dir=scratch) as directory:
+            root = Path(directory)
+            step("Windows: the agent refuses each kind of folder")
+            refusals(root)
             windows(root)
             args.report.write_text(
                 json.dumps(
@@ -706,7 +1002,7 @@ def main() -> None:
                         "ok": True,
                         "platform": "win32",
                         "proved": [
-                            "real LocalService and NT SERVICE SID token",
+                            "real virtual account service, registered as the agent registers an app",
                             "app read/write",
                             "persisted access",
                             "revocation",
@@ -720,16 +1016,20 @@ def main() -> None:
                 ),
                 encoding="utf-8",
             )
-        else:
-            run(
-                "sudo",
-                "--preserve-env=RUNNER_ENVIRONMENT",
-                sys.executable,
-                str(Path(__file__).resolve()),
-                "--linux-root",
-                "--report",
-                str(args.report.resolve()),
-            )
+            step("Windows: every check passed")
+    else:
+        step("Linux: continue as root")
+        stream(
+            "sudo",
+            "--preserve-env=RUNNER_ENVIRONMENT",
+            sys.executable,
+            "-u",
+            str(Path(__file__).resolve()),
+            "--linux-root",
+            "--report",
+            str(args.report.resolve()),
+            timeout=660,
+        )
 
 
 if __name__ == "__main__":

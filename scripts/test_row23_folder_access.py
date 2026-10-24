@@ -1249,3 +1249,104 @@ def test_acceptance_release_checks_lookup_one_id_and_foreign_id():
         lambda: states.copy(),
     )
     assert calls == [{"path": "/srv/one"}, {"id": "one"}, {"id": "foreign"}]
+
+
+def test_linux_unprivileged_part_never_asks_a_broker_it_has_not_installed(
+    tmp_path, monkeypatch
+):
+    """Linux inspection goes through the root broker, which the root part installs.
+
+    Asking it before then waited forever: 13 silent minutes, then the job limit.
+    """
+    import sys
+
+    module = acceptance()
+    report = tmp_path / "report.json"
+    monkeypatch.setattr(sys, "argv", ["acceptance", "--report", str(report)])
+    monkeypatch.setattr(
+        module,
+        "os",
+        SimpleNamespace(name="posix", environ={"RUNNER_ENVIRONMENT": "github-hosted"}),
+    )
+
+    def too_early(_):
+        pytest.fail("Linux refusals need the root broker, which is not installed yet")
+
+    monkeypatch.setattr(module, "refusals", too_early)
+    calls = []
+    monkeypatch.setattr(
+        module.subprocess,
+        "run",
+        lambda args, **kwargs: calls.append(args)
+        or SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    module.main()
+    assert calls[-1][0] == "sudo" and "--linux-root" in calls[-1]
+    assert "-u" in calls[-1], "The root part must print each step as it happens"
+
+
+def test_every_command_is_bounded_and_names_itself_when_it_stalls():
+    import sys
+
+    module = acceptance()
+    with pytest.raises(RuntimeError, match="did not finish in 0.5 seconds"):
+        module.run(sys.executable, "-c", "import time; time.sleep(30)", timeout=0.5)
+    with pytest.raises(AssertionError, match="The broker did not answer.*\nbroker log"):
+        module.wait_for(
+            lambda: False, seconds=0.2, what="The broker", detail=lambda: "broker log"
+        )
+
+
+@pytest.mark.skipif(
+    __import__("os").name != "nt", reason="Windows service registration"
+)
+def test_windows_probe_service_is_registered_like_an_app_and_can_read_its_script(
+    tmp_path, monkeypatch
+):
+    """The 1053 rounds: the service could not read a script inside a mkdtemp folder."""
+    import ctypes
+
+    import win32security
+    import win32serviceutil
+
+    module = acceptance()
+    events = []
+    monkeypatch.setattr(ctypes.windll.shell32, "IsUserAnAdmin", lambda: 1)
+    monkeypatch.setattr(
+        module, "create_service", lambda *args: events.append(("create", *args))
+    )
+    monkeypatch.setattr(
+        module, "run", lambda *args, **kwargs: events.append(args) or ""
+    )
+    monkeypatch.setattr(
+        win32security,
+        "LookupAccountName",
+        lambda *_: (win32security.ConvertStringSidToSid("S-1-5-80-1-2-3-4-5"), "", 5),
+    )
+
+    def start(name):
+        events.append(("start", name))
+        raise RuntimeError("1053")
+
+    monkeypatch.setattr(win32serviceutil, "StartService", start)
+    monkeypatch.setattr(module, "service_diagnostics", lambda *_: "diagnostics")
+    monkeypatch.setattr(
+        module, "remove_service", lambda n: events.append(("remove", n))
+    )
+    with pytest.raises(AssertionError, match="did not start: 1053\ndiagnostics"):
+        module.windows(tmp_path)
+    _, name, account, command = events[0]
+    assert account == "NT SERVICE\\" + name
+    script = tmp_path / "probe" / "service_probe.py"
+    assert script.is_file()
+    assert f' -I -u "{script}" "{tmp_path / "probe-io"}" {name}' in command
+    grants = {
+        args[1]: args[3]
+        for args in events
+        if args[0] == "icacls" and args[2] == "/grant:r"
+    }
+    assert grants[str(script.parent)] == account + ":(OI)(CI)(RX)"
+    assert grants[str(tmp_path / "probe-io")] == account + ":(OI)(CI)(M)"
+    last_grant = max(i for i, args in enumerate(events) if args[0] == "icacls")
+    assert events.index(("start", name)) > last_grant
+    assert events[-1] == ("remove", name)

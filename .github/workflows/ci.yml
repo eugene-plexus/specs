@@ -742,8 +742,14 @@ jobs:
       - name: Install Linux ACL tools for the real root broker
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y acl
+      # The root helper's and the acceptance's own unit tests; no other job runs them.
+      - name: Root helper and acceptance unit tests
+        run: python -m pytest specs/scripts/test_row23_folder_access.py -q -p no:cacheprovider
+      # Unbuffered, so a stalled run shows the step it stalled in.
       - name: Installed root broker or real service SID, app I/O and authenticated routes
-        run: python specs/scripts/row23-folder-access-acceptance.py --report row23-report.json
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python -u specs/scripts/row23-folder-access-acceptance.py --report row23-report.json
       - name: Keep folder access evidence
         if: always()
         uses: actions/upload-artifact@v4
