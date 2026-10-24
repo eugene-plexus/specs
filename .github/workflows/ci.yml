@@ -953,6 +953,9 @@ jobs:
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
 
+      - name: Check Hindsight catalogue and memory server link contract
+        run: python scripts/test_hindsight_contract.py
+
       - name: Check gateway routing node contract
         run: python scripts/test_gateway_routing_node_contract.py
 
@@ -1078,6 +1081,47 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test -- --run
+
+  mv5b-hindsight:
+    needs: plan
+    if: needs.plan.outputs.runtime == 'true'
+    name: Hindsight slim memory server (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/specs
+          ref: ${{ github.repository == 'eugene-plexus/specs' && github.sha || 'main' }}
+          path: specs
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/agent
+          ref: ${{ needs.plan.outputs.agent_ref || 'main' }}
+          path: agent
+      - uses: actions/checkout@v6
+        with:
+          repository: eugene-plexus/workbench
+          ref: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+          path: workbench
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: 0.12.18
+      - name: Prepare the candidate packages and syscall tracing
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y strace postgresql-client
+          uv venv .codex-tmp/acceptance-venv --python 3.12
+          uv pip install --python .codex-tmp/acceptance-venv/bin/python './agent[dev]' ./workbench
+      - name: Verify Hindsight with local stub models and private banks
+        run: |
+          sudo install -d -o "$(id -un)" /var/lib/eugene-plexus-mv5b/.codex-tmp
+          .codex-tmp/acceptance-venv/bin/python specs/scripts/mv5b-hindsight-acceptance.py --output /var/lib/eugene-plexus-mv5b/.codex-tmp/acceptance
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mv5b-hindsight-linux
+          path: /var/lib/eugene-plexus-mv5b/.codex-tmp/acceptance/result.json
 
   candidate-workbench:
     if: inputs.workbench_ref != ''
