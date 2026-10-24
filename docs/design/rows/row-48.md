@@ -6,10 +6,10 @@ Library is down", in two parts:
 
 - **48b: keep working without the Library.** Size M, cross-component.
   Repos: agent, gateway, library, ui, specs. Ready to build.
-- **48c: a standby Library.** Size L, high risk (a new grant and a new
-  service credential). Repos: library, agent, control, ui, specs. It
-  starts after row 4 merges, because it reuses row 4's promotion and
-  address rules.
+- **48c: a standby Library. Not built** (R48-STANDBY, Troy 2026-10-24:
+  Choice 3, 48b alone). Most installs keep their models on one NAS, and a
+  standby cannot read the models while that NAS is down. §3 stays as the
+  design if this is asked for again.
 
 Sources: the code on every repo's `main` on 2026-10-23 (read for this
 design; references below are `A/` agent, `G/` gateway, `L/` library, `C/`
@@ -156,7 +156,10 @@ injected); the runtime restarts from the node copy with the note; the
 console's Library proxy answers the sentence. Then it restores both and
 checks the note clears at the next start.
 
-## 3. 48c: a standby Library
+## 3. 48c: a standby Library (not built)
+
+Troy chose 48b alone (R48-STANDBY, 2026-10-24). This section is kept as
+the design, not as work.
 
 This follows control's warm standby (`warm-standby.md`, SB1-SB4) and row
 4's promotion rules, with one difference: **a standby Library answers
@@ -253,13 +256,42 @@ without the grant must be refused.
 
 ## 5. Calls
 
-- **R48-STANDBY:** what "Library redundancy" builds. Recommended: 48c as
-  above (a standby that answers reads by itself; an owner promotes it
-  for writes). Other choices: automatic promotion (two Libraries could
-  write the same folders), or 48b alone (one Library, everything else
-  keeps working).
-- **R48-STALE:** the gateway keeps a model's last known settings for the
-  whole outage (recommended), or for 5 minutes as today and then uses the
-  gateway's defaults.
+- **R48-STANDBY** (answered 2026-10-24: Choice 3): 48b alone. No second
+  Library; 48c is not built.
+- **R48-STALE** (answered 2026-10-24: Choice 1, as built): the gateway
+  keeps a model's last known settings for the whole outage and across a
+  restart; experts can still set a limit (`profileMaxStaleSeconds`).
 
-Both defaults are built until Troy answers.
+## What building found
+
+- **48b, phase 1:** `Runtime.localPathNote` already carries copy notes.
+  Its contract now also covers a start from an unchecked local copy;
+  no second runtime note field is needed.
+- The gateway has no `GET /v1/info` today. 48b adds the endpoint rather
+  than extending one. Its `library.reachable` is null until the first
+  check, including after a restart; loading saved settings alone does
+  not show whether the Library can answer.
+- The acceptance in §2.6 uses short real times with
+  `profileCacheSeconds: 1`. Gateway unit tests use an injected clock to
+  cover an outage past 300 s; the process acceptance does not inject time.
+- **48b, phase 2:** a folder with no path mapping still needs its saved
+  Library root for the source check. Checking the disk root instead would
+  mistake an unavailable folder for a removed model. Copy layout stays
+  unchanged, including sharded and prepared models; the first source
+  record also keeps their member list for a restart without the source.
+- Copy completion and runtime reads can record the same source at once.
+  Windows exposed competing writes to the record's temporary file. Record
+  reads and writes now share a lock, and an unchanged record is not written
+  again. Clearing a copy also clears its record; a running copy keeps both.
+- Only a successful Library answer replaces saved defaults. Any failed
+  read (a transport error, a timeout, a refusal or a malformed answer)
+  keeps them: a refusal says nothing about the model's settings. An empty
+  profile answer is a success and clears them, including on disk.
+- The local Windows acceptance passed with a removed `subst` drive and
+  cleared install variables. The CI dependency lock could not be installed
+  in the sandbox (`av==19.0.2` was unavailable offline); the isolated local
+  runner used the worktrees' installed dependencies and the release-pinned
+  control source. CI still installs the full lock on Linux and Windows.
+- The agent's existing real-app-install test needs a managed Python from
+  GitHub. That download is blocked by this sandbox, so its whole-suite
+  run reports that test as failed; the row's changed tests pass.

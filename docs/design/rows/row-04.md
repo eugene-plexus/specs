@@ -133,3 +133,176 @@ About 10 minutes.
 ## Calls answered by Troy (2026-10-21)
 
 - **R4-MOVE: Choice 1.** Machines follow a new root address only with a promotion.
+
+## What building found (2026-10-22)
+
+Built on branch `r4-promoted-root` in specs, control and agent. UI not built
+(see the last item).
+
+**The contract as built**
+- `control.yaml`: `MachineList.control` (`MachineListControl`: `epoch`,
+  `node`, `url`, the last two nullable); `LogPage.appliedDigest`;
+  `StandbyStatus.version` and `StandbyStatus.matches`; the
+  `Eugene-Plexus-Version` header (the standby's on its pulls, the root's on a
+  log page) and `Eugene-Plexus-Copy-Digest` (the standby's digest at `after`).
+- `agent.yaml`: `POST /v1/node/machine-list` (204; 401 for a list not signed
+  by the pinned root; 409 for an older list or a lower epoch) and
+  `NodeIdentity.controlUrlEpoch`. The body schema is `SignedMachineList`, a
+  copy of control's, because agent.yaml does not reference control.yaml.
+- The specs branch merges `ac04e63` (row 17's contract): agent main pins it
+  and specs main does not have it yet, so a pin of this branch from main
+  alone would have taken row 17's fields out of the agent.
+
+**Decisions made while building**
+- **Two lists that name roots at different epochs are ordered by epoch, not
+  by version.** Each root numbers its own lists, and an old root that kept
+  writing could out-number the new one. A list with no `control` block (a
+  root older than row 4) is ordered by version as before.
+- **A list at an epoch above the one a node holds raises it**, even when the
+  node cannot move (the list names no address, or a loopback or link-local
+  one). The list is signed by the same identity as the bundle, so it fences
+  the old root the same way.
+- **A move drops the join token's root pin** (`controlPins` in `node.yaml`):
+  it was the old root's key; the new root's list names its own.
+- **The promoted mark is `standbyPromoted` in `agent.yaml`**, beside the
+  entry it is about, and it goes with the entry. It is set only when the copy
+  answers `role: control` at epoch N and the machine list held (signed)
+  names this machine the root at N. A copy that answers `control` without a
+  promotion (one started without its role) is not taken for the root.
+  `is_standby()` still names the copy, so the planner keeps its wiring (its
+  state directory and node name) and a restart starts it as the root on the
+  same copy; `standby.promoted()` and `is_root()` decide the routes.
+- **The promoted copy starts its node poller** (and the TLS-key watch when it
+  has a nodes name) at the promotion: nothing restarts it, and before this
+  row a promoted copy never polled.
+- **A root pushes to a node behind only on `controlUrlEpoch` when its list
+  names an address**; otherwise that node cannot move and the push would
+  repeat every minute for nothing. A node behind on `epoch` is always sent
+  the bundle again.
+- **The fallback remembers the last standby holder.** A promotion takes the
+  grant, so the new root's bundle names none. A node that restarts after
+  taking the new root's bundle but not its list has no holder to ask; the
+  new root's poll still reaches it.
+- **4b compares only on one version.** The root's version rides the log page
+  as a header; a standby on another version does not compare, and the root
+  does not judge its copy (`matches` absent). Otherwise a rolling update
+  replaces the copy every 10 minutes and reports it different. The root
+  computes `matches` itself, from the copy's digest at its own index; a pull
+  behind the root keeps the last answer.
+- **"Cannot reach the root at ..."** is in the node's log, said once per
+  silence. No field carries it to the console yet.
+
+**Acceptance.** `specs/scripts/root-moved-acceptance.py` runs in Pinned
+integration on Linux and Windows (L1 and W3, every profile), not on the LT1
+Docker harness: Windows runners cannot run Linux containers, and the shared
+harness's real start path gives each agent its machine port on a free port.
+The four agents advertise the runner's routable address, each on its own
+ports, so every call between them crosses a machine table to a machine port.
+The promotion is called at the copy's loopback port, not through the
+console. `standby-acceptance.py` step 7 now expects B's agent to report
+`hostsControl` and no standby after the promotion. Sabotage: ten new checks
+(the epoch rule, the fence, the loopback refusal, both conditions of the
+promoted mark, the 2-minute wait, both version gates, the 10-minute limit,
+the once-a-minute push), each caught by its unit test.
+
+**Not changed**
+- The bundle's own rule (`tokens.accepts_replacement`, row 35's file)
+  refuses a bundle at a higher epoch with a lower version. Bundle versions
+  are the log index, so a promoted copy's bundle is refused only where an
+  old root wrote past the index the copy was promoted at (a forced
+  promotion of a copy that was behind). Its list still moves the node, but
+  the node takes the new root's bundles only once its index passes.
+- **UI (Machines, `StandbyPanel.tsx`) is not built.** The contract carries
+  what it needs: `Node.lastSeenEpoch` for "still follows the old root",
+  `StandbyStatus.version` and `matches` for the standby's line. A follow-up
+  row in `ui`.
+
+## The adversarial review (2026-10-22), and what changed
+
+Codex reviewed the branch with in-memory probes: four blockers and four
+should-fix items. Each fix has a test that failed before it; 19 new checks
+were broken once each and caught.
+
+- **A superseded root could still command machines** (a promotion keeps the
+  root's token key). Every token the root signs but a client key carries
+  `ep`, the epoch it was signed at. Every verifier (the vendored token
+  module, in agent, control, gateway, inference-driver, library and
+  tool-driver) refuses a root token whose `ep` is below its bundle's epoch,
+  and the agent also refuses one below the epoch it holds from a list:
+  *"This command came from a root this machine no longer follows (epoch 2;
+  it follows epoch 3)."* A root token with no `ep` (a root older than row
+  4) is refused once the bundle's `tokenEpochs` (written once, as a hidden
+  `patchConfig`, by the first bundle an unlocked active root signs) says
+  roots mark theirs, if it is newer than that or a promotion followed. Chosen
+  over rotating the token key at promotion: a rotation needs the old key
+  revoked everywhere it is cached, and leaves client keys broken. Client keys
+  are not fenced by epoch: they outlive any root and are revoked one by one.
+  A session signed before a promotion is refused after it: sign in again.
+- **Lists.** Once a node holds a list that names its root, a list that
+  names none is refused (409), as is a malformed `control`. Another list
+  under the same version is refused. Nothing is written unless it is taken.
+  A kept list below the epoch held is not loaded.
+- **Bundles are ordered by epoch first**, in the vendored token module
+  (`accepts_replacement`, and so every component's `BundleFile`): a root
+  promoted from a copy that was behind is taken. **A crash before the
+  promotion's bundle arrives** no longer restarts the copy as a standby:
+  the agent passes the epoch it holds (`FOLLOW_EPOCH`), and a copy whose
+  own log names its node the root at a higher epoch starts as the root; a
+  copy a held list names the root is not started to follow.
+- **Snapshots are checked before they replace a copy**: complete (every
+  `Snapshot` field), the same install (`controlPublicKey`, `salt`) and no
+  lower epoch. A snapshot that failed, gave no identity, or recovered from
+  an entry that would not apply holds the next one off for 30 s. A standby
+  newer than its root may now refuse the root's snapshot as incomplete
+  until the root is updated.
+- **Should-fix, done:** a list moves a node only to a root it lists, at that
+  machine's registered port and keys; `standbyPromoted` is dropped when no
+  signed list names this machine the root; a root that answers only for an
+  older epoch counts as silent for the fallback, and the standby's machine
+  with a changed key is asked through its root's signed list, fetched
+  without the key and verified; a promotion and the poll send each machine
+  its bundle and list on their own (16 at once, 30 s each).
+- **Acceptance**: a machine's state is read with a token it mints for
+  itself; D comes back on new ports so only the fallback can move it; A,
+  unlocked, signs a list numbered above C's at its lower epoch (refused for
+  the epoch) and relays a command C refuses.
+
+## The second review (2026-10-23), and what changed
+
+Codex re-reviewed the fixes: the four should-fix items closed, a gap left in
+each blocker, and two new should-fix items. Each fix has a test that failed
+before it.
+
+- **Tokens without `ep`.** A promotion ends them, wherever it is learned:
+  a node refuses a root token without `ep` once it holds an epoch above its
+  bundle's (a promoted root's list came first) or above `legacyTokenEpoch`
+  (`node.yaml`: the epoch it held when it first ran row 4 code, or joined).
+  A root promoted from a copy that is the first to write `tokenEpochs` names
+  the epoch it replaced, so every verifier refuses that root's tokens
+  without `ep` at once.
+- **Out of scope:** a former root re-signing tokens with a forged `ep` holds
+  the install's own token key; a compromised root machine is outside what
+  Eugene's code defends (Troy's standing rule, 2026-10-07).
+- **The list fence survives a restart.** `node.yaml` keeps `listEpoch`, the
+  highest root epoch a taken list named. A list that names no root is
+  refused against it, and a kept list without one is not loaded.
+- **A promoted copy that restarts locked, before anything was pushed.** The
+  agent asks its copy: one that says it is the root at an epoch above any
+  this node holds gives the bundle it signed at its promotion (a locked
+  root still serves it), verified against the install's identity. Taken, it
+  ends the standby grant here; the copy is marked promoted, this node
+  follows its own copy, and `/control` opens, so the owner can sign in on
+  this machine's console. `NodeIdentity.rootLocked` (from control's
+  `/healthz` `details.locked`) puts "The control root on <machine> is
+  locked" in Home's Needs attention, with the unlock action (ui). The
+  minute's pull checks this while the root it names does not answer.
+- **Snapshots are typed.** Collections must be lists, `config` and the
+  other objects objects, the key fields text or null, `index` and `epoch`
+  whole numbers, and every node named. Only the fields every supported root
+  writes are required; later ones are optional and read as empty.
+- **A failed fresh snapshot** is retried after 30 s: the 10 minutes start
+  once one was taken.
+- **Sabotage.** Each of the 14 new checks was broken once and its test
+  failed (restored from a copy). Two first missed: a node that kept no
+  joining epoch (a direct test now), and the required snapshot fields (the
+  test now keeps only what a v0.2.0 root writes, control 3c378a1).
