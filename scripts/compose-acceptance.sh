@@ -49,7 +49,7 @@
 #   17. with nothing mounted at /models, the library reports its default
 #       directory MISSING and its health degraded, rather than scanning
 #       an empty directory inside the container
-#   18. a stop runs the agent's and all three children's lifespan shutdown
+#   18. a stop runs the agent's and all four children's lifespan shutdown
 #   19. state survives down + up: the same install comes back
 #   20. the image runs as --user 99:100 against a directory OWNED by
 #       99:100 -- the uid it does not contain, and the one the Unraid
