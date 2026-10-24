@@ -1681,30 +1681,39 @@
    "title": "The Library at scale",
    "summary": "The Library at scale. Paginate `/v1/models`, then design an answer to \"the Library is down\"",
    "from": "M2-PAGE, LIB-RED",
-   "size": "S, then L",
+   "size": "S, then M",
    "risk": "cross",
    "risk_note": "cross",
    "who": "businesses",
-   "notes": "Redundancy is design first",
+   "notes": "Part 1 shipped. Part 2: 48b keeps working without the Library (M, cross). 48c (a standby Library) not built: R48-STANDBY Choice 3",
    "lane": "LIB",
    "lane_order": 7,
    "repos": [
     "library",
     "gateway",
+    "agent",
     "ui"
    ],
    "contract": "library.yaml",
    "hot_files": [
-    "library/src/eugene_plexus_library/routes/models.py",
-    "gateway/src/eugene_plexus_gateway/profiles.py"
+    "agent/src/eugene_plexus_agent/model_copies.py",
+    "agent/src/eugene_plexus_agent/library_folders.py",
+    "gateway/src/eugene_plexus_gateway/profiles.py",
+    "library/src/eugene_plexus_library/routes/models.py"
    ],
    "design_state": "ready",
    "needs": [],
    "design_docs": [
+    "rows/row-48.md",
     "m2-model-library.md",
-    "library-folders-and-reach.md"
+    "library-folders-and-reach.md",
+    "node-local-model-copy.md",
+    "warm-standby.md"
    ],
-   "calls": [],
+   "calls": [
+    "R48-STANDBY",
+    "R48-STALE"
+   ],
    "issue": 75
   },
   {
@@ -1853,18 +1862,19 @@
    "from": "PLAT (memory `project_platform_half_on_roadmap`)",
    "size": "L",
    "risk": "high",
-   "risk_note": "high (store, migrations)",
+   "risk_note": "high (store, migrations, a new component)",
    "who": "developers",
-   "notes": "Rows 54-56 share it, so design it once",
+   "notes": "Rows 54-56 share it, so design it once. A core component (R53-REPO, 2026-10-23)",
    "lane": "GW",
    "lane_order": 15,
    "repos": [
-    "platform-store",
+    "store",
     "gateway",
     "agent",
-    "ui"
+    "ui",
+    "specs"
    ],
-   "contract": "design only",
+   "contract": "store.yaml (new), common.yaml (ComponentKind), gateway.yaml, agent.yaml",
    "hot_files": [
     "specs/docs/design/"
    ],
@@ -1876,18 +1886,16 @@
     "llm-d-lessons.md",
     "openai-inference-compatibility.md"
    ],
-   "calls": [
-    "R53-REPO"
-   ],
+   "calls": [],
    "issue": 80
   },
   {
    "row": 54,
    "part": 5,
-   "title": "Stored responses, with the chain as the conversation key",
-   "summary": "Stored responses, with the chain as the conversation key",
+   "title": "Stored responses and conversations, with the chain as the conversation key",
+   "summary": "Stored responses and conversations, with the chain as the conversation key",
    "from": "LD6",
-   "size": "M",
+   "size": "L",
    "risk": "high",
    "risk_note": "high (chats at rest)",
    "who": "agent clients",
@@ -1896,7 +1904,7 @@
    "lane_order": 7,
    "repos": [
     "gateway",
-    "platform-store"
+    "store"
    ],
    "contract": "gateway.yaml",
    "hot_files": [
@@ -1914,9 +1922,7 @@
     "llm-d-lessons.md",
     "responses-and-completions.md"
    ],
-   "calls": [
-    "R54-DEFAULT"
-   ],
+   "calls": [],
    "issue": 81
   },
   {
@@ -1933,7 +1939,7 @@
    "lane": "GW",
    "lane_order": 8,
    "repos": [
-    "platform-store",
+    "store",
     "gateway",
     "ui"
    ],
@@ -1969,7 +1975,7 @@
    "lane": "GW",
    "lane_order": 13,
    "repos": [
-    "platform-store",
+    "store",
     "gateway"
    ],
    "contract": "gateway.yaml",
@@ -1986,9 +1992,7 @@
     "rows/row-53.md",
     "workbench-memory-and-documents.md"
    ],
-   "calls": [
-    "MRC24"
-   ],
+   "calls": [],
    "issue": 83
   },
   {

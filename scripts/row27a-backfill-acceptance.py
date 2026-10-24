@@ -129,9 +129,9 @@ def snapshot(path: Path, columns: dict | None = None) -> dict:
 
 
 async def seed(directory: Path) -> None:
-    """Build a populated schema-30 fixture, removing all five schema-31 columns.
+    """Build a populated schema-32 fixture, removing all five schema-33 columns.
 
-    As in Workbench's migration unit test, use its schema builder, then undo 31's
+    As in Workbench's migration unit test, use its schema builder, then undo 33's
     additive DDL. The acceptance takes the old-column snapshot BEFORE Workbench starts.
     """
     from eugene_plexus_workbench.store import Chat, Message, Person, Project, Store
@@ -214,7 +214,7 @@ async def seed(directory: Path) -> None:
         for table, names in EXTRA_COLUMNS.items():
             for name in names:
                 db.execute(f"ALTER TABLE {table} DROP COLUMN {name}")
-        db.execute("UPDATE meta SET value = '30' WHERE key = 'schema'")
+        db.execute("UPDATE meta SET value = '32' WHERE key = 'schema'")
         db.commit()
     (directory / "expected.json").write_text(
         json.dumps({"documents": expected, "excluded": excluded}), encoding="utf-8"
@@ -255,8 +255,8 @@ def serve(directory: Path, port: int) -> None:
 
 
 class Install:
-    def __init__(self, work: Path, package: Path):
-        self.work, self.package = work, package
+    def __init__(self, work: Path, package: Path, commit: str):
+        self.work, self.package, self.commit = work, package, commit
         self.r7 = load("row27a_row7", "row7-person-removal-acceptance.py")
         self.c3 = load("row27a_c3", "c3-workbench-acceptance.py")
         self.ports = self.c3.free_ports(
@@ -426,6 +426,14 @@ class Install:
             ),
             encoding="utf-8",
         )
+        # The shipped catalogue, Workbench's entry at the candidate's archive, as rows 7 and 70c
+        # do: the agent needs a catalogue file. This script runs Workbench itself, as a process
+        # it can seed at schema 32, kill hard and restart, not as an app the agent installs.
+        self.r7.workbench_catalogue(
+            agent_dir,
+            version=self.commit,
+            source=f"https://github.com/eugene-plexus/workbench/archive/{self.commit}.tar.gz",
+        )
         self.start("agent")
         local = self.call(
             "agent", "POST", "/v1/auth/initialize", json={"passphrase": password}
@@ -534,7 +542,7 @@ class Install:
                 for t in EXTRA_COLUMNS
             }
         after = json.loads((data / "migration.json").read_text(encoding="utf-8"))
-        backup = data / "workbench.sqlite3.schema-30.bak"
+        backup = data / "workbench.sqlite3.schema-32.bak"
         intact = before == after and backup.is_file() and snapshot(backup) == before
         nullable = all(
             added[t].get(n, (None,) * 4)[3] == 0
@@ -543,8 +551,8 @@ class Install:
         )
         check(
             "1",
-            "populated schema 30 migrates to 31 intact",
-            old_version == "30" and version == "31" and intact and nullable,
+            "populated schema 32 migrates to 33 intact",
+            old_version == "32" and version == "33" and intact and nullable,
             {
                 "schema": f"{old_version}->{version}",
                 "rows": {t: len(v["rows"]) for t, v in before.items()},
@@ -598,8 +606,8 @@ class Install:
         self.http.close()
 
 
-def exercise(work: Path, package: Path, *, sabotage: bool):
-    install = Install(work, package)
+def exercise(work: Path, package: Path, commit: str, *, sabotage: bool):
+    install = Install(work, package, commit)
     original = None
     module = package / "eugene_plexus_workbench" / "store.py"
     try:
@@ -851,7 +859,8 @@ def exercise(work: Path, package: Path, *, sabotage: bool):
                 print("SABOTAGE restored the temporary store.py", flush=True)
 
 
-def candidate(work: Path, source: Path | None, ref: str) -> Path:
+def candidate(work: Path, source: Path | None, ref: str) -> tuple[Path, str]:
+    commit = "local"
     if source is None:
         r7 = load("row27a_resolve", "row7-person-removal-acceptance.py")
         commit = r7.resolve(ref)
@@ -874,7 +883,7 @@ def candidate(work: Path, source: Path | None, ref: str) -> Path:
         install / "eugene_plexus_workbench",
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
-    return install
+    return install, commit
 
 
 def main() -> int:
@@ -911,12 +920,12 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="row27a-", dir=TEMP_ROOT)).resolve()
     passed = False
     try:
-        package = candidate(
+        package, commit = candidate(
             work, args.source.resolve() if args.source else None, args.workbench
         )
         if args.sabotage:
             try:
-                exercise(work / "sabotage", package, sabotage=True)
+                exercise(work / "sabotage", package, commit, sabotage=True)
             except Failure as exc:
                 check(
                     "7",
@@ -933,7 +942,7 @@ def main() -> int:
                     False,
                     "broken restart guard passed",
                 )
-        exercise(work / "normal", package, sabotage=False)
+        exercise(work / "normal", package, commit, sabotage=False)
         passed = True
         print(
             "ALL PASS row 27a"

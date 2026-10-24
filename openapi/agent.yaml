@@ -547,6 +547,40 @@ paths:
         '404': {description: No such key.}
         '503': {description: Registry unavailable.}
 
+  /v1/auth/client-keys/{keyId}/rotate:
+    post:
+      tags: [auth]
+      operationId: rotateClientKey
+      summary: Make a new token with the same name and limits; the old one stops after an overlap (operator only).
+      description: |
+        The new key copies the old key's name and limits exactly. The old
+        token keeps working until `retiresAt` (default one day, or stop it
+        now with `overlapSeconds` 0), then new requests on it are refused as
+        replaced; running ones finish. During the overlap both tokens share
+        one concurrency and rate allowance. The token is shown once.
+        An enrolled agent forwards to the root. For an app installed on this
+        node, it also writes the new token to the app's key file and restarts
+        the app when the app reads its key only at start. A key of an app on
+        another machine gets a 409 naming that machine.
+      parameters:
+        - {name: keyId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientKeyRotateRequest'}
+      responses:
+        '201':
+          description: The new key and its one-time token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientKeyCreated'}
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404': {description: No such key.}
+        '409': {description: "The key is turned off or expired, or already replaced. The message says which."}
+        '503': {description: Registry unavailable or the root is locked.}
+
   # -------- v0.2: auth --------
 
   /v1/auth/status:
@@ -1353,6 +1387,12 @@ paths:
         409 when an entry with this `id` already exists, shipped or custom;
         422 when `source` is neither an archive URL nor an existing folder
         on this node.
+
+        MV5b links are only between shipped catalogue entries. A custom
+        entry declaring `provides`, `providesPath`, `uses: [memory-server]`
+        (alone or with other uses), or the `{linkSecret}` placeholder is
+        refused with 422, even when `allowCustomApps` is on. A custom entry
+        cannot override a shipped provider or receive its link credential.
       requestBody:
         required: true
         content:
@@ -1428,6 +1468,21 @@ paths:
         `installApp` says. If that revocation fails the uninstall stops
         with the authority's answer and nothing has been removed; a
         refusal of the credential itself is a 502.
+
+        For Hindsight, run `pg0 stop` for its named instance before removing
+        its environment, including after a hard kill. With `purge: true`,
+        also run `pg0 drop` by instance name, in the account and HOME used
+        by that app, before deleting its files. This removes pg0 data even
+        when it lives in that account's profile outside the app's data
+        folder. A failed stop or drop names its observed cause, returns
+        503 and keeps the install record and tools for retry. Do not report
+        a successful purge while memories remain.
+
+        Uninstalling a link provider removes its link credential and
+        withdraws the consumers' link. Keeping data keeps the secret
+        privately for a reinstall; a purge deletes it, so reinstall with
+        deleted data creates a new secret. Refresh or restart consumers
+        so an old link cannot keep reaching an uninstalled provider.
       parameters:
         - in: query
           name: purge
@@ -1525,6 +1580,13 @@ paths:
         403 for a custom entry while `allowCustomApps` is off; 409 when an
         install is in flight or that version is already installed; 422
         when this node cannot install apps (`AppCatalogue.reason`).
+
+        Also check the entry's `installable` state before installing and
+        return 422 with its `reason` when false. Hindsight's first install
+        saves `settings: {memoryModel: null}` and does not start a process
+        until the owner chooses its model. The app page shows that cause;
+        installation itself may complete successfully while it awaits a
+        choice. Updating an installed app keeps its selected model.
       responses:
         "202":
           description: Install accepted and running.
@@ -1582,6 +1644,18 @@ paths:
       tags: [apps]
       operationId: startApp
       summary: Start an installed app, and keep it started across restarts.
+      description: |
+        For Hindsight, `settings.memoryModel` must have an explicit owner
+        choice. While it is unset, no process starts and `App.detail` says
+        "Choose the model Hindsight reads your chats with". Return 409
+        with that cause; the agent and its settings endpoints stay up.
+        A model that has not been measured is allowed.
+
+        Before starting Hindsight, run `pg0 stop` for its named instance
+        to clear a database left by a hard kill. Use its app interpreter,
+        account and HOME. A failed cleanup returns 503 with its observed
+        cause rather than starting against an unverified orphan database.
+        An already stopped or absent named instance is successful cleanup.
       responses:
         "200":
           description: The app.
@@ -1592,6 +1666,10 @@ paths:
         "401":
           $ref: "components/common.yaml#/components/responses/Problem"
         "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
           $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/apps/{id}/stop:
@@ -1601,6 +1679,14 @@ paths:
       tags: [apps]
       operationId: stopApp
       summary: Stop an installed app, and keep it stopped across restarts.
+      description: |
+        Hindsight's database can outlive its parent. After stopping its
+        process, run `pg0 stop` for its named instance with the app's
+        interpreter, account and HOME, even after a hard kill. Confirm
+        that instance has stopped before returning success. A failure
+        returns 503 and names its observed cause; retain the tools and
+        record needed to retry. The same cleanup applies at agent shutdown.
+        An already stopped or absent named instance is successful cleanup.
       responses:
         "200":
           description: The app.
@@ -1611,6 +1697,8 @@ paths:
         "401":
           $ref: "components/common.yaml#/components/responses/Problem"
         "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
           $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/apps/{id}/restart:
@@ -1636,6 +1724,11 @@ paths:
         Before the request the console confirms: "Reset Open WebUI's
         settings to Eugene's? It restarts, and its Admin Settings go back
         to Eugene's. Chats, people, knowledge, models and tools stay."
+
+        Hindsight runs the same named-instance `pg0 stop` cleanup as
+        `stopApp`, including when its process was already killed. Do not
+        start its replacement until cleanup succeeds. A cleanup failure
+        returns 503 and names its observed cause.
       requestBody:
         required: false
         content:
@@ -1658,6 +1751,8 @@ paths:
         "404":
           $ref: "components/common.yaml#/components/responses/Problem"
         "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
           $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/apps/{id}/rollback:
@@ -1705,6 +1800,97 @@ paths:
         "409":
           $ref: "components/common.yaml#/components/responses/Problem"
         "500":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/apps/{id}/settings:
+    parameters:
+      - $ref: "#/components/parameters/AppId"
+    get:
+      tags: [apps]
+      operationId: getAppSettings
+      summary: Read the launcher settings for an installed app.
+      description: |
+        Requires an operator session. These settings belong to the agent,
+        are persisted in `apps.yaml` under the app's `settings`, and are
+        available even while the app is stopped or has failed. They do not
+        require `configTrio` and are not proxied to the app. The console
+        on any connected machine reaches them through this node's agent.
+
+        Returns the effective selection, including an explicit null for
+        an unset memory model. No app or link secret is returned. 409
+        when the installed app has no launcher settings; 503 when the
+        agent cannot read them, with the observed cause.
+      responses:
+        "200":
+          description: The effective launcher settings.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+              example:
+                memoryModel: null
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    patch:
+      tags: [apps]
+      operationId: updateAppSettings
+      summary: Choose or clear the model an installed memory server reads with.
+      description: |
+        Requires an operator session. Writes the agent's launcher settings,
+        independent of the app's `configTrio`. Omitted fields stay as they
+        are; null clears the model. Validate before changing anything.
+        Unknown settings or malformed values return 422 with the observed
+        cause. Unmeasured models are advice only, never an admission gate.
+
+        A changed model restarts an enabled app; a stopped app stays stopped.
+        The old process must be confirmed stopped, including Hindsight's
+        `pg0 stop` cleanup, before persisting the new selection. During
+        that stop, reads still report the old effective selection. A stop
+        failure returns 503 with its observed cause and keeps the old
+        selection. Never report the requested value as effective while
+        the old process is still running. A persistence failure also
+        returns 503 with its cause and leaves the old selection in effect.
+
+        After saving, use the new selection for the replacement process.
+        Return the effective settings; the console also reads `App.status`
+        and `App.lastError`. A failed replacement start is reported there
+        with its observed cause; it does not silently restore another
+        model. Clearing the model stops Hindsight and leaves it awaiting
+        an owner choice. An unchanged selection does not restart the app.
+        409 when the app has no launcher settings or another install,
+        restart, uninstall or settings change is in progress.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppSettingsUpdate"
+      responses:
+        "200":
+          description: The effective launcher settings after the change.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
           $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/apps/{id}/config:
@@ -1792,6 +1978,183 @@ paths:
           $ref: "components/common.yaml#/components/responses/Problem"
 
   # -------- runtimes: engine processes we supervise --------
+
+  /v1/serving-measurements:
+    get:
+      tags: [runtimes]
+      operationId: listServingMeasurements
+      summary: Recent measurements of people served by a runtime on this node.
+      description: |
+        Operator-only. Newest first, including an active job. Keeps the
+        newest 20 runs per node and the newest completed run per runtime,
+        across agent restarts. A runtime's newest completed run is retained
+        even when it is outside the newest 20. Computes `current` and
+        `staleBecause` on read against the running runtime's provenance.
+        An optional runtime name filters the list, including stopped runtimes.
+      parameters:
+        - name: runtime
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Measurements and their current provenance status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServingMeasurementList"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+    post:
+      tags: [runtimes]
+      operationId: startServingMeasurement
+      summary: Measure how many people this running runtime serves at a speed.
+      description: |
+        Operator-only. An agent job, started through the node proxy and
+        polled through the list, using the gateway's streamed OpenAI door.
+        Does not launch the measured runtime, change its settings, download
+        a model or install an engine. One measurement job per node, shared
+        with benchmarks and profile builds. A stopped runtime is a 422,
+        naming the runtime and node and asking the operator to start it.
+
+        Uses the caller's own credential to mint a client key, as app
+        installs do: `localOnly`, `allowedModels: [alias]`, concurrency 64,
+        10,000 requests a minute, `ttlDays: 1`, named
+        "Measurement <runtime> <date>". The raw key stays only in memory;
+        it is never returned or persisted. It cannot reach a cloud tier
+        or a fallback model. The key is revoked when the run ends, whether
+        completed, failed or cancelled, using the caller's credential.
+        A failed revocation reports the observed cause and leaves
+        `keyLive: true` until revocation or expiry is confirmed; the console
+        retries through cancel. One day is a backstop, not the end-of-run
+        revocation policy (Troy's MEASURE-KEY call).
+
+        Rechecks the gateway's routing view before sending work. The
+        console asks for consent before submitting `stopReplicas`; the
+        job stops exactly those other ready replicas through their agents
+        with the caller's credential, and restarts what it stopped after
+        completion, failure or cancellation. Another ready replica not
+        listed in `stopReplicas` returns 409; no replica is stopped
+        implicitly. Unrelated runtimes are reported, not stopped.
+        Restart outcomes, including refusals and their observed cause,
+        are kept in `restarts`. Check X-Eugene-Plexus-Runtime on every
+        answer; an answer from another runtime stops the run and names
+        the answering runtime and node, and the intended runtime and node.
+
+        Levels are 1, 2, 4, 8 and so on, with `maxPeople` as the final
+        level if it is not a power of two. Stops one level past the knee,
+        at 5% request errors, or at TTFT p50 above 60 s. Requests in flight
+        at a window's end finish and count; cancellation aborts them.
+        Warm-up requests do not count. Records the effective request,
+        actual output tokens, gateway wait, cache reuse, foreign requests
+        when counters exist, watts when host history has them, and loop
+        lag. Missing observations never block a run; they are unknown.
+        Failures name their observed cause, including the control root's
+        words when it could not mint the key. Keeps partial results.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServingMeasurementRequest"
+      responses:
+        "202":
+          description: Accepted; poll this node's measurements for progress.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServingMeasurement"
+        "400":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "409":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "422":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/serving-measurements/preflight:
+    post:
+      tags: [runtimes]
+      operationId: preflightServingMeasurement
+      summary: What measuring this runtime would affect, and roughly how long it takes.
+      description: |
+        Operator-only. Reads the gateway's routing view using the caller's
+        credential. Names other ready replicas of the same alias, with
+        node and runtime identities so the console can ask for consent
+        before stopping them through their agents. Lists other running
+        runtimes on the measured node that may share its resources.
+        Changes nothing: does not mint a key, stop a replica or send work.
+        `problems` names observed reasons the job cannot start; missing
+        counters, untested engines and unknown readings never block it.
+        The estimate covers the requested levels and windows, excluding
+        an unknown drain time for requests still in flight.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ServingMeasurementRequest"
+      responses:
+        "200":
+          description: Replicas to ask about, other load, start problems and a time estimate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServingMeasurementPreflight"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
+
+  /v1/serving-measurements/{id}/cancel:
+    post:
+      tags: [runtimes]
+      operationId: cancelServingMeasurement
+      summary: Stop this measurement and revoke its key, keeping partial results.
+      description: |
+        Operator-only. Stops an active run within 5 s and revokes its key
+        with the caller's credential. On a finished run it only revokes
+        any key still live; it does not change the finished state or
+        repeat replica restarts. Idempotent after revocation. The console
+        calls this for a finished run with `keyLive: true`, including a
+        run failed by an agent restart. A failed revocation names the
+        observed cause and leaves `keyLive: true`; never reports a key as
+        revoked without confirmation. Partial levels are retained.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Stopped or already finished, with the observed key and restart status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ServingMeasurement"
+        "401":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "403":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "404":
+          $ref: "components/common.yaml#/components/responses/Problem"
+        "503":
+          $ref: "components/common.yaml#/components/responses/Problem"
 
   /v1/benchmarks:
     get:
@@ -3297,6 +3660,59 @@ paths:
               schema:
                 $ref: "components/common.yaml#/components/schemas/Problem"
 
+  /v1/node/machine-list:
+    post:
+      tags: [node]
+      operationId: pushMachineList
+      summary: Take a newer machine list from the control root, and follow a promoted root.
+      security: []
+      description: |
+        The mirror of `POST /v1/node/trust-bundle` for the signed machine
+        list (`control.yaml`, `MachineList`; row 4). A root pushes it after
+        a promotion, and to any node whose `epoch` or `controlUrlEpoch` it
+        sees lower than its own, at most once a minute. The agent also
+        pulls it every minute (`GET /v1/trust/machines`).
+
+        **The credential is the signature, not a bearer token**: a JWS
+        signed by the root identity this agent pinned at enrolment. A list
+        that does not verify, or reaches an agent that has not enrolled, is
+        refused with 401.
+
+        **Following a promoted root** (R4-MOVE, Troy 2026-10-21). The agent
+        writes the list's `control.url` as its `controlUrl` only when the
+        list is newer than the one it holds, its `control.epoch` is above
+        this node's `controlUrlEpoch`, and at least the epoch it holds. It
+        then holds that epoch, rebuilds its machine table, announces its
+        address to the new root, pulls the bundle there, and logs *the
+        install's root moved to <node> (epoch N)*. The same epoch never
+        moves a node.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignedMachineList"
+      responses:
+        "204":
+          description: Taken, or the same list again.
+        "401":
+          description: |
+            The signature does not verify against the pinned
+            `controlPublicKey`, or this agent has not enrolled.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+        "409":
+          description: |
+            Refused: the list's `version` is lower than the one this agent
+            holds, or its `control.epoch` is lower than the epoch it holds
+            (a superseded root). `detail` names both numbers.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "components/common.yaml#/components/schemas/Problem"
+
   /v1/directories:
     get:
       tags: [config]
@@ -3747,6 +4163,434 @@ components:
       description: The app's `AppManifest.id`.
 
   schemas:
+    ServingWorkload:
+      type: string
+      enum: [agents, chat, streams]
+      description: |
+        A person is one top-level session, not a stream or sub-agent.
+        `agents` uses growing histories, the published pauses and bursts,
+        and an uncounted warm start at a random turn. `chat` uses short
+        questions and reading pauses. `streams` is closed loop with no
+        pause or history growth, comparable with a concurrency sweep.
+        All use the profile builder's bundled corpus and seeded sampling.
+
+    ServingMeasurementRequest:
+      type: object
+      additionalProperties: false
+      required: [runtime]
+      properties:
+        runtime:
+          type: string
+          minLength: 1
+          description: The name of an existing runtime on this node; it must be ready.
+        workload:
+          $ref: "#/components/schemas/ServingWorkload"
+          default: agents
+        maxPeople:
+          type: integer
+          minimum: 1
+          maximum: 256
+          description: Defaults to min(256, 4 * parallelSlots) of the running runtime.
+        windowSeconds:
+          type: integer
+          minimum: 10
+          maximum: 3600
+          description: |
+            Per level. Defaults to 300 for agents and chat, 120 for streams.
+            With `full: true` the effective window is 3,600 seconds, even
+            when a different window was supplied. Requests still in flight
+            at the window's end finish and count, adding drain time.
+        full:
+          type: boolean
+          default: false
+          description: Use a one-hour window at each level.
+        seed:
+          type: integer
+          default: 0
+          description: Seed for workload sampling; does not promise identical model output.
+        ttftThresholdMs:
+          type: number
+          exclusiveMinimum: 0
+          default: 1000
+          description: |
+            The owner's first-token ceiling, in milliseconds; editable on
+            the run page. Troy's MEASURE-KNEE-2 call sets the default to
+            first content after more than one second.
+        speedRatioThreshold:
+          type: number
+          exclusiveMinimum: 0
+          maximum: 1
+          default: 0.6666666666666666
+          description: |
+            Minimum per-person median speed as a fraction of level 1's;
+            editable on the run page. Default is two thirds (Troy's
+            MEASURE-KNEE-2 call). A speed below this crosses the knee.
+        stopReplicas:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServingRuntime"
+          default: []
+          description: |
+            The other replicas the operator agreed to stop after seeing
+            the preflight, identified by node, runtime and model alias.
+            Only replicas of the measured alias may be listed, never the
+            measured runtime. The job calls their agents to stop them,
+            then restarts exactly those it stopped when the run ends.
+            An unlisted ready replica is a 409, including one that became
+            ready after the preflight. Already stopped entries are not
+            restarted by this job.
+
+    ServingRuntime:
+      type: object
+      additionalProperties: false
+      required: [node, runtime, model]
+      properties:
+        node:
+          type: string
+          minLength: 1
+          description: Node identity used by the node proxy.
+        runtime:
+          type: string
+          minLength: 1
+        model:
+          type: string
+          minLength: 1
+          description: The model alias exposed by the gateway.
+
+    ServingMeasurementPreflight:
+      type: object
+      required: [otherReplicas, otherRuntimes, problems, estimateSeconds]
+      properties:
+        otherReplicas:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServingRuntime"
+          description: Other ready replicas of the same alias, including replicas on other nodes.
+        otherRuntimes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServingRuntime"
+          description: Other running runtimes on this node; informational, never stopped implicitly.
+        problems:
+          type: array
+          items:
+            type: string
+          description: Observed causes that prevent starting, one sentence each. Empty when it can start.
+        estimateSeconds:
+          type: [integer, "null"]
+          minimum: 0
+          description: Estimated total of the level windows; null when it cannot be estimated.
+
+    ServingLevel:
+      type: object
+      description: |
+        One tested number of people, including all requests begun in its
+        window and their drain time. Excludes warm-up requests. Unknown
+        observations are null, never fabricated zeroes. Latencies are
+        client-side through the gateway; speed after the first content
+        token excludes TTFT. A level remains readable with no successful
+        requests, including a failed or cancelled partial level.
+      required: [people, streamsMean, streamsPeak, requests, errors, errorCauses, ttftP50Ms, ttftP90Ms, itlP50Ms, itlP90Ms, tokensPerSecondEachP50, tokensPerSecondEachP10, tokensPerSecondTotal, promptTokens, cachedTokens, waitedP50Ms, foreignRequests, watts, outputTokens, durationSeconds, promptReuse, loopLagMaxMs, loopLagged]
+      properties:
+        people:
+          type: integer
+          minimum: 1
+          maximum: 256
+        streamsMean:
+          type: number
+          minimum: 0
+          description: Time-weighted mean requests in flight, including sub-agents.
+        streamsPeak:
+          type: integer
+          minimum: 0
+          description: Peak requests in flight, including sub-agents.
+        requests:
+          type: integer
+          minimum: 0
+          description: Counted requests attempted, including requests that failed.
+        errors:
+          type: integer
+          minimum: 0
+        errorCauses:
+          type: object
+          additionalProperties:
+            type: integer
+            minimum: 1
+          description: Counts by observed cause, including the engine or gateway's error words.
+        ttftP50Ms:
+          type: [number, "null"]
+          minimum: 0
+          description: Median time to first content token; null when no request produced content.
+        ttftP90Ms:
+          type: [number, "null"]
+          minimum: 0
+        itlP50Ms:
+          type: [number, "null"]
+          minimum: 0
+          description: Median inter-token latency; null when there are no measured intervals.
+        itlP90Ms:
+          type: [number, "null"]
+          minimum: 0
+        tokensPerSecondEachP50:
+          type: [number, "null"]
+          minimum: 0
+          description: Median per-request decode speed after the first content token, not total speed divided by people.
+        tokensPerSecondEachP10:
+          type: [number, "null"]
+          minimum: 0
+        tokensPerSecondTotal:
+          type: [number, "null"]
+          minimum: 0
+          description: Actual counted output tokens divided by durationSeconds; null if output usage is unavailable.
+        promptTokens:
+          type: integer
+          minimum: 0
+          description: Sum of reported prompt usage; missing usage is named in the job's detail.
+        cachedTokens:
+          type: integer
+          minimum: 0
+          description: Sum of reported cached prompt usage; missing usage is named in the job's detail.
+        waitedP50Ms:
+          type: [number, "null"]
+          minimum: 0
+          description: Median X-Eugene-Plexus-Waited-Ms; null when the header was unavailable.
+        foreignRequests:
+          type: [integer, "null"]
+          minimum: 0
+          description: Engine request-counter delta minus this job's requests; null means others' use is unknown.
+        watts:
+          type: [number, "null"]
+          minimum: 0
+          description: Mean GPU power from host history over the level; null when history has no power readings.
+        outputTokens:
+          type: integer
+          minimum: 0
+          description: Actual reported output tokens, including any output from failed requests; never max_tokens.
+        durationSeconds:
+          type: number
+          minimum: 0
+          description: Observed duration including drain time; permits interpreting total throughput on partial levels.
+        promptReuse:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+          description: Fraction of prompt tokens reused as an unchanged prefix between turns; null when not observed.
+        loopLagMaxMs:
+          type: number
+          minimum: 0
+          description: Largest measured event-loop scheduling delay during this level.
+        loopLagged:
+          type: boolean
+          description: True when loopLagMaxMs exceeds 50 ms; marks a potentially load-generator-limited level.
+
+    ServingKnee:
+      type: object
+      description: |
+        The last level before TTFT p50 exceeds request.ttftThresholdMs
+        or per-request median speed falls below request.speedRatioThreshold
+        times level 1's. These owner-editable thresholds follow Troy's
+        MEASURE-KNEE-2 call. `found: false` means the limit was not reached;
+        `people` and speeds then describe the largest tested usable level,
+        not an extrapolation. An unfinished or unusable run has a null knee.
+      required: [found, people, tokensPerSecondEach, ttftP50Ms]
+      properties:
+        found:
+          type: boolean
+        people:
+          type: integer
+          minimum: 1
+          maximum: 256
+        tokensPerSecondEach:
+          type: number
+          minimum: 0
+        ttftP50Ms:
+          type: number
+          minimum: 0
+
+    ServingGpu:
+      type: object
+      required: [name, uuid, memoryBytes]
+      properties:
+        name:
+          type: string
+        uuid:
+          type: [string, "null"]
+          description: Stable device identity when available.
+        memoryBytes:
+          type: [integer, "null"]
+          minimum: 0
+
+    ServingProvenance:
+      type: object
+      description: |
+        Snapshot of the engine, effective launch, model file and hardware
+        measured. Unknown identity fields are null and remain visible as
+        unknown; their absence never makes an untested engine unsupported.
+        Model identity is its local path, size and mtime, not a model hash.
+        Does not hold prompts, answers, credentials or raw client keys.
+      required: [engine, engineBuild, binaryHash, launchArgv, modelPath, modelSizeBytes, modelModifiedAt, gpus, driver, cpu, ramBytes, agentCommit, gatewayCommit]
+      properties:
+        engine:
+          type: string
+          minLength: 1
+        engineBuild:
+          type: [string, "null"]
+        binaryHash:
+          type: [string, "null"]
+          pattern: "^[0-9a-f]{64}$"
+          description: sha256 of the running engine binary, when readable.
+        launchArgv:
+          type: array
+          items:
+            type: string
+          description: Effective engine launch argv at measurement time, with credentials redacted.
+        modelPath:
+          type: string
+        modelSizeBytes:
+          type: [integer, "null"]
+          minimum: 0
+        modelModifiedAt:
+          type: [string, "null"]
+          format: date-time
+        gpus:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServingGpu"
+          description: GPUs used by the runtime, in stable device order; empty for CPU-only.
+        driver:
+          type: [string, "null"]
+          description: GPU driver version or versions, in stable device order.
+        cpu:
+          type: [string, "null"]
+        ramBytes:
+          type: [integer, "null"]
+          minimum: 0
+        agentCommit:
+          type: [string, "null"]
+        gatewayCommit:
+          type: [string, "null"]
+
+    ServingDrafting:
+      type: object
+      description: |
+        Drafting in effect during this run, for comparing on and off
+        records of the same model and machine. No automatic off pass.
+        Acceptance is an observation and is not part of provenanceKey;
+        drafting configuration is captured by the effective launch argv.
+      required: [type, model, acceptance]
+      properties:
+        type:
+          type: [string, "null"]
+          description: Engine's drafting type, off when disabled, null when unknown.
+        model:
+          type: [string, "null"]
+          description: Draft model path or identity; null when no separate draft model is used or it is unknown.
+        acceptance:
+          type: [number, "null"]
+          minimum: 0
+          maximum: 1
+          description: Accepted draft tokens divided by proposed draft tokens; null when not observed.
+
+    ServingMeasurementRestart:
+      type: object
+      required: [node, runtime, state, detail]
+      properties:
+        node:
+          type: string
+        runtime:
+          type: string
+        state:
+          $ref: "#/components/schemas/MeasurementRestartState"
+        detail:
+          type: [string, "null"]
+          description: Observed cause of a refusal or failed restart; null when no explanation is needed.
+
+    ServingMeasurement:
+      type: object
+      description: |
+        A serving measurement kept on the runtime's node for rows 11,
+        13, 14 and 69 and the speed nudge. Agent restart marks an unfinished
+        run failed and names that cause; it keeps partial levels and never
+        resumes load silently. Final records keep their state when cancel
+        is used only to revoke a key. Does not persist prompts or answers.
+      required: [id, node, runtime, model, state, request, startedAt, finishedAt, progress, detail, levels, knee, provenance, provenanceKey, current, staleBecause, keyLive, restarts, drafting]
+      properties:
+        id:
+          type: string
+        node:
+          type: string
+        runtime:
+          type: string
+        model:
+          type: string
+          description: The measured gateway model alias.
+        state:
+          $ref: "#/components/schemas/BenchmarkState"
+        request:
+          $ref: "#/components/schemas/ServingMeasurementRequest"
+          description: |
+            The effective request, including resolved workload, maxPeople,
+            windowSeconds, full, seed, both knee thresholds and stopReplicas.
+            Returned settings always describe the values in effect, including
+            the one-hour window when full overrides a supplied shorter one.
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: [string, "null"]
+          format: date-time
+        progress:
+          type: number
+          minimum: 0
+          maximum: 1
+        detail:
+          type: string
+          description: One sentence of progress, or the observed cause of a failure, including the upstream's words.
+        levels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServingLevel"
+        knee:
+          anyOf:
+            - $ref: "#/components/schemas/ServingKnee"
+            - type: "null"
+        provenance:
+          $ref: "#/components/schemas/ServingProvenance"
+        provenanceKey:
+          type: string
+          pattern: "^[0-9a-f]{64}$"
+          description: |
+            Lowercase sha256 of provenance as UTF-8 JSON with sorted object
+            keys, compact separators and unescaped Unicode. Array order is
+            preserved. Includes null identity fields; excludes observations
+            such as drafting acceptance and the request's workload seed.
+        current:
+          type: boolean
+          description: Recomputed on read; true only when the runtime's present provenance matches this record.
+        staleBecause:
+          type: array
+          items:
+            type: string
+          description: What changed since measurement, with old and new values; empty when current. A missing runtime is named.
+        keyLive:
+          type: boolean
+          description: True until the control root confirms revocation or expiry; a failed revocation is named in detail.
+        restarts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServingMeasurementRestart"
+        drafting:
+          $ref: "#/components/schemas/ServingDrafting"
+
+    ServingMeasurementList:
+      type: object
+      required: [measurements]
+      properties:
+        measurements:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServingMeasurement"
+
     BenchmarkRequest:
       type: object
       additionalProperties: false
@@ -4439,6 +5283,18 @@ components:
 
     # -------- This node --------
 
+    SignedMachineList:
+      type: object
+      required: [jws]
+      properties:
+        jws:
+          type: string
+          description: |
+            A JWS compact serialization with header
+            `{"alg": "EdDSA", "typ": "ep-machines+jwt"}` whose payload is a
+            `MachineList` (`control.yaml`), signed with the root identity
+            this node pinned at enrolment.
+
     LocalStandby:
       type: object
       description: |
@@ -4691,8 +5547,27 @@ components:
           type: string
           format: uri
           description: The control root this node answers to.
+        controlUrlEpoch:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            The epoch `controlUrl` came with (row 4): the epoch at
+            enrolment, or of the promoted root this node moved to. A node
+            moves only for a signed machine list at a higher epoch. Set to
+            the epoch held when a node updated to row 4 first starts, so an
+            update never moves a node. Absent until enrolled.
         standby:
           $ref: '#/components/schemas/LocalStandby'
+        rootLocked:
+          type: boolean
+          description: |
+            This machine runs the install's control root, and it is locked:
+            nothing can be signed until the owner signs in with the
+            passphrase (row 4). Home says so. Common after a restart under
+            `prompt_on_startup`, and after a promoted copy restarts before
+            any other machine heard of the promotion. Absent when this
+            machine runs no root, or its state is not known yet.
         hostsControl:
           type: boolean
           description: |
@@ -6024,6 +6899,9 @@ components:
     ClientKeyCreateRequest:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyCreateRequest'
 
+    ClientKeyRotateRequest:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyRotateRequest'
+
     ClientKeyCreated:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyCreated'
 
@@ -6936,6 +7814,15 @@ components:
             complaint we answer. Values here are engine *launch* flags;
             sampling parameters that ride on each request are the
             gateway's, not these.
+
+            For llama.cpp and vLLM, `missingCard` is the agent's "If a
+            card is missing" setting, exposed in the engine's GUI
+            `flagSchema`. `start-on-cards-left` is the default: refit for
+            the cards present and report any temporary context or RAM
+            offload changes. `do-not-start` refuses the launch and names
+            the missing card. The profile is not changed; the next start
+            uses its saved settings when all cards are back. This setting
+            controls the agent's launch check, not an engine CLI flag.
         extraArgs:
           type: array
           items:
@@ -7100,12 +7987,22 @@ components:
           type: string
           readOnly: true
           description: |
-            Why this node is **not** opening a local copy, when it is
-            not and the operator asked for one: not enough free space to
-            leave the configured headroom, the copy failed, the source
-            could not be read. Absent when the copy was used, and absent
-            when copying is switched off — a node that was never asked
-            has nothing to explain.
+            Why a requested local copy was skipped or used without
+            checking its source. A skipped copy names the observed cause:
+            not enough free space to leave the configured headroom, a
+            failed copy, or a source that could not be read.
+
+            When the source's Library folder root on this machine raises
+            an OSError or exceeds the 5 s check limit, a copy whose size
+            matches its saved source record may be used. The note starts
+            "Started from this machine's copy" and names the folder root
+            and the observed cause. It remains until the next start that
+            checks the source. A missing file in a readable folder does
+            not permit this fallback.
+
+            Absent when the source was checked and the copy was used,
+            and absent when copying is switched off — a node that was
+            never asked has nothing to explain.
 
             On the wire because a silently skipped copy is the failure
             mode of this whole feature: the model still serves, the
@@ -7215,6 +8112,16 @@ components:
           description: Version reported by the binary that is actually running.
         capabilities:
           $ref: "#/components/schemas/RuntimeCapabilities"
+        effectiveLaunch:
+          $ref: "#/components/schemas/StrataEffectiveLaunch"
+          readOnly: true
+          description: |
+            Strata settings applied by the last successful launch, read
+            from its private launch configuration. Absent before a
+            launch or when unknown; never copied from saved flags.
+        chatTemplate:
+          $ref: "#/components/schemas/RuntimeChatTemplate"
+          readOnly: true
         lastRestart:
           type: string
           format: date-time
@@ -7224,12 +8131,178 @@ components:
             Most recent failure for this runtime — a spawn error, a
             non-zero exit, or a readiness probe that never passed.
             Cleared on a successful start.
+        lastDevices:
+          type: array
+          readOnly: true
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+          description: |
+            UUIDs of the cards used at the last successful start, recorded
+            by the agent. An observation, never a profile setting or a
+            replacement for its saved device pins. Kept across stops and
+            failed starts, and updated only after a successful start.
+            Absent before a successful start has been observed; an empty
+            list means no device UUIDs were available or used.
+        startedOnFewerCards:
+          readOnly: true
+          anyOf:
+            - $ref: "#/components/schemas/RuntimeStartedOnFewerCards"
+            - type: "null"
+          description: |
+            The last successful start used fewer cards because one or
+            more expected cards were missing. Names those cards and the
+            launch changes actually applied. Null when there is no such
+            observation. Kept until a successful start with every
+            expected card clears it; a returning card does not restart a
+            running runtime automatically. The profile stays unchanged.
         loadProgress:
           $ref: "#/components/schemas/LoadProgress"
         speculation:
           $ref: "#/components/schemas/RuntimeSpeculation"
         promptCache:
           $ref: "#/components/schemas/RuntimePromptCache"
+
+    StrataEffectiveLaunch:
+      type: object
+      readOnly: true
+      additionalProperties: false
+      required: [speedProjection, gpus, layerSplit]
+      description: |
+        Strata's applied launch settings, read from the launch configuration
+        that was successfully spawned, not the current profile or prepared
+        file, which may have changed since. Unknown values leave this record
+        absent; they never acquire an intent default. A stopped runtime may
+        retain the last successful launch, labelled as such. This records
+        launch settings, not a claim of successful inference or measured speed.
+      properties:
+        speedProjection:
+          $ref: 'components/common.yaml#/components/schemas/SpeedProjectionMode'
+          description: |
+            Changes answers when on; experimental. Applied mode from the
+            loaded control vector and launch sampling default together.
+            A vector absent or disabled in that configuration means off.
+        gpus:
+          $ref: 'components/common.yaml#/components/schemas/StrataGpuSelection'
+          description: Selected node inventory ordinals, main first, resolved from the applied launch and its visibility mapping.
+        layerSplit:
+          anyOf:
+            - $ref: 'components/common.yaml#/components/schemas/StrataLayerSplit'
+            - type: 'null'
+          description: |
+            null with one card. Otherwise the applied boundaries or auto
+            when upstream chooses them. auto reports the selected mode,
+            not measured boundaries or an assumed equal split.
+
+    RuntimeStartedOnFewerCards:
+      type: object
+      readOnly: true
+      required: [missing, changes]
+      description: |
+        Observed result of a successful start on the cards left. The
+        console keeps a warning until a start with every expected card
+        clears it, and offers a restart so the person can use a returned
+        card. Never written back to a profile.
+      properties:
+        missing:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/RuntimeMissingDevice"
+        changes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+          description: |
+            One sentence per launch change actually applied, such as a
+            smaller context, more of the model in RAM, a changed tensor
+            split or reduced tensor parallelism. Empty when only the
+            device selection changed. These describe values in effect,
+            not suggestions from fit that were never used.
+
+    RuntimeMissingDevice:
+      type: object
+      readOnly: true
+      required: [uuid, name, lastIndex]
+      description: A missing card, identified from the agent's last observation.
+      properties:
+        uuid:
+          type: string
+          minLength: 1
+          description: Stable vendor UUID of the missing card.
+        name:
+          type: string
+          minLength: 1
+          description: Device name when the card was last present.
+        lastIndex:
+          type: integer
+          minimum: 0
+          description: Device index when the card was last present, before renumbering.
+
+    RuntimeChatTemplate:
+      type: object
+      readOnly: true
+      description: |
+        The chat template the running engine reports in effect, not a
+        saved setting or a Library fallback recommendation. Publish only
+        after the engine reports its effective template text; the digest
+        is SHA-256 of those exact UTF-8 bytes, without whitespace or line
+        ending normalization. The source is not inferred from argv alone.
+
+        Omit on stopped runtimes, while the effective template is
+        unconfirmed, and on engines that do not report it. Clear this
+        observation on stop and before each new start, so a changed
+        setting cannot leave a previous process's template on display.
+        Missing information does not block a launch or inference.
+      required: [source, name, sha256]
+      properties:
+        source:
+          type: string
+          enum: [embedded, eugene, override, engine]
+          description: |
+            * `embedded` — the reported text matches the model file's
+              embedded template and no operator override selected it.
+            * `eugene` — the reported text matches the Eugene fallback
+              captured at launch, with no operator override in effect.
+            * `override` — the reported text matches the operator's
+              explicit template override captured at launch. This takes
+              precedence even when its contents match a bundled template.
+            * `engine` — the engine reports the text but its origin is
+              unknown, or it does not match the captured selection.
+              Never label an unconfirmed fallback as `eugene`.
+        name:
+          type: string
+          minLength: 1
+          description: |
+            Human-readable name of the effective template. Use an engine
+            template label when the origin is unknown; never the name of
+            a saved override or fallback that was not confirmed.
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: Digest of the effective template text returned by the engine.
+        id:
+          type: string
+          minLength: 1
+          description: |
+            The Library's `ChatTemplateFallback.id` when source is
+            `eugene`; omitted for other sources. The digest identifies
+            the exact template revision in effect.
+        path:
+          type: string
+          minLength: 1
+          description: |
+            Template file on this runtime's node, captured at launch and
+            reported only when its captured contents match the engine's
+            effective template. Absent for embedded and engine templates,
+            and for inline overrides. A later edit to this file does not
+            change the running process's template or digest.
+      example:
+        source: engine
+        name: Engine chat template
+        sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 
     RuntimePromptCache:
       type: object
@@ -8371,6 +9444,9 @@ components:
     AppManifest:
       type: object
       additionalProperties: false
+      dependentRequired:
+        provides: [providesPath]
+        providesPath: [provides]
       description: |
         What an app is, how to install it, and what it needs from the hub.
         The shipped catalogue is a list of these; so is a custom entry.
@@ -8403,6 +9479,42 @@ components:
         apps must refuse local model-selected processes without this signal.
         It describes account isolation from Eugene, not isolation between
         people using the same app. It is not a user-configurable setting.
+
+        **MV5b's Hindsight entry is Experimental.** Install exactly
+        `hindsight-api-slim[embedded-db]` at `1.0.0`, with the explicit
+        dependency pin `pg0-embedded==0.15.2` and Python 3.12,
+        entry `hindsight_api.main:main`, `ui: false`, `configTrio: false`,
+        `localActions: false`, `healthPath: /health` and `uses: [inference]`.
+        It provides `memory-server` at `/mcp/`. Its LLM, embeddings and
+        reranker addresses and keys all name the gateway, never upstream
+        defaults. Use the OpenAI LLM and embeddings providers, the Cohere
+        reranker at the gateway's full `/v1/rerank` path, and disable OTEL
+        traces. Set `HINDSIGHT_API_LLM_REASONING_EFFORT=none`.
+
+        Set `HINDSIGHT_API_TENANT_EXTENSION` to `ApiKeyTenantExtension`
+        and `HINDSIGHT_API_TENANT_API_KEY` to `{appSecret}`: REST is open
+        otherwise. Enable MCP with `HINDSIGHT_API_MCP_AUTH_TOKEN` set to
+        the separate `{linkSecret}`. A REST key is not an MCP token.
+        Set the database URL to
+        `pg0://hindsight:{databaseSecret}@eugene-plexus-hindsight:{auxPort}`.
+        pg0 `start`, `stop` and `drop` must all use
+        `eugene-plexus-hindsight`, never the default `hindsight` instance.
+        The database must listen on the reserved `{auxPort}`; if that
+        port is in use or pg0 selects another port, the start is refused
+        and names the observed cause. Never report a moved port as ready.
+        On Linux,
+        HOME must be the app's data folder, so pg0 data is contained there.
+        Where pg0 uses the account profile instead, a purge must run
+        `pg0 drop` by instance name before deleting the app's files.
+        Require password authentication in `pg_hba.conf` for TCP and the
+        Unix socket, never `trust`. Acceptance must check that both the
+        default `hindsight`/`hindsight` login and a login with no password
+        are refused over TCP and the Unix socket, while the generated
+        password succeeds. The launcher must redact database credentials
+        from pg0 and Hindsight output, logs and errors, including their
+        connection URIs.
+        Availability follows MV5b-C1: Linux and agent-account installs
+        only; Windows own-account installs wait for data-folder support.
       required: [id, name, source, version, package, entry]
       properties:
         id:
@@ -8482,6 +9594,10 @@ components:
             proxied through the console: the console's origin holds the
             operator session and an unauthenticated proxy to every
             component, and anything running there has operator authority.
+        experimental:
+          type: boolean
+          default: false
+          description: Show an Experimental badge on the catalogue card and installed app page.
         configTrio:
           type: boolean
           default: false
@@ -8497,7 +9613,64 @@ components:
           items:
             $ref: "#/components/schemas/AppHubSurface"
           default: [inference]
-          description: The hub surfaces the app's key is scoped to.
+          description: |
+            The app's dependencies. `inference` scopes its hub key;
+            `memory-server` requests the same-machine catalogue link,
+            never a wider hub credential. Only shipped catalogue entries
+            may consume that link.
+        provides:
+          type: string
+          enum: [memory-server]
+          description: |
+            A link provided to another app on the same machine, only
+            between entries from the shipped catalogue. One provider of
+            `memory-server` per machine; a custom entry may not declare
+            this field. `providesPath` is required with it.
+
+            The agent generates a link secret at provider installation,
+            separate from the REST app secret. Only that provider receives
+            `{linkSecret}` for MCP. A shipped consumer with
+            `uses: [inference, memory-server]` receives the exact loopback
+            URL including `providesPath` in
+            `EUGENE_PLEXUS_APP_MEMORY_SERVER_URL`, and the secret's file
+            in `EUGENE_PLEXUS_APP_MEMORY_SERVER_TOKEN_FILE`. The URL never
+            contains the secret. No link is delivered when the provider
+            is absent; link absence must not prevent the consumer starting.
+
+            The consumer also gets
+            `EUGENE_PLEXUS_APP_MEMORY_SERVER_MODEL_FILE`, a read-only file
+            containing the provider's effective `AppSettings` as JSON.
+            This non-secret metadata stays current when the effective
+            model changes; do not retain a snapshot across changes.
+            Workbench reads it at each call and looks up that model's
+            locality in the gateway. If the file is missing or unreadable,
+            the model is unset, or locality cannot be established, treat
+            it as outside and name the observed cause. A loopback server
+            address alone never establishes model locality.
+
+            The credential is an owner-only file granted only to the
+            provider's and authorised consumers' accounts on Windows,
+            and a systemd credential on Linux. A third app gets no grant.
+            It never appears in API responses, per-person records, logs
+            or a service definition. The consumer re-reads its token file
+            when it changes. Provider uninstall withdraws the link;
+            reinstall after purge generates a new secret. Uninstall
+            without purge keeps it privately with the retained data.
+
+            Workbench chooses each person's bank as `wb-` plus the first
+            16 hex characters of SHA-256 of their `sub`, appended to the
+            link path with a trailing slash. The person cannot choose a
+            bank or see the token. Only this exact agent-provided address
+            is exempt from the memory server policy's loopback refusal;
+            person-supplied addresses keep all MV5a checks.
+        providesPath:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: "^/(?:[A-Za-z0-9_~-]+/)*$"
+          description: |
+            Root-relative link path ending in `/`, such as `/mcp/`.
+            Requires `provides`. No origin, query, fragment or dot segments.
         signIn:
           type: boolean
           default: false
@@ -8530,6 +9703,9 @@ components:
             text with placeholders filled in at every start:
 
             * `{bindHost}`, `{port}` — where to listen;
+            * `{auxPort}` — a distinct, persisted auxiliary port from
+              8190-8289, reserved against all app ports and auxiliary ports;
+              Hindsight's named pg0 instance uses it;
             * `{dataDir}` — its private data directory;
             * `{gatewayUrl}` — the gateway, as `EUGENE_PLEXUS_APP_GATEWAY_URL`;
             * `{appUrl}` — the address the console opens it at;
@@ -8571,13 +9747,32 @@ components:
               and say why in the start notes;
             * `{imageModelSet}` — `true` when `{imageModel}` has a value,
               otherwise `false`, including when the listing fails;
+            * `{memoryModel}` — the owner's explicit per-app
+              `settings.memoryModel` in `apps.yaml`, unset until chosen.
+              A manifest using it is refused a start while it is unset;
+              never omit it and let the app choose its own model;
+            * `{linkSecret}` — the MCP link credential, only for a shipped
+              `provides: memory-server` entry, read in its launch account.
+              A missing credential refuses the provider's start with the
+              observed cause; never start an unprotected memory server;
+            * `{databaseSecret}` — a URL-safe random database password,
+              generated in the launch account at the app's first start,
+              kept in an owner-only file in the app's data directory and
+              reused on subsequent starts. It is separate from
+              `{appSecret}` and `{linkSecret}`. If the launcher cannot
+              obtain it because its file is missing, unreadable or empty,
+              the start is refused with the observed cause; never use a
+              default password or leave the database variable unset.
+              Filled values never appear in `launch.json`, logs, service
+              definitions or API responses;
             * `{clientKey}`, `{oidcClientSecret}`, `{appSecret}` — secrets.
               `{appSecret}` is a random value made at its first start and
               kept in its data directory.
 
             **A manifest that names `{gatewayUrl}` is not started while
             the gateway's address is unknown** (MR6, 2026-10-12). Every
-            other placeholder with no value leaves its variable unset, but
+            other placeholder except `{memoryModel}`, `{linkSecret}` and `{databaseSecret}`
+            with no value leaves its variable unset, but
             an app without the gateway's address uses its own default, and
             Open WebUI's is `https://api.openai.com/v1`: documents and
             speech would go there. The start is refused, naming why, and
@@ -8672,16 +9867,18 @@ components:
       type: string
       enum:
         - inference
+        - memory-server
       description: |
-        A public hub surface an app's client key may be used on.
+        An app dependency: a public hub surface or a narrow catalogue link.
 
         * `inference` — the gateway's client doors (`/v1/models`,
           `/v1/chat/completions` and the rest), under A5's default
           limits. The operator narrows or widens the key like any other.
 
-        One member today on purpose. A trainer depositing models into the
-        Library would add a second, together with the Library endpoint it
-        names, when a trainer exists to use it — not before.
+        * `memory-server` — the same-machine app link from a shipped
+          catalogue provider. It is not a hub client-key scope and grants
+          no access to the Library, control root or other apps. Link
+          credentials go only to shipped catalogue consumers declaring it.
 
     AppIsolation:
       type: string
@@ -8758,6 +9955,23 @@ components:
           description: |
             The version installed on this node, when one is. Differs from
             `manifest.version` when an update is available.
+        installable:
+          type: boolean
+          description: |
+            Whether this particular entry can be installed on this node,
+            including the catalogue-wide checks. An older agent may omit
+            it; absence is unknown, not a refusal. Keep the entry visible
+            and give the observed cause in `reason` when false.
+            Hindsight is available on Linux and agent-account installs
+            only (MV5b-C1). Windows own-account installs are refused
+            because pg0 cannot keep data in the app's data folder there.
+            Being experimental or an untested model is not a refusal.
+        reason:
+          type: string
+          minLength: 1
+          description: |
+            The observed cause and remedy when this entry's `installable`
+            is false. Absent when true; never a generic "not supported".
         resetsSettings:
           type: boolean
           default: false
@@ -8845,6 +10059,48 @@ components:
         finishedAt:
           type: string
           format: date-time
+
+    AppMemoryModel:
+      type: [string, "null"]
+      minLength: 1
+      maxLength: 512
+      default: null
+      description: |
+        The gateway model id Hindsight reads chats with. It is unset
+        until the owner chooses; null clears the selection and stops
+        Hindsight. There is no automatic first-model or fallback choice.
+        The console lists chat models from the gateway's `GET /v1/models`,
+        marks the probe or harness measurements as advice, and lets an
+        expert enter a model id. Measurements never block an untested
+        model. Gateway access limits still apply.
+
+        Locality comes from the selected model's gateway metadata, never
+        from this server's loopback URL. Workbench treats outside or
+        unknown locality as an outside model under the person's write
+        policy, as for an MV5a server.
+
+    AppSettings:
+      type: object
+      additionalProperties: false
+      description: |
+        Effective launcher settings for the installed app, persisted in
+        its `apps.yaml` entry under `settings`. For a running app these
+        are the values used to launch that process; for a stopped app
+        they are the values its next start will use. No pending selection
+        may be shown while an old process still runs. An unset model is
+        explicit null, including in API responses. No secret is included.
+      required: [memoryModel]
+      properties:
+        memoryModel:
+          $ref: "#/components/schemas/AppMemoryModel"
+
+    AppSettingsUpdate:
+      type: object
+      additionalProperties: false
+      description: Partial launcher settings update; omitted fields stay unchanged.
+      properties:
+        memoryModel:
+          $ref: "#/components/schemas/AppMemoryModel"
 
     AppRestartRequest:
       type: object
@@ -8940,6 +10196,8 @@ components:
           description: |
             Settings last given to the app on its first start or a reset
             start. Absent before a recorded seed or on an older install.
+        settings:
+          $ref: "#/components/schemas/AppSettings"
         availableImageModel:
           type: string
           minLength: 1
@@ -8967,6 +10225,14 @@ components:
           description: |
             The port it binds, allocated from 8190-8289 and persisted so
             its address does not change between restarts.
+        auxPort:
+          type: integer
+          minimum: 8190
+          maximum: 8289
+          description: |
+            The auxiliary port reserved for `{auxPort}`, persisted and
+            distinct from every app's main and auxiliary port. Present
+            only when its manifest needs it, including while stopped.
         uiUrl:
           type: string
           format: uri
@@ -8987,12 +10253,26 @@ components:
             config.
         ui:
           type: boolean
+        experimental:
+          type: boolean
+          default: false
+          description: Whether to show the installed app's Experimental badge.
         configTrio:
           type: boolean
         uses:
           type: array
           items:
             $ref: "#/components/schemas/AppHubSurface"
+        provides:
+          type: string
+          enum: [memory-server]
+          description: The installed manifest's same-machine catalogue link, when provided.
+        providesPath:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: "^/(?:[A-Za-z0-9_~-]+/)*$"
+          description: The installed manifest's link path; no credential is returned.
         keyId:
           type: string
           description: |
