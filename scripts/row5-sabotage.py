@@ -29,6 +29,7 @@ ENV = {
 C_APPLIED = "src/eugene_plexus_control/applied.py"
 C_CHANGE = "src/eugene_plexus_control/passphrase_change.py"
 C_SM = "src/eugene_plexus_control/state_machine.py"
+C_REPL = "src/eugene_plexus_control/replication.py"
 C_AUTH = "src/eugene_plexus_control/routes/auth.py"
 C_CTRL = "src/eugene_plexus_control/routes/control.py"
 C_KEYS = "src/eugene_plexus_control/oidc_keys.py"
@@ -125,6 +126,47 @@ CASES: list[tuple[str, str, str, str, str, str, str]] = [
     ("a locked machine is not asked for the old passphrase", "agent", A_AUTH,
      "            \"old-passphrase-needed\",", "            \"something-else\",", "pytest",
      AP + "test_a_locked_machine_asks_once_for_the_old_passphrase"),
+    # The review (Codex, 2026-10-24).
+    ("a value sealed under the old key is stored", "control", C_SM,
+     "                if sealed_under != self._state.identity.salt:\n                    raise SealedUnderOldKey()\n",
+     "", "pytest", CP + "test_a_secret_sealed_before_a_change_is_refused_not_stored"),
+    ("a sealed write need not name its generation", "control", C_SM,
+     "                if sealed_under is _UNSET:\n", "                if False:\n", "pytest",
+     CP + "test_every_sealed_op_names_the_salt_it_sealed_under"),
+    ("compaction runs inside the append again", "control", C_SM,
+     "            self._pending_change = self._state.index\n            return\n",
+     (
+         "            self._store.write_snapshot(\n"
+         "                to_canonical(self._state), compact_through=self._state.index - 1\n"
+         "            )\n            return\n"
+     ),
+     "pytest", CP + "test_a_compaction_that_fails_leaves_the_new_key_in_effect"),
+    ("a start does not finish a change's compaction", "control", C_SM,
+     "                self._pending_change = changes[-1]\n", "                pass\n", "pytest",
+     CP + "test_a_restart_finishes_a_compaction_a_crash_left"),
+    ("a standby takes a change without noting its keyring entry", "control", C_REPL,
+     "        if salt is not None and self._before_passphrase_change is not None:\n",
+     "        if False:\n", "pytest",
+     CP + "test_a_standby_follows_the_change_by_entry_or_by_snapshot"),
+    ("the stale keyring note is not written", "control", C_CHANGE,
+     "    if old_salt:\n        _private_write(\n", "    if False:\n        _private_write(\n",
+     "pytest", CP + "test_a_standby_killed_before_its_cleanup_finishes_it_at_start"),
+    ("two key changes at once both change it", "control", C_KEYS,
+     "    with _CHANGE_LOCK:\n        machine = app.state.machine\n",
+     "    with threading.Lock():\n        machine = app.state.machine\n", "pytest",
+     CK + "test_two_routine_changes_at_once_change_the_key_once"),
+    ("the root ignores a machine's unsaved file", "control", C_CHANGE,
+     "            if isinstance(body, dict) and body.get(\"passphraseFile\") == \"old\":\n",
+     "            if False:\n", "pytest",
+     CP + "test_a_machine_that_could_not_save_its_file_says_so"),
+    ("an agent hides a file it could not save", "agent", A_AUTH,
+     "    return NodePassphraseResult.model_validate({\"passphraseFile\": file_state, \"detail\": why})",
+     "    return NodePassphraseResult.model_validate({\"passphraseFile\": \"matches\"})", "pytest",
+     AP + "test_the_root_hears_when_this_machine_could_not_save_its_file"),
+    ("a changed machine's warning is not shown", "ui", U_CHANGE,
+     "      ? `${machine.node}: changed, but ${machine.detail}`",
+     "      ? `${machine.node}: changed`", "vitest",
+     "src/app/people/page.test.tsx::changes Eugene's passphrase from the owner's row"),
     ("plain is shown as changed", "ui", U_CHANGE,
      "  if (machine.state === \"plain\") return `${machine.node}: not sent: reached in plain HTTP`;",
      "  if (machine.state === \"plain\") return `${machine.node}: changed`;", "vitest",
