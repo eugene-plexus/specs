@@ -160,3 +160,9 @@ Risks:
   Site the person controls.
 - **Context cost.** A loaded skill's body can be 32,000 characters; the
   rounds limit and the context work in row 26 bound it.
+
+## Calls answered by Troy (2026-10-22)
+
+- **R32-OWNER: Choice 1, with a change of words.** A person may turn off a
+  skill the owner gave everyone, and the page marks it **"From Eugene"**,
+  not "From the owner".

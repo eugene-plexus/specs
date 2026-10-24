@@ -20,6 +20,8 @@ WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
 SETUP_STEPS = 15
 FULL, EVERY = "full", "every"
 PINNED_STEPS = {
+    "di7-same-answer-acceptance.py": (EVERY, "linux"),
+    "Keep row 20 CPU evidence": ("always", "linux"),
     "row65-ollama-protocol.py": (EVERY, "both"),
     "run-operations-checks.py": (FULL, "both"),
     "s10-starter-check.py": (FULL, "both"),
@@ -30,6 +32,10 @@ PINNED_STEPS = {
     "row3-per-node-keys-acceptance.py": (EVERY, "both"),
     # Row 70 (2026-10-21): group policies at the root and through an agent.
     "row70-group-policy-acceptance.py": (EVERY, "both"),
+    "row57-responses-tools-acceptance.py": (EVERY, "linux"),
+    # Row 24 (2026-10-22): rotating a client key under a running stream.
+    "ck-rotate-acceptance.py": (EVERY, "both"),
+    "row70c-workbench-groups-acceptance.py": (EVERY, "both"),
     "r8-profile-acceptance.py": (EVERY, "both"),
     "ls1-eligibility-acceptance.py": (EVERY, "both"),
     "ls2-discover-acceptance.py": (FULL, "both"),
@@ -38,6 +44,7 @@ PINNED_STEPS = {
     "ls5-preparation-checks.py": (FULL, "both"),
     "ls5-preparation-acceptance.py": (FULL, "both"),
     "runtime-stop-acceptance.py": (EVERY, "both"),
+    "row43-cards-left-acceptance.py": (EVERY, "linux"),
     "ls6-fit-acceptance.py": (FULL, "both"),
     "ls7-copy-acceptance.py": (FULL, "both"),
     "ls7b-facts-acceptance.py": (FULL, "both"),
@@ -55,6 +62,7 @@ PINNED_STEPS = {
     "p8-search-acceptance.py": (FULL, "both"),
     "google-search-acceptance.py": (FULL, "both"),
     "gemini-acceptance.py": (FULL, "both"),
+    "row58-gemini-door-acceptance.py": (FULL, "linux"),
     "tools-assumed-acceptance.py": (FULL, "both"),
     "genui-inference-acceptance.py": (FULL, "both"),
     "genui-inference-sabotage.py": (FULL, "both"),
@@ -129,6 +137,15 @@ class WiringTests(unittest.TestCase):
         )
         self.assertLess(dependencies, checks[0])
         self.assertNotIn("if", steps[checks[0]])
+
+    def test_di7_repeatable_answers_runs_with_real_cpu_engine_and_keeps_evidence(self) -> None:
+        steps = workflow("ci.yml")["jobs"]["r7-signing"]["steps"]
+        step = next(s for s in steps if "di7-same-answer-acceptance.py" in s.get("run", ""))
+        self.assertEqual(step["if"], "matrix.shard == 'L2'")
+        self.assertIn("--output .codex-tmp/di7", step["run"])
+        artifact = next(s for s in steps if s.get("with", {}).get("name") == "di7-cpu-evidence")
+        self.assertIn("always()", artifact["if"])
+        self.assertEqual(artifact["with"]["path"], ".codex-tmp/di7")
 
     def test_no_step_on_windows_runs_under_the_default_shell(self) -> None:
         """The runner's default pwsh fails a step only on the exit code of its last
@@ -278,6 +295,7 @@ class WiringTests(unittest.TestCase):
                 part = f"({bare})" if windows else bare
                 full = "needs.plan.outputs.full == 'true'"
                 gates = {
+                    f"always() && {part}": "always",
                     bare: "every",
                     f"{part} && {full}": "full",
                     f"always() && {part} && {full}": "always-full",
