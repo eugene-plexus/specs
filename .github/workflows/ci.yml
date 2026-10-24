@@ -435,6 +435,9 @@ jobs:
       - name: The shared acceptance harness is the real server - console log copy, machine port, client doors, stop file (row 2)
         if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/harness-acceptance.py
+      - name: Measure people served through the shared harness and a two-slot fixture (row 10)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/serving-sweep-acceptance.py
       - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
         if: matrix.shard == 'L1'
         run: python specs/scripts/row57-responses-tools-acceptance.py
@@ -940,6 +943,8 @@ jobs:
       - name: Check Ollama Keep and worker report contracts
         run: python scripts/test_ollama_contract.py
 
+      - name: Check gateway routing node contract
+        run: python scripts/test_gateway_routing_node_contract.py
       - name: Check DeepSeek Flash template contracts
         run: python scripts/test_deepseek_flash_contract.py
 

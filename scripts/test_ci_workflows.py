@@ -20,6 +20,7 @@ WORKFLOWS = Path(__file__).resolve().parent.parent / ".github/workflows"
 SETUP_STEPS = 15
 FULL, EVERY = "full", "every"
 PINNED_STEPS = {
+    "serving-sweep-acceptance.py": (EVERY, "linux"),
     "di7-same-answer-acceptance.py": (EVERY, "linux"),
     "Keep row 20 CPU evidence": ("always", "linux"),
     "row65-ollama-protocol.py": (EVERY, "both"),
