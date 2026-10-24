@@ -660,8 +660,15 @@ def main() -> int:
         text = json.dumps(answer)
         must("50", "a chat answers from the fixture model", status == 200 and "C4-ANSWER" in text, text[:300])
         # The operator's readiness search (step 25) is the install's own, not the app's.
-        keys = {r.get("clientKeyName") for r in gateway_rows(token)
-                if not (r.get("door") == "web_search" and not r.get("clientKeyName"))}
+        def chat_keys() -> set:
+            return {r.get("clientKeyName") for r in gateway_rows(token)
+                    if not (r.get("door") == "web_search" and not r.get("clientKeyName"))}
+        # The gateway writes request rows from a background task in batches, so the
+        # chat's row can land after its answer (an empty read failed run 39946705058).
+        keys, deadline = chat_keys(), time.perf_counter() + 15
+        while not keys and time.perf_counter() < deadline:
+            time.sleep(0.5)
+            keys = chat_keys()
         check("51", "the gateway records its requests under the app's key and no other",
               keys == {app.get("keyName")}, sorted(map(str, keys)))
 
