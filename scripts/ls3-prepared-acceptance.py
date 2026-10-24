@@ -211,7 +211,7 @@ def fake_strata(root: Path) -> Path:
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="ep-ls3-", ignore_cleanup_errors=True) as raw:
         directory = Path(raw)
-        agent_port, library_port = free_ports(2)
+        agent_port, library_port, machine_port = free_ports(3)
         models = directory / "models"
         models.mkdir()
         entry = prepared_bundle(models / "strata-bundle")
@@ -250,6 +250,7 @@ def main() -> int:
                 "EUGENE_PLEXUS_AGENT_CONFIG_FILE": str(directory / "agent.yaml"),
                 "EUGENE_PLEXUS_AGENT_BIND_HOST": "127.0.0.1",
                 "EUGENE_PLEXUS_AGENT_BIND_PORT": str(agent_port),
+                "EUGENE_PLEXUS_AGENT_MACHINE_PORT": str(machine_port),
                 "EUGENE_PLEXUS_AGENT_ENGINE_ROOT": str(directory / "engines"),
                 "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
                 "PYTHONUNBUFFERED": "1",

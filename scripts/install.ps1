@@ -133,13 +133,13 @@ $PrefixGiven = [bool]$Prefix
 # --- pins -------------------------------------------------------------
 # Generated from release/manifest.json by scripts/release-inputs.py.
 $PIN = @{
-    "agent"            = "eba3a7d7c280295f201c11cb18543774c9ec5048"
-    "control"          = "341ed54edde8156756d64a3c4793bf126511188d"
-    "gateway"          = "72378a0eab23f2807de111de12ab787ed288960b"
-    "inference-driver" = "121f5a37d39a5735e253358fc5ca6850ce2d32cf"
-    "library"          = "40d911e0ee7baf3ceb43d3de59c4c3cfaf8ebad8"
-    "tool-driver"      = "9934205ce5eb5b0c0d845c23ff83a1b3f3e85609"
-    "ui"               = "091f9d8d675cdd8de10e2ee0ac744fab4de4394e"  # branch `dist`, not `main`
+    "agent"            = "f4996935bda7269c72f27f22d026ced201764655"
+    "control"          = "c90d76d0383103afeeb517c5e226b358c94229f1"
+    "gateway"          = "a1ad7777530bca9a6529f1143474daac68e92653"
+    "inference-driver" = "7fb4c875ef86ae65b601249818212b2934d8b506"
+    "library"          = "1b015632de2dddde6139719916b77128a9019869"
+    "tool-driver"      = "a9c8b03439b60d2ba24275bf9f17da02c245190e"
+    "ui"               = "720a00516284e21233c587736f4af5d9fb8375e8"  # branch `dist`, not `main`
 }
 $DIST = @{
     "agent"            = "eugene-plexus-agent"
@@ -2005,6 +2005,26 @@ attrs==26.1.0 \
 authlib==1.8.0 \
     --hash=sha256:88aebbd9af6757e14e912d5dc007ae1dc1f3e27e3b2152ce7c552ee2c3b3c121 \
     --hash=sha256:f3ecd5f1da737262fb53bf1a4d95c4ea1ad9dd509316587a255c99ab1838a4f0
+av==19.0.2 \
+    --hash=sha256:04c8e412642c652cb2b1997a9cb2114546ee7d894600c631f4be8ceb26a0d0d2 \
+    --hash=sha256:0e425d631510ca21e47c58f3837a9dceae0453c24e926408c8a12b95239cbbd6 \
+    --hash=sha256:1e7cb7b66a832bce8996af5b94f1cf4014a05ff51e0005feac4cb2566d711020 \
+    --hash=sha256:32a8d37bde9e24ad0cc855140cbeecde17a363d7dc7928dcfc71a34b5f3ed387 \
+    --hash=sha256:3ce5a1d7b916d13c16ac58f1756f0fee4af2d53f02bc1403e18550b50d375a22 \
+    --hash=sha256:44d3faae747cf04a33f39db8ae983ff3d93adc864ee663bc186b25b686803c3e \
+    --hash=sha256:79a277b077e3768a0ea9f881ca0b3bc96d4135a8d3a7a579938adb58718d0dfd \
+    --hash=sha256:8596fad2017d380708de35ddf9d34f808b8488c912cdc3f361691d866d9dc32d \
+    --hash=sha256:91924f5c836b1cbf89fe1522c642f98e89a733124908561fd49dc7a70e9b6d10 \
+    --hash=sha256:9c1da7aad0fa6c13b4a5c1e7985be0d13f8526a96284573acaf3d55ead6d3fe8 \
+    --hash=sha256:9d4f9f78c0ce1f20deb72626fdb3c723757f61a8cd6fbb7dd44d9401884a91fd \
+    --hash=sha256:9db27c2248112a8eed3edd3ca83cf4405f52a402cda2eb1956035e646e6b99c6 \
+    --hash=sha256:ae4618eab172f8135596972252f39c7399291c921e661c1771ba26b9254b800f \
+    --hash=sha256:b0dff6dfcc6ff9944fbbff15bc4ee2d90a2c1695d493bdea96e86f48823e9feb \
+    --hash=sha256:b559ff381bd800c46fee6a17d7e22a3443708cdd58d0901ae91d27cf5dd0578c \
+    --hash=sha256:b632e026f4375037438a6b2b5d6a489e55bc9504fad22078991ef96211bec2a9 \
+    --hash=sha256:bebbc52598886480f4d861c575dc2b020785d6c04e1308680ddcc545e1b94c66 \
+    --hash=sha256:dfe7af5aa8243afd5d4778f85ad1a7c948e37fad272869da1f8f93f8d57fa7ad \
+    --hash=sha256:f5f7bcf987567cd3f9b01f1c375c59bf59d8a5b98c9c5c154aeda7a11e0c5dce
 certifi==2026.7.22 \
     --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
     --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55

@@ -247,8 +247,17 @@ for _ in $(seq 1 60); do curl -fsS -o /dev/null "http://127.0.0.1:$PORT/healthz"
 AFTER=$(api GET /v1/node)
 last=$(printf '%s' "$AFTER" | json '(d["update"].get("last") or {}).get("outcome","")')
 [ "$last" = succeeded ] && ok "6d. the agent that came back reports it" || bad "6d. update: $(printf '%s' "$AFTER" | json 'd["update"]')"
-curl -fsSL "https://raw.githubusercontent.com/eugene-plexus/specs/$TARGET/scripts/install.sh" \
-    -o "$WORK/target-install.sh" 2>/dev/null || : >"$WORK/target-install.sh"
+# The target's installer: from this checkout when it has the commit (a branch run's
+# commit is not always served by raw.githubusercontent), else from GitHub, tried
+# three times. An empty file would read as "?" for every pin, so say what failed.
+git -c safe.directory='*' -C "$HERE" show "$TARGET:scripts/install.sh" >"$WORK/target-install.sh" 2>/dev/null \
+    || for _ in 1 2 3; do
+        curl -fsSL "https://raw.githubusercontent.com/eugene-plexus/specs/$TARGET/scripts/install.sh" \
+            -o "$WORK/target-install.sh" 2>/dev/null && break
+        sleep 3
+    done
+grep -q '^PIN_' "$WORK/target-install.sh" 2>/dev/null \
+    || bad "6e. could not read the installer at $TARGET (neither this checkout nor raw.githubusercontent had it)"
 compare=$(printf '%s' "$AFTER" | python3 -c '
 import json, re, sys
 pins = dict(re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})", open(sys.argv[1]).read(), re.M))

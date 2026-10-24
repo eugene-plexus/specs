@@ -266,3 +266,43 @@ were broken once each and caught.
   itself; D comes back on new ports so only the fallback can move it; A,
   unlocked, signs a list numbered above C's at its lower epoch (refused for
   the epoch) and relays a command C refuses.
+
+## The second review (2026-10-23), and what changed
+
+Codex re-reviewed the fixes: the four should-fix items closed, a gap left in
+each blocker, and two new should-fix items. Each fix has a test that failed
+before it.
+
+- **Tokens without `ep`.** A promotion ends them, wherever it is learned:
+  a node refuses a root token without `ep` once it holds an epoch above its
+  bundle's (a promoted root's list came first) or above `legacyTokenEpoch`
+  (`node.yaml`: the epoch it held when it first ran row 4 code, or joined).
+  A root promoted from a copy that is the first to write `tokenEpochs` names
+  the epoch it replaced, so every verifier refuses that root's tokens
+  without `ep` at once.
+- **Out of scope:** a former root re-signing tokens with a forged `ep` holds
+  the install's own token key; a compromised root machine is outside what
+  Eugene's code defends (Troy's standing rule, 2026-10-07).
+- **The list fence survives a restart.** `node.yaml` keeps `listEpoch`, the
+  highest root epoch a taken list named. A list that names no root is
+  refused against it, and a kept list without one is not loaded.
+- **A promoted copy that restarts locked, before anything was pushed.** The
+  agent asks its copy: one that says it is the root at an epoch above any
+  this node holds gives the bundle it signed at its promotion (a locked
+  root still serves it), verified against the install's identity. Taken, it
+  ends the standby grant here; the copy is marked promoted, this node
+  follows its own copy, and `/control` opens, so the owner can sign in on
+  this machine's console. `NodeIdentity.rootLocked` (from control's
+  `/healthz` `details.locked`) puts "The control root on <machine> is
+  locked" in Home's Needs attention, with the unlock action (ui). The
+  minute's pull checks this while the root it names does not answer.
+- **Snapshots are typed.** Collections must be lists, `config` and the
+  other objects objects, the key fields text or null, `index` and `epoch`
+  whole numbers, and every node named. Only the fields every supported root
+  writes are required; later ones are optional and read as empty.
+- **A failed fresh snapshot** is retried after 30 s: the 10 minutes start
+  once one was taken.
+- **Sabotage.** Each of the 14 new checks was broken once and its test
+  failed (restored from a copy). Two first missed: a node that kept no
+  joining epoch (a direct test now), and the required snapshot fields (the
+  test now keeps only what a v0.2.0 root writes, control 3c378a1).

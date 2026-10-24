@@ -640,6 +640,36 @@ paths:
         '404': {description: No such key.}
         '503': {description: Registry unavailable.}
 
+  /v1/auth/client-keys/{keyId}/rotate:
+    post:
+      tags: [auth]
+      operationId: rotateClientKey
+      summary: Make a new token with the same name and limits; the old one stops after an overlap (operator only).
+      description: |
+        The new key copies the old key's name and limits exactly. The old
+        token keeps working until `retiresAt` (default one day, or stop it
+        now with `overlapSeconds` 0), then new requests on it are refused as
+        replaced; running ones finish. During the overlap both tokens share
+        one concurrency and rate allowance. The token is shown once.
+      parameters:
+        - {name: keyId, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ClientKeyRotateRequest'}
+      responses:
+        '201':
+          description: The new key and its one-time token.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientKeyCreated'}
+        '401':
+          $ref: 'components/common.yaml#/components/responses/Problem'
+        '404': {description: No such key.}
+        '409': {description: "The key is turned off or expired, or already replaced. The message says which."}
+        '503': {description: Registry unavailable or the root is locked.}
+
   /v1/auth/client-keys:
     get:
       operationId: listClientKeys
@@ -879,6 +909,17 @@ paths:
           each. Empty when no group sets a policy.
         An app reads a change after its next token refresh (the ID token
         lives 10 minutes).
+
+        **The ID token's cap (row 70c).** An app may keep the ID token in a
+        cookie, and a browser drops a cookie over 4 KB. So in the ID token
+        the two claims together take at most 1024 bytes, counted as the
+        token's payload carries them: compact JSON with every non-ASCII
+        character escaped (one emoji is 12 bytes). Past that, the ID token
+        lists the groups that fit, in name order, keeps every policy value,
+        keeps in `setBy` only the groups it lists, and adds
+        `eugene_groups_truncated: true`. An app that needs every group then
+        reads this answer, which is never cut (at most 64 groups). Without
+        the flag, the ID token holds every group.
       responses:
         '200':
           description: Claims.
@@ -887,6 +928,42 @@ paths:
               schema: {type: object, additionalProperties: true}
         '401':
           description: Missing, expired or revoked access token.
+  /oidc/groups:
+    get:
+      operationId: oidcGroups
+      summary: The permission groups that give this app (row 70c)
+      description: |
+        `client_secret_basic`, as `/oidc/revoke`. The groups whose apps
+        include the calling app (or every app), as `{id, name}`, sorted by
+        name. An app uses it to attach settings of its own to a group, such
+        as Workbench's group memory servers, which its owner sets before any
+        member signs in. It says nothing of who is in a group: a person's
+        groups come only in their own sign-in claims.
+
+        Bounded: 5 wrong secrets from one address, or 60 reads by one app,
+        in 60 seconds, then 429 `slow_down` with `Retry-After`. The list
+        has no fixed length; a person's own groups are at most 64.
+      responses:
+        '200':
+          description: The groups, possibly none.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OidcGroupsResponse'}
+        '401':
+          description: '`invalid_client`.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '429':
+          description: '`slow_down`: too many wrong secrets from this address, or reads by this app. Wait `Retry-After` seconds.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
+        '503':
+          description: '`temporarily_unavailable`: the root is a standby; ask the active one.'
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OAuthError'}
   /oidc/revoke:
     post:
       operationId: oidcRevoke
@@ -4294,6 +4371,9 @@ components:
     ClientKeyCreateRequest:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyCreateRequest'
 
+    ClientKeyRotateRequest:
+      $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyRotateRequest'
+
     ClientKeyCreated:
       $ref: 'components/client-keys.yaml#/components/schemas/ClientKeyCreated'
 
@@ -5425,6 +5505,8 @@ components:
         - putClientKey
         - revokeClientKey
         - setClientKeyLimits
+        - rotateClientKey
+        - touchClientKey
         - putClientAdmission
         - rotateSigningKey
         - revokeSession
@@ -6251,6 +6333,24 @@ components:
           type: array
           description: Ids Eugene has no person for. Each one was deleted, or never was Eugene's.
           items: {type: string}
+
+    OidcGroup:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id: {type: string, minLength: 1, maxLength: 64}
+        name: {type: string, minLength: 1, maxLength: 80}
+
+    OidcGroupsResponse:
+      type: object
+      additionalProperties: false
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          description: The permission groups that give the calling app, sorted by name.
+          items: {$ref: '#/components/schemas/OidcGroup'}
 
     PromoteRequest:
       type: object
