@@ -189,6 +189,21 @@ class ShipTests(unittest.TestCase):
         self.assertEqual(self.pushes(), [self.initial])
         self.assertEqual(git(self.origins / "control.git", "rev-parse", "main"), self.pinned)
 
+    def test_a_dependency_the_lock_already_resolved_ships(self) -> None:
+        write(
+            self.root / "control/pyproject.toml",
+            '[project]\nname = "c"\ndependencies = ["httpx", "rich"]\n\n'
+            '[build-system]\nrequires = ["hatchling"]\n',
+        )
+        commit(self.root / "control", "A dependency change")
+        write(self.specs / "release/requirements.in", "hatchling\nhttpx\n")
+        commit(self.specs, "A lock without rich")
+        with self.assertRaisesRegex(ship.Stop, r"dependencies changed \(rich not in"):
+            self.ship(dry_run=True)
+        write(self.specs / "release/requirements.in", "hatchling\nhttpx\nrich\n")
+        commit(self.specs, "The lock re-resolved with rich")
+        self.ship(dry_run=True)
+
     # What main() says when a step stops it: pushes already made are not "not shipped".
 
     def main(self, *arguments: str) -> tuple[int, str, str]:
