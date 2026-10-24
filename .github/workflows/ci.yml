@@ -945,6 +945,10 @@ jobs:
 
       - name: Check gateway routing node contract
         run: python scripts/test_gateway_routing_node_contract.py
+
+      - name: Check Strata preparation and effective launch contracts
+        run: python scripts/test_strata_settings_contract.py
+
       - name: Check DeepSeek Flash template contracts
         run: python scripts/test_deepseek_flash_contract.py
 

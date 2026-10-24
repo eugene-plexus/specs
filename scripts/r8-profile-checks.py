@@ -29,8 +29,11 @@ def main() -> None:
         env["PYTHONPATH"] = os.pathsep.join(str(root / name / "src") for name in ("gateway", "library"))
         def run(repo: str, test: str, label: str, expected: int) -> None:
             env["PYTHONPYCACHEPREFIX"] = str(root / "pycache" / label)
+            # Each run compiles every import afresh (its own pycache). A busy Windows
+            # runner once took 75 s for a 6 s run and timed out the next at 90 s
+            # (specs run 39946184252); the limit only catches a hang.
             result = subprocess.run([sys.executable, "-m", "pytest", test, "-q", "--disable-warnings", "--tb=no"],
-                cwd=root / repo, env=env, text=True, capture_output=True, timeout=90)
+                cwd=root / repo, env=env, text=True, capture_output=True, timeout=300)
             if result.returncode != expected:
                 raise AssertionError(f"{label}: expected {expected}, got {result.returncode}\n{result.stdout}\n{result.stderr}")
             print(("PASS baseline " if expected == 0 else "CAUGHT ") + label, flush=True)
