@@ -188,6 +188,48 @@ def related(path, root):
     )
 
 
+def mount_table():
+    return Path("/proc/self/mountinfo").read_text()
+
+
+def unescape(field):
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), field)
+
+
+def inside(path, root):
+    return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def names_of(path):
+    """Every name a folder has through the mounts that show its filesystem.
+
+    `mount --bind /etc /srv/etc-alias` makes /srv/etc-alias/ssh the same
+    folder as /etc/ssh, and realpath keeps the alias. A filesystem mounted
+    twice, or a home's disk bound elsewhere, does the same. The deepest
+    mount holding the path gives its place on that filesystem (the mount's
+    root field); each mount of the same filesystem that shows that place
+    gives another name. An unreadable table fails the request.
+    """
+    mounts = []
+    for line in mount_table().splitlines():
+        fields = line.split()
+        mounts.append((unescape(fields[4]), unescape(fields[3]), fields[2]))
+    holding = [m for m in mounts if inside(path, m[0])]
+    if not holding:
+        return [path]
+    deepest = max(len(m[0]) for m in holding)
+    point, root, device = [m for m in holding if len(m[0]) == deepest][-1]
+    place = "/" + "/".join(
+        p for p in (root + "/" + path[len(point) :]).split("/") if p
+    )
+    names = {path}
+    for other_point, other_root, other_device in mounts:
+        if other_device == device and inside(place, other_root):
+            rest = place[len(other_root.rstrip("/")) :]
+            names.add("/" + "/".join(p for p in (other_point + rest).split("/") if p))
+    return sorted(names)
+
+
 def refuse(path, prefix):
     """Match the agent: own prefix, system, home, then other install ancestors."""
     if any(ord(c) < 32 or ord(c) == 127 for c in path) or not path.startswith("/"):
@@ -202,12 +244,6 @@ def refuse(path, prefix):
         raise ValueError("not_a_folder: Choose an existing folder.")
     if os.path.ismount(path):
         raise ValueError("drive_root: Choose a folder inside the drive.")
-    if path == prefix or path.startswith(prefix.rstrip("/") + "/"):
-        raise ValueError("eugene: This is Eugene's own folder.")
-    if any(related(path, system) for system in SYSTEM) or Path(path).parts[
-        1
-    ].startswith("lib"):
-        raise ValueError("system: Eugene does not give apps system folders.")
     import pwd
 
     homes = ["/home"] + [
@@ -215,6 +251,25 @@ def refuse(path, prefix):
         for p in pwd.getpwall()
         if p.pw_dir.startswith("/") and p.pw_dir not in ("/", "/nonexistent")
     ]
+    policy(path, prefix, homes)
+    for name in names_of(path):
+        if name == path:
+            continue
+        try:
+            policy(name, prefix, homes)
+        except ValueError as exc:
+            cause, words = str(exc).split(":", 1)
+            raise ValueError(f"{cause}: {path} is {name} through a mount.{words}") from None
+
+
+def policy(path, prefix, homes):
+    if path == prefix or path.startswith(prefix.rstrip("/") + "/"):
+        raise ValueError("eugene: This is Eugene's own folder.")
+    parts = Path(path).parts
+    if any(related(path, system) for system in SYSTEM) or (
+        len(parts) > 1 and parts[1].startswith("lib")
+    ):
+        raise ValueError("system: Eugene does not give apps system folders.")
     if any(related(path, home) for home in homes):
         raise ValueError("home: Use a Job Site to work in your own folders.")
     if related(path, prefix):
@@ -380,6 +435,9 @@ def grant(fd, group, write, ledger, save):
     """Preflight and save a complete plan before the first ACL change."""
     ledger["group"] = group
     ledger["items"] = []
+    # Entries for the group that a grant leaves as they are: removal keeps them.
+    ledger["kept"] = []
+    keys = ("group:" + group, "default:group:" + group)
     for batch in batches(fd):
         for (names, child, ident), before in zip(batch, acls([c for _, c, _ in batch])):
             after = plan(before, group, write, stat.S_ISDIR(os.fstat(child).st_mode))
@@ -387,6 +445,8 @@ def grant(fd, group, write, ledger, save):
                 ledger["items"].append(
                     dict(names=names, identity=ident, before=before, after=after)
                 )
+            elif any(key in before for key in keys):
+                ledger["kept"].append(dict(names=names, identity=ident))
     save(ledger)
     plans = {tuple(item["names"]): item for item in ledger["items"]}
     for batch in batches(fd):
@@ -413,14 +473,16 @@ def grant(fd, group, write, ledger, save):
 
 
 def revoke(fd, ledger):
-    # This group belongs solely to Eugene. Revoke its entry throughout the
-    # current tree, including children created since grant, preserving masks
-    # and every other principal's ACL (including subsequent chmod changes).
+    # Revoke the group's entries throughout the current tree, including
+    # children created since the grant, and every other principal's ACL
+    # (including later chmod changes). An item nobody changed since the grant
+    # gets its recorded ACL back; an entry the group held before stays.
     if not ledger["items"]:
         return True
     group = ledger["group"]
     skipped = []
     plans = {tuple(item["names"]): item for item in ledger["items"] if "names" in item}
+    kept = {tuple(item["names"]): item for item in ledger.get("kept", [])}
     for batch in batches(fd, revoke=True, skipped=skipped):
         normal = [item for item in batch if item[2]]
         entries = list(zip(normal, acls([c for _, c, _ in normal]))) if normal else []
@@ -429,15 +491,51 @@ def revoke(fd, ledger):
                 continue
             try:
                 current = acl(item[1])
-                remove_entries([(item, current)], group, plans)
+                remove_entries([(item, current)], group, plans, kept)
             except (OSError, ValueError) as exc:
                 skipped.append("/".join(item[0]) + ": " + str(exc))
-        remove_entries(entries, group, plans)
+        remove_entries(entries, group, plans, kept)
     ledger["refusal"] = "; ".join(skipped)
     return not skipped
 
 
-def remove_entries(entries, group, plans):
+def remove_entries(entries, group, plans, kept=None):
+    kept = kept or {}
+    keys = ("group:" + group, "default:group:" + group)
+    restore, removable = [], []
+    for (names, child, ident), current in entries:
+        item = plans.get(names)
+        planned = item is not None and same_identity(ident, item["identity"])
+        prior = kept.get(names)
+        if planned and current == item["after"]:
+            if current != item["before"]:
+                restore.append((child, item["before"]))
+            continue
+        if prior is not None and same_identity(ident, prior["identity"]):
+            continue  # The group's own entries from before the grant.
+        if planned and any(key in item["before"] for key in keys):
+            # Changed since, but the grant widened an older entry: put that
+            # entry back as it was and keep everything else.
+            wanted = {k: v for k, v in current.items() if k not in keys}
+            wanted.update({k: item["before"][k] for k in keys if k in item["before"]})
+            restore.append((child, wanted))
+            continue
+        removable.append(((names, child, ident), current))
+    if restore:
+        run(
+            "setfacl",
+            "--restore=-",
+            input="".join(
+                "# file: /proc/self/fd/"
+                + str(child)
+                + "\n"
+                + "\n".join(k + ":" + v for k, v in wanted.items())
+                + "\n\n"
+                for child, wanted in restore
+            ),
+            pass_fds=tuple(child for child, _ in restore),
+        )
+    everything, entries = entries, removable
     for default in (False, True):
         key = ("default:" if default else "") + "group:" + group
         held = [child for (_, child, _), current in entries if key in current]
@@ -453,7 +551,8 @@ def remove_entries(entries, group, plans):
             )
     clear = []
     base = {"default:user:", "default:group:", "default:other:", "default:mask:"}
-    for (names, child, ident), current in entries:
+    # Default ACLs the grant created go; setfacl --restore leaves them.
+    for (names, child, ident), current in everything:
         item = plans.get(names)
         defaults = {k for k in current if k.startswith("default:")}
         defaults.discard("default:group:" + group)

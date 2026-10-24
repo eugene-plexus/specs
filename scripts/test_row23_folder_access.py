@@ -15,12 +15,17 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 
 
+MOUNT_ROOT = "1 0 8:1 / / rw,relatime - ext4 /dev/sda1 rw\n"
+
+
 def helper():
     spec = importlib.util.spec_from_file_location(
         "folder_helper", ROOT / "scripts/folder-access-helper.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    # One root filesystem; a test that is about mounts sets its own table.
+    module.mount_table = lambda: MOUNT_ROOT
     return module
 
 
@@ -390,6 +395,87 @@ def test_helper_refusal_precedence(monkeypatch, path, prefix, home, cause):
         h.refuse(path, prefix)
 
 
+@pytest.mark.parametrize(
+    ("mounts", "path", "cause"),
+    [
+        # Review blocker: `mount --bind /etc /srv/etc-alias`; realpath keeps the alias.
+        (
+            "2 1 8:1 /etc /srv/etc-alias rw - ext4 /dev/sda1 rw\n",
+            "/srv/etc-alias/ssh",
+            "system",
+        ),
+        (
+            "2 1 8:1 /etc /srv/with\\040space rw - ext4 /dev/sda1 rw\n",
+            "/srv/with space/ssh",
+            "system",
+        ),
+        # A home on its own disk, bound into /srv.
+        (
+            "3 1 8:17 / /home rw - ext4 /dev/sdb1 rw\n"
+            "4 1 8:17 /person /srv/person rw - ext4 /dev/sdb1 rw\n",
+            "/srv/person/projects",
+            "home",
+        ),
+        # The system disk mounted a second time shows Eugene's own folder.
+        (
+            "5 1 8:1 / /mnt/system rw - ext4 /dev/sda1 rw\n",
+            "/mnt/system/srv/install/apps",
+            "eugene",
+        ),
+        # A data disk bound into /srv is an ordinary shared folder.
+        (
+            "6 1 8:33 / /data rw - ext4 /dev/sdc1 rw\n"
+            "7 1 8:33 /projects /srv/projects rw - ext4 /dev/sdc1 rw\n",
+            "/srv/projects/acme",
+            None,
+        ),
+        ("", "/srv/projects/acme", None),
+    ],
+)
+def test_helper_refuses_a_mount_alias_of_a_protected_folder(
+    monkeypatch, mounts, path, cause
+):
+    import re
+    import sys
+    from pathlib import PurePosixPath
+
+    h = helper()
+    h.mount_table = lambda: MOUNT_ROOT + mounts
+    monkeypatch.setitem(
+        sys.modules,
+        "pwd",
+        SimpleNamespace(getpwall=lambda: [SimpleNamespace(pw_dir="/home/person")]),
+    )
+    monkeypatch.setattr(h, "Path", PurePosixPath)
+    monkeypatch.setattr(h.os.path, "realpath", lambda path, **kw: path)
+    monkeypatch.setattr(h.os.path, "isdir", lambda path: True)
+    monkeypatch.setattr(h.os.path, "ismount", lambda path: False)
+    if cause is None:
+        h.refuse(path, "/srv/install")
+    else:
+        with pytest.raises(ValueError, match=f"^{cause}: {re.escape(path)} is /"):
+            h.refuse(path, "/srv/install")
+
+
+def test_helper_fails_closed_without_the_mount_table(monkeypatch):
+    import sys
+    from pathlib import PurePosixPath
+
+    h = helper()
+
+    def unreadable():
+        raise PermissionError("mountinfo")
+
+    h.mount_table = unreadable
+    monkeypatch.setitem(sys.modules, "pwd", SimpleNamespace(getpwall=lambda: []))
+    monkeypatch.setattr(h, "Path", PurePosixPath)
+    monkeypatch.setattr(h.os.path, "realpath", lambda path, **kw: path)
+    monkeypatch.setattr(h.os.path, "isdir", lambda path: True)
+    monkeypatch.setattr(h.os.path, "ismount", lambda path: False)
+    with pytest.raises(PermissionError):
+        h.refuse("/srv/projects/acme", "/srv/install")
+
+
 @pytest.mark.skipif(__import__("sys").platform != "linux", reason="Linux ACL tools")
 def test_revoke_removes_owned_group_after_growth_and_chmod(tmp_path):
     h = helper()
@@ -624,6 +710,48 @@ def fake_tree(monkeypatch):
     )
 
 
+def test_revoke_keeps_an_entry_the_group_had_before_the_grant(fake_tree):
+    """Review: removal deleted a by-hand entry for Eugene's own group."""
+    f = fake_tree
+    seed = f.add("seed.txt")
+    f.acl[seed].update({"group:1001": "r--", "mask:": "r--"})
+    by_hand = f.acl[seed].copy()
+    record = {}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    assert f.h.revoke(10, record)
+    assert f.acl[seed] == by_hand
+
+
+def test_revoke_restores_an_entry_the_grant_widened(fake_tree):
+    f = fake_tree
+    sub = f.add("sub", stat.S_IFDIR | 0o700)
+    f.acl[sub] = {
+        "user:": "rwx",
+        "group:": "---",
+        "other:": "---",
+        "group:1001": "r-x",
+        "mask:": "r-x",
+    }
+    before = f.acl[sub].copy()
+    record = {}
+    f.h.grant(10, "1001", True, record, lambda _: None)
+    assert f.acl[sub]["group:1001"] == "rwx"
+    assert f.h.revoke(10, record)
+    assert f.acl[sub] == before
+
+
+def test_revoke_restores_the_exact_acl_of_an_item_nobody_changed(fake_tree):
+    """No mask or default entry is left behind where nothing else changed."""
+    f = fake_tree
+    seed = f.add("seed.txt")
+    before = {fd: f.acl[fd].copy() for fd in (10, seed)}
+    record = {}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    assert "mask:" in f.acl[seed] and "default:mask:" in f.acl[10]
+    assert f.h.revoke(10, record)
+    assert {fd: f.acl[fd] for fd in (10, seed)} == before
+
+
 @pytest.mark.parametrize("stage", ["stat", "open"])
 def test_revoke_continues_after_a_child_vanishes(fake_tree, stage):
     f = fake_tree
@@ -721,6 +849,7 @@ def test_grant_then_home_policy_still_inspects_and_revokes(
 
     monkeypatch.setattr(f.h, "opened", opened)
     before = f.h.inspect_folder("/srv/shared", "/srv/install")
+    original = f.acl[10].copy()
     record = {"path": "/srv/shared", "identity": before["identity"]}
     assert f.h.grant(10, "1001", False, record, lambda _: None)
     homes.append("/srv/shared/person")
@@ -733,8 +862,8 @@ def test_grant_then_home_policy_still_inspects_and_revokes(
     f.h.main()
     assert json.loads(capsys.readouterr().out)["removed"]
     assert json.loads(target.read_text())["removed"]
-    assert any("-x" in call for call in f.calls)
-    assert "group:1001" not in f.acl[10]
+    assert any(call[0] == "setfacl" for call in f.calls)
+    assert f.acl[10] == original
 
 
 @pytest.mark.parametrize("replaced", [False, True])
@@ -1337,18 +1466,21 @@ def test_windows_probe_service_is_registered_like_an_app_and_can_read_its_script
     )
     with pytest.raises(AssertionError, match="did not start: 1053\ndiagnostics"):
         module.windows(tmp_path)
-    _, name, account, command = events[0]
-    assert account == "NT SERVICE\\" + name
+    created = [event for event in events if event[0] == "create"]
+    assert [event[1] for event in created] == ["EpR23Probe", "EpR23Other"]
     script = tmp_path / "probe" / "service_probe.py"
     assert script.is_file()
-    assert f' -I -u "{script}" "{tmp_path / "probe-io"}" {name}' in command
     grants = {
-        args[1]: args[3]
+        (args[1], args[3])
         for args in events
-        if args[0] == "icacls" and args[2] == "/grant:r"
+        if args[0] == "icacls" and args[2] in ("/grant", "/grant:r")
     }
-    assert grants[str(script.parent)] == account + ":(OI)(CI)(RX)"
-    assert grants[str(tmp_path / "probe-io")] == account + ":(OI)(CI)(M)"
+    for _, name, account, command in created:
+        assert account == "NT SERVICE\\" + name
+        own_io = tmp_path / ("probe-io" if name == "EpR23Probe" else "other-io")
+        assert f' -I -u "{script}" "{own_io}" {name}' in command
+        assert (str(script.parent), account + ":(OI)(CI)(RX)") in grants
+        assert (str(own_io), account + ":(OI)(CI)(M)") in grants
     last_grant = max(i for i, args in enumerate(events) if args[0] == "icacls")
-    assert events.index(("start", name)) > last_grant
-    assert events[-1] == ("remove", name)
+    assert events.index(("start", "EpR23Probe")) > last_grant
+    assert events[-2:] == [("remove", "EpR23Probe"), ("remove", "EpR23Other")]

@@ -129,6 +129,20 @@ def answer(request):
     reply.update(identity())
     reply['writtenFile'] = 'app-created-' + request['id'] + '.txt'
     folder = Path(request['path'])
+    if request.get('protect'):
+        # What the app's own account may do to a folder it made: close it to
+        # inheritance, which turns inherited entries into explicit copies.
+        import subprocess
+        made = folder / request['protect']
+        try:
+            made.mkdir(exist_ok=True)
+            (made / 'secret.txt').write_text('app secret')
+            subprocess.run(['icacls', str(made), '/inheritance:d'], check=True,
+                           capture_output=True, timeout=60)
+            reply['protected'] = True
+        except (OSError, subprocess.SubprocessError) as exc:
+            reply['protected'] = False
+            reply['protectError'] = str(exc)
     for name, action in [('read', lambda: (folder / request.get('readFile', 'seed.txt')).read_text()),
                          ('write', lambda: (folder / reply['writtenFile']).write_text('app data'))]:
         try:
@@ -229,11 +243,11 @@ def probe_log(directory: Path) -> str:
         return "The probe wrote no log, so its interpreter never ran its first line."
 
 
-def probe(directory: Path, path: Path, read_file: str = "seed.txt") -> dict:
+def probe(directory: Path, path: Path, read_file: str = "seed.txt", **extra) -> dict:
     ident = uuid.uuid4().hex
     temp = directory / "command.new"
     temp.write_text(
-        json.dumps({"id": ident, "path": str(path), "readFile": read_file}),
+        json.dumps({"id": ident, "path": str(path), "readFile": read_file, **extra}),
         encoding="utf-8",
     )
     replace(temp, directory / "command.json")
@@ -258,9 +272,9 @@ def assert_app_revoked(io, folder, created):
         assert not observed["read"] and not observed["write"], (file, observed)
 
 
-def root_refusals(ctl, broker, link, owner):
+def root_refusals(ctl, broker, link, owner, extra=()):
     """Bypass the unprivileged agent: the installed root broker must refuse."""
-    for path, cause in (("/etc", "system:"), (str(link), "link:")):
+    for path, cause in (("/etc", "system:"), (str(link), "link:"), *extra):
         ident = uuid.uuid4().hex
         request = ctl / (ident + ".path")
         request.write_text(path)
@@ -385,7 +399,7 @@ def refusals(root: Path) -> None:
     own = root / "eugene"
     own.mkdir()
     target = root / "target"
-    target.mkdir()
+    (target / "sub").mkdir(parents=True)
     link = root / "link"
     subprocess.run(
         ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(target)],
@@ -403,6 +417,8 @@ def refusals(root: Path) -> None:
             (str(own), "eugene"),
             (str(Path.home()), "home"),
             (str(link), "link"),
+            # A junction part-way along the path is refused too.
+            (str(link / "sub"), "link"),
             (r"\\unreachable.invalid\share", "network"),
             (str(root / "missing"), "not_a_folder"),
         ],
@@ -485,6 +501,8 @@ def linux(specs: Path) -> None:
     unit = "eugene-plexus-app@workbench.service"
     drop = Path("/etc/systemd/system/" + unit + ".d")
     io = Path("/var/lib/eugene-plexus-apps/workbench")
+    alias = root / "etc-alias"
+    other = "ep-r23-other"
     try:
         step("Linux: install the units, the shell broker and the root helper")
         run("bash", str(setup))
@@ -539,9 +557,18 @@ def linux(specs: Path) -> None:
         wait_for(io.is_dir, what="Workbench's state directory")
         link = root / "root-refusal-link"
         link.symlink_to("/etc", target_is_directory=True)
-        step("Linux: the root broker itself refuses /etc and a link to it")
+        # Review blocker: a bind mount gives /etc a second name that realpath
+        # keeps. Read-only, so nothing can write through it into /etc.
+        alias.mkdir()
+        run("mount", "--bind", "/etc", str(alias))
+        run("mount", "-o", "remount,bind,ro", str(alias))
+        step("Linux: the root broker itself refuses /etc, a link to it and a bind mount of it")
         root_refusals(
-            ctl, broker, link, lambda p: os.chown(p, runner.pw_uid, runner.pw_gid)
+            ctl,
+            broker,
+            link,
+            lambda p: os.chown(p, runner.pw_uid, runner.pw_gid),
+            extra=[(str(alias / "systemd"), "system:")],
         )
         group_name = (
             "eapp-" + hashlib.sha256(b"workbench").hexdigest()[:12] + "-files"
@@ -587,29 +614,62 @@ def linux(specs: Path) -> None:
                     (str(in_home), "home"),
                     (str(refusal_link), "link"),
                     (str(link), "link"),
+                    (str(alias / "systemd"), "system"),
                     ("//unreachable.invalid/share", "network"),
                     (str(root / "missing"), "not_a_folder"),
                 ]
             ),
         )["ok"]
+        run("umount", str(alias))
+        assert not os.path.ismount(alias)
         folder = root / "f\u00fc project %data"
         folder.mkdir(mode=0o700)
         (folder / "seed.txt").write_text("project data")
         (folder / "seed.txt").chmod(0o600)
         run("setfacl", "-m", "u:65534:r-x", str(folder))
+        # Negative controls: an unrelated account, and a folder beside it.
+        run("useradd", "--system", "--no-create-home", "--shell", "/usr/sbin/nologin", other)
+        outside = root / "outside"
+        outside.mkdir(mode=0o700)
+        (outside / "seed.txt").write_text("outside")
+        (outside / "seed.txt").chmod(0o600)
+
+        def unrelated(path):
+            """What the unrelated account can do: (read, write)."""
+            reads = subprocess.run(
+                ["runuser", "-u", other, "--", "cat", str(path / "seed.txt")],
+                capture_output=True,
+                timeout=60,
+            )
+            writes = subprocess.run(
+                ["runuser", "-u", other, "--", "sh", "-c", 'echo x > "$1"', "sh",
+                 str(path / "unrelated.txt")],
+                capture_output=True,
+                timeout=60,
+            )
+            return reads.returncode == 0, writes.returncode == 0
+
+        def acls(path):
+            return [run("getfacl", "-cpnE", str(p)) for p in (path, path / "seed.txt")]
+
         step("Linux: Workbench cannot read the folder before a grant")
         before = probe(io, folder)
         assert not before["read"] and not before["write"]
-        step("Linux: a read grant lets Workbench read, not write")
+        untouched = acls(folder)
+        step("Linux: a read grant lets Workbench read, not write; nobody else gains")
         read = agent("add", str(folder), "read")
         assert read["state"] == "ready", read
         observed = probe(io, folder)
         assert observed["read"] and not observed["write"], observed
         assert int(group) in observed["groups"] and observed["uid"] != runner.pw_uid
-        step("Linux: removing the read grant closes the folder")
+        assert unrelated(folder) == (False, False)
+        beside = probe(io, outside)
+        assert not beside["read"] and not beside["write"], beside
+        step("Linux: removing the read grant restores the folder's ACLs exactly")
         assert agent("remove", read["id"])["state"] == "removed"
         assert not probe(io, folder)["read"]
-        step("Linux: a write grant needs a restart, then Workbench writes")
+        assert acls(folder) == untouched
+        step("Linux: a write grant needs a restart, then Workbench writes; nobody else gains")
         write = agent("add", str(folder), "write")
         assert write["state"] == "ready" and write["restartNeeded"], write
         assert not probe(io, folder)["write"]
@@ -620,6 +680,9 @@ def linux(specs: Path) -> None:
         assert observed["read"] and observed["write"], observed
         created = folder / observed["writtenFile"]
         assert not agent("list")["restartNeeded"]
+        assert unrelated(folder) == (False, False)
+        beside = probe(io, outside)
+        assert not beside["read"] and not beside["write"], beside
         # Reopen the agent's durable record; chmod and new inherited files
         # must not prevent revocation, or undo another principal's entry.
         step("Linux: removing the write grant closes the folder and the app's file")
@@ -672,6 +735,20 @@ def linux(specs: Path) -> None:
         assert agent("list")["id"] == parent_read["id"]
         assert agent("remove", parent_read["id"])["state"] == "removed"
         assert not probe(io, child)["read"]
+        # Review: removal deleted a by-hand entry for Eugene's own group.
+        step("Linux: an entry for Eugene's group made by hand stays after a removal")
+        manual = root / "manual"
+        manual.mkdir(mode=0o700)
+        (manual / "seed.txt").write_text("by hand")
+        (manual / "seed.txt").chmod(0o600)
+        run("setfacl", "-m", f"g:{group}:r--", str(manual / "seed.txt"))
+        by_hand = run("getfacl", "-cpnE", str(manual / "seed.txt"))
+        grant = agent("add", str(manual), "read")
+        assert grant["state"] == "ready", grant
+        assert probe(io, manual)["read"]
+        assert agent("remove", grant["id"])["state"] == "removed"
+        assert run("getfacl", "-cpnE", str(manual / "seed.txt")) == by_hand
+        assert not probe(io, manual)["read"]
         # Real parser, masked named user AND owning group, unchanged on failure.
         step("Linux: a masked ACL entry is refused and left unchanged")
         for entry in ("u:65534:rwx", "g::rwx"):
@@ -716,8 +793,19 @@ def linux(specs: Path) -> None:
             check=False,
             timeout=120,
         )
+        subprocess.run(["umount", str(alias)], check=False, capture_output=True, timeout=60)
+        subprocess.run(["userdel", other], check=False, capture_output=True, timeout=60)
         # Dedicated paths created above on an explicitly disposable runner.
+        # Never delete through a mount: the bind mount above shows /etc.
+        mounted = [
+            line.split()[4]
+            for line in Path("/proc/self/mountinfo").read_text().splitlines()
+            if line.split()[4].startswith(str(root) + "/")
+        ]
         for target in (drop, Path("/etc/eugene-plexus/folder-access/workbench"), root):
+            if target == root and mounted:
+                step(f"Linux: {root} still holds mounts {mounted}; it stays on this runner")
+                continue
             if target.exists():
                 shutil.rmtree(target)
         run("systemctl", "daemon-reload")
@@ -841,29 +929,65 @@ def windows(root: Path) -> None:
     closed.mkdir()
     (closed / "seed.txt").write_text("keep closed")
     private(closed)
+    # Negative controls: a folder beside the granted one, and an unrelated
+    # service account that is never given anything.
+    outside = root / "outside"
+    outside.mkdir()
+    (outside / "seed.txt").write_text("outside")
+    private(outside)
+    other = "EpR23Other"
+    other_account = "NT SERVICE\\" + other
+    other_io = root / "other-io"
+    other_io.mkdir()
     # The base interpreter, as `app_accounts.base_interpreter` picks it:
     # a service must be the process the service manager started.
     python = getattr(sys, "_base_executable", None) or sys.executable
-    step(f"Windows: register {account} the way the agent registers an app")
+    step(f"Windows: register {account} and {other_account} the way the agent registers an app")
     create_service(name, account, f'"{python}" -I -u "{script}" "{io}" {name}')
+    create_service(other, other_account, f'"{python}" -I -u "{script}" "{other_io}" {other}')
+
+    def holders(tree):
+        """Every item under `tree` whose DACL names the probe's account."""
+        found = []
+        for item in [tree, *tree.rglob("*")]:
+            acl = ws.GetFileSecurity(str(item), 4).GetSecurityDescriptorDacl()
+            if acl is not None and any(
+                ws.ConvertSidToStringSid(acl.GetAce(i)[-1]) == sid_text
+                for i in range(acl.GetAceCount())
+            ):
+                found.append(str(item))
+        return found
+
+    def dacls(path):
+        return [
+            ws.ConvertSecurityDescriptorToStringSecurityDescriptor(
+                ws.GetFileSecurity(str(p), 4), 1, 4
+            )
+            for p in (path, path / "seed.txt")
+        ]
+
     try:
-        run("icacls", str(home), "/grant:r", account + ":(OI)(CI)(RX)")
-        run("icacls", str(io), "/grant:r", account + ":(OI)(CI)(M)")
+        for account_name, own_io in ((account, io), (other_account, other_io)):
+            run("icacls", str(home), "/grant", account_name + ":(OI)(CI)(RX)")
+            run("icacls", str(own_io), "/grant:r", account_name + ":(OI)(CI)(M)")
         sid_text = ws.ConvertSidToStringSid(ws.LookupAccountName(None, account)[0])
-        step("Windows: start the probe service")
-        try:
-            win32serviceutil.StartService(name)
-        except Exception as exc:
-            raise AssertionError(
-                f"The probe service did not start: {exc}\n{service_diagnostics(name, io)}"
-            ) from exc
+        step("Windows: start the probe services")
+        for service, service_io in ((name, io), (other, other_io)):
+            try:
+                win32serviceutil.StartService(service)
+            except Exception as exc:
+                raise AssertionError(
+                    f"The probe service {service} did not start: {exc}\n"
+                    f"{service_diagnostics(service, service_io)}"
+                ) from exc
         step("Windows: the service's account cannot open the folder before a grant")
         before = probe(io, folder)
         assert sid_text in before["sids"], before
         assert not before["read"] and not before["write"], before
+        untouched = dacls(folder)
         backend = WindowsPermissions(account, eugene=(), homes=())
         access = Access(root / "folder-access.json", backend)
-        step("Windows: a read grant lets the service read, not write")
+        step("Windows: a read grant lets the service read, not write; nobody else gains")
         read = access.add("workbench", str(folder), "read", "acceptance")
         assert read.state == "ready", read.message
         assert read.notInheriting == 1
@@ -871,23 +995,43 @@ def windows(root: Path) -> None:
         assert not denied["read"] and not denied["write"], denied
         observed = probe(io, folder)
         assert observed["read"] and not observed["write"], observed
-        step("Windows: the record survives a reopen, and its release closes the folder")
+        unrelated = probe(other_io, folder)
+        assert not unrelated["read"] and not unrelated["write"], unrelated
+        beside = probe(io, outside)
+        assert not beside["read"] and not beside["write"], beside
+        step("Windows: the record survives a reopen, and its release restores the DACLs")
         reopened = Access(access.file, backend)
         assert reopened.listing("workbench")[0].id == read.id
         assert reopened.release("workbench", read.id)[0].state == "removed"
         assert not probe(io, folder)["read"]
-        step("Windows: a write grant lets the service write")
+        assert holders(folder) == []
+        assert dacls(folder) == untouched
+        step("Windows: a write grant lets the service write; nobody else gains")
         write = access.add("workbench", str(folder), "write", "acceptance")
         assert write.state == "ready", write.message
         observed = probe(io, folder)
         assert observed["read"] and observed["write"], observed
         created = folder / observed["writtenFile"]
-        step("Windows: removing the write grant closes the folder and the app's file")
+        unrelated = probe(other_io, folder)
+        assert not unrelated["read"] and not unrelated["write"], unrelated
+        beside = probe(io, outside)
+        assert not beside["read"] and not beside["write"], beside
+        # Review blocker: the app closes a folder it made to inheritance, so
+        # Eugene's inherited entry becomes an explicit copy in that folder.
+        step("Windows: the app protects a folder it made; removal still takes its access")
+        protected = probe(io, folder, protect="keep")
+        assert protected.get("protected"), protected
+        keep = folder / "keep"
+        assert str(keep) in holders(folder)
+        step("Windows: removing the write grant closes the folder and the app's files")
         assert access.remove("workbench", write.id).state == "removed"
         revoked = probe(io, folder)
         assert not revoked["read"] and not revoked["write"], revoked
         assert_app_revoked(io, folder, created)
         assert created.read_text() == "app data"
+        locked = probe(io, keep, "secret.txt")
+        assert not locked["read"] and not locked["write"], locked
+        assert holders(folder) == []
         step("Windows: an entry made outside Eugene stays after a removal")
         manual, _, _ = backend.grant(str(folder), "read", lambda _: None)
         existing = access.add("workbench", str(folder), "read", "acceptance")
@@ -895,6 +1039,20 @@ def windows(root: Path) -> None:
         assert access.remove("workbench", existing.id).state == "removed"
         assert probe(io, folder)["read"]
         assert backend.revoke(str(folder), manual)
+        assert holders(folder) == []
+        step("Windows: a grant inside another grant is refused, naming the outer one")
+        sub = folder / "sub"
+        sub.mkdir()
+        outer = access.add("workbench", str(folder), "read", "acceptance")
+        assert outer.state == "ready", outer.message
+        try:
+            access.add("workbench", str(sub), "write", "acceptance")
+        except ValueError as exc:
+            assert "is inside" in str(exc) and str(folder).lower() in str(exc).lower(), exc
+        else:
+            raise AssertionError("A grant inside another grant was accepted")
+        assert access.remove("workbench", outer.id).state == "removed"
+        assert holders(folder) == []
         step("Windows: a folder swapped for a junction is left alone, and so is the target")
         swap, target = root / "swap", root / "swap-target"
         swap.mkdir()
@@ -931,6 +1089,7 @@ def windows(root: Path) -> None:
     finally:
         step("Windows: clean up")
         remove_service(name)
+        remove_service(other)
 
 
 def main() -> None:
@@ -968,6 +1127,10 @@ def main() -> None:
                         "growth/chmod revoke",
                         "deleted folder restart",
                         "unsafe parent refusal",
+                        "bind mount alias of /etc refused by the broker and the agent",
+                        "by-hand entry for Eugene's group kept",
+                        "read grant removal restores the exact ACLs",
+                        "unrelated account and outside folder gain nothing",
                     ],
                 }
             ),
@@ -1017,6 +1180,10 @@ def main() -> None:
                             "HTTP app-key lookup, id release, foreign id refusal",
                             "preexisting ACL preservation",
                             "refusals and authenticated routes",
+                            "folder protected by the app after a grant loses the access",
+                            "grant inside another grant refused",
+                            "read grant removal restores the exact DACLs",
+                            "unrelated service account and outside folder gain nothing",
                         ],
                     }
                 ),
