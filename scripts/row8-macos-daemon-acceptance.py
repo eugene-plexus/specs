@@ -1037,9 +1037,11 @@ def phase_plant_before_move(ctx: dict) -> None:
 
 
 FORGED = HOME / "row8-forged" / "vllm"
-#: In another case than the daemon reads (8c re-review): a Mac's volume
-#: ignores case, so carried, this would be its `exec-approvals.json`.
-FORGED_NAME = "Exec-Approvals.json"
+#: A spelling only the volume can tell from `exec-approvals.json` (8c
+#: re-reviews): `ſ` (U+017F) folds to `s` on APFS, so carried, this would be
+#: the daemon's file. The move clears the copy of the name by lookup; on a
+#: volume that does not fold it, it crosses and nothing reads it.
+FORGED_NAME = "exec-approval\u017f.json"
 
 
 def forge_approval() -> dict:
@@ -1069,6 +1071,9 @@ def forge_approval() -> dict:
     }
     (USER_PREFIX / FORGED_NAME).write_text(json.dumps({"approvals": [approval]}),
                                                      encoding="utf-8")
+    # Observed, not inferred: whether this volume takes the two as one.
+    approval["folds"] = (USER_PREFIX / "exec-approvals.json").exists()
+    fact("the volume takes exec-approval\u017f.json for exec-approvals.json", approval["folds"])
     return approval
 
 
@@ -1078,15 +1083,17 @@ def phase_forged_approval_after_move(ctx: dict, said: str) -> None:
     that program binds exactly what the planted one did -- so, carried, it
     would have been honoured."""
     forged = ctx.get("forged") or {}
-    claim = ("an approval planted in the per-user install, in another case, does not cross: the daemon "
-             "asks before running the program it named, though it bound exactly what the owner's own "
-             "approval binds")
+    claim = ("an approval planted in the per-user install as exec-approval\u017f.json does not reach the "
+             "daemon: the daemon asks before running the program it named, though it bound exactly what "
+             "the owner's own approval binds")
     if "error" in forged or not forged:
         check("11j", claim, False, forged.get("error") or "nothing was planted")
         return
-    # Either spelling: on a volume that ignores case they are one file.
-    kept = any(sudo("test", "-e", str(PREFIX / name), timeout=20).returncode == 0
-               for name in ("exec-approvals.json", FORGED_NAME))
+    # What the daemon would read, by its own spelling: on a volume that folds
+    # the two, the move must have taken it out of the copy, and said so.
+    kept = sudo("test", "-e", str(PREFIX / "exec-approvals.json"), timeout=20).returncode == 0
+    folds = bool(forged.get("folds"))
+    said_it = "did not carry exec-approvals.json (the old install held a name this volume takes" in said
     entry = _engine_said(ctx, str(FORGED))
     trust = entry.get("execTrust") or {}
     status, approval = api("POST", f"{ctx['base']}/v1/exec-approvals", ctx["token"],
@@ -1095,10 +1102,11 @@ def phase_forged_approval_after_move(ctx: dict, said: str) -> None:
     same = {key: approval.get(key) == forged.get(key)
             for key in ("path", "accountUid", "sha256", "chain")}
     check("11j", claim,
-          not kept and f"did not carry {FORGED_NAME}" in said
+          not kept and (said_it or not folds)
           and trust.get("kind") == "needs_approval" and status == 201 and all(same.values()),
-          {"carried": kept, "execTrust": trust, "approve": status, "same as planted": same,
-           "said": [line for line in said.splitlines() if "exec-approvals" in line.lower()][:2]})
+          {"daemon's file there": kept, "volume folds": folds, "said": said_it, "execTrust": trust,
+           "approve": status, "same as planted": same,
+           "words": [line for line in said.splitlines() if "exec-approval" in line.lower()][:2]})
     if approval.get("id"):
         api("DELETE", f"{ctx['base']}/v1/exec-approvals/{approval['id']}", ctx["token"])
     api("PATCH", f"{ctx['base']}/v1/config", ctx["token"], {"vllmBinary": None})

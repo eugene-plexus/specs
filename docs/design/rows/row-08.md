@@ -328,6 +328,18 @@ Also from the review: the SHA-256 answer is no longer kept between checks. A fil
    - When the approvals file cannot be written, the dropped approvals stay refused in memory, and the next write that succeeds takes them out of the file.
    - *Default built:* that memory is the process's. If the agent restarts before any write succeeds, an approval still in the file is read again. The file is the account's own, and nothing else writes it.
 
+**The second re-review (Codex, 2026-10-24) found three blockers and one more.** The orchestrator chose structural fixes over more fingerprints. Each fix has a check that failed first, and was sabotaged once and caught: 9 in the agent, 5 in the installer.
+1. *Unicode folding.* APFS folds more than ASCII case: `exec-approvalſ.json` (U+017F) is `exec-approvals.json`, and no list here can hold every spelling. So after the copy, the move removes each reserved name by its own spelling and lets the volume decide what that lookup reaches.
+   - The reserved names are the approvals file, the folders it never carries, `.engine-records`, and each app's `versions`.
+   - The move stops, naming the file, if anything is still there.
+   - `bin` was made before the copy, so it must hold afterwards what it held before.
+   - Python code needs nothing more: imports check a name exactly.
+   - Stub checks: M4d checks that the removals happen after the copy and before the records. M5c covers a name that will not go, and M5d the copy landing in `bin`; both refuse the move and put it back.
+   - Acceptance 11j plants `exec-approvalſ.json` on the macOS runners. It records whether the volume takes it for `exec-approvals.json`, and requires that the daemon's file is not there, that the move said so when the volume folds, and that the daemon asks. On a volume that does not fold, the spelling crosses and nothing reads it.
+2. *A padded `env`, and any program that runs its argument.* Fingerprints cannot tell what a program does: `env` plus one byte, `sh` with a script, `nice` and `timeout` all run what follows them. So every word after a shebang's interpreter that holds a `/`, from that first `/` (so `--file=/x` and `-f/x` too), is checked like a program. The verdict is the worst of all of them. A folder given to an interpreter (`-I/usr/share/perl`) is checked as a folder. The env fingerprint stays, because it costs one small hash, but it is no longer the defence.
+3. *An empty PATH.* An empty PATH, or one with an empty folder in it, searches the folder the engine starts in. `search_path` never returns either: when no folder passes, the engine is not started, and the message names the first folder's cause.
+4. *Revocation through another name.* A check now records the file it reached, its path and its (device, inode), even when it stops there. A refusal then drops every approval whose chain holds that file under any name: through another link, as a hard link, or as the interpreter that runs a script.
+
 **Not covered, and why:**
 - Windows, as before.
 - What an app or a tool server starts, as before.

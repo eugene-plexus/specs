@@ -135,6 +135,20 @@ fi
 cat >/dev/null 2>&1 || true
 exit 0
 STUB
+  # rm, except that EP_STUB_RM_KEEPS names a file it leaves in place: a
+  # name a volume will not let go of, as far as the installer can tell.
+  cat > "$bin/rm" <<'STUB'
+#!/bin/sh
+if [ -n "${EP_STUB_RM_KEEPS:-}" ]; then
+  for a in "$@"; do
+    case "$a" in
+      */"$EP_STUB_RM_KEEPS") /bin/rm "$@"; : > "$a"; exit 0 ;;
+    esac
+  done
+fi
+exec /bin/rm "$@"
+STUB
+  chmod +x "$bin/rm"
   # The agent: records every argument on a line of its own.
   cat > "$bin/agent-stub" <<'STUB'
 #!/bin/sh
@@ -477,6 +491,17 @@ for a do
   case "$a" in --no-fflags|--no-mac-metadata) continue ;; esac
   set -- "$@" "$a"
 done
+# EP_STUB_TAR_MERGE_BIN: the move's copy also lands a file in the
+# destination's bin, what a volume does with a name it takes for `bin`.
+if [ -n "${EP_STUB_TAR_MERGE_BIN:-}" ]; then
+  "$real" "$@" || exit $?
+  last=
+  for a in "$@"; do
+    case "$last" in -C) case "$a" in */.) : > "${a%/.}/bin/planted" ;; esac ;; esac
+    last=$a
+  done
+  exit 0
+fi
 exec "$real" "$@"
 STUB
   # df: the real one, or a disk with EP_STUB_DF_FREE_KB free; with
@@ -860,6 +885,10 @@ YAML
   # so `Exec-Approvals.json` would be the daemon's `exec-approvals.json`,
   # `Engines` its engine store, an app's `Versions` its environments.
   printf '{"approvals": [{"id": "forged"}]}\n' > "$old/Exec-Approvals.json"
+  # And one only the volume can tell apart (8c re-review 2): `ſ` (U+017F)
+  # folds to `s` on a Mac. Here, case-sensitive, it crosses and nothing
+  # reads it; the copy is cleared of each reserved name by lookup.
+  printf '{"approvals": [{"id": "forged"}]}\n' > "$old/exec-approval$(printf '\305\277').json"
   mkdir -p "$old/Engines/llama_cpp/b9" "$old/apps/tiny/Versions/v1/venv/bin"
   printf '#!/bin/sh\necho planted\n' > "$old/Engines/llama_cpp/b9/llama-server"
   printf '#!/bin/sh\necho planted\n' > "$old/apps/tiny/Versions/v1/venv/bin/python"
@@ -1102,6 +1131,26 @@ if [ ! -e "$PREFIX/exec-approvals.json" ] \
 else
   bad "approvals: $(ls -l "$PREFIX/exec-approvals.json" 2>&1)"; show "$OUT" 8
 fi
+# And whatever else the volume takes as the same name: after the copy, each
+# reserved name is removed from it by its own spelling (the volume answers
+# the lookup), before the engine records are written.
+extract_at=$(grep -n -- "-f $PREFIX/.move.tar -C $PREFIX/.$" "$STATE/sudo.log" | head -n 1 | cut -d: -f1)
+records_at=$(grep -n -- "-C $PREFIX/.engine-records" "$STATE/sudo.log" | head -n 1 | cut -d: -f1)
+missing=
+for reserved in exec-approvals.json venv pythons .cache uninstall update engines eugene-mlx \
+    install-check.py release-requirements.lock .engine-records apps/tiny/versions; do
+  at=$(grep -n -- "-- env .* rm -rf $PREFIX/$reserved\$" "$STATE/sudo.log" | head -n 1 | cut -d: -f1)
+  if [ -z "$at" ] || [ -z "$extract_at" ] || [ "$at" -lt "$extract_at" ] \
+      || { [ -n "$records_at" ] && [ "$at" -gt "$records_at" ]; }; then
+    missing="$missing $reserved@${at:-none}"
+  fi
+done
+if [ -z "$missing" ] && [ -e "$PREFIX/exec-approval$(printf '\305\277').json" ] \
+    && [ ! -e "$PREFIX/exec-approvals.json" ]; then
+  ok "each reserved name was removed from the copy by lookup, after it and before the records"
+else
+  bad "not removed by lookup in order (copy at ${extract_at:-none}, records at ${records_at:-none}):$missing"
+fi
 # Names are matched whatever their case: a Mac's volume ignores it.
 other_case=$(find "$PREFIX" -iname 'exec-approvals.json' -o -name 'Engines' -o -name 'Versions' 2>/dev/null)
 if [ -z "$other_case" ] \
@@ -1142,6 +1191,37 @@ if [ ! -e "$PREFIX" ] && [ ! -f "$DAEMON" ] && [ ! -f "$ROOT/receipts/account.tx
   ok "the copy, the daemon plist and the account this run made are gone"
 else
   bad "left: prefix=$([ -e "$PREFIX" ] && echo yes || echo no) daemon=$([ -f "$DAEMON" ] && echo yes || echo no) receipt=$([ -f "$ROOT/receipts/account.txt" ] && echo yes || echo no)"
+fi
+
+say "M5c. a reserved name the copy will not let go of stops the move, and puts it back"
+rm -rf "$WORK/reserved"
+mkdir -p "$WORK/reserved/home"
+old_install "$WORK/reserved/home"
+OLD=$WORK/reserved/home/.local/share/eugene-plexus
+BEFORE=$(cd "$OLD" && find . -type f -exec sha256sum {} + | sort)
+EP_EXTRA_ENV=EP_STUB_RM_KEEPS=exec-approvals.json run_mac reserved
+if [ "$RC" != 0 ] \
+    && printf '%s' "$OUT" | grep -q "the copy still holds $PREFIX/exec-approvals.json after it was removed" \
+    && printf '%s' "$OUT" | grep -q 'Eugene runs again from' \
+    && [ "$(cd "$OLD" 2>/dev/null && find . -type f -exec sha256sum {} + | sort)" = "$BEFORE" ] \
+    && [ ! -e "$PREFIX" ]; then
+  ok "refused naming the file; the LaunchAgent runs again from the untouched old folder; the copy is gone"
+else
+  bad "rc=$RC prefix=$([ -e "$PREFIX" ] && echo kept || echo gone)"; show "$OUT" 10
+fi
+
+say "M5d. a copy that lands in bin under another name stops the move, and puts it back"
+rm -rf "$WORK/binmerge"
+mkdir -p "$WORK/binmerge/home"
+old_install "$WORK/binmerge/home"
+OLD=$WORK/binmerge/home/.local/share/eugene-plexus
+EP_EXTRA_ENV=EP_STUB_TAR_MERGE_BIN=1 run_mac binmerge
+if [ "$RC" != 0 ] \
+    && printf '%s' "$OUT" | grep -q "the copy put something into $PREFIX/bin, under a name this volume takes for bin" \
+    && printf '%s' "$OUT" | grep -q 'Eugene runs again from' && [ -d "$OLD" ] && [ ! -e "$PREFIX" ]; then
+  ok "refused naming bin; the LaunchAgent runs again; the copy is gone"
+else
+  bad "rc=$RC prefix=$([ -e "$PREFIX" ] && echo kept || echo gone)"; show "$OUT" 10
 fi
 
 say "M6. a move refuses --no-start, having changed nothing"

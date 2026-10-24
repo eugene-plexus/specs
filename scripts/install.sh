@@ -1977,8 +1977,10 @@ mac_migrate_copy() {
                 done ;;
         esac
     done
+    _bin_before=$(in_prefix ls -A "$PREFIX/bin")
     if [ "$#" -gt 0 ]; then mac_copy_as_person "$_old" . "$@"; fi
     MAC_COPY_EXCLUDE=
+    mac_migrate_reserved "$_bin_before"
     mac_migrate_engine_records
     in_prefix chmod 0750 "$PREFIX"
 }
@@ -1986,6 +1988,41 @@ mac_migrate_copy() {
 # NAME in lower case, to match a name the way a Mac's volume does.
 mac_lower() {
     printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
+# **Names that never cross are taken out of the copy by lookup** (row 8c,
+# second re-review). A Mac's volume takes more spellings as one name than
+# any list here can hold -- it folds case and more (`exec-approvalſ.json`,
+# with U+017F, is `exec-approvals.json`) -- so after the copy each reserved
+# name is removed by its own spelling, and the volume decides what that
+# reaches. Anything still there stops the move, naming it. `bin` was made
+# before the copy: it must hold what it held then. An app's `versions` goes
+# the same way. Python code needs nothing more: imports check a name
+# exactly, even where the volume ignores case.
+MAC_RESERVED="exec-approvals.json venv pythons .cache uninstall update engines eugene-mlx install-check.py release-requirements.lock .engine-records"
+mac_migrate_reserved() {
+    for _reserved in $MAC_RESERVED; do
+        mac_remove_by_lookup "$PREFIX/$_reserved"
+    done
+    for _app in "$PREFIX"/apps/*; do
+        in_prefix test -d "$_app" || continue
+        mac_remove_by_lookup "$_app/versions"
+    done
+    if [ "$(in_prefix ls -A "$PREFIX/bin")" != "$1" ]; then
+        die "the copy put something into $PREFIX/bin, under a name this volume takes for bin,
+       so Eugene was not moved. Nothing of the old install was changed."
+    fi
+}
+
+mac_remove_by_lookup() {
+    if in_prefix test -e "$1" || in_prefix test -L "$1"; then
+        say "did not carry ${1#"$PREFIX"/} (the old install held a name this volume takes for it)"
+    fi
+    in_prefix rm -rf "$1"
+    if in_prefix test -e "$1" || in_prefix test -L "$1"; then
+        die "the copy still holds $1 after it was removed, so Eugene was not moved.
+       Nothing of the old install was changed."
+    fi
 }
 
 # What the move leaves behind: what this install makes again, and what
