@@ -675,8 +675,6 @@ def exercise(directory: Path, *, live: bool) -> None:
         for content, param, words in (
             ([{"type": "text", "text": "hi"}, audio_part(fmt="wav")],
              "messages[0].content[1].input_audio", "declared wav"),
-            ([{"type": "text", "text": "hi"}, {"type": "file", "file": {"file_id": "file-abc123"}}],
-             "messages[0].content[1].file.file_id", "no file store"),
             ([{"type": "text", "text": "hi"}, {"type": "file", "file": {"filename": "z.pdf", "file_data": fox}}],
              "messages[0].content[1].file.file_data", "not a PDF"),
         ):
@@ -685,8 +683,15 @@ def exercise(directory: Path, *, live: bool) -> None:
             assert refused.status_code == 400, refused.text
             error = refused.json()["error"]
             assert error.get("param") == param and words in error["message"], error
+        # Row 53: a file_id is read from the install's store, and this install
+        # runs none, so it is a 503 naming the store, before any backend is asked.
+        stored = chat(key, "router/acme/reads",
+                      [{"type": "text", "text": "hi"}, {"type": "file", "file": {"file_id": "file-abc123"}}])
+        assert stored.status_code == 503, stored.text
+        assert stored.json()["error"]["message"].startswith("Eugene's store is not answering"), stored.text
         assert counts() == before, (before, counts())
-        ok("MP3 bytes declared wav, a file_id and an MP3 sent as a PDF are each refused by the gateway itself, naming the field")
+        ok("MP3 bytes declared wav and an MP3 sent as a PDF are each refused by the gateway itself, "
+           "naming the field; a file_id with no store running is a 503 naming the store")
 
         # --- 5. a bare-base64 PDF arrives as the data URL -----------------------
         for data in (zebra, PDF_PREFIX + zebra):

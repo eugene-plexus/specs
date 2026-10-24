@@ -51,7 +51,7 @@ import tempfile
 import tokenize
 from pathlib import Path
 
-REPOS = ("agent", "control", "gateway", "library", "inference-driver", "tool-driver")
+REPOS = ("agent", "control", "gateway", "library", "inference-driver", "tool-driver", "store")
 REFERENCE = "agent"
 
 FORBIDDEN = (

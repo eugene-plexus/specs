@@ -15,6 +15,10 @@ For tests and live runs, never for keeping anyone's memory: it holds everything 
   clear say they worked and keep everything; a forget is held open, unanswered, until `hold` is
   false again (`/state`'s `holding` counts those waiting).
 - `POST /memories` `{"id": "...", "text": "..."}`: put a memory in, as if retained long ago.
+- `POST /control` `{"retain_limit": N, "retain_delay": seconds}`: hold retains before
+  accepting any beyond N (null removes the limit); delay each acceptance. `retain_waiting`
+  lists the calls waiting. `{"discard_retains": true}` rejects these unaccepted calls,
+  for a crash test to discard requests whose caller has died. Existing logs stay intact.
 - `GET /state`: what was retained, recalled, forgotten and cleared, and every request's token.
 
 Run with an interpreter that has `mcp` and `uvicorn` (Workbench's venv does):
@@ -45,6 +49,10 @@ STATE: dict[str, Any] = {
     "liar": False,
     "hold": False,
     "holding": 0,
+    "retain_limit": None,
+    "retain_delay": 0.0,
+    "retain_waiting": [],
+    "retain_generation": 0,
 }
 
 
@@ -74,6 +82,24 @@ def build(token: str, without: set[str]) -> Any:
             content: str, document_id: str = "", timestamp: str = "", context: str = ""
         ) -> str:
             """Keep what was said."""
+            generation = STATE["retain_generation"]
+            STATE["retain_waiting"].append(document_id)
+            try:
+                while (
+                    STATE["retain_limit"] is not None
+                    and len(STATE["retained"]) >= STATE["retain_limit"]
+                ):
+                    if generation != STATE["retain_generation"]:
+                        raise RuntimeError(
+                            "unaccepted retain discarded after caller died"
+                        )
+                    await asyncio.sleep(0.02)
+                if STATE["retain_delay"]:
+                    await asyncio.sleep(float(STATE["retain_delay"]))
+                if generation != STATE["retain_generation"]:
+                    raise RuntimeError("unaccepted retain discarded after caller died")
+            finally:
+                STATE["retain_waiting"].remove(document_id)
             STATE["retained"].append(
                 {
                     "content": content,
@@ -131,9 +157,11 @@ def build(token: str, without: set[str]) -> Any:
             return
         if request.url.path == "/control" and request.method == "POST":
             body = await request.json()
-            for key in ("slow", "liar", "hold"):
+            for key in ("slow", "liar", "hold", "retain_limit", "retain_delay"):
                 if key in body:
                     STATE[key] = body[key]
+            if body.get("discard_retains"):
+                STATE["retain_generation"] += 1
             await JSONResponse({"ok": True})(scope, receive, send)
             return
         if request.url.path == "/memories" and request.method == "POST":
@@ -156,10 +184,14 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--token", default="")
-    parser.add_argument("--without", default="", help="verbs not offered, comma separated")
+    parser.add_argument(
+        "--without", default="", help="verbs not offered, comma separated"
+    )
     args = parser.parse_args()
     without = {v.strip() for v in args.without.split(",") if v.strip()}
-    uvicorn.run(build(args.token, without), host=args.host, port=args.port, log_level="error")
+    uvicorn.run(
+        build(args.token, without), host=args.host, port=args.port, log_level="error"
+    )
 
 
 if __name__ == "__main__":

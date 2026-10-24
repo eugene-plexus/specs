@@ -25,7 +25,7 @@ def resolve(root: Path, agent: Path) -> dict[str, str]:
 
     pins = json.loads((root / "release/manifest.json").read_text(encoding="utf-8"))["components"]
     if set(pins) != COMPONENTS:
-        raise ValueError("the release must name exactly seven component pins")
+        raise ValueError("the release must name exactly eight component pins")
     catalogue = yaml.safe_load(
         (agent / "src/eugene_plexus_agent/apps_catalogue.yaml").read_text(encoding="utf-8")
     )

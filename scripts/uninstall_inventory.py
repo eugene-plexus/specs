@@ -78,7 +78,8 @@ def inventory(prefix: Path) -> dict:
     ]
     apps = prefix / "apps"
     software += [apps / name for name in ("pythons", "launcher", "ctl")]
-    data = [prefix / name for name in ("logs", "passphrase", "control-state")]
+    # `store`: the files apps kept through the gateway (row 53).
+    data = [prefix / name for name in ("logs", "passphrase", "control-state", "store")]
     for app in apps.iterdir() if apps.is_dir() and not apps.is_symlink() else []:
         if (
             app.is_dir()
@@ -103,6 +104,7 @@ def inventory(prefix: Path) -> dict:
             or item.name.startswith(
                 (
                     ".update-channel",
+                    ".store-declared",
                     "agent.yaml.",
                     "node.yaml.",
                     "control.yaml.",
