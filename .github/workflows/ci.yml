@@ -385,6 +385,15 @@ jobs:
         run: python -m pip install --no-deps --no-build-isolation -e ./agent -e ./control -e ./gateway -e ./library -e ./inference-driver -e ./tool-driver
       - name: Check installed dependency consistency
         run: python -m pip check
+      - name: Repeat fixed-seed answers under load with the acquired CPU engine (row 20)
+        if: matrix.shard == 'L2'
+        run: python specs/scripts/di7-same-answer-acceptance.py --output .codex-tmp/di7
+      - name: Keep row 20 CPU evidence
+        if: always() && matrix.shard == 'L2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: di7-cpu-evidence
+          path: .codex-tmp/di7
       - name: Keep Ollama files through the real machine proxy
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         shell: python {0}
@@ -426,6 +435,9 @@ jobs:
       - name: The shared acceptance harness is the real server - console log copy, machine port, client doors, stop file (row 2)
         if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/harness-acceptance.py
+      - name: Responses client tools and compact through the OpenAI SDK and fixture backend (row 57)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/row57-responses-tools-acceptance.py
       - name: Rotate the root's token key across two live agents
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/r7-rotation-acceptance.py
@@ -435,6 +447,9 @@ jobs:
       - name: Policies per permission group at the root and through an agent, and a broken rule caught (row 70)
         if: matrix.shard == 'L3' || matrix.shard == 'W2'
         run: python specs/scripts/row70-group-policy-acceptance.py
+      - name: Rotate a client key under a running stream, and record last use across a root restart (row 24)
+        if: matrix.shard == 'L2' || matrix.shard == 'W2'
+        run: python specs/scripts/ck-rotate-acceptance.py
       - name: Verify R8 defaults and A2 request settings through isolated HTTP processes
         if: matrix.shard == 'L2' || matrix.shard == 'W1'
         run: python specs/scripts/r8-profile-acceptance.py
@@ -459,6 +474,9 @@ jobs:
       - name: Verify runtime Stop waits for descendants and refuses stale Strata listeners
         if: matrix.shard == 'L1' || matrix.shard == 'W1'
         run: python specs/scripts/runtime-stop-acceptance.py
+      - name: Verify hardware readout and restart on the cards left with stub NVIDIA devices (row 43)
+        if: matrix.shard == 'L1'
+        run: python specs/scripts/row43-cards-left-acceptance.py
       - name: Verify each engine owns its fit model, from declaration to judge to admission (LS6)
         if: (matrix.shard == 'L3' || matrix.shard == 'W2') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/ls6-fit-acceptance.py
@@ -510,6 +528,9 @@ jobs:
       - name: Verify a Gemini account (native API, thought signatures, every surface) through signed processes and the unchanged OpenAI SDK
         if: (matrix.shard == 'L3' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/gemini-acceptance.py
+      - name: Verify row 58 Gemini door through the Python SDK and recorded Gemini CLI requests
+        if: matrix.shard == 'L3' && needs.plan.outputs.full == 'true'
+        run: python specs/scripts/row58-gemini-door-acceptance.py
       - name: Verify the gateway and driver pair on stand-in providers (tools are assumed - header agreement, slots, counts, stream heads)
         if: (matrix.shard == 'L2' || matrix.shard == 'W3') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/tools-assumed-acceptance.py
@@ -541,6 +562,12 @@ jobs:
         env:
           R7_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
         run: python specs/scripts/row7-person-removal-acceptance.py
+      # Row 70c: Workbench at the candidate, as row 7's.
+      - name: Verify Workbench reads people's groups and a group's memory server is every member's (row 70c)
+        if: matrix.shard == 'L2' || matrix.shard == 'W3'
+        env:
+          R70C_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row70c-workbench-groups-acceptance.py
       - name: Verify Update all survives an agent restart across enrolled machines and apps
         if: (matrix.shard == 'L2' || matrix.shard == 'W1') && needs.plan.outputs.full == 'true'
         run: python specs/scripts/update-all-acceptance.py
@@ -912,6 +939,9 @@ jobs:
 
       - name: Check Strata preparation and effective launch contracts
         run: python scripts/test_strata_settings_contract.py
+
+      - name: Check DeepSeek Flash template contracts
+        run: python scripts/test_deepseek_flash_contract.py
 
       - name: Validate every OpenAPI document
         shell: bash
