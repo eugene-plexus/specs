@@ -74,10 +74,11 @@ def main() -> None:
         for label, repo, relative, old, new, test in cases:
             path = root / repo / relative
             saved = path.read_bytes()
-            text = saved.decode("utf-8")
+            # A Windows checkout holds CRLF; a multi-line mutation is written with LF.
+            text = saved.decode("utf-8").replace("\r\n", "\n")
             assert old in text, f"{label}: mutation no longer matches"
             try:
-                path.write_text(text.replace(old, new, 1), encoding="utf-8")
+                path.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
                 run(repo, test, label, 1)
             finally:
                 path.write_bytes(saved)
