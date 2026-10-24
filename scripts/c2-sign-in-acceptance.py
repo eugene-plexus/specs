@@ -17,7 +17,14 @@ What it proves, in order:
   enforced;
 - a person signs in with their own name and password, is refused for an
   app they are not given, and is cut off at the next refresh once disabled,
-  revoked or given a new password.
+  revoked or given a new password;
+- (row 5, 5a) the sign-in key changes: a routine change waits until the key
+  is 30 days and 10 minutes old, then keeps the old key verifying, so the
+  app's refresh token from before still works and a new sign-in verifies;
+  *End every app sign-in now* retires the old key, and its refresh tokens
+  are refused. The control process here is this script's own, so it moves
+  the key schedule's clock (`oidc_keys.now`) by the days written in
+  `key-clock-days`; every token keeps the real clock.
 
 Run with Python holding editable installs of agent and control, plus
 `authlib` (scripts/requirements-acceptance.txt).
@@ -65,9 +72,23 @@ def serve(kind: str, directory: Path, port: int) -> None:
     import uvicorn
 
     if kind == "control":
+        from datetime import UTC, datetime, timedelta
+
+        from eugene_plexus_control import oidc_keys
         from eugene_plexus_control.app import create_app
         from eugene_plexus_control.settings import Settings
 
+        shift = directory / "key-clock-days"
+
+        def moved() -> datetime:
+            try:
+                days = float(shift.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                days = 0.0
+            return datetime.now(UTC) + timedelta(days=days)
+
+        # Row 5: the key schedule's clock only; tokens keep the real one.
+        oidc_keys.now = moved
         app = create_app(Settings(config_file=directory / "control.yaml", state_dir=directory / "state"))
     else:
         from eugene_plexus_agent.app import create_app
@@ -402,6 +423,62 @@ def exercise(directory: Path) -> None:
         print("\n== a sign-in is not a console session", flush=True)
         check("70", "the owner's console session still works beside it",
               call("agent", "GET", "/v1/node", operator).status_code == 200)
+
+        print("\n== the sign-in key changes (row 5)", flush=True)
+
+        def owner_signs_in() -> tuple[dict, str]:
+            session = rp()
+            authorize, _, verifier, nonce = begin(session)
+            status, location = sign_in(browser, authorize, name="operator", password=passphrase)
+            if status not in (302, 303):
+                raise Abort(f"the owner could not sign in: {status} {location[:120]}")
+            got = session.fetch_token(meta["token_endpoint"], code=code_from(location)[0],
+                                      code_verifier=verifier)
+            return got, nonce
+
+        before, _ = owner_signs_in()
+        first = _kid(before["id_token"])
+        listed = call("control", "GET", "/v1/oidc/keys", root).json()
+        check("80", "the owner sees the key that signs, and when it changes by itself",
+              [k["kid"] for k in listed.get("keys", [])] == [first] and bool(listed.get("nextChangeAt")),
+              listed)
+        soon = call("control", "POST", "/v1/oidc/keys/change", root, json={})
+        check("81", "a routine change waits while the key is younger than 30 days, and says so",
+              soon.status_code == 409 and "End every app sign-in now" in soon.text, soon.text[:200])
+        (directory / "control" / "key-clock-days").write_text("31", encoding="utf-8")
+        changed = call("control", "POST", "/v1/oidc/keys/change", root, json={})
+        keys = changed.json().get("keys", []) if changed.status_code == 200 else []
+        must("82", "31 days on, the key changes, and the one before still verifies",
+             len(keys) == 2 and keys[1]["kid"] == first and keys[0]["signs"]
+             and bool(keys[1].get("verifiesUntil")), changed.text[:200])
+        second = keys[0]["kid"]
+        jwks = httpx.get(meta["jwks_uri"], trust_env=False).json()
+        key_set = KeySet.import_key_set(jwks)
+        check("83", "the JWKS publishes both keys", sorted(k["kid"] for k in jwks["keys"]) == sorted([first, second]),
+              [k["kid"] for k in jwks["keys"]])
+        renewed = httpx.post(meta["token_endpoint"], trust_env=False, auth=(app_id, app_secret),
+                             data={"grant_type": "refresh_token", "refresh_token": before["refresh_token"]})
+        renewed_ok = renewed.status_code == 200 and _kid(renewed.json().get("id_token", "")) == second
+        if renewed_ok:
+            jwt.decode(renewed.json()["id_token"], key_set, algorithms=["RS256"])
+        check("84", "the app stays signed in: its refresh token from before works, and what it gets "
+              "is signed with the new key", renewed_ok, renewed.text[:200])
+        after, nonce = owner_signs_in()
+        check("85", "a new sign-in is signed with the new key and verifies",
+              _kid(after["id_token"]) == second and validated(after["id_token"], nonce)["sub"] == "operator")
+        leaked = call("control", "POST", "/v1/oidc/keys/change", root, json={"endSignIns": True})
+        kept = leaked.json().get("keys", []) if leaked.status_code == 200 else []
+        must("86", "after a leak, End every app sign-in now leaves one new key", len(kept) == 1
+             and kept[0]["kid"] not in (first, second), leaked.text[:200])
+        check("87", "every refresh token the old keys signed is refused",
+              _refresh(meta, app_id, app_secret, before["refresh_token"]) == "invalid_grant"
+              and _refresh(meta, app_id, app_secret, after["refresh_token"]) == "invalid_grant")
+        jwks = httpx.get(meta["jwks_uri"], trust_env=False).json()
+        key_set = KeySet.import_key_set(jwks)
+        last, nonce = owner_signs_in()
+        check("88", "the JWKS holds only the new key, and a new sign-in verifies against it",
+              [k["kid"] for k in jwks["keys"]] == [kept[0]["kid"]]
+              and validated(last["id_token"], nonce)["sub"] == "operator")
     except Abort as exc:
         print(f"\nABORTED at {exc}", flush=True)
     finally:
@@ -422,6 +499,18 @@ def exercise(directory: Path) -> None:
             if log.is_file():
                 print(f"\n--- {name} log (tail)\n" + log.read_text(encoding="utf-8", errors="replace")[-3000:])
         raise SystemExit(1)
+
+
+def _kid(token: str) -> str | None:
+    """The `kid` in a JWT's header, read without verifying it."""
+    import base64
+    import json
+
+    try:
+        head = token.split(".", 1)[0]
+        return json.loads(base64.urlsafe_b64decode(head + "=" * (-len(head) % 4))).get("kid")
+    except (ValueError, IndexError):
+        return None
 
 
 def _message(page: str) -> str:
