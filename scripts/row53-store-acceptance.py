@@ -451,7 +451,8 @@ def check_isolation(
 
 def store_rows(store_dir: Path, owner: str | None = None) -> list[tuple[str, str, str]]:
     path = store_dir / "store.sqlite3"
-    connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    # Read-only, beside the running store; `as_uri` spells a Windows path too.
+    connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
     try:
         query = "SELECT id, owner, sha256 FROM files"
         rows = connection.execute(
