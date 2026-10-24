@@ -6,10 +6,10 @@ Library is down", in two parts:
 
 - **48b: keep working without the Library.** Size M, cross-component.
   Repos: agent, gateway, library, ui, specs. Ready to build.
-- **48c: a standby Library.** Size L, high risk (a new grant and a new
-  service credential). Repos: library, agent, control, ui, specs. It
-  starts after row 4 merges, because it reuses row 4's promotion and
-  address rules.
+- **48c: a standby Library. Not built** (R48-STANDBY, Troy 2026-10-24:
+  Choice 3, 48b alone). Most installs keep their models on one NAS, and a
+  standby cannot read the models while that NAS is down. §3 stays as the
+  design if this is asked for again.
 
 Sources: the code on every repo's `main` on 2026-10-23 (read for this
 design; references below are `A/` agent, `G/` gateway, `L/` library, `C/`
@@ -156,7 +156,10 @@ injected); the runtime restarts from the node copy with the note; the
 console's Library proxy answers the sentence. Then it restores both and
 checks the note clears at the next start.
 
-## 3. 48c: a standby Library
+## 3. 48c: a standby Library (not built)
+
+Troy chose 48b alone (R48-STANDBY, 2026-10-24). This section is kept as
+the design, not as work.
 
 This follows control's warm standby (`warm-standby.md`, SB1-SB4) and row
 4's promotion rules, with one difference: **a standby Library answers
@@ -253,16 +256,11 @@ without the grant must be refused.
 
 ## 5. Calls
 
-- **R48-STANDBY:** what "Library redundancy" builds. Recommended: 48c as
-  above (a standby that answers reads by itself; an owner promotes it
-  for writes). Other choices: automatic promotion (two Libraries could
-  write the same folders), or 48b alone (one Library, everything else
-  keeps working).
-- **R48-STALE:** the gateway keeps a model's last known settings for the
-  whole outage (recommended), or for 5 minutes as today and then uses the
-  gateway's defaults.
-
-Both defaults are built until Troy answers.
+- **R48-STANDBY** (answered 2026-10-24: Choice 3): 48b alone. No second
+  Library; 48c is not built.
+- **R48-STALE** (answered 2026-10-24: Choice 1, as built): the gateway
+  keeps a model's last known settings for the whole outage and across a
+  restart; experts can still set a limit (`profileMaxStaleSeconds`).
 
 ## What building found
 
@@ -285,9 +283,10 @@ Both defaults are built until Troy answers.
   Windows exposed competing writes to the record's temporary file. Record
   reads and writes now share a lock, and an unchanged record is not written
   again. Clearing a copy also clears its record; a running copy keeps both.
-- A Library answer that refuses a read or is malformed is not a transport
-  outage. Only transport errors, timeouts and proxy 502/503/504 preserve
-  saved defaults. An empty profile answer clears them, including on disk.
+- Only a successful Library answer replaces saved defaults. Any failed
+  read (a transport error, a timeout, a refusal or a malformed answer)
+  keeps them: a refusal says nothing about the model's settings. An empty
+  profile answer is a success and clears them, including on disk.
 - The local Windows acceptance passed with a removed `subst` drive and
   cleared install variables. The CI dependency lock could not be installed
   in the sandbox (`av==19.0.2` was unavailable offline); the isolated local
