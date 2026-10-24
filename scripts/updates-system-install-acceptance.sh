@@ -165,8 +165,9 @@ states=$(printf '%s' "$NODE" | json '" ".join(c["state"] for c in d["install"]["
 mechanism=$(printf '%s' "$NODE" | json 'd["install"]["mechanism"]')
 agent_commit=$(printf '%s' "$NODE" | json 'next(c.get("commit","") for c in d["install"]["components"] if c["name"]=="agent")')
 pinned=$(sed -n 's/^PIN_AGENT=\([0-9a-f]*\).*/\1/p' "$WORK/install.sh")
-# One stamped commit per pin the installer that ran carries: seven since P8
-# added the tool-driver, six from an EP_FROM that predates it. PIN_SITE_HOST
+# One stamped commit per pin the installer that ran carries: eight since row
+# 53 added the store, seven from an EP_FROM before it, six from one before P8
+# added the tool-driver. PIN_SITE_HOST
 # (Job Sites 2b.2) is not one: root installs the site host apart from the
 # agent's prefix, and the agent does not report it as a component.
 count=$(grep -E '^PIN_[A-Z_]+=[0-9a-f]{40}' "$WORK/install.sh" | grep -vc '^PIN_SITE_HOST=')
@@ -264,7 +265,8 @@ pins = dict(re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})", open(sys.argv[1]).read(
 before = dict(re.findall(r"^PIN_([A-Z_]+)=([0-9a-f]{40})", open(sys.argv[2]).read(), re.M))
 names = {"agent": "AGENT", "control": "CONTROL", "gateway": "GATEWAY",
          "inference-driver": "DRIVER", "library": "LIBRARY", "ui": "UI",
-         "tool-driver": "TOOL_DRIVER"}
+         "tool-driver": "TOOL_DRIVER", "store": "STORE"}
+names = {n: k for n, k in names.items() if k in pins}
 now = {c["name"]: c.get("commit", "") for c in json.load(sys.stdin)["install"]["components"]}
 wrong = ["%s %s not %s" % (n, (now.get(n) or "-")[:7], pins.get(k, "?")[:7])
          for n, k in names.items() if now.get(n) != pins.get(k)]
@@ -272,8 +274,8 @@ moved = sum(1 for k in names.values() if pins.get(k) != before.get(k))
 print("; ".join(wrong) if wrong else f"ok {moved}")
 ' "$WORK/target-install.sh" "$WORK/install.sh")
 case $compare in
-    "ok 0") ok "6e. it runs all seven commits $TARGET pins (the same seven it had: no version changed)" ;;
-    ok\ *)  ok "6e. it runs all seven commits $TARGET pins, ${compare#ok } of them new" ;;
+    "ok 0") ok "6e. it runs every commit $TARGET pins (the same ones it had: no version changed)" ;;
+    ok\ *)  ok "6e. it runs every commit $TARGET pins, ${compare#ok } of them new" ;;
     *)      bad "6e. $compare" ;;
 esac
 

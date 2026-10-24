@@ -213,3 +213,67 @@ Risks:
 2026-10-23): a core component named `store`, on by default, aiming at full
 OpenAI API compatibility. The defaults above (30 days, 10 GiB) follow
 OpenAI's and DI2's and are settings.
+
+## 8. What building found (2026-10-23)
+
+- **No `/store/` route on the machine port.** Another machine's gateway
+  reaches the store the way it reaches the library: its own agent's
+  `/api/proxy/store`, which finds the store in the install's topology and
+  forwards to the holding machine's agent through its machine port,
+  re-minting the gateway's token for that machine. A separate `/store/`
+  route would be a second path to the same listener, and it could not carry
+  the token anyway: the machine port translates none, and the gateway holds
+  no token addressed to another machine. Only a machine whose key holds the
+  `gateway` grant can name owners at the store.
+- **Removal needs the root, so control and the agent changed.** The store's
+  own token cannot leave its machine, so it asks its agent
+  (`POST /v1/people/known`, this machine's store only), and the agent asks
+  the root with its node token (`POST /v1/people/known` on control,
+  `sub: agent` only). Nothing is said while the root is locked or a standby;
+  a root that cannot be asked deletes nothing.
+- **A rotated key's lineage is a reader first.** `ClientAdmissionResult`
+  gains an optional `lineage`; the gateway takes it when present and uses
+  the key id otherwise. The authority does not send it yet: an older reader
+  refuses an unknown field (`extra=forbid`), so it starts once every reader
+  has shipped. Until then a rotated key starts a new owner, and its old files
+  end on their own date.
+- **The files doors are outside `CLIENT_ADMISSION_PATHS`**, because
+  `admission.py` belongs to rows 11 and 37 now. Each door makes its own
+  check-only `ClientRequest` (the same `check` the inference doors make
+  first), so a revoked key, a removed person and a person token without its
+  app key are refused as anywhere; a file request holds no lease and counts
+  against no rate. Their 16 MiB limit is their own middleware
+  (`FilesBodyLimit`), because the shared limit matches exact paths only.
+  They are not answered cross-origin yet.
+- **Two port walks could hand out 8084 twice.** `ports.first_free` returns
+  its preferred port whenever the operating system says it is free, and at
+  boot nothing listens yet: a root that moves control behind the machine
+  port, and a root that gains the store, both walked from a port another
+  entry already declared. Both now start past every declared port.
+- **The dev bootstrap does not install the store yet.** It clones each
+  repository's `main`, and the store's `main` holds nothing until this row
+  merges. A follow-up adds it to `bootstrap.sh` and `bootstrap.ps1`.
+
+### Defaults built
+
+- A file ends **30 days** after upload; an app may ask for up to **30 days**
+  (OpenAI's own maximum), and for any number of seconds below it (OpenAI
+  takes 3,600 at least; this install takes 1). Both are settings.
+- **10 GiB and 10,000 files** per owner, install-wide. The per-group quota
+  (row 70's `platformStoreBytes`) is not built: it needs control's policy
+  schema and the gateway to carry it, and is a follow-up.
+- **Deletes data, on:** a person the root no longer knows loses everything
+  they kept here at the next sweep (hourly), with no waiting period. Three or
+  more unknown at once are held until the owner releases them in Settings ->
+  Files apps keep (`removalBrake`, 0 turns the hold off). Files already end
+  in 30 days, so a 30-day grace like Workbench's would keep little; a true
+  delete matches MRC27.
+- **A switch for files only.** Responses, batches and vector stores get
+  theirs with rows 54-56; a switch for a part that does not exist would show
+  a setting that does nothing.
+- A `file_id` on chat, Responses and Messages carries a **PDF, an image or
+  UTF-8 text**; anything else is refused, naming its type. Anthropic's
+  uploaded files read as `downloadable: true`: the owner may read back what
+  it kept.
+- The owner's console shows counts and bytes per owner by the person's or
+  key's name, never a file name or content.

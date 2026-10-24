@@ -62,6 +62,7 @@ MANIFEST_REPOS = (
     "control",
     "gateway",
     "library",
+    "store",
     "inference-driver",
     "tool-driver",
 )
