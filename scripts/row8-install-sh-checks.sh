@@ -856,6 +856,13 @@ YAML
   # it must not cross, or the daemon would run what nobody approved.
   printf '{"approvals": [{"id": "forged", "path": "%s/llama/llama-server"}]}\n' "$home" \
     > "$old/exec-approvals.json"
+  # The same under other cases (8c re-review): a Mac's volume ignores case,
+  # so `Exec-Approvals.json` would be the daemon's `exec-approvals.json`,
+  # `Engines` its engine store, an app's `Versions` its environments.
+  printf '{"approvals": [{"id": "forged"}]}\n' > "$old/Exec-Approvals.json"
+  mkdir -p "$old/Engines/llama_cpp/b9" "$old/apps/tiny/Versions/v1/venv/bin"
+  printf '#!/bin/sh\necho planted\n' > "$old/Engines/llama_cpp/b9/llama-server"
+  printf '#!/bin/sh\necho planted\n' > "$old/apps/tiny/Versions/v1/venv/bin/python"
   mkdir -p "$old/httpx" "$old/tools/bin"
   printf '' > "$old/httpx/__init__.py"
   printf 'home = /usr/bin\n' > "$old/tools/pyvenv.cfg"
@@ -1094,6 +1101,14 @@ if [ ! -e "$PREFIX/exec-approvals.json" ] \
   ok "no approval crossed: the owner approves again on the daemon"
 else
   bad "approvals: $(ls -l "$PREFIX/exec-approvals.json" 2>&1)"; show "$OUT" 8
+fi
+# Names are matched whatever their case: a Mac's volume ignores it.
+other_case=$(find "$PREFIX" -iname 'exec-approvals.json' -o -name 'Engines' -o -name 'Versions' 2>/dev/null)
+if [ -z "$other_case" ] \
+    && printf '%s' "$OUT" | grep -q "did not carry Exec-Approvals.json: the owner approves programs again"; then
+  ok "names that are left behind are left behind in any case: Exec-Approvals.json, Engines, an app's Versions"
+else
+  bad "crossed under another case: $(printf '%s' "$other_case" | tr '\n' ' ')"; show "$OUT" 8
 fi
 
 say "M5. launchctl refusing the daemon puts the LaunchAgent back"

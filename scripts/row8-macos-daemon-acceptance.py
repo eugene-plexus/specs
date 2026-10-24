@@ -1037,6 +1037,9 @@ def phase_plant_before_move(ctx: dict) -> None:
 
 
 FORGED = HOME / "row8-forged" / "vllm"
+#: In another case than the daemon reads (8c re-review): a Mac's volume
+#: ignores case, so carried, this would be its `exec-approvals.json`.
+FORGED_NAME = "Exec-Approvals.json"
 
 
 def forge_approval() -> dict:
@@ -1064,7 +1067,7 @@ def forge_approval() -> dict:
         "approvedAt": "2026-10-23T00:00:00Z",
         "approvedBy": "nobody",
     }
-    (USER_PREFIX / "exec-approvals.json").write_text(json.dumps({"approvals": [approval]}),
+    (USER_PREFIX / FORGED_NAME).write_text(json.dumps({"approvals": [approval]}),
                                                      encoding="utf-8")
     return approval
 
@@ -1075,12 +1078,15 @@ def phase_forged_approval_after_move(ctx: dict, said: str) -> None:
     that program binds exactly what the planted one did -- so, carried, it
     would have been honoured."""
     forged = ctx.get("forged") or {}
-    claim = ("an approval planted in the per-user install does not cross: the daemon asks before running "
-             "the program it named, though it bound exactly what the owner's own approval binds")
+    claim = ("an approval planted in the per-user install, in another case, does not cross: the daemon "
+             "asks before running the program it named, though it bound exactly what the owner's own "
+             "approval binds")
     if "error" in forged or not forged:
         check("11j", claim, False, forged.get("error") or "nothing was planted")
         return
-    kept = sudo("test", "-e", str(PREFIX / "exec-approvals.json"), timeout=20).returncode == 0
+    # Either spelling: on a volume that ignores case they are one file.
+    kept = any(sudo("test", "-e", str(PREFIX / name), timeout=20).returncode == 0
+               for name in ("exec-approvals.json", FORGED_NAME))
     entry = _engine_said(ctx, str(FORGED))
     trust = entry.get("execTrust") or {}
     status, approval = api("POST", f"{ctx['base']}/v1/exec-approvals", ctx["token"],
@@ -1089,10 +1095,10 @@ def phase_forged_approval_after_move(ctx: dict, said: str) -> None:
     same = {key: approval.get(key) == forged.get(key)
             for key in ("path", "accountUid", "sha256", "chain")}
     check("11j", claim,
-          not kept and "did not carry exec-approvals.json" in said
+          not kept and f"did not carry {FORGED_NAME}" in said
           and trust.get("kind") == "needs_approval" and status == 201 and all(same.values()),
           {"carried": kept, "execTrust": trust, "approve": status, "same as planted": same,
-           "said": [line for line in said.splitlines() if "exec-approvals" in line][:2]})
+           "said": [line for line in said.splitlines() if "exec-approvals" in line.lower()][:2]})
     if approval.get("id"):
         api("DELETE", f"{ctx['base']}/v1/exec-approvals/{approval['id']}", ctx["token"])
     api("PATCH", f"{ctx['base']}/v1/config", ctx["token"], {"vllmBinary": None})

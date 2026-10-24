@@ -315,6 +315,19 @@ Built on the same branch (agent `exec_trust.py`, `exec_approvals.py`, `routes/ex
 
 Also from the review: the SHA-256 answer is no longer kept between checks. A file's change time moves on a coarse clock (a second on HFS+, a jiffy on Linux), so two writes could share one, and a changed file could keep its old hash. A test with the real hash changes one byte, keeps the size, puts the modification time back, and holds the clock still.
 
+**The re-review (Codex, 2026-10-24) found three blockers and one more, all fixed.** Each fix has a check that failed first and was sabotaged once and caught: 8 in the agent, 3 in the installer.
+1. *Names in another case.* The move left out `exec-approvals.json` only in lower case. A Mac's volume ignores case, so `Exec-Approvals.json` would have become the daemon's file. Now every name the move leaves out is matched in any case: the approvals file, code suffixes, the top-level skips (`Engines` would have been the engine store), and an app's `Versions`.
+   - The stub check M4d plants all three.
+   - Acceptance 11j now plants the approval as `Exec-Approvals.json`.
+2. *`env` by other means.* A copy or a hard link of `/usr/bin/env` under another name passed the name check. It is now refused three ways:
+   - A shebang that names a bare program after its interpreter (`#!/usr/local/bin/run python3`) is refused, whatever the interpreter is. The program after it is the first word that is not an option. A word that is not an option and not absolute counts as a PATH lookup. `#!/usr/bin/python3 -W ignore` would be refused too; no engine writes that.
+   - A program or interpreter that is the system's `env` by device and inode (a hard link), or by size and SHA-256 (a copy), is refused. `/usr/bin/env` and `/bin/env` are checked.
+   - An engine Eugene's own account starts gets a PATH of checked folders only: the runtime's own `PATH`, then sudo's `secure_path` folders, each kept only when nobody but root or Eugene's account can change it. A person's own install keeps the PATH it was given.
+3. *An I/O error was taken for absence.* Only "no such file" and "not a folder" now mean absent. Any other error looking for `pyvenv.cfg`, `site-packages` or a standard library is refused, naming it. Asked alone, such an error counts as present, so what follows checks it and fails closed.
+4. *Refusals reach through links.* A refusal now drops every approval whose walked chain goes through the refused program or through what made it refused. An example is the approval of `/Users/troy/current/llama-server` when `/opt/a/llama-server` is refused by its own path.
+   - When the approvals file cannot be written, the dropped approvals stay refused in memory, and the next write that succeeds takes them out of the file.
+   - *Default built:* that memory is the process's. If the agent restarts before any write succeeds, an approval still in the file is read again. The file is the account's own, and nothing else writes it.
+
 **Not covered, and why:**
 - Windows, as before.
 - What an app or a tool server starts, as before.

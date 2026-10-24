@@ -1962,8 +1962,19 @@ mac_migrate_copy() {
         case "$_id" in
             *[!A-Za-z0-9._-]*) die "an app folder in $_old/apps has a name Eugene does not make ($_id), so
        Eugene was not moved. Nothing was changed." ;;
+        esac
+        # In any case: a Mac's volume ignores it, so `Versions` would be
+        # the app's `versions` to the daemon (8c re-review).
+        case "$(mac_lower "$_id")" in
             launcher|pythons|.cache|ctl) MAC_COPY_EXCLUDE="$MAC_COPY_EXCLUDE --exclude=./apps/$_id" ;;
-            *) MAC_COPY_EXCLUDE="$MAC_COPY_EXCLUDE --exclude=./apps/$_id/versions" ;;
+            *)
+                MAC_COPY_EXCLUDE="$MAC_COPY_EXCLUDE --exclude=./apps/$_id/versions"
+                for _entry in "$_app"/*; do
+                    _entry=${_entry##*/}
+                    if [ "$_entry" != versions ] && [ "$(mac_lower "$_entry")" = versions ]; then
+                        MAC_COPY_EXCLUDE="$MAC_COPY_EXCLUDE --exclude=./apps/$_id/$_entry"
+                    fi
+                done ;;
         esac
     done
     if [ "$#" -gt 0 ]; then mac_copy_as_person "$_old" . "$@"; fi
@@ -1972,10 +1983,15 @@ mac_migrate_copy() {
     in_prefix chmod 0750 "$PREFIX"
 }
 
+# NAME in lower case, to match a name the way a Mac's volume does.
+mac_lower() {
+    printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # What the move leaves behind: what this install makes again, and what
 # runs -- the engine store and an MLX environment among it.
 mac_migrate_skips() {
-    case "$1" in
+    case "$(mac_lower "$1")" in
         venv|pythons|bin|.cache|uninstall|update|engines|eugene-mlx|install-check.py|release-requirements.lock) return 0 ;;
     esac
     return 1
@@ -2005,7 +2021,9 @@ mac_migrate_carries() {
         say "did not carry $_name: not a file or a folder"
         return 1
     fi
-    case "$_name" in
+    # Matched in any case: a Mac's volume ignores it, so `Exec-Approvals.json`
+    # is the daemon's `exec-approvals.json` (8c re-review).
+    case "$(mac_lower "$_name")" in
         *.py|*.pyc|*.pyo|*.pth|*.so|*.dylib|*.pyd)
             say "did not carry $_name: code"
             return 1 ;;
