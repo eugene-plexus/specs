@@ -464,6 +464,8 @@ try:
         r = a.add('workbench', sys.argv[3], sys.argv[4], 'acceptance')
     elif verb == 'remove':
         r = a.remove('workbench', sys.argv[3])
+    elif verb == 'decide':
+        r = a.decide('workbench', sys.argv[3], sys.argv[4], sys.argv[5])
     else:
         r = next(x for x in a.listing('workbench') if x.state == 'ready')
 except Refused as exc:
@@ -765,6 +767,34 @@ def linux(specs: Path) -> None:
         assert run("getfacl", "-cpnE", str(manual / "moved.txt")) == by_hand
         assert not probe(io, manual, "moved.txt")["read"]
         # Real parser, masked named user AND owning group, unchanged on failure.
+        # R23-UNKNOWN (Troy, 2026-10-24): an entry changed by hand after the
+        # grant is the owner's call, through the installed root helper.
+        step("Linux: removal asks about entries changed by hand; Remove and Keep work")
+        asked = root / "asked"
+        asked.mkdir(mode=0o700)
+        for name in ("seed.txt", "kept.txt", "removed.txt"):
+            (asked / name).write_text("asked")
+            (asked / name).chmod(0o600)
+        grant = agent("add", str(asked), "read")
+        assert grant["state"] == "ready", grant
+        assert probe(io, asked)["read"]
+        for name in ("kept.txt", "removed.txt"):
+            run("setfacl", "-m", f"g:{group}:rw-", str(asked / name))
+        outcome = agent("remove", grant["id"])
+        assert outcome["state"] == "incomplete", outcome
+        pending = {Path(u["path"]).name: u for u in outcome["unknown"]}
+        assert set(pending) == {"kept.txt", "removed.txt"}, outcome
+        assert all(u["decision"] == "pending" and "rw-" in u["entry"] for u in pending.values())
+        assert "group:" + group + ":" not in run("getfacl", "-cpnE", str(asked))
+        outcome = agent("decide", grant["id"], pending["removed.txt"]["id"], "remove")
+        assert outcome["state"] == "incomplete", outcome
+        assert "group:" + group + ":" not in run("getfacl", "-cpnE", str(asked / "removed.txt"))
+        outcome = agent("decide", grant["id"], pending["kept.txt"]["id"], "keep")
+        assert outcome["state"] == "removed", outcome
+        assert [u["decision"] for u in outcome["unknown"]] == ["kept"], outcome
+        assert "through an entry Eugene did not add" in outcome["message"], outcome
+        assert "group:" + group + ":rw-" in run("getfacl", "-cpnE", str(asked / "kept.txt"))
+        assert not probe(io, asked)["read"]
         step("Linux: a masked ACL entry is refused and left unchanged")
         for entry in ("u:65534:rwx", "g::rwx"):
             run("setfacl", "-n", "-m", entry + ",m::r--", str(folder))
@@ -1081,6 +1111,38 @@ def windows(root: Path) -> None:
             raise AssertionError("A grant inside another grant was accepted")
         assert access.remove("workbench", outer.id).state == "removed"
         assert holders(folder) == []
+        # R23-UNKNOWN (Troy, 2026-10-24): access Eugene did not add is the
+        # owner's call; Remove takes it, Keep leaves it and says so.
+        step("Windows: removal asks about entries Eugene did not add; Remove and Keep work")
+        asked = root / "asked"
+        asked.mkdir()
+        private(asked)
+        (asked / "seed.txt").write_text("asked")
+        for name in ("extra-keep", "extra-remove"):
+            (asked / name).mkdir()
+            (asked / name / "seed.txt").write_text("asked")
+        grant = access.add("workbench", str(asked), "read", "acceptance")
+        assert probe(io, asked)["read"]
+        assert grant.state == "ready", grant.message
+        for name in ("extra-keep", "extra-remove"):
+            run("icacls", str(asked / name), "/grant", account + ":(OI)(CI)(F)")
+        outcome = access.remove("workbench", grant.id)
+        assert outcome.state == "incomplete", outcome.message
+        pending = {Path(u.path).name: u for u in outcome.unknown or []}
+        assert set(pending) == {"extra-keep", "extra-remove"}, outcome
+        assert all("full control" in u.entry for u in pending.values()), outcome
+        outcome = access.decide("workbench", grant.id, pending["extra-remove"].id, "remove")
+        assert outcome.state == "incomplete", outcome.message
+        gone = probe(io, asked / "extra-remove")
+        assert not gone["read"] and not gone["write"], gone
+        outcome = access.decide("workbench", grant.id, pending["extra-keep"].id, "keep")
+        assert outcome.state == "removed", outcome.message
+        assert [u.decision for u in outcome.unknown or []] == ["kept"]
+        assert "through an entry Eugene did not add" in outcome.message
+        # Plainly: the app still has that access, and only that access.
+        still = probe(io, asked / "extra-keep")
+        assert still["read"] and still["write"], still
+        assert not probe(io, asked)["read"]
         step("Windows: a folder swapped for a junction is left alone, and so is the target")
         swap, target = root / "swap", root / "swap-target"
         swap.mkdir()
@@ -1159,6 +1221,7 @@ def main() -> None:
                         "by-hand entry for Eugene's group kept, across a rename",
                         "read grant removal restores the exact ACLs",
                         "unrelated account and outside folder gain nothing",
+                        "an entry changed by hand is the owner's call: Remove and Keep",
                     ],
                 }
             ),
@@ -1213,6 +1276,7 @@ def main() -> None:
                             "grant inside another grant refused",
                             "read grant removal restores the exact DACLs",
                             "unrelated service account and outside folder gain nothing",
+                            "an entry Eugene did not add is the owner's call: Remove and Keep",
                         ],
                     }
                 ),

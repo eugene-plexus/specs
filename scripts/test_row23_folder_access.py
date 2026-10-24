@@ -1588,3 +1588,104 @@ def test_windows_probe_service_is_registered_like_an_app_and_can_read_its_script
     last_grant = max(i for i, args in enumerate(events) if args[0] == "icacls")
     assert events.index(("start", "EpR23Probe")) > last_grant
     assert events[-2:] == [("remove", "EpR23Probe"), ("remove", "EpR23Other")]
+
+
+def changed_by_hand(f):
+    """A read grant, then a person changes the group's entry on seed.txt by hand."""
+    seed = f.add("seed.txt")
+    record = {"path": "/srv/shared", "identity": [10, 1, 2], "write": False}
+    f.h.grant(10, "1001", False, record, lambda _: None)
+    f.acl[seed]["group:1001"] = "rw-"
+    fingerprint = {
+        "kind": "entry",
+        "names": ["seed.txt"],
+        "identity": [seed, 1, 2],
+        "key": "group:1001",
+        "value": "rw-",
+    }
+    return seed, record, fingerprint
+
+
+def test_revoke_leaves_an_entry_changed_after_the_grant_for_the_owner(fake_tree):
+    """R23-UNKNOWN (Troy, 2026-10-24): the owner decides; nothing is deleted first."""
+    f = fake_tree
+    seed, record, fingerprint = changed_by_hand(f)
+    assert f.h.revoke(10, record)
+    assert record["unknown"] == [fingerprint]
+    assert f.acl[seed]["group:1001"] == "rw-"
+    assert "group:1001" not in f.acl[10]
+    record["accepted"] = [fingerprint]
+    assert f.h.revoke(10, record)
+    assert record["unknown"] == []
+    assert f.acl[seed]["group:1001"] == "rw-"
+
+
+def test_revoke_main_reports_the_entry_and_keeps_the_record(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    f = fake_tree
+    seed, record, fingerprint = changed_by_hand(f)
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    f.h.main()
+    outcome = json.loads(capsys.readouterr().out)
+    assert outcome["removed"] is False
+    assert [u["fingerprint"] for u in outcome["unknown"]] == [fingerprint]
+    assert "rw-" in outcome["unknown"][0]["entry"]
+    saved = json.loads(target.read_text())
+    assert not saved.get("removed") and saved["unknown"] == [fingerprint]
+
+
+def configure_decide_main(f, monkeypatch, tmp_path, record, mode, fingerprint):
+    target = configure_revoke_main(f, monkeypatch, tmp_path, record)
+    argv = list(f.h.sys.argv)
+    argv[3], argv[5] = "folder-decide", mode
+    monkeypatch.setattr(f.h, "sys", SimpleNamespace(version_info=(3, 12), argv=argv))
+    fake_run = f.h.run
+
+    def run(*args, **kwargs):
+        if args[0] == "runuser":
+            return json.dumps(fingerprint)
+        return fake_run(*args, **kwargs)
+
+    monkeypatch.setattr(f.h, "run", run)
+    return target
+
+
+def test_decide_remove_checks_the_entry_again_and_deletes_only_it(
+    fake_tree, monkeypatch, tmp_path, capsys
+):
+    f = fake_tree
+    seed, record, fingerprint = changed_by_hand(f)
+    f.h.revoke(10, record)
+    target = configure_decide_main(f, monkeypatch, tmp_path, record, "remove", fingerprint)
+    f.acl[seed]["group:1001"] = "rwx"  # changed again since it was found
+    with pytest.raises(ValueError, match="changed since"):
+        f.h.main()
+    assert f.acl[seed]["group:1001"] == "rwx"
+    f.acl[seed]["group:1001"] = "rw-"
+    f.h.main()
+    assert json.loads(capsys.readouterr().out)["decided"]
+    assert "group:1001" not in f.acl[seed]
+    assert json.loads(target.read_text())["unknown"] == []
+
+
+def test_decide_keep_records_the_owners_choice(fake_tree, monkeypatch, tmp_path, capsys):
+    f = fake_tree
+    seed, record, fingerprint = changed_by_hand(f)
+    f.h.revoke(10, record)
+    target = configure_decide_main(f, monkeypatch, tmp_path, record, "keep", fingerprint)
+    f.h.main()
+    saved = json.loads(target.read_text())
+    assert saved["accepted"] == [fingerprint] and saved["unknown"] == []
+    assert f.acl[seed]["group:1001"] == "rw-"
+
+
+def test_decide_refuses_an_entry_the_ledger_does_not_list(fake_tree, monkeypatch, tmp_path):
+    f = fake_tree
+    seed, record, fingerprint = changed_by_hand(f)
+    f.h.revoke(10, record)
+    forged = {**fingerprint, "names": ["..", "etc"]}
+    configure_decide_main(f, monkeypatch, tmp_path, record, "remove", forged)
+    with pytest.raises(ValueError, match="not waiting for a decision"):
+        f.h.main()
+    assert f.acl[seed]["group:1001"] == "rw-"

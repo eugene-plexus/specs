@@ -1017,6 +1017,11 @@ def revoke(fd, ledger):
     skipped = []
     plans = index(item for item in ledger["items"] if "names" in item)
     kept = index(ledger.get("kept", []))
+    # An entry for the group changed after the grant is not Eugene's to
+    # take: it stays, and the owner decides (R23-UNKNOWN).
+    ledger["unknown"] = []
+    accepted = {json.dumps(f, sort_keys=True) for f in ledger.get("accepted", [])}
+    found = (ledger["unknown"], accepted)
     for batch in batches(fd, revoke=True, skipped=skipped):
         normal = [item for item in batch if item[2]]
         entries = list(zip(normal, acls([c for _, c, _ in normal]))) if normal else []
@@ -1025,10 +1030,10 @@ def revoke(fd, ledger):
                 continue
             try:
                 current = acl(item[1])
-                remove_entries([(item, current)], group, plans, kept)
+                remove_entries([(item, current)], group, plans, kept, found)
             except (OSError, ValueError) as exc:
                 skipped.append("/".join(item[0]) + ": " + str(exc))
-        remove_entries(entries, group, plans, kept)
+        remove_entries(entries, group, plans, kept, found)
     ledger["refusal"] = "; ".join(skipped)
     return not skipped
 
@@ -1054,10 +1059,12 @@ def recorded(records, names, ident):
     return records.get(tuple(names))
 
 
-def remove_entries(entries, group, plans, kept=None):
+def remove_entries(entries, group, plans, kept=None, found=None):
     kept = kept or {}
+    unknown, accepted = found if found is not None else ([], set())
     keys = ("group:" + group, "default:group:" + group)
     restore, removable = [], []
+    left = set()  # items whose default entry for the group stays
     for (names, child, ident), current in entries:
         item = recorded(plans, names, ident)
         planned = item is not None and same_identity(ident, item["identity"])
@@ -1068,12 +1075,34 @@ def remove_entries(entries, group, plans, kept=None):
             continue
         if prior is not None and same_identity(ident, prior["identity"]):
             continue  # The group's own entries from before the grant.
-        if planned and any(key in item["before"] for key in keys):
-            # Changed since, but the grant widened an older entry: put that
-            # entry back as it was and keep everything else.
-            wanted = {k: v for k, v in current.items() if k not in keys}
-            wanted.update({k: item["before"][k] for k in keys if k in item["before"]})
-            restore.append((child, wanted))
+        changed = []
+        if planned:
+            for key in keys:
+                if key in current and current[key] not in (
+                    item["before"].get(key),
+                    item["after"].get(key),
+                ):
+                    changed.append(key)
+                    fingerprint = dict(
+                        kind="entry",
+                        names=list(names),
+                        identity=list(ident),
+                        key=key,
+                        value=current[key],
+                    )
+                    if json.dumps(fingerprint, sort_keys=True) not in accepted:
+                        unknown.append(fingerprint)
+            if "default:group:" + group in changed:
+                left.add(child)
+        if planned and (changed or any(key in item["before"] for key in keys)):
+            # Changed since: put back what the grant widened, leave what was
+            # changed by someone else, and keep everything else.
+            wanted = {k: v for k, v in current.items() if k not in keys or k in changed}
+            wanted.update(
+                {k: item["before"][k] for k in keys if k in item["before"] and k not in changed}
+            )
+            if wanted != current:
+                restore.append((child, wanted))
             continue
         removable.append(((names, child, ident), current))
     if restore:
@@ -1113,6 +1142,7 @@ def remove_entries(entries, group, plans, kept=None):
         defaults.discard("default:group:" + group)
         if (
             item is not None
+            and child not in left
             and same_identity(ident, item["identity"])
             and not any(k.startswith("default:") for k in item["before"])
             and defaults == base
@@ -1307,8 +1337,8 @@ def main():
     if (
         not re.fullmatch(r"[a-z][a-z0-9-]{1,39}", app)
         or not re.fullmatch(r"[0-9a-f]{32}", ident)
-        or mode not in ("read", "write")
-        or verb not in ("folder-inspect", "folder-grant", "folder-revoke")
+        or mode not in (("remove", "keep") if verb == "folder-decide" else ("read", "write"))
+        or verb not in ("folder-inspect", "folder-grant", "folder-revoke", "folder-decide")
     ):
         raise ValueError("Invalid folder permission request identifiers.")
     if verb in ("folder-inspect", "folder-grant"):
@@ -1399,6 +1429,9 @@ def main():
                 )
             )
     else:
+        if verb == "folder-decide":
+            decide(prefix, account, group, ident, mode, target)
+            return
         if not target.is_file():
             print(json.dumps(dict(removed=True)))
             return
@@ -1431,7 +1464,8 @@ def main():
                     }
                     restored, reapplied = reapply(fd, record, records)
                     removed = complete and restored
-        if removed:
+        unknown = record.get("unknown") or []
+        if removed and not unknown:
             record["removed"] = True
             write_record(target, record)
             dropin(
@@ -1439,15 +1473,109 @@ def main():
                 group_name,
                 [json.loads(p.read_text()) for p in directory.glob("*.json")],
             )
+        elif unknown:
+            write_record(target, record)  # The ledger lists what waits for the owner.
         print(
             json.dumps(
                 dict(
-                    removed=removed,
+                    removed=removed and not unknown,
                     message=record.get("refusal") or "",
                     reapplied=reapplied,
+                    unknown=[
+                        dict(
+                            path="/".join([record["path"].rstrip("/"), *found["names"]]),
+                            entry=(
+                                f"group {group_name} has {found['value']}"
+                                + (
+                                    " for new items"
+                                    if found["key"].startswith("default:")
+                                    else ""
+                                )
+                                + " on this item, set outside Eugene"
+                            ),
+                            fingerprint=found,
+                        )
+                        for found in unknown
+                    ],
                 )
             )
         )
+
+
+@contextlib.contextmanager
+def entry_fd(fd, names):
+    """Hold an item below `fd` by name, never following a link."""
+    held = []
+    try:
+        current = fd
+        for name in names:
+            current = os.open(
+                name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=current
+            )
+            held.append(current)
+        yield current
+    finally:
+        for item in reversed(held):
+            os.close(item)
+
+
+def decide(prefix, account, group, ident, mode, target):
+    """The owner's decision about one entry this ledger lists (R23-UNKNOWN).
+
+    The agent names the entry; only an entry this root-owned ledger lists is
+    acted on, so the agent can never point this at anything else. Remove
+    checks the same item and the same value first, then deletes that entry.
+    """
+    if not target.is_file():
+        raise ValueError("No such access record.")
+    record = json.loads(target.read_text())
+    wanted = json.loads(
+        run(
+            "runuser",
+            "-u",
+            account,
+            "--",
+            "head",
+            "-c",
+            "4097",
+            "--",
+            str(Path(prefix) / "apps/ctl" / (ident + ".entry")),
+        )
+    )
+    if wanted not in (record.get("unknown") or []):
+        raise ValueError(
+            "This entry is not waiting for a decision. "
+            "Choose Remove access again to check the folder."
+        )
+    if mode == "keep":
+        record.setdefault("accepted", []).append(wanted)
+    else:
+        with opened(record["path"], parents_safe=False, allow_mount_root=True) as fd:
+            if not same_identity(identity(fd), record["identity"]):
+                raise ValueError("The folder was replaced, so the entry was left as it is.")
+            with entry_fd(fd, wanted["names"]) as child:
+                if not same_identity(identity(child), wanted["identity"]):
+                    raise ValueError(
+                        "The item changed since Eugene found it, so the entry was left as it is."
+                    )
+                if acl(child).get(wanted["key"]) != wanted["value"]:
+                    raise ValueError(
+                        "The entry changed since Eugene found it, so it was left as it is. "
+                        "Choose Remove access again to check the folder."
+                    )
+                default = wanted["key"].startswith("default:")
+                run(
+                    "setfacl",
+                    "-n",
+                    "-x",
+                    ("d:" if default else "") + "g:" + group,
+                    "--",
+                    f"/proc/self/fd/{child}",
+                    pass_fds=(child,),
+                )
+    record["unknown"] = [f for f in record["unknown"] if f != wanted]
+    write_record(target, record)
+    print(json.dumps(dict(decided=True)))
 
 
 if __name__ == "__main__":
@@ -1486,10 +1614,16 @@ for NAME in $NAMES; do
     MODE=read
     GRANT=
     case "$VERB" in
-        folder-inspect|folder-grant|folder-revoke)
+        folder-inspect|folder-grant|folder-revoke|folder-decide)
             set -- $APP
             if [ "$#" = 3 ]; then APP=$1; MODE=$2; GRANT=$3; else VERB=; fi
-            case "$MODE" in read|write) ;; *) VERB= ;; esac
+            # folder-decide carries the owner's answer (R23-UNKNOWN).
+            case "$VERB:$MODE" in
+                folder-decide:remove|folder-decide:keep) ;;
+                folder-decide:*) VERB= ;;
+                *:read|*:write) ;;
+                *) VERB= ;;
+            esac
             printf '%s' "$GRANT" | grep -Eq '^[0-9a-f]{32}$' || VERB=
             ;;
         start|stop|restart|clean) ;;
@@ -1499,7 +1633,7 @@ for NAME in $NAMES; do
     if [ -z "$VERB" ]; then
         CODE=2
         OUT="refused: this helper starts, stops, restarts or cleans one eugene-plexus-app@ unit"
-    elif [ "$VERB" = folder-inspect ] || [ "$VERB" = folder-grant ] || [ "$VERB" = folder-revoke ]; then
+    elif [ "$VERB" = folder-inspect ] || [ "$VERB" = folder-grant ] || [ "$VERB" = folder-revoke ] || [ "$VERB" = folder-decide ]; then
         OUT=$(/usr/bin/python3 -I /usr/local/lib/eugene-plexus/folder-access.py "${DIR%/apps/ctl}" "$ACCOUNT" "$VERB" "$APP" "$MODE" "$GRANT" 2>&1)
         CODE=$?
     elif [ "$VERB" = clean ]; then
