@@ -1705,9 +1705,10 @@ paths:
         400 saying so, before anything is forwarded or woken. A `file_id`
         (row 53) is read from the caller's own files in the install's
         store and carried inline: a PDF as `file_data`, an image as an
-        image part, text as text; another owner's id is refused as a
-        missing one, and a store that is not answering is a 503 naming
-        the cause.
+        image part, UTF-8 text as text; another owner's id is refused as
+        a missing one, and a store that is not answering is a 503 naming
+        the cause. The files one request names count together against the
+        11 MiB attachment limit, a file named twice twice.
 
         **Audio out (P2b, 2026-09-28).** `modalities: ["text", "audio"]`
         with `audio: {voice, format}` asks for a spoken answer, and routes
@@ -3911,14 +3912,15 @@ paths:
         install on the root by default, and belongs to the caller: the
         person the root verified (an app's `X-Eugene-Person-Token`), else
         the client key, else the owner's console. Nobody else sees it, the
-        install owner included. It ends 30 days after upload by default,
-        or at `expires_after` (OpenAI's field; any number of seconds up to
-        the install's maximum, 30 days by default), and is then deleted
-        for good.
+        install owner included. **It is kept until it is deleted**, as
+        OpenAI keeps a file, unless the request sends `expires_after`
+        (OpenAI's field and bounds: one hour to 30 days) or the owner set a
+        default life in Settings; then it is deleted for good at its end.
 
         **At most 16 MiB here**, the gateway's body limit; a larger file
         comes through `/v1/uploads` in parts. Over the owner's quota (10
-        GiB and 10,000 files by default) is a 413 that says the numbers.
+        GiB and 10,000 files by default) is a 413 that says the numbers;
+        nothing is written past it.
 
         **Anthropic's Files API is this door too**: a request with
         `anthropic-version` (every Anthropic SDK sends it) is answered in
@@ -4237,6 +4239,11 @@ paths:
               schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
         '404':
           description: No such upload or part for this caller.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
+        '409':
+          description: The upload is being completed, or is taking a part, already.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/OpenAIErrorResponse'}
@@ -11450,11 +11457,9 @@ components:
           const: created_at
         seconds:
           type: integer
-          minimum: 1
-          description: |
-            Seconds after upload. OpenAI takes 3,600 to 2,592,000; this
-            install takes any number up to its maximum (30 days by
-            default, `fileMaxDays` in Settings -> Store).
+          minimum: 3600
+          maximum: 2592000
+          description: Seconds after upload, one hour to 30 days, as OpenAI takes them.
 
     FileUploadForm:
       type: object
@@ -11474,7 +11479,8 @@ components:
           const: created_at
         expires_after[seconds]:
           type: integer
-          minimum: 1
+          minimum: 3600
+          maximum: 2592000
 
     OpenAIFile:
       type: object
@@ -11490,8 +11496,8 @@ components:
         created_at:
           type: integer
         expires_at:
-          type: integer
-          description: Every file kept here has an end.
+          type: ['integer', 'null']
+          description: Null when the file is kept until it is deleted (OpenAI's default).
         filename:
           type: string
         purpose:

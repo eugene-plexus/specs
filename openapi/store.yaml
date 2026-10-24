@@ -54,18 +54,28 @@ info:
 
     ## Ends
 
-    Every object expires. A file lives 30 days after upload by default
-    (`fileDefaultDays`), or the `expiresAfterSeconds` its caller sent, up
-    to `fileMaxDays`. An upload in progress lives one hour, as OpenAI's
-    does. An expired object answers 404 at once; the sweep, every
+    **A file is kept until it is deleted**, as OpenAI keeps one, unless
+    its caller sent `expiresAfterSeconds` (at most 30 days, OpenAI's
+    bound) or the owner set a default life (`fileDefaultDays`, 0 by
+    default). An upload in progress lives one hour, as OpenAI's does. An
+    ended object answers 404 at once; the sweep, every
     `sweepIntervalMinutes`, deletes it for good: its row (SQLite's
     `secure_delete` is on) and, when the last reference to it goes, its
     blob file.
 
+    **The quota bounds the disk.** Room is taken before a byte is
+    written: a whole file's size, or a part's against its upload's
+    declared size. An upload is joined once at a time (a second
+    `complete` is a 409), and its parts are deleted as they are joined.
+    An ended file counts until its bytes are deleted; an owner at its
+    quota has its own ended files deleted first.
+
     **Removing a person deletes what they own here.** Each sweep asks the
     root, through this machine's agent (`POST /v1/people/known`), whether
     the people who own objects here still exist, and deletes everything
-    of each one it says is unknown. When `removalBrake` or more are
+    of each one it says is unknown, up to the store's generation read
+    before it asked: a person restored under the same id who keeps a file
+    while the root answers keeps it. When `removalBrake` or more are
     unknown at once, nothing is deleted until the owner releases them
     (`POST /v1/removals/release`): a restored or wrong root must not
     empty the store.
@@ -135,10 +145,11 @@ paths:
         - name: expiresAfterSeconds
           in: query
           required: false
-          schema: {type: integer, minimum: 1}
+          schema: {type: integer, minimum: 1, maximum: 2592000}
           description: |
-            The file's end, in seconds after it is kept. Absent, the
-            install's `fileDefaultDays`. More than `fileMaxDays` is a 400.
+            The file's end, in seconds after it is kept, at most 30 days.
+            Absent, the install's `fileDefaultDays`, which by default is
+            none: the file is kept until it is deleted.
       requestBody:
         required: true
         content:
@@ -303,6 +314,11 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: The upload is being completed, or is taking a part; try again when that has finished.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
 
   /v1/uploads/{uploadId}/complete:
     parameters:
@@ -335,6 +351,11 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: The upload is being completed, or is taking a part; try again when that has finished.
+          content:
+            application/problem+json:
+              schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
         '413': {$ref: '#/components/responses/OverQuota'}
 
   /v1/uploads/{uploadId}/cancel:
@@ -604,7 +625,7 @@ components:
     StoredFile:
       type: object
       additionalProperties: false
-      required: [id, filename, purpose, bytes, mimeType, sha256, createdAt, expiresAt, status]
+      required: [id, filename, purpose, bytes, mimeType, sha256, createdAt, status]
       properties:
         id:
           type: string
@@ -629,7 +650,7 @@ components:
           description: Unix seconds.
         expiresAt:
           type: integer
-          description: Unix seconds. Every kept file has an end.
+          description: Unix seconds. Absent, the file is kept until it is deleted.
         status:
           $ref: '#/components/schemas/StoredFileStatus'
 
@@ -680,6 +701,7 @@ components:
         expiresAfterSeconds:
           type: integer
           minimum: 1
+          maximum: 2592000
           description: The file's end once completed, as on `POST /v1/files`.
 
     StoredUpload:
