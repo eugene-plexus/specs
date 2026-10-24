@@ -484,17 +484,17 @@ $DCP stop >/dev/null 2>&1
 logs=$($DCP logs --no-color 2>/dev/null | tr -d '\r')
 own=$(printf '%s' "$logs" | grep -cE '(^|\| *)INFO: +Application shutdown complete')
 kids=0
-for k in control gateway library; do
+for k in control gateway library store; do
   printf '%s' "$logs" | grep -qE "\[$k\] INFO: +Application shutdown complete" && kids=$((kids + 1))
 done
-[ "$kids" = 3 ] && [ "$own" -ge 1 ] \
-  && ok "18. the agent and all three children ran their ASGI lifespan shutdown" \
-  || bad "18. graceful shutdown: agent=$own children=$kids/3"
+[ "$kids" = 4 ] && [ "$own" -ge 1 ] \
+  && ok "18. the agent and all four children ran their ASGI lifespan shutdown" \
+  || bad "18. graceful shutdown: agent=$own children=$kids/4"
 
 $DCP up -d >/dev/null 2>&1
 for _ in $(seq 1 45); do curl -sf -m 2 http://127.0.0.1:8079/healthz >/dev/null 2>&1 && break; sleep 1; done
 decl=$($CT exec "$CID" sh -c "grep -c '^- kind: ' /data/agent.yaml" 2>/dev/null | tr -d '\r')
-[ "${decl:-0}" = 3 ] && ok "19. state survived the restart: the same three components are declared" \
+[ "${decl:-0}" = 4 ] && ok "19. state survived the restart: the same four components are declared" \
                      || bad "19. /data/agent.yaml declares '${decl:-0}' components after a restart"
 
 $DCP down -v >/dev/null 2>&1 || true
