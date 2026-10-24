@@ -76,6 +76,7 @@ PINNED_STEPS = {
     "c2-sign-in-acceptance.py": (EVERY, "both"),
     "c3-workbench-acceptance.py": (EVERY, "both"),
     "row7-person-removal-acceptance.py": (EVERY, "both"),
+    "row27a-backfill-acceptance.py": (EVERY, "both"),
     "update-all-acceptance.py": (FULL, "both"),
     "standby-acceptance.py": (FULL, "both"),
     "job-sites-acceptance.py": (FULL, "linux"),
@@ -162,7 +163,9 @@ class WiringTests(unittest.TestCase):
         default = []
         for path in sorted(WORKFLOWS.glob("*.yml")):
             document = workflow(path.name)
-            workflow_shell = ((document.get("defaults") or {}).get("run") or {}).get("shell")
+            workflow_shell = ((document.get("defaults") or {}).get("run") or {}).get(
+                "shell"
+            )
             for job_id, job in (document.get("jobs") or {}).items():
                 if not can_run_on_windows(job):
                     continue
@@ -196,7 +199,9 @@ class WiringTests(unittest.TestCase):
 
     def test_branch_pushes_run_ci_and_main_pushes_are_never_cancelled(self) -> None:
         ci = workflow("ci.yml")
-        self.assertEqual(ci["on"]["push"]["branches"], ["**", "!edge", "!dependabot/**"])
+        self.assertEqual(
+            ci["on"]["push"]["branches"], ["**", "!edge", "!dependabot/**"]
+        )
         self.assertEqual(ci["on"]["pull_request"]["branches"], ["main"])
         self.assertTrue(ci["on"]["schedule"])
         group = ci["concurrency"]["group"]
@@ -244,7 +249,9 @@ class WiringTests(unittest.TestCase):
             "${{ github.event.before || github.event.pull_request.base.sha || inputs.base }}",
         )
         for name in REF_INPUTS:
-            self.assertEqual(select["env"][f"{name.upper()}_REF"], f"${{{{ inputs.{name}_ref }}}}")
+            self.assertEqual(
+                select["env"][f"{name.upper()}_REF"], f"${{{{ inputs.{name}_ref }}}}"
+            )
 
     def test_every_job_tests_the_planned_component_refs(self) -> None:
         ci = workflow("ci.yml")
@@ -258,15 +265,20 @@ class WiringTests(unittest.TestCase):
                 repository = step.get("with", {}).get("repository", "")
                 component = repository.removeprefix("eugene-plexus/").replace("-", "_")
                 if component in REF_INPUTS:
-                    self.assertIn(f"needs.plan.outputs.{component}_ref", step["with"]["ref"])
+                    self.assertIn(
+                        f"needs.plan.outputs.{component}_ref", step["with"]["ref"]
+                    )
 
     def test_durable_run_protocol_uses_the_planned_library_ref(self) -> None:
         step = next(
             step
             for step in workflow("ci.yml")["jobs"]["r7-signing"]["steps"]
-            if step.get("name") == "Verify durable run protocol when both consumers provide it"
+            if step.get("name")
+            == "Verify durable run protocol when both consumers provide it"
         )
-        self.assertEqual(step["env"]["LIBRARY_REF"], "${{ needs.plan.outputs.library_ref }}")
+        self.assertEqual(
+            step["env"]["LIBRARY_REF"], "${{ needs.plan.outputs.library_ref }}"
+        )
         self.assertIn('"specs/scripts/run-operations-checks.py"', step["run"])
 
     def test_every_pinned_integration_step_runs_once_per_system(self) -> None:
@@ -281,8 +293,12 @@ class WiringTests(unittest.TestCase):
         )
         clause = re.compile(r"matrix\.shard == '([LW][123])'")
         steps = job["steps"]
-        first = next(i for i, step in enumerate(steps) if "matrix.shard" in step.get("if", ""))
-        self.assertEqual(steps[first - 1]["name"], "Check installed dependency consistency")
+        first = next(
+            i for i, step in enumerate(steps) if "matrix.shard" in step.get("if", "")
+        )
+        self.assertEqual(
+            steps[first - 1]["name"], "Check installed dependency consistency"
+        )
         # Every part installs the same components: no setup step is split.
         self.assertEqual(first, SETUP_STEPS)
         for step in steps[:first]:
@@ -297,7 +313,9 @@ class WiringTests(unittest.TestCase):
                 self.assertEqual(len(linux), 1)
                 self.assertLessEqual(len(windows), 1)
                 # The part clause is ANDed onto a condition the unsplit job had.
-                bare = " || ".join(f"matrix.shard == '{part}'" for part in linux + windows)
+                bare = " || ".join(
+                    f"matrix.shard == '{part}'" for part in linux + windows
+                )
                 part = f"({bare})" if windows else bare
                 full = "needs.plan.outputs.full == 'true'"
                 gates = {
@@ -322,7 +340,8 @@ class WiringTests(unittest.TestCase):
         aggregate = jobs["pinned-integration"]
         self.assertEqual(aggregate["needs"], ["plan", "r7-signing"])
         self.assertEqual(
-            aggregate["if"], "${{ !cancelled() && needs.plan.outputs.runtime == 'true' }}"
+            aggregate["if"],
+            "${{ !cancelled() && needs.plan.outputs.runtime == 'true' }}",
         )
         names = {
             aggregate["name"].replace("${{ matrix.os }}", system)
@@ -334,7 +353,9 @@ class WiringTests(unittest.TestCase):
         self.assertIn('if [ "$PARTS" != success ]; then', check["run"])
         self.assertIn("exit 1", check["run"])
         # Every part's name falls under the prefix Publish Edge requires to pass.
-        self.assertTrue(jobs["r7-signing"]["name"].startswith(edge_marker.RUNTIME_PREFIX))
+        self.assertTrue(
+            jobs["r7-signing"]["name"].startswith(edge_marker.RUNTIME_PREFIX)
+        )
         self.assertEqual(jobs["r7-signing"]["strategy"]["fail-fast"], "false")
 
     def test_a_reduced_run_on_main_needs_the_previous_push_to_have_passed(self) -> None:
@@ -366,7 +387,9 @@ class WiringTests(unittest.TestCase):
         self.assertEqual(ci["permissions"], {"contents": "read"})
         for name, job in ci["jobs"].items():
             with self.subTest(job=name):
-                self.assertIn(job.get("permissions", {"contents": "read"}), [{"contents": "read"}])
+                self.assertIn(
+                    job.get("permissions", {"contents": "read"}), [{"contents": "read"}]
+                )
         granted = workflow("release-qualification.yml")["permissions"]
         self.assertEqual(granted.get("contents"), "read")
 
@@ -376,7 +399,9 @@ class WiringTests(unittest.TestCase):
             for step in workflow("ci.yml")["jobs"]["plan"]["steps"]
             if step.get("id") == "select"
         )
-        self.assertIn("command.append(f\"--branch={os.environ['CI_BRANCH']}\")", select["run"])
+        self.assertIn(
+            "command.append(f\"--branch={os.environ['CI_BRANCH']}\")", select["run"]
+        )
 
     def test_planner_outputs_and_scoped_jobs_are_connected(self) -> None:
         jobs = workflow("ci.yml")["jobs"]
@@ -458,9 +483,12 @@ class WiringTests(unittest.TestCase):
         for job in ("coverage", "build-verify-publish"):
             with self.subTest(job=job):
                 self.assertEqual(
-                    container["jobs"][job]["steps"][0]["with"]["ref"], "${{ github.sha }}"
+                    container["jobs"][job]["steps"][0]["with"]["ref"],
+                    "${{ github.sha }}",
                 )
-        self.assertIn("inputs.profile && github.run_id", container["concurrency"]["group"])
+        self.assertIn(
+            "inputs.profile && github.run_id", container["concurrency"]["group"]
+        )
         # Publication still needs the tag, checked out, at the qualified inputs.
         promote = container["jobs"]["promote-release"]["steps"][0]
         self.assertEqual(promote["with"]["ref"], "${{ inputs.release_tag }}")

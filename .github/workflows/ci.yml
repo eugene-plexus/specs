@@ -595,6 +595,11 @@ jobs:
         env:
           R7_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
         run: python specs/scripts/row7-person-removal-acceptance.py
+      - name: Verify past chats migrate, resume once after a crash, yield to live answers and stop (row 27a)
+        if: matrix.shard == 'L3' || matrix.shard == 'W2'
+        env:
+          R27A_WORKBENCH_REF: ${{ inputs.workbench_ref || (github.repository == 'eugene-plexus/specs' && github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref_name) || 'main' }}
+        run: python specs/scripts/row27a-backfill-acceptance.py
       # Row 70c: Workbench at the candidate, as row 7's.
       - name: Verify Workbench reads people's groups and a group's memory server is every member's (row 70c)
         if: matrix.shard == 'L2' || matrix.shard == 'W3'
