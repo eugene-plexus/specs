@@ -221,7 +221,7 @@ class FolderAccessContractTests(unittest.TestCase):
         )
         self.assertEqual(
             self.schemas["FolderAccessUnknownKind"]["enum"],
-            ["entry", "null_dacl", "owner", "unreadable"],
+            ["entry", "null_dacl", "owner", "unreadable", "hardlink"],
         )
         self.assertEqual(
             self.schemas["FolderAccessUnknownDecision"]["enum"], ["pending", "kept"]

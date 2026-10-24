@@ -478,6 +478,30 @@ def grant(fd, group, write, ledger, save, check=None):
     return bool(plans)
 
 
+def fingerprint_key(fingerprint):
+    """What an owner's answer is about: the item and the entry, never its name.
+
+    A rename keeps the inode, so it keeps the answer; the name is only shown."""
+    return json.dumps(
+        {k: v for k, v in fingerprint.items() if k != "names"}, sort_keys=True
+    )
+
+
+def report(fingerprint, found):
+    """List one entry the owner decides, or note the owner already kept it."""
+    unknown, retained, accepted = found
+    key = fingerprint_key(fingerprint)
+    target = retained if key in accepted else unknown
+    if all(fingerprint_key(other) != key for other in target):
+        target.append(fingerprint)
+
+
+# What an item with another name, and an entry Eugene did not add, are in words.
+HARDLINK = (
+    "it has another name outside the folder, so changing it here changes it there too"
+)
+
+
 def revoke(fd, ledger):
     # Revoke the group's entries throughout the current tree, including
     # children created since the grant, and every other principal's ACL
@@ -492,9 +516,35 @@ def revoke(fd, ledger):
     # An entry for the group changed after the grant is not Eugene's to
     # take: it stays, and the owner decides (R23-UNKNOWN).
     ledger["unknown"] = []
-    accepted = {json.dumps(f, sort_keys=True) for f in ledger.get("accepted", [])}
-    found = (ledger["unknown"], accepted)
+    # What the owner chose to keep, from this record: the truth, whatever the
+    # agent saved. Only entries met again below are reported as retained.
+    ledger["retained"] = []
+    accepted = {fingerprint_key(f) for f in ledger.get("accepted", [])}
+    found = (ledger["unknown"], ledger["retained"], accepted)
+    # What Eugene's own default leaves on a new item; anything else is the owner's.
+    own = {
+        item["after"]["default:group:" + group]
+        for item in ledger["items"]
+        if "default:group:" + group in item.get("after", {})
+    }
+    allowed = {identity_key(i) for i in ledger.get("allowed", [])}
     for batch in batches(fd, revoke=True, skipped=skipped):
+        # One rule: an item with another name is never changed here, since the
+        # change would reach that name too. The owner decides (R23-UNKNOWN).
+        shared = []
+        for item in batch:
+            info = os.fstat(item[1])
+            if (
+                not stat.S_ISDIR(info.st_mode)
+                and info.st_nlink > 1
+                and identity_key(item[2]) not in allowed
+            ):
+                report(
+                    dict(kind="hardlink", names=list(item[0]), identity=list(item[2])),
+                    found,
+                )
+                shared.append(item)
+        batch = [item for item in batch if item not in shared]
         normal = [item for item in batch if item[2]]
         entries = list(zip(normal, acls([c for _, c, _ in normal]))) if normal else []
         for item in batch:
@@ -502,10 +552,10 @@ def revoke(fd, ledger):
                 continue
             try:
                 current = acl(item[1])
-                remove_entries([(item, current)], group, plans, kept, found)
+                remove_entries([(item, current)], group, plans, kept, found, own)
             except (OSError, ValueError) as exc:
                 skipped.append("/".join(item[0]) + ": " + str(exc))
-        remove_entries(entries, group, plans, kept, found)
+        remove_entries(entries, group, plans, kept, found, own)
     ledger["refusal"] = "; ".join(skipped)
     return not skipped
 
@@ -531,11 +581,12 @@ def recorded(records, names, ident):
     return records.get(tuple(names))
 
 
-def remove_entries(entries, group, plans, kept=None, found=None):
+def remove_entries(entries, group, plans, kept=None, found=None, own=None):
     kept = kept or {}
-    unknown, accepted = found if found is not None else ([], set())
+    found = found if found is not None else ([], [], set())
     keys = ("group:" + group, "default:group:" + group)
     restore, removable = [], []
+    spare = {}  # fd -> keys that stay for the owner to decide
     left = set()  # items whose default entry for the group stays
     for (names, child, ident), current in entries:
         item = recorded(plans, names, ident)
@@ -555,15 +606,16 @@ def remove_entries(entries, group, plans, kept=None, found=None):
                     item["after"].get(key),
                 ):
                     changed.append(key)
-                    fingerprint = dict(
-                        kind="entry",
-                        names=list(names),
-                        identity=list(ident),
-                        key=key,
-                        value=current[key],
+                    report(
+                        dict(
+                            kind="entry",
+                            names=list(names),
+                            identity=list(ident),
+                            key=key,
+                            value=current[key],
+                        ),
+                        found,
                     )
-                    if json.dumps(fingerprint, sort_keys=True) not in accepted:
-                        unknown.append(fingerprint)
             if "default:group:" + group in changed:
                 left.add(child)
         if planned and (changed or any(key in item["before"] for key in keys)):
@@ -576,6 +628,22 @@ def remove_entries(entries, group, plans, kept=None, found=None):
             if wanted != current:
                 restore.append((child, wanted))
             continue
+        if not planned and own is not None:
+            # Made, or replaced, after the grant: only what Eugene's default
+            # puts on a new item is Eugene's. Any other value was set by hand.
+            for key in keys:
+                if key in current and current[key] not in own:
+                    spare.setdefault(child, set()).add(key)
+                    report(
+                        dict(
+                            kind="entry",
+                            names=list(names),
+                            identity=list(ident),
+                            key=key,
+                            value=current[key],
+                        ),
+                        found,
+                    )
         removable.append(((names, child, ident), current))
     if restore:
         run(
@@ -594,7 +662,11 @@ def remove_entries(entries, group, plans, kept=None, found=None):
     everything, entries = entries, removable
     for default in (False, True):
         key = ("default:" if default else "") + "group:" + group
-        held = [child for (_, child, _), current in entries if key in current]
+        held = [
+            child
+            for (_, child, _), current in entries
+            if key in current and key not in spare.get(child, ())
+        ]
         if held:
             run(
                 "setfacl",
@@ -905,11 +977,20 @@ def main():
             decide(prefix, account, group, ident, mode, target)
             return
         if not target.is_file():
-            print(json.dumps(dict(removed=True)))
+            print(json.dumps(dict(removed=True, kept=[], unknown=[])))
             return
         record = json.loads(target.read_text())
         if record.get("removed"):
-            print(json.dumps(dict(removed=True)))
+            # Finished before; the agent may not have heard, so say what stays.
+            print(
+                json.dumps(
+                    dict(
+                        removed=True,
+                        kept=[listing(f, group_name, record) for f in record.get("retained", [])],
+                        unknown=[],
+                    )
+                )
+            )
             return
         reapplied = []
         with contextlib.ExitStack() as held:
@@ -953,25 +1034,29 @@ def main():
                     removed=removed and not unknown,
                     message=record.get("refusal") or "",
                     reapplied=reapplied,
-                    unknown=[
-                        dict(
-                            path="/".join([record["path"].rstrip("/"), *found["names"]]),
-                            entry=(
-                                f"group {group_name} has {found['value']}"
-                                + (
-                                    " for new items"
-                                    if found["key"].startswith("default:")
-                                    else ""
-                                )
-                                + " on this item, set outside Eugene"
-                            ),
-                            fingerprint=found,
-                        )
-                        for found in unknown
-                    ],
+                    unknown=[listing(found, group_name, record) for found in unknown],
+                    kept=[listing(found, group_name, record) for found in record.get("retained", [])],
                 )
             )
         )
+
+
+def listing(found, group_name, record=None):
+    """One entry for the agent: where it is, in words, and the ledger's fingerprint."""
+    root = (record or {}).get("path", "")
+    if found["kind"] == "hardlink":
+        words_for = HARDLINK
+    else:
+        words_for = (
+            f"group {group_name} has {found['value']}"
+            + (" for new items" if found["key"].startswith("default:") else "")
+            + " on this item, set outside Eugene"
+        )
+    return dict(
+        path="/".join([root.rstrip("/"), *found["names"]]) if root else "/".join(found["names"]),
+        entry=words_for,
+        fingerprint=found,
+    )
 
 
 @contextlib.contextmanager
@@ -1014,6 +1099,15 @@ def decide(prefix, account, group, ident, mode, target):
             str(Path(prefix) / "apps/ctl" / (ident + ".entry")),
         )
     )
+    key = fingerprint_key(wanted)
+    if (
+        mode == "keep"
+        and key in {fingerprint_key(f) for f in record.get("accepted", [])}
+        and wanted not in (record.get("unknown") or [])
+    ):
+        # Committed already, and the agent asks again after a crash.
+        print(json.dumps(dict(decided=True)))
+        return
     if wanted not in (record.get("unknown") or []):
         raise ValueError(
             "This entry is not waiting for a decision. "
@@ -1030,21 +1124,25 @@ def decide(prefix, account, group, ident, mode, target):
                     raise ValueError(
                         "The item changed since Eugene found it, so the entry was left as it is."
                     )
-                if acl(child).get(wanted["key"]) != wanted["value"]:
-                    raise ValueError(
-                        "The entry changed since Eugene found it, so it was left as it is. "
-                        "Choose Remove access again to check the folder."
+                if wanted["kind"] == "hardlink":
+                    # Only allows: the removal that follows changes the item.
+                    record.setdefault("allowed", []).append(wanted["identity"])
+                else:
+                    if acl(child).get(wanted["key"]) != wanted["value"]:
+                        raise ValueError(
+                            "The entry changed since Eugene found it, so it was left as it is. "
+                            "Choose Remove access again to check the folder."
+                        )
+                    default = wanted["key"].startswith("default:")
+                    run(
+                        "setfacl",
+                        "-n",
+                        "-x",
+                        ("d:" if default else "") + "g:" + group,
+                        "--",
+                        f"/proc/self/fd/{child}",
+                        pass_fds=(child,),
                     )
-                default = wanted["key"].startswith("default:")
-                run(
-                    "setfacl",
-                    "-n",
-                    "-x",
-                    ("d:" if default else "") + "g:" + group,
-                    "--",
-                    f"/proc/self/fd/{child}",
-                    pass_fds=(child,),
-                )
     record["unknown"] = [f for f in record["unknown"] if f != wanted]
     write_record(target, record)
     print(json.dumps(dict(decided=True)))
