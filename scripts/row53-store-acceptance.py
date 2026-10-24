@@ -13,20 +13,29 @@ person's own token); a plain client key has no person.
 1. Ann keeps a file in one request and a 40 MiB file through an upload of three
    parts; lists and reads both; a chat naming her text file's id reaches the
    backend with the file's words inline.
-2. Ben's list is empty; Ben asking for Ann's id gets the same 404 as for an id
-   that does not exist; Ben's chat with Ann's id is refused the same way.
+2. Ben's list is empty; Ben asking for Ann's file, its content, or its
+   deletion gets the same 404 as for an id that does not exist, and Ann's file
+   is untouched; Ben's chat with Ann's id is refused the same way.
 3. The plain key's files are its own: neither person sees them, it sees no
    person's.
-4. A file kept for one second is gone after the sweep: from the database and
-   from the disk.
-5. Ann is removed at the root: at the next sweep everything she kept is gone,
-   rows and blobs; Ben's files stay.
+4. Files are kept until deleted, as OpenAI keeps them; an app's
+   `expires_after` takes OpenAI's bounds (one hour to 30 days). A file the
+   store was told to keep for one second (asked with the gateway's own token,
+   as the door would) is gone after the sweep: from the database and the disk.
+5. Ann is removed at the root (call R53-REMOVE, Choice 2: row 7's rules). A
+   copy of the store is kept beside it, as a migration keeps one. At the next
+   sweep her files are hidden: the store answers her ids with the 404 of a
+   missing id, to her and to Ben, her token is refused at the gateway, her
+   rows and blobs are still on disk, and the console shows her counts with a
+   delete date 30 days on. The owner's Delete now deletes them at once: rows,
+   blobs and her rows in the copy. Ben's and the key's files stay.
 6. The store is stopped: `/v1/files` is a 503 naming the cause, and a chat that
    names no file still answers.
-7. `--sabotage`: a store whose listing drops the owner filter serves the
-   install; step 2's isolation check must fail against it. The sabotage is made
-   in that store's process only (a method replaced before it starts); no file
-   changes, so nothing needs restoring.
+7. `--sabotage`: a store whose listing drops the owner filter, then one whose
+   lookup by id (read, content, delete) drops it, serves the install; step 2's
+   isolation check must fail against each. Each sabotage is made in that store's
+   process only (a method replaced before it starts); no file changes, so
+   nothing needs restoring.
 
 Run with a Python that has agent, control, gateway, inference-driver and store
 installed (CI's Pinned integration job has them).
@@ -41,6 +50,7 @@ import json
 import os
 import re
 import secrets
+import shutil
 import socket
 import sqlite3
 import subprocess
@@ -159,6 +169,21 @@ def _sabotage_listing() -> None:
     keeper.Keeper.list_files = every_owners  # type: ignore[method-assign]
 
 
+def _sabotage_lookup() -> None:
+    """Read, content and delete by id, without the owner filter."""
+    from eugene_plexus_store import keeper
+
+    def anyones(self: Any, owner: str, file_id: str) -> Any:
+        row = self.database.connection.execute(
+            "SELECT * FROM files WHERE id = ?", (file_id,)
+        ).fetchone()
+        if row is None:
+            raise keeper.not_found("file", file_id)
+        return row
+
+    keeper.Keeper._owned_file = anyones  # type: ignore[method-assign]
+
+
 def serve(kind: str, directory: Path, port: int) -> None:
     import uvicorn
 
@@ -195,8 +220,8 @@ def serve(kind: str, directory: Path, port: int) -> None:
                     **bootstrap,
                 )
             )
-        elif kind == "store-sabotaged":
-            _sabotage_listing()
+        elif kind.startswith("store-sabotaged-"):
+            {"listing": _sabotage_listing, "lookup": _sabotage_lookup}[kind.rsplit("-", 1)[1]]()
             from eugene_plexus_store.app import create_app as store_app
             from eugene_plexus_store.settings import Settings as StoreSettings
 
@@ -264,7 +289,9 @@ class Install:
         self.logs: list[Any] = []
         self.passphrase = secrets.token_urlsafe(24)
         self.ports: dict[str, int] = {}
-        for name in ("control", "agent", "machine", "fixture", "model", "gateway", "sabotaged"):
+        for name in (
+            "control", "agent", "machine", "fixture", "model", "gateway", "listing", "lookup"
+        ):
             self.ports[name] = free_port(*self.ports.values())
 
     def url(self, name: str) -> str:
@@ -437,20 +464,26 @@ def check_isolation(
     outsider: Caller, others: dict[str, str], missing: str = "file-" + "0" * 24
 ) -> None:
     """Step 2's assertion, apart so the sabotage run can expect it to fail:
-    `outsider` lists none of `others` (id -> whose), and asking for one is
-    the same 404 as asking for an id that does not exist."""
+    `outsider` lists none of `others` (id -> whose), and asking for one, its
+    content, or its deletion is the same 404 as asking for an id that does not
+    exist."""
     seen = outsider.listed()
     foreign = [ident for ident in seen if ident in others]
     assert not foreign, f"listed another owner's files: {[others[i] for i in foreign]}"
-    none = outsider.files("GET", f"/{missing}")
-    for ident in others:
-        theirs = outsider.files("GET", f"/{ident}")
-        assert theirs.status_code == none.status_code == 404, (theirs.text, none.text)
-        assert without(theirs.text, ident) == without(none.text, missing), theirs.text
+    for method, suffix in (("GET", ""), ("GET", "/content"), ("DELETE", "")):
+        none = outsider.files(method, f"/{missing}{suffix}")
+        for ident in others:
+            theirs = outsider.files(method, f"/{ident}{suffix}")
+            assert theirs.status_code == none.status_code == 404, (
+                f"{method} {suffix or 'file'} of {others[ident]}'s: {theirs.status_code}"
+            )
+            assert without(theirs.text, ident) == without(none.text, missing), theirs.text
 
 
-def store_rows(store_dir: Path, owner: str | None = None) -> list[tuple[str, str, str]]:
-    path = store_dir / "store.sqlite3"
+def store_rows(
+    store_dir: Path, owner: str | None = None, name: str = "store.sqlite3"
+) -> list[tuple[str, str, str]]:
+    path = store_dir / name
     # Read-only, beside the running store; `as_uri` spells a Windows path too.
     connection = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
     try:
@@ -647,7 +680,7 @@ def exercise(directory: Path, sabotage: bool) -> None:
         assert small.status_code == 200, small.text
         notes = small.json()
         assert notes["object"] == "file" and notes["bytes"] == len(MARKER.encode()), notes
-        assert notes["expires_at"] - notes["created_at"] == 30 * 86400, notes
+        assert notes["expires_at"] is None, notes  # kept until deleted, as OpenAI keeps
         big = os.urandom(40 * MIB)
         upload = ann.post(
             "/v1/uploads",
@@ -693,10 +726,12 @@ def exercise(directory: Path, sabotage: bool) -> None:
         # ---------------------------------------------------------------- #
         # 2. Ben sees nothing of Ann's
         # ---------------------------------------------------------------- #
+        missing = "file-" + "0" * 24
         anns = {notes["id"]: "Ann", large["id"]: "Ann"}
         assert ben.listed() == []
         check_isolation(ben, anns)
-        missing = "file-" + "0" * 24
+        assert set(ann.listed()) == set(anns), "Ben's delete reached Ann's files"
+        assert ann.files("GET", f"/{notes['id']}/content").content == MARKER.encode()
         asked = len(install.client.get(install.url("fixture") + "/seen").json())
         theirs, none = ben.chat(notes["id"]), ben.chat(missing)
         assert theirs.status_code == none.status_code == 400, (theirs.text, none.text)
@@ -726,12 +761,32 @@ def exercise(directory: Path, sabotage: bool) -> None:
         # ---------------------------------------------------------------- #
         # 4. A file kept for one second is gone after the sweep
         # ---------------------------------------------------------------- #
-        brief = key.keep(
-            "brief.txt",
-            b"gone in a second " + secrets.token_bytes(16),
+        too_short = key.keep(
+            "short.txt",
+            b"x",
             **{"expires_after[anchor]": "created_at", "expires_after[seconds]": "1"},
         )
-        assert brief.status_code == 200, brief.text
+        assert too_short.status_code == 400, too_short.text
+        hour = key.keep(
+            "hour.txt",
+            b"an hour " + secrets.token_bytes(8),
+            **{"expires_after[anchor]": "created_at", "expires_after[seconds]": "3600"},
+        )
+        assert hour.status_code == 200, hour.text
+        assert hour.json()["expires_at"] == hour.json()["created_at"] + 3600
+        # The store's own end, as the gateway would ask it, in one second.
+        gateway_token = bootstrap_for(agent_dir, install.url("agent"), "gateway")["service_token"]
+        brief = install.client.post(
+            install.url("agent") + "/api/proxy/store/v1/files",
+            params={"filename": "brief.txt", "purpose": "user_data", "expiresAfterSeconds": 1},
+            content=b"gone in a second " + secrets.token_bytes(16),
+            headers={
+                "Authorization": f"Bearer {gateway_token}",
+                "X-Eugene-Plexus-Owner": f"key:{plain_key.json()['key']['id']}",
+                "Content-Type": "application/octet-stream",
+            },
+        )
+        assert brief.status_code == 201, brief.text
         brief_id = brief.json()["id"]
         brief_blob = next(sha for ident, _, sha in store_rows(store_dir) if ident == brief_id)
         assert brief_blob in blob_names(store_dir)
@@ -742,23 +797,76 @@ def exercise(directory: Path, sabotage: bool) -> None:
         assert swept.json()["files"] >= 1, swept.text
         assert brief_id not in {ident for ident, _, _ in store_rows(store_dir)}
         assert brief_blob not in blob_names(store_dir)
-        ok("step 4: a file kept for one second is gone after the sweep, from the database and the disk")
+        ok(
+            "step 4: files are kept until deleted; expires_after takes OpenAI's bounds; a file "
+            "kept for one second is gone after the sweep, from the database and the disk"
+        )
 
         # ---------------------------------------------------------------- #
-        # 5. Ann is removed: everything she kept goes at the next sweep
+        # 5. Ann is removed: hidden at the next sweep, then deleted now
         # ---------------------------------------------------------------- #
         ann_owner = f"person:{people['Ann']['id']}"
-        ann_blobs = {sha for _, _, sha in store_rows(store_dir, ann_owner)}
+        ann_rows = store_rows(store_dir, ann_owner)
+        ann_blobs = {sha for _, _, sha in ann_rows}
         assert len(ann_blobs) == 2 and ann_blobs <= blob_names(store_dir)
+        ben_kept = ben.keep("ben.txt", b"Ben's own words " + secrets.token_bytes(8))
+        assert ben_kept.status_code == 200, ben_kept.text
+        # A copy beside the store, as a migration keeps one (`schema-N.bak`).
+        copy = "store.sqlite3.schema-1.bak"
+        shutil.copyfile(store_dir / "store.sqlite3", store_dir / copy)
+        assert len(store_rows(store_dir, ann_owner, copy)) == 2
         removed = install.call("control", "DELETE", f"/v1/people/{people['Ann']['id']}", root)
         assert removed.status_code == 204, removed.text
         swept = install.call("agent", "POST", "/api/proxy/store/v1/sweep", session)
         assert swept.status_code == 200, swept.text
-        assert swept.json()["removal"]["removed"] == 1, swept.text
+        assert swept.json()["removal"]["hidden"] == 1, swept.text
+        assert swept.json()["removal"]["deleted"] == 0, swept.text
+        # Hidden, not deleted: on disk, and answered as ids that do not exist.
+        assert store_rows(store_dir, ann_owner) == ann_rows
+        assert ann_blobs <= blob_names(store_dir)
+
+        def as_store(owner: str, path: str) -> httpx.Response:
+            return install.client.get(
+                install.url("agent") + "/api/proxy/store/v1/files" + path,
+                headers={"Authorization": f"Bearer {gateway_token}", "X-Eugene-Plexus-Owner": owner},
+            )
+
+        absent = as_store(ann_owner, f"/{missing}")
+        for ident, _, _ in ann_rows:
+            for suffix in ("", "/content"):
+                hers = as_store(ann_owner, f"/{ident}{suffix}")
+                assert hers.status_code == absent.status_code == 404, hers.text
+                assert without(hers.text, ident) == without(absent.text, missing), hers.text
+        assert as_store(ann_owner, "").json()["data"] == []
+        check_isolation(ben, anns)
+        install.wait(
+            lambda: ann.files("GET").status_code == 401, "Ann's token refused at the gateway"
+        )
+        listed = install.call("agent", "GET", "/api/proxy/store/v1/owners", session).json()
+        entry = next(o for o in listed["owners"] if o["owner"] == ann_owner)
+        assert entry["files"] == 2 and entry["deleteAt"] - entry["removedAt"] == 30 * 86400, entry
+        assert "removedAt" not in next(
+            o for o in listed["owners"] if o["owner"] == f"person:{people['Ben']['id']}"
+        )
+        ok(
+            "step 5: Ann removed at the root: her files are hidden from her and from Ben, still "
+            "on disk, and the console shows her delete date 30 days on"
+        )
+        deleted = install.call(
+            "agent",
+            "POST",
+            "/api/proxy/store/v1/removals/delete",
+            session,
+            json={"owner": ann_owner},
+        )
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["files"] == 2 and deleted.json()["removal"]["deleted"] == 1
         assert store_rows(store_dir, ann_owner) == []
+        assert store_rows(store_dir, ann_owner, copy) == [], "the copy still holds Ann's rows"
         assert not ann_blobs & blob_names(store_dir), "a removed person's blob is still on disk"
-        assert key.listed() == [kept.json()["id"]]
-        ok("step 5: Ann removed at the root: her rows and blobs are gone; the key's file stays")
+        assert ben.listed() == [ben_kept.json()["id"]]
+        assert set(key.listed()) == {kept.json()["id"], hour.json()["id"]}
+        ok("step 5: Delete now: Ann's rows, blobs and copy rows are gone; Ben's and the key's stay")
 
         # ---------------------------------------------------------------- #
         # 6. The store stopped: files are a 503 naming the cause; chat answers
@@ -783,26 +891,34 @@ def exercise(directory: Path, sabotage: bool) -> None:
         # ---------------------------------------------------------------- #
         # 7. Sabotage: a store whose listing drops the owner filter
         # ---------------------------------------------------------------- #
-        sabotaged_dir = directory / "sabotaged"
-        sabotaged_dir.mkdir(exist_ok=True)
-        (sabotaged_dir / "bootstrap.json").write_text(
-            json.dumps(bootstrap_for(agent_dir, install.url("agent"), "store")),
-            encoding="utf-8",
-        )
-        install.start("sabotaged", "store-sabotaged")
-        declared = install.call(
-            "agent",
-            "POST",
-            "/v1/components",
-            session,
-            json={"name": "store", "kind": "store", "url": install.url("sabotaged")},
-        )
-        assert declared.status_code == 201, declared.text
-        install.wait(lambda: key.files("GET").status_code == 200, "the sabotaged store in use")
-        planted = key.keep("planted.txt", b"the key's planted words")
-        assert planted.status_code == 200, planted.text
-        with must_fail("step 2's isolation check against a listing without its owner filter"):
-            check_isolation(ben, {planted.json()["id"]: "the plain key"})
+        for broken, what in (
+            ("listing", "a listing without its owner filter"),
+            ("lookup", "a read, content and delete by id without the owner filter"),
+        ):
+            sabotaged_dir = directory / broken
+            sabotaged_dir.mkdir(exist_ok=True)
+            (sabotaged_dir / "bootstrap.json").write_text(
+                json.dumps(bootstrap_for(agent_dir, install.url("agent"), "store")),
+                encoding="utf-8",
+            )
+            install.start(broken, f"store-sabotaged-{broken}")
+            declared = install.call(
+                "agent",
+                "POST",
+                "/v1/components",
+                session,
+                json={"name": "store", "kind": "store", "url": install.url(broken)},
+            )
+            assert declared.status_code == 201, declared.text
+            install.wait(lambda: key.files("GET").status_code == 200, f"the {broken} sabotage in use")
+            planted = key.keep("planted.txt", b"the key's planted words")
+            assert planted.status_code == 200, planted.text
+            with must_fail(f"step 2's isolation check against {what}"):
+                check_isolation(ben, {planted.json()["id"]: "the plain key"})
+            removed = install.call("agent", "DELETE", "/v1/components/store", session)
+            assert removed.status_code in (200, 204), removed.text
+            install.processes[broken].terminate()
+            install.processes[broken].wait(timeout=15)
     finally:
         install.close()
 

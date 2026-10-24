@@ -70,15 +70,25 @@ info:
     An ended file counts until its bytes are deleted; an owner at its
     quota has its own ended files deleted first.
 
-    **Removing a person deletes what they own here.** Each sweep asks the
-    root, through this machine's agent (`POST /v1/people/known`), whether
-    the people who own objects here still exist, and deletes everything
-    of each one it says is unknown, up to the store's generation read
-    before it asked: a person restored under the same id who keeps a file
-    while the root answers keeps it. When `removalBrake` or more are
-    unknown at once, nothing is deleted until the owner releases them
-    (`POST /v1/removals/release`): a restored or wrong root must not
-    empty the store.
+    **A removed person's objects are hidden, then deleted** (call
+    R53-REMOVE, Choice 2: Workbench's rules for a removed person, row 7).
+    Each sweep asks the root, through this machine's agent
+    (`POST /v1/people/known`, the answer Workbench gets from
+    `/oidc/subjects`), whether the people who own objects here still
+    exist. A person it no longer has is hidden at once: every lookup and
+    listing of theirs answers as if they kept nothing (the same 404 as an
+    id that does not exist, to them and to everyone), nothing new is kept
+    for them (403), and the owner's console shows only their counts and
+    their date. Their objects are deleted for good `removedPeopleDays`
+    (30) after, the date fixed when they were hidden; at once when
+    `removedPeopleRetention` is `none`; or when the owner presses Delete
+    now (`POST /v1/removals/delete`). Deleting is a true delete (MRC27):
+    the rows, the blob files no one else names, and the person's rows in
+    every copy kept before a migration. A person the root has again
+    before the date is restored: the same ids and the same bytes. A root
+    that cannot be asked hides and restores nobody; a date that has
+    passed is kept to. Each deletion takes only what is older than the
+    store's generation read before the root was asked.
 
     ## Storage
 
@@ -108,7 +118,7 @@ tags:
   - name: files
     description: Files and uploads, for the gateway's `/v1/files` and `/v1/uploads` doors.
   - name: store
-    description: Counts, the sweep and held removals, for the owner's console.
+    description: Counts, the sweep and removed people, for the owner's console.
   - name: config
     description: The standard config trio.
   - name: meta
@@ -126,7 +136,8 @@ paths:
         limit; larger files come through `/v1/uploads`). The name, the
         purpose and the end ride the query, so no multipart is decoded
         twice. Answers 413 with the numbers when the owner's quota would
-        be passed, and 403 when the owner turned files off.
+        be passed, and 403 when the owner turned files off or the owner
+        is a person Eugene removed.
       parameters:
         - $ref: '#/components/parameters/Owner'
         - name: filename
@@ -400,7 +411,7 @@ paths:
     get:
       tags: [store]
       operationId: getStoreStatus
-      summary: The last sweep, and removals waiting for the owner.
+      summary: Which parts are on, and the last sweep.
       responses:
         '200':
           description: The store's state.
@@ -425,26 +436,32 @@ paths:
               schema: {$ref: '#/components/schemas/SweepReport'}
         '401': {$ref: '#/components/responses/Unauthorized'}
 
-  /v1/removals/release:
+  /v1/removals/delete:
     post:
       tags: [store]
-      operationId: releaseHeldRemovals
-      summary: Delete what the held removals own.
+      operationId: deleteRemovedPersonNow
+      summary: Delete now, everything a removed person kept here.
       description: |
-        An operator session only. When `removalBrake` or more people were
-        unknown to the root at once, the sweep deleted nothing of theirs
-        and held them. This deletes everything those people own here, for
-        good, after the root is asked once more: a person it knows again
-        is kept.
+        An operator session only. The owner's Delete now (MRC27): every
+        file and upload of a hidden person, at once and for good, with
+        their rows in every copy kept before a migration. Only a person
+        Eugene removed (one `/v1/owners` lists with `deleteAt`): a person
+        Eugene still has keeps their files.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemovalDeleteRequest'}
       responses:
         '200':
           description: What was deleted.
           content:
             application/json:
               schema: {$ref: '#/components/schemas/SweepReport'}
+        '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
-        '503':
-          description: The root could not be asked; nothing was deleted.
+        '404':
+          description: The owner named is not a person Eugene removed.
           content:
             application/problem+json:
               schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
@@ -577,7 +594,9 @@ components:
     Forbidden:
       description: |
         The owner header came with a credential that may not name owners,
-        or the owner turned this part of the store off in its settings.
+        the owner turned this part of the store off in its settings, or
+        the owner named is a person Eugene removed (nothing new is kept
+        for them while their objects are hidden).
       content:
         application/problem+json:
           schema: {$ref: 'components/common.yaml#/components/schemas/Problem'}
@@ -782,6 +801,27 @@ components:
         uploads:
           type: integer
           description: Uploads in progress.
+        removedAt:
+          type: integer
+          description: |
+            Unix seconds. Set for a person Eugene removed: their objects
+            have been hidden from everyone since then.
+        deleteAt:
+          type: integer
+          description: |
+            Unix seconds. Set with `removedAt`: when their objects are
+            deleted for good, unless Eugene has them again first or the
+            owner deletes them now.
+
+    RemovalDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [owner]
+      properties:
+        owner:
+          type: string
+          pattern: '^person:[A-Za-z0-9._@:-]{1,200}$'
+          description: The removed person, as `/v1/owners` names them.
 
     StoreOwnerList:
       type: object
@@ -803,24 +843,27 @@ components:
     RemovalCheck:
       type: object
       additionalProperties: false
-      required: [checked, removed, held]
+      required: [checked, hidden, restored, deleted]
       properties:
         checked:
           type: integer
           description: How many people who own something here the root was asked about.
-        removed:
+        hidden:
           type: integer
-          description: How many of them the root no longer knows and whose objects were deleted.
-        held:
-          type: array
-          items: {type: string}
+          description: People the root no longer has, whose objects were hidden now.
+        restored:
+          type: integer
+          description: Hidden people the root has again, whose objects are theirs again.
+        deleted:
+          type: integer
           description: |
-            `person:<id>` owners the root no longer knows, held because
-            `removalBrake` or more were unknown at once. Nothing of theirs
-            is deleted until the owner releases them.
+            Removed people whose objects were deleted for good: their date
+            passed, `removedPeopleRetention` is `none`, or Delete now.
         error:
           type: string
-          description: Why the root could not be asked; then nothing was deleted for removal.
+          description: |
+            Why the root could not be asked; then nobody was hidden or
+            restored. A date that had passed was still kept to.
 
     SweepReport:
       type: object
@@ -862,13 +905,9 @@ components:
     StoreStatus:
       type: object
       additionalProperties: false
-      required: [parts, held]
+      required: [parts]
       properties:
         parts:
           $ref: '#/components/schemas/StoreParts'
         lastSweep:
           $ref: '#/components/schemas/SweepReport'
-        held:
-          type: array
-          items: {type: string}
-          description: Removed people whose objects wait for the owner (`POST /v1/removals/release`).

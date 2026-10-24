@@ -89,7 +89,7 @@ stored responses wait for it."). Chat, completions and Messages without a
 
 | Object | Default life | Who can change it |
 |---|---|---|
-| File | 30 days after upload, or the request's `expires_after` (OpenAI's field) | the caller per file; the owner sets the install default and maximum |
+| File | Until deleted, as OpenAI keeps it; or the request's `expires_after` (OpenAI's field, one hour to 30 days) | the caller per file; the owner may set a default life (review, 2026-10-24) |
 | Upload in progress | 1 hour (OpenAI's), then its parts are deleted | none |
 | (row 54) Stored response and conversation | 30 days | the owner's default |
 | (row 55) Batch and its files | 30 days after it ends | the owner's default |
@@ -101,7 +101,8 @@ stored responses wait for it."). Chat, completions and Messages without a
 - **Deletion is real:** metadata rows deleted with `secure_delete`, blob
   files unlinked; a blob shared by content address is unlinked when its
   last reference goes. A sweep each hour removes what expired.
-- **Removing a person** (row 7) deletes everything they own here.
+- **Removing a person** (row 7) hides everything they own here at once and
+  deletes it 30 days later, as Workbench does (R53-REMOVE, Choice 2).
 
 ### Files and Uploads (this row)
 
@@ -179,7 +180,10 @@ two people with Workbench-style person tokens and one plain key:
 3. The plain key's files are its own.
 4. A file with `expires_after` 1 s is gone after the sweep (shortened), from
    the database and the disk.
-5. A is removed (row 7): A's files and blobs are gone.
+5. A is removed (row 7): A's files are hidden (404 to A and to B) and stay
+   on disk; A restored, the same ids and bytes come back; A removed again,
+   the owner's Delete now deletes A's files and blobs at once, every copy;
+   with the days shortened, the sweep after the date deletes them.
 6. The store is stopped: `/v1/files` is the 503 naming the cause; a plain
    chat still answers.
 7. **Sabotage:** drop the owner filter on listing; step 2 must fail.
@@ -213,6 +217,16 @@ Risks:
 2026-10-23): a core component named `store`, on by default, aiming at full
 OpenAI API compatibility. The defaults above (30 days, 10 GiB) follow
 OpenAI's and DI2's and are settings.
+
+- **R53-REMOVE: Choice 2 (Troy, 2026-10-24).** When the root removes a
+  person, what they own in the store is hidden at once, from everyone,
+  and deleted 30 days later by the sweep. Restoring the person within the
+  30 days brings everything back unchanged. It matches MRC27 and row 7:
+  the owner's Delete now deletes at once and for good, every copy, and
+  row 7's legal-hold setting governs the store too (keep 30 days, the
+  default, or not at all). The signal is row 7's (the root's answer about
+  its people). The mass-removal brake is dropped: the 30-day window
+  replaces it. Building it is described under "Defaults built".
 
 ## 8. What building found (2026-10-23)
 
@@ -256,18 +270,44 @@ OpenAI's and DI2's and are settings.
 
 ### Defaults built
 
-- A file ends **30 days** after upload; an app may ask for up to **30 days**
-  (OpenAI's own maximum), and for any number of seconds below it (OpenAI
-  takes 3,600 at least; this install takes 1). Both are settings.
+- **A file is kept until it is deleted**, as OpenAI keeps one (Troy's
+  standing rule: full OpenAI compatibility by default; set by the review,
+  2026-10-24, replacing the 30-day default in section 2's table). An app may
+  ask for an end with `expires_after`, within OpenAI's bounds (one hour to 30
+  days). The owner may set a default life in Settings (`fileDefaultDays`, 0
+  by default). An upload in progress still ends after an hour, as OpenAI's.
 - **10 GiB and 10,000 files** per owner, install-wide. The per-group quota
   (row 70's `platformStoreBytes`) is not built: it needs control's policy
   schema and the gateway to carry it, and is a follow-up.
-- **Deletes data, on:** a person the root no longer knows loses everything
-  they kept here at the next sweep (hourly), with no waiting period. Three or
-  more unknown at once are held until the owner releases them in Settings ->
-  Files apps keep (`removalBrake`, 0 turns the hold off). Files already end
-  in 30 days, so a 30-day grace like Workbench's would keep little; a true
-  delete matches MRC27.
+- **A removed person is hidden, then deleted** (R53-REMOVE, Choice 2,
+  replacing the immediate delete and the brake built first). The sweep
+  (hourly, or Sweep now) asks the root about every person who owns
+  something here, the hidden ones too, through the agent's
+  `POST /v1/people/known`, which gives the answer Workbench gets from
+  `/oidc/subjects`. A person it no longer has is hidden at once: lookups
+  and listings answer the same 404 as a missing id, to the person and to
+  everyone; nothing new is kept for them (403, "Eugene removed this
+  person"); the console shows only their counts, the day they were hidden
+  and their delete date. The date is fixed when they are hidden
+  (`removedPeopleDays`, 30, 1 to 365); a later change never shortens it.
+  `removedPeopleRetention` "Not at all" deletes at once instead. The keys,
+  values and wording are row 7's.
+- **Restored within the days, everything comes back unchanged:** the same
+  ids and bytes, at the next sweep after the root has the person again (or
+  at once with Sweep now). A file whose own `expires_after` passed while
+  its owner was hidden is deleted on time, as it would have been.
+- **Delete now** (Settings -> Files apps keep, per removed person;
+  `POST /v1/removals/delete`, an operator session only) deletes at once and
+  for good: rows, blobs no one else names, and the person's rows in every
+  copy kept before a migration (MRC27). It refuses a person Eugene still
+  has (404): their files are theirs.
+- **A root that cannot be asked** hides and restores nobody; a date that
+  has passed is still kept to, as row 7 keeps it (the date was decided when
+  the root answered).
+- **The quota and the disk:** a hidden person's objects stay counted against
+  them until deleted, and nothing new is kept for them, so no upload
+  reclaims what they kept. Deleting is fenced by the generation read before
+  the root was asked.
 - **A switch for files only.** Responses, batches and vector stores get
   theirs with rows 54-56; a switch for a part that does not exist would show
   a setting that does nothing.
@@ -277,3 +317,36 @@ OpenAI's and DI2's and are settings.
   it kept.
 - The owner's console shows counts and bytes per owner by the person's or
   key's name, never a file name or content.
+
+### The review (2026-10-24)
+
+A second model reviewed the row and found no way for a client to name an
+owner. It found, and building fixed, each with a test that fails without the
+fix and one sabotage of each new check:
+
+- **`file_id` expansion went past the attachment limit.** A 6 MiB text file
+  named twice expanded to 12 MiB of text the later checks never count. The
+  files one request names now share the 11 MiB attachment budget, a file
+  named twice counted twice, checked from each file's recorded size before
+  its bytes are read.
+- **The quota did not bound the disk.** A whole file and a part were written
+  before their checks, two `complete` calls joined one upload twice, and an
+  ended file left the accounting while its bytes stayed until the sweep.
+  Room is now taken under the lock before any byte is written; an upload is
+  joined once at a time (409), its parts checked by reading and deleted as
+  they are joined; an ended file counts until its bytes are deleted, and an
+  owner at its quota has its own ended files deleted first.
+- **Removal could race a person restored under the same id.** Every file
+  and upload carries the store's generation; the sweep reads it before it
+  asks the root and deletes only what is older.
+- **The standby could still take a port the store declared.**
+  `ports.first_free` now never returns a reserved port, the preferred one
+  included, so every allocator skips a declared port.
+- **A caller's `text/plain` on bytes that are not UTF-8 was a 500.** Text is
+  only what decodes as UTF-8; anything else is refused naming its type.
+- **Coverage:** the gateway's files doors have an admission matrix (no
+  credential, an expired key, a session for another machine, another
+  machine's service token, a person token beside a session, a person the
+  root no longer knows, a key revoked for real); the acceptance checks
+  another owner's file, content and deletion, and sabotages the listing and
+  the lookup by id separately.
