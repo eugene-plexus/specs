@@ -30,6 +30,9 @@ C_APPLIED = "src/eugene_plexus_control/applied.py"
 C_CHANGE = "src/eugene_plexus_control/passphrase_change.py"
 C_SM = "src/eugene_plexus_control/state_machine.py"
 C_REPL = "src/eugene_plexus_control/replication.py"
+C_AUTHSTATE = "src/eugene_plexus_control/auth_state.py"
+C_OIDC = "src/eugene_plexus_control/oidc.py"
+C_OIDC_ROUTES = "src/eugene_plexus_control/routes/oidc.py"
 C_AUTH = "src/eugene_plexus_control/routes/auth.py"
 C_CTRL = "src/eugene_plexus_control/routes/control.py"
 C_KEYS = "src/eugene_plexus_control/oidc_keys.py"
@@ -167,6 +170,24 @@ CASES: list[tuple[str, str, str, str, str, str, str]] = [
      "      ? `${machine.node}: changed, but ${machine.detail}`",
      "      ? `${machine.node}: changed`", "vitest",
      "src/app/people/page.test.tsx::changes Eugene's passphrase from the owner's row"),
+    # The re-review (Codex, 2026-10-24).
+    ("an unlock labels its key with the salt now, not its own", "control", C_AUTH,
+     "    unseal_with_master_key(auth, machine, master_key, salt=identity.salt)",
+     "    unseal_with_master_key(auth, machine, master_key, salt=machine.state.identity.salt)",
+     "pytest", CP + "test_a_sign_in_the_change_overtook_publishes_no_key"),
+    ("a key is published whatever the salt now", "control", C_AUTHSTATE,
+     (
+         "            if salt is None or current() != salt:\n                return False\n"
+         "            self.set_master_key(key, salt=salt)"
+     ),
+     "            self.set_master_key(key, salt=current())", "pytest",
+     CP + "test_a_change_between_the_check_and_the_publish_publishes_nothing"),
+    ("a sign-in does not wait for the key in effect", "control", C_OIDC,
+     "        if generation is not None and generation == machine.state.identity.salt:",
+     "        if True:", "pytest", CP + "test_a_first_sign_in_during_the_handoff_is_asked_to_retry"),
+    ("no Retry-After while the key changes", "control", C_OIDC_ROUTES,
+     "        response.headers[\"Retry-After\"] = str(oidc.RETRY_AFTER_SECONDS)",
+     "        pass", "pytest", CP + "test_a_first_sign_in_during_the_handoff_is_asked_to_retry"),
     ("plain is shown as changed", "ui", U_CHANGE,
      "  if (machine.state === \"plain\") return `${machine.node}: not sent: reached in plain HTTP`;",
      "  if (machine.state === \"plain\") return `${machine.node}: changed`;", "vitest",
